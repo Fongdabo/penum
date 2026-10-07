@@ -637,7 +637,7 @@ dim_break:['ค่านี้ทำให้บางชิ้นสั้น�
 dim_mode_na:['ชนิดนี้ใช้กับจุดอ้างอิงคู่นี้ไม่ได้ (ระยะเป็นศูนย์)','That type does not work for these two references (zero distance).'],dim_txt_num:['ใส่ตัวเลขเป็นข้อความแทนค่าไม่ได้ ให้แก้ที่ช่อง “ระยะ” เพื่อขยับจริง','A number cannot be used as replacement text. Edit “Value” to actually move things.'],p_dimtype:['ชนิดเส้นบอกระยะ','Dimension Type'],p_scale:['มาตราส่วน','View Scale'],p_sheetname:['ชื่อชีต','Sheet Name'],p_detail:['ระดับรายละเอียด','Detail Level'],
 p_underlay:['แบบรองพื้น','Underlay'],p_tags:['แสดงป้ายกำกับ','Show Tags'],p_roomfill:['ระบายสีห้อง','Room Color Fill'],p_cut:['ระดับตัดแปลน','Cut Plane'],p_vstyle:['รูปแบบการแสดงผล','Visual Style'],p_persp:['ทัศนียภาพ','Perspective'],p_sheetno:['เลขที่ชีต','Sheet Number'],p_paper:['ขนาดกระดาษ','Paper Size'],p_vpcount:['จำนวนมุมมองบนชีต','Views on Sheet'],p_project:['ชื่อโครงการ','Project Name'],p_units:['หน่วยความยาว','Length Unit'],
 top_auto:['ถึงชั้นถัดไป (อัตโนมัติ)','Up to next level (auto)'],top_unconn:['กำหนดความสูงเอง','Unconnected'],top_upto:['ถึงระดับ:','Up to level:'],top_3000:['ไม่ผูกระดับ (สูง 3.00 ม.)','Unconnected (3.00 m)'],
-rs_hip:['ปั้นหยา','Hip'],rs_gable:['จั่ว','Gable'],rs_shed:['เพิงหมาแหงน','Shed'],rs_flat:['เรียบ','Flat'],sys_SA:['ลมจ่าย (SA)','Supply Air (SA)'],sys_RA:['ลมกลับ (RA)','Return Air (RA)'],sys_EA:['ลมระบาย (EA)','Exhaust Air (EA)'],sys_OA:['ลมบริสุทธิ์ (OA)','Outside Air (OA)'],
+rs_hip:['ปั้นหยา','Hip'],rs_arc:['โค้ง (Extrusion)','Curved (Extrusion)'],p_arcrise:['ความสูงโค้ง','Arc Rise'],rs_gable:['จั่ว','Gable'],rs_shed:['เพิงหมาแหงน','Shed'],rs_flat:['เรียบ','Flat'],sys_SA:['ลมจ่าย (SA)','Supply Air (SA)'],sys_RA:['ลมกลับ (RA)','Return Air (RA)'],sys_EA:['ลมระบาย (EA)','Exhaust Air (EA)'],sys_OA:['ลมบริสุทธิ์ (OA)','Outside Air (OA)'],
 n_multi:['เลือกหลายหมวดอยู่ แก้คุณสมบัติได้เมื่อเลือกหมวดเดียว ใช้ย้าย คัดลอก หมุน สะท้อน และลบได้ตามปกติ','Several categories are selected. Properties can be edited for one category at a time; Move, Copy, Rotate, Mirror and Delete still work.'],
 n_opening:['เลือกชนิด แล้วชี้บนผนังเพื่อวาง ด้านเปิดตามด้านที่เมาส์อยู่','Pick a type, then point at a wall. The swing follows the side of the cursor.'],n_stair:['คลิกจุดเริ่มบันได แล้วคลิกบอกทิศขึ้น ความยาวคิดจากความสูงชั้นให้เอง','Click the start of the run, then the direction. Run length is computed from the storey height.'],n_selected:['เลือกอยู่ {0} ชิ้น','{0} selected'],
 // type dialog
@@ -1746,6 +1746,17 @@ function roofGeo(P,rf){
   const eave=pts.map((p,i)=>{const a=E[(i+n-1)%n],b=E[i],c=a.dx*b.dy-a.dy*b.dx;if(Math.abs(c)<1e-6)return[p[0]-b.nx*O,p[1]-b.ny*O];
     const ax=p[0]-a.nx*O,ay=p[1]-a.ny*O,bx=p[0]-b.nx*O,by=p[1]-b.ny*O,s=((bx-ax)*b.dy-(by-ay)*b.dx)/c;return[ax+a.dx*s,ay+a.dy*s]});
   let S=[],li=0;E.forEach((e,i)=>{if(e.L>E[li].L+1)li=i});
+  if(shape==='arc'){          // a curved roof extruded along its ridge direction (Revit: Roof by Extrusion with an arc profile): strips across, each a plane, rise e.rise over the walls
+    let gx=E[li].dx,gy=E[li].dy;if((rf.alt||0)%2){const t=gx;gx=-gy;gy=t}const ux=-gy,uy=gx,sv=q=>q[0]*ux+q[1]*uy;let a=Infinity,b=-Infinity,s0=Infinity,s1=-Infinity;
+    for(const p of pts){const v=sv(p);a=Math.min(a,v);b=Math.max(b,v)}for(const q of eave){const v=sv(q);s0=Math.min(s0,v);s1=Math.max(s1,v)}
+    const c=Math.max(1,b-a),Rz=clamp(rf.rise>0?rf.rise:Math.round(c*0.15),50,c/2),rad=(c*c/4+Rz*Rz)/(2*Rz),sc=(a+b)/2,hA=v=>Math.sqrt(Math.max(0,rad*rad-(v-sc)*(v-sc)))-(rad-Rz);
+    const N=clamp(Math.round((s1-s0)/350),8,40),faces=[],zt=z0+th;let zmax=zt;
+    for(let k=0;k<N;k++){const sa=s0+(s1-s0)*k/N,sb=s0+(s1-s0)*(k+1)/N;let poly=clipHP(eave,q=>sv(q)-sa);if(poly.length>=3)poly=clipHP(poly,q=>sb-sv(q));poly=dedupe(poly);if(poly.length<3)continue;
+      const ha=hA(sa),hb=hA(sb),loop=poly.map(q=>[q[0],q[1],zt+ha+(hb-ha)*(sv(q)-sa)/(sb-sa||1)]);loop.forEach(q=>{if(q[2]>zmax)zmax=q[2]});faces.push({i:-2,arc:1,loop})}
+    const gables=[];for(const e of E){if(Math.abs(e.dx*gx+e.dy*gy)>0.7072)continue;const prof=[];for(let m=0;m<=24;m++){const q=[e.p[0]+(e.q[0]-e.p[0])*m/24,e.p[1]+(e.q[1]-e.p[1])*m/24];prof.push([q[0],q[1],z0+hA(sv(q))])}
+      if(Math.max(...prof.map(p=>p[2]))-z0<5)continue;const loop=[[e.p[0],e.p[1],z0],[e.q[0],e.q[1],z0]];for(let m=prof.length-1;m>=0;m--)if(prof[m][2]-z0>1)loop.push(prof[m]);gables.push({loop,nx:e.nx,ny:e.ny,p:e.p,q:e.q})}
+    let area=0;for(const f of faces){const Nw=newell(f.loop.map(q=>[q[0],q[2],q[1]]));area+=Math.hypot(Nw[0],Nw[1],Nw[2])/2}
+    return{th,z0,eave,faces,gables,shape,warn,zmax,area,rise:Rz}}
   if(shape==='hip')S=E.map((e,i)=>i);
   else if(shape==='gable'){let gx=E[li].dx,gy=E[li].dy;if((rf.alt||0)%2){const t=gx;gx=-gy;gy=t}S=E.map((e,i)=>Math.abs(e.dx*gx+e.dy*gy)>0.7072?i:-1).filter(i=>i>=0);if(!S.length)S=[li]}
   else if(shape==='shed')S=[(li+(rf.alt||0))%n];
@@ -1952,16 +1963,18 @@ function buildMeshes(P,FP,FIT){
       for(const pc of polyMinus(e.pts,holeParts(holes)))prism(m,pc,zr[0],zr[1]);boxL(m,e.pts,zr[0],zr[1]);for(const hq of holes)boxL(m,hq,zr[0],zr[1]);slabTilt(e,m);items.push(m)
     }else if(e.cat==='ceiling'){const T=typ(P,e),zr=zRange(P,e),m=mk(e.id,'ceiling',hex2rgb(T.color||'#e8e8e4')),holes=slabHoles(P,e);m.mt=matOf('ceiling',T);for(const pc of polyMinus(e.pts,holeParts(holes)))prism(m,pc,zr[0],zr[1]);boxL(m,e.pts,zr[0],zr[1]);for(const hq of holes)boxL(m,hq,zr[0],zr[1]);slabTilt(e,m);items.push(m)
     }else if(e.cat==='roof'){const T=typ(P,e),R=roofGeo(P,e),rc=hex2rgb(T.color),m=mk(e.id,'roof',rc),ED=[];m.mt=matOf('roof',T);
+      const arc=R.shape==='arc',SL=[];          // a curved roof: the lines of a seam between two strips are left out
       for(const f of R.faces){const L=f.loop.map(q=>[q[0],q[2],q[1]]);extrude(L,[0,-R.th,0],m.t);
-        for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];m.l.push(a[0],a[1],a[2],b[0],b[1],b[2],a[0],a[1]-R.th,a[2],b[0],b[1]-R.th,b[2]);
+        for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];(arc?SL:m.l).push(a[0],a[1],a[2],b[0],b[1],b[2],a[0],a[1]-R.th,a[2],b[0],b[1]-R.th,b[2]);
           if(R.eave.some(q=>Math.abs(q[0]-a[0])<1&&Math.abs(q[1]-a[2])<1))m.l.push(a[0],a[1],a[2],a[0],a[1]-R.th,a[2]);
           const mx=a[0]+b[0],my=a[1]+b[1],mz=a[2]+b[2],g=ED.find(q=>Math.abs(q.mx-mx)<4&&Math.abs(q.my-my)<4&&Math.abs(q.mz-mz)<4);if(g)g.n++;else ED.push({a,b,n:1,mx,my,mz})}}
+      if(arc)for(let k=0;k<SL.length;k+=12){const mx=SL[k]+SL[k+3],my=SL[k+1]+SL[k+4],mz=SL[k+2]+SL[k+5],g=ED.find(q=>Math.abs(q.mx-mx)<4&&Math.abs(q.my-my)<4&&Math.abs(q.mz-mz)<4);if(!g||g.n<2)for(let j=0;j<12;j++)m.l.push(SL[k+j])}
       items.push(m);
       if(R.faces.length>1&&R.th>=30){          // a sloped roof: caps along its ridge and hips (edges two faces share), fascia boards along its eaves, and under a hip roof the soffit of the overhang
         let cx=0,cy=0;for(const q of R.eave){cx+=q[0]/R.eave.length;cy+=q[1]/R.eave.length}
         const zE=Math.min(...R.faces.map(f=>Math.min(...f.loop.map(q=>q[2])))),cap=mk(e.id,'roof',[rc[0]*0.8,rc[1]*0.8,rc[2]*0.8]),fa=mk(e.id,'roof',[0.93,0.92,0.89]);cap.mt=m.mt===MAT.sheet?MAT.sheet:MAT.plain;fa.mt=MAT.paint;
         for(const g of ED){const a=g.a,b=g.b,d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],dl=Math.hypot(d[0],d[1],d[2]);if(dl<40)continue;
-          if(g.n>1){const hl=Math.hypot(d[0],d[2]),p=hl<1e-6?[1,0,0]:[-d[2]/hl,0,d[0]/hl],w=[d[0]/dl,d[1]/dl,d[2]/dl],u=[p[1]*w[2]-p[2]*w[1],p[2]*w[0]-p[0]*w[2],p[0]*w[1]-p[1]*w[0]],rr=Math.min(85,R.th*0.75),lp=[];
+          if(g.n>1&&arc)continue;if(g.n>1){const hl=Math.hypot(d[0],d[2]),p=hl<1e-6?[1,0,0]:[-d[2]/hl,0,d[0]/hl],w=[d[0]/dl,d[1]/dl,d[2]/dl],u=[p[1]*w[2]-p[2]*w[1],p[2]*w[0]-p[0]*w[2],p[0]*w[1]-p[1]*w[0]],rr=Math.min(85,R.th*0.75),lp=[];
             for(let i=0;i<8;i++){const t=i/8*2*Math.PI,c=Math.cos(t)*rr,s=Math.sin(t)*rr*0.8;lp.push([a[0]+p[0]*c+u[0]*s,a[1]+p[1]*c+u[1]*s,a[2]+p[2]*c+u[2]*s])}extrude(lp,d,cap.t)}
           else if(Math.abs(a[1]-zE)<2&&Math.abs(b[1]-zE)<2){const hl=Math.hypot(d[0],d[2])||1,ux=d[0]/hl,uy=d[2]/hl;let ox=uy,oy=-ux;if(ox*((a[0]+b[0])/2-cx)+oy*((a[2]+b[2])/2-cy)<0){ox=-ox;oy=-oy}
             const t=22,A=[a[0]-ux*t,a[2]-uy*t],B=[b[0]+ux*t,b[2]+uy*t];solid(fa,[A,B,[B[0]+ox*t,B[1]+oy*t],[A[0]+ox*t,A[1]+oy*t]],zE-Math.max(R.th,170)-20,zE+4)}}
@@ -11082,7 +11095,7 @@ function catRows(cat,els,isNew){
     case'floor':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_level',V(x=>x.level),L);h+=PR.num('off','p_heightoff',V(x=>x.off||0),U,'step="50"');if(!isNew)h+=slopeRows(els,V);
       if(!isNew)h+=strRows(els)+PR.grp('g_dims')+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit())+PR.ro('p_volume',fmtVol(S('vol'))+' '+volUnit());break;
     case'roof':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('off','p_baseoff',V(x=>x.off||0),U,'step="50"');
-      h+=PR.grp('g_shape')+PR.sel('shape','p_shape',V(x=>x.shape),[['hip',t('rs_hip')],['gable',t('rs_gable')],['shed',t('rs_shed')],['flat',t('rs_flat')]])+PR.num('slope','p_slope',V(x=>roofSlopeIn(x.slope)),slopeSym('su'),ufOf().su==='deg'?'step="1" min="1" max="70"':'step="any" min="0"')+PR.num('overhang','p_overhang',V(x=>x.overhang),U,'step="50" min="0"')+PR.chk('gut','p_gutter',els.every(x=>x.gut));
+      h+=PR.grp('g_shape')+PR.sel('shape','p_shape',V(x=>x.shape),[['hip',t('rs_hip')],['gable',t('rs_gable')],['shed',t('rs_shed')],['arc',t('rs_arc')],['flat',t('rs_flat')]])+(els.every(x=>x.shape==='arc')?PR.num('rise','p_arcrise',V(x=>x.rise>0?x.rise:x.pts&&x.pts.length>2?Math.round(roofGeo(P,x).rise||0):''),U,'step="50" min="50"'):PR.num('slope','p_slope',V(x=>roofSlopeIn(x.slope)),slopeSym('su'),ufOf().su==='deg'?'step="1" min="1" max="70"':'step="any" min="0"'))+PR.num('overhang','p_overhang',V(x=>x.overhang),U,'step="50" min="0"')+PR.chk('gut','p_gutter',els.every(x=>x.gut));
       if(!isNew)h+=PR.grp('g_dims')+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit())+(els.some(x=>x.gut)?PR.ro('p_gutlen',fmtLen(els.reduce((s,x)=>s+roofGutterLen(P,x),0))+' '+unitName()):'');break;
     case'railing':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('off','p_baseoff',V(x=>x.off||0),U,'step="50"');
       if(!isNew)h+=PR.num('off2','p_off2',V(x=>x.off2!=null?x.off2:(x.off||0)),U,'step="50"')+PR.grp('g_dims')+PR.ro('p_length',fmtLen(S('len'))+' '+unitName())+PR.ro('p_height',((typ(P,e)||{}).h||900)+' '+U);break;
@@ -12029,7 +12042,7 @@ function swSync(){if(!SW.el||SW.el.hidden)return;const v=activeView(),is3=!!v&&v
 XA.wheel=()=>swShow();XD.push(()=>{swSync();return false});
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=41,V1_NAME='V1.31';
+const V1_BUILD=42,V1_NAME='V1.32';
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -13079,7 +13092,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # พื้น ฝ้า หลังคา
 - [[t_floor]] ((SB)) · [[t_ceiling]] · [[t_roof]] วาดขอบเขตได้สามวิธี: [[a_rect]] คลิกสองมุม · [[a_line]] คลิกทีละมุมจนครบรอบ แล้วกด ((Enter)) หรือ [[a_finish]] · [[a_pick]] คลิกในห้องเพื่อใช้ขอบห้อง
-- หลังคา: เลือก [[p_shape]] (ปั้นหยา จั่ว เพิงหมาแหงน เรียบ) [[p_slope]] และ [[p_overhang]] ในแผงคุณสมบัติ · ปุ่ม [[a_ridge]] เปลี่ยนทิศของสันหลังคา
+- หลังคา: เลือก [[p_shape]] (ปั้นหยา จั่ว เพิงหมาแหงน โค้ง เรียบ) [[p_slope]] และ [[p_overhang]] ในแผงคุณสมบัติ · ปุ่ม [[a_ridge]] เปลี่ยนทิศของสันหลังคา · หลังคาโค้ง (เหมือน Roof by Extrusion ที่หน้าตัดเป็นส่วนโค้ง) ตั้ง [[p_arcrise]] เหนือผนัง โค้งไปตามแนวสัน มีผนังปิดหัวโค้งสองด้าน รางน้ำ และผนังยึดใต้หลังคาได้
 - [[a_attach]]: เลือกผนัง กดปุ่มนี้ เลือก [[att_top]] หรือ [[att_base]] บนแถบตัวเลือก แล้วคลิกหลังคา พื้น หรือฝ้า — ในแปลนคลิกตรงไหนก็ได้ที่อยู่ใต้ (หรือเหนือ) สิ่งนั้น หรือคลิกบนสิ่งนั้นในมุมมอง 3 มิติ · ผนังจะไปจบที่สิ่งนั้นและตามรูปทรงของมัน เช่น ผนังหน้าจั่วขึ้นไปถึงสันหลังคา และเปลี่ยนตามเมื่อหลังคาเปลี่ยน · [[a_detach]] ปลดการยึด
 - [[a_editprof]]: แก้รูปด้านข้างของผนังทีละชิ้น — ลากจุดมุม ดับเบิลคลิกบนเส้นเพื่อเพิ่มจุด ดับเบิลคลิกที่จุดเพื่อลบ หรือพิมพ์ระยะและความสูงของจุดที่เลือก แล้วกด [[wpf_finish]] · ใช้ทำผนังหน้าจั่ว ผนังขั้นบันได หรือยกฐานบางช่วง · [[a_resetprof]] คืนเป็นสี่เหลี่ยม · พื้นที่และปริมาตรของผนังในตารางคิดตามรูปทรงใหม่
 - [[a_cwpanels]]: ผนังกระจกแบ่งช่องตามเส้นกริดที่ตั้งในชนิดของผนัง (แก้ชนิด: การจัดเส้นกริดแนวตั้ง/แนวนอนแบบระยะคงที่ จำนวนช่องคงที่ ระยะไม่เกิน/ไม่น้อยกว่า ขนาดและสีเสาครีบ เสาครีบที่ขอบ แผงตั้งต้น) · เลือกผนังกระจกหนึ่งชิ้น กดปุ่มนี้ที่แผงคุณสมบัติ แล้วคลิกช่องเพื่อสลับ กระจก แผงทึบ ช่องเปิด เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนแสดงเสาครีบที่ถูกตัด
@@ -13186,7 +13199,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # Floors, ceilings, roofs
 - [[t_floor]] ((SB)) · [[t_ceiling]] · [[t_roof]]: the boundary is sketched in one of three ways: [[a_rect]] two corners · [[a_line]] corner by corner, then ((Enter)) or [[a_finish]] · [[a_pick]] a click inside a room takes its boundary
-- Roofs: [[p_shape]] (hip, gable, shed, flat), [[p_slope]] and [[p_overhang]] are in Properties · [[a_ridge]] turns the ridge
+- Roofs: [[p_shape]] (hip, gable, shed, curved, flat), [[p_slope]] and [[p_overhang]] are in Properties · [[a_ridge]] turns the ridge · a curved roof (Revit's Roof by Extrusion with an arc profile) takes an [[p_arcrise]] over the walls and runs along the ridge, with its two arched ends filled, gutters, and walls that can attach under it
 - [[a_attach]]: select walls, press it, choose [[att_top]] or [[att_base]] in the options bar, then click the roof, floor or ceiling — in a plan a click anywhere under (or over) it will do, or click it in a 3D view · the walls end on it and follow its shape: a gable wall goes up to the ridge, and follows when the roof changes · [[a_detach]] sets them free again
 - [[a_editprof]]: reshape the side of one wall — drag its corners, double-click a line for a new corner, double-click a corner to remove it, or type the distance and the height of the selected corner, then [[wpf_finish]] · for gable walls, stepped walls or a raised base · [[a_resetprof]] makes it a rectangle again · the area and volume of the wall in the schedules follow the new shape
 - [[a_cwpanels]]: a curtain wall is split by the grid set in its type (Edit Type: vertical and horizontal grid layout by Fixed Distance, Fixed Number, Maximum or Minimum Spacing, mullion size and colour, border mullions, default panel) · select one curtain wall, press this in Properties and click panels to switch Glazed, Solid and Empty; it shows in 3D, elevations and sections, and plans show the cut mullions
