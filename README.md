@@ -18,6 +18,16 @@
 - PENUM MEP: https://claude.ai/artifact/89886eHGkANsq5qJL74P6u
 - PENUM BIM: https://claude.ai/artifact/Vq6P1YQRkfUKiEjjDcPsha
 
+## ติดตั้งเป็นแอปบน Windows (GitHub Pages)
+
+ทุกครั้งที่ push เข้า `main` workflow `.github/workflows/pages.yml` จะรัน `tools/build-pages.mjs` เพื่อห่อซอร์สแต่ละแอปเป็นหน้าเว็บเต็ม
+พร้อม manifest และ service worker แล้วขึ้น GitHub Pages ผู้ใช้เปิดหน้าแอปใน Edge หรือ Chrome แล้วกด "ติดตั้งแอป"
+แอปจะเปิดเป็นหน้าต่างของตัวเอง ใช้ได้แม้ไม่มีอินเทอร์เน็ต และได้รุ่นใหม่เมื่อเปิดขณะออนไลน์
+
+- ตั้งค่าครั้งแรก: Settings › Pages › Source เลือก **GitHub Actions** (GitHub Pages แบบฟรีต้องเป็น repo สาธารณะ)
+- ลองในเครื่อง: `node tools/build-pages.mjs site` แล้วเปิด `site/` ผ่านเว็บเซิร์ฟเวอร์ใดก็ได้
+- นอกหน้า Artifact ปุ่มตรวจหาอัปเดตจะแจ้งว่าตรวจไม่ได้ (แอปอัปเดตเองตอนเปิดอยู่แล้ว) และการบันทึกไฟล์ใช้การดาวน์โหลดของเบราว์เซอร์
+
 ## อัปเดตโค้ด
 
 หลัง publish รุ่นใหม่ในโปรเจกต์ Claude ให้นำซอร์สล่าสุดมา commit ที่นี่ โดยตัดโครงหน้า
