@@ -14,6 +14,7 @@ for (const f of readdirSync(join(root, 'icons'))) copyFileSync(join(root, 'icons
 const APPS = [
   { dir: 'mep', name: 'PENUM MEP', short: 'PENUM MEP', desc: 'งานระบบอาคาร คำนวณ แบบ และ BOQ', theme: '#123A42', bg: '#F2F5F4', shim: true },
   { dir: 'bim', name: 'PENUM BIM', short: 'PENUM BIM', desc: 'โปรแกรมเขียนแบบ BIM ในเบราว์เซอร์', theme: '#1b2028', bg: '#eef1f5' },
+  { dir: 'pm', name: 'PENUM PM', short: 'PENUM PM', desc: 'บริหารโครงการ แผนงาน จัดซื้อ งบ เบิกงวด หน้างาน และส่งมอบ', theme: '#123A42', bg: '#F2F5F4' },
 ];
 
 // PENUM MEP saves files only through the Artifact host's downloads service and otherwise shows the text to copy.
