@@ -7,6 +7,6 @@ const pg=await b.newPage();const errs=[];pg.on('pageerror',e=>errs.push(e.messag
 await pg.goto('http://localhost:8765/pm/index.html');await pg.waitForTimeout(800);
 await pg.addScriptTag({content:fs.readFileSync(dir+'/seed.js','utf8')});
 const out=await pg.evaluate(L=>seed(L),fs.readFileSync(dir+'/logo.svg','utf8'));
-fs.writeFileSync(dir+'/PENUM-demo-company.json',JSON.stringify(out));
+fs.writeFileSync(dir+'/PRANA-demo-company.json',JSON.stringify(out));
 console.log('errors',errs, 'size',JSON.stringify(out).length, Object.values(out.projects).map(p=>p.name), out.co.staff.length);
 await b.close();srv.close();
