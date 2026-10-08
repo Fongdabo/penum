@@ -1,7 +1,7 @@
 // Build the GitHub Pages site: wrap each app's Artifact source in a full HTML page,
 // add a web app manifest and a service worker so Edge/Chrome can install it as a desktop app.
 // Usage: node tools/build-pages.mjs [outDir]   (default: site)
-import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -48,6 +48,8 @@ ${src}
       { src: '../icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }, null, 2));
+  // documents an app links to (PENUM PM's forms library) are served next to it
+  if (existsSync(join(root, a.dir, 'files'))) cpSync(join(root, a.dir, 'files'), join(dir, 'files'), { recursive: true });
   writeFileSync(join(dir, 'sw.js'), readFileSync(join(root, 'tools', 'sw.js'), 'utf8').replace('__VERSION__', `${a.dir}-${ver}`));
 }
 
