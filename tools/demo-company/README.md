@@ -1,6 +1,6 @@
 # Demo company (ORIEN)
 
-Sample data for PENUM PM: a simulated MEP/HVAC contractor, บริษัท โอเรียน จำกัด (ORIEN Air Systems) (39 staff in 10 departments,
+Sample data for PENUM PM: a simulated MEP contractor covering all building systems (electrical, plumbing, air conditioning, fire protection, low voltage), บริษัท โอเรียน จำกัด (ORIEN Air Systems) (39 staff in 10 departments,
 7 customers, 4 projects at different stages, sales pipeline, quotations, service contracts and repair jobs).
 
 Open it in PENUM PM with เมนู → เปิดไฟล์สำรอง and pick `ORIEN-demo-company.json`.
