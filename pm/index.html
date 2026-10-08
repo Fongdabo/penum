@@ -1674,8 +1674,8 @@ ACT.cCopy=async b=>toast(await copyText(b.dataset.v)?'คัดลอกแล�
     <label style="display:block;margin-top:10px">อีเมลผู้ดูแลระบบ (เห็นทุกส่วน คั่นด้วยจุลภาค)<input data-p="co.adminMails" value="${esc(DB.co.adminMails||'')}" style="width:100%;max-width:520px;display:block;margin-top:4px"></label>`:''}`
   :`<ol style="padding-left:0;list-style:none">
     ${step(1,!!cid,'ลงทะเบียนแอปกับ Microsoft (ผู้ดูแลทำครั้งเดียว)',`<ol class="hint" style="padding-left:18px;line-height:1.8">
-      <li>เปิด <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">entra.microsoft.com</a> ล็อกอินด้วยบัญชี Microsoft ที่ใช้ OneDrive</li>
-      <li>กด <b>App registrations</b> แล้วกด <b>+ New registration</b></li>
+      <li>เปิด <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener">portal.azure.com</a> ล็อกอินด้วยบัญชี Microsoft ที่ใช้ OneDrive (ถ้าเจอกล่องเตือน “Interaction required” กด Ignore)</li>
+      <li>ช่องค้นหาด้านบนพิมพ์ <b>App registrations</b> แล้วกด <b>+ New registration</b></li>
       <li>ช่อง Name พิมพ์ <b>PENUM PM</b></li>
       <li>Supported account types เลือก <b>Accounts in any organizational directory and personal Microsoft accounts</b></li>
       <li>Redirect URI เลือก <b>Single-page application (SPA)</b> แล้ววาง <code>${esc(ru)}</code> <button type="button" class="btn sm" data-a="cCopy" data-v="${esc(ru)}">คัดลอก</button></li>
@@ -1693,9 +1693,72 @@ async function cloudInit(){const back=await msRedirect().catch(()=>false);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&cloudOn())cloudSync()});
   addEventListener('online',()=>cloudOn()&&cloudSync())}
 
+/* ---------- no app registration needed: a folder inside OneDrive on this computer ----------
+   The app reads and writes PENUM-PM/penum-pm.json in a folder the user picks once (Edge/Chrome on a computer);
+   the OneDrive program syncs that folder to the cloud and to everyone it is shared with. Same merge as above,
+   and OneDrive's own conflict copies (penum-pm-PCNAME.json) are merged in and removed. */
+const FS={h:null,busy:false,state:'',msg:''};
+const fsOK=()=>'showDirectoryPicker' in window;
+const folderOn=()=>!!CL.dirName&&!cloudOn();
+const EMPTY='{"projects":{},"co":{}}';
+async function dirH(){if(!FS.h){try{FS.h=await IDB.get('__dirh')}catch(e){}}return FS.h}
+async function fPerm(ask){const h=await dirH();if(!h)return false;const o={mode:'readwrite'};let p=await h.queryPermission(o);if(p!=='granted'&&ask)p=await h.requestPermission(o);return p==='granted'}
+async function fRead(dir,name){try{const f=await (await dir.getFileHandle(name)).getFile();return {txt:await f.text(),mtime:f.lastModified}}catch(e){return null}}
+async function fWrite(dir,name,txt){const fh=await dir.getFileHandle(name,{create:true}),w=await fh.createWritable();await w.write(txt);await w.close();return (await fh.getFile()).lastModified}
+async function fSub(name){return (await dirH()).getDirectoryHandle(name,{create:true})}
+async function folderSync(force){if(!folderOn()||FS.busy)return;if(!await fPerm(false)){FS.state='perm';cloudBadge();return}
+  FS.busy=true;FS.state='busy';cloudBadge();let changed=false;
+  try{const h=await dirH(),cur=await fRead(h,FNAME),anc=JSON.parse((await IDB.get('__cloudbase'))||EMPTY);
+    if(cur&&(force||cur.mtime!==CL.dirMtime)&&cur.txt!==payload()){applyData(merge3(anc,JSON.parse(payload()),JSON.parse(cur.txt||EMPTY)));changed=true}
+    for await(const [nm,eh] of h.entries()){if(eh.kind!=='file'||nm===FNAME||!/^penum-pm.*\.json$/i.test(nm))continue;
+      try{applyData(merge3(anc,JSON.parse(payload()),JSON.parse(await (await eh.getFile()).text())));await h.removeEntry(nm);changed=true}catch(e){}}
+    const body=payload();CL.dirMtime=!cur||body!==cur.txt?await fWrite(h,FNAME,body):cur.mtime;
+    await baseSet(body);CL.last=Date.now();clSave();await fBackup(h,body).catch(()=>{});fPhotos().catch(()=>{});FS.state='ok';FS.msg=''}
+  catch(e){FS.state='err';FS.msg=e.message}
+  finally{FS.busy=false;if(changed)render();else cloudBadge()}}
+async function fBackup(h,body){const d=today();if(CL.dirBk===d)return;const bk=await h.getDirectoryHandle('backup',{create:true});await fWrite(bk,`penum-pm-${d}.json`,body);CL.dirBk=d;clSave();
+  const L=[];for await(const [nm] of bk.entries())if(/^penum-pm-\d{4}-\d\d-\d\d\.json$/.test(nm))L.push(nm);L.sort().reverse();for(const nm of L.slice(30))await bk.removeEntry(nm).catch(()=>{})}
+async function fPhotos(){const done=new Set(CL.dirPh||[]),d=await fSub('photos');for(const k of photoKeys()){if(done.has(k))continue;const v=await IDB.get(k).catch(()=>null);if(!v)continue;await fWrite(d,k+'.txt',v);done.add(k);CL.dirPh=[...done];clSave()}}
+{const f=phSrc;phSrc=async k=>{const v=await f(k);if(v||!folderOn())return v;
+  try{if(!await fPerm(false))return '';const r=await fRead(await fSub('photos'),k+'.txt');if(r&&r.txt.startsWith('data:')){await IDB.put(k,r.txt);phCache[k]=r.txt;return r.txt}}catch(e){}return ''}}
+let fT;{const s=save;save=function(now){s(now);if(folderOn()){clearTimeout(fT);fT=setTimeout(()=>folderSync(),1500)}}}
+{const cb=cloudBadge;cloudBadge=function(){cb();const b=$('#cloudBtn');if(!b)return;if(!folderOn()){b.dataset.a='cGo';return}b.dataset.a='fGo';
+  const t=CL.last?new Date(CL.last).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):'';
+  b.textContent=FS.state==='perm'?'📁 กดเพื่อเปิดโฟลเดอร์ OneDrive':FS.state==='busy'?'📁 กำลังบันทึก…':FS.state==='err'?'📁 บันทึกไม่ได้':`📁 OneDrive บันทึกแล้ว ${t}`;
+  b.title=FS.state==='err'?FS.msg:`โฟลเดอร์ ${CL.dirName}`;b.style.borderColor=FS.state==='err'||FS.state==='perm'?'#E58A7A':''}}
+
+ACT.fGo=async()=>{if(FS.state==='perm'||FS.state==='err'){if(await fPerm(true)){await folderSync(true);return}}S.mode='co';S.ctab='coset';render();setTimeout(()=>{const c=$('#folderCard');if(c)c.scrollIntoView({behavior:'smooth'})},50)};
+ACT.fPick=async()=>{if(!fsOK()){toast('ใช้ได้กับ Edge หรือ Chrome บนคอมพิวเตอร์');return}
+  let h;try{h=await showDirectoryPicker({id:'penum-pm',mode:'readwrite',startIn:'documents'})}catch(e){return}
+  if(!/penum/i.test(h.name)&&!confirm(`โฟลเดอร์ที่เลือกชื่อ “${h.name}” ปกติควรเป็นโฟลเดอร์ PENUM-PM ใน OneDrive ใช้โฟลเดอร์นี้ต่อไหม?`))return;
+  await IDB.put('__dirh',h);FS.h=h;CL.dirName=h.name;CL.dirMtime=0;CL.dirPh=[];CL.dirBk='';clSave();
+  const cur=await fRead(h,FNAME),hasLocal=Object.values(DB.projects).some(p=>p.boq.items.length||p.tasks.length)||DB.co.staff.length;
+  const keep=!cur||(hasLocal&&confirm('โฟลเดอร์นี้มีข้อมูลกลางอยู่แล้ว รวมข้อมูลในเครื่องนี้เข้าไปด้วยไหม?\nกด ตกลง = รวม · กด ยกเลิก = ใช้ข้อมูลในโฟลเดอร์อย่างเดียว (ข้อมูลในเครื่องนี้ถูกแทนที่)'));
+  await baseSet(keep?EMPTY:payload());await folderSync(true);toast(cur?'เชื่อมโฟลเดอร์ข้อมูลกลางแล้ว':'สร้างข้อมูลกลางในโฟลเดอร์แล้ว');render()};
+ACT.fSync=async()=>{if(await fPerm(true))folderSync(true)};
+ACT.fOff=async()=>{if(!confirm('เลิกเชื่อมโฟลเดอร์บนเครื่องนี้? (ข้อมูลในเครื่องและในโฟลเดอร์ยังอยู่)'))return;delete CL.dirName;clSave();FS.h=null;await IDB.del('__dirh');IDB.del('__cloudbase');FS.state='';render()};
+
+{const f=CVIEWS.coset;CVIEWS.coset=()=>{if(cloudOn())return f();const on=folderOn();
+  return f()+`<section class="card" id="folderCard"><h2><span>ทางเลือกที่ไม่ต้องลงทะเบียน: โฟลเดอร์ OneDrive ในคอมพิวเตอร์</span><small>PENUM PM บันทึกลงโฟลเดอร์ แล้วโปรแกรม OneDrive ซิงค์ขึ้นคลาวด์และไปยังเครื่องของคนที่แชร์ให้ ใช้ได้กับ Edge หรือ Chrome บนคอมพิวเตอร์</small></h2>
+  ${on?`<dl class="stats"><div><dt>โฟลเดอร์</dt><dd style="font-size:15px">${esc(CL.dirName)}</dd></div><div><dt>บันทึกล่าสุด</dt><dd style="font-size:15px">${CL.last?new Date(CL.last).toLocaleString('th-TH'):'–'}</dd></div><div><dt>สำรองอัตโนมัติ</dt><dd style="font-size:15px">วันละครั้ง เก็บ 30 วัน <small>(โฟลเดอร์ backup)</small></dd></div></dl>
+    ${FS.state==='err'?`<p class="pill bad" style="display:inline-block;margin-bottom:8px">${esc(FS.msg)}</p>`:''}
+    <div class="row"><button type="button" class="btn pri" data-a="fSync">บันทึกและดึงข้อมูลตอนนี้</button><button type="button" class="btn" data-a="fPick">เปลี่ยนโฟลเดอร์</button><button type="button" class="btn" data-a="fOff">เลิกเชื่อมบนเครื่องนี้</button></div>
+    <p class="hint" style="margin-top:8px">ให้คนอื่นใช้ข้อมูลชุดเดียวกัน: เปิด onedrive.live.com คลิกขวาที่โฟลเดอร์ ${esc(CL.dirName)} › <b>แชร์</b> › ใส่อีเมล เลือก <b>แก้ไขได้</b> › ส่ง · คนที่ได้รับเปิดลิงก์แล้วกด <b>เพิ่มทางลัดไปยังไฟล์ของฉัน</b> จากนั้นในเครื่องของเขากดปุ่ม “เลือกโฟลเดอร์” ในหน้านี้ แล้วเลือกโฟลเดอร์เดียวกัน</p>`
+  :`<ol class="hint" style="padding-left:18px;line-height:1.9">
+    <li>เปิดโปรแกรม <b>OneDrive</b> บนคอมพิวเตอร์ (Windows มีมาให้แล้ว ไอคอนรูปเมฆที่มุมขวาล่าง) และล็อกอินด้วยบัญชีเดียวกับ onedrive.live.com</li>
+    <li>กดปุ่มด้านล่าง หน้าต่างเลือกโฟลเดอร์จะเปิดขึ้น ทางซ้ายกด <b>OneDrive</b></li>
+    <li>กด <b>โฟลเดอร์ใหม่</b> ตั้งชื่อ <b>PENUM-PM</b> แล้วดับเบิลคลิกเข้าไปในโฟลเดอร์นั้น</li>
+    <li>กด <b>เลือกโฟลเดอร์</b> แล้วกด <b>ดูไฟล์</b> หรือ <b>อนุญาต</b> ให้แก้ไขไฟล์ได้</li></ol>
+    <button type="button" class="btn pri" data-a="fPick"${fsOK()?'':' disabled'}>เลือกโฟลเดอร์ OneDrive</button>${fsOK()?'':' <span class="hint">เบราว์เซอร์นี้ใช้ไม่ได้ ใช้ Edge หรือ Chrome บนคอมพิวเตอร์</span>'}`}</section>`}}
+
+function folderInit(){if(folderOn())folderSync(true);else cloudBadge();
+  setInterval(()=>{if(folderOn()&&document.visibilityState==='visible')folderSync()},20000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&folderOn())folderSync()})}
+
 /* ---------- start ---------- */
 load();
 if(!SUITE){$('#lnkMep').href='https://claude.ai/artifact/89886eHGkANsq5qJL74P6u';$('#lnkBim').href='https://claude.ai/artifact/Vq6P1YQRkfUKiEjjDcPsha';$('#lnkMep').target=$('#lnkBim').target='_blank'}
 render();
 cloudInit();
+folderInit();
 </script>
