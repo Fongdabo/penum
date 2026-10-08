@@ -1757,6 +1757,88 @@ function folderInit(){if(folderOn())folderSync(true);else cloudBadge();
   setInterval(()=>{if(folderOn()&&document.visibilityState==='visible')folderSync()},20000);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&folderOn())folderSync()})}
 
+/* ---------- sign in with a PIN per person (folder mode / one shared PC) ----------
+   Keeps honest people in their own department's screens and puts a name on approvals.
+   It is not encryption: anyone who opens the data file can read it. */
+const AKEY='penum.pm.auth';
+let PINAUTH=null;try{PINAUTH=JSON.parse(localStorage.getItem(AKEY)||'null')}catch(e){}
+const authSave=()=>{try{PINAUTH?localStorage.setItem(AKEY,JSON.stringify(PINAUTH)):localStorage.removeItem(AKEY)}catch(e){}};
+async function pinHash(salt,pin){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('penum-pm|'+salt+'|'+pin));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+const pinOn=()=>!!DB.co.pinOn&&!!DB.co.adminPin&&!cloudOn();
+const authOK=()=>PINAUTH&&(PINAUTH.id===''||CO().staff.some(s=>s.id===PINAUTH.id&&s.active!==false&&s.pin));
+{const r=render;render=function(){if(pinOn()){if(!authOK()){loginScreen();return}S.me=PINAUTH.id}
+  r();bandCtl(true);if(pinOn()&&S.me)['[data-a="backup"]','[data-a="restore"]'].forEach(q=>{const e=$(q);if(e)e.hidden=true});const us=$('#userSel');if(us&&pinOn()){us.disabled=true;us.title='เปลี่ยนผู้ใช้: กดออกจากระบบแล้วเข้าใหม่ด้วย PIN'}
+  let o=$('#outBtn');if(pinOn()){if(!o&&us){o=document.createElement('button');o.type='button';o.id='outBtn';o.className='bbtn';o.dataset.a='pinOut';o.textContent='ออกจากระบบ';us.after(o)}}else if(o)o.remove()}}
+const bandCtl=show=>['#userSel','#outBtn','[data-a="backup"]','[data-a="restore"]'].forEach(q=>{const e=$(q);if(e)e.hidden=!show});
+function loginScreen(){bandCtl(false);$('#tabs').innerHTML='';$('#modeSw').innerHTML='';$('#projBox').hidden=true;const us=$('#userSel');if(us)us.disabled=true;
+  const L=CO().staff.filter(s=>s.active!==false&&s.pin);
+  $('#view').innerHTML=`<section class="card" style="max-width:420px;margin:40px auto"><h2>เข้าใช้งาน PENUM PM</h2>
+  <label style="display:block;margin-bottom:10px">ชื่อผู้ใช้<select id="pinWho" style="width:100%;display:block;margin-top:4px"><option value="__admin">ผู้ดูแลระบบ</option>${L.map(s=>`<option value="${s.id}"${PINAUTH&&PINAUTH.last===s.id?' selected':''}>${esc(s.name||s.code)} · ${esc(s.role||'')}</option>`).join('')}</select></label>
+  <label style="display:block">PIN<input id="pinVal" type="password" inputmode="numeric" autocomplete="current-password" style="width:100%;display:block;margin-top:4px;font-size:20px;letter-spacing:6px"></label>
+  <div class="row" style="margin-top:12px"><button type="button" class="btn pri" data-a="pinIn">เข้าใช้งาน</button></div>
+  <p class="hint" style="margin-top:10px">ลืม PIN ให้ผู้ดูแลระบบตั้งใหม่ที่ ตั้งค่าบริษัท › เข้าระบบด้วย PIN</p></section>`;
+  setTimeout(()=>{const i=$('#pinVal');if(i)i.focus()},30);if(typeof cloudBadge==='function')cloudBadge()}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='pinVal')ACT.pinIn()});
+ACT.pinIn=async()=>{const who=($('#pinWho')||{}).value,pin=(($('#pinVal')||{}).value||'').trim();if(!pin)return;
+  const id=who==='__admin'?'':who,want=id===''?DB.co.adminPin:(CO().staff.find(s=>s.id===id)||{}).pin;
+  if(want&&await pinHash(id||'admin',pin)===want){PINAUTH={id,last:id,at:Date.now()};authSave();S.me=id;toast(id?`สวัสดีครับ ${staffName(id)}`:'เข้าใช้งานในฐานะผู้ดูแลระบบ');render()}
+  else{toast('PIN ไม่ถูกต้อง');const i=$('#pinVal');if(i){i.value='';i.focus()}}};
+ACT.pinOut=()=>{const last=PINAUTH&&PINAUTH.id;PINAUTH={last};authSave();render()};
+ACT.pinSet=async b=>{const id=b.dataset.id,nm=id==='admin'?'ผู้ดูแลระบบ':staffName(id);const v=prompt(`ตั้ง PIN ใหม่ให้ ${nm} (ตัวเลข 4–8 หลัก)`,'');if(v==null)return;
+  if(!/^\d{4,8}$/.test(v.trim())){toast('PIN ต้องเป็นตัวเลข 4–8 หลัก');return}const h=await pinHash(id,v.trim());
+  if(id==='admin')DB.co.adminPin=h;else{const s=CO().staff.find(x=>x.id===id);if(s)s.pin=h}save();render();toast(`ตั้ง PIN ให้ ${nm} แล้ว`)};
+ACT.pinClear=b=>{const s=CO().staff.find(x=>x.id===b.dataset.id);if(s&&confirm(`ลบ PIN ของ ${s.name}? คนนี้จะเข้าใช้งานไม่ได้จนกว่าจะตั้งใหม่`)){delete s.pin;save();render()}};
+ACT.pinToggle=()=>{if(!DB.co.adminPin){toast('ตั้ง PIN ผู้ดูแลระบบก่อน');return}
+  if(!DB.co.pinOn&&!confirm('เปิดใช้การเข้าระบบด้วย PIN? ทุกเครื่องที่ใช้ข้อมูลชุดนี้จะต้องใส่ PIN ก่อนใช้งาน'))return;
+  DB.co.pinOn=!DB.co.pinOn;if(DB.co.pinOn){PINAUTH={id:'',last:'',at:Date.now()};authSave()}save();render()};
+{const f=CVIEWS.coset;CVIEWS.coset=()=>{if(cloudOn())return f();const C=CO(),L=C.staff.filter(s=>s.active!==false),admin=!S.me;
+  return f()+`<section class="card" id="pinCard"><h2><span>เข้าระบบด้วย PIN</span><small>แต่ละคนใส่ชื่อและ PIN ก่อนใช้งาน แล้วจะเห็นเฉพาะส่วนงานของฝ่ายตัวเอง และชื่อจะไปอยู่บนการอนุมัติ</small></h2>
+  ${admin?`<div class="row" style="margin-bottom:10px"><button type="button" class="btn${DB.co.pinOn?'':' pri'}" data-a="pinToggle">${DB.co.pinOn?'ปิดการใช้ PIN':'เปิดใช้การเข้าระบบด้วย PIN'}</button>
+    <button type="button" class="btn" data-a="pinSet" data-id="admin">${C.adminPin?'เปลี่ยน':'ตั้ง'} PIN ผู้ดูแลระบบ</button>${C.adminPin?'<span class="pill ok">ตั้งแล้ว</span>':'<span class="pill warn">ยังไม่ได้ตั้ง</span>'}</div>
+  <div class="tw"><table><thead><tr><th>พนักงาน</th><th>ฝ่าย</th><th>PIN</th><th></th></tr></thead><tbody>${L.map(s=>`<tr><td>${esc(s.name||s.code)}<br><small class="muted">${esc(s.role||'')}</small></td><td>${esc((SKILLS.depts.find(d=>d.c===s.dept)||{}).n||'')}</td><td>${s.pin?'<span class="pill ok">ตั้งแล้ว</span>':'<span class="pill">ยังไม่มี</span>'}</td><td style="white-space:nowrap"><button type="button" class="btn sm" data-a="pinSet" data-id="${s.id}">${s.pin?'เปลี่ยน PIN':'ตั้ง PIN'}</button>${s.pin?` <button type="button" class="btn sm del" data-a="pinClear" data-id="${s.id}">ลบ</button>`:''}</td></tr>`).join('')}</tbody></table></div>
+  <p class="hint" style="margin-top:6px">ตั้ง PIN ให้แต่ละคนแล้วบอกเขาเป็นการส่วนตัว คนที่ยังไม่มี PIN จะเข้าใช้งานไม่ได้ · PIN ช่วยแยกสิทธิ์การใช้งาน แต่ไม่ได้เข้ารหัสข้อมูล คนที่เปิดไฟล์ข้อมูลในโฟลเดอร์ได้ยังอ่านไฟล์ได้</p>`
+  :'<p class="hint">เฉพาะผู้ดูแลระบบตั้งค่าส่วนนี้ได้</p>'}</section>`}}
+
+/* ---------- download any table as a file Excel opens (CSV, UTF-8 with BOM so Thai shows correctly) ---------- */
+{const f=copyBtn;copyBtn=k=>f(k)+` <button type="button" class="btn sm" data-a="dlTbl" data-k="${k}">ดาวน์โหลด Excel</button>`}
+ACT.dlTbl=async b=>{const t=TABLES[b.dataset.k];if(!t)return;
+  const csv='﻿'+tsvOf(t.rows(),t.cols).split('\n').map(l=>l.split('\t').map(v=>/[",\r\n]/.test(v)||/^[=+\-@]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')).join('\r\n');
+  const nm=`PENUM-${b.dataset.k}-${today()}.csv`;// plain ASCII name: some browsers drop non-Latin download names
+  toast(await download(nm,csv,'text/csv;charset=utf-8')?'ดาวน์โหลดแล้ว เปิดด้วย Excel ได้เลย':'ดาวน์โหลดไม่ได้')};
+
+/* ---------- company logo on every printed document ---------- */
+const withLogo=h=>DB.co.logo?h.replace('<div class="co"><div>',`<div class="co"><div style="display:flex;gap:12px;align-items:center"><img src="${DB.co.logo}" alt="" style="max-height:56px;max-width:160px;object-fit:contain"><div>`).replace(/(<div class="co">.*?<\/div>)(<div style="text-align:right">)/s,'$1</div>$2'):h;
+{const f=cphead;cphead=(t,s)=>withLogo(f(t,s))}{const f=phead;phead=(t,s)=>withLogo(f(t,s))}
+ACT.logoUp=()=>{const f=$('#fileIn');f.accept='image/*';f.onchange=async()=>{const file=f.files[0];f.value='';if(!file)return;
+  const url=await new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(file)}),im=new Image();im.src=url;await im.decode().catch(()=>{});
+  const k=Math.min(1,400/Math.max(im.naturalWidth||1,im.naturalHeight||1)),c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*k)||1;c.height=Math.round(im.naturalHeight*k)||1;c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+  DB.co.logo=c.toDataURL('image/png');save();render();toast('ใส่โลโก้แล้ว จะขึ้นบนเอกสารที่พิมพ์ทุกใบ')};f.click()};
+ACT.logoDel=()=>{if(confirm('ลบโลโก้?')){delete DB.co.logo;save();render()}};
+{const f=CVIEWS.coset;CVIEWS.coset=()=>{const h=f(),i=h.indexOf('</section>');const box=`<div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><b>โลโก้บริษัท</b>${DB.co.logo?`<img src="${DB.co.logo}" alt="โลโก้" style="max-height:48px;max-width:160px;border:1px solid var(--line);border-radius:6px;padding:4px;background:#fff"><button type="button" class="btn sm" data-a="logoUp">เปลี่ยน</button><button type="button" class="btn sm del" data-a="logoDel">ลบ</button>`:`<button type="button" class="btn sm" data-a="logoUp">ใส่โลโก้</button><span class="hint">ขึ้นบนใบเสนอราคา ใบสั่งซื้อ ใบเบิกงวด และเอกสารพิมพ์ทุกใบ</span>`}</div>`;
+  return i<0?h+box:h.slice(0,i)+box+h.slice(i)}}
+
+/* ---------- what needs attention today, across all projects and the company ---------- */
+function alerts(){const td=today(),A=[],soon=k=>addD(td,k),add=(lv,kind,p,txt,due,go)=>A.push({lv,kind,p,txt,due,go});
+  projects().forEach(p=>withP(p,()=>{
+    p.pos.forEach(po=>{if(poState(po).k==='bad')add('bad','ของส่งล่าช้า',p,`${po.no} ${vName(po.vid)}`,po.due,{m:'pj',k:'buy',s:'po'})});
+    (p.rfis||[]).forEach(r=>{if(r.status==='open'&&okD(r.due)&&r.due<=soon(1))add(r.due<td?'bad':'warn','RFI รอคำตอบ',p,`${r.no} ${r.subject||''}`,r.due,{m:'pj',k:'site',s:'rfi'})});
+    (p.punch||[]).forEach(r=>{if(r.status!=='done'&&okD(r.due)&&r.due<td)add('warn','Punch list เกินกำหนด',p,`${r.no} ${r.item||''} ${r.loc||''}`,r.due,{m:'pj',k:'hand',s:'punch'})});
+    (p.war||[]).forEach(w=>{if(!okD(w.start))return;const d=pd(w.start);d.setMonth(d.getMonth()+n(w.months));const end=iso(d);if(end>=td&&end<=soon(60))add('warn','ประกันใกล้หมด',p,`${w.item||''} ${w.vendor||''}`,end,{m:'pj',k:'hand',s:'war'})});
+    if(p.tasks.length){const s=sched();p.tasks.forEach(t=>{const r=s.R[t.id];if(r&&r.crit&&n(t.pct)<100&&okD(r.ef)&&r.ef<td)add('bad','งานวิกฤตล่าช้า',p,t.name||'',r.ef,{m:'pj',k:'sched'})})}}));
+  arRows().forEach(({p,b,c,due})=>{if(b.status!=='paid'&&due<td)add('bad','ลูกหนี้เกินกำหนด',p,`${b.no} ${fmt(c.net)} บาท`,due,{m:'co',k:'acct',s:'ar'})});
+  apRows().forEach(({p,po,t,due})=>{if(!po.paid&&due<=soon(7))add(due<td?'bad':'warn','ครบกำหนดจ่ายผู้ขาย',p,`${po.no} ${fmt(t)} บาท`,due,{m:'co',k:'acct',s:'ap'})});
+  CO().staff.forEach(s=>{if(s.active!==false&&okD(s.licExp)&&s.licExp<=soon(30))add(s.licExp<td?'bad':'warn','ใบอนุญาต/บัตรอบรมใกล้หมด',null,`${s.name} · ${s.lic||''}`,s.licExp,{m:'co',k:'hr',s:'staff'})});
+  CO().tickets.forEach(t=>{if((t.status==='open'||t.status==='plan')&&okD(t.due)&&t.due<=soon(3))add(t.due<td?'bad':'warn',t.kind==='pm'?'งาน PM ใกล้ถึงกำหนด':'งานซ่อมรอทำ',null,`${t.no} ${t.problem||''}`,t.due,{m:'co',k:'svc',s:'job'})});
+  return A.filter(a=>allowed(a.go.m,a.go.k)).sort((a,b)=>(a.lv==='bad'?0:1)-(b.lv==='bad'?0:1)||String(a.due).localeCompare(String(b.due)))}
+function alertCard(list,title){if(!list.length)return '';const max=12;
+  return `<section class="card"><h2><span>${title}</span><small>${list.length} รายการ · เรียงจากเรื่องด่วน</small></h2><div class="tw"><table><thead><tr><th>เรื่อง</th><th>รายการ</th><th>โครงการ</th><th>กำหนด</th><th></th></tr></thead><tbody>
+  ${list.slice(0,max).map(a=>`<tr><td><span class="pill ${a.lv}">${a.kind}</span></td><td>${esc(a.txt)}</td><td>${a.p?esc(a.p.name):'<span class="muted">บริษัท</span>'}</td><td style="white-space:nowrap">${thD(a.due)}</td><td><button type="button" class="btn sm" data-a="go" data-m="${a.go.m}" data-k="${a.go.k}"${a.go.s?` data-s="${a.go.s}"`:''}${a.p?` data-p="${a.p.id}"`:''}>เปิด</button></td></tr>`).join('')}
+  ${list.length>max?`<tr><td colspan="5" class="muted">และอีก ${list.length-max} รายการ</td></tr>`:''}</tbody></table></div></section>`}
+{const f=CVIEWS.exec;CVIEWS.exec=()=>{let h=f();const c=alertCard(alerts(),'ต้องดูวันนี้');const i=h.indexOf('<section');return c?(i<0?c+h:h.slice(0,i)+c+h.slice(i)):h}}
+{const f=VIEWS.dash;VIEWS.dash=()=>f()+alertCard(alerts().filter(a=>a.p&&a.p.id===P.id),'ต้องดูในโครงการนี้')}
+// backup and restore move the whole company's data: only the administrator, once PINs are on
+{for(const k of ['backup','restore']){const f=ACT[k];ACT[k]=b=>{if(pinOn()&&(!authOK()||S.me)){toast('เฉพาะผู้ดูแลระบบ');return}return f(b)}}}
+
 /* ---------- start ---------- */
 load();
 if(!SUITE){$('#lnkMep').href='https://claude.ai/artifact/89886eHGkANsq5qJL74P6u';$('#lnkBim').href='https://claude.ai/artifact/Vq6P1YQRkfUKiEjjDcPsha';$('#lnkMep').target=$('#lnkBim').target='_blank'}
