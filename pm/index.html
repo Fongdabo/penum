@@ -255,6 +255,9 @@ tr.late td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
 .sow-l li{margin:3px 0}
 .sow-l li.exc{color:var(--muted)}
 
+.form label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--ink)}
+.form label.chk input{width:auto}
+
 /* print */
 #print{display:none}
 @media print{
@@ -299,6 +302,16 @@ tr.late td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
   #print .sow-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   #print .sow-s h4{font-size:11.5px;margin:2px 0;color:#334155}
   #print .sow-s ol,#print .sow-s ul{margin:0;padding-left:18px;font-size:11px}
+  #print ol.cl{padding-left:20px;margin:6px 0}
+  #print ol.cl li{margin:0 0 7px;line-height:1.55}
+  #print .env{position:relative;width:220mm;height:110mm;box-sizing:border-box;padding:9mm 10mm;font-size:12px}
+  #print .env-f{display:flex;gap:10px;align-items:flex-start;font-size:10.5px;color:#334155;max-width:110mm}
+  #print .env-f img{width:auto;height:14mm;margin:0;border:0}
+  #print .env-f b{font-size:12px;color:#0F1B33}
+  #print .env-r{position:absolute;left:10mm;bottom:10mm;border:1.5px solid #DC2626;color:#DC2626;padding:2px 10px;font-weight:600}
+  #print .env-t{position:absolute;left:95mm;top:48mm;right:12mm;font-size:14px;line-height:1.6}
+  #print .env-t small{display:block;color:#64748B;font-size:11px}
+  #print .env-t b{font-size:16px}
   .gb,.gm,.gb i{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 @media (max-width:640px){
@@ -2398,6 +2411,149 @@ function scurve(wd=760,ht=260){
     ${PL?`<span><i style="background:var(--muted)"></i>แผนงวดเงิน (เส้นประ)</span>`:''}<span><i style="background:var(--warn-c)"></i>ตั้งเบิกแล้ว ${fmt(BI.v,1)}%</span><span><i style="background:var(--good)"></i>รับเงินแล้ว ${fmt(RC.v,1)}%</span>
     ${wait>0.05?`<span><i style="background:var(--warn-c);opacity:.35"></i>ตั้งเบิกแล้วรอรับเงิน ${fmt(wait*tot/100)} บาท</span>`:''}<span class="muted">เงินคิดเป็น % ของมูลค่าสัญญา ไม่รวม VAT</span></div>`;
 }
+
+/* ---------- round 2.4: every company form can be filled, numbered, saved and printed in the app ---------- */
+DOC_EN.unshift([/ใบส่งของ/,'DELIVERY NOTE'],[/ใบสั่งงาน/,'WORK ORDER'],[/สัญญาจ้าง/,'SUBCONTRACT AGREEMENT'],[/ใบส่งมอบงาน/,'HANDOVER CERTIFICATE'],[/ใบวางบิล/,'BILLING NOTE'],[/ใบลา/,'LEAVE REQUEST'],[/โครงสร้างเงินเดือน/,'SALARY STRUCTURE'],[/ผลประเมินประจำปี/,'ANNUAL PERFORMANCE REVIEW'],[/แผนพัฒนา/,'INDIVIDUAL DEVELOPMENT PLAN']);
+
+/* --- project documents: one engine, four forms --- */
+const HODOCS=[['d_asb','แบบสร้างจริง (As-built Drawing)'],['d_om','คู่มือใช้งานและบำรุงรักษา (O&M)'],['d_tc','รายงานทดสอบระบบ (T&C) และ TAB'],['d_war','ใบรับประกันอุปกรณ์จากผู้ผลิต'],['d_train','บันทึกการอบรมผู้ใช้งาน'],['d_spare','อะไหล่และเครื่องมือส่งมอบ'],['d_key','กุญแจตู้และอุปกรณ์']];
+const FD={
+  dn:{t:'ใบส่งของ',pre:'DN-',main:'to',f:[['date','วันที่','date'],['to','ส่งถึง'],['addr','สถานที่ส่ง','',2],['ref','อ้างอิง (PO ลูกค้า / งวดงาน)'],['by','ผู้ส่งของ'],['car','ทะเบียนรถ'],['note','หมายเหตุ','area',3]],
+    ln:[['desc','รายการ','',320],['q','จำนวน','num'],['unit','หน่วย'],['rem','หมายเหตุ']],sign:['ผู้ส่งของ','ผู้รับของ','ผู้ตรวจรับ'],init:()=>({to:P.info.client||'',addr:P.info.site||''}),boq:1},
+  wo:{t:'ใบสั่งงาน',pre:'WO-',main:'to',f:[['date','วันที่','date'],['to','สั่งงานถึง (ผู้รับเหมาหรือทีมช่าง)','sub'],['loc','พื้นที่ทำงาน'],['start','เริ่มงาน','date'],['finish','กำหนดเสร็จ','date'],['value','ค่าจ้าง (บาท ไม่รวม VAT)','num'],['scope','รายละเอียดงาน','area',3],['note','หมายเหตุ','area',3]],
+    ln:[['desc','รายการงาน','',320],['q','จำนวน','num'],['unit','หน่วย'],['rate','ค่าแรง/หน่วย','num']],sign:['ผู้สั่งงาน','ผู้รับงาน','ผู้ตรวจรับงาน'],init:()=>({start:today(),finish:addD(today(),7)}),boq:1},
+  sc:{t:'สัญญาจ้างผู้รับเหมาช่วง',pre:'SC-',main:'name',f:[['date','วันที่ทำสัญญา','date'],['sub','ผู้รับจ้าง (จากทะเบียนผู้รับเหมาช่วง)','subid'],['name','ชื่อผู้รับจ้าง'],['tax','เลขประจำตัวผู้เสียภาษี'],['addr','ที่อยู่ผู้รับจ้าง','',2],['scope','ขอบเขตงานที่จ้าง','area',3],['value','ค่าจ้างรวม (บาท ไม่รวม VAT)','num'],['start','เริ่มงาน','date'],['finish','แล้วเสร็จ','date'],['ret','หักประกันผลงาน (%)','num'],['wht','หัก ณ ที่จ่าย (%)','num'],['war','รับประกันผลงาน (เดือน)','num'],['fine','ค่าปรับล่าช้า (บาท/วัน)','num']],
+    ln:[['desc','งวดงาน / เงื่อนไขการจ่าย','',360],['pct','% ของค่าจ้าง','num']],lnh:'งวดการจ่ายเงิน',sign:['ผู้ว่าจ้าง','ผู้รับจ้าง','พยาน','พยาน'],init:()=>({ret:5,wht:3,war:12,fine:1000})},
+  ho:{t:'ใบส่งมอบงาน',pre:'HO-',main:'to',f:[['date','วันที่ส่งมอบ','date'],['to','ผู้รับมอบ (ผู้ว่าจ้าง)'],['contract','เลขที่สัญญา'],['sys','ระบบที่ส่งมอบ','area',3],['wstart','เริ่มรับประกัน','date'],['wmon','รับประกัน (เดือน)','num'],...HODOCS.map(([k,l])=>[k,l,'chk']),['note','หมายเหตุ / งานค้าง','area',3]],
+    sign:['ผู้ส่งมอบ (บริษัท)','ผู้รับมอบ (ผู้ว่าจ้าง)','ผู้ควบคุมงาน / ที่ปรึกษา'],init:()=>({to:P.info.client||'',contract:P.info.contractNo||'',wstart:today(),wmon:12,sys:[...new Set(P.boq.items.map(i=>gName(i.g)))].join('\n')})}};
+Object.keys(FD).forEach(k=>{NEW[k]=arr=>Object.assign({no:nextNo(FD[k].pre,arr),date:today(),ln:[]},FD[k].init?FD[k].init():{})});
+NEW.ln=()=>({desc:'',q:'',unit:'',rem:''});
+const fdArr=k=>{P.fdoc=P.fdoc||{};return P.fdoc[k]=P.fdoc[k]||[]};
+TABS.splice(TABS.findIndex(t=>t[0]==='docs')+1,0,['forms','ออกเอกสาร']);
+ICO.forms='<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>';
+ACCESS.SVC.pj.push('forms');ACCESS.PUR.pj.push('forms');
+function fdField(base,d,[k,l,t,w]){const p=`${base}.${k}`,v=d[k]??'',cl=w===3?' class="full"':w===2?' class="w2"':'';
+  if(t==='chk')return `<label class="chk"><input type="checkbox" data-p="${p}" data-t="chk"${v?' checked':''}> ${l}</label>`;
+  if(t==='area')return `<label${cl}>${l}<textarea data-p="${p}" rows="3">${esc(v)}</textarea></label>`;
+  if(t==='subid')return `<label${cl}>${l}<select data-p="${p}"><option value="">–</option>${P.subs.map(s=>`<option value="${s.id}"${s.id===v?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+  if(t==='sub')return `<label${cl}>${l}<input data-p="${p}" value="${esc(v)}" list="fdSubs"></label>`;
+  return `<label${cl}>${l}<input${t==='date'?' type="date"':t==='num'?' data-t="num" inputmode="decimal"':''} data-p="${p}" value="${esc(v)}"></label>`}
+function fdView(k){const T=FD[k],L=fdArr(k),sel=L.find(x=>x.id===S.sel['fd'+k])||L[L.length-1];
+  const list=`<section class="card"><h2><span>${T.t}</span><small>${L.length} ฉบับ · เลขที่รันให้อัตโนมัติ แก้ได้</small><span class="sp"></span><button type="button" class="btn sm pri" data-a="add" data-c="fdoc.${k}" data-sel="fd${k}">+ ${T.t}ใหม่</button></h2>
+    <div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่</th><th>${esc(T.f.find(f=>f[0]===T.main)[1])}</th><th></th></tr></thead><tbody>
+    ${L.length?L.slice().reverse().map(d=>`<tr class="${sel&&sel.id===d.id?'sel':''}"><td><button type="button" class="btn ghost sm" data-a="sel" data-k="fd${k}" data-id="${d.id}"><b>${esc(d.no)}</b></button></td><td>${thD(d.date)}</td><td>${esc(d[T.main]||'')}</td><td><button type="button" class="x" data-a="delRow" data-c="fdoc.${k}" data-id="${d.id}" aria-label="ลบ">✕</button></td></tr>`).join(''):`<tr><td colspan="4" class="empty">ยังไม่มี${T.t}</td></tr>`}</tbody></table></div></section>`;
+  if(!sel)return list;const b=`fdoc.${k}.${sel.id}`;sel.ln=sel.ln||[];
+  const lc=(T.ln||[]).map(([kk,h,t,w])=>({k:kk,h,t:t||undefined,w:w||(t==='num'?80:120)}));
+  return list+`<section class="card"><h2><span>${esc(sel.no)}</span><span class="sp"></span><button type="button" class="btn sm pri" data-a="print" data-k="fd" data-id="${k}:${sel.id}">พิมพ์${T.t}</button></h2>
+  <datalist id="fdSubs">${[...P.subs.map(s=>s.name),...CO().staff.filter(s=>s.active!==false&&s.dept==='PRJ').map(s=>'ทีม '+s.name)].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  <div class="form"><label>เลขที่<input data-p="${b}.no" value="${esc(sel.no)}"></label>${T.f.map(f=>fdField(b,sel,f)).join('')}</div>
+  ${T.ln?`<h3 class="fm-g">${T.lnh||'รายการ'}</h3>${gtable(`${b}.ln`,sel.ln,lc,{empty:'ยังไม่มีรายการ'})}<div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-a="add" data-c="${b}.ln">+ เพิ่มรายการ</button>${T.boq&&P.boq.items.length?`<select id="fdG" aria-label="หมวดงาน">${[...new Set(P.boq.items.map(i=>i.g))].map(g=>`<option value="${g}">${gName(g)}</option>`).join('')}</select><button type="button" class="btn sm" data-a="fdBoq" data-k="${k}" data-id="${sel.id}">ดึงรายการจาก BOQ หมวดนี้</button>`:''}${k==='sc'?`<button type="button" class="btn sm" data-a="fdScStd" data-id="${sel.id}">ใช้งวดมาตรฐาน</button>`:''}</div>`:''}
+  ${k==='ho'?`<p class="hint" style="margin-top:10px">Punch list ค้าง ${(P.punch||[]).filter(x=>x.status!=='done'&&x.status!=='closed').length} รายการ จะพิมพ์ในใบส่งมอบให้อัตโนมัติ</p>`:''}</section>`}
+ACT.fdBoq=b=>{const d=fdArr(b.dataset.k).find(x=>x.id===b.dataset.id),g=$('#fdG').value;if(!d)return;d.ln=d.ln||[];P.boq.items.filter(i=>i.g===g).forEach(i=>d.ln.push({id:uid(),desc:itemName(i),q:n(i.q),unit:i.unit||'',rem:'',rate:''}));save();render()};
+ACT.fdScStd=b=>{const d=fdArr('sc').find(x=>x.id===b.dataset.id);if(!d)return;if((d.ln||[]).length&&!confirm('แทนที่งวดเดิม?'))return;d.ln=[['เมื่อเข้าพื้นที่และส่งแผนงาน',10],['เมื่องานติดตั้งแล้วเสร็จ 50%',30],['เมื่องานติดตั้งแล้วเสร็จ 100%',40],['เมื่อทดสอบระบบผ่านและส่งมอบ',20]].map(([desc,pct])=>({id:uid(),desc,pct}));save();render()};
+HOOK.push((p,v)=>{const m=p.match(/^fdoc\.sc\.([^.]+)\.sub$/);if(!m)return;const d=fdArr('sc').find(x=>x.id===m[1]),s=P.subs.find(x=>x.id===v);if(!d||!s)return;Object.assign(d,{name:s.name||'',tax:s.tax||'',addr:s.addr||'',scope:s.scope||d.scope||'',value:n(s.value)||d.value,ret:s.ret!==''&&s.ret!=null?n(s.ret):d.ret,wht:s.ent==='co'?3:s.ent?3:d.wht})});
+VIEWS.forms=()=>{const {cur,html}=subTabs('forms',[['dn','ใบส่งของ'],['wo','ใบสั่งงาน'],['sc','สัญญาผู้รับเหมาช่วง'],['ho','ใบส่งมอบงาน']]);return html+fdView(cur)};
+const fdTxt=v=>esc(v||'').replace(/\n/g,'<br>');
+function fdMeta(T,d,skip){return `<div class="meta">${T.f.filter(([k,l,t])=>!skip.includes(k)&&t!=='chk'&&t!=='area'&&t!=='subid'&&k!=='date'&&d[k]!==''&&d[k]!=null).map(([k,l,t])=>`<div><b>${l}:</b> ${t==='date'?thDL(d[k]):t==='num'?fmt(d[k],k==='value'?2:0):fdTxt(d[k])}</div>`).join('')}</div>`}
+const signs=L=>`<div class="sign" style="grid-template-columns:repeat(${L.length},1fr)">${L.map(x=>`<div>${x}<br><small>วันที่ ........./........./.........</small></div>`).join('')}</div>`;
+PRINT.fd=key=>{const [k,id]=String(key).split(':'),T=FD[k],d=fdArr(k).find(x=>x.id===id);if(!d)return '';const ln=d.ln||[],C=CO();
+  let body='';
+  if(k==='dn')body=fdMeta(T,d,['note'])+`<table><thead><tr><th>#</th><th>รายการ</th><th>จำนวน</th><th>หน่วย</th><th>หมายเหตุ</th></tr></thead><tbody>${ln.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.desc)}</td><td style="text-align:right">${fmtq(l.q)}</td><td>${esc(l.unit)}</td><td>${esc(l.rem||'')}</td></tr>`).join('')}</tbody></table>${d.note?`<div class="box">${fdTxt(d.note)}</div>`:''}<p>ได้รับสินค้าตามรายการข้างต้นในสภาพเรียบร้อยครบถ้วน</p>`;
+  if(k==='wo'){const t=sum(ln,l=>n(l.q)*n(l.rate));body=fdMeta(T,d,['note'])+(d.scope?`<h3>รายละเอียดงาน</h3><div class="box">${fdTxt(d.scope)}</div>`:'')+(ln.length?`<table><thead><tr><th>#</th><th>รายการงาน</th><th>จำนวน</th><th>หน่วย</th><th>ค่าแรง/หน่วย</th><th>จำนวนเงิน</th></tr></thead><tbody>${ln.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.desc)}</td><td style="text-align:right">${fmtq(l.q)}</td><td>${esc(l.unit)}</td><td style="text-align:right">${l.rate?fmt(l.rate,2):''}</td><td style="text-align:right">${l.rate?fmt(n(l.q)*n(l.rate),2):''}</td></tr>`).join('')}${t?`<tr><td colspan="5" style="text-align:right"><b>รวม</b></td><td style="text-align:right"><b>${fmt(t,2)}</b></td></tr>`:''}</tbody></table>`:'')+(d.note?`<p>หมายเหตุ: ${fdTxt(d.note)}</p>`:'')+`<p>ผู้รับงานต้องปฏิบัติตามกฎความปลอดภัยของโครงการ ใช้วัสดุตามที่อนุมัติ และแจ้งผู้สั่งงานเมื่อพบปัญหาก่อนดำเนินการต่อ</p>`}
+  if(k==='sc'){const v=n(d.value),tp=sum(ln,x=>x.pct);body=`<p>สัญญานี้ทำขึ้นเมื่อวันที่ ${thDL(d.date)} ระหว่าง <b>${esc(C.name||'')}</b> ${C.addr?'สำนักงานตั้งอยู่ที่ '+esc(C.addr):''} เลขประจำตัวผู้เสียภาษี ${esc(C.tax||'–')} ซึ่งต่อไปเรียกว่า “ผู้ว่าจ้าง” ฝ่ายหนึ่ง กับ <b>${esc(d.name||'')}</b> ${d.addr?'ที่อยู่ '+esc(d.addr):''} เลขประจำตัวผู้เสียภาษี ${esc(d.tax||'–')} ซึ่งต่อไปเรียกว่า “ผู้รับจ้าง” อีกฝ่ายหนึ่ง ทั้งสองฝ่ายตกลงกันดังนี้</p>
+    <ol class="cl"><li><b>งานที่จ้าง</b> ผู้ว่าจ้างตกลงจ้างและผู้รับจ้างตกลงรับจ้างทำงานในโครงการ ${esc(P.name)} ${P.info.site?'ณ '+esc(P.info.site):''} ตามขอบเขตต่อไปนี้<div class="box">${fdTxt(d.scope)}</div></li>
+    <li><b>ค่าจ้าง</b> ค่าจ้างรวมเป็นเงิน ${fmt(v,2)} บาท (${bahtText(v)}) ไม่รวมภาษีมูลค่าเพิ่ม ราคานี้รวมค่าแรง เครื่องมือ และค่าใช้จ่ายทั้งหมดที่จำเป็นต่องาน เว้นแต่ระบุไว้เป็นอย่างอื่น</li>
+    <li><b>ระยะเวลา</b> ผู้รับจ้างต้องเริ่มงานวันที่ ${thDL(d.start)} และทำให้แล้วเสร็จภายในวันที่ ${thDL(d.finish)} หากล่าช้าโดยไม่มีเหตุอันสมควร ยอมให้ปรับวันละ ${fmt(d.fine)} บาท</li>
+    <li><b>การจ่ายเงิน</b> ผู้ว่าจ้างจ่ายค่าจ้างตามงวดในตารางท้ายข้อนี้ หลังผู้ควบคุมงานตรวจรับงานงวดนั้นแล้ว โดยหักประกันผลงานร้อยละ ${fmt(d.ret,1)} และหักภาษี ณ ที่จ่ายร้อยละ ${fmt(d.wht,1)} ${ln.length?`<table style="margin-top:6px"><thead><tr><th>งวด</th><th>เงื่อนไข</th><th>%</th><th>จำนวนเงิน (บาท)</th></tr></thead><tbody>${ln.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.desc)}</td><td style="text-align:right">${fmt(x.pct,1)}%</td><td style="text-align:right">${fmt(v*n(x.pct)/100,2)}</td></tr>`).join('')}<tr><td></td><td><b>รวม</b></td><td style="text-align:right">${fmt(tp,1)}%</td><td style="text-align:right">${fmt(v*tp/100,2)}</td></tr></tbody></table>`:''}</li>
+    <li><b>เงินประกันผลงาน</b> ผู้ว่าจ้างจะคืนเงินประกันผลงานเมื่อพ้นระยะรับประกัน ${fmt(d.war)} เดือนนับจากวันส่งมอบงานทั้งหมด และผู้รับจ้างแก้ไขข้อบกพร่องครบแล้ว</li>
+    <li><b>คุณภาพและวัสดุ</b> ผู้รับจ้างต้องทำงานตามแบบ รายการประกอบแบบ และมาตรฐานวิชาชีพ ใช้วัสดุตามที่ได้รับอนุมัติ งานที่ไม่ถูกต้องต้องแก้ไขด้วยค่าใช้จ่ายของผู้รับจ้าง</li>
+    <li><b>ความปลอดภัย</b> ผู้รับจ้างต้องปฏิบัติตามกฎความปลอดภัยของโครงการและกฎหมาย จัดอุปกรณ์ป้องกันอันตรายให้คนงาน และรับผิดชอบความเสียหายที่เกิดจากการทำงานของตน</li>
+    <li><b>แรงงาน</b> ผู้รับจ้างรับผิดชอบค่าจ้าง ประกันสังคม และเอกสารคนงานทั้งหมดตามกฎหมาย และห้ามโอนงานต่อโดยไม่ได้รับอนุญาตเป็นหนังสือ</li>
+    <li><b>การบอกเลิกสัญญา</b> หากผู้รับจ้างทิ้งงานหรือผิดสัญญาข้อใดและไม่แก้ไขภายใน 7 วันหลังได้รับแจ้งเป็นหนังสือ ผู้ว่าจ้างมีสิทธิบอกเลิกสัญญาและจ้างผู้อื่นทำต่อ โดยเรียกค่าใช้จ่ายที่เพิ่มขึ้นจากผู้รับจ้าง</li></ol>
+    <p>สัญญานี้ทำขึ้นสองฉบับมีข้อความตรงกัน คู่สัญญาได้อ่านและเข้าใจดีแล้ว จึงลงลายมือชื่อไว้เป็นสำคัญ</p>`}
+  if(k==='ho'){const pn=(P.punch||[]).filter(x=>x.status!=='done'&&x.status!=='closed');body=`<p>${esc(C.name||'')} ขอส่งมอบงานโครงการ <b>${esc(P.name)}</b> ${P.info.site?'ณ '+esc(P.info.site):''} ${d.contract?'ตามสัญญาเลขที่ '+esc(d.contract):''} ให้แก่ <b>${esc(d.to||'')}</b> ดังนี้</p>
+    <h3>ระบบที่ส่งมอบ</h3><div class="box">${fdTxt(d.sys)}</div>
+    <h3>เอกสารและสิ่งของที่ส่งมอบ</h3><table><tbody>${HODOCS.map(([kk,l])=>`<tr><td style="width:30px;text-align:center">${d[kk]?'☑':'☐'}</td><td>${l}</td></tr>`).join('')}</tbody></table>
+    <p>ระยะรับประกันผลงาน ${fmt(d.wmon)} เดือน เริ่มวันที่ ${thDL(d.wstart)} ถึงวันที่ ${thDL(addD(d.wstart,Math.round(n(d.wmon)*30.4)))}</p>
+    ${pn.length?`<h3>งานค้างที่จะแก้ไขให้แล้วเสร็จ (Punch list ${pn.length} รายการ)</h3><table><thead><tr><th>เลขที่</th><th>ตำแหน่ง</th><th>รายการ</th><th>กำหนดเสร็จ</th></tr></thead><tbody>${pn.map(x=>`<tr><td>${esc(x.no)}</td><td>${esc(x.loc||'')}</td><td>${esc(x.item||'')}</td><td>${thD(x.due)}</td></tr>`).join('')}</tbody></table>`:'<p>ไม่มีงานค้าง</p>'}
+    ${d.note?`<p>หมายเหตุ: ${fdTxt(d.note)}</p>`:''}<p>ผู้รับมอบได้ตรวจสอบแล้ว และรับมอบงานตามรายการข้างต้น</p>`}
+  return phead(`${T.t} ${esc(d.no)}`,`วันที่ ${thDL(d.date)}`)+body+signs(T.sign)};
+
+/* --- billing note (ใบวางบิล): gather a customer's outstanding invoices --- */
+NEW.bnotes=arr=>({no:nextNo('BN-',arr),date:today(),cust:'',due:addD(today(),30),invs:[],note:''});
+function custOpen(cust){const R=[];projects().forEach(p=>{if(p.info.cust!==cust)return;withP(p,()=>p.bills.forEach(b=>{if(b.status!=='draft'&&b.status!=='paid')R.push({p,b,c:billCalc(b),k:p.id+':'+b.id})}))});return R}
+function bnRows(d){return (d.invs||[]).map(k=>{const [pid,bid]=k.split(':'),p=DB.projects[pid],b=p&&p.bills.find(x=>x.id===bid);return b?{p,b,c:withP(p,()=>billCalc(b)),k}:null}).filter(Boolean)}
+ACT.bnTog=b=>{const d=CO().bnotes.find(x=>x.id===b.dataset.id);if(!d)return;d.invs=d.invs||[];const i=d.invs.indexOf(b.dataset.k);i<0?d.invs.push(b.dataset.k):d.invs.splice(i,1);save();render()};
+function acctBn(){const C=CO();C.bnotes=C.bnotes||[];const L=C.bnotes,sel=L.find(x=>x.id===S.sel.bn)||L[L.length-1];
+  const list=`<section class="card"><h2><span>ใบวางบิล</span><small>รวมใบแจ้งหนี้ที่ยังไม่ได้รับเงินของลูกค้ารายเดียว ส่งให้ลูกค้าพร้อมนัดวันรับเช็ค</small><span class="sp"></span><button type="button" class="btn sm pri" data-a="add" data-c="co.bnotes" data-sel="bn">+ ใบวางบิลใหม่</button></h2>
+    <div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่</th><th>ลูกค้า</th><th class="r">ยอดรวม</th><th>นัดรับเงิน</th><th></th></tr></thead><tbody>${L.length?L.slice().reverse().map(d=>`<tr class="${sel&&sel.id===d.id?'sel':''}"><td><button type="button" class="btn ghost sm" data-a="sel" data-k="bn" data-id="${d.id}"><b>${esc(d.no)}</b></button></td><td>${thD(d.date)}</td><td>${esc(custName(d.cust))}</td><td class="r">${fmt(sum(bnRows(d),r=>r.c.net))}</td><td>${thD(d.due)}</td><td><button type="button" class="x" data-a="delRow" data-c="co.bnotes" data-id="${d.id}" aria-label="ลบ">✕</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">ยังไม่มีใบวางบิล</td></tr>'}</tbody></table></div></section>`;
+  if(!sel)return list;const b=`co.bnotes.${sel.id}`,op=sel.cust?custOpen(sel.cust):[],have=new Set(sel.invs||[]),extra=bnRows(sel).filter(r=>!op.some(o=>o.k===r.k));
+  return list+`<section class="card"><h2><span>${esc(sel.no)}</span><span class="sp"></span><button type="button" class="btn sm pri" data-a="print" data-k="bn" data-id="${sel.id}">พิมพ์ใบวางบิล</button></h2>
+  <div class="form"><label>เลขที่<input data-p="${b}.no" value="${esc(sel.no)}"></label><label>วันที่<input type="date" data-p="${b}.date" value="${esc(sel.date)}"></label><label>ลูกค้า<select data-p="${b}.cust"><option value="">–</option>${C.customers.map(c=>`<option value="${c.id}"${c.id===sel.cust?' selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>นัดรับเงิน<input type="date" data-p="${b}.due" value="${esc(sel.due||'')}"></label><label class="full">หมายเหตุ<input data-p="${b}.note" value="${esc(sel.note||'')}"></label></div>
+  <h3 class="fm-g">เลือกใบแจ้งหนี้ที่วางบิล</h3><div class="tw"><table><thead><tr><th></th><th>ใบแจ้งหนี้</th><th>วันที่</th><th>โครงการ</th><th>ครบกำหนด</th><th class="r">ยอดรับสุทธิ</th></tr></thead><tbody>
+  ${[...op,...extra].length?[...op,...extra].map(r=>`<tr><td class="c"><input type="checkbox" data-a="bnTog" data-id="${sel.id}" data-k="${r.k}"${have.has(r.k)?' checked':''} aria-label="เลือก"></td><td>${esc(r.b.no)}</td><td>${thD(r.b.date)}</td><td>${esc(r.p.name)}</td><td>${thD(billDue(r.p,r.b))}</td><td class="r">${fmt(r.c.net)}</td></tr>`).join(''):`<tr><td colspan="6" class="empty">${sel.cust?'ลูกค้ารายนี้ไม่มีใบแจ้งหนี้ค้างรับ':'เลือกลูกค้าก่อน'}</td></tr>`}</tbody></table></div></section>`}
+PRINT.bn=id=>{const d=(CO().bnotes||[]).find(x=>x.id===id);if(!d)return '';const R=bnRows(d),cu=CO().customers.find(x=>x.id===d.cust)||{},t=sum(R,r=>r.c.net);
+  return cphead(`ใบวางบิล ${esc(d.no)}`,`วันที่ ${thDL(d.date)}<br>นัดรับเงิน ${thDL(d.due)}`)+`<div class="meta"><div><b>ลูกค้า:</b> ${esc(cu.name||'')}<br>${esc(cu.addr||'')}<br>เลขประจำตัวผู้เสียภาษี ${esc(cu.tax||'–')}</div><div>จำนวน ${R.length} ฉบับ</div></div>
+  <table><thead><tr><th>#</th><th>เลขที่ใบแจ้งหนี้</th><th>วันที่</th><th>โครงการ / รายการ</th><th>ครบกำหนด</th><th>จำนวนเงิน (บาท)</th></tr></thead><tbody>${R.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.b.no)}</td><td>${thD(r.b.date)}</td><td>${esc(r.p.name)}</td><td>${thD(billDue(r.p,r.b))}</td><td style="text-align:right">${fmt(r.c.net,2)}</td></tr>`).join('')}
+  <tr><td colspan="5" style="text-align:right"><b>รวมทั้งสิ้น</b> (${bahtText(t)})</td><td style="text-align:right"><b>${fmt(t,2)}</b></td></tr></tbody></table>${d.note?`<p>หมายเหตุ: ${esc(d.note)}</p>`:''}
+  <div class="sign" style="grid-template-columns:1fr 1fr"><div>ผู้วางบิล<br><small>วันที่ ........./........./.........</small></div><div>ผู้รับวางบิล<br><small>วันที่ ........./........./.........</small></div></div>`};
+{const f=CVIEWS.acct;CVIEWS.acct=()=>{const L=[['ar','ลูกหนี้ (เงินรับ)'],['bn','ใบวางบิล'],['ap','เจ้าหนี้ (เงินจ่าย)'],['cf','กระแสเงินสด'],['vat','ภาษีซื้อ-ภาษีขาย'],['wht','ภาษีหัก ณ ที่จ่าย']];
+  if(S.sub[curTab()]==='bn'){const {html}=subTabs('acct',L);return html+acctBn()}
+  return f().replace(/^<div class="sub" role="tablist">[\s\S]*?<\/div>/,subTabs('acct',L).html)}}
+
+/* --- envelope addressed to a customer, supplier or subcontractor --- */
+function envTo(){const C=CO(),R=[];C.customers.forEach(c=>R.push(['c:'+c.id,'ลูกค้า · '+c.name,c.name,c.contact?'เรียน '+c.contact:'',c.addr||'']));
+  projects().forEach(p=>{p.vendors.forEach(v=>R.push(['v:'+p.id+':'+v.id,'ผู้ขาย · '+v.name,v.name,v.contact?'เรียน '+v.contact:'',v.addr||'']));p.subs.forEach(s=>R.push(['s:'+p.id+':'+s.id,'ผู้รับเหมา · '+s.name,s.name,'',s.addr||'']))});
+  const seen=new Set();return R.filter(r=>!seen.has(r[2])&&seen.add(r[2]))}
+function orgEnv(){const E=S.sel.env||{};const R=envTo();
+  return `<section class="card"><h2><span>ซองจดหมาย</span><small>พิมพ์บนซอง DL (11 × 22 ซม.) ชื่อและที่อยู่ดึงจากทะเบียนลูกค้า ผู้ขาย และผู้รับเหมาช่วง แก้ก่อนพิมพ์ได้</small></h2>
+  <div class="form"><label class="w2">ผู้รับ<select id="envSel"><option value="">– เลือก –</option>${R.map(r=>`<option value="${r[0]}"${r[0]===E.k?' selected':''}>${esc(r[1])}</option>`).join('')}</select></label>
+  <label class="w2">ชื่อ<input id="envN" value="${esc(E.n||'')}"></label><label class="w2">เรียน<input id="envA" value="${esc(E.a||'')}"></label><label class="full">ที่อยู่<textarea id="envD" rows="3">${esc(E.d||'')}</textarea></label><label>หมายเหตุบนซอง<input id="envR" value="${esc(E.r||'')}" placeholder="เช่น เอกสารสำคัญ"></label></div>
+  <div class="row" style="margin-top:10px"><button type="button" class="btn sm pri" data-a="envPrint">พิมพ์ซองจดหมาย</button></div></section>`}
+document.addEventListener('change',e=>{if(e.target.id!=='envSel')return;const r=envTo().find(x=>x[0]===e.target.value);S.sel.env=r?{k:r[0],n:r[2],a:r[3],d:r[4],r:''}:{};render()});
+ACT.envPrint=()=>{const C=CO(),v=id=>($('#'+id)||{}).value||'';S.sel.env=Object.assign(S.sel.env||{},{n:v('envN'),a:v('envA'),d:v('envD'),r:v('envR')});
+  $('#print').innerHTML=`<style>@page{size:220mm 110mm;margin:0}</style><div class="env"><div class="env-f">${C.logo?`<img src="${C.logo}" alt="">`:''}<div><b>${esc(C.name||'')}</b><br>${esc(C.addr||'')}<br>${C.phone?'โทร '+esc(C.phone):''}</div></div>${v('envR')?`<div class="env-r">${esc(v('envR'))}</div>`:''}<div class="env-t"><small>กรุณาส่ง</small><b>${esc(v('envN'))}</b>${v('envA')?`<br>${esc(v('envA'))}`:''}<br>${fdTxt(v('envD'))}</div></div>`;setTimeout(()=>print(),300)};
+
+/* --- HR: printable review register, salary structure, development plan and leave slip --- */
+PRINT.rev=()=>{const L=CO().staff.filter(s=>s.active!==false);return cphead('ทะเบียนผลประเมินประจำปี',`ปี ${Number(today().slice(0,4))+543}<br>ลับเฉพาะ ฝ่ายบุคคลและผู้บริหาร`)+`<table><thead><tr><th>#</th><th>พนักงาน</th><th>ตำแหน่ง</th><th>กระบอก</th><th>เงินเดือนปัจจุบัน</th><th>ทักษะ %</th><th>KPI</th><th>พฤติกรรม</th><th>คะแนน / เกรด</th><th>% ขึ้น</th><th>เงินเดือนใหม่</th></tr></thead><tbody>
+  ${L.map((s,i)=>{const r=review(s);return `<tr><td>${i+1}</td><td>${esc(s.name||s.code)}</td><td>${esc(s.role||'')}</td><td>${esc(gradeOf(s))}</td><td style="text-align:right">${fmt(r.cur)}</td><td style="text-align:right">${r.sp??''}</td><td style="text-align:right">${s.kpi??''}</td><td style="text-align:right">${s.beh??''}</td><td style="text-align:right">${r.tot==null?'':r.tot+' '+r.gr}</td><td style="text-align:right">${r.pct==null?'':fmt(r.pct*100,1)+'%'}</td><td style="text-align:right">${r.nw==null?'':fmt(r.nw)}</td></tr>`}).join('')}</tbody></table>`+signs(['ผู้จัดทำ (ฝ่ายบุคคล)','ผู้ตรวจสอบ','กรรมการผู้จัดการ'])};
+PRINT.band=()=>{const PC=payCfg();return cphead('โครงสร้างเงินเดือน','ลับเฉพาะ ฝ่ายบุคคลและผู้บริหาร')+`<table><thead><tr><th>กระบอก</th><th>ชื่อระดับ</th><th>ต่ำสุด</th><th>จุด 25%</th><th>กึ่งกลาง</th><th>จุด 75%</th><th>สูงสุด</th><th>ตำแหน่ง</th></tr></thead><tbody>
+  ${PC.bands.map(b=>{const x=band(b.g);return `<tr><td>${esc(b.g)}</td><td>${esc(b.n||'')}</td><td style="text-align:right">${fmt(x.min)}</td><td style="text-align:right">${fmt(x.p25)}</td><td style="text-align:right">${fmt(x.mid)}</td><td style="text-align:right">${fmt(x.p75)}</td><td style="text-align:right">${fmt(x.max)}</td><td><small>${esc(Object.keys(PAY0.map).filter(r=>PAY0.map[r]===b.g).join(', '))}</small></td></tr>`}).join('')}</tbody></table>
+  <h3>อัตราขึ้นเงินเดือนตามผลประเมิน</h3><table><thead><tr><th>เกรด</th><th>Compa &lt; 0.90</th><th>0.90–1.10</th><th>&gt; 1.10</th></tr></thead><tbody>${PC.merit.map(m=>`<tr><td>${esc(m.g)}</td><td style="text-align:right">${fmt(n(m.lo)*100,1)}%</td><td style="text-align:right">${fmt(n(m.mid)*100,1)}%</td><td style="text-align:right">${fmt(n(m.hi)*100,1)}%</td></tr>`).join('')}</tbody></table>
+  <h3>ค่าตำแหน่งและค่าใบอนุญาต</h3><table><tbody>${PC.allow.map(a=>`<tr><td>${esc(a.n)}</td><td style="text-align:right">${fmt(a.amt)} บาท/เดือน</td></tr>`).join('')}</tbody></table>`};
+PRINT.idp=id=>{const C=CO(),L=C.staff.filter(s=>s.active!==false&&(!id||s.id===id));const G=s=>reqSkills(s).map(x=>({x,a:(s.sk||{})[x.k]})).filter(g=>g.a!=null&&g.a!==''&&n(g.a)<g.x.req);
+  const P_=L.filter(s=>G(s).length);return P_.map((s,i)=>`${i?'<div style="page-break-before:always"></div>':''}`+cphead(`แผนพัฒนารายบุคคล (IDP) ${esc(s.name)}`,`${esc(s.role||'')}<br>ปี ${Number(today().slice(0,4))+543}`)+`<table><thead><tr><th>#</th><th>ทักษะที่ต้องพัฒนา</th><th>ประเมินจริง / ต้องการ</th><th>วิธีพัฒนา</th><th>ผู้ดูแล</th><th>กำหนดเสร็จ</th><th>ผล</th></tr></thead><tbody>
+    ${G(s).map((g,j)=>`<tr><td>${j+1}</td><td>${esc(g.x.k)}</td><td style="text-align:center">${g.a} / ${g.x.req}</td><td>${g.x.req-n(g.a)>=2?'อบรม + หัวหน้าสอนงานและคุมใกล้ชิด':'อบรม / สอนงาน'}</td><td></td><td></td><td></td></tr>`).join('')}</tbody></table>`+signs(['พนักงาน','หัวหน้างาน','ฝ่ายบุคคล'])).join('')||cphead('แผนพัฒนารายบุคคล (IDP)','')+'<p>ไม่มีช่องว่างทักษะจากผลที่ประเมินแล้ว</p>'};
+PRINT.leave=id=>{const C=CO(),l=(C.leave||[]).find(x=>x.id===id);if(!l)return '';const s=C.staff.find(x=>x.id===l.staff)||{},t=(LTYPE.find(x=>x[0]===l.type)||['',''])[1],yr=(l.from||today()).slice(0,4);
+  const used=sum((C.leave||[]).filter(x=>x.staff===l.staff&&x.type===l.type&&x.status==='ok'&&(x.from||'').startsWith(yr)&&x.id!==l.id),leaveDays);
+  return cphead(`ใบลา (${esc(t)})`,`วันที่ยื่น ${thDL(l.date||l.from)}`)+`<div class="meta"><div><b>ชื่อ:</b> ${esc(s.name||'')}<br><b>ตำแหน่ง:</b> ${esc(s.role||'')}</div><div><b>ประเภท:</b> ${esc(t)}<br><b>ตั้งแต่</b> ${thDL(l.from)} <b>ถึง</b> ${thDL(l.to||l.from)} รวม ${fmtq(leaveDays(l))} วัน</div></div>
+  <div class="box">เหตุผล: ${esc(l.reason||l.note||'')}</div><p>ลาประเภทนี้ไปแล้วในปีนี้ ${fmtq(used)} วัน · สิทธิทั้งปี ${C.leaveQ[l.type]??'–'} วัน · สถานะ: ${l.status==='ok'?'อนุมัติ':l.status==='no'?'ไม่อนุมัติ':'รออนุมัติ'}</p>`+signs(['ผู้ขอลา','หัวหน้างาน','ฝ่ายบุคคล'])};
+const prBtn=(k,l,id)=>`<button type="button" class="btn sm" data-a="print" data-k="${k}"${id?` data-id="${id}"`:''}>${l}</button>`;
+{const f=hrRev;hrRev=function(){return `<div class="row" style="justify-content:flex-end">${prBtn('rev','พิมพ์ทะเบียนผลประเมินประจำปี')}</div>`+f()}}
+{const f=hrBand;hrBand=function(){return `<div class="row" style="justify-content:flex-end">${prBtn('band','พิมพ์โครงสร้างเงินเดือน')}</div>`+f()}}
+{const f=hrGap;hrGap=function(){return `<div class="row" style="justify-content:flex-end">${prBtn('idp','พิมพ์แผนพัฒนารายบุคคล (IDP) ทุกคน')}</div>`+f()}}
+{const f=hrLeave;hrLeave=function(){const h=f(),u=me(),L=(CO().leave||[]).filter(l=>!u||isBoss()||l.staff===u.id).slice(-60).reverse();if(!L.length)return h;
+  return `<div class="row" style="justify-content:flex-end"><select id="lvPick" aria-label="ใบลา">${L.map(l=>`<option value="${l.id}">${esc(staffName(l.staff)||'–')} · ${thD(l.from)} · ${(LTYPE.find(x=>x[0]===l.type)||['',''])[1]}</option>`).join('')}</select><button type="button" class="btn sm" data-a="lvPrint">พิมพ์ใบลา</button></div>`+h}}
+ACT.lvPrint=()=>{const id=($('#lvPick')||{}).value;if(id)ACT.print({dataset:{k:'leave',id}})};
+
+/* --- forms library: each card opens the page that fills the form in the app --- */
+const FORM_GO={quotation:['co','sales','quote'],'tax-invoice':['co','acct','ar'],'billing-note':['co','acct','bn'],receipt:['co','acct','ar'],'purchase-request':['pj','buy','pr'],'purchase-order':['pj','buy','po'],'delivery-note':['pj','forms','dn'],subcontract:['pj','forms','sc'],
+  'work-order':['pj','forms','wo'],'variation-order':['pj','site','vo'],'daily-report':['pj','site','daily'],handover:['pj','forms','ho'],'service-report':['co','svc','job'],envelope:['co','org','env'],'mep-org-and-workflow-charts':['co','org','chart'],'mep-skill-sheets':['co','hr','skill']};
+function orgForms(){const card=([f,t])=>{const g=FORM_GO[f];return `<div class="fm"><a href="files/${f}.pdf" target="_blank" rel="noopener" class="fm-pv"><img src="files/pv/${f}.jpg" alt="" loading="lazy"></a><div class="fm-t">${t}</div><div class="row">${g?`<button type="button" class="btn sm pri" data-a="go" data-m="${g[0]}" data-k="${g[1]}" data-s="${g[2]}">ทำในโปรแกรม</button>`:''}<a class="btn sm" href="files/${f}.pdf" target="_blank" rel="noopener">${g?'แบบเปล่า':'เปิด'}</a></div></div>`};
+  return `<section class="card"><h2><span>แบบฟอร์มและเอกสารบริษัท</span><small>ทุกแบบฟอร์มกรอก ออกเลขที่ บันทึก และพิมพ์หัวกระดาษ ORIEN ได้ในโปรแกรม กด “ทำในโปรแกรม” เพื่อไปหน้านั้น ส่วน PDF เปล่ากับ Excel เก็บไว้เผื่อใช้</small><span class="sp"></span>
+    <a class="btn sm" href="files/ORIEN-document-set.pdf" target="_blank" rel="noopener">ชุดแบบเปล่า (PDF)</a><a class="btn sm" href="files/ORIEN-forms-fillable.xlsx" download>Excel (ไม่จำเป็น)</a></h2>
+  ${FORMS.map(([g,L])=>`<h3 class="fm-g">${g}</h3><div class="fms">${L.map(card).join('')}</div>`).join('')}
+  <h3 class="fm-g">เอกสารฝ่ายบุคคล</h3><div class="row">${[['skill','แบบประเมินทักษะรายคน'],['rev','ทะเบียนผลประเมินและขึ้นเงินเดือน'],['band','โครงสร้างเงินเดือน'],['gap','แผนพัฒนารายบุคคล (IDP)'],['leave','ใบลา']].map(([s,l])=>`<button type="button" class="btn sm" data-a="go" data-m="co" data-k="hr" data-s="${s}">${l}</button>`).join('')}</div>
+  <p class="hint" style="margin-top:12px">ไฟล์ PDF บนเว็บใครมีลิงก์ก็เปิดได้ จึงใส่ไว้เฉพาะแบบฟอร์มเปล่า ส่วนข้อมูลเงินเดือนอยู่ในโปรแกรมเท่านั้น</p></section>`}
+CVIEWS.org=()=>{const {cur,html}=subTabs('org',[['chart','ผังองค์กร'],['flow','ขั้นตอนงาน'],['forms','แบบฟอร์มและเอกสาร'],['env','ซองจดหมาย']]);return html+({chart:orgChart,flow:orgFlow,forms:orgForms,env:orgEnv}[cur])()};
+
+/* --- demo: one of each project document and a billing note --- */
+{const f=ACT.loadDemo;ACT.loadDemo=b=>{const r=f(b);const keep=P;projects().filter(p=>p.subs.length&&p.boq.items.length).slice(-1).forEach(p=>{P=p;
+  const dn=Object.assign({id:uid()},NEW.dn(fdArr('dn')),{ref:'งวดที่ 2',by:'สมชาย ใจดี',car:'1กข 2345'});dn.ln=p.boq.items.filter(i=>i.g==='eq').slice(0,4).map(i=>({id:uid(),desc:itemName(i),q:n(i.q),unit:i.unit,rem:''}));fdArr('dn').push(dn);
+  const s=p.subs[0];const wo=Object.assign({id:uid()},NEW.wo(fdArr('wo')),{to:s.name,loc:'ชั้น 1 โซน A',value:85000,scope:'ติดตั้งท่อลมและหัวจ่ายลมชั้น 1 ตามแบบ M-101 รวมฉนวนและขาแขวน'});fdArr('wo').push(wo);
+  const sc=Object.assign({id:uid()},NEW.sc(fdArr('sc')),{sub:s.id,name:s.name,tax:s.tax||'',addr:s.addr||'',scope:s.scope||'',value:n(s.value),start:p.info.start,finish:p.info.finish});sc.ln=[['เมื่อเข้าพื้นที่และส่งแผนงาน',10],['เมื่องานติดตั้งแล้วเสร็จ 50%',30],['เมื่องานติดตั้งแล้วเสร็จ 100%',40],['เมื่อทดสอบระบบผ่านและส่งมอบ',20]].map(([desc,pct])=>({id:uid(),desc,pct}));fdArr('sc').push(sc);
+  const ho=Object.assign({id:uid()},NEW.ho(fdArr('ho')),{d_asb:true,d_om:true,d_tc:true,d_war:true,d_train:false,d_spare:false,d_key:true});fdArr('ho').push(ho)});P=keep;
+  const C=CO();C.bnotes=C.bnotes||[];const cu=C.customers.find(c=>custOpen(c.id).length);if(cu&&!C.bnotes.length)C.bnotes.push(Object.assign({id:uid()},NEW.bnotes(C.bnotes),{cust:cu.id,invs:custOpen(cu.id).map(x=>x.k)}));save();render();return r}}
 
 /* ---------- start ---------- */
 load();
