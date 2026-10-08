@@ -2,8 +2,8 @@
 async function seed(LOGO){
   localStorage.clear();load();
   const C=DB.co,td=today();
-  Object.assign(C,{name:'บริษัท เกียรติวายุ วิศวกรรม จำกัด',tax:'0105569012345',
-    addr:'88/8 อาคารเกียรติวายุ ถนนวิภาวดีรังสิต แขวงจอมพล เขตจตุจักร กรุงเทพฯ 10900',phone:'02-555-0100',email:'info@kiatvayu.co.th',
+  Object.assign(C,{name:'บริษัท แอโรว่า จำกัด',tax:'0105569012345',
+    addr:'88/8 อาคารแอโรว่า ถนนวิภาวดีรังสิต แขวงจอมพล เขตจตุจักร กรุงเทพฯ 10900',phone:'02-555-0100',email:'info@aerova.co.th',
     terms:'ยืนราคา 30 วัน · มัดจำ 15% · เบิกงวดตามผลงานรายเดือน หักประกันผลงาน 5% · รับประกันผลงาน 1 ปี อุปกรณ์ตามผู้ผลิต'});
   // logo: SVG -> PNG data URL, the same format the app's own logo upload stores
   C.logo=await new Promise(ok=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=640;c.height=200;c.getContext('2d').drawImage(im,0,0,640,200);ok(c.toDataURL('image/png'))};im.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(LOGO)))});
@@ -63,10 +63,10 @@ async function seed(LOGO){
     ['ปาริชาติ รับเรื่อง','SVC','ผู้รับแจ้งซ่อม','month',14000,'parichat','',''],
     ['เกรียงไกร ปลอดภัย','SHE','จป.วิชาชีพ','month',35000,'kriangkrai','ใบอนุญาต จป.วิชาชีพ',500],
   ];
-  C.staff=ST.map(([name,dept,role,wtype,wage,mail,lic,exp],i)=>({id:uid(),code:'E'+pad(i+1),name,dept,role,email:mail?mail+'@kiatvayu.co.th':'',phone:'08-'+(1000+i*37)+'-'+(2000+i*11),
+  C.staff=ST.map(([name,dept,role,wtype,wage,mail,lic,exp],i)=>({id:uid(),code:'E'+pad(i+1),name,dept,role,email:mail?mail+'@aerova.co.th':'',phone:'08-'+(1000+i*37)+'-'+(2000+i*11),
     start:addD(td,-(i<4?280:250-i*5)),wtype,wage,proj:'',lic,licExp:exp?addD(td,exp):'',sk:{},active:true}));
   const by=nm=>C.staff.find(s=>s.name===nm);
-  C.adminMails='thanaphon@kiatvayu.co.th, supaporn@kiatvayu.co.th';
+  C.adminMails='thanaphon@aerova.co.th, supaporn@aerova.co.th';
 
   // skills: everyone gets an assessment close to their role's required level; a few gaps on purpose
   C.staff.forEach((s,k)=>{reqSkills(s).forEach((x,i)=>s.sk[x.k]=Math.max(1,Math.min(4,x.req-((i+k)%6===2?1:0)+((i+k)%11===5?1:0))));s.kpi=70+((k*7)%25);s.beh=75+((k*5)%20)});
@@ -81,10 +81,10 @@ async function seed(LOGO){
     const p=demoProject(o);p.info.company=C.name;return p};
   const fix=(p,pm,eng,fore)=>{p.info.pm=pm;const sw=x=>{for(const k of ['by','who','wit'])if(x&&typeof x[k]==='string')x[k]=x[k].replace('คุณสมชาย','คุณ'+pm.split(' ')[0]).replace('คุณวิทยา','คุณ'+eng.split(' ')[0])};
     ['prs','daily','tc','safe'].forEach(k=>(p[k]||[]).forEach(sw))};
-  const P1=mkP({name:'อาคารสำนักงานศรีนคร ทาวเวอร์',client:c[0].name,cust:c[0].id,age:52,no:'KV-CT-2026-004',site:'ถนนพระราม 9 ห้วยขวาง กรุงเทพฯ'},1);fix(P1,'สมชาย ใจดี','วิทยา แก้วกล้า');
-  const P2=mkP({name:'โรงงานสยามฟู้ด อาคารผลิต 1',client:c[1].name,cust:c[1].id,age:150,no:'KV-CT-2026-002',site:'นิคมฯ บางปู สมุทรปราการ'},1.6);fix(P2,'อรวรรณ ตั้งมั่น','ปกรณ์ สุขสันต์');
-  const P3=mkP({name:'โรงพยาบาลรักษ์สุขภาพ ปรับปรุงหอผู้ป่วยชั้น 4',client:c[2].name,cust:c[2].id,age:235,no:'KV-CT-2026-001',site:'ถนนงามวงศ์วาน นนทบุรี'},0.6);fix(P3,'สมชาย ใจดี','วิทยา แก้วกล้า');
-  const P4=mkP({name:'โรงเรียนดวงดาววิทยา อาคารเรียนใหม่',client:c[4].name,cust:c[4].id,age:10,no:'KV-CT-2026-006',site:'ถนนบางนา-ตราด กม.8 สมุทรปราการ'},0.85);fix(P4,'อรวรรณ ตั้งมั่น','ปกรณ์ สุขสันต์');
+  const P1=mkP({name:'อาคารสำนักงานศรีนคร ทาวเวอร์',client:c[0].name,cust:c[0].id,age:52,no:'AV-CT-2026-004',site:'ถนนพระราม 9 ห้วยขวาง กรุงเทพฯ'},1);fix(P1,'สมชาย ใจดี','วิทยา แก้วกล้า');
+  const P2=mkP({name:'โรงงานสยามฟู้ด อาคารผลิต 1',client:c[1].name,cust:c[1].id,age:150,no:'AV-CT-2026-002',site:'นิคมฯ บางปู สมุทรปราการ'},1.6);fix(P2,'อรวรรณ ตั้งมั่น','ปกรณ์ สุขสันต์');
+  const P3=mkP({name:'โรงพยาบาลรักษ์สุขภาพ ปรับปรุงหอผู้ป่วยชั้น 4',client:c[2].name,cust:c[2].id,age:235,no:'AV-CT-2026-001',site:'ถนนงามวงศ์วาน นนทบุรี'},0.6);fix(P3,'สมชาย ใจดี','วิทยา แก้วกล้า');
+  const P4=mkP({name:'โรงเรียนดวงดาววิทยา อาคารเรียนใหม่',client:c[4].name,cust:c[4].id,age:10,no:'AV-CT-2026-006',site:'ถนนบางนา-ตราด กม.8 สมุทรปราการ'},0.85);fix(P4,'อรวรรณ ตั้งมั่น','ปกรณ์ สุขสันต์');
   Object.assign(DEMO,bs,{items:base});
   // P3 is finished and handed over: everything done, paid, closed
   P3.tasks.forEach(t=>t.pct=100);P3.info.handover=P3.info.finish;P3.bills.forEach(b=>{b.status='paid';b.paid=b.paid||addD(b.date,30)});
