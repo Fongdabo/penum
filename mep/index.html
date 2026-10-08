@@ -666,8 +666,8 @@ const PRICE_DEF={
   diff:{g:'duct',label:'หัวจ่ายลม',unit:'บาท/ชิ้น',m:1500,l:300},
   grille:{g:'duct',label:'หน้ากากลมกลับ',unit:'บาท/ชิ้น',m:1200,l:300},
   hepa:{g:'duct',label:'HEPA terminal box',unit:'บาท/ชิ้น',m:18000,l:1500},
-  vd:{g:'duct',label:'Volume damper',unit:'บาท/ชิ้น',m:1200,l:200},
-  fd:{g:'duct',label:'Fire damper',unit:'บาท/ชิ้น',m:4500,l:500},
+  vd:{g:'duct',label:'Volume damper 300×300 mm',unit:'บาท/ชิ้น',m:1200,l:200},
+  fd:{g:'duct',label:'Fire damper 300×300 mm',unit:'บาท/ชิ้น',m:4500,l:500},
   chwPipe:{g:'chw',label:'ท่อน้ำเย็นพร้อมฉนวนและวาล์ว (เหมา)',unit:'บาท/TR',m:2500,l:1200},
   ahuValve:{g:'chw',label:'ชุดวาล์วและอุปกรณ์ต่อ AHU',unit:'บาท/ชุด',m:25000,l:5000},
   cable:{g:'el',label:'สายไฟ THW',unit:'ของ: บาท/m ต่อ mm² · แรง: บาท/m',m:6,l:10},
@@ -1201,12 +1201,12 @@ function boq(){
     if(hepa)add('duct','hepa','HEPA terminal box',tr('ชิ้น'),hepa,PR.hepa.m,PR.hepa.l,SHT,'HEPA Terminal');
     if(CT&&P.cad.ducts.length){const V={};P.cad.terms.forEach(t=>{if(t[2]!=='SA')return;let nb=null,bd=1e12;P.cad.ducts.forEach(d=>{if(d[0]!==t[0]||d[2]!=='SA')return;const dx=d[5]-d[3],dy=d[6]-d[4],l2=dx*dx+dy*dy||1,tt=Math.max(0,Math.min(1,((t[3]-d[3])*dx+(t[4]-d[4])*dy)/l2)),ds=Math.hypot(d[3]+tt*dx-t[3],d[4]+tt*dy-t[4])+(d[1]===t[1]?0:1e5);if(ds<bd){bd=ds;nb=d}});
         if(!nb)return;const w=bRec?ductRec(nb[7],nb[8],nb[9]).w:nb[7],h=bRec?ductRec(nb[7],nb[8],nb[9]).h:nb[8],k=w+'x'+h;(V[k]=V[k]||{w,h,q:0}).q++});
-      Object.values(V).sort((a,b)=>b.w*b.h-a.w*a.h).forEach(v=>add('duct','vd-'+v.w+'x'+v.h,`${v.w}"x${v.h}"`,tr('ชิ้น'),v.q,PR.vd.m,PR.vd.l,SHM,'Volume Damper'))}
+      Object.values(V).sort((a,b)=>b.w*b.h-a.w*a.h).forEach(v=>{const k=dmpK(v.w*v.h*0.00064516);add('duct','vd-'+v.w+'x'+v.h,`${v.w}"x${v.h}"`,tr('ชิ้น'),v.q,dmpP(PR.vd.m,k),dmpP(PR.vd.l,k),SHM,'Volume Damper')})}
     else if(diff){const z=termSize('SA',n(A.cmhDiff||700)/1.699);add('duct','vd',z.t,tr('ชิ้น'),diff,PR.vd.m,PR.vd.l,SHM,'Volume Damper')}
     if(fd){if(P.boqOv.fd)add('duct','fd',tl('ขนาดตามท่อลมที่ผ่านผนังกันไฟ','Size to suit duct at fire-rated wall'),tr('ชิ้น'),Math.round(fd),PR.fd.m,PR.fd.l,SHM,'Fire Damper');
       else{const FD={},c=n(A.fdRoom);pl.rows.forEach(r=>{if(!(r.q>0)||!r.S.duct)return;const t=P.ducts.find(x=>x.room===r.rm.id&&x.kind==='sm'),z=ductCalc(t||newDuct({kind:'sm',cmh:Math.round(r.r.supply*3.6/r.q)}));if(!z)return;
           const g=FD[z.size]=FD[z.size]||{a:z.W*z.H,q:0,rm:[]};g.q+=c;g.rm.push(r.rm.name)});
-        Object.entries(FD).sort((a,b)=>b[1].a-a[1].a).forEach(([k,v])=>add('duct','fd-'+k.replace(/[^0-9a-z]/gi,''),`${k} · ${v.rm.join(', ')}`,tr('ชิ้น'),v.q,PR.fd.m,PR.fd.l,SHM,'Fire Damper'))}}
+        Object.entries(FD).sort((a,b)=>b[1].a-a[1].a).forEach(([k,v])=>{const f=dmpK(v.a);add('duct','fd-'+k.replace(/[^0-9a-z]/gi,''),`${k} · ${v.rm.join(', ')}`,tr('ชิ้น'),v.q,dmpP(PR.fd.m,f),dmpP(PR.fd.l,f),SHM,'Fire Damper')})}}
   }
   // chilled water
   if(pl.ch.N){
@@ -2724,6 +2724,9 @@ function cadPipes(C){return ((C&&C.pipes)||[]).map(q=>{let h=0;for(let i=1;i<q[3
 function cadPipeSizes(C){const M={};cadPipes(C).forEach(r=>[r.liq,r.gas].forEach(t=>{const m=M[t]=M[t]||{t,d:pipeDia(t),len:0};m.len+=r.tot}));return Object.values(M).sort((a,b)=>a.d-b.d)}
 /* ---------- drawing vs recommendation ---------- */
 const REC={fr:1.25,v:7,tab:10};
+/* v65 a damper's price grows with its face: the price table is for 300×300 mm (0.09 m²), others by (area/0.09)^0.6, from ×0.6 to ×6; rounded to 10 baht */
+function dmpK(a){return a>0?Math.min(6,Math.max(0.6,Math.pow(a/0.09,0.6))):1}
+function dmpP(p,k){return Math.round(p*k/10)*10}
 function ductRec(w,h,cfm){
   const Q=cfm*0.000471947,chk=(W,H)=>{const a=W*0.0254,b=H*0.0254,v=Q/(a*b),fr=Q>0?fricD(Q,deq(a,b)):0;return {v,fr,ok:v<=REC.v+1e-6&&fr<=REC.fr+1e-6}};
   const cur=chk(w,h);if(cur.ok||!(cfm>0))return {w,h,v:cur.v,fr:cur.fr,same:true,cur};
@@ -4760,7 +4763,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=64,MEP_NAME='v64';
+const MEP_BUILD=65,MEP_NAME='v65';
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
