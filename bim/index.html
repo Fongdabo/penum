@@ -5604,7 +5604,7 @@ function dxfParse(txt,opt){opt=opt||{};const MAX=opt.max||600000,ln=txt.split(/\
   /* polylines and inserts own the records that follow them up to SEQEND */
   const group=list=>{const o=[];for(let k=0;k<list.length;k++){const r=list[k];if((r.t==='POLYLINE'||(r.t==='INSERT'&&num(r,66,0)===1))){r.sub=[];k++;while(k<list.length&&list[k].t!=='SEQEND'){r.sub.push(list[k]);k++}}o.push(r)}return o};
   for(const b of blocks.values())b.e=group(b.e);
-  const layer=n=>{const nm=String(n||'0').trim()||'0',k=nm.toUpperCase();let l=res.L.get(k);if(!l){const d=LY.get(k);l={n:d?d.n:nm,s:[],a:[],t:[]};res.L.set(k,l)}return l};
+  const layer=n=>{const nm=String(n||'0').trim()||'0',k=nm.toUpperCase();let l=res.L.get(k);if(!l){const d=LY.get(k);l={n:d?d.n:nm,s:[],a:[],t:[],f:[]};res.L.set(k,l)}return l};
   const bb=res.bb,ext=(x,y)=>{if(x<bb[0])bb[0]=x;if(x>bb[2])bb[2]=x;if(y<bb[1])bb[1]=y;if(y>bb[3])bb[3]=y};
   let total=0;const full=()=>{if(total>=MAX){res.trunc=true;return true}return false};
   /* T: [a,b,c,d,e,f] maps block coordinates to the drawing */
@@ -5630,6 +5630,36 @@ function dxfParse(txt,opt){opt=opt||{};const MAX=opt.max||600000,ln=txt.split(/\
       const w=d[deg][2]||1;out.push([d[deg][0]/w,d[deg][1]/w])}
     return out};
   const skip=t=>{res.skipped[t]=(res.skipped[t]||0)+1};
+  /* V1.59 HATCH: its boundary paths as rings; a solid fill is kept as a filled area (l.f), a pattern as its lines (the pattern lines the file carries, already scaled and turned),
+     cut to the boundary (even-odd, so islands stay open) */
+  const hatch=(l,T,r,mir)=>{const Pp=r.p;let i=0;const at=c=>{while(i<Pp.length&&Pp[i][0]!==c)i++;if(i>=Pp.length)return NaN;const v=parseFloat(Pp[i][1]);i++;return v},X=x=>mir?-x:x,rings=[];
+    const solid=(num(r,70,0)&1)===1,np=at(91);if(!(np>0))return skip('HATCH');
+    for(let pth=0;pth<np&&pth<500&&i<Pp.length;pth++){const fl=at(92),ring=[];
+      if(fl&2){const hb=at(72),cl=at(73),nv=at(93);for(let v=0;v<nv&&i<Pp.length;v++){const x=X(at(10)),y=at(20);let b=0;if(hb){const save=i;if(i<Pp.length&&Pp[i][0]===42){b=parseFloat(Pp[i][1]);i++}else i=save}ring.push([x,y,(mir?-1:1)*b])}
+        const pts=[];for(let k=0;k<ring.length;k++){const p=ring[k],q=ring[(k+1)%ring.length];pts.push([p[0],p[1]]);if(p[2]&&(k<ring.length-1||cl!==0)){const dx=q[0]-p[0],dy=q[1]-p[1],d=Math.hypot(dx,dy),b=p[2];if(d<1e-12)continue;const h=(1-b*b)/(4*b),cx=(p[0]+q[0])/2-dy*h,cy=(p[1]+q[1])/2+dx*h,R=d*(1+b*b)/(4*Math.abs(b)),a0=Math.atan2(p[1]-cy,p[0]-cx),sw=4*Math.atan(b),n=Math.max(2,Math.ceil(Math.abs(sw)/(Math.PI/24)));for(let j=1;j<n;j++){const t=a0+sw*j/n;pts.push([cx+R*Math.cos(t),cy+R*Math.sin(t)])}}}
+        if(pts.length>2)rings.push(pts)}
+      else{const ne=at(93),pts=[];for(let k=0;k<ne&&i<Pp.length;k++){const ty=at(72);
+          if(ty===1){const x1=X(at(10)),y1=at(20),x2=X(at(11)),y2=at(21);if(!pts.length)pts.push([x1,y1]);pts.push([x2,y2])}
+          else if(ty===2){const cx=X(at(10)),cy=at(20),R=at(40);let a0=at(50),a1=at(51);const ccw=at(73);if(mir){const t0=180-a1,t1=180-a0;a0=t0;a1=t1}let sw=a1-a0;if(sw<=0)sw+=360;const n=Math.max(2,Math.ceil(sw/7.5)),seq=[];for(let j=0;j<=n;j++){const t=(a0+sw*j/n)*Math.PI/180;seq.push([cx+R*Math.cos(t),cy+R*Math.sin(t)])}if(!ccw!==!!mir)seq.reverse();for(const q of seq)pts.push(q)}
+          else if(ty===3){const cx=X(at(10)),cy=at(20),mx=X(at(11)),my=at(21),kk=at(40),p0=at(50)*Math.PI/180;let p1=at(51)*Math.PI/180;const ccw=at(73);if(p1<=p0)p1+=Math.PI*2;const n=Math.max(4,Math.ceil((p1-p0)/(Math.PI/24))),seq=[];for(let j=0;j<=n;j++){const t=p0+(p1-p0)*j/n;seq.push([cx+Math.cos(t)*mx-Math.sin(t)*my*kk,cy+Math.cos(t)*my+Math.sin(t)*mx*kk])}if(!ccw)seq.reverse();for(const q of seq)pts.push(q)}
+          else if(ty===4){const deg=at(94);at(73);at(74);const nk=at(95),nc=at(96),kn=[],cp=[],wt=[];for(let j=0;j<nk;j++)kn.push(at(40));for(let j=0;j<nc;j++){cp.push([X(at(10)),at(20)]);if(i<Pp.length&&Pp[i][0]===42){wt.push(parseFloat(Pp[i][1]));i++}}for(const q of spline(deg,kn,cp,wt))pts.push(q)}
+          else break}
+        if(pts.length>2)rings.push(pts)}
+      if(i<Pp.length&&Pp[i][0]===97){const ns=parseFloat(Pp[i][1]);i++;for(let j=0;j<ns&&i<Pp.length&&Pp[i][0]===330;j++)i++}}
+    if(!rings.length)return skip('HATCH');
+    if(solid){if(full())return;l.f.push(rings.map(R=>R.map(p=>{const q=ap(T,p[0],p[1]);ext(q[0],q[1]);return[q[0],q[1]]})));res.n.fill=(res.n.fill||0)+1;total++;return}
+    let bx0=Infinity,by0=Infinity,bx1=-Infinity,by1=-Infinity;for(const R of rings)for(const p of R){if(p[0]<bx0)bx0=p[0];if(p[0]>bx1)bx1=p[0];if(p[1]<by0)by0=p[1];if(p[1]>by1)by1=p[1]}
+    const nl=at(78);let budget=20000;
+    for(let f=0;f<nl&&i<Pp.length&&budget>0;f++){const ang=at(53)*Math.PI/180*(mir?-1:1),bx=X(at(43)),by=at(44),ox=X(at(45)),oy=at(46),nd=at(79),D=[];for(let j=0;j<nd;j++)D.push(at(49));
+      const ux=Math.cos(mir?Math.PI-ang:ang),uy=Math.sin(mir?Math.PI-ang:ang),nx=-uy,ny=ux,hs=ox*nx+oy*ny,sh=ox*ux+oy*uy;if(!isFinite(hs)||Math.abs(hs)<1e-9)continue;
+      const pr=[[bx0,by0],[bx1,by0],[bx1,by1],[bx0,by1]].map(p=>(p[0]-bx)*nx+(p[1]-by)*ny),k0=Math.floor(Math.min(...pr)/hs),k1=Math.ceil(Math.max(...pr)/hs),ka=Math.min(k0,k1),kb=Math.max(k0,k1);if(kb-ka>4000)continue;          // too fine to draw: left out
+      const PL=D.reduce((a,d)=>a+Math.abs(d),0);
+      for(let kq=ka;kq<=kb&&budget>0;kq++){const px=bx+ox*kq,py=by+oy*kq,ts=[];
+        for(const R of rings)for(let j=0;j<R.length;j++){const a=R[j],b=R[(j+1)%R.length],ex=b[0]-a[0],ey=b[1]-a[1],den=ux*ey-uy*ex;if(Math.abs(den)<1e-12)continue;const tt=((a[0]-px)*ey-(a[1]-py)*ex)/den,ss=((a[0]-px)*uy-(a[1]-py)*ux)/den;if(ss>=0&&ss<1)ts.push(tt)}
+        ts.sort((a,b)=>a-b);for(let j=0;j+1<ts.length;j+=2){const t0=ts[j],t1=ts[j+1];if(t1-t0<1e-9)continue;
+          if(!D.length||PL<1e-9){seg(l,T,px+ux*t0,py+uy*t0,px+ux*t1,py+uy*t1);budget--;continue}
+          let m=Math.floor(t0/PL)*PL;while(m<t1&&budget>0){for(const d of D){const a=m,b=m+Math.abs(d);if(d>=0&&b>t0&&a<t1){const c0=Math.max(a,t0),c1=Math.min(t1,d===0?a+PL*0.01:b);if(c1>c0){seg(l,T,px+ux*c0,py+uy*c0,px+ux*c1,py+uy*c1);budget--}}m=b;if(m>=t1)break}if(PL<=0)break}}}}
+    res.n.fill=(res.n.fill||0)+1};
   const ID=[1,0,0,1,0,0],mul=(A,B)=>[A[0]*B[0]+A[2]*B[1],A[1]*B[0]+A[3]*B[1],A[0]*B[2]+A[2]*B[3],A[1]*B[2]+A[3]*B[3],A[0]*B[4]+A[2]*B[5]+A[4],A[1]*B[4]+A[3]*B[5]+A[5]];
   const draw=(r,T,inh,depth)=>{if(full())return;if(num(r,67,0)===1)return;                                                 // paper space
     const ln0=String(str(r,8,'0')).trim()||'0',lname=ln0==='0'&&inh?inh:ln0,l=layer(lname),mir=num(r,230,1)<0,X=x=>mir?-x:x;                // a block's layer 0 takes the layer of its insert
@@ -5655,11 +5685,12 @@ function dxfParse(txt,opt){opt=opt||{};const MAX=opt.max||600000,ln=txt.split(/\
         for(let a=0;a<nc&&a<200;a++)for(let q=0;q<nr&&q<200;q++){const ox=a*dc,oy=q*dr,Tb=mul(T,[c*sx,s*sx,-s*sy,c*sy,ix+c*ox-s*oy-(c*sx*b.bx-s*sy*b.by),iy+s*ox+c*oy-(s*sx*b.bx+c*sy*b.by)]);
           for(const e of b.e)draw(e,Tb,lname,depth+1)}
         for(const s2 of r.sub||[])if(s2.t==='ATTRIB')draw(s2,T,lname,depth+1);break}
+      case'HATCH':hatch(l,T,r,mir);break;          // V1.59
       case'DIMENSION':{const b=blocks.get(String(str(r,2,'')).trim().toUpperCase());if(b)for(const e of b.e)draw(e,T,lname,depth+1);else skip('DIMENSION');break}
       case'POINT':case'VIEWPORT':case'ATTDEF':case'SEQEND':case'VERTEX':case'ENDSEC':case'EOF':break;
       default:skip(r.t)}};
   for(const r of group(ents))draw(r,ID,null,0);
-  for(const [k,l] of res.L){const d=LY.get(k);if(l.s.length||l.a.length||l.t.length)res.layers.push({n:l.n,k,c:d?d.c:7,off:d?d.off:false,dash:!!(d&&/dash|hidden|cent(er|re)|dot|phantom|divide/i.test(d.lt||''))})}
+  for(const [k,l] of res.L){const d=LY.get(k);if(l.s.length||l.a.length||l.t.length||l.f.length)res.layers.push({n:l.n,k,c:d?d.c:7,off:d?d.off:false,dash:!!(d&&/dash|hidden|cent(er|re)|dot|phantom|divide/i.test(d.lt||''))})}
   res.layers.sort((a,b)=>a.n<b.n?-1:a.n>b.n?1:0);if(!isFinite(bb[0])){bb[0]=bb[1]=0;bb[2]=bb[3]=1}return res}
 /* the unit a drawing is most likely in when the file does not say: a building some tens of units wide is drawn in metres */
 function dxfGuessUnit(res){if(res.units&&DXF_K[res.units[1]])return res.units[1];const w=Math.max(res.bb[2]-res.bb[0],res.bb[3]-res.bb[1]);return w<400?'m':'mm'}
@@ -5671,7 +5702,8 @@ function dxfBlob(res,unit){const k=typeof unit==='number'&&unit>0?unit:DXF_K[uni
     for(let i=0;i<l.s.length;i+=2){s[i]=r1((l.s[i]-cx)*k);s[i+1]=r1(-(l.s[i+1]-cy)*k)}
     for(let i=0;i<l.a.length;i+=5){const full=l.a[i+4]-l.a[i+3]>=360-1e-9;a.push(r1((l.a[i]-cx)*k),r1(-(l.a[i+1]-cy)*k),r1(l.a[i+2]*k),full?0:r2(-l.a[i+4]),full?360:r2(-l.a[i+3]))}         // turned over with y: the sweep runs the other way
     for(const q of l.t)t.push([r1((q[0]-cx)*k),r1(-(q[1]-cy)*k),r1(q[2]*k),r2(-q[3]),q[4],q[5],q[6]]);
-    const o={n:d.n,c:d.c,off:d.off?1:0,s,a,t};if(d.rgb)o.rgb=d.rgb;if(d.dash)o.dash=1;L.push(o)}
+    const o={n:d.n,c:d.c,off:d.off?1:0,s,a,t};if(l.f&&l.f.length)o.f=l.f.map(F=>F.map(R=>{const q=[];for(const p of R)q.push(r1((p[0]-cx)*k),r1(-(p[1]-cy)*k));return q}));          // V1.59 solid hatches: rings of x, y
+    if(d.rgb)o.rgb=d.rgb;if(d.dash)o.dash=1;L.push(o)}
   return{k,cx,cy,w:r1((res.bb[2]-res.bb[0])*k),h:r1((res.bb[3]-res.bb[1])*k),L,n:Object.assign({},res.n)}}
 
 /* ===== 28 IFC (pure): the model written as an IFC4 file — ISO 10303-21, the STEP physical file (Revit: File > Export > IFC) =====
@@ -16349,6 +16381,7 @@ function drawLink(g,e,T,col,hi,o,v){const B=CADB.get(e.key);if(!B)return;const c
   if(o&&o.w){vx0=vy0=Infinity;vx1=vy1=-Infinity;for(const q of [[0,0],[o.w,0],[o.w,o.h],[0,o.h]]){const p=F.from((q[0]-T.ox)/T.s,(q[1]-T.oy)/T.s);if(p[0]<vx0)vx0=p[0];if(p[0]>vx1)vx1=p[0];if(p[1]<vy0)vy0=p[1];if(p[1]>vy1)vy1=p[1]}}
   ctx.save();ctx.translate(g.X(e.x),g.Y(e.y));if(a)ctx.rotate(a);g.dash(null);ctx.lineWidth=hi?1.5:1;ctx.lineJoin='round';
   for(const ly of linkL(e,B,v)){if(linkOff(e,ly))continue;g.lay('link',ly);g.el(e);const c=hi||(half?base:ly.rgb||aciCss(ly.c,col));ctx.strokeStyle=c;ctx.lineWidth=(hi?1.5:1)*(ly.w||1);const s=ly.s,n=s.length;
+    if(Array.isArray(ly.f)&&ly.f.length&&ctx.fill){ctx.save();ctx.fillStyle=c;ctx.globalAlpha=half?0.35:0.75;for(const F of ly.f){ctx.beginPath();for(const R of F){for(let j=0;j+1<R.length;j+=2){const x=R[j]*k,y=R[j+1]*m*k;if(j)ctx.lineTo(x,y);else ctx.moveTo(x,y)}ctx.closePath()}ctx.fill('evenodd')}ctx.restore()}          // V1.59 solid hatches
     if(n){ctx.beginPath();let cnt=0;for(let i=0;i<n;i+=4){const x1=s[i],y1=s[i+1],x2=s[i+2],y2=s[i+3];if((x1<vx0&&x2<vx0)||(x1>vx1&&x2>vx1)||(y1<vy0&&y2<vy0)||(y1>vy1&&y2>vy1))continue;
         ctx.moveTo(x1*k,y1*m*k);ctx.lineTo(x2*k,y2*m*k);if(++cnt>=4000){ctx.stroke();ctx.beginPath();cnt=0}}if(cnt)ctx.stroke()}
     const A=ly.a;for(let i=0;i<A.length;i+=5){const cx=A[i],cy=A[i+1],r=A[i+2];if(cx+r<vx0||cx-r>vx1||cy+r<vy0||cy-r>vy1||r*k<0.3)continue;ctx.beginPath();
@@ -16452,7 +16485,7 @@ function dlgDxfIn(res,name){const U=['mm','cm','m','in','ft'],u0=dxfGuessUnit(re
       let x=B.cx*B.k,y=-B.cy*B.k;const pv=planOf(lv)||activeView();
       if(pos==='center'){const E=P.els.some(q=>q.level===lv&&q.cat!=='link')||P.grids.length?planExtents(pv):{x0:0,y0:0,x1:0,y1:0};x=Math.round((E.x0+E.x1)/2);y=Math.round((E.y0+E.y1)/2)}
       let id=0;edit(()=>{id=P.seq++;P.els.push({id,cat:'link',level:lv,x,y,rot:0,sc:1,key,name:name.replace(/\.dxf$/i,''),half,pin:true,loff:B.L.filter(l=>l.off).map(l=>l.n)})});
-      const av=activeView();if(!av||av.kind!=='plan'||av.level!==lv)showView(pv.id);const v2=activeView();navOf(v2).fit=true;setTool('modify');ui.sel=new Set([id]);refresh();if(dk==='am')dlgAutoModel(id);else toast(t('dxf_in_done',B.n.seg+B.n.arc+B.n.txt),7000)}})}          /* … and straight on to Auto Model (83-automodel.js) */
+      const av=activeView();if(!av||av.kind!=='plan'||av.level!==lv)showView(pv.id);const v2=activeView();navOf(v2).fit=true;setTool('modify');ui.sel=new Set([id]);refresh();if(dk==='am')dlgAutoModel(id);else toast(t('dxf_in_done',B.n.seg+B.n.arc+B.n.txt+(B.n.fill||0)),7000)}})}          /* … and straight on to Auto Model (83-automodel.js) */
 /* Manage Links: every linked drawing, where it lies, show / hide, layers, remove */
 function dlgLinks(){const ls=P.els.filter(e=>e.cat==='link');
   const body=ls.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('p_name')}</th><th>${t('p_level')}</th><th>${t('dxf_size')}</th><th></th></tr></thead><tbody>${ls.map(e=>{const B=CADB.get(e.key)||{w:0,h:0},l=lvl(P,e.level);
