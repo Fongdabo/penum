@@ -1158,7 +1158,7 @@ ACT.delProj=()=>{if(Object.keys(DB.projects).length<2){toast('ต้องมี
 /* ---------- dashboard ---------- */
 VIEWS.dash=()=>{
   const s=sched(),td=today(),C=contract(),{T}=costTable(),act=s.act(),plan=s.planAt(td);
-  const bl=P.bills.map(b=>[b,billCalc(b)]),billed=sum(bl.filter(([b])=>b.status!=='draft'),x=>x[1].amt),recv=sum(bl.filter(([b])=>b.status==='paid'),x=>x[1].net);
+  const bl=P.bills.map(b=>[b,billCalc(b)]),billed=sum(bl.filter(([b])=>b.status!=='draft'&&(b.kind||'prog')==='prog'),x=>x[1].amt),recv=sum(bl.filter(([b])=>b.status==='paid'),x=>x[1].net);
   const lateDl=P.pos.filter(p=>poState(p).k==='bad'),openRfi=(P.rfis||[]).filter(r=>r.status!=='closed'&&r.status!=='ans'),pendSub=(P.subm||[]).filter(r=>okD(r.date)&&r.status==='pending'),openPunch=(P.punch||[]).filter(r=>r.status!=='done');
   const up=[];
   P.tasks.forEach(t=>{const r=s.R[t.id];if(n(t.pct)<100&&r.es>=td&&r.es<=addD(td,14))up.push([r.es,'เริ่มงาน',t.name]);if(n(t.pct)<100&&r.ef<td)up.push([r.ef,'<span class="pill bad">งานล่าช้า</span>',t.name])});
@@ -1274,15 +1274,17 @@ const QST=[['draft','ร่าง'],['sent','ส่งลูกค้าแล�
 NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
 const qUnit=(Q,i)=>i.sp!==''&&i.sp!=null&&n(i.sp)>0?n(i.sp):n(i.t)/Math.max(1e-9,n(i.q))*(1+n(Q.mk)/100);
 function qCalc(Q){const sub=sum(Q.items,i=>n(i.q)*qUnit(Q,i)),disc=n(Q.disc),net=sub-disc,vat=net*7/100;return {sub,disc,net,vat,grand:net+vat,cost:sum(Q.items,boqCost)}}
-function qFill(Q,items,meta){Q.items=items.map(i=>({id:uid(),g:i.g,head:i.head||'',type:i.type||'',desc:i.desc,unit:i.unit,q:n(i.q),m:n(i.m),l:n(i.l),t:n(i.t),sp:''}));Q.src=meta.src||'';if(meta.sub&&meta.ohp)Q.mk=Math.round(n(meta.ohp)*1000/n(meta.sub))/10}
+function qFill(Q,items,meta){Q.items=items.map(i=>({id:uid(),g:i.g,head:i.head||'',type:i.type||'',desc:i.desc,unit:i.unit,q:n(i.q),m:n(i.m),l:n(i.l),t:n(i.t),sp:''}));Q.src=meta.src||'';if(meta.sub&&meta.ohp&&!n(Q.mk))Q.mk=Math.round(n(meta.ohp)*1000/n(meta.sub))/10}
 ACT.qMep=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),L=mepLink();if(!Q||!L)return;if(Q.items.length&&!confirm('แทนที่รายการเดิม?'))return;
   qFill(Q,L.boq.items.map(i=>({g:i.g,head:i.head,type:i.type,desc:i.desc,unit:i.unit,q:i.q,m:i.m,l:i.l,t:i.total})),{src:'PENUM MEP · '+(L.project||''),sub:L.boq.sub,ohp:L.boq.ohp});if(!Q.title)Q.title=L.project||'';save();render()};
 ACT.qPaste=b=>{dialog('วาง BOQ จาก PENUM MEP',`<ol class="steps"><li>เปิด PENUM MEP ไปที่หน้า BOQ</li><li>กดปุ่ม <b>คัดลอก BOQ (วางใน Excel)</b></li><li>คลิกในช่องด้านล่าง แล้วกด Ctrl+V</li></ol><textarea id="boqTxt" rows="8"></textarea>`,`<button type="button" class="btn pri" data-a="qPasteGo" data-id="${b.dataset.id}">นำเข้า</button>`)};
+// a tender title ("ประกวดราคาจ้างก่อสร้าง…") makes a poor project name: keep what is being built
+const pjName=t=>String(t||'').trim().replace(/^โครงการ\s*/,'').replace(/^(ประกวดราคา|สอบราคา|ประกาศ)\s*(จ้าง)?\s*(ก่อสร้าง)?\s*/,'').replace(/^(จ้าง)?ก่อสร้าง\s*/,'').replace(/^โครงการ\s*/,'').trim()||String(t||'').trim();
 ACT.qPasteGo=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),r=parseBoqTSV($('#boqTxt').value);if(!Q||!r.items.length){toast('ไม่พบรายการ BOQ');return}qFill(Q,r.items,{src:'วางจาก PENUM MEP',sub:r.sub,ohp:r.ohp});$('#dlg').close();save();render()};
 ACT.qFromPj=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),p=DB.projects[$('#qPj').value];if(!Q||!p||!p.boq.items.length){toast('โครงการนี้ยังไม่มี BOQ');return}qFill(Q,p.boq.items,{src:'โครงการ '+p.name,sub:p.boq.sub,ohp:p.boq.ohp});save();render()};
 ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;if(Q.pj&&DB.projects[Q.pj]){ACT.go({dataset:{m:'pj',k:'dash',p:Q.pj}});return}
   if(!Q.items.length){toast('ใบเสนอราคายังไม่มีรายการ');return}if(!confirm(`บันทึกว่าได้งาน และสร้างโครงการ “${Q.title||Q.no}” จากใบเสนอราคานี้?`))return;
-  const C=qCalc(Q),p=blankProject(Q.title||Q.no),c=CO().customers.find(x=>x.id===Q.cust)||{};
+  const C=qCalc(Q),p=blankProject(pjName(Q.title)||Q.no),c=CO().customers.find(x=>x.id===Q.cust)||{};
   Object.assign(p.info,{client:c.name||'',cust:Q.cust||'',site:Q.site||'',cv:Math.round(C.net*100)/100,cvAuto:0});
   const k=C.sub?C.net/C.sub:1;
   withP(p,()=>setBoq(Q.items.map(i=>({g:i.g,head:i.head,type:i.type,desc:i.desc,unit:i.unit,q:n(i.q),m:n(i.m),l:n(i.l),t:n(i.q)*qUnit(Q,i)*k})),{src:'ใบเสนอราคา '+Q.no,sub:C.net,ohp:0,vat:C.vat,grand:C.grand}));
@@ -1365,9 +1367,9 @@ function acctAR(){const td=today(),R=arRows().sort((a,b)=>a.due.localeCompare(b.
   ${R.length?R.map(({p,b,c,due})=>{const late=b.status!=='paid'&&due<td;return `<tr><td>${esc(p.name)}</td><td><b>${esc(b.no)}</b></td><td>${thD(b.date)}</td><td>${late?`<span class="pill bad">${thD(due)} · เกิน ${diffD(due,td)} วัน</span>`:thD(due)}</td><td class="r">${fmt(c.net)}</td><td>${b.status==='paid'?`<span class="pill ok">รับแล้ว ${thD(b.paid)}</span>`:`<span class="pill info">${BSTAT.find(s=>s[0]===b.status)[1]}</span>`}</td>
     <td style="white-space:nowrap">${b.status!=='paid'?`<button type="button" class="btn sm" data-a="arPaid" data-p="${p.id}" data-id="${b.id}">รับเงินแล้ว</button>`:''} <button type="button" class="btn sm" data-a="printTax" data-p="${p.id}" data-id="${b.id}">ใบกำกับภาษี</button></td></tr>`}).join(''):'<tr><td colspan="7" class="empty">ยังไม่มีใบแจ้งหนี้</td></tr>'}</tbody></table></div></section>`}
 ACT.printTax=b=>{const p=DB.projects[b.dataset.p];if(!p)return;$('#print').innerHTML=withP(p,()=>taxInv(b.dataset.id));setTimeout(()=>print(),300)};
-function taxInv(id){const b=P.bills.find(x=>x.id===id);if(!b)return '';const c=billCalc(b),cu=CO().customers.find(x=>x.id===P.info.cust)||{},k=b.kind||'prog',I=P.info;
+function taxInv(id){const b=P.bills.find(x=>x.id===id);if(!b)return '';if(!b.tiNo){b.tiNo=nextNo('IV-',projects().flatMap(q=>q.bills.filter(y=>y.tiNo).map(y=>({no:y.tiNo}))));save()}const c=billCalc(b),cu=CO().customers.find(x=>x.id===P.info.cust)||{},k=b.kind||'prog',I=P.info;
   const what=k==='adv'?'เงินล่วงหน้า':k==='ret'?'คืนเงินประกันผลงาน':I.billMode==='pct'?`ค่างานงวดที่ ${esc(((P.inst||[]).find(x=>x.id===b.inst)||{}).no||'')}`:`ค่างานตามผลงานสะสม ${fmt(c.cum,2)}%`;
-  return cphead(`ใบแจ้งหนี้ / ใบกำกับภาษี ${esc(b.no)}`,`วันที่ ${thDL(b.date)}<br>ครบกำหนดชำระ ${thDL(billDue(P,b))}`)+`<div class="meta"><div><b>ลูกค้า</b> ${esc(cu.name||I.client||'')}<br>${esc(cu.addr||'')}<br>${cu.tax?'เลขประจำตัวผู้เสียภาษี '+esc(cu.tax):''}</div><div>โครงการ ${esc(P.name)}<br>สัญญาเลขที่ ${esc(I.contractNo||'')}</div></div>
+  return cphead(`ใบแจ้งหนี้ / ใบกำกับภาษี ${esc(b.tiNo)}`,`วันที่ ${thDL(b.date)}<br>อ้างอิงใบเบิก ${esc(b.no)}<br>ครบกำหนดชำระ ${thDL(billDue(P,b))}`)+`<div class="meta"><div><b>ลูกค้า</b> ${esc(cu.name||I.client||'')}<br>${esc(cu.addr||'')}<br>${cu.tax?'เลขประจำตัวผู้เสียภาษี '+esc(cu.tax):''}</div><div>โครงการ ${esc(P.name)}<br>สัญญาเลขที่ ${esc(I.contractNo||'')}</div></div>
   <table><thead><tr><th>รายการ</th><th>จำนวนเงิน</th></tr></thead><tbody><tr><td>${what} โครงการ ${esc(P.name)}</td><td style="text-align:right">${fmt(c.amt,2)}</td></tr>${c.adv?`<tr><td>หักคืนเงินล่วงหน้า</td><td style="text-align:right">-${fmt(c.adv,2)}</td></tr>`:''}
   <tr><td>มูลค่าก่อนภาษี</td><td style="text-align:right">${fmt(c.base,2)}</td></tr><tr><td>ภาษีมูลค่าเพิ่ม ${n(I.vat)}%</td><td style="text-align:right">${fmt(c.vat,2)}</td></tr><tr><td><b>รวมเงิน</b></td><td style="text-align:right"><b>${fmt(c.base+c.vat,2)}</b></td></tr>
   ${c.ret?`<tr><td>หักเงินประกันผลงาน ${n(I.ret)}%</td><td style="text-align:right">-${fmt(c.ret,2)}</td></tr>`:''}<tr><td>หักภาษี ณ ที่จ่าย ${n(I.wht)}% (ลูกค้าหัก)</td><td style="text-align:right">-${fmt(c.wht,2)}</td></tr><tr><td><b>ยอดชำระสุทธิ</b></td><td style="text-align:right"><b>${fmt(c.net,2)}</b></td></tr></tbody></table>
@@ -1388,7 +1390,7 @@ document.addEventListener('change',e=>{if(e.target.id==='cfSel'){S.sel.cfp=e.tar
 
 /* ---------- owner dashboard across projects ---------- */
 function pjSummary(p){return withP(p,()=>{const s=sched(),td=today(),C=contract(),{T}=costTable(),bl=p.bills.map(b=>[b,billCalc(b)]);
-  const billed=sum(bl.filter(([b])=>b.status!=='draft'),x=>x[1].amt),recv=sum(bl.filter(([b])=>b.status==='paid'),x=>x[1].net),ar=sum(bl.filter(([b])=>b.status!=='draft'&&b.status!=='paid'),x=>x[1].net);
+  const billed=sum(bl.filter(([b])=>b.status!=='draft'&&(b.kind||'prog')==='prog'),x=>x[1].amt),recv=sum(bl.filter(([b])=>b.status==='paid'),x=>x[1].net),ar=sum(bl.filter(([b])=>b.status!=='draft'&&b.status!=='paid'),x=>x[1].net);
   const act=p.tasks.length?s.act():0,plan=p.tasks.length?s.planAt(td):0;
   return {p,C,act,plan,T,margin:C.total-T.fc,billed,recv,ar,issues:p.rfis.filter(r=>r.status==='open').length+p.punch.filter(r=>r.status!=='done').length+p.pos.filter(x=>poState(x).k==='bad').length,done:act>=99.9&&p.tasks.length}})}
 CVIEWS.exec=()=>{
@@ -3890,7 +3892,8 @@ PRINT.tdsum=id=>{const t=tdById(id);if(!t)return '';const c=tdCalc(t),G=tdGroups
    K > 1.04 → + value × (K − 1.04), K < 0.96 → − value × (0.96 − K). K is cut to 3 decimals. */
 const KIX=[['I','ดัชนีราคาผู้บริโภคทั่วไป'],['C','ดัชนีราคาซีเมนต์'],['M','ดัชนีราคาวัสดุก่อสร้าง (ไม่รวมเหล็กและซีเมนต์)'],['S','ดัชนีราคาเหล็ก'],['E','ดัชนีราคาเครื่องจักรกลและบริภัณฑ์'],['F','ดัชนีราคาน้ำมันดีเซล']];
 const KF={bld:{n:'งานอาคาร',a:.25,b:{I:.15,C:.10,M:.40,S:.10}},own:{n:'ตามสูตรในสัญญา (กรอกเอง)',a:.25,b:{I:.15,C:0,M:.40,S:.10,E:.10,F:0}}};
-const kCfg=p=>{p.kv=p.kv||{f:'bld',open:(p.info.signed||p.info.start||today()).slice(0,7),a:KF.own.a,b:Object.assign({},KF.own.b),mon:{}};return p.kv};
+const kTender=p=>{const C=CO();return (C.tenders||[]).find(t=>t.quote&&(C.quotes.find(q=>q.id===t.quote)||{}).pj===p.id)};
+const kCfg=p=>{p.kv=p.kv||{f:'bld',open:(okD((kTender(p)||{}).open)?kTender(p).open:p.info.signed||p.info.start||today()).slice(0,7),a:KF.own.a,b:Object.assign({},KF.own.b),mon:{}};return p.kv};
 const kCo=kv=>kv.f==='own'?{a:n(kv.a),b:kv.b}:KF[kv.f]||KF.bld;
 const kIdx=m=>tdCfg().kidx.find(x=>x.m===m);
 function kOf(kv,m){const o=kIdx(kv.open),t=kIdx(m),F=kCo(kv);if(!o||!t)return null;let K=F.a;
@@ -4506,6 +4509,17 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .la-t .r{text-align:right}
 .la-l{margin:0;padding-left:18px;display:grid;gap:8px;font-size:14px}
 </style>`);
+/* ---------- 3.10.1: fixes from the five-project simulation ----------
+   An advance or retention bill no longer takes an instalment, so instalment 1 is still billed in % mode;
+   a bill set to "รับเงินแล้ว" gets today's date as its receipt date (editable), and a PO ticked as paid gets a pay date. */
+{const f=NEW.bills;NEW.bills=arr=>{const r=f(arr.filter(b=>(b.kind||'prog')==='prog'));r.no=nextNo('INV-',arr);return r}}
+HOOK.push((p,v)=>{const m=p.match(/^bills\.([^.]+)\.(kind|status)$/);if(!m)return;const b=P.bills.find(x=>x.id===m[1]);if(!b)return;
+  if(m[2]==='kind'){if(v!=='prog')b.inst='';else if(!b.inst){const used=new Set(P.bills.filter(x=>x!==b&&(x.kind||'prog')==='prog').map(x=>x.inst));const ni=(P.inst||[]).find(x=>!used.has(x.id));if(ni)b.inst=ni.id}}
+  else if(v==='paid'){if(!okD(b.paid))b.paid=today()}else b.paid=''});
+HOOK.push((p,v)=>{const m=p.match(/^pos\.([^.]+)\.paid$/);if(!m)return;const o=P.pos.find(x=>x.id===m[1]);if(!o)return;if(v&&!okD(o.paidDate))o.paidDate=today();if(!v)o.paidDate=''});
+// data saved before this fix: advance and retention bills holding an instalment give it back
+function fix3101(){let k=0;projects().forEach(p=>(p.bills||[]).forEach(b=>{if((b.kind||'prog')!=='prog'&&b.inst){b.inst='';k++}}));if(k)save()}
+{const r=render;render=function(){try{fix3101()}catch(e){console.error(e)}return r.apply(this,arguments)}}
 
 /* ---------- start ---------- */
 load();
