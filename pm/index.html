@@ -642,7 +642,9 @@ HOOK.push(p=>{if(/^tasks\.[^.]+\.pct$/.test(p)){P.hist[today()]=Math.round(sched
 const depParse=v=>String(v).toUpperCase().split(/[,;\s]+/).filter(Boolean).map(s=>{const k=s.match(/^(\d+)(FS|SS|FF|SF)?([+-]\d+)?(D|DAYS?|วัน)?$/);if(!k)return null;const p=P.tasks[+k[1]-1];
   return p?{id:p.id,lag:k[3]?n(k[3]):0,...(k[2]&&k[2]!=='FS'?{ty:k[2]}:{})}:null}).filter(Boolean);
 HOOK.push((p,v)=>{const m=p.match(/^tasks\.([^.]+)\.depTxt$/);if(!m)return;const t=P.tasks.find(x=>x.id===m[1]);if(!t)return;delete t.depTxt;
-  t.dep=depParse(String(v).replace(/\s*([+-])\s*/g,'$1')).filter(d=>d.id!==t.id)});
+  t.dep=depParse(String(v).replace(/\s*([+-])\s*/g,'$1')).filter(d=>d.id!==t.id);
+  // a new predecessor means "follow it": drop the old typed start so the task moves right after it
+  if(t.dep.length)t.start=''});
 HOOK.push((p,v)=>{const m=p.match(/^tasks\.([^.]+)\.start$/);if(m&&!v){const t=P.tasks.find(x=>x.id===m[1]);if(t)t.start=''}});
 const depTxt=t=>(t.dep||[]).map(d=>{const i=P.tasks.findIndex(x=>x.id===d.id);if(i<0)return '';const ty=d.ty&&d.ty!=='FS'?d.ty:'',lg=n(d.lag);return `${i+1}${ty||(lg?'FS':'')}${lg?(lg>0?'+':'')+lg:''}`}).filter(Boolean).join(',');
 NEW.tasks=arr=>{const l=arr.length?arr[arr.length-1]:null;return {name:'งานใหม่',dur:5,pct:0,g:'',lv:l?lvOf(l):0,dep:l?[{id:l.id,lag:0}]:[]}};
@@ -729,9 +731,9 @@ VIEWS.sched=()=>{
     return `<tr class="${r.crit?'crit':''}${r.sum?' gs':''}" data-tid="${t.id}"><td class="muted r">${i+1}</td><td class="muted gw">${O.wbs[t.id]}</td>
       <td class="nm"><div class="gnm" style="padding-left:${lv*18}px">${r.sum?`<button type="button" class="gtg" data-a="tCol" data-id="${t.id}" aria-label="${t.col?'กางหัวข้อ':'พับหัวข้อ'}">${t.col?'▸':'▾'}</button>`:'<i class="gtg"></i>'}<input data-p="tasks.${t.id}.name" value="${esc(t.name)}" aria-label="ชื่องาน"></div></td>
       <td>${r.sum?ro(`${d} วัน`):`<input class="r" inputmode="numeric" data-p="tasks.${t.id}.dur" data-t="num" value="${d}" aria-label="จำนวนวัน" style="width:52px">`}</td>
-      <td>${r.sum?ro(thD(r.es)):`<input type="date" data-p="tasks.${t.id}.start" value="${esc(okD(t.start)?t.start:r.es)}" title="${(t.dep||[]).length?'เริ่มหลังงานก่อนหน้าเสร็จ ใส่วันที่เพื่อกำหนดวันเริ่มไม่ก่อนวันนั้น':''}" aria-label="วันเริ่ม" style="width:128px">`}</td>
+      <td>${r.sum?ro(thD(r.es)):`<input type="date" data-p="tasks.${t.id}.start" value="${esc(r.es)}" title="${(t.dep||[]).length?'เริ่มหลังงานก่อนหน้าเสร็จ ใส่วันที่เพื่อกำหนดวันเริ่มไม่ก่อนวันนั้น':''}" aria-label="วันเริ่ม" style="width:128px">`}</td>
       <td class="${late?'':'muted'}" style="${late?'color:var(--danger)':''}">${thD(r.ef)}</td>
-      <td><input data-p="tasks.${t.id}.depTxt" value="${esc(depTxt(t))}" title="เลขแถวงานก่อนหน้า เช่น 2 · 2FS+5 · 4SS" aria-label="งานก่อนหน้า" style="width:84px"></td>
+      <td>${(()=>{const own=(t.dep||[]).some(d=>(O.anc[t.id]||[]).includes(d.id));return `<input data-p="tasks.${t.id}.depTxt" value="${esc(depTxt(t))}" title="${own?'งานก่อนหน้าเป็นหัวข้อของงานนี้เอง จึงไม่มีผล ให้ใส่เลขแถวงานที่ต้องเสร็จก่อน':'เลขแถวงานก่อนหน้า เช่น 2 · 2FS+5 · 4SS'}" aria-label="งานก่อนหน้า" style="width:84px${own?';border-color:#F59E0B;color:#D97706':''}">${own?'<small style="display:block;color:#D97706;font-size:11px;line-height:1.2">หัวข้อของตัวเอง</small>':''}`})()}</td>
       <td>${r.sum?ro(fmt(p,0)+'%'):`<input class="r" inputmode="numeric" data-p="tasks.${t.id}.pct" data-t="num" value="${n(t.pct)}" aria-label="ร้อยละที่ทำได้" style="width:52px">`}</td>
       ${S.gcols?`<td>${r.sum?'':`<select data-p="tasks.${t.id}.g" aria-label="หมวดงาน BOQ" style="width:140px">${G_OPTS().map(([k,l])=>`<option value="${k}"${k===(t.g||'')?' selected':''}>${esc(l)}</option>`).join('')}</select>`}</td>
       <td class="r muted">${fmt((r.sum?r.ws:r.w)*100/s.W,1)}</td>`:''}
@@ -6670,6 +6672,28 @@ function gArrBtn(){const z=document.querySelector('#view [data-a=zoom]');if(!z||
   z.parentElement.insertAdjacentHTML('afterend',`<span class="sub" id="gArrSw" title="เส้นลูกศรที่โยงงานก่อนหน้า">${[['a','เส้นทั้งหมด'],['m','เฉพาะหัวข้อหลัก'],['off','ปิดเส้น']].map(([k,l])=>`<button type="button" data-a="gArr" data-k="${k}" aria-selected="${m===k}">${l}</button>`).join('')}</span>`)}
 ACT.gArr=b=>{try{localStorage.setItem(GARR_K,b.dataset.k)}catch(e){}const s=$('#gArrSw');if(s)s.remove();gArrBtn();gArrows()};
 {const r=render;render=function(){const x=r.apply(this,arguments);try{if(S.mode==='pj'&&S.tab==='sched')gArrBtn()}catch(e){}return x}}
+
+/* ---------- 3.43 แผนงาน: วันเริ่มแสดงแบบไทยเหมือนช่องอื่น ----------
+   The start column mixed the browser's date box (07/09/2026) with Thai dates (7 ก.ย. 69) on heading rows and in
+   the finish column. The date box stays (click opens the calendar) but shows the Thai date until it is being typed in. */
+document.head.insertAdjacentHTML('beforeend',`<style>
+.gt td.gdt{position:relative}
+.gt td.gdt input[type=date]{color:transparent;cursor:pointer}
+.gt td.gdt input[type=date]:focus{color:inherit}
+.gt td.gdt>b.gdtx{position:absolute;left:14px;top:50%;transform:translateY(-50%);pointer-events:none;font-weight:400;white-space:nowrap}
+.gt td.gdt input[type=date]:focus+b.gdtx{display:none}
+</style>`);
+function gDates(){document.querySelectorAll('#view table.gt input[type=date][data-p$=".start"]').forEach(i=>{const td=i.parentElement;if(!td||td.tagName!=='TD')return;
+  td.classList.add('gdt');let b=td.querySelector('b.gdtx');if(!b){b=document.createElement('b');b.className='gdtx';i.after(b);
+    i.addEventListener('click',()=>{try{i.showPicker()}catch(e){}});i.addEventListener('input',()=>{b.textContent=okD(i.value)?thD(i.value):''})}
+  b.textContent=okD(i.value)?thD(i.value):''})}
+{const r=render;render=function(){const x=r.apply(this,arguments);try{if(S.mode==='pj'&&S.tab==='sched')gDates()}catch(e){}return x}}
+// row tools (＋ ⇤ ⇥ ↑ ↓ ✕) show on the row under the mouse only, and never on paper or screenshots of the plan
+document.head.insertAdjacentHTML('beforeend',`<style>
+@media (hover:hover){.gt tbody td:has(>button.t-ins) button{opacity:0;transition:opacity .12s}
+ .gt tbody tr:hover td:has(>button.t-ins) button,.gt tbody td:has(>button.t-ins) button:focus-visible{opacity:1}}
+@media print{.gt td:has(>button.t-ins) button{display:none!important}}
+</style>`);
 
 /* ---------- start ---------- */
 load();
