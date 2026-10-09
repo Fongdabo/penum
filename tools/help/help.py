@@ -140,8 +140,10 @@ for tab in TABS:
 # full manual as index.html, plus a "หน้าในโปรแกรม" list of tab pages
 full = re.sub(r'img/([\w\-]+)\.jpg', r'img/\1.webp', src)
 links = ''.join(f'<a href="{t}.html">{PAGE.get(t, t)}</a>' for t in TABS)
-full = full.replace('<nav class="toc">', f'<nav class="toc"><div class="byp"><h1>คู่มือแยกตามหน้า</h1><div class="jump">{links}</div></div>', 1)
-full = full.replace('</style>', '.byp{margin-bottom:26px}.byp .jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.byp .jump a{font-size:14px;padding:4px 12px;border-radius:99px;background:#E6F6F7;border:1px solid #A7DADE;color:#0B5F66;font-weight:500}@media print{.byp{display:none}}</style>', 1)
+vfirst = ''.join(f'<div class="vbox"><b>▶ {vids[k]["title"]}</b><video controls preload="none" playsinline poster="video/{k}.jpg" src="video/{k}.mp4"></video></div>' for k in ('start', 'mobile') if k in vids)
+vfirst = f'<div class="vgrid">{vfirst}</div>' if vfirst else ''
+full = full.replace('<nav class="toc">', f'<nav class="toc"><div class="byp"><h1>คู่มือแยกตามหน้า</h1><div class="jump">{links}</div>{vfirst}</div>', 1)
+full = full.replace('</style>', '.byp{margin-bottom:26px}.vgrid{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:16px;align-items:start}.vgrid video{width:100%;border-radius:10px;background:#000}.vgrid b{display:block;font-size:14px;margin-bottom:6px}@media (max-width:640px){.vgrid{grid-template-columns:1fr}}.byp .jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.byp .jump a{font-size:14px;padding:4px 12px;border-radius:99px;background:#E6F6F7;border:1px solid #A7DADE;color:#0B5F66;font-weight:500}@media print{.byp{display:none}}</style>', 1)
 open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(full)
 json.dump(ix, open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
