@@ -2460,7 +2460,7 @@ function qpayPrint(Q){const L=qEnsure(Q).qpay;if(!L.length)return '';const c=qCa
 
 /* --- payment plan: planned instalments against what was actually billed and received --- */
 NEW.inst=arr=>({no:String(arr.length+1),desc:'',pct:0,task:'',date:''});
-function instPlan(){const L=P.inst||[],s=sched(),C=contract(),cu=CO().customers.find(x=>x.id===P.info.cust),cr=cu?n(cu.credit):30;let cum=0;
+function instPlan(){const L=P.inst||[],s=sched(),C=contract(),cr=pjCredit(P);let cum=0;
   return L.map(x=>{const r=x.task&&s.R[x.task],d=okD(x.date)?x.date:r?(r.ef||r.es):'';cum+=n(x.pct);return {x,d,auto:!okD(x.date)&&!!d,amt:C.total*n(x.pct)/100,cum,cumAmt:C.total*cum/100,rcv:d?addD(d,cr):''}})}
 function instActual(L){const C=contract(),pct=P.info.billMode==='pct',prog=billsSorted().filter(b=>(b.kind||'prog')==='prog'&&b.status!=='draft').map(b=>({b,c:billCalc(b)}));let run=0;prog.forEach(r=>{run+=r.c.amt;r.run=run});
   return L.map(r=>{const m=pct?prog.find(y=>y.b.inst===r.x.id):prog.find(y=>y.run>=r.cumAmt-0.5);return m?{b:m.b,date:m.b.date,paid:m.b.status==='paid'?(m.b.paid||m.b.date):'',rc:billRecv(m.b),net:m.c.net}:null})}
@@ -6435,6 +6435,29 @@ ACT.pjRenGo=()=>{const I=[...document.querySelectorAll('#dlg input[data-ren]')],
   I.forEach((x,i)=>{const p=DB.projects[x.dataset.ren];if(p)p.name=v[i]});$('#dlg').close();save();render();toast('ตั้งชื่อแยกงานแล้ว')};
 // a won quote whose project name is already taken gets its scope or number added, so the list never shows two identical names
 {const f=ACT.qWon;ACT.qWon=b=>{f(b);const Q=CO().quotes.find(q=>q.id===b.dataset.id),p=Q&&DB.projects[Q.pj];if(p&&pjDup(p).length){p.name=pjSug(p,1);save();render()}}}
+
+/* ---------- 3.33 เครดิตรับเงิน: the client pays N days after the bill date ----------
+   Set once per project (default = the customer's credit, else 30 days) and change on a single bill when needed.
+   Each bill then shows its due date, how many days are left or how late it is; cash flow, AR and the plan use the same date. */
+const crSet=v=>v!=null&&String(v).trim()!=='';
+function pjCredit(p){if(crSet(p.info.credit))return n(p.info.credit);const c=CO().customers.find(x=>x.id===p.info.cust);return c&&crSet(c.credit)?n(c.credit):30}
+billDue=function(p,b){return addD(b.date,crSet(b.credit)?n(b.credit):pjCredit(p))};
+function dueCell(b){if(b.status==='draft'||!okD(b.date))return '<span class="muted">–</span>';const d=billDue(P,b),td=today();
+  if(b.status==='paid'){const pd0=b.paid||d,late=diffD(d,pd0);return `${thD(d)}${late>0?` <small style="color:var(--danger)">รับช้า ${late} วัน</small>`:''}`}
+  const left=diffD(td,d);return left<0?`${thD(d)} <span class="pill bad">เลยกำหนด ${-left} วัน</span>`:`${thD(d)} <small class="muted">${left?`อีก ${left} วัน`:'วันนี้'}</small>`}
+{const f=VIEWS.cost;VIEWS.cost=()=>{let h=f();if((S.sub.cost||'sum')!=='bill')return h;const I=P.info,cr=pjCredit(P);
+  // project setting next to VAT / หัก ณ ที่จ่าย
+  h=h.replace(/(<label>หัก ณ ที่จ่าย \(%\)<input data-t="num" data-p="info\.wht"[^>]*><\/label>)/,`$1<label>เครดิตรับเงิน (วัน นับจากวันเบิก)<input inputmode="numeric" data-p="info.credit" value="${crSet(I.credit)?esc(I.credit):''}" placeholder="${cr}" aria-label="เครดิตรับเงิน"></label>`);
+  // list: a due-date column
+  h=h.replace(/(<table class="bl-list"><thead><tr>[\s\S]*?)<th>สถานะ<\/th>/,'$1<th>ครบกำหนดรับเงิน</th><th>สถานะ</th>').replace('<td colspan="12" class="empty">ยังไม่มีใบเบิกงวด','<td colspan="13" class="empty">ยังไม่มีใบเบิกงวด');
+  P.bills.forEach(b=>{const k=h.indexOf(`data-a="sel" data-k="bill" data-id="${b.id}"`);if(k<0)return;const a=h.indexOf('<td><span class="pill',k);if(a<0)return;h=h.slice(0,a)+`<td class="due">${dueCell(b)}</td>`+h.slice(a)});
+  // bill form: its own credit (blank = project's) and the due date
+  const sel=P.bills.find(x=>x.id===S.sel.bill)||billsSorted().slice(-1)[0];
+  if(sel){const re=new RegExp(`(<label>วันที่<input type="date" data-p="bills\\.${sel.id}\\.date"[^>]*><\\/label>)`);
+    h=h.replace(re,`$1<label>เครดิต (วัน)<input inputmode="numeric" data-p="bills.${sel.id}.credit" value="${crSet(sel.credit)?esc(sel.credit):''}" placeholder="${cr} ตามโครงการ" aria-label="เครดิตของใบนี้"></label><label>ครบกำหนดรับเงิน<span class="due-v">${dueCell(sel)}</span></label>`)}
+  return h}}
+document.head.insertAdjacentHTML('beforeend',`<style>.bl-list td.due{white-space:nowrap;font-size:13px}.due-v{display:flex;align-items:center;gap:6px;min-height:38px;font-weight:600}</style>`);
+Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' เครดิต ครบกำหนด รอบจ่าย 30 วัน credit due'});
 
 /* ---------- start ---------- */
 load();
