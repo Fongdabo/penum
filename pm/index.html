@@ -6387,6 +6387,39 @@ document.head.insertAdjacentHTML('beforeend',`<style>.slip-dg{display:grid;grid-
 .sl-ok{display:block;color:var(--good);font-size:11px;margin-top:2px}.sl-chk{display:block;margin-top:4px;font-size:11px;padding:2px 8px}</style>`);
 Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' วันที่โอน วันที่ตามสลิป'});
 
+/* ---------- 3.32 โครงการชื่อซ้ำ ----------
+   Two projects with the same name looked identical in the project list. Now each one says what tells it apart
+   (its quote number, how much is in it, or that it is empty), and the project page offers to merge the other one in. */
+const pjDup=p=>Object.values(DB.projects).filter(x=>x.id!==p.id&&(x.name||'').trim()===(p.name||'').trim());
+function pjTag(p){const q=(CO().quotes||[]).find(x=>x.pj===p.id),bits=[];if(q)bits.push(q.no);
+  if(pjEmpty(p))bits.push('ว่าง');else{if(p.boq.items.length)bits.push(`BOQ ${p.boq.items.length}`);if(p.bills.length)bits.push(`เบิก ${p.bills.length}`);if(p.tasks.length)bits.push(`แผน ${p.tasks.length}`)}
+  if(!q&&p.created)bits.push('สร้าง '+thD(p.created));return bits.join(' · ')}
+{const r=render;render=function(){const x=r.apply(this,arguments);['sbProj','projSel'].forEach(i=>{const s=document.getElementById(i);if(!s)return;
+  [...s.options].forEach(o=>{const p=DB.projects[o.value];if(p&&pjDup(p).length)o.textContent=`${p.name} (${pjTag(p)})`})});return x}}
+// merge another project into this one: lists are joined by id, empty fields filled, links from the company side moved over
+function pjMerge(T,F){for(const k in F){const a=F[k],b=T[k];
+    if(k==='id'||k==='name'||k==='created')continue;
+    if(k==='info'){for(const j in a)if(b[j]==null||b[j]===''||(j==='cv'&&!n(b[j])))b[j]=a[j];continue}
+    if(k==='boq'){if(!b.items.length&&a.items.length)T.boq=a;continue}
+    if(Array.isArray(a)){if(!Array.isArray(b)){T[k]=a;continue}if(k==='inst'&&b.length)continue;const ids=new Set(b.map(x=>x&&x.id));a.forEach(x=>{if(!x||!ids.has(x.id))b.push(x)});continue}
+    if(a&&typeof a==='object'){T[k]=Object.assign({},a,b||{});continue}
+    if(b==null||b==='')T[k]=a}
+  const swap=o=>{if(Array.isArray(o)){o.forEach((v,i)=>{if(v===F.id)o[i]=T.id;else if(v&&typeof v==='object')swap(v)})}else if(o&&typeof o==='object')for(const k in o){if(o[k]===F.id)o[k]=T.id;else if(o[k]&&typeof o[k]==='object')swap(o[k])}};
+  swap(DB.co);delete DB.projects[F.id]}
+ACT.pjMerge=async b=>{const F=DB.projects[b.dataset.id];if(!F||F.id===P.id)return;
+  if(!confirm(`รวมโครงการ “${F.name}” (${pjTag(F)}) เข้ากับโครงการนี้ (${pjTag(P)})?\n\nข้อมูลทั้งสองฝั่งจะรวมกันอยู่ในโครงการนี้ แล้วโครงการที่ซ้ำจะหายจากรายการ\nตกลง แล้วระบบจะถามให้ดาวน์โหลดไฟล์สำรองก่อน`))return;
+  if(confirm('ดาวน์โหลดไฟล์สำรองเก็บไว้ก่อนรวมไหม (แนะนำ)\n\nตกลง = ดาวน์โหลดแล้วรวม\nยกเลิก = รวมเลยไม่สำรอง'))await ACT.backup();
+  const nm=pjTag(F);pjMerge(P,F);S.sel={};save();render();toast(`รวมโครงการแล้ว (${nm})`)};
+ACT.pjGoto=b=>{if(!DB.projects[b.dataset.id])return;DB.cur=b.dataset.id;P=DB.projects[DB.cur];S.sel={};save();render()};
+function dupCard(){const D=pjDup(P);if(!D.length)return '';
+  return `<section class="card pj-dup"><h2><span>มีโครงการชื่อเดียวกันอีก ${D.length} โครงการ</span><small>ถ้าเป็นงานเดียวกัน กด “รวมเข้าโครงการนี้” ข้อมูลจะมาอยู่ที่นี่ที่เดียว · ถ้าเป็นคนละงาน ให้เปลี่ยนชื่อที่ ข้อมูลโครงการ</small></h2>
+  <p style="margin:0 0 8px">โครงการนี้: <b>${esc(P.name)}</b> <span class="pill">${esc(pjTag(P))}</span></p>
+  ${D.map(p=>`<div class="row" style="gap:10px;align-items:center;margin:6px 0;flex-wrap:wrap"><b>${esc(p.name)}</b><span class="pill">${esc(pjTag(p))}</span><span class="sp" style="flex:1"></span><button type="button" class="btn sm" data-a="pjGoto" data-id="${p.id}">ไปดูโครงการนั้น</button><button type="button" class="btn sm pri" data-a="pjMerge" data-id="${p.id}">รวมเข้าโครงการนี้</button></div>`).join('')}</section>`}
+{const f=VIEWS.dash;VIEWS.dash=()=>dupCard()+f()}
+{const f=VIEWS.setup;VIEWS.setup=()=>dupCard()+f()}
+document.head.insertAdjacentHTML('beforeend',`<style>.pj-dup{border-left:4px solid var(--warn,#f59e0b)}</style>`);
+Object.assign(SBKW,{'pj.setup':(SBKW['pj.setup']||'')+' โครงการซ้ำ รวมโครงการ ชื่อซ้ำ merge'});
+
 /* ---------- start ---------- */
 load();
 if(DEMOPG)demoBoot();
