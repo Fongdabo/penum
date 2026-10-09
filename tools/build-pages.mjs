@@ -49,7 +49,7 @@ ${src}
     ],
   }, null, 2));
   // documents an app links to (PENUM PM's forms library) are served next to it
-  if (existsSync(join(root, a.dir, 'files'))) cpSync(join(root, a.dir, 'files'), join(dir, 'files'), { recursive: true });
+  for (const sub of ['files', 'help']) if (existsSync(join(root, a.dir, sub))) cpSync(join(root, a.dir, sub), join(dir, sub), { recursive: true });
   writeFileSync(join(dir, 'sw.js'), readFileSync(join(root, 'tools', 'sw.js'), 'utf8').replace('__VERSION__', `${a.dir}-${ver}`));
 }
 
