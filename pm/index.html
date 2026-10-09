@@ -6473,6 +6473,25 @@ ACT.blSort=b=>{const k=b.dataset.k;BLS=BLS.k===k?{k,d:-BLS.d}:{k,d:1};try{localS
 document.head.insertAdjacentHTML('beforeend',`<style>.bl-list th.bl-s button{all:unset;cursor:pointer;font:inherit;color:inherit;display:inline-flex;gap:4px;align-items:center;padding:2px 4px;margin:-2px -4px;border-radius:6px}.bl-list th.bl-s button:hover,.bl-list th.bl-s button:focus-visible{background:var(--sunk,rgba(127,127,127,.15))}.bl-list th.bl-s i{font-style:normal;font-size:10px;opacity:.55}.bl-list th.bl-s.on i{opacity:1;color:var(--accent)}</style>`);
 Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' เรียง เลขที่ sort'});
 
+/* ---------- 3.35 เงินประกันผลงาน: deduct on every instalment, or all at once on the last one ----------
+   P.info.retMode: '' = every bill (as before), 'last' = nothing held on the way, the whole retention on the final bill.
+   The final bill is found by itself (last instalment in % mode, 100% done in quantity mode); a bill can be set by hand. */
+function retIsLast(b){if(b.retAll==='y')return true;if(b.retAll==='n')return false;const L=P.inst||[];
+  if(P.info.billMode==='pct')return !!(L.length&&b.inst&&b.inst===L[L.length-1].id);return billCalc0(b).cum>=99.5}
+const billCalc0=billCalc;
+billCalc=function(b){const r=billCalc0(b);if(P.info.retMode!=='last'||(b.kind||'prog')!=='prog'||!r.ret&&!n(P.info.ret))return r;
+  const prog=billsSorted().filter(x=>(x.kind||'prog')==='prog'),i=prog.indexOf(b);let ret=0;
+  if(retIsLast(b)){const before=prog.slice(0,i),cumAmt=sum(before,x=>billCalc0(x).amt)+r.amt,held=sum(before,x=>billCalc(x).ret);ret=Math.max(0,cumAmt*n(P.info.ret)/100-held)}
+  return Object.assign({},r,{ret,net:r.base+r.vat-r.wht-ret,retLast:ret>0})};
+{const f=VIEWS.cost;VIEWS.cost=()=>{let h=f();if((S.sub.cost||'sum')!=='bill')return h;const I=P.info,last=I.retMode==='last';
+  h=h.replace(/(<label>หักประกันผลงาน \(%\)<input data-t="num" data-p="info\.ret"[^>]*><\/label>)/,`$1<label>หักเงินประกันผลงานเมื่อไร<select data-p="info.retMode"><option value=""${last?'':' selected'}>หักทุกงวด</option><option value="last"${last?' selected':''}>หักครั้งเดียวในงวดสุดท้าย</option></select></label>`);
+  const sel=P.bills.find(x=>x.id===S.sel.bill)||billsSorted().slice(-1)[0];
+  if(last&&sel&&(sel.kind||'prog')==='prog'){const re=new RegExp(`(<label>สถานะ<select data-p="bills\\.${sel.id}\\.status")`),v=sel.retAll||'',auto=(()=>{const s=sel.retAll;sel.retAll='';const x=retIsLast(sel);sel.retAll=s;return x})();
+    h=h.replace(re,`<label>หักเงินประกันในใบนี้<select data-p="bills.${sel.id}.retAll"><option value=""${v?'':' selected'}>อัตโนมัติ (${auto?'งวดสุดท้าย หักทั้งหมด':'ยังไม่หัก'})</option><option value="y"${v==='y'?' selected':''}>หักทั้งหมดในใบนี้</option><option value="n"${v==='n'?' selected':''}>ไม่หักในใบนี้</option></select></label>$1`)}
+  if(last)h=h.replace(/<dt>หักประกันผลงาน ([\d.]+)%<\/dt>/,(m,p)=>`<dt>หักประกันผลงาน ${p}% <small>(หักงวดสุดท้าย)</small></dt>`);
+  return h}}
+Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' เงินประกัน หักงวดสุดท้าย retention'});
+
 /* ---------- start ---------- */
 load();
 if(DEMOPG)demoBoot();
