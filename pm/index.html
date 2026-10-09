@@ -5056,7 +5056,10 @@ PFX.push(['LT-','หนังสือส่งงวดงาน']);
 const SUBPG=[['let','หนังสือนำส่งงวดงาน'],['sum','ใบสรุปผลงานประจำงวด'],['bill','ใบเบิกเงินงวด'],['cert','ใบรับรองผลงาน / ใบตรวจรับ'],['ph','รูปถ่ายผลงาน'],['ti','ใบแจ้งหนี้ / ใบกำกับภาษี']];
 const isGovP=()=>P.info.sector==='gov';
 const subTo=()=>(P.info.subTo||'').trim()||(isGovP()?'ประธานกรรมการตรวจรับพัสดุ':(P.info.client||custName(P.info.cust)||'ผู้ว่าจ้าง'));
-function subSigner(){const I=P.info;if(I.signer)return [I.signer,I.signerRole||'กรรมการผู้จัดการ'];
+// who may sign: project managers and above (department managers, directors, the managing director)
+const signerOk=s=>s&&s.active!==false&&(s.dept==='MGT'||/ผู้จัดการ|ผู้อำนวยการ|\(PM\)/.test(s.role||''));
+const signerList=()=>(CO().staff||[]).filter(signerOk).sort((a,b)=>(a.dept==='MGT'?0:1)-(b.dept==='MGT'?0:1)||(/กรรมการผู้จัดการ/.test(b.role||'')?1:0)-(/กรรมการผู้จัดการ/.test(a.role||'')?1:0)||String(a.name).localeCompare(String(b.name),'th'));
+function subSigner(){const I=P.info,st=I.signerId&&(CO().staff||[]).find(x=>x.id===I.signerId);if(st)return [st.name,I.signerRole||st.role||''];if(I.signer)return [I.signer,I.signerRole||'กรรมการผู้จัดการ'];
   const s=(CO().staff||[]).find(x=>x.active!==false&&/กรรมการผู้จัดการ|ผู้จัดการทั่วไป/.test(x.role||''));return [s?s.name:'',I.signerRole||(s?s.role:'กรรมการผู้จัดการ')]}
 function subInfo(b){const prog=billsSorted().filter(x=>(x.kind||'prog')==='prog'),i=prog.indexOf(b),prev=i>0?prog[i-1]:null,it=(P.inst||[]).find(x=>x.id===b.inst);
   const no=it?it.no:String(i+1),s=P.tasks.length?sched():null;
@@ -5124,7 +5127,9 @@ function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,p
   <label class="w2">เรียน<input data-p="info.subTo" value="${esc(I.subTo||'')}" placeholder="${esc(subTo())}"></label>
   <label>${isGovP()?'ผู้ควบคุมงาน':'ที่ปรึกษา / ผู้ควบคุมงาน'}<input data-p="info.consult" value="${esc(I.consult||'')}"></label>
   <label>เลขที่สัญญา<input data-p="info.contractNo" value="${esc(I.contractNo||'')}"></label><label>วันที่ลงนามสัญญา<input type="date" data-p="info.signed" value="${esc(I.signed||'')}"></label>
-  <label>ผู้ลงนามหนังสือ<input data-p="info.signer" value="${esc(I.signer||'')}" placeholder="${esc(sn||'ชื่อผู้มีอำนาจลงนาม')}"></label><label>ตำแหน่ง<input data-p="info.signerRole" value="${esc(I.signerRole||'')}" placeholder="กรรมการผู้จัดการ"></label>
+  ${(()=>{const L=signerList(),cur=I.signerId&&L.find(x=>x.id===I.signerId),man=I.signerId==='_m'||(!cur&&!!I.signer);
+    return `<label>ผู้ลงนามหนังสือ<select data-p="info.signerId"><option value=""${!cur&&!man?' selected':''}>อัตโนมัติ${sn&&!cur&&!man?` (${esc(sn)})`:''}</option>${L.map(x=>`<option value="${x.id}"${cur&&cur.id===x.id?' selected':''}>${esc(x.name)} · ${esc(x.role||'')}</option>`).join('')}<option value="_m"${man?' selected':''}>พิมพ์ชื่อเอง…</option></select></label>
+    ${man?`<label>ชื่อผู้ลงนาม<input data-p="info.signer" value="${esc(I.signer||'')}" placeholder="ชื่อผู้มีอำนาจลงนาม"></label>`:''}<label>ตำแหน่ง<input data-p="info.signerRole" value="${esc(I.signerRole||'')}" placeholder="${esc(cur?cur.role||'':'กรรมการผู้จัดการ')}"></label>`})()}
   <label class="full">งานที่ทำแล้วเสร็จในงวดนี้ (ใส่ในหนังสือนำส่ง)<textarea data-p="${bp}.work" rows="2" placeholder="${esc(subWork(Object.assign({},b,{work:''}),x)||'เช่น ติดตั้งท่อลมชั้น 1–2 และเครื่องปรับอากาศชั้น 1 แล้วเสร็จ')}">${esc(b.work||'')}</textarea></label></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:4px 16px;margin-top:10px">${SUBPG.map(([k,l])=>ck(k,l)).join('')}</div>
   <p class="hint">ผลงานสะสมที่ขอเบิก ${fmt(billCalc(b).cum,1)}% · ความคืบหน้าในแผนงาน ${fmt(x.act,1)}% · ตามแผน ${fmt(x.plan,1)}% ณ วันที่ใบเบิก ${b.letNo?`· หนังสือเลขที่ ${esc(b.letNo)}`:'· เลขที่หนังสือออกให้อัตโนมัติเมื่อพิมพ์'} · หัวเอกสารและโลโก้มาจาก ตั้งค่าบริษัท</p></section>`}
@@ -5133,6 +5138,9 @@ function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,p
   return h.replace(m[0]+'>',m[0]+'>').replace(/(<button type="button" class="btn sm" data-a="print" data-k="bill" data-id="[^"]+">[^<]*<\/button>)/,'$1<button type="button" class="btn sm pri" data-a="subGo">ชุดเอกสารส่งงวด ↓</button>')+subCard(b)}}
 ACT.subGo=()=>{const e=$('#subCard');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})};
 Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' ส่งงวด เอกสารส่งงวด หนังสือนำส่ง ส่งมอบงาน ใบรับรองผลงาน payment certificate ใบตรวจรับ'});
+
+// picking a person: their own title is used unless one is typed after; picking "อัตโนมัติ" drops a typed name
+HOOK.push((p,v)=>{if(p!=='info.signerId')return;P.info.signerRole='';if(v!=='_m')P.info.signer=''});
 /* ---------- 3.15.1: the company on the sign-in card ----------
    The PIN card shows whose data this is before anyone signs in: the company logo, Thai and English name,
    and PENUM PM small underneath. Data on a device belongs to one company (เริ่มบริษัทใหม่ replaces it), so there is
