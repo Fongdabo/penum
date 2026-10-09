@@ -6557,6 +6557,95 @@ function fitPrint(){const el=$('#print'),pg=fitPage();if(!pg)return;const c=el.q
 document.head.insertAdjacentHTML('beforeend','<style>@media print{#print table.pgw{table-layout:fixed}}</style>');
 window.addEventListener('beforeprint',()=>{try{pgWrap();if(!$('#print .fitz'))fitPrint()}catch(e){}});
 
+/* ---------- 3.41 เลขที่สัญญาจากไฟล์ PO ----------
+   Next to every "เลขที่สัญญา" box: pick the customer's PO / contract file (PDF or Excel) and the number and its date
+   are read from the text. The user confirms in a dialog before anything is written. Scanned PDFs and photos carry no
+   text, so they are typed by hand. */
+document.head.insertAdjacentHTML('beforeend',`<style>
+.po-pick{display:inline-flex;margin-top:4px;font-size:12.5px;padding:3px 9px;border-radius:8px;border:1px dashed var(--line);background:none;color:var(--pri,#0891B2);cursor:pointer;width:max-content}
+.po-pick:hover{border-style:solid}
+.po-ln{font-size:12px;color:var(--muted);margin:2px 0 8px;max-height:3.2em;overflow:hidden}
+</style>`);
+// the text of the file as lines (cells on one line joined by two spaces so "P.O. No." and its value stay apart)
+async function poLines(file){const nm=file.name.toLowerCase();
+  if(/\.(xlsx|xls|xlsm|csv)$/.test(nm)){await libLoad('xlsx.full.min.js');const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true}),L=[];
+    wb.SheetNames.forEach(s=>XLSX.utils.sheet_to_json(wb.Sheets[s],{header:1,raw:false,defval:''}).forEach(r=>{const t=r.map(c=>String(c).trim()).filter(Boolean).join('  ');if(t)L.push(t)}));return L}
+  if(!/\.pdf$/.test(nm)&&file.type!=='application/pdf')return null;
+  await libLoad('pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc='files/lib/pdf.worker.min.js';
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise,out=[];
+  for(let pg=1;pg<=Math.min(pdf.numPages,4);pg++){const tc=await(await pdf.getPage(pg)).getTextContent(),L=[];
+    tc.items.forEach(it=>{if(!it.str||!it.str.trim())return;const x=it.transform[4],y=it.transform[5];let l=L.find(l=>Math.abs(l.y-y)<3.5);if(!l){l={y,it:[]};L.push(l)}l.it.push({x,e:x+(it.width||it.str.length*4),s:it.str})});
+    L.sort((a,b)=>b.y-a.y).forEach(l=>{l.it.sort((a,b)=>a.x-b.x);let s='',e=null;l.it.forEach(t=>{s+=e==null?t.s:(t.x-e>12?'  ':t.x-e>1.5&&!/^[ัิ-ฺ็-๎]/.test(t.s)?' ':'')+t.s;e=t.e});out.push(s.replace(/[\uE000-\uF8FF]/g,'').replace(/\s+$/,''))})}
+  return out}
+const PO_LAB=/(?:P\s*\.?\s*O\s*\.?\s*(?:No|Number|#)\b\.?|Purchase\s*Order\s*(?:No|Number|#)?\.?|Order\s*No\.?|Contract\s*(?:No|Number)\.?|เลขที่\s*(?:ใบสั่งซื้อ|ใบสั่งจ้าง|สัญญา(?:จ้าง)?|PO|P\.O\.)|(?:ใบสั่งซื้อ|ใบสั่งจ้าง|สัญญา(?:จ้าง)?)\s*เลขที่)/i;
+const PO_DLAB=/(?:P\s*\.?\s*O\s*\.?\s*Date|Order\s*Date|Date|วันที่(?:สั่งซื้อ|สั่งจ้าง|ทำสัญญา|ลงนาม)?|ลงวันที่)/i;
+const poTok=s=>{const m=String(s||'').replace(/^[\s:：.#-]+/,'').match(/^([A-Za-z0-9ก-ฮ][A-Za-z0-9ก-ฮ\-\/_.]*\d[A-Za-z0-9\-\/_.]*)/);return m?m[1].replace(/[.\-\/]+$/,''):''};
+const THMS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'],THML=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],ENM=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+function poDate(s){s=String(s||'');const Y=y=>{y=+y;if(y<100)y+=y>60?2500:2000;return y>2400?y-543:y},iso=(y,m,d)=>{const r=`${Y(y)}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;return okD(r)?r:''};
+  let m=s.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);if(m)return iso(m[1],m[2],m[3]);
+  m=s.match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})\b/);if(m)return iso(m[3],m[2],m[1]);
+  m=s.match(/(\d{1,2})\s*([ก-๙.]+)\s*(\d{2,4})/);if(m){const k=THMS.indexOf(m[2].replace(/\s/g,''))+1||THML.indexOf(m[2])+1;if(k)return iso(m[3],k,m[1])}
+  m=s.match(/(\d{1,2})[\s\-]*([A-Za-z]{3})[a-z]*[\s\-,]*(\d{2,4})/);if(m){const k=ENM.indexOf(m[2].toLowerCase())+1;if(k)return iso(m[3],k,m[1])}
+  m=s.match(/([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);if(m){const k=ENM.indexOf(m[1].toLowerCase())+1;if(k)return iso(m[3],k,m[2])}return ''}
+// candidates in the order they are most likely right: a labelled number, then a bare "PO…" code anywhere
+function poFind(L){const nos=[],add=v=>{v=poTok(v);if(v&&v.length>=3&&!/^\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}$/.test(v)&&!nos.includes(v))nos.push(v)};let date='';
+  L.forEach((l,i)=>{const m=l.match(PO_LAB);if(m){const rest=l.slice(m.index+m[0].length);add(rest)||0;if(!poTok(rest)&&L[i+1])add(L[i+1].split(/\s{2,}/)[0])}
+    if(!date){const d=l.match(PO_DLAB);if(d){const v=poDate(l.slice(d.index+d[0].length));if(v)date=v}}});
+  L.forEach(l=>(l.match(/\bP\.?O\.?[-\s]?\d[\w\-\/]*/gi)||[]).forEach(x=>add(x.replace(/\s/g,''))));
+  return {nos,date}}
+ACT.poPick=b=>{const path=b.dataset.p||'info.contractNo';pickFile(async file=>{toast('กำลังอ่าน '+file.name+' …');let L;
+  try{L=await poLines(file)}catch(e){L=null}
+  if(!L){dialog('อ่านเลขที่จากไฟล์ไม่ได้',`<p>ไฟล์ <b>${esc(file.name)}</b> เป็นรูปภาพหรือไฟล์ที่ไม่มีตัวอักษรให้อ่าน</p><p class="hint">ใช้ไฟล์ PDF ที่ได้จากลูกค้าโดยตรง (ไม่ใช่ไฟล์สแกน) หรือ Excel หรือพิมพ์เลขที่ลงในช่องเอง</p>`,'');return}
+  const R=poFind(L);if(!R.nos.length){dialog('ไม่พบเลขที่ในไฟล์',`<p>อ่านไฟล์ <b>${esc(file.name)}</b> ได้ แต่ไม่พบคำว่า P.O. No. / เลขที่ใบสั่งซื้อ / เลขที่สัญญา</p>${L.length?'':'<p class="hint">ไฟล์นี้อาจเป็นไฟล์สแกน ให้พิมพ์เลขที่ลงในช่องเอง</p>'}`,'');return}
+  const I=P.info,show=l=>L.find(x=>x.includes(l))||'';
+  dialog('ดึงเลขที่สัญญาจากเอกสาร',`<p>จากไฟล์ <b>${esc(file.name)}</b></p>
+    <label style="display:block;margin:8px 0 2px">เลขที่สัญญา / PO<input id="poNo" list="poNoL" value="${esc(R.nos[0])}" style="display:block;min-width:260px;margin-top:4px"><datalist id="poNoL">${R.nos.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+    ${R.nos.length>1?`<p class="hint">พบ ${R.nos.length} เลข: ${R.nos.map(esc).join(' · ')} กดที่ช่องเพื่อเลือก หรือแก้เองได้</p>`:'<p class="hint">แก้ตัวเลขในช่องได้ ถ้าอ่านผิด</p>'}
+    <div class="po-ln" id="poLn">${esc(show(R.nos[0]))}</div>
+    ${R.date?`<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="poDt" checked> ใส่วันที่ลงนามสัญญาเป็น <b>${esc(thDL(R.date))}</b> ด้วย${I.signed&&I.signed!==R.date?` <small class="muted">(เดิม ${esc(thDL(I.signed))})</small>`:''}</label>`:''}
+    ${I.contractNo?`<p class="hint">เลขที่เดิม “${esc(I.contractNo)}” จะถูกแทนที่</p>`:''}`,
+    `<button type="button" class="btn pri" data-a="poGo" data-p="${esc(path)}" data-d="${esc(R.date)}">ใช้เลขที่นี้</button>`);
+  const s=$('#poNo');if(s)s.oninput=()=>{$('#poLn').textContent=show(s.value)}})};
+ACT.poGo=b=>{const v=$('#poNo')&&$('#poNo').value.trim();if(!v)return;setPath(b.dataset.p,v);const dt=$('#poDt');if(b.dataset.d&&dt&&dt.checked)P.info.signed=b.dataset.d;
+  $('#dlg').close();save();render();toast('ใส่เลขที่สัญญา '+v+' แล้ว')};
+function poBtns(){document.querySelectorAll('#view input[data-p="info.contractNo"]').forEach(i=>{const lb=i.closest('label');if(!lb||lb.querySelector('.po-pick'))return;
+  lb.style.display=lb.style.display||'flex';lb.style.flexDirection='column';
+  lb.insertAdjacentHTML('beforeend','<button type="button" class="po-pick" data-a="poPick" data-p="info.contractNo" title="เลือกไฟล์ PO หรือสัญญา (PDF / Excel) แล้วระบบอ่านเลขที่ให้">📄 ดึงจากไฟล์ PO / สัญญา</button>')})}
+{const r=render;render=function(){const x=r.apply(this,arguments);try{if(S.mode==='pj')poBtns()}catch(e){}return x}}
+Object.assign(SBKW,{'pj.setup':(SBKW['pj.setup']||'')+' PO ใบสั่งซื้อ ใบสั่งจ้าง เลขที่สัญญา ดึงจากไฟล์'});
+
+/* ---------- 3.41 header on one row ----------
+   On a computer the header band holds the breadcrumb, the project name and the buttons on a single line, like
+   PENUM MEP / BIM. The project name shrinks with "…" (full name on hover); controls get a little narrower. */
+document.head.insertAdjacentHTML('beforeend',`<style>
+@media (min-width:1000px){
+ body.sb .band .brand{flex-wrap:nowrap!important;column-gap:12px}
+ body.sb .band .brand>.proj{flex:none;flex-wrap:nowrap}
+ body.sb .brand>.sp{display:none}
+ body.sb .crumb{flex:1 1 auto;min-width:0;flex-wrap:nowrap;white-space:nowrap;overflow:hidden}
+ body.sb .crumb>span{flex:none}
+ body.sb .crumb>span.last{flex:0 0 auto}
+ body.sb .crumb>i{flex:none}
+ body.sb .crumb small{flex:0 100 auto;flex-basis:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:5px;padding-left:12px;border-left:1px solid var(--band-line);font-size:13px}
+ body.sb .band #userSel{max-width:230px}
+ body.sb .band #cloudBtn{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+}
+@media (min-width:1000px) and (max-width:1499px){
+ body.sb .band #userSel{max-width:170px}
+ body.sb .band #cloudBtn{max-width:130px}
+ body.sb .band #langSw .lg-t small{display:none}
+ body.sb .crumb.pjc>span:not(.last),body.sb .crumb.pjc>i{display:none}
+}
+@media (min-width:1000px) and (max-width:1299px){
+ body.sb .band #userSel{max-width:140px}
+ body.sb .band #cloudBtn{max-width:34px;padding-inline:10px;text-overflow:clip}
+ body.sb .band #langSw .lg-t{display:none}
+ body.sb .crumb>span:first-child:not(.last),body.sb .crumb>span:first-child:not(.last)+i{display:none}
+}
+</style>`);
+{const f=sbCrumb;sbCrumb=function(){const x=f.apply(this,arguments);const el=$('#crumb');if(el){el.classList.toggle('pjc',S.mode==='pj'&&!!el.querySelector('small'));const s=el.querySelector('small');if(s)s.title=s.textContent;el.querySelectorAll('span').forEach(t=>t.title=t.textContent)}return x}}
+{const cb=cloudBadge;cloudBadge=function(){const x=cb.apply(this,arguments);const b=$('#cloudBtn');if(b&&!b.title)b.title=b.textContent.trim();return x}}
+
 /* ---------- start ---------- */
 load();
 if(DEMOPG)demoBoot();
