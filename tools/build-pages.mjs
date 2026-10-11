@@ -15,6 +15,7 @@ const APPS = [
   { dir: 'mep', name: 'PENUM MEP', short: 'PENUM MEP', desc: 'งานระบบอาคาร คำนวณ แบบ และ BOQ', theme: '#123A42', bg: '#F2F5F4', shim: true },
   { dir: 'bim', name: 'PENUM BIM', short: 'PENUM BIM', desc: 'โปรแกรมเขียนแบบ BIM ในเบราว์เซอร์', theme: '#1b2028', bg: '#eef1f5' },
   { dir: 'pm', name: 'PENUM PM', short: 'PENUM PM', desc: 'บริหารโครงการ แผนงาน จัดซื้อ งบ เบิกงวด หน้างาน และส่งมอบ', theme: '#123A42', bg: '#F2F5F4' },
+  { dir: 'sales', name: 'PENUM PM ฝ่ายขาย', short: 'ฝ่ายขาย', desc: 'ลงทะเบียนลูกค้า ออกรหัสใช้งาน และบันทึกงานช่วยเหลือ PENUM PM', theme: '#3F7F89', bg: '#F3F6F5' },
 ];
 
 // PENUM MEP saves files only through the Artifact host's downloads service and otherwise shows the text to copy.
