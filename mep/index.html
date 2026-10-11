@@ -659,6 +659,7 @@ Object.assign(TYPES,{          // more common Thai building spaces; rates are ty
   iso5:{rateR:[3000,5000],achR:[240,480],label:'คลีนรูม ISO 5',rate:3500,light:15,act:'bench',oaMode:'ach',lps:10,ach:5,inf:0,minAch:300,h:3}
 });
 ['office','meet','class','control','server','prod','lab','iso8','iso7','iso6','iso5','wh','hosp','or','shop','rest','kitchen','hall','home','bed'].forEach(k=>{const v=TYPES[k];delete TYPES[k];TYPES[k]=v});          // dropdown order: similar spaces sit together
+const COND_DEF={iso8:{Ti:22,RH:50,hum:'1',dp:12},iso7:{Ti:22,RH:50,hum:'1',dp:12},iso6:{Ti:21,RH:50,hum:'1',dp:15},iso5:{Ti:21,RH:50,hum:'1',dp:15},or:{Ti:21,RH:50,hum:'1',dp:10},server:{Ti:24,RH:50},lab:{Ti:22}};
 const GROUPS={env:['เปลือกอาคาร','--env'],int:['ภายในห้อง','--int'],air:['อากาศ','--air']};
 const SYS={
   split:{label:'Split ติดผนัง/แขวน',sizes:[9000,12000,18000,24000,30000,36000,48000,60000],kwtr:1.0,ref:true,duct:false,cfmtr:350},
@@ -965,7 +966,7 @@ function newRoom(type='office',name){
     walls:[],roof:{type:'none',area:null,U:null,cltd:null},glass:[],
     people:{n:10,act:t.act},light:{wpm2:t.light,fsa:1},equip:[],proc:{s:0,l:0},
     air:{oaMode:t.oaMode,lps:t.lps,ach:t.ach,cmh:0,inf:t.inf,minAch:t.minAch},
-    eq:defEq(type)};
+    eq:defEq(type),cond:Object.assign({},COND_DEF[type]||{})};
 }
 function defEq(type){const sc=SCHED[type]||[10,6];return {sys:DEF_SYS[type]||'ducted',size:'auto',qty:null,len:30,tsp:/iso|^or$/.test(type)?1000:500,hours:sc[0],days:sc[1]}}
 function sample(){
@@ -993,7 +994,7 @@ try{P=JSON.parse(localStorage.getItem(STORE))}catch(e){P=null}
 if(!P||!P.rooms) P=sample();
 const EX_EST=[['พัดลมระบายอากาศ EXH 690 CFM',12000,2500],['พัดลมระบายอากาศ EXH1-03 1,100 CFM',85000,8000],['เครื่องฟอกอากาศฝังฝ้า 600 CFM',45000,3500],['ชุดควบคุมห้องความดันลบ',65000,10000],['งานไฟฟ้าพัดลมระบายและเครื่องฟอกอากาศ',60000,40000]];
 function ensure(){
-  P.rooms.forEach(rm=>{if(!rm.eq)rm.eq=defEq(rm.type)});
+  P.rooms.forEach(rm=>{if(!rm.eq)rm.eq=defEq(rm.type);if(!rm.cond)rm.cond={}});
   P.plant=Object.assign({vrfRatio:1.1,vrfKwtr:0.95,chType:'air',chN:2,chDiv:0.9,df:0.9,plantLen:40},P.plant||{});
   P.assume=Object.assign({refLen:15,drainLen:10,ductRatio:0.8,ductRatioClean:1.2,insRatio:0.7,cmhDiff:700,cmhHepa:1500,retRatio:0.5,fdRoom:2,ohp:10,vat:7,fitPipe:30,fitDuct:15,fitFire:35,fitEl:10,fcuShare:40,flexLen:1.5},P.assume||{});
   if(P.assume.profitM==null)P.assume.profitM=n(P.assume.profit);if(P.assume.profitL==null)P.assume.profitL=n(P.assume.profit);
@@ -1033,7 +1034,10 @@ function oaLps(rm){const a=rm.air,vol=n(rm.area)*n(rm.height);if(a.oaMode==='per
 
 const FAN_H={ahu:{dp:750,eta:0.6},ffu:{dp:150,eta:0.5}};
 function fanMode(rm){const m=(rm.air&&rm.air.fanH)||'auto';return m!=='auto'?m:/iso/.test(rm.type)?'ffu':rm.eq&&rm.eq.sys==='ahu'?'ahu':'none'}
-function calc(rm,d=P.design){
+function dOf(rm){const c=rm&&rm.cond;if(!c)return P.design;const d=Object.assign({},P.design);if(c.Ti!=null&&c.Ti!=='')d.Ti=c.Ti;if(c.RH!=null&&c.RH!=='')d.RH=c.RH;if(c.hum==='1'||c.hum==='0')d.hum=c.hum;return d}          // project design conditions with this room's own temperature / RH / humidity control on top
+function roomDp(rm){const v=rm&&rm.cond&&rm.cond.dp;return v==null||v===''?(/^iso/.test(rm.type)?12:0):+v}
+const dpTxt=rm=>{const v=roomDp(rm);return v>0?'+'+fmt(v)+' Pa':v<0?fmt(v)+' Pa':tl('สมดุล','neutral')};
+function calc(rm,d=dOf(rm)){
   const vol=n(rm.area)*n(rm.height);
   const dT=n(d.To)-n(d.Ti), dW=Math.max(0,wFromWB(n(d.To),n(d.Twb))-wFromRH(n(d.Ti),n(d.RH)));
   const sf=n(d.SF)/100;
@@ -1411,7 +1415,7 @@ const STDT={          // T °C, RH %, hum = humidity must be controlled, oa = [L
 };
 const STD_ST={ok:['ok','ผ่าน','Pass','#1a7f37'],bad:['crit','ไม่ผ่าน','Fail','#b42318'],warn:['bad','ควรตรวจสอบ','Check','#b54708'],na:['info','ไม่บังคับ','n/a','#667085']};
 function stdRows(rm,row){
-  const S=STDT[rm.type]||STDT.office,d=P.design,r=row?row.r:calc(rm),vol=r.vol,a=n(rm.area),out=[];
+  const S=STDT[rm.type]||STDT.office,d=dOf(rm),r=row?row.r:calc(rm),vol=r.vol,a=n(rm.area),out=[];
   const add=(k,std,des,st,src)=>out.push({k,std,des,st,src:src?STD_SRC[src]||src:''});
   const inR=(v,[lo,hi])=>v>=lo&&v<=hi;
   add(tl('อุณหภูมิห้อง','Room temperature'),`${S.T[0]}–${S.T[1]} °C`,`${n(d.Ti)} °C`,inR(n(d.Ti),S.T)?'ok':'bad',S.ts);
@@ -1432,7 +1436,8 @@ function stdRows(rm,row){
   if(S.lpd!=null){const w=n(rm.light.wpm2);add(tl('กำลังไฟแสงสว่าง (LPD)','Lighting power density'),`≤ ${S.lpd} W/m²`,`${fmt(w,1)} W/m²`,w<=S.lpd?'ok':'warn','a90')}
   if(S.filt){const clean=/^iso/.test(rm.type),ahu=rm.eq.sys==='ahu',have=clean?'Pre + Medium + HEPA':(ahu||rm.type==='hosp'||rm.type==='or')?'Pre + Medium filter':'Pre filter';
     add(tl('ระบบกรองอากาศ','Filtration'),S.filt,have,clean||ahu||rm.type==='hosp'?'ok':'bad',S.achSrc)}
-  if(S.press){const ahu=rm.eq.sys==='ahu';add(tl('ความดันห้อง','Room pressure'),tl('บวกเทียบห้องข้างเคียง (≈ +10 ถึง +15 Pa)','positive to adjacent spaces (≈ +10 to +15 Pa)'),ahu?'+10 ถึง +15 Pa (AHU)':tl('ระบบนี้คุมความดันไม่ได้','this system cannot hold pressure'),ahu?'ok':'bad',S.achSrc)}
+  if(S.press){const ahu=rm.eq.sys==='ahu',dp=roomDp(rm);add(tl('ความดันห้อง','Room pressure'),tl('บวกเทียบห้องข้างเคียง (≈ +10 ถึง +15 Pa)','positive to adjacent spaces (≈ +10 to +15 Pa)'),dpTxt(rm)+(ahu?'':tl(' · ระบบนี้คุมความดันไม่ได้',' · this system cannot hold pressure')),ahu&&dp>0?(dp>=5?'ok':'warn'):'bad',S.achSrc)}
+  else if(roomDp(rm))add(tl('ความดันห้อง','Room pressure'),tl('ตามที่ผู้ออกแบบกำหนด','as set by the designer'),dpTxt(rm),rm.eq.sys==='ahu'||rm.eq.sys==='package'||rm.eq.sys==='ducted'?'ok':'warn','rot');
   if(row){const ratio=row.ratio||0;add(tl('ขนาดเครื่องเทียบโหลด','Installed vs load'),'100–130%',r.btu>0?`${fmt(ratio*100)}%`:'–',r.btu<=0?'warn':ratio<0.98?'bad':ratio>1.3?'warn':'ok','rot');
     if(row.airOk===false)add(tl('ลมจ่ายของเครื่อง','Unit airflow'),`≥ ${fmt(r.supply*3.6)} CMH`,`${fmt(row.airCMH)} CMH`,'bad','rot')}
   return out;
@@ -1492,6 +1497,10 @@ function renderEditor(){
       ${fld('ความยาว (m)',numIn('dimL',rm.dimL,'เช่น 12'))}
       ${fld('พื้นที่ (m²)',`<input type="number" step="any" data-p="area" id="i-area" value="${rm.area??''}" ${n(rm.dimW)>0&&n(rm.dimL)>0?'readonly class="calc"':''}>`)}
       ${fld('ความสูงฝ้า (m)',numIn('height',rm.height))}
+      ${fld('อุณหภูมิห้อง (°C)',numIn('cond.Ti',rm.cond.Ti,'ตามโครงการ '+P.design.Ti))}
+      ${fld('ความชื้น (%RH)',numIn('cond.RH',rm.cond.RH,'ตามโครงการ '+P.design.RH))}
+      ${fld('ควบคุมความชื้น',`<select data-p="cond.hum" id="i-cond-hum">${opt([['',(+P.design.hum?'ตามโครงการ (ควบคุม)':'ตามโครงการ (ไม่ควบคุม)')],['1','ควบคุม'],['0','ไม่ควบคุม']],rm.cond.hum||'')}</select>`)}
+      ${fld('ความดันห้อง (Pa)',numIn('cond.dp',rm.cond.dp,/^iso/.test(rm.type)?'+12':'0 = สมดุล, ติดลบ = ความดันลบ'))}
       ${rm.mode==='quick'?fld('BTU/h ต่อ m²',numIn('rate',rm.rate))+fld('ACH ขั้นต่ำ (ลมจ่าย)',numIn('air.minAch',rm.air.minAch)):''}
     </div>
     <p class="hint" id="dimHint">${dimHint(rm)}</p>
@@ -1575,7 +1584,7 @@ function wbOf(t,w){let a=-10,b=t;for(let i=0;i<50;i++){const m=(a+b)/2;if(wFromW
 function rhOf(t,w){const pw=w*PATM/(0.621945+w);return Math.min(100,pw/pws(t)*100)}
 function st(name,t,w,key){return {name,key,t,w,h:hOf(t,w),rh:rhOf(t,w),wb:wbOf(t,w),dp:dewPt(w)}}
 function psyStates(rm){
-  const d=P.design,r=calc(rm),sf=1+n(d.SF)/100;
+  const d=dOf(rm),r=calc(rm),sf=1+n(d.SF)/100;
   const O=st('อากาศภายนอก',n(d.To),wFromWB(n(d.To),n(d.Twb)),'O');
   const R=st('ห้อง',n(d.Ti),wFromRH(n(d.Ti),n(d.RH)),'R');
   const out={O,R,r};
@@ -1655,7 +1664,7 @@ const T=(x,y,s,c='',a='middle')=>`<text x="${x}" y="${y}" text-anchor="${a}"${c?
 const sensor=(x,y,s)=>`<circle class="sens" cx="${x}" cy="${y}" r="12"/>${T(x,y+4,s,'sens-t')}`;
 function sysInfo(rm){
   const pl=plan(),row=pl.rows.find(x=>x.rm.id===rm.id),ps=psyStates(rm),r=calc(rm);
-  return {row,ps,r,sys:rm.eq.sys,clean:/iso/.test(rm.type),oa:(r.oaLps||0)*3.6,sup:r.supply*3.6,d:P.design};
+  return {row,ps,r,sys:rm.eq.sys,clean:/iso/.test(rm.type),oa:(r.oaLps||0)*3.6,sup:r.supply*3.6,d:dOf(rm),rm};
 }
 /* ---------- technical system & control diagram (P&ID style) ---------- */
 function tagSplit(name){
@@ -1690,7 +1699,7 @@ function diagTech(I,rm){
   const RX=702,RY=196,RW=226,RH=196;
   g+=`<rect class="ln thk" x="${RX}" y="${RY}" width="${RW}" height="${RH}"/><rect class="ln" x="${RX+4}" y="${RY+4}" width="${RW-8}" height="${RH-8}"/>`;
   const nmL=wrap2(TS.room,21),h0=nmL.length>1?24:15.5;
-  const rows=[['ROOM NAME','',''],['CLASS',clean?rm.type.replace('iso','ISO '):'-',''],['TEMP',d.Ti+' ±1','°C'],['HUM',+d.hum?d.RH+' ±10':'-',+d.hum?'%RH':''],['PRESS',clean?'+12':'-','Pa'],['SA',fmt(sup),'CMH'],['RA',fmt(ra),'CMH'],['OA/EA',fmt(oa),'CMH']];
+  const rows=[['ROOM NAME','',''],['CLASS',clean?rm.type.replace('iso','ISO '):'-',''],['TEMP',d.Ti+' ±1','°C'],['HUM',+d.hum?d.RH+' ±10':'-',+d.hum?'%RH':''],['PRESS',roomDp(rm)?(roomDp(rm)>0?'+':'')+roomDp(rm):'-','Pa'],['SA',fmt(sup),'CMH'],['RA',fmt(ra),'CMH'],['OA/EA',fmt(oa),'CMH']];
   const tX=RX+50,tY=RY+50,rh=15.5,TW=168;
   const TH=h0+rh*(rows.length-1);
   g+=`<rect class="ln" x="${tX}" y="${tY}" width="${TW}" height="${TH}"/>`;
@@ -1736,7 +1745,7 @@ function diagTech(I,rm){
     /* cooling coil */
     const cc=396;
     g+=`<rect class="ln" x="${cc}" y="${CY}" width="26" height="${CH}"/><circle class="ln" cx="${cc+13}" cy="${CY+41}" r="7"/>`+ln(`M${cc+9} ${CY+41} h8`)+tx(cc-6,CY+72,ahu?'COOLING COIL':'DX COOLING COIL',{r:-90,a:'start',fs:7.5});
-    const reheat=ahu&&ps&&ps.sat&&+P.design.hum;
+    const reheat=ahu&&ps&&ps.sat&&+d.hum;
     if(reheat)g+=`<rect class="ln" x="462" y="${CY}" width="22" height="${CH}"/><circle class="ln" cx="473" cy="${CY+41}" r="7"/>`+ln(`M469 ${CY+41} h8 M473 ${CY+37} v8`)+tx(456,CY+68,'HEATING COIL',{r:-90,a:'start',fs:7.5});
     g+=door(reheat?496:470);
     /* leaving air temp */
@@ -1785,7 +1794,7 @@ function diagTech(I,rm){
 function diagAirOld(I,rm){
   const {row,ps,sys,clean,oa,sup,d}=I, pkg=sys==='package', ahu=sys==='ahu';
   const unit=ahu?`AHU · ${fmt(sup)} CMH`:pkg?`Package unit · ${row?sizeTxt(sys,row.s):''} × ${row?row.q:1}`:`Ducted split (indoor) · ${row?sizeTxt(sys,row.s):''} × ${row?row.q:1}`;
-  const fanX=pkg?400:450, reheat=ahu&&ps.sat&&+P.design.hum;
+  const fanX=pkg?400:450, reheat=ahu&&ps.sat&&+d.hum;
   let g='';
   // casing
   g+=`<rect class="casing" x="130" y="44" width="400" height="116" rx="4"/>`+T(130,34,unit,'tt','start');
@@ -1809,7 +1818,7 @@ function diagAirOld(I,rm){
   g+=arrowPath([[exitX,100],[575,100],[575,24],[715,24],[715,50]],'sa');
   g+=T(582,16,`${tl('ลมจ่าย','Supply')} ${fmt(sup)} CMH${ps.S?' · '+fmt(ps.S.t,1)+'°C':''}`,'lbl','start');
   // room
-  g+=`<rect class="room" x="620" y="40" width="190" height="212" rx="4"/>`+T(632,82,rm.name.length>18?rm.name.slice(0,17)+'…':rm.name,'tt','start')+T(632,98,`${d.Ti}°C${+d.hum?' · '+d.RH+'%RH':''}${clean?' · +12 Pa':''}`,'lbl','start');
+  g+=`<rect class="room" x="620" y="40" width="190" height="212" rx="4"/>`+T(632,82,rm.name.length>18?rm.name.slice(0,17)+'…':rm.name,'tt','start')+T(632,98,`${d.Ti}°C${+d.hum?' · '+d.RH+'%RH':''}${roomDp(rm)?' · '+dpTxt(rm):''}`,'lbl','start');
   g+=`<path class="diff" d="M700 50 h30 l-6 8 h-18 z"/>`+T(745,58,clean?'HEPA':'หัวจ่าย','lbl','start');
   g+=`<rect class="box" x="620" y="210" width="10" height="24"/>`;
   if(clean)g+=arrowPath([[810,200],[840,200]],'ra')+T(826,218,'รั่วออก','lbl');
@@ -1859,14 +1868,14 @@ function diagSplitOld(I,rm){
   return `<svg class="sd" viewBox="0 0 850 320" role="img" aria-label="ไดอะแกรมระบบ ${esc(unitTxt)} ในห้อง ${esc(nm(rm))}">${g}</svg>`;
 }
 function controlSeq(I){
-  const {sys,clean,oa,ps,d}=I, ahu=sys==='ahu';
+  const {sys,clean,oa,ps,d,rm}=I, ahu=sys==='ahu';
   const L=[];
   if(ahu){
     L.push(tl(`ควบคุมอุณหภูมิห้องที่ ${d.Ti}°C ด้วยวาล์วน้ำเย็น 2 ทางแบบปรับต่อเนื่อง (PI) ตามเซนเซอร์ T ในห้องหรือท่อลมกลับ`,`Room temperature is held at ${d.Ti}°C by a modulating 2-way chilled water valve (PI) from the room / return air sensor.`));
     if(+d.hum)L.push(tl(`ความชื้นเกิน ${d.RH+5}%RH ให้เปิดวาล์วน้ำเย็นเพิ่มเพื่อลดความชื้น${ps.sat?' แล้วใช้ Reheat ชดเชยอุณหภูมิ':' ถ้าห้องเย็นเกินให้ใช้ Reheat'}`,`Above ${d.RH+5}%RH the valve opens further to dehumidify${ps.sat?', with reheat restoring room temperature.':'; reheat is used if the room overcools.'}`));
     L.push(tl(`พัดลมจ่ายใช้ VSD รักษาปริมาณลม ${fmt(I.sup)} CMH คงที่เมื่อไส้กรองเริ่มตัน`,`The supply fan VSD maintains a constant ${fmt(I.sup)} CMH as filters load.`));
     L.push(tl(`Damper อากาศภายนอกเปิดค้างที่ตำแหน่งขั้นต่ำให้ได้ ${fmt(oa)} CMH`,`The outdoor air damper holds a minimum position for ${fmt(oa)} CMH.`));
-    if(clean)L.push(tl('รักษาแรงดันห้อง +10 ถึง +15 Pa เทียบพื้นที่รอบข้าง ด้วยการปรับ Damper อากาศภายนอก/ลมกลับ ตามเซนเซอร์ ΔP','Room pressure is kept at +10 to +15 Pa relative to adjacent areas by modulating the outdoor / return air dampers from the ΔP sensor.'));
+    if(clean)L.push(tl('รักษาแรงดันห้อง '+dpTxt(rm)+' เทียบพื้นที่รอบข้าง ด้วยการปรับ Damper อากาศภายนอก/ลมกลับ ตามเซนเซอร์ ΔP','Room pressure is kept at '+dpTxt(rm)+' relative to adjacent areas by modulating the outdoor / return air dampers from the ΔP sensor.'));
     L.push(tl('DPS คร่อมไส้กรองแจ้งเตือนเมื่อไส้กรองตัน','A differential pressure switch across the filters raises a dirty-filter alarm.'));
     L.push(tl('Chiller ทำงานแบบสลับเครื่องนำ (lead/lag) ตามโหลด ปั๊มน้ำเย็นทำงานคู่กับ Chiller','Chillers run lead/lag with load; chilled water pumps are interlocked with their chillers.'));
   } else if(sys==='ducted'||sys==='package'){
@@ -2150,7 +2159,7 @@ const ICO={
 function sdStrips(rm){
   const I=sysInfo(rm),r=I.r,ach=I.r.vol>0?I.sup/I.r.vol:0,air=['ducted','package','ahu'].includes(I.sys),ahu=I.sys==='ahu';
   const iso=/^iso\d$/.test(rm.type)?rm.type.replace('iso','ISO '):null;
-  const fn=[['dust','ความสะอาด',iso?`${iso} · HEPA`:(ahu||I.clean?'Pre + Medium filter':'Pre filter')],['temp','อุณหภูมิ',`${I.d.Ti}°C`],['hum','ความชื้น',+I.d.hum?`${I.d.RH}%RH`:'ไม่ควบคุม'],['pres','ความดัน',I.clean?'+10 ถึง +15 Pa':'สมดุล'],['ach','อัตราเปลี่ยนอากาศ',`${fmt(ach,1)} ACH`]];
+  const fn=[['dust','ความสะอาด',iso?`${iso} · HEPA`:(ahu||I.clean?'Pre + Medium filter':'Pre filter')],['temp','อุณหภูมิ',`${I.d.Ti}°C`],['hum','ความชื้น',+I.d.hum?`${I.d.RH}%RH`:'ไม่ควบคุม'],['pres','ความดัน',dpTxt(rm)],['ach','อัตราเปลี่ยนอากาศ',`${fmt(ach,1)} ACH`]];
   const steps=air?[['out','อากาศภายนอก',`${fmt(I.oa)} CMH`],['filt','Pre filter',''],...(ahu||I.clean?[['filt','Medium filter','']]:[]),['coil','คอยล์เย็น',I.ps.S?`ออก ${fmt(I.ps.S.t,1)}°C`:''],['fan','พัดลม',`${fmt(I.sup)} CMH`],[I.clean?'filt':'out',I.clean?'HEPA':'หัวจ่าย',''],['room','ห้อง',`${I.d.Ti}°C ${I.d.RH}%`],['ret',I.clean?'ลมกลับ / Exhaust':'ลมกลับ',`${fmt(Math.max(0,I.sup-I.oa))} CMH`]]
     :[['room','ลมในห้อง',`${I.d.Ti}°C`],['filt','กรองที่เครื่อง',''],['coil','คอยล์เย็น',''],['fan','พัดลมเครื่อง',''],['room','ลมเย็นกลับเข้าห้อง',''],...(I.oa>0?[['out','เติมอากาศ',`${fmt(I.oa)} CMH`]]:[])];
   return `<div class="strip"><h3 class="sd-h">หน้าที่หลักของระบบ</h3><div class="fn-row">${fn.map(([i,t,v])=>`<div class="fn"><span class="fn-i">${ICO[i]}</span><span><b>${t}</b><small>${esc(v)}</small></span></div>`).join('')}</div></div>
@@ -2165,7 +2174,7 @@ function sd3List(rm){
 function renderResults(){
   const el=$('results');
   if(view!=='room'){el.hidden=true;return} el.hidden=false;
-  const rm=room(),r=calc(rm),d=P.design;
+  const rm=room(),r=calc(rm),d=dOf(rm);
   let h=`<div class="res-name"><span>${esc(nm(rm))}</span><span class="chip">${rm.mode==='quick'?'ประเมินเร็ว':'ละเอียด'}</span></div>
   <div class="big"><b>${fmt(r.tr,2)}</b><span>TR</span></div>
   <dl class="kv" style="margin:0">
@@ -2590,7 +2599,7 @@ function energyReport(){
 let FX_ROOM=null;
 function fxBlock(t,eq,sub,res){return `<div class="fx"><div class="fx-t">${t}</div><div class="fx-eq">${eq}</div>${sub?`<div class="fx-sub">${sub}${res?` = <b>${res}</b>`:''}</div>`:''}</div>`}
 function formulaHTML(rm){
-  const d=P.design,r=calc(rm),c=corr(d),sf=n(d.SF)/100,pl=plan(),row=pl.rows.find(x=>x.rm.id===rm.id),G=energy(),eo=G.rows.find(o=>o.rm.id===rm.id),E=P.energy;
+  const d=dOf(rm),r=calc(rm),c=corr(d),sf=n(d.SF)/100,pl=plan(),row=pl.rows.find(x=>x.rm.id===rm.id),G=energy(),eo=G.rows.find(o=>o.rm.id===rm.id),E=P.energy;
   const Tm=n(d.To)-n(d.DR)/2,f1=v=>fmt(v,1),f0=v=>fmt(v),f2=v=>fmt(v,2),B=tl('บาท','THB');
   let h=`<h3 class="fx-h">${tl('ก. ภาระการทำความเย็น','A. Cooling load')} <small>${esc(nm(rm))} · ${r.mode==='quick'?tl('โหมดประเมินเร็ว','quick estimate'):tl('วิธี CLTD/CLF','CLTD/CLF method')}</small></h3>`;
   if(r.mode==='quick'){
@@ -4676,7 +4685,7 @@ function reportCore(){
   </tbody></table>
   <h2 id="rp3">${secNo('rp3')}. ${tr('รายละเอียดรายห้อง')}</h2>`;
   rs.forEach(({rm,r},i)=>{
-    h+=`<h3 id="rp3-${i+1}">${secNo('rp3')}.${i+1} ${esc(nm(rm))}</h3><p class="meta">${tr(TYPES[rm.type].label)}${n(rm.dimW)>0&&n(rm.dimL)>0?` · ${tl('ขนาด','size')} ${fmt(n(rm.dimW),1)} × ${fmt(n(rm.dimL),1)} m`:''} · ${tl('พื้นที่','area')} ${fmt(n(rm.area))} m² · ${tl('สูง','height')} ${fmt(n(rm.height),1)} m · ${tl('ปริมาตร','volume')} ${fmt(r.vol)} m³</p>`;
+    h+=`<h3 id="rp3-${i+1}">${secNo('rp3')}.${i+1} ${esc(nm(rm))}</h3><p class="meta">${tr(TYPES[rm.type].label)}${(D=>` · ${D.Ti} °C${+D.hum?' / '+D.RH+'% RH':''}`)(dOf(rm))}${roomDp(rm)?' · '+dpTxt(rm):''}${n(rm.dimW)>0&&n(rm.dimL)>0?` · ${tl('ขนาด','size')} ${fmt(n(rm.dimW),1)} × ${fmt(n(rm.dimL),1)} m`:''} · ${tl('พื้นที่','area')} ${fmt(n(rm.area))} m² · ${tl('สูง','height')} ${fmt(n(rm.height),1)} m · ${tl('ปริมาตร','volume')} ${fmt(r.vol)} m³</p>`;
     if(rm.mode==='quick'){
       h+=`<p>${tl(`ประเมินจากค่า ${fmt(n(rm.rate))} BTU/h·m² ได้ ${fmt(r.btu)} BTU/h (${fmt(r.tr,2)} TR) ลมจ่ายประมาณ ${fmt(r.supply*3.6)} CMH`,`Estimated at ${fmt(n(rm.rate))} BTU/h·m²: ${fmt(r.btu)} BTU/h (${fmt(r.tr,2)} TR), supply airflow approx. ${fmt(r.supply*3.6)} CMH`)}${n(rm.air.minAch)>0?` (${tl('ACH ขั้นต่ำ','min. ACH')} ${rm.air.minAch})`:''}</p>`;
     } else {
@@ -4864,7 +4873,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=72,MEP_NAME='v72';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=73,MEP_NAME='v73';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -4921,7 +4930,7 @@ $('editor').addEventListener('input',e=>{
   let v=el.type==='number'?(el.value===''?null:parseFloat(el.value)):el.value;
   setPath(tgt,path,v);
   if(el.tagName==='SELECT'){
-    if(el.dataset.preset){const rm=room(),t=TYPES[v];Object.assign(rm,{rate:t.rate,height:t.h});rm.light.wpm2=t.light;rm.people.act=t.act;rm.eq=defEq(v);Object.assign(rm.air,{oaMode:t.oaMode,lps:t.lps,ach:t.ach,inf:t.inf,minAch:t.minAch});}
+    if(el.dataset.preset){const rm=room(),t=TYPES[v];rm.cond=Object.assign({},COND_DEF[v]||{});Object.assign(rm,{rate:t.rate,height:t.h});rm.light.wpm2=t.light;rm.people.act=t.act;rm.eq=defEq(v);Object.assign(rm.air,{oaMode:t.oaMode,lps:t.lps,ach:t.ach,inf:t.inf,minAch:t.minAch});}
     save();renderAll();return;
   }
   if(p==='dimW'||p==='dimL'){const rm=room(),W=n(rm.dimW),L=n(rm.dimL),ai=$('i-area');if(W>0&&L>0){rm.area=Math.round(W*L*100)/100;if(ai){ai.value=rm.area;ai.readOnly=true;ai.classList.add('calc')}}else if(ai){ai.readOnly=false;ai.classList.remove('calc')}}
