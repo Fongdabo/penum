@@ -1855,6 +1855,7 @@ async function cloudPull(force){if(!cloudOn())return;
   if(!force&&it.eTag===CL.file.etag)return false;
   const dl=await gjson(`/drives/${CL.file.drive}/items/${CL.file.id}?$select=id,eTag,@microsoft.graph.downloadUrl`);
   const txt=await (await fetch(dl['@microsoft.graph.downloadUrl'])).text(),remote=JSON.parse(txt||'{}'),base=await baseGet(),local=JSON.parse(payload());
+  {const x=coClash(remote);if(x){toast(clashMsg(x));throw new Error(clashMsg(x))}}
   const merged=base?merge3(base,local,remote):remote;applyData(merged);
   CL.file.etag=dl.eTag;clSave();await baseSet(txt);CS.dirty=payload()!==txt;
   const by=((it.lastModifiedBy||{}).user||{}).displayName;if(by&&(it.lastModifiedBy.user.email||'').toLowerCase()!==myMail())CS.msg=`อัปเดตจาก ${by}`;
@@ -1975,6 +1976,9 @@ async function cloudInit(){const back=await msRedirect().catch(()=>false);
 const FS={h:null,busy:false,state:'',msg:''};
 const fsOK=()=>'showDirectoryPicker' in window;
 const folderOn=()=>!!CL.dirName&&!cloudOn();
+// a company set up from a licence code never merges into another company's shared data (3.48.1)
+function coClash(R){const L=DB.co||{},F=(R&&R.co)||{},ln=(L.name||'').trim(),fn=(F.name||'').trim();return L.lic&&fn&&ln&&fn!==ln&&F.lic!==L.lic?fn:''}
+const clashMsg=x=>`ข้อมูลในที่เก็บนี้เป็นของ “${x}” ไม่ใช่ “${DB.co.name}” ระบบหยุดไว้ ไม่ให้ข้อมูลสองบริษัทปนกัน`;
 const EMPTY='{"projects":{},"co":{}}';
 async function dirH(){if(!FS.h){try{FS.h=await IDB.get('__dirh')}catch(e){}}return FS.h}
 async function fPerm(ask){const h=await dirH();if(!h)return false;const o={mode:'readwrite'};let p=await h.queryPermission(o);if(p!=='granted'&&ask)p=await h.requestPermission(o);return p==='granted'}
@@ -1984,6 +1988,7 @@ async function fSub(name){return (await dirH()).getDirectoryHandle(name,{create:
 async function folderSync(force){if(!folderOn()||FS.busy)return;if(!await fPerm(false)){FS.state='perm';cloudBadge();return}
   FS.busy=true;FS.state='busy';cloudBadge();let changed=false;
   try{const h=await dirH(),cur=await fRead(h,FNAME),anc=JSON.parse((await IDB.get('__cloudbase'))||EMPTY);
+    if(cur){const x=coClash(JSON.parse(cur.txt||EMPTY));if(x){toast(clashMsg(x));throw new Error(clashMsg(x))}}
     if(cur&&(force||cur.mtime!==CL.dirMtime)&&cur.txt!==payload()){applyData(merge3(anc,JSON.parse(payload()),JSON.parse(cur.txt||EMPTY)));changed=true}
     for await(const [nm,eh] of h.entries()){if(eh.kind!=='file'||nm===FNAME||!/^penum-pm.*\.json$/i.test(nm))continue;
       try{const J=JSON.parse(await (await eh.getFile()).text());
@@ -6749,7 +6754,7 @@ const licPend=()=>{try{return sessionStorage.getItem(LICSK)||''}catch(e){return 
 const licPendClear=()=>{try{sessionStorage.removeItem(LICSK)}catch(e){}};
 let LICHASH=!!licPend();
 function licFromLink(){if(!LICHASH||DEMOPG)return;LICHASH=false;
-  if(dbEmpty()&&!DB.co.lic){S.wiz=true;S.wizNew=true;S.noWelcome=false;DB.co.pfx=DB.co.pfx||{};return}
+  if(dbEmpty()&&!DB.co.lic&&!folderOn()&&!cloudOn()){S.wiz=true;S.wizNew=true;S.noWelcome=false;DB.co.pfx=DB.co.pfx||{};return}
   if(DB.co.lic){S.dept='set';pgGo(['co','coset','']);setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},80);return}
   setTimeout(()=>dialog('รหัสเปิดใช้งาน',`<p>เครื่องนี้มีข้อมูลของบริษัทอื่นอยู่แล้ว รหัสเปิดใช้งานใช้กับบริษัทใหม่</p><p class="hint">เปิดลิงก์นี้ในเครื่องที่ยังไม่มีข้อมูล หรือกด “เริ่มบริษัทใหม่” (ระบบให้ดาวน์โหลดไฟล์สำรองก่อนล้างข้อมูล)</p>`,
     `<button type="button" class="btn" data-a="coNew">เริ่มบริษัทใหม่</button>`),60)}
