@@ -1062,7 +1062,7 @@ function ensure(){
 ensure();
 let view='cover';
 const VCAT={cover:'gen',dash:'gen',cad:'gen',draft:'gen',boq:'gen',compare:'gen',concept:'gen',formula:'gen',report:'gen',print:'gen',backup:'gen',room:'ac',types:'ac',equip:'ac',duct:'ac',smoke:'ac',chw:'ac',energy:'ac',fire:'fp',elec:'el',plumb:'pl',civil:'cv'},catLast={};
-let SBX=0;          // set while the option comparison works on a scratch copy of the project
+let SBX=0,newUndo=0;          // set while the option comparison works on a scratch copy of the project
 function save(){if(SBX)return;try{localStorage.setItem(STORE,JSON.stringify(P))}catch(e){}try{pnPush()}catch(e){}}
 const room=()=>P.rooms.find(r=>r.id===P.active)||P.rooms[0];
 
@@ -1224,7 +1224,10 @@ function plan(){
 }
 
 /* ---------- BOQ ---------- */
+function roomSig(){return P.rooms.map(r=>[r.id,r.type,n(r.area),n(r.dimW),n(r.dimL),n(r.height),r.eq.sys,r.eq.size,r.eq.qty].join(':')).join('|')}
+function cadStale(){const C=P.cad;if(!C||!C.gen)return false;return C.sig?C.sig!==roomSig():!P.rooms.some(r=>n(r.area)>0)}          // drawings generated before v88 carry no signature: stale once every room is empty
 function boq(){
+  if(cadStale()){const c=P.cad;P.cad=null;try{return boq()}finally{P.cad=c}}          // quantities from an out-of-date generated drawing would price rooms that no longer exist
   const pl=plan(), A=P.assume, PR=P.prices, items=[];
   const add=(g,key,desc,unit,q,m,l,sub,typ)=>{const o=P.boqOv[key]||{};items.push({g,key,desc,unit,aq:q,am:m,al:l,q:o.q??q,m:o.m??m,l:o.l??l,ov:o,sub:sub||'',typ:typ||''})};
   const bl=(en,th)=>RL==='th'?`${en} (${th})`:en,U=tr('ชุด'),SYS_EN={split:'Wall Mounted Type',ducted:'Ducted Type',vrf:'VRF Indoor Type',package:'Packaged Unit'};
@@ -1410,7 +1413,7 @@ function boq(){
 const $=id=>document.getElementById(id);
 function renderRooms(){
   const tot=P.rooms.reduce((a,rm)=>a+calc(rm).tr,0);
-  $('rooms').innerHTML=`<div class="cap">ห้อง / พื้นที่</div>`+
+  $('rooms').innerHTML=(newUndo?`<p class="note" style="margin:0 0 8px;font-size:12.5px">${tl('เริ่มโครงการใหม่แล้ว','New project started')} <button type="button" class="btn sm" data-act="newUndo">${tl('กู้คืนโครงการเดิม','Restore the previous project')}</button></p>`:'')+`<div class="cap">ห้อง / พื้นที่</div>`+
     P.rooms.map(rm=>`<button type="button" class="room-btn ${view==='room'&&rm.id===P.active?'on':''}" data-act="pick" data-id="${rm.id}"><span class="n">${esc(nm(rm))}</span><span class="t">${fmt(calc(rm).tr,1)} TR</span></button>`).join('')+
     `<button type="button" class="btn sm" data-act="addRoom" style="margin-top:4px">+ เพิ่มห้อง</button><hr>
     <button type="button" class="room-btn ${view==='report'?'on':''}" data-act="report"><span class="n"><b>รวมทั้งโครงการ</b></span><span class="t">${fmt(tot,1)} TR</span></button>`;
@@ -2476,6 +2479,22 @@ function renderEquip(){
 }
 
 /* ---------- render: BOQ ---------- */
+const BOQ_SRC={eq:'cad',pipe:'cad',duct:'cad',chw:'cad',el:'cad',oth:'cad',smk:'smoke',fp:'fire',elb:'elec',plb:'plumb',civ:'civil',ex:'boq'};
+function boqLeft(B){if(P.rooms.some(r=>n(r.area)>0||calc(r).tr>0))return null;const by={};B.items.forEach(i=>{if(i.t>0)by[i.g]=(by[i.g]||0)+i.t});return Object.keys(by).length?by:null}          // the rooms are empty but something else still carries a price
+function boqLeftCard(B){const by=boqLeft(B);if(!by)return '';const VL={cad:tl('แบบ 3D','3D drawing'),smoke:tl('ควบคุมควันไฟ','Smoke control'),fire:tl('ดับเพลิง','Fire'),elec:tl('ไฟฟ้าอาคาร','Electrical'),plumb:tl('สุขาภิบาล','Plumbing'),civil:tl('โยธา','Civil'),boq:'BOQ'};
+  const G={};Object.entries(by).forEach(([g,t])=>{const v=BOQ_SRC[g]||'boq';(G[v]=G[v]||{t:0,gs:[]}).t+=t;G[v].gs.push(g)});
+  return `<section class="panel card" style="border-color:var(--warn,#E8590C)"><h2><span>${tl('ห้องว่างแล้ว แต่ยังมีราคาจากส่วนอื่น','The rooms are empty, but other parts still carry a price')}</span></h2>
+  <p class="hint" style="margin:0 0 8px">${tl('ราคาด้านล่างไม่ได้มาจากห้อง ดูที่แท็บต้นทาง หรือกดล้างทีละส่วน (กดสองครั้งเพื่อยืนยัน) ข้อมูลห้องและโครงการอื่นที่บันทึกไว้ไม่ถูกแตะ','These prices do not come from the rooms. Open the source tab, or clear each part (press twice to confirm). Rooms and other saved projects are not touched.')}</p>
+  <div class="tbl-wrap"><table class="eq"><tbody>${Object.entries(G).map(([v,o])=>`<tr><td>${o.gs.map(g=>tr(BOQ_G[g])).join(', ')}</td><td class="r">${fmt(o.t)} ${tl('บาท','THB')}</td><td>${v==='boq'?'':`<button type="button" class="btn sm" data-view-go="${v}">${tl('ไปที่','Open')} ${VL[v]}</button>`}</td><td><button type="button" class="btn sm danger" data-act="boqWipe" data-src="${v}">${tl('ล้างส่วนนี้','Clear this')}</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="row" style="margin-top:8px"><button type="button" class="btn danger" data-act="boqWipe" data-src="all">${tl('ล้างทั้งหมดที่เหลือ','Clear all of these')}</button></div></section>`}
+function boqWipe(v){const M=P.mep;
+  if(v==='cad'||v==='all')delete P.cad;
+  if(v==='smoke'||v==='all')P.smoke={stairs:[],zones:[]};
+  if(v==='fire'||v==='all'){P.fire.zones=[];if(P.cad)delete P.cad.fp}
+  if(v==='elec'||v==='all'){M.el.zones=[];M.el.loads=[]}
+  if(v==='plumb'||v==='all'){Object.keys(M.pl.fx).forEach(k=>M.pl.fx[k]=0);M.pl.set.people=0}
+  if(v==='civil'||v==='all')M.cv.set.on=0;
+  if(v==='boq'||v==='all'){P.boqExtra=[];P.boqOv={}}}
 function renderBoq(){
   const B=boq(), A=P.assume;
   let h=`<div class="wide">
@@ -2486,7 +2505,7 @@ function renderBoq(){
     <div><dt>ต่อตันความเย็นติดตั้ง</dt><dd>${B.pl.installed>0?fmt(B.grand/B.pl.installed):'–'} <small>บาท/TR</small></dd></div>
     <div><dt>ต่อพื้นที่</dt><dd>${fmt(B.grand/Math.max(1,P.rooms.reduce((a,r)=>a+n(r.area),0)))} <small>บาท/m²</small></dd></div>
   </dl>
-  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><span class="toast" id="toast" role="status"></span></div>
+  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><span class="toast" id="toast" role="status"></span></div>${boqLeftCard(B)}
   <section class="panel card"><h2><span>ใบประมาณราคา (BOQ)</span><small>ช่องว่าง = ค่าคำนวณอัตโนมัติ พิมพ์ทับได้ แก้แล้วกด Enter</small></h2>
   <p class="exnote" style="margin:0 0 8px">ราคาต่อหน่วยตั้งต้นเป็นตัวเลขตัวอย่างเพื่อทดลองใช้ ไม่ใช่ราคาตลาด ใส่ราคาของคุณในตารางราคาด้านล่างก่อนใช้งานจริง</p>
   <div class="grid" style="margin:0 0 10px">${fld('กำไรค่าของทุกรายการ (%)',pIn('data-as="profitM" id="as-pfm"',A.profitM))}${fld('กำไรค่าแรงทุกรายการ (%)',pIn('data-as="profitL" id="as-pfl"',A.profitL))}</div>
@@ -2872,8 +2891,8 @@ function instTime(B,pl){const A=P.assume,day=n(A.crewDay)||1000,md=B.subL/day,cr
   site=Math.max(1,Math.ceil(md/crew/6*1.15)),lead=Math.max(1,...pl.rows.filter(r=>r.q>0).map(r=>LEADW[r.sys]||2),pl.ch.N?12:0),tc=pl.ch.N||pl.rows.some(r=>r.q>0&&r.sys==='ahu')?2:1,pre=Math.ceil(site/2);
   return {md,crew,site,lead,tc,tot:Math.max(lead,pre)+(site-pre)+tc,pre}}          // pipes, ducts and cable trays go in while the equipment is on order; setting, connecting and testing follow delivery
 function conceptFigs(){
-  if(P.cad&&(P.cad.ducts.length||P.cad.equip.length))return {plan:cadPlanSVG(P.cad,1),d3:cad3dSVG(P.cad,1,plan().ch.N?'sx+:chw':undefined),drawn:1};
-  const P0=P;let o={plan:'',d3:'',drawn:0};SBX=1;try{P=JSON.parse(JSON.stringify(P0));if(cadFromRooms())o={plan:cadPlanSVG(P.cad,1),d3:cad3dSVG(P.cad,1,plan().ch.N?'sx+:chw':undefined),drawn:0}}finally{P=P0;SBX=0}return o}
+  if(P.cad&&(P.cad.ducts.length||P.cad.equip.length)&&!cadStale())return {plan:cadPlanSVG(P.cad,1),d3:cad3dSVG(P.cad,1,plan().ch.N?'sx+:chw':undefined),drawn:1};
+  const P0=P;let o={plan:'',d3:'',drawn:0};SBX=1;try{P=JSON.parse(JSON.stringify(P0));delete P.cad;if(cadFromRooms())o={plan:cadPlanSVG(P.cad,1),d3:cad3dSVG(P.cad,1,plan().ch.N?'sx+:chw':undefined),drawn:0}}finally{P=P0;SBX=0}return o}
 function conceptHTML(){
   const I=infoR(),pl=plan(),B=boq(),G=energy(),T=instTime(B,pl),F=conceptFigs(),area=P.rooms.reduce((a,r)=>a+n(r.area),0),BT=tl('บาท','THB'),W=tl('สัปดาห์','wk');
   const grp={};pl.rows.forEach(r=>{if(!(r.q>0))return;const k=r.sys+'|'+r.s;(grp[k]=grp[k]||{r,q:0,rooms:[]}).q+=r.q;grp[k].rooms.push(tagSplit(r.rm.name).room||nm(r.rm))});
@@ -3218,7 +3237,8 @@ function renderCad0(){
   const seg=(act,list,cur)=>`<div class="seg">${list.map(([v,l])=>`<button type="button" data-act="${act}" data-v="${v}" class="${String(cur)===String(v)?'on':''}">${l}</button>`).join('')}</div>`;
   const ck=(k,l)=>`<label><input type="checkbox" data-cl="${k}" ${V.lay[k]?'checked':''}> ${l}</label>`;
   const flag=s=>{const o=[];if(s.design&&Math.abs(s.term-s.design)/s.design>0.03)o.push(`<span class="pill bad">ลมรวมไม่ตรงป้ายเครื่อง</span>`);if(s.asm)o.push(`<span class="pill info">หัวจ่ายไม่มีป้ายลม</span>`);if(s.unl>0.3*s.len)o.push(`<span class="pill info">ท่อไม่มีป้ายขนาด ${fmt(s.unl,1)} m</span>`);if(s.vmax>9)o.push(`<span class="pill crit">ความเร็วเกิน 9 m/s</span>`);else if(s.vmax>7)o.push(`<span class="pill bad">ความเร็วค่อนข้างสูง</span>`);if(!(s.vmax>7)&&CDc.rows.some(g=>g.sys===s.name&&!g.rec.same))o.push(`<span class="pill bad">แรงเสียดทานเกินเกณฑ์</span>`);return o.join(' ')||`<span class="pill ok">ผ่าน</span>`};
-  $('editor').innerHTML=`<div class="wide">
+  const stale=cadStale()?`<section class="panel card" style="border-color:var(--warn,#E8590C)"><p class="note warn" style="margin:0 0 10px">${tl('แบบนี้สร้างจากข้อมูลห้องชุดเดิม ข้อมูลห้องเปลี่ยนไปแล้ว BOQ จึงไม่นำท่อ หัวจ่าย และสายไฟจากแบบนี้ไปคิดราคา กดสร้างแบบใหม่ให้ตรงกับห้องปัจจุบัน หรือลบแบบนี้ออก','This drawing was made from earlier room data. The rooms have changed, so the BOQ no longer prices ducts, diffusers and cables from it. Regenerate it from the current rooms, or delete it.')}</p><div class="row"><button type="button" class="btn primary" data-act="cadGen">${tl('สร้างแบบใหม่จากข้อมูลห้อง','Regenerate from rooms')}</button><button type="button" class="btn danger" data-act="cadClear">${tl('ลบแบบออกจากโครงการ','Delete the drawing')}</button></div></section>`:'';
+  $('editor').innerHTML=`<div class="wide">${stale}
   <dl class="stats" style="margin:0">
     <div><dt>ระบบลม</dt><dd>${S.length} <small>ระบบ</small></dd></div>
     <div><dt>ท่อลมจากแบบ</dt><dd>${fmt(len)} <small>m</small> · ${C.ducts.length} <small>ช่วง</small></dd></div>
@@ -4469,7 +4489,7 @@ function cadFromRooms(){
     const wW=Math.max(lay(r0,1),lay(r1,0));
     hw(y0,0,wW,[],200);hw(y1,0,wW,[],200);vw(wW,y0,y1,200);vw(0,y0,y1,200,[c0+300,c1-300]);          // envelope, entrance at the corridor end
     C.wings.push({y0,y1,c0,c1,w:wW});y=y1+GAP}
-  P.cad=C;
+  C.sig=roomSig();P.cad=C;
   hvAuto();
   /* outdoor side: wall units on the outside wall, AHUs in a plant room outside it, outdoor units and pipes straight out of their own room */
   const r50=v=>Math.round(v/50)*50,key=pwKey,eqOf=t=>C.equip.find(q=>key(q[2])===key(t)),ctr=e=>[(e[3]+e[5])/2,(e[4]+e[6])/2],Xr=r50(Math.max(...C.wings.map(w=>w.w))+900),taken=[];let odu=null;
@@ -4492,7 +4512,7 @@ function cadFromRooms(){
   hvFlow();C.ducts.forEach(d=>{if(d[10]==='auto'){const z=ductSZ(d[9]);d[7]=z[0];d[8]=z[1]}});
   if(plan().ch.N)sxLayout('chw');
   if(P.mep.el.zones.length)sxLayout('el');else{const L={pts:[],lines:[],boxes:[]};elHvac(C,L);if(L.boxes.length)C.sx.el=L}          // only the AC power layer unless the building electrical tab is in use
-  return RS.length}
+  C.sig=roomSig();return RS.length}
 
 function sxLens(L){const o={cwm:0,cw:0,d100:0,d50:0};L.lines.forEach(l=>{const m=Math.hypot(l[3]-l[1],l[4]-l[2])/1000;if(l[6]==='cw'){if(l[5]>=32)o.cwm+=m;else o.cw+=m}else if(l[5]>=100)o.d100+=m;else o.d50+=m});return o}
 function cadRooms(C,f){
@@ -5374,7 +5394,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=87,MEP_NAME='v87';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=88,MEP_NAME='v88';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -5503,6 +5523,8 @@ document.addEventListener('click',async e=>{
     case 'smAdd':{const L=P.smoke[b.dataset.list];L.push(b.dataset.list==='stairs'?newStair(L.length):newZone(L.length));break}
     case 'cmpUse':{const k=b.dataset.k;if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent=tl('กดอีกครั้งเพื่อเปลี่ยนทุกห้อง','Click again to change every room');setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent=tl('ใช้ทางเลือกนี้กับโครงการ','Use this option')}},4000);return}
       P.rooms.forEach(rm=>{const sy=cmpSys(k,rm);if(sy!==rm.eq.sys){rm.eq.sys=sy;rm.eq.size='auto';rm.eq.qty=null}});save();renderAll();{const t=$('toast');if(t)t.textContent=(tl('เปลี่ยนระบบทุกห้องแล้ว ถ้ามีแบบที่สร้างจากข้อมูลห้อง ให้กดสร้างแบบใหม่ในหน้าแบบ 3D','Every room now uses this option. Rebuild the drawing on the 3D page if it was generated from the room data.'))}return}
+    case 'newUndo':{let Q=null;try{Q=JSON.parse(localStorage.getItem(STORE+'-prev'))}catch(e){}newUndo=0;if(Q&&Q.rooms){P=Q;ensure();$('projName').value=P.name||''}break}
+    case 'boqWipe':if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent=uiT('กดอีกครั้งเพื่อล้าง');setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent=b.dataset.src==='all'?uiT('ล้างทั้งหมดที่เหลือ'):uiT('ล้างส่วนนี้')}},4000);return}boqWipe(b.dataset.src);break;
     case 'cadPick0':cadPickShow(null);return;
     case 'cptPrint':window.print();return;
     case 'v3dMake':b.disabled=true;v3dMake().catch(()=>{b.disabled=false});return;
@@ -5531,7 +5553,7 @@ document.addEventListener('click',async e=>{
     case 'cadZoom':cadV.zoom=Math.max(0.4,Math.min(8,cadV.zoom*(+b.dataset.v)));cadDraw();return;
     case 'cadReset':Object.assign(cadV,{yaw:-0.5,el:0.9,zoom:1,px:0,py:0});cadDraw();return;
     case 'cadSample':P.cad=JSON.parse(JSON.stringify(CAD_SAMPLE));break;
-    case 'cadClear':delete P.cad;break;
+    case 'cadClear':if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent=uiT('กดอีกครั้งเพื่อลบแบบ');setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent=uiT('ลบแบบออกจากโครงการ')}},4000);return}delete P.cad;break;
     case 'cadLoad':{let o=null;try{o=JSON.parse($('cadTxt').value)}catch(err){}
       if(!o||!Array.isArray(o.ducts)||!Array.isArray(o.terms)||!Array.isArray(o.equip)||!o.Z){$('toast').textContent='ข้อมูลแบบไม่ถูกต้อง ตรวจว่าคัดลอกมาครบ';return}
       P.cad=o;break}
@@ -5571,7 +5593,8 @@ document.addEventListener('click',e=>{const m=$('moreMenu');if(!m||!m.open)retur
 const nb=$('btnNew');
 nb.addEventListener('click',()=>{
   if(!nb.classList.contains('armed')){nb.classList.add('armed');nb.textContent='กดอีกครั้ง ข้อมูลเดิมจะถูกล้าง';setTimeout(()=>{nb.classList.remove('armed');nb.textContent='เริ่มโครงการใหม่'},4000);return}
-  const r=newRoom('office','ห้องที่ 1');r.area=0;r.people.n=0;P={v:1,name:'โครงการใหม่',design:{...P.design},rooms:[r],active:r.id,plant:P.plant,assume:P.assume,types:P.types};ensure();
+  try{localStorage.setItem(STORE+'-prev',JSON.stringify(P))}catch(e){}          // one step back, in case the wrong project was cleared
+  const r=newRoom('office','ห้องที่ 1');r.area=0;r.people.n=0;P={v:1,name:'โครงการใหม่',design:{...P.design},rooms:[r],active:r.id,plant:P.plant,assume:P.assume,types:P.types};ensure();newUndo=1;
   nb.classList.remove('armed');nb.textContent='เริ่มโครงการใหม่';view='room';save();$('projName').value=P.name;renderAll();
 });
 try{cadMigrate()}catch(e){}
