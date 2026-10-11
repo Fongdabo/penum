@@ -794,6 +794,7 @@ const AMP3=[18,24,31,42,56,73,89,108,136,164,188,216,245,286];
 const AMP1=[21,28,36,50,66,84,104,125,160,194,225,260,297,350];
 const GND=[[20,2.5],[40,4],[70,6],[100,10],[200,16],[400,25],[500,35],[800,50],[1000,70],[1250,95],[2000,120],[1e9,185]];
 const MOTOR=[0.37,0.55,0.75,1.1,1.5,2.2,3,4,5.5,7.5,11,15,18.5,22,30,37,45,55,75,90,110];
+const AF=[100,160,250,400,630,800,1000,1250,1600,2000,2500,3200];          // common MCCB/ACB frame sizes
 const TX=[100,160,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150];
 
 /* ---------- report language ---------- */
@@ -1013,7 +1014,7 @@ if(!P||!P.rooms) P=sample();
 const EX_EST=[['พัดลมระบายอากาศ EXH 690 CFM',12000,2500],['พัดลมระบายอากาศ EXH1-03 1,100 CFM',85000,8000],['เครื่องฟอกอากาศฝังฝ้า 600 CFM',45000,3500],['ชุดควบคุมห้องความดันลบ',65000,10000],['งานไฟฟ้าพัดลมระบายและเครื่องฟอกอากาศ',60000,40000]];
 function ensure(){
   applyTypes();P.rooms.forEach(rm=>{if(!TYPES[rm.type])rm.type='office';if(!rm.eq)rm.eq=defEq(rm.type);if(!rm.cond)rm.cond={}});
-  P.plant=Object.assign({vrfRatio:1.1,vrfKwtr:0.95,chType:'air',chN:2,chDiv:0.9,df:0.9,plantLen:40},P.plant||{});
+  P.plant=Object.assign({vrfRatio:1.1,vrfKwtr:0.95,chType:'air',chN:2,chDiv:0.9,df:0.9,plantLen:40,feedLen:30},P.plant||{});
   P.assume=Object.assign({refLen:15,drainLen:10,ductRatio:0.8,ductRatioClean:1.2,insRatio:0.7,cmhDiff:700,cmhHepa:1500,retRatio:0.5,fdRoom:2,ohp:10,vat:7,fitPipe:30,fitDuct:15,fitFire:35,fitEl:10,fcuShare:40,flexLen:1.5},P.assume||{});
   if(P.assume.profitM==null)P.assume.profitM=n(P.assume.profit);if(P.assume.profitL==null)P.assume.profitL=n(P.assume.profit);
   let pr=P.prices;if(!pr){try{pr=JSON.parse(localStorage.getItem('hvac-prices'))}catch(e){}}pr=pr||{};P.prices={};Object.keys(PRICE_DEF).forEach(k=>P.prices[k]=Object.assign({m:PRICE_DEF[k].m,l:PRICE_DEF[k].l},pr[k]||{}));
@@ -1115,6 +1116,7 @@ function elec(kw,ph,len){
   return {I,cb,mm,g,vd:vd(k),ph,cores:ph===1?2:4,over,len:L};
 }
 const cableTxt=e=>e?`${e.cores}×${e.mm} + G ${e.g} mm²`:'–';
+const feedTxt=m=>m?`${m.fd.sets>1?m.fd.sets+' × (':''}4×${m.fd.mm} + G ${Math.min(GND.find(x=>m.cb<=x[0])?GND.find(x=>m.cb<=x[0])[1]:m.fd.mm,m.fd.mm)} mm²${m.fd.sets>1?')':''}`:'–';
 function sizeTxt(sys,s){
   if(sys==='vrf')return `${(s/3412).toFixed(1)} kW`;
   if(sys==='package'||s>=90000)return `${fmt(s/12000,s%12000?1:0)} TR`;
@@ -1183,7 +1185,9 @@ function plan(){
   const I=dem*1000/(Math.sqrt(3)*400*0.85);
   const mainCB=CB.find(c=>c>=I*1.25)||CB[CB.length-1];
   const tx=TX.find(t=>t>=dem/0.85*1.25)||TX[TX.length-1];
-  return {rows,loads,vrf,ch,conn,dem,I,mainCB,tx,installed:rows.reduce((a,r)=>a+r.inst/12000,0),need:rows.reduce((a,r)=>a+r.r.tr,0)};
+  const main=dem>0?Object.assign(elec(dem,3,n(pl.feedLen)||30),{af:AF.find(a=>a>=mainCB)||AF[AF.length-1]}):null;          // HVAC panel incomer and its feeder from the MDB
+  if(main){main.cb=mainCB;main.fd=elFeeder(mainCB);const R=main.fd;main.vd=Math.sqrt(3)*I*main.len*0.0225*0.85/(R.mm*R.sets)/400*100}
+  return {rows,loads,vrf,ch,conn,dem,I,mainCB,tx,main,installed:rows.reduce((a,r)=>a+r.inst/12000,0),need:rows.reduce((a,r)=>a+r.r.tr,0)};
 }
 
 /* ---------- BOQ ---------- */
@@ -1284,6 +1288,8 @@ function boq(){
   });
   let nIso=0;pl.loads.forEach(L=>{if(L.el)nIso+=L.qty});
   if(pl.loads.length)add('el','panel',tr(PRICE_DEF.panel.label),tr('ตู้'),1,PR.panel.m,PR.panel.l);
+  if(pl.main){const M=pl.main,pk=M.cb<=63?'cbS':'cbL';add('el','cb-main',`MAIN 3P ${M.cb}AT/${M.af}AF`,tr('ตัว'),1,Math.round(PR[pk].m*Math.max(1,M.cb/100)),PR[pk].l,bl('Main Circuit Breaker','เบรกเกอร์เมนตู้แอร์'));
+    const ln_=M.len*M.fd.sets;cab[M.fd.mm]=(cab[M.fd.mm]||0)+ln_*4;const gm=Math.min((GND.find(x=>M.cb<=x[0])||[0,M.fd.mm])[1],M.fd.mm);cab[gm]=(cab[gm]||0)+ln_}
   Object.entries(cbs).sort((a,b)=>a[1].a-b[1].a).forEach(([k,v])=>{const pk=v.a<=63?'cbS':'cbL';add('el','cb-'+k,k,tr('ตัว'),v.q,PR[pk].m,PR[pk].l,bl('Circuit Breaker','เบรกเกอร์'))});
   if(nIso)add('el','iso','Waterproof Isolator Switch',tr('ตัว'),nIso,PR.iso.m,PR.iso.l);
   const ek=[];Object.keys(cab).map(Number).sort((a,b)=>a-b).forEach(mm=>{ek.push('cab-'+mm);add('el','cab-'+mm,`THW ${mm} Sq.mm`,'m',Math.ceil(cab[mm]*1.1),Math.round(PR.cable.m*mm+5),PR.cable.l,bl('Electrical wire','สายไฟฟ้า'))});
@@ -2290,7 +2296,7 @@ function renderEquip(){
     <div><dt>ติดตั้งรวม</dt><dd>${fmt(pl.installed,1)} <small>TR · ${pl.need>0?fmt(pl.installed/pl.need*100,0):0}%</small></dd></div>
     <div><dt>ไฟฟ้าติดตั้ง</dt><dd>${fmt(pl.conn,1)} <small>kW</small></dd></div>
     <div><dt>ความต้องการไฟฟ้า</dt><dd>${fmt(pl.dem,1)} <small>kW · ${fmt(pl.I)} A @400V</small></dd></div>
-    <div><dt>เบรกเกอร์เมนแนะนำ</dt><dd>${pl.mainCB} <small>A 3P</small></dd></div>
+    <div><dt>เบรกเกอร์เมนแนะนำ</dt><dd>${pl.mainCB} <small>AT 3P${pl.main?' / '+pl.main.af+' AF':''}</small></dd></div>
     <div><dt>หม้อแปลงสำหรับระบบแอร์</dt><dd>${pl.tx} <small>kVA ขั้นต่ำ</small></dd></div>
   </dl>
   <section class="panel card"><h2><span>เลือกเครื่องรายห้อง</span><small>เว้นจำนวนว่าง = คำนวณให้อัตโนมัติ · แก้ค่าแล้วกด Enter</small></h2>
@@ -2331,7 +2337,22 @@ function renderEquip(){
     if(pl.vrf.hp)h+=`<p class="hint">VRF: เครื่องภายในรวม ${fmt(pl.vrf.indoorKW,1)} kW (${pl.vrf.units} เครื่อง) ใช้เครื่องภายนอกรวม ${pl.vrf.hp} HP · combination ratio ${fmt(pl.vrf.ratio*100,0)}% (ทั่วไป 50–130%)</p>`;
     if(pl.ch.N)h+=`<p class="hint">Chiller: โหลด AHU รวม ${fmt(pl.ch.ahuTR,1)} TR × diversity ${p.chDiv} → ${pl.ch.N} × ${pl.ch.each} TR ยังไม่รวมเครื่องสำรอง</p>`;
   } else h+=`<p class="hint">ยังไม่มีห้องที่เลือก VRF หรือ AHU</p>`;
-  h+=`</section>
+  h+=`</section>`;
+  if(pl.main){const M=pl.main,cir=pl.loads.filter(L=>L.el);
+    h+=`<section class="panel card"><h2><span>ตู้ไฟระบบปรับอากาศ (HVAC MCC) และเบรกเกอร์เมน</span><small>รับไฟจากตู้ MDB</small></h2>
+    <dl class="stats" style="margin:0 0 12px">
+      <div><dt>เบรกเกอร์เมน</dt><dd>3P ${M.cb} <small>AT / ${M.af} AF</small></dd></div>
+      <div><dt>สายเมนจาก MDB</dt><dd style="font-size:16px">${feedTxt(M)}</dd></div>
+      <div><dt>แรงดันตก</dt><dd>${fmt(M.vd,1)} <small>% · ${fmt(M.len)} m</small></dd></div>
+      <div><dt>วงจรย่อย</dt><dd>${cir.reduce((a,L)=>a+L.qty,0)} <small>วงจร</small></dd></div></dl>
+    <div class="grid">${fld('ระยะสายเมนจาก MDB ถึงตู้แอร์ (m)',pIn('data-pl="feedLen" id="pl-fl"',p.feedLen))}</div>
+    <div class="tbl-wrap" style="margin-top:12px"><table class="eq" style="min-width:640px"><thead><tr><th>วงจร</th><th class="r">จำนวน</th><th class="r">kW รวม</th><th class="r">CB ต่อวงจร</th><th>สายไฟ</th></tr></thead><tbody>
+    ${cir.map(L=>`<tr><td>${esc(L.name)}</td><td class="r">${L.qty}</td><td class="r">${fmt(L.qty*L.kw,1)}</td><td class="r">${L.el.ph===1?'1P':'3P'} ${L.el.cb}A</td><td>${cableTxt(L.el)}</td></tr>`).join('')}
+    <tr class="sub"><td>รวมโหลดติดตั้ง</td><td></td><td class="r">${fmt(pl.conn,1)}</td><td></td><td></td></tr>
+    <tr class="sub"><td>ความต้องการไฟฟ้า × demand factor ${p.df}</td><td></td><td class="r">${fmt(pl.dem,1)}</td><td class="r">${fmt(pl.I)} A</td><td></td></tr>
+    <tr class="sub"><td>เบรกเกอร์เมน (≥ 1.25 × ${fmt(pl.I)} A)</td><td class="r">1</td><td></td><td class="r">3P ${M.cb}AT/${M.af}AF</td><td>${feedTxt(M)}</td></tr></tbody></table></div>
+    <p class="hint">ค่า kA ของเบรกเกอร์เมนต้องไม่ต่ำกว่ากระแสลัดวงจรที่ตู้ MDB ให้วิศวกรไฟฟ้ากำหนดตามขนาดหม้อแปลงและระยะสาย ${M.vd>3?'<b>แรงดันตกเกิน 3% ลองเพิ่มขนาดสายหรือย้ายตู้ให้ใกล้ MDB</b>':''}</p></section>`}
+  h+=`
   <p class="note">ขนาดสายเลือกจากกระแสพิกัดเบรกเกอร์ (1.25 × กระแสใช้งาน, PF 0.85, 230/400 V) ตามตารางพิกัดกระแสสาย THW ในท่อร้อยสาย อุณหภูมิ 40°C (ค่าประมาณตามแนวทาง วสท.) และเพิ่มขนาดจนแรงดันตกไม่เกิน 3% ใช้สำหรับประเมินและทำ BOQ วิศวกรไฟฟ้าต้องตรวจสอบก่อนใช้งานจริง</p></div>`;
   $('editor').innerHTML=h;
 }
@@ -4263,7 +4284,7 @@ function elDiag(){
   g+=tx(120,92,'UTILITY 22 kV',{fs:10,c:'b'})+ln('M120 100 V130')+`<circle class="ln" cx="120" cy="146" r="16"/><circle class="ln" cx="120" cy="168" r="16"/>`+tx(150,150,`TR ${fmt(A.tx)} kVA`,{a:'start',fs:10,c:'b'})+tx(150,164,'22 kV / 400-230 V',{a:'start',fs:8.5})+ln('M120 184 V214');
   g+=box(104,214,32,22)+tx(120,229,'CB',{fs:8})+tx(146,229,`MAIN ${A.cb} A 3P`,{a:'start',fs:9})+tx(146,243,`${A.fd.sets>1?A.fd.sets+' × ':''}4×${A.fd.mm} mm²`,{a:'start',fs:8})+ln('M120 236 V270')+ln('M60 270 H900','thk')+tx(64,262,`MDB · ${fmt(A.desKVA)} kVA`,{a:'start',fs:10,c:'b'});
   const F=[];for(let i=0;i<Math.min(A.db,3);i++)F.push([`DB-${i+1}`,`${tl('แสงสว่างและเต้ารับ','LIGHTING & RECEPTACLE')}`.toUpperCase(),`${fmt((A.ltVA+A.rcDem)/1000/A.db,1)} kVA`]);
-  if(A.db>3)F.push([`+${A.db-3} DB`,'','']);if(pl.conn>0)F.push(['HVAC PANEL','AIR-CONDITIONING',`${fmt(pl.dem,1)} kW · ${pl.mainCB} A`]);
+  if(A.db>3)F.push([`+${A.db-3} DB`,'','']);if(pl.conn>0)F.push(['HVAC PANEL','AIR-CONDITIONING',`${fmt(pl.dem,1)} kW · ${pl.mainCB}AT`+(pl.main?` · 4×${pl.main.fd.mm} mm²`:'')]);
   A.oth.filter(l=>!l.em&&l.name!==tl('ระบบปรับอากาศ','Air-conditioning system')).slice(0,2).forEach(l=>F.push(['FEEDER',String(l.name).toUpperCase().slice(0,22),`${fmt(l.dem,1)} kW`]));
   const em=A.oth.filter(l=>l.em),n0=F.length,gap=Math.min(120,560/Math.max(1,n0));
   F.forEach((f,i)=>{const x=100+i*gap;g+=ln(`M${x} 270 V300`)+box(x-12,300,24,18)+tx(x,313,'CB',{fs:7})+ln(`M${x} 318 V350`)+box(x-46,350,92,54,'ln thk')+tx(x,370,f[0],{fs:9.5,c:'b'})+tx(x,383,f[1],{fs:6.5})+tx(x,396,f[2],{fs:8})});
@@ -4954,7 +4975,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=76,MEP_NAME='v76';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=77,MEP_NAME='v77';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
