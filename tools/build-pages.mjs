@@ -43,7 +43,9 @@ ${src}
 </body></html>
 `);
   writeFileSync(join(dir, 'manifest.webmanifest'), JSON.stringify({
-    id: `./`, name: a.name, short_name: a.short, description: a.desc, lang: 'th',
+    // the id is resolved against the site's origin, so a relative './' gave all four apps the same identity and
+    // an installed app could take over another app's start page; each app gets its own path
+    id: `/penum/${a.dir}/`, name: a.name, short_name: a.short, description: a.desc, lang: 'th',
     start_url: './', scope: './', display: 'standalone', theme_color: a.theme, background_color: a.bg,
     icons: [
       { src: `${ic}icon-192.png`, sizes: '192x192', type: 'image/png' },
