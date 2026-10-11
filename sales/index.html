@@ -142,6 +142,29 @@ function mail(c,kind){const P=PLAN[c.pl]||['',0],S=DB.set,sig=[S.sender,S.compan
 `1) เริ่มใช้งานครั้งแรก (สำหรับผู้ดูแลระบบ ทำครั้งเดียว)\nเปิดลิงก์นี้บนคอมพิวเตอร์ ด้วย Microsoft Edge หรือ Google Chrome\n\n${actLink(c)}\n\n${LONGNOTE}\n\nเมื่อเปิดลิงก์แล้ว หน้าจอจะพาทำ 3 ขั้น\nก. กรอกข้อมูลบริษัท (รหัสใช้งานใส่ไว้ให้แล้ว)\nข. ตั้ง PIN ของผู้ดูแลระบบ\nค. เลือกที่เก็บข้อมูลของบริษัท (OneDrive, Google Drive, Dropbox, โฟลเดอร์กลางในบริษัท หรือเฉพาะเครื่องนี้) แล้วสร้างโฟลเดอร์ PENUM-PM\n\n`+
 `2) ลิงก์ติดตั้งโปรแกรม (สำหรับทุกคนในบริษัท ส่งต่อให้พนักงานได้)\n${S.app}\n- คอมพิวเตอร์: เปิดลิงก์ด้วย Edge หรือ Chrome แล้วกดไอคอน "ติดตั้ง" ท้ายช่องที่อยู่เว็บ\n- Android: เปิดด้วย Chrome กด ⋮ > ติดตั้งแอป\n- iPhone: เปิดด้วย Safari กด แชร์ > เพิ่มไปยังหน้าจอโฮม\nพนักงานเข้าใช้ด้วยชื่อและ PIN ที่ผู้ดูแลระบบตั้งให้\n\n`+
 `3) คู่มือเริ่มใช้งาน (PDF แนบมากับอีเมลนี้ หรือเปิดจากลิงก์)\n${S.guide}\nทำตามทีละขั้นได้เลย ติดขัดตรงไหนติดต่อได้ทันทีครับ\n\n${sig}`}}
+/* Gmail draft through Google sign-in: the seller's own Google Cloud client id (ตั้งค่า › Gmail).
+   Gmail compose links cannot carry a long Thai body or a file, so the draft is built here and saved with the Gmail API. */
+let GTOK=null,GEXP=0;
+function gisLoad(){if(window.google&&google.accounts&&google.accounts.oauth2)return Promise.resolve();if(gisLoad.p)return gisLoad.p;
+  return gisLoad.p=new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=ok;s.onerror=()=>{gisLoad.p=null;no(new Error('โหลดระบบล็อกอิน Google ไม่ได้ ตรวจอินเทอร์เน็ต'))};document.head.append(s)})}
+function gToken(){if(GTOK&&Date.now()<GEXP)return Promise.resolve(GTOK);
+  return new Promise((ok,no)=>{const c=google.accounts.oauth2.initTokenClient({client_id:DB.set.gcid,scope:'https://www.googleapis.com/auth/gmail.compose',login_hint:DB.set.from||undefined,
+    callback:r=>{if(r.error)return no(new Error(r.error_description||r.error));GTOK=r.access_token;GEXP=Date.now()+(Number(r.expires_in)||3600)*1000-60000;ok(GTOK)},
+    error_callback:e=>no(new Error(e&&e.type==='popup_closed'?'ปิดหน้าต่างล็อกอิน Google ก่อนเสร็จ':'เปิดหน้าต่างล็อกอิน Google ไม่ได้ (อนุญาตป๊อปอัปให้เว็บนี้)'))});
+    c.requestAccessToken({prompt:''})})}
+const u8b64=u=>{let t='';for(let i=0;i<u.length;i+=0x8000)t+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(t)};
+const utf8b64=t=>u8b64(new TextEncoder().encode(t)),wrap76=t=>t.replace(/.{1,76}/g,'$&\r\n');
+async function gDraft(x,tok){const bd='orien-'+Date.now().toString(36);let pdf='';
+  try{const r=await fetch(DB.set.guide);if(r.ok)pdf=u8b64(new Uint8Array(await r.arrayBuffer()))}catch(e){}
+  const L=[...(DB.set.from?['From: '+DB.set.from]:[]),'To: '+x.to,'Subject: =?UTF-8?B?'+utf8b64(x.su)+'?=','MIME-Version: 1.0','Content-Type: multipart/mixed; boundary="'+bd+'"','',
+    '--'+bd,'Content-Type: text/plain; charset="UTF-8"','Content-Transfer-Encoding: base64','',wrap76(utf8b64(x.body))];
+  if(pdf)L.push('--'+bd,'Content-Type: application/pdf; name="PENUM-PM-start-guide.pdf"','Content-Disposition: attachment; filename="PENUM-PM-start-guide.pdf"','Content-Transfer-Encoding: base64','',wrap76(pdf));
+  L.push('--'+bd+'--','');
+  const raw=btoa(L.join('\r\n')).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({message:{raw}})});
+  if(r.status===401)GTOK=null;
+  if(!r.ok){let m='';try{m=(await r.json()).error.message}catch(e){}throw new Error('Gmail ไม่รับ ('+r.status+') '+m)}
+  const d=await r.json();return {d,pdf:!!pdf}}
 function openMail(c,kind){const m=mail(c,kind);
   $('#dlgT').textContent=kind==='renew'?'อีเมลต่ออายุ':'อีเมลเปิดใช้งาน';
   $('#dlgB').innerHTML=`<label>ถึง<input id="mTo" value="${esc(c.em)}"></label><label>เรื่อง<input id="mSu" value="${esc(m.su)}"></label><label>ข้อความ<textarea id="mBody" style="min-height:300px">${esc(m.body)}</textarea></label>
@@ -153,7 +176,18 @@ function openMail(c,kind){const m=mail(c,kind);
   const note=m=>{let n=$('#mNote');if(!n){n=document.createElement('p');n.id='mNote';n.style.cssText='margin:8px 0 0;padding:10px 12px;border-radius:10px;background:#FFF4D6;color:#5A4300;font-weight:600';$('#dlgB').append(n)}n.textContent=m};
   // Gmail and mail apps reject very long links (Thai text grows ~9x when encoded), so long bodies go via the clipboard
   const LONG=1800,clip=t=>{try{return navigator.clipboard.writeText(t).catch(()=>copy(t))}catch(e){return copy(t)}};
-  B('เปิดใน Gmail','pri',()=>{const x=v(),big=encodeURIComponent(x.body).length>LONG,p=big?clip(x.body):null;
+  if(DB.set.gcid)gisLoad().catch(()=>{});
+  B('สร้างอีเมลใน Gmail (แนบคู่มือให้)','pri',async ev=>{const x=v(),btn=ev.currentTarget;if(btn.disabled)return;
+    if(!DB.set.gcid){note('ยังไม่ได้ต่อกับ Google ไปที่แท็บ ตั้งค่า › ส่งอีเมลผ่าน Gmail ใส่ Client ID ก่อน ระหว่างนี้ใช้ปุ่ม เปิดใน Gmail แล้วกด Ctrl+V ได้');return}
+    if(!x.to){note('ใส่อีเมลผู้รับก่อน');return}
+    try{if(!(window.google&&google.accounts&&google.accounts.oauth2)){await gisLoad();note('พร้อมแล้ว กดปุ่มนี้อีกครั้ง');return}
+      btn.disabled=true;const tp=gToken();note('กำลังเข้าสู่ระบบ Google…');const tok=await tp;note('กำลังสร้างอีเมลใน Gmail…');
+      const {d,pdf}=await gDraft(x,tok);sent();
+      const u='https://mail.google.com/mail/u/'+encodeURIComponent(DB.set.from||'0')+'/#drafts?compose='+encodeURIComponent(d.message&&d.message.id||'');
+      note('สร้างอีเมลไว้ในกล่อง ฉบับร่าง ของ Gmail แล้ว'+(pdf?' แนบคู่มือ PDF ให้แล้ว':' (แนบคู่มือไม่ได้ แนบเองก่อนส่ง)')+' กดลิงก์ด้านล่างเพื่อเปิด ตรวจแล้วกดส่ง');
+      const a=document.createElement('a');a.href=u;a.target='_blank';a.rel='noopener';a.className='btn pri';a.style.marginTop='8px';a.textContent='เปิดอีเมลใน Gmail';$('#mNote').append(document.createElement('br'),a)}
+    catch(e){note('สร้างอีเมลไม่สำเร็จ: '+e.message+' ใช้ปุ่ม เปิดใน Gmail แล้วกด Ctrl+V แทนได้')}finally{btn.disabled=false}});
+  B('เปิดใน Gmail','',()=>{const x=v(),big=encodeURIComponent(x.body).length>LONG,p=big?clip(x.body):null;
     window.open('https://mail.google.com/mail/?'+(DB.set.from?'authuser='+encodeURIComponent(DB.set.from)+'&':'')+'view=cm&fs=1&to='+encodeURIComponent(x.to)+'&su='+encodeURIComponent(x.su)+(big?'':'&body='+encodeURIComponent(x.body)),'_blank');
     if(big)note('คัดลอกข้อความไว้ให้แล้ว ใน Gmail ที่เปิดขึ้นมา คลิกในช่องเนื้อหาอีเมล แล้วกด Ctrl+V (มือถือ: กดค้างแล้วเลือก วาง) จากนั้นแนบคู่มือ PDF แล้วกดส่ง');sent()});
   B('เปิดในโปรแกรมอีเมล','',()=>{const x=v(),big=encodeURIComponent(x.body).length>LONG;if(big)clip(x.body);
@@ -267,6 +301,8 @@ function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+c.an+c.em).toLowerCase()
 function viewSet(){const S=DB.set;return `<section class="card"><h2>ข้อมูลผู้ขาย (ท้ายอีเมล)</h2><div class="g">
   <label>อีเมลผู้ส่ง (บัญชี Gmail ที่ใช้ส่งให้ลูกค้า)<input data-s="from" type="email" value="${esc(S.from)}"></label><label>บริษัทผู้ขาย<input data-s="company" value="${esc(S.company)}"></label><label>ชื่อผู้ส่ง<input data-s="sender" value="${esc(S.sender)}" placeholder="ฝ่ายขาย PENUM PM"></label><label>โทรศัพท์<input data-s="phone" value="${esc(S.phone)}"></label><label>LINE ID<input data-s="line" value="${esc(S.line)}"></label>
   <label>ที่อยู่โปรแกรม<input data-s="app" value="${esc(S.app)}"></label></div></section>
+  <section class="card"><h2>ส่งอีเมลผ่าน Gmail</h2><p class="mut" style="margin-top:0">ใส่ Client ID จาก Google Cloud แล้วปุ่ม <b>สร้างอีเมลใน Gmail</b> จะสร้างอีเมลพร้อมข้อความและแนบคู่มือ PDF ไว้ในกล่อง ฉบับร่าง ของ Gmail ให้ คุณแค่เปิดดูแล้วกดส่ง ขั้นตอนตั้งค่าดูในคู่มือที่ได้จากผู้ดูแลโปรแกรม</p>
+  <label>Google Client ID<input data-s="gcid" placeholder="xxxxxxxx.apps.googleusercontent.com" value="${esc(S.gcid||'')}"></label></section>
   <section class="card"><h2>ความปลอดภัย</h2><p class="mut" style="margin-top:0">กุญแจออกรหัสเก็บในเครื่องนี้แบบเข้ารหัสด้วย PIN ของคุณ ทุกครั้งที่เปิดโปรแกรมต้องใส่ PIN</p>
   <div class="row"><button data-a="lock">ล็อกตอนนี้</button><button data-a="chpin">เปลี่ยน PIN</button><button class="del" data-a="rmkey">ลบกุญแจออกจากเครื่องนี้</button></div></section>
   <section class="card"><h2>ใช้หลายเครื่อง</h2><p class="mut" style="margin:0">ติดตั้งได้ทั้งคอมพิวเตอร์และมือถือ แต่ละเครื่องเก็บรายชื่อลูกค้าของตัวเอง เวลาย้ายไปทำงานอีกเครื่อง กด <b>ดาวน์โหลดไฟล์สำรอง</b> ที่เครื่องเดิม แล้วกด <b>เปิดไฟล์สำรอง</b> ที่เครื่องใหม่ ทุกเครื่องต้องเปิดไฟล์กุญแจและตั้ง PIN ครั้งแรก</p></section>
