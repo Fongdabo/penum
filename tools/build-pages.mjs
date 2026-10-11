@@ -55,6 +55,8 @@ ${src}
   }, null, 2));
   // documents an app links to (PENUM PM's forms library) are served next to it
   for (const sub of ['files', 'help', 'icons']) if (existsSync(join(root, a.dir, sub))) cpSync(join(root, a.dir, sub), join(dir, sub), { recursive: true });
+  // ORIEN ฝ่ายขาย › กล่องรับเรื่อง copies the feedback SQL for the Supabase SQL Editor
+  if (a.dir === 'sales') { mkdirSync(join(dir, 'files'), { recursive: true }); copyFileSync(join(root, 'tools', 'feedback-setup.sql'), join(dir, 'files', 'feedback-setup.sql')); }
   writeFileSync(join(dir, 'sw.js'), readFileSync(join(root, 'tools', 'sw.js'), 'utf8').replace('__VERSION__', `${a.dir}-${ver}`).replaceAll('../icons/', ic));
 }
 

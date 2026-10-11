@@ -527,6 +527,7 @@ input.calc{background:var(--accent-soft);color:var(--accent);font-weight:600;cur
       <details class="more" id="moreMenu"><summary class="btn onband"><span>เมนู</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="menu">
         <button id="btnBackup" type="button">สำรองข้อมูล</button>
         <button id="btnUpd" type="button">ตรวจหาอัปเดต</button>
+        <button id="btnFb" type="button">แจ้งปัญหา / ความคิดเห็น</button>
         <hr>
         <button id="btnBim" type="button" title="เปิด PENUM BIM">PENUM BIM ↗</button>
         <button id="btnPm" type="button" title="เปิด PENUM PM">PENUM PM ↗</button>
@@ -4776,7 +4777,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=67,MEP_NAME='v67';
+const MEP_BUILD=67,MEP_NAME='v67';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -4950,4 +4951,103 @@ mountLangPicker();uiObs.observe(document.body,{childList:true,subtree:true,chara
 window.__calc=calc;window.__P=()=>P;
 })();
 </script>
-
+<!-- PENUM-FB:start (copied from tools/feedback.js by tools/sync-feedback.mjs; edit there) -->
+<script>
+/* PENUM feedback box (กล่องแจ้งปัญหาและแสดงความคิดเห็น), shared by PENUM PM, MEP and BIM.
+   Source of truth: tools/feedback.js. node tools/sync-feedback.mjs copies it into each app between the PENUM-FB markers.
+   A message goes to ORIEN's Supabase through the rpc penum_fb_send (tools/feedback-setup.sql): the public key can only add
+   messages, never read them; ORIEN ฝ่ายขาย reads them with its reader code. Offline, or before the SQL has been run,
+   the same text can go by LINE OA or e-mail instead.
+   Each app calls penumFB.init({app,name,ver,sfx,info}) once and penumFB.open() from its menu. */
+(()=>{if(window.penumFB)return;
+const SB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
+const LINE='@xhg5783r',MAIL='fong101dt@gmail.com';
+const KINDS=[['bug','🐞','แจ้งปัญหา','เล่าว่ากำลังทำอะไร แล้วเกิดอะไรขึ้น เช่น กดบันทึกใบสั่งซื้อแล้วหน้าค้าง'],
+  ['idea','💡','อยากได้เพิ่ม','อยากให้โปรแกรมทำอะไรได้ หรืออยากให้ปรับตรงไหน'],
+  ['how','❓','ถามวิธีใช้','อยากทำอะไร แต่หาเมนูไม่เจอ หรือไม่แน่ใจวิธีใช้'],
+  ['other','💬','ความคิดเห็น','ชม ติ หรือเรื่องอื่น ๆ']];
+let C={app:'',name:'PENUM',ver:'',sfx:'',info:null},K='bug',SHOT='',BUILD=null,D=null;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ls=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k+C.sfx)||'';localStorage.setItem(k+C.sfx,v)}catch(e){return ''}};
+const mob=()=>/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const CSS=`.pfb{border:none;border-radius:16px;padding:0;width:min(560px,calc(100% - 24px));max-height:calc(100% - 24px);color:#1F2A30;background:#fff;box-shadow:0 24px 70px rgba(8,20,40,.35);font:15px/1.55 "IBM Plex Sans Thai","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif}
+.pfb::backdrop{background:rgba(10,20,30,.45)}.pfb *{box-sizing:border-box}
+.pfb-hd{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 10px;border-bottom:1px solid #E3E9EE;background:linear-gradient(120deg,#EAF6F9,#F4F1FF)}
+.pfb-hd b{font-size:17px;display:block}.pfb-hd small{color:#5E6E75;font-size:13px}.pfb-x{margin-left:auto;border:none;background:none;font-size:22px;line-height:1;cursor:pointer;color:#5E6E75;padding:2px 6px}
+.pfb-bd{padding:14px 18px;display:flex;flex-direction:column;gap:12px;overflow:auto;max-height:calc(100vh - 190px)}
+.pfb-k{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.pfb-k button{font:inherit;font-size:13.5px;border:1.5px solid #D5DEE7;background:#fff;border-radius:12px;padding:8px 4px;cursor:pointer;color:#1F2A30;display:flex;flex-direction:column;align-items:center;gap:2px}
+.pfb-k button span{font-size:20px;line-height:1.2}.pfb-k button[aria-pressed=true]{border-color:#0B7F99;background:#E6F5F8;color:#0A6479;font-weight:600}
+.pfb label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:#5E6E75}
+.pfb textarea,.pfb input[type=text]{font:inherit;color:#1F2A30;padding:9px 11px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;width:100%}.pfb textarea{min-height:120px;resize:vertical}
+.pfb textarea:focus,.pfb input:focus{outline:2px solid #00A3C4;outline-offset:0;border-color:#00A3C4}
+.pfb-at{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:#5E6E75}.pfb-at img{max-height:70px;max-width:120px;border-radius:6px;border:1px solid #D5DEE7}
+.pfb-b{font:inherit;font-size:14px;padding:8px 14px;border-radius:10px;border:1px solid #CBD5E1;background:#fff;color:#1F2A30;cursor:pointer;text-decoration:none;display:inline-block}.pfb-b.pri{background:#0B7F99;border-color:#0B7F99;color:#fff}.pfb-b:disabled{opacity:.55;cursor:default}
+.pfb-b.ln{background:#06C755;border-color:#06C755;color:#fff}
+.pfb-inf{font-size:12.5px;color:#5E6E75;background:#F4F7F9;border-radius:8px;padding:6px 10px}
+.pfb-ft{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid #E3E9EE}
+.pfb-ok{padding:28px 20px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}.pfb-ok .big{font-size:44px;line-height:1}
+.pfb-er{background:#FFF4E5;border:1px solid #F3C98B;color:#7A4A0B;border-radius:10px;padding:10px 12px;font-size:13.5px;display:flex;flex-direction:column;gap:8px}
+@media(max-width:480px){.pfb-k{grid-template-columns:repeat(2,1fr)}}`;
+function info(){let x={};try{x=(C.info&&C.info())||{}}catch(e){}
+  return {company:String(x.company||'').slice(0,200),lic:String(x.lic||'').slice(0,60),page:String(x.page||'').slice(0,200)}}
+function device(){const u=navigator.userAgent,os=/Windows/.test(u)?'Windows':/Android/.test(u)?'Android':/iPhone|iPad|iPod/.test(u)?'iOS':/Mac/.test(u)?'Mac':/Linux/.test(u)?'Linux':'',
+  br=/Edg\//.test(u)?'Edge':/Chrome\//.test(u)?'Chrome':/Firefox\//.test(u)?'Firefox':/Safari\//.test(u)?'Safari':'';
+  const inst=matchMedia('(display-mode: standalone)').matches||navigator.standalone;return [os,br,innerWidth+'×'+innerHeight,inst?'ติดตั้งแล้ว':''].filter(Boolean).join(' · ')}
+// the installed build: sw.js carries the app's content hash, so a report says exactly which copy the customer runs
+function build(){if(BUILD!==null)return Promise.resolve(BUILD);
+  return fetch('sw.js',{cache:'no-store'}).then(r=>r.ok?r.text():'').then(t=>{const m=t.match(/penum-(\w+-[0-9a-f]{12})/);return BUILD=m?m[1]:''}).catch(()=>BUILD='')}
+function verTxt(){return [C.ver,BUILD].filter(Boolean).join(' · ')}
+function payload(){const I=info();return {app:C.app,ver:verTxt(),kind:K,message:D.querySelector('#pfbM').value.trim(),contact:D.querySelector('#pfbC').value.trim(),...I,device:device(),shot:SHOT}}
+function plain(p){const k=KINDS.find(x=>x[0]===p.kind)||KINDS[3];
+  return [`[${C.name}] ${k[2]}`,p.message,'',p.contact&&('ติดต่อกลับ: '+p.contact),p.company&&('บริษัท: '+p.company+(p.lic?' ('+p.lic+')':'')),p.page&&('หน้า: '+p.page),'รุ่น: '+(p.ver||'-')+' · '+p.device,p.shot?'(มีรูปหน้าจอ แนบรูปแยกในแชทได้)':''].filter(Boolean).join('\n')}
+async function shrink(file){const url=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file)});
+  const im=new Image();im.src=url;await im.decode();let w=im.naturalWidth,h=im.naturalHeight;const s=Math.min(1,1400/Math.max(w,h));w=Math.round(w*s);h=Math.round(h*s);
+  const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0,w,h);
+  for(const q of [.75,.6,.45,.3]){const d=c.toDataURL('image/jpeg',q);if(d.length<600000)return d}return ''}
+function setShot(d){SHOT=d||'';const a=D.querySelector('#pfbAt');a.innerHTML=SHOT?`<img src="${SHOT}" alt="รูปที่แนบ"><button type="button" class="pfb-b" data-f="unshot">เอารูปออก</button>`
+  :`<button type="button" class="pfb-b" data-f="shot">📎 แนบรูปหน้าจอ</button><span>${mob()?'ไม่บังคับ':'หรือจับภาพหน้าจอแล้วกด Ctrl+V ในกล่องนี้'}</span>`}
+async function addImg(f){if(!f||!/^image\//.test(f.type))return;try{setShot(await shrink(f))}catch(e){setShot('')}}
+function form(){const I=info(),k=KINDS.find(x=>x[0]===K);
+  D.innerHTML=`<div class="pfb-hd"><div><b>แจ้งปัญหา / แสดงความคิดเห็น</b><small>ส่งถึงทีมผู้พัฒนา ${esc(C.name)} ที่ ORIEN โดยตรง ทุกข้อความมีคนอ่าน</small></div><button type="button" class="pfb-x" data-f="close" aria-label="ปิด">×</button></div>
+  <div class="pfb-bd"><div class="pfb-k" role="group" aria-label="เรื่องที่จะแจ้ง">${KINDS.map(x=>`<button type="button" data-k="${x[0]}" aria-pressed="${x[0]===K}"><span>${x[1]}</span>${x[2]}</button>`).join('')}</div>
+  <label>รายละเอียด *<textarea id="pfbM" maxlength="5000" placeholder="${esc(k[3])}">${esc(ls('penum.fb.draft'))}</textarea></label>
+  <div class="pfb-at" id="pfbAt"></div>
+  <label>ชื่อ และเบอร์โทรหรือ LINE สำหรับติดต่อกลับ (ไม่บังคับ)<input type="text" id="pfbC" maxlength="300" value="${esc(ls('penum.fb.contact'))}" placeholder="เช่น สมชาย ฝ่ายจัดซื้อ 081-234-5678"></label>
+  <div class="pfb-inf">ส่งไปพร้อมกัน: ${esc(C.name)} ${esc(verTxt())}${I.page?' · หน้า '+esc(I.page):''}${I.company?' · '+esc(I.company):''}</div><div id="pfbEr"></div></div>
+  <div class="pfb-ft"><button type="button" class="pfb-b pri" data-f="send">ส่งข้อความ</button><button type="button" class="pfb-b" data-f="close">ยกเลิก</button></div>
+  <input type="file" id="pfbF" accept="image/*" hidden>`;
+  setShot(SHOT);D.querySelector('#pfbF').onchange=e=>addImg(e.target.files[0])}
+function fail(p,why){const t=plain(p),e=D.querySelector('#pfbEr');
+  e.innerHTML=`<div class="pfb-er"><b>ส่งเข้าระบบไม่ได้ตอนนี้</b><span>${esc(why)} ข้อความยังอยู่ ส่งทางอื่นแทนได้เลย</span>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="pfb-b ln" data-f="line">ส่งทาง LINE ${LINE}</button><a class="pfb-b" href="mailto:${MAIL}?subject=${encodeURIComponent('['+C.name+'] '+(KINDS.find(x=>x[0]===p.kind)||KINDS[3])[2])}&body=${encodeURIComponent(t.slice(0,1500))}">ส่งอีเมล</a><button type="button" class="pfb-b" data-f="copy">คัดลอกข้อความ</button></div><span id="pfbLn"></span></div>`}
+async function copyT(t){try{await navigator.clipboard.writeText(t);return true}catch(e){const a=document.createElement('textarea');a.value=t;D.append(a);a.select();let ok=false;try{ok=document.execCommand('copy')}catch(x){}a.remove();return ok}}
+async function send(){const p=payload(),btn=D.querySelector('[data-f=send]');
+  if(!p.message){D.querySelector('#pfbM').focus();D.querySelector('#pfbEr').innerHTML='<div class="pfb-er">พิมพ์รายละเอียดก่อนกดส่ง</div>';return}
+  ls('penum.fb.contact',p.contact);btn.disabled=true;btn.textContent='กำลังส่ง…';
+  let id=null,why='ไม่มีอินเทอร์เน็ต หรือระบบรับเรื่องยังไม่เปิด';
+  try{const r=await fetch(SB.url+'/rest/v1/rpc/penum_fb_send',{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({p})});
+    if(r.ok)id=await r.json();else if(r.status===404)why='ระบบรับเรื่องยังไม่เปิด';else{let m='';try{m=(await r.json()).message||''}catch(e){}why=/busy/.test(m)?'มีคนส่งเข้ามามาก รอสักครู่แล้วลองใหม่':'ระบบรับเรื่องไม่ตอบ ('+r.status+')'}}catch(e){}
+  if(id==null){btn.disabled=false;btn.textContent='ลองส่งอีกครั้ง';fail(p,why);return}
+  ls('penum.fb.draft','');SHOT='';
+  D.innerHTML=`<div class="pfb-ok"><div class="big">✅</div><b style="font-size:18px">ส่งถึงทีม ORIEN แล้ว</b><span>เลขที่เรื่อง <b>#${esc(id)}</b> ขอบคุณที่ช่วยให้ ${esc(C.name)} ดีขึ้น${p.contact?'<br>ทีมงานจะติดต่อกลับตามที่ให้ไว้':''}</span><button type="button" class="pfb-b pri" data-f="close">ปิด</button></div>`}
+function wire(){D=document.createElement('dialog');D.className='pfb';D.setAttribute('aria-label','แจ้งปัญหา / แสดงความคิดเห็น');document.body.append(D);
+  const st=document.createElement('style');st.textContent=CSS;document.head.append(st);
+  D.addEventListener('click',async e=>{const k=e.target.closest('[data-k]');
+    if(k){K=k.dataset.k;D.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-pressed',b===k));D.querySelector('#pfbM').placeholder=KINDS.find(x=>x[0]===K)[3];return}
+    const f=(e.target.closest('[data-f]')||{}).dataset;if(!f||!f.f)return;
+    if(f.f==='close')D.close();if(f.f==='send')send();if(f.f==='shot')D.querySelector('#pfbF').click();if(f.f==='unshot')setShot('');
+    if(f.f==='copy'){const ok=await copyT(plain(payload()));e.target.textContent=ok?'คัดลอกแล้ว ✓':'คัดลอกไม่ได้'}
+    if(f.f==='line'){const t=plain(payload());if(mob()){open(`https://line.me/R/oaMessage/${encodeURIComponent(LINE)}/?${encodeURIComponent(t)}`,'_blank');return}
+      const ok=await copyT(t);open(`https://line.me/R/ti/p/${encodeURIComponent(LINE)}`,'_blank');
+      D.querySelector('#pfbLn').innerHTML=`${ok?'คัดลอกข้อความไว้แล้ว':'กด คัดลอกข้อความ ก่อน'} เปิด LINE › เพิ่มเพื่อน › ค้นหาไอดี <b>${LINE}</b> › เปิดแชท › วาง (Ctrl+V) › ส่ง หรือสแกน QR ในหน้าที่เพิ่งเปิดด้วยมือถือ`}});
+  D.addEventListener('input',e=>{if(e.target.id==='pfbM')ls('penum.fb.draft',e.target.value)});
+  D.addEventListener('paste',e=>{const f=[...((e.clipboardData||{}).files||[])].find(x=>/^image\//.test(x.type));if(f){e.preventDefault();addImg(f)}});
+  D.addEventListener('keydown',e=>e.stopPropagation())}
+window.penumFB={init(o){Object.assign(C,o||{})},
+  open(kind){if(!D)wire();if(kind)K=kind;form();if(!D.open)D.showModal();build().then(()=>{const i=D.querySelector('.pfb-inf');if(i&&BUILD){const I=info();i.textContent=`ส่งไปพร้อมกัน: ${C.name} ${verTxt()}${I.page?' · หน้า '+I.page:''}${I.company?' · '+I.company:''}`}});setTimeout(()=>{const m=D.querySelector('#pfbM');if(m)m.focus()},50)}};
+})();
+</script>
+<!-- PENUM-FB:end -->
+<script>// the feedback box: menu › แจ้งปัญหา / ความคิดเห็น
+penumFB.init({app:'MEP',name:'PENUM MEP',ver:window.PENUM_VER||'',info:()=>({page:[...document.querySelectorAll('#cats button.on,#tabs button.on')].map(b=>b.textContent.trim()).join(' › ')})});
+document.getElementById('btnFb').addEventListener('click',()=>penumFB.open());</script>
