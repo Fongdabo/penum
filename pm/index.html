@@ -6812,10 +6812,22 @@ function licCard(){const L=licP(),pend=licPend();if(!licOn()&&!pend)return '';co
   const head=`<section class="card" id="licCard"><h2><span>สิทธิ์การใช้งาน</span><small>รหัสเปิดใช้งานจากผู้ให้บริการ เก็บไว้กับข้อมูลบริษัท ทุกเครื่องที่ใช้ข้อมูลชุดนี้ตรวจรหัสเอง</small></h2>`;
   const body=L?licInfo(L)+`<p style="margin:8px 0">ผู้ใช้งานตอนนี้ <b>${fmt(licUsed())}</b>${licMax()?` / ${fmt(licMax())}`:''} คน <small class="muted">(ผู้ดูแลระบบ + พนักงานที่ตั้ง PIN แล้ว)</small></p>`
     :st==='rev'?'<p class="lic-bad">รหัสนี้ถูกผู้ให้บริการยกเลิกแล้ว ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ข้อมูลไม่ถูกลบ ติดต่อผู้ให้บริการเพื่อรับรหัสใหม่</p>':st==='bad'?'<p class="lic-bad">รหัสที่เก็บไว้ไม่ถูกต้อง ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ใส่รหัสใหม่จากผู้ให้บริการด้านล่าง</p>':'<p class="hint">กำลังตรวจรหัส…</p>';
-  const renew=admin?`<h3 class="wz-s">${L?'ต่ออายุหรือเปลี่ยนแพ็กเกจ':'ใส่รหัสใหม่'}</h3><p class="hint">วางรหัสใหม่ที่ได้จากผู้ให้บริการ (ต้องเป็นบริษัทเดียวกัน) รหัสใหม่จะแทนรหัสเดิม ข้อมูลทั้งหมดอยู่ครบ</p>
+  const renew=admin?`${L?`<p class="hint">หลังผู้ให้บริการอนุมัติ รหัสใหม่จะเข้ามาเองเมื่อเปิดโปรแกรมตอนต่อเน็ต ไม่ต้องทำอะไร</p><details${pend?' open':''}><summary class="hint" style="cursor:pointer">มีรหัสใหม่จากผู้ให้บริการ? วางรหัสเอง</summary>`:`<h3 class="wz-s">ใส่รหัสใหม่</h3>`}<p class="hint">วางรหัสใหม่ที่ได้จากผู้ให้บริการ (ต้องเป็นบริษัทเดียวกัน) รหัสใหม่จะแทนรหัสเดิม ข้อมูลทั้งหมดอยู่ครบ</p>
     <textarea id="licNew" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(pend)}</textarea><div id="licNewR" class="lic-r"></div>
-    <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-a="licRenew">ใช้รหัสนี้</button></div>`:'<p class="hint">ผู้ดูแลระบบเป็นคนใส่รหัสต่ออายุ</p>';
+    <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-a="licRenew">ใช้รหัสนี้</button></div>${L?'</details>':''}`:'<p class="hint">รหัสต่ออายุจะเข้ามาเองเมื่อผู้ให้บริการอนุมัติ</p>';
   return head+body+planCard(L,admin)+renew+'</section>'}
+/* approved renewals: ORIEN publishes the new code in files/licences.json, encrypted with a key made from the code this company
+   already holds (so only this company can read it); PM picks it up when it opens online */
+const licNorm=c=>String(c||'').replace(/\s+/g,'').replace(/^.*#lic=/,'');
+const sha=async t=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));
+async function licAuto(){try{if(DEMOPG||!licOn())return;const cur=licNorm(DB.co.lic);
+  const j=await (await fetch('files/licences.json',{cache:'no-store'})).json(),idx=[...(await sha('i'+cur)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join(''),e=j&&j.e&&j.e[idx];if(!e)return;
+  const k=await crypto.subtle.importKey('raw',await sha('k'+cur),'AES-GCM',false,['decrypt']);
+  const code=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:licB64(e.iv)},k,licB64(e.ct)));
+  const r=await licCheck(code),o=await licCheck(cur);if(!r.ok||!o.ok||r.p.co!==o.p.co||code===cur||String(r.p.iat)<String(o.p.iat)||DB.co.lic!==cur&&licNorm(DB.co.lic)!==cur)return;
+  DB.co.lic=r.code;if(r.p.an)DB.co.adminName=r.p.an;if(r.p.em)DB.co.adminEmail=r.p.em;LIC={code:r.code,r};LOCKSNAP=null;save(true);render();
+  toast(`ได้รับรหัสใหม่จากผู้ให้บริการแล้ว: ${LIC_PLAN[r.p.pl]||r.p.pl} ${fmt(r.p.mx)} คน ใช้ได้ถึง ${thDL(r.p.exp)}`)}catch(e){}}
+if(!DEMOPG)setTimeout(licAuto,1500);
 /* packages on offer, from files/plans.json (ORIEN edits prices there); a request goes to ORIEN by e-mail or LINE */
 let PLANS=(()=>{try{return JSON.parse(localStorage.getItem('penum.plans')||'null')}catch(e){return null}})()||{contact:{email:'fong101dt@gmail.com',line:''},vat:'ราคาต่อเดือน ไม่รวม VAT 7%',plans:[{k:'pilot',name:'ทดลองใช้ (Pilot)',price:0,users:10,txt:'ฟรีช่วงทดลอง'},{k:'starter',name:'Starter',price:1490,users:10},{k:'std',name:'Standard',price:3900,users:30},{k:'biz',name:'Business',price:7900,users:80},{k:'ent',name:'Enterprise',price:null,users:200,txt:'ติดต่อฝ่ายขาย'}]};
 if(!DEMOPG)fetch('files/plans.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.plans))return;const t=JSON.stringify(j);if(t===JSON.stringify(PLANS))return;PLANS=j;try{localStorage.setItem('penum.plans',t)}catch(e){}if(S.ctab==='coset')render()}).catch(()=>{});
