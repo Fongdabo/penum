@@ -1738,6 +1738,9 @@ function tagSplit(name){
   const parts=m[1].split(/\s*,\s*/),pre=(/^[A-Za-z]+[\s\-]?/.exec(parts[0])||[''])[0];
   return {tags:parts.map((t,i)=>i&&!/^[A-Za-z]/.test(t)?pre+t:t),room:m[2].trim()};
 }
+function unitTags(rm,nU,pre){          // tag of every unit serving a room: tags written in the room name first, else <base>-1..n
+  const TS=tagSplit(rm.name),idx=String(Math.max(1,P.rooms.findIndex(r=>r.id===rm.id)+1)).padStart(2,'0'),base=TS.tags[0]||pre+'-'+idx;
+  return Array.from({length:nU},(_,k)=>TS.tags.length>=nU?TS.tags[k]:nU>1?base+'-'+(k+1):base)}
 function wrap2(t,n){
   if(t.length<=n)return [t];
   let k=-1;for(let i=Math.min(n,t.length-1);i>4;i--)if(' ,/'.includes(t[i])){k=i;break}
@@ -1818,7 +1821,7 @@ function diagTech(I,rm){
     /* supply duct */
     g+=`<rect class="ln" x="524" y="${CY-8}" width="30" height="8"/>`+ln(`M539 ${CY-8} V132 H${sx} V${RY-(clean?12:0)}`)+ah(539,190,'u')+tx(548,196,'SA',{a:'start',fs:11})+ah(640,132,'r')+tx(640,124,'SA',{fs:11})+ah(sx,RY-(clean?14:2),'d')+tx(sx+10,RY-24,'SA',{a:'start',fs:11});
     /* tag + system box */
-    g+=`<rect class="ln" x="${CX+CW-74}" y="${CY+CH+14}" width="74" height="22"/>`+tx(CX+CW-37,CY+CH+30,tag,{fs:tag.length>9?9.5:12})+(nU>1?tx(CX+CW-80,CY+CH+30,'TYPICAL OF '+nU+' UNITS',{a:'end',fs:9}):'');
+    g+=`<rect class="ln" x="${CX+CW-74}" y="${CY+CH+14}" width="74" height="22"/>`+tx(CX+CW-37,CY+CH+30,tag,{fs:tag.length>9?9.5:12})+(nU>1?tx(CX+CW-80,CY+CH+30,'TYPICAL OF '+nU+' UNITS',{a:'end',fs:9})+tx(CX+CW,CY+CH+50,'SEE UNIT SCHEDULE BELOW',{a:'end',fs:8}):'');
     g+=`<rect class="ln thk" x="78" y="404" width="190" height="34"/>`+tx(173,428,ahu?'CHW':pkg?'DX PACKAGE':allOA?'DX · 100% OA':'DX',{fs:17,c:'b'});
     g+=ln(`M${cc+13} ${CY+CH} v8 h-40 v6`)+tx(cc-30,CY+CH+26,'DRAIN W/TRAP',{a:'end',fs:7.5});
     if(ahu){
@@ -1839,7 +1842,7 @@ function diagTech(I,rm){
   } else {
     /* split / VRF: indoor unit inside room, outdoor unit outside */
     const iy=RY+9,nD=Math.min(nU,3),uw=nD===1?92:nD===2?74:48,ug=nD===2?10:7,ix=nD===1?RX+70:RX+58,ux_=k=>ix+k*(uw+ug);
-    for(let k=0;k<nD;k++){const X=ux_(k),tg=nU>3&&k===2?'… ×'+nU:(TS.tags[k]||(nU>1?tag+'-'+(k+1):tag));
+    for(let k=0;k<nD;k++){const X=ux_(k),tg=nU>3&&k===2?'… ×'+nU:unitTags(rm,nU,tag.replace(/-\d+$/,''))[k];
       g+=`<rect class="ln thk" x="${X}" y="${iy}" width="${uw}" height="22" rx="3"/>`+tx(X+uw/2,iy+15,tg,{fs:tg.length*6>uw-6?Math.max(6.5,(uw-6)/tg.length*1.55):10})+[0.18,0.5,0.82].map(f=>ln(`M${X+uw*f} ${iy+24} v8`)+ah(X+uw*f,iy+36,'d')).join('');
       if(k)g+=ln(`M${X-ug} ${iy+8} H${X} M${X-ug} ${iy+16} H${X}`)+ctl(`M656 39 H${X+uw*0.65} V${iy}`)}
     const ux=330,uy=250;
@@ -1854,7 +1857,16 @@ function diagTech(I,rm){
     g+=`<rect class="ln thk" x="78" y="404" width="190" height="34"/>`+tx(173,428,vrf?'VRF':'DX SPLIT',{fs:17,c:'b'})+`<rect class="ln" x="${ux-5}" y="${uy+112+9*(nO-1)}" width="74" height="20"/>`+tx(ux+32,uy+126+9*(nO-1),row?sizeTxt(sys,row.s)+' × '+row.q:'',{fs:8.5});
     if(oa>0){g+=`<rect class="ln" x="78" y="70" width="70" height="44"/><circle class="ln" cx="113" cy="90" r="11"/><path class="ln" d="M113 79 h14 v8 M104 101 h20 M100 105 h28"/>`+tx(113,128,'FRESH AIR FAN',{fs:9.5})+ln(`M48 92 H78 M148 92 H${rx} V${RY}`)+ah(78,92,'r')+ah(rx,RY-2,'d')+tx(44,84,'OA',{a:'start',fs:11})+tx(470,84,'OA '+fmt(oa)+' CMH',{fs:10})+ctl('M560 28 H113 V70')+tx(118,22,'FRESH AIR FAN CONTROLS',{c:'ctl-t',a:'start',fs:8.5})}
   }
-  return `<svg class="sd sdt" viewBox="0 0 960 600" role="img" aria-label="System and control diagram ${esc(tag)} ${esc(nm(rm))}">${g}</svg>`;
+  let VH=600;
+  if(nU>1&&row){          // unit schedule: every unit drawn above as "typical" gets its own line
+    const tg=unitTags(rm,nU,TS.tags[0]?'':tag.replace(/-\d+$/,'')),nr=Math.min(nU,12),y0=616,cw=[0,130,250,370],hd=['TAG','CAPACITY','SUPPLY AIR','SERVES'];
+    const per=air?fmt(sup/nU)+' CMH':'-',cap=sys==='ahu'?fmt(row.s/12000,1)+' TR':sizeTxt(sys,row.s);
+    g+=tx(78,y0-6,'UNIT SCHEDULE · '+nU+' UNITS',{a:'start',fs:10,c:'b'})+`<rect class="ln" x="78" y="${y0}" width="600" height="${16*(nr+1)+(nU>nr?16:0)}"/>`+ln(`M78 ${y0+16} H678`);
+    hd.forEach((h,i)=>g+=tx(86+cw[i],y0+11.5,h,{a:'start',fs:8}));
+    for(let k=0;k<nr;k++){const y=y0+16*(k+1);g+=tx(86,y+11.5,tg[k],{a:'start',fs:8.5})+tx(86+cw[1],y+11.5,cap,{a:'start',fs:8.5})+tx(86+cw[2],y+11.5,per,{a:'start',fs:8.5})+tx(86+cw[3],y+11.5,wrap2(TS.room,30)[0],{a:'start',fs:8.5})}
+    if(nU>nr)g+=tx(86,y0+16*(nr+1)+11.5,'… '+(nU-nr)+' MORE UNITS, SAME AS ABOVE',{a:'start',fs:8.5});
+    VH=y0+16*(nr+1)+(nU>nr?16:0)+18}
+  return `<svg class="sd sdt" viewBox="0 0 960 ${VH}" role="img" aria-label="System and control diagram ${esc(tag)} ${esc(nm(rm))}">${g}</svg>`;
 }
 function diagAirOld(I,rm){
   const {row,ps,sys,clean,oa,sup,d}=I, pkg=sys==='package', ahu=sys==='ahu';
@@ -4202,11 +4214,14 @@ function chwDiag(){
   g+=tx(520,90,`CHS ${fmt(7)}°C · Ø${H.main.dn} · ${fmt(H.Q,1)} L/s`,{fs:9.5})+tx(520,yb+86,`CHR ${fmt(7+H.dT,1)}°C · Ø${H.main.dn}`,{fs:9.5});
   if(wc){g+=box(40,cy0-70,90,46)+tx(85,cy0-50,'COOLING',{fs:8.5})+tx(85,cy0-39,'TOWER',{fs:8.5})+ln(`M140 ${cy0+15} V${cy0-24} H130 M85 ${cy0-24} V${cy0+15+(nC-1)*cg}`)+tx(85,cy0-78,`CDW Ø${H.cmain.dn} · ${fmt(H.qc1*ch.N,1)} L/s`,{fs:8})}
   g+=`<circle class="ln fpbg" cx="80" cy="${yb+70}" r="16"/>`+tx(80,yb+73,'EXP',{fs:8})+ln(`M96 ${yb+70} H120`)+tx(80,yb+100,`EXPANSION TANK ${fmt(A.exp)} L`,{fs:8});
-  const L=A.ahus.slice(0,4),ax0=560,ag=90;
-  L.forEach((a,i)=>{const x=ax0+i*ag;g+=ln(`M${x} 96 V190 M${x+40} 250 V${yb+70}`)+box(x-22,190,84,60,'ln thk')+tx(x+20,214,(tagSplit(a.r.rm.name).tags[0]||'AHU-'+(i+1)),{fs:9,c:'b'})+tx(x+20,228,`${fmt(a.kw/3.517,1)} TR${a.n>1?' × '+a.n:''}`,{fs:8})+tx(x+20,240,`${fmt(a.q,1)} L/s · Ø${a.p.dn}`,{fs:8})+gv(x,150,1)+gv(x+40,290,1)+`<circle class="ln fpbg" cx="${x+40}" cy="320" r="7"/>`+tx(x+40,323,'M',{fs:7})+tx(x+52,323,'CCV',{a:'start',fs:7.5})});
-  if(A.ahus.length>4)g+=tx(ax0+4*ag,220,`+${A.ahus.length-4} MORE`,{a:'start',fs:8,c:'hl'});
-  g+=ln(`M900 96 V${yb+70}`)+gv(900,(96+yb+70)/2,1)+tx(912,(96+yb+70)/2+3,'BYPASS',{a:'start',fs:8});
-  return `<svg class="sd sdt" viewBox="0 0 960 ${yb+120}" role="img" aria-label="Chilled water system diagram">${g}</svg>`}
+  const typ=+(P.mep.chw&&P.mep.chw.typ)===1,U=[];          // every unit gets its own branch; the compact view keeps one typical box per room
+  A.ahus.forEach(a=>{if(typ){U.push({a,tag:unitTags(a.r.rm,1,'AHU')[0],n:a.n});return}unitTags(a.r.rm,a.n,'AHU').forEach(t=>U.push({a,tag:t,n:1}))});
+  const MAXU=24,L=U.slice(0,MAXU),ax0=560,ag=90,xe=Math.max(900,ax0+L.length*ag+(U.length>MAXU?70:0)),W=xe+60;
+  g=g.split(' H900').join(' H'+xe);
+  L.forEach((u,i)=>{const a=u.a,x=ax0+i*ag;g+=ln(`M${x} 96 V190 M${x+40} 250 V${yb+70}`)+box(x-22,190,84,60,'ln thk')+tx(x+20,214,u.tag,{fs:u.tag.length>9?7.5:9,c:'b'})+tx(x+20,228,`${fmt(a.kw/3.517,1)} TR${u.n>1?' × '+u.n:''}`,{fs:8})+tx(x+20,240,`${fmt(a.q,1)} L/s · Ø${a.p.dn}`,{fs:8})+gv(x,150,1)+gv(x+40,290,1)+`<circle class="ln fpbg" cx="${x+40}" cy="320" r="7"/>`+tx(x+40,323,'M',{fs:7})+tx(x+52,323,'CCV',{a:'start',fs:7.5})+(u.n>1?tx(x+20,268,'TYPICAL OF '+u.n,{fs:7.5,c:'hl'}):'')});
+  if(U.length>MAXU)g+=tx(ax0+MAXU*ag,220,`+${U.length-MAXU} MORE`,{a:'start',fs:8,c:'hl'});
+  g+=ln(`M${xe} 96 V${yb+70}`)+gv(xe,(96+yb+70)/2,1)+tx(xe+12,(96+yb+70)/2+3,'BYPASS',{a:'start',fs:8});
+  return `<svg class="sd sdt" viewBox="0 0 ${W} ${yb+120}" role="img" aria-label="Chilled water system diagram"${W>960?` style="min-width:${Math.round(W*0.8)}px"`:''}>${g}</svg>`}
 function chwFormula(){const A=chwAll();if(!A.any)return `<p class="hint">${tl('เลือกระบบ AHU + Chiller ให้ห้องอย่างน้อยหนึ่งห้องเพื่อดูสูตรพร้อมตัวเลข','Select the AHU + Chiller system for at least one room to see worked formulas')}</p>`;const H=A.H,S=P.mep.chw,f1=v=>fmt(v,1),f2=v=>fmt(v,2);
   return fxBlock(tl('อัตราไหลน้ำเย็น','Chilled water flow'),tl('Q = kW ÷ (4.186 × ΔT) (L/s)','Q = kW ÷ (4.186 × ΔT) (L/s)'),`${f1(A.ch.each*3.517)} ÷ (4.186 × ${H.dT})`,`${f2(H.q1)} L/s ${tl('ต่อเครื่อง','per chiller')}`)+
     fxBlock(tl('ขนาดท่อน้ำเย็น','Chilled water pipe size'),tl('เลือกขนาดเล็กสุดที่ความเร็วไม่เกินเกณฑ์ และแรงเสียดทานไม่เกิน {0} Pa/m','Smallest size with velocity within the limit and friction up to {0} Pa/m').replace('{0}',n(S.frMax)),`Q ${f1(H.Q)} L/s → Ø${H.main.dn} mm`,`${f1(H.main.v)} m/s · ${fmt(H.main.fr)} Pa/m`)+
@@ -4227,12 +4242,13 @@ function renderChw(){
     ${fld('ผลต่างอุณหภูมิน้ำเย็น (°C)',mIn('chw.dT',S.dT))}${fld('ความยาวท่อเมนเที่ยวเดียว (m)',mIn('chw.mainLen',S.mainLen))}${fld('ความยาวท่อแยกต่อ AHU (m)',mIn('chw.brLen',S.brLen))}
     ${fld('แรงเสียดทานสูงสุด (Pa/m)',mIn('chw.frMax',S.frMax))}${fld('ความเร็วน้ำสูงสุด (m/s)',mIn('chw.vMax',S.vMax))}${fld('ตัวคูณข้อต่อและวาล์ว',mIn('chw.fit',S.fit))}
     ${fld('ความดันตก Chiller (kPa)',mIn('chw.dpCh',S.dpCh))}${fld('ความดันตกคอยล์ AHU (kPa)',mIn('chw.dpCoil',S.dpCoil))}${fld('ความดันตกวาล์วควบคุม (kPa)',mIn('chw.dpValve',S.dpValve))}
-    ${fld('ประสิทธิภาพปั๊ม',mIn('chw.eff',S.eff))}${ch.type==='water'?fld('ความยาวท่อน้ำระบายความร้อน (m)',mIn('chw.cwLen',S.cwLen)):''}
+    ${fld('ประสิทธิภาพปั๊ม',mIn('chw.eff',S.eff))}${fld('ไดอะแกรม AHU',`<select data-mp="chw.typ">${opt([['0','แสดงทุกเครื่อง'],['1','ย่อเป็นเครื่องตัวแทน (typical)']],String(+S.typ===1?1:0))}</select>`)}${ch.type==='water'?fld('ความยาวท่อน้ำระบายความร้อน (m)',mIn('chw.cwLen',S.cwLen)):''}
   </div>
   <dl class="kv sm-kv" style="margin:12px 0 0">${kvD('อัตราไหลต่อ Chiller',`${fmt(H.q1,1)} L/s`)}${kvD('ท่อเมน',`Ø${H.main.dn} · ${fmt(H.main.v,1)} m/s · ${fmt(H.main.fr)} Pa/m`)}${kvD('ความดันรวมของปั๊ม',`${fmt(H.kPa)} kPa`)}${kvD('ปั๊มน้ำเย็น',`${ch.N} × ${fmt(H.q1,1)} L/s · ${fmt(H.head)} m · ${H.kw} kW`)}
     ${ch.type==='water'?kvD('ท่อน้ำระบายความร้อน',`Ø${H.cmain.dn} · ${fmt(H.qc1*ch.N,1)} L/s`)+kvD('ปั๊มน้ำระบายความร้อน',`${fmt(H.chead)} m · ${H.ckw} kW`):''}${kvD('ปริมาตรน้ำในระบบ',`${fmt(A.vol)} L`)}${kvD('ถังขยายตัว',`${fmt(A.exp)} L`)}</dl></section>
-  <section class="panel card"><h2><span>ท่อน้ำเย็นเข้า AHU</span></h2><div class="tbl-wrap"><table class="eq" style="min-width:620px"><thead><tr><th>AHU</th><th class="r">จำนวน</th><th class="r">TR</th><th class="r">L/s</th><th class="r">ขนาดท่อ mm</th><th class="r">m/s</th><th class="r">Pa/m</th></tr></thead><tbody>
-    ${A.ahus.map(a=>`<tr><td>${esc(nm(a.r.rm))}</td><td class="r">${a.n}</td><td class="r">${fmt(a.kw/3.517,1)}</td><td class="r">${fmt(a.q,2)}</td><td class="r">Ø${a.p.dn}</td><td class="r">${fmt(a.p.v,1)}</td><td class="r">${fmt(a.p.fr)}</td></tr>`).join('')}</tbody></table></div></section>
+  <section class="panel card"><h2><span>ท่อน้ำเย็นเข้า AHU</span></h2><div class="tbl-wrap"><table class="eq" style="min-width:620px"><thead><tr><th>AHU</th><th>ห้อง</th><th class="r">จำนวน</th><th class="r">TR ต่อเครื่อง</th><th class="r">L/s ต่อเครื่อง</th><th class="r">ท่อแยกต่อเครื่อง mm</th><th class="r">m/s</th><th class="r">Pa/m</th><th class="r">TR รวม</th><th class="r">L/s รวม</th></tr></thead><tbody>
+    ${A.ahus.map(a=>{const t=unitTags(a.r.rm,a.n,'AHU');return `<tr><td>${esc(a.n>1?t[0]+' – '+t[a.n-1]:t[0])}</td><td>${esc(nm(a.r.rm))}</td><td class="r">${a.n}</td><td class="r">${fmt(a.kw/3.517,1)}</td><td class="r">${fmt(a.q,2)}</td><td class="r">Ø${a.p.dn}</td><td class="r">${fmt(a.p.v,1)}</td><td class="r">${fmt(a.p.fr)}</td><td class="r">${fmt(a.kw/3.517*a.n,1)}</td><td class="r">${fmt(a.q*a.n,2)}</td></tr>`}).join('')}
+    <tr class="sub"><td>รวม</td><td></td><td class="r">${A.nA}</td><td></td><td></td><td></td><td></td><td></td><td class="r">${fmt(A.ahus.reduce((s,a)=>s+a.kw/3.517*a.n,0),1)}</td><td class="r">${fmt(A.ahus.reduce((s,a)=>s+a.q*a.n,0),2)}</td></tr></tbody></table></div><p class="hint" style="margin:6px 0 0">ท่อแยกเข้า AHU คิดทีละเครื่อง ท่อเมน Ø${H.main.dn} คิดจากอัตราไหลรวมของ Chiller ${fmt(H.Q,1)} L/s</p></section>
   <section class="panel card"><h2><span>ไดอะแกรมระบบน้ำเย็น</span></h2><div style="overflow-x:auto" data-noxl>${chwDiag()}</div></section>
   ${sxCard('chw')}
   <section class="panel card"><h2><span>สูตรที่ใช้</span></h2><div class="fx-body">${chwFormula()}</div><p class="hint">ขนาดท่อและแรงดันปั๊มเป็นการคำนวณเบื้องต้น ความยาวท่อเป็นค่าที่กรอก งานจริงต้องคำนวณจากแนวท่อจริงและข้อมูลผู้ผลิต</p></section></div>`}
@@ -4938,7 +4954,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=75,MEP_NAME='v75';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=76,MEP_NAME='v76';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
