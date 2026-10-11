@@ -6735,12 +6735,17 @@ async function licCheck(code){code=String(code||'').replace(/\s+/g,'').replace(/
     const p=JSON.parse(new TextDecoder().decode(licB64(m[1])));if(p.v!==1||!p.co||!okD(p.exp))throw 0;r={ok:true,p,code}}
   catch(e){r={ok:false,err:'bad',code}}
   return LICV[code]=r}
+// revoked licence ids, published by ORIEN in files/revoked.json; the last list seen is kept so it also applies offline
+let LICREV=(()=>{try{return JSON.parse(localStorage.getItem('penum.revoked')||'[]')}catch(e){return []}})();
+{const v=r=>r.ok&&LICREV.includes(r.p.id)?Object.assign({},r,{ok:false,err:'rev'}):r;const f=licCheck;licCheck=async c=>v(await f(c))}
+if(!DEMOPG)fetch('files/revoked.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.ids))return;const L=j.ids.map(String);
+  if(JSON.stringify(L)===JSON.stringify(LICREV))return;LICREV=L;try{localStorage.setItem('penum.revoked',JSON.stringify(L))}catch(e){}LIC={code:null,r:null};render()}).catch(()=>{});
 // the state of this data set, kept up to date by render (checking is async, so the last result is cached)
 let LIC={code:null,r:null};
 const licOn=()=>!DEMOPG&&!!(DB&&DB.co&&DB.co.lic);
-function licState(){if(!licOn())return 'none';if(LIC.code!==DB.co.lic||!LIC.r)return 'wait';if(!LIC.r.ok)return 'bad';
+function licState(){if(!licOn())return 'none';if(LIC.code!==DB.co.lic||!LIC.r)return 'wait';if(!LIC.r.ok)return LIC.r.err==='rev'?'rev':'bad';
   const d=diffD(today(),LIC.r.p.exp);return d<-LIC_GRACE?'ro':d<0?'grace':d<=LIC_WARN?'warn':'ok'}
-const licRO=()=>{const s=licState();return s==='ro'||s==='bad'};
+const licRO=()=>{const s=licState();return s==='ro'||s==='bad'||s==='rev'};
 const licP=()=>licOn()&&LIC.r&&LIC.r.ok&&LIC.code===DB.co.lic?LIC.r.p:null;
 const licUsed=()=>1+CO().staff.filter(s=>s.active!==false&&s.pin).length;
 const licMax=()=>{const p=licP();return p&&n(p.mx)>0?n(p.mx):0};
@@ -6771,7 +6776,7 @@ function licStep(){const p=licP(),need=S.wizNew&&!p;
   :`<textarea id="wzLic" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(licPend())}</textarea><div id="wzLicR" class="lic-r"></div>`}</section>`}
 async function licTry(code,out){const el=$(out);if(!el)return null;code=String(code||'').trim();if(!code){el.innerHTML='';return null}
   el.innerHTML='<span class="hint">กำลังตรวจรหัส…</span>';const r=await licCheck(code);
-  if(!r.ok){el.innerHTML='<p class="lic-bad">รหัสไม่ถูกต้อง ติดต่อผู้ให้บริการ</p>';return null}
+  if(!r.ok){el.innerHTML=`<p class="lic-bad">${r.err==='rev'?'รหัสนี้ถูกยกเลิกแล้ว':'รหัสไม่ถูกต้อง'} ติดต่อผู้ให้บริการ</p>`;return null}
   if(diffD(today(),r.p.exp)<0){el.innerHTML=licInfo(r.p)+'<p class="lic-bad">รหัสนี้หมดอายุแล้ว ติดต่อผู้ให้บริการเพื่อต่ออายุ</p>';return null}
   el.innerHTML=licInfo(r.p,'ok');return r}
 async function wzLicGo(){const t=$('#wzLic');if(!t)return;const r=await licTry(t.value,'#wzLicR');if(!r)return;const C=DB.co;
@@ -6806,7 +6811,7 @@ const licAllowedIds=()=>{const m=licMax();const L=CO().staff.filter(s=>s.active!
 function licCard(){const L=licP(),pend=licPend();if(!licOn()&&!pend)return '';const admin=!S.me,st=licState();
   const head=`<section class="card" id="licCard"><h2><span>สิทธิ์การใช้งาน</span><small>รหัสเปิดใช้งานจากผู้ให้บริการ เก็บไว้กับข้อมูลบริษัท ทุกเครื่องที่ใช้ข้อมูลชุดนี้ตรวจรหัสเอง</small></h2>`;
   const body=L?licInfo(L)+`<p style="margin:8px 0">ผู้ใช้งานตอนนี้ <b>${fmt(licUsed())}</b>${licMax()?` / ${fmt(licMax())}`:''} คน <small class="muted">(ผู้ดูแลระบบ + พนักงานที่ตั้ง PIN แล้ว)</small></p>`
-    :st==='bad'?'<p class="lic-bad">รหัสที่เก็บไว้ไม่ถูกต้อง ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ใส่รหัสใหม่จากผู้ให้บริการด้านล่าง</p>':'<p class="hint">กำลังตรวจรหัส…</p>';
+    :st==='rev'?'<p class="lic-bad">รหัสนี้ถูกผู้ให้บริการยกเลิกแล้ว ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ข้อมูลไม่ถูกลบ ติดต่อผู้ให้บริการเพื่อรับรหัสใหม่</p>':st==='bad'?'<p class="lic-bad">รหัสที่เก็บไว้ไม่ถูกต้อง ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ใส่รหัสใหม่จากผู้ให้บริการด้านล่าง</p>':'<p class="hint">กำลังตรวจรหัส…</p>';
   const renew=admin?`<h3 class="wz-s">${L?'ต่ออายุหรือเปลี่ยนแพ็กเกจ':'ใส่รหัสใหม่'}</h3><p class="hint">วางรหัสใหม่ที่ได้จากผู้ให้บริการ (ต้องเป็นบริษัทเดียวกัน) รหัสใหม่จะแทนรหัสเดิม ข้อมูลทั้งหมดอยู่ครบ</p>
     <textarea id="licNew" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(pend)}</textarea><div id="licNewR" class="lic-r"></div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-a="licRenew">ใช้รหัสนี้</button></div>`:'<p class="hint">ผู้ดูแลระบบเป็นคนใส่รหัสต่ออายุ</p>';
@@ -6829,7 +6834,7 @@ function licBanner(){const st=licState(),p=licP(),admin=!S.me;if(st==='none'||st
   const go='<button type="button" class="btn sm" data-a="licGo">ตั้งค่า › สิทธิ์การใช้งาน</button>';
   if(st==='warn'){if(!admin)return '';return `<div class="lic-ban warn">สิทธิ์การใช้งานหมดอายุ ${thDL(p.exp)} (อีก ${diffD(today(),p.exp)} วัน) ติดต่อผู้ให้บริการเพื่อต่ออายุ แล้วใส่รหัสใหม่ ${go}</div>`}
   if(st==='grace'){const left=LIC_GRACE+diffD(today(),p.exp);return `<div class="lic-ban bad">สิทธิ์การใช้งานหมดอายุแล้วเมื่อ ${thDL(p.exp)} ใช้งานต่อได้อีก ${left} วัน หลังจากนั้นข้อมูลจะเปิดดูและพิมพ์ได้อย่างเดียว${admin?' '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
-  return `<div class="lic-ban bad">${st==='bad'?'รหัสเปิดใช้งานไม่ถูกต้อง':'สิทธิ์การใช้งานหมดอายุ'} ข้อมูลเปิดดู พิมพ์ และดาวน์โหลดไฟล์สำรองได้ แต่แก้ไขไม่ได้ ข้อมูลไม่ถูกลบ${admin?' ใส่รหัสใหม่ได้ที่ '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
+  return `<div class="lic-ban bad">${st==='bad'?'รหัสเปิดใช้งานไม่ถูกต้อง':st==='rev'?'รหัสเปิดใช้งานถูกยกเลิก':'สิทธิ์การใช้งานหมดอายุ'} ข้อมูลเปิดดู พิมพ์ และดาวน์โหลดไฟล์สำรองได้ แต่แก้ไขไม่ได้ ข้อมูลไม่ถูกลบ${admin?' ใส่รหัสใหม่ได้ที่ '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
 ACT.licGo=()=>{S.dept='set';pgGo(['co','coset','']);render();setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},60)};
 {const r=render;render=function(){try{if(typeof DB!=='undefined'&&DB&&DB.co){licSync();licFromLink()}}catch(e){console.error(e)}const x=r.apply(this,arguments);
   try{const t=$('#wzLic'),o=$('#wzLicR');if(t&&o&&t.value.trim()&&!o.innerHTML)setTimeout(wzLicGo,0)}catch(e){}
