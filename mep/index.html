@@ -1458,6 +1458,21 @@ function stdReport(rows){
   h+=`<p class="meta">${tl('ค่ามาตรฐานเป็นค่าอ้างอิงเบื้องต้นจาก ASHRAE 55, 62.1, 90.1, 170, ASHRAE TC 9.9 และ IEST-RP-CC012 / ISO 14644-4 ผู้ออกแบบต้องตรวจกับฉบับล่าสุด กฎหมายอาคารและข้อกำหนดของโครงการก่อนใช้งาน "ควรตรวจสอบ" คือค่าที่อยู่นอกช่วงแนะนำแต่ไม่ใช่ข้อบังคับ','Criteria are reference values from ASHRAE 55, 62.1, 90.1, 170, ASHRAE TC 9.9 and IEST-RP-CC012 / ISO 14644-4. Confirm against the current editions, building regulations and the project specification. "Check" marks values outside a recommended range that is not mandatory.')}</p>`;
   return h;
 }
+function roomEqCard(rm){          // pick the system, unit size and number of units right on the room page (same fields as เครื่องและไฟฟ้า)
+  const r=plan().rows.find(x=>x.rm===rm);if(!r)return '';const e=rm.eq,id=rm.id;
+  const size=r.sys==='ahu'?`<span class="hint" style="margin:0">${fmt(r.s/12000,1)} TR · ${fmt(r.cmhUnit)} CMH ต่อเครื่อง</span>`
+    :`<select data-eq="${id}.size" id="rsz-${id}"><option value="auto" ${e.size==='auto'?'selected':''}>อัตโนมัติ (${sizeTxt(r.sys,r.s)})</option>${SYS[r.sys].sizes.map(x=>`<option value="${x}" ${+e.size===x?'selected':''}>${sizeTxt(r.sys,x)}</option>`).join('')}</select>`;
+  const air=r.sys==='ahu'?'':(r.airOk?`<span class="pill ok">ลมจ่ายพอ</span>`:`<span class="pill bad">ลมจ่ายไม่พอ ${fmt(r.airCMH)}/${fmt(r.r.supply*3.6)} CMH</span>`);
+  const pr=r.r.btu<=0?'':r.ratio<0.98?`<span class="pill crit">เล็กกว่าโหลด ${fmt(r.ratio*100)}%</span>`:r.ratio>1.3?`<span class="pill bad">ใหญ่เกิน ${fmt(r.ratio*100)}%</span>`:`<span class="pill ok">${fmt(r.ratio*100)}% ของโหลด</span>`;
+  return `<div class="rm-eq" style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px"><b>เครื่องปรับอากาศของห้องนี้</b>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:8px">
+    ${fld('ระบบ',`<select data-eq="${id}.sys" id="rsy-${id}">${opt(Object.entries(SYS).map(([k,v])=>[k,v.label]),r.sys)}</select>`)}
+    ${fld(r.sys==='ahu'?'ขนาดต่อเครื่อง':'ขนาดต่อเครื่อง',size)}
+    ${fld('จำนวนเครื่อง',`<input type="number" step="1" min="0" data-eq="${id}.qty" id="rqt-${id}" value="${e.qty??''}" placeholder="อัตโนมัติ ${r.q}">`)}
+  </div>
+  <p style="margin:8px 0 0">${r.q} × ${r.sys==='ahu'?fmt(r.s/12000,1)+' TR':sizeTxt(r.sys,r.s)} = <b>${fmt(r.inst/12000,1)} TR</b> (${fmt(r.inst)} BTU/h) เทียบโหลด ${fmt(r.r.tr,2)} TR ${pr} ${air}</p>
+  <p class="hint" style="margin:4px 0 0">เว้นจำนวนว่าง = โปรแกรมเลือกให้ ค่าเดียวกับหน้าเครื่องและไฟฟ้า และใช้ใน BOQ</p></div>`;
+}
 function guideTable(){return `<div class="tbl-wrap"><table class="eq" style="min-width:560px"><thead><tr><th>ประเภทพื้นที่</th><th class="r">BTU/h ต่อ m²</th><th class="r">m² ต่อ TR</th><th class="r">ACH ลมจ่าย</th><th>หมายเหตุ</th></tr></thead><tbody>`+
   Object.values(TYPES).map(t=>`<tr><td>${t.label}</td><td class="r">${fmt(t.rateR[0])}–${fmt(t.rateR[1])}</td><td class="r">${fmt(12000/t.rateR[1],0)}–${fmt(12000/t.rateR[0],0)}</td><td class="r">${t.achR[0]}–${t.achR[1]}</td><td style="color:var(--muted);font-size:12px">${GNOTE[t.label]||''}</td></tr>`).join('')+`</tbody></table></div>`}
 const GNOTE={'สำนักงาน':'ใช้ค่าบนถ้ามีกระจกทิศตะวันตกมากหรือคนหนาแน่น','ห้องควบคุม / ห้องไฟฟ้า':'ขึ้นกับความร้อนจากตู้ไฟ/เซิร์ฟเวอร์ ควรคำนวณละเอียด','พื้นที่ผลิตทั่วไป':'เครื่องจักรร้อนมากอาจเกิน 1,500 ต้องคำนวณละเอียด','คลีนรูม ISO 8':'ลมจ่ายมักถูกกำหนดด้วย ACH มากกว่าโหลด','คลีนรูม ISO 7':'มักใช้ FFU/HEPA เต็มฝ้า อากาศภายนอกสูง','คลังสินค้า':'ฝ้าสูง ใช้ค่าต่ำถ้ามีฉนวนหลังคาดี'};
@@ -1505,6 +1520,7 @@ function renderEditor(){
     </div>
     <p class="hint" id="dimHint">${dimHint(rm)}</p>
     <div id="guideBox">${guideHTML(rm)}</div>
+    <div id="rmEqBox">${roomEqCard(rm)}</div>
     <div id="stdBox" style="margin-top:12px">${stdCard(rm)}</div>
     ${rm.mode==='quick'?`<p class="hint">เปลี่ยนประเภทพื้นที่จะใส่ค่าตั้งต้นให้ใหม่ ค่า BTU/h·m² เป็นค่าทั่วไป ควรปรับตามประสบการณ์และลักษณะงาน (${fmt(12000/(n(rm.rate)||1),1)} m²/TR)</p>`:''}
   </section>`;
@@ -4873,7 +4889,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=73,MEP_NAME='v73';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=74,MEP_NAME='v74';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -4912,6 +4928,7 @@ $('editor').addEventListener('change',e=>{
 function refreshQ(){
   const rm=room(),d=P.design;
   const gb=$('guideBox');if(gb)gb.innerHTML=guideHTML(rm);
+  const rqb=$('rmEqBox');if(rqb&&!rqb.contains(document.activeElement))rqb.innerHTML=roomEqCard(rm);
   const sbx=$('stdBox');if(sbx){const op=sbx.querySelector('details');sbx.innerHTML=stdCard(rm);if(op&&!op.open)sbx.querySelector('details').open=false}
   const pb=$('psyBox');if(pb)pb.innerHTML=psyCard(rm);
   const sb=$('sdBox');if(sb){if(SD_MODE==='3d'){clearTimeout(window.__sdT);window.__sdT=setTimeout(()=>{const old=$('sd3d')&&$('sd3d')._st;sb.innerHTML=diagCard(room());mount3D(room(),old)},450)}else sb.innerHTML=diagCard(rm)}
