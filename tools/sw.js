@@ -1,5 +1,5 @@
 // Offline support for an installed PENUM app.
-// The page itself is network-first, so a new release shows up on the next open when online,
+// The page itself (and small .json lists such as revoked licences) is network-first, so a new release shows up on the next open when online,
 // and the cached copy opens when offline. Fonts and icons are cache-first.
 const CACHE = 'penum-__VERSION__';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', '../icons/icon-192.png', '../icons/icon-512.png'];
@@ -20,7 +20,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const sameOrigin = url.origin === location.origin;
   const isFont = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
-  if (req.mode === 'navigate' || (sameOrigin && /\.(html|webmanifest)$/.test(url.pathname))) {
+  if (req.mode === 'navigate' || (sameOrigin && /\.(html|webmanifest|json)$/.test(url.pathname))) {
     e.respondWith(fetch(req).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(req, copy));
