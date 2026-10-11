@@ -82,6 +82,16 @@ fetch('https://fongdabo.github.io/penum/pm/files/revoked.json',{cache:'no-store'
 const snOf=c=>c.sn||String(((c.lics||[])[0]||{}).id||'').replace(/-R\d+$/,'');
 const lk=l=>l.no||l.id;// the code's own number: its serial, or its old id
 const isRev=l=>PUBREV.some(x=>x===l.no||x===l.id||x===String(l.id).replace(/-R\d+$/,''));
+// approval: the newest code, encrypted once for each older code of this customer (PENUM PM holding that code can read it)
+async function licPack(c){const L=(c.lics||[]).filter(l=>l.code),nw=L[L.length-1];if(!nw||L.length<2)return null;const e={};
+  const sha=async t=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));
+  for(const l of L.slice(0,-1)){const idx=[...(await sha('i'+l.code)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join('');
+    const k=await crypto.subtle.importKey('raw',await sha('k'+l.code),'AES-GCM',false,['encrypt']),iv=crypto.getRandomValues(new Uint8Array(12));
+    e[idx]={iv:b64u(iv),ct:b64u(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(nw.code))))}}
+  return `อนุมัติรหัสใหม่ ${c.co} รหัสลูกค้า ${snOf(c)} Serial number ${lk(nw)}\n[PENUM-LIC]${JSON.stringify(e)}`}
+async function approveAsk(c){const t=await licPack(c);if(!t)return openMail(c,'welcome');
+  dlgMsg('อนุมัติแล้ว',`<p>ออกรหัสใหม่ให้ <b>${esc(c.co)}</b> แล้ว (Serial number ${esc(lk(c.lics[c.lics.length-1]))})</p><p><b>ขั้นต่อไป:</b> กด “คัดลอกข้อความ” แล้ววางส่งให้ Claude ในโปรเจกต์ PENUM Claude จะประกาศให้ PENUM PM ของลูกค้าอัปเดตรหัสเองเมื่อเปิดโปรแกรมตอนต่อเน็ต ลูกค้าไม่ต้องวางรหัส</p><p class="mut">ข้อความนี้เข้ารหัสไว้ เปิดอ่านได้เฉพาะโปรแกรมของลูกค้ารายนี้</p>`,t);
+  const m=document.createElement('button');m.textContent='ส่งอีเมลแจ้งลูกค้าด้วย';m.onclick=()=>openMail(c,'renew');$('#dlgF').append(m)}
 function newSerial(){const used=new Set(allLics().map(l=>l.no));let s;do{const r=crypto.getRandomValues(new Uint32Array(2));s=String(1+r[0]%9)+String(r[1]%1e9).padStart(9,'0')}while(used.has(s));return s}
 const allLics=()=>[...DB.cust.flatMap(c=>c.lics||[]),...(DB.gone||[]).flatMap(g=>g.lics||[])];
 const revWait=()=>allLics().filter(l=>l.rev&&!isRev(l)).map(lk);
@@ -260,15 +270,15 @@ function custForm(c){const n=!c;c=c||{id:'',co:'',en:'',tax:'',addr:'',an:'',em:
       save();dlg.close();render();toast('ลบแล้ว');if(L.some(l=>l.rev))revAsk(L.map(lk))};
     $('#dlgF').prepend(d)}
   dlgOpen()}
-function renewForm(c){$('#dlgT').textContent='ต่ออายุ / ออกรหัสใหม่: '+c.co;const base=c.exp&&days(c.exp)>0?c.exp:today();
+function renewForm(c){$('#dlgT').textContent='อนุมัติ ต่ออายุ / เปลี่ยนแพ็กเกจ: '+c.co;const base=c.exp&&days(c.exp)>0?c.exp:today();
   $('#dlgB').innerHTML=`<div class="g"><label>แพ็กเกจ<select id="rPl">${Object.entries(PLAN).map(([k,v])=>`<option value="${k}"${k===c.pl?' selected':''}>${v[0]}</option>`).join('')}</select></label>
   <label>จำนวนผู้ใช้สูงสุด<input id="rMx" type="number" min="1" value="${c.mx}"></label><label>ราคาต่อเดือน<input id="rPr" type="number" value="${c.price}"></label>
   <label>ใช้ได้ถึง<input id="rEx" type="date" value="${addM(base,12)}"></label></div>
   <div class="row"><span class="mut">ต่อจากวันหมดอายุเดิม:</span><button class="sm" data-m="1">1 เดือน</button><button class="sm" data-m="3">3 เดือน</button><button class="sm" data-m="6">6 เดือน</button><button class="sm" data-m="12">1 ปี</button></div>`;
   $('#dlgB').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>$('#rEx').value=addM(base,+b.dataset.m));
   $('#rPl').onchange=()=>{const P=PLAN[$('#rPl').value];$('#rMx').value=P[2];$('#rPr').value=P[1]};
-  $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent='ออกรหัสใหม่';
-  b.onclick=async()=>{c.pl=$('#rPl').value;c.mx=Math.max(1,+$('#rMx').value||1);c.price=+$('#rPr').value||0;c.exp=$('#rEx').value;await issue(c);dlg.close();render();openMail(c,'renew')};
+  $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent='อนุมัติและออกรหัสใหม่';
+  b.onclick=async()=>{c.pl=$('#rPl').value;c.mx=Math.max(1,+$('#rMx').value||1);c.price=+$('#rPr').value||0;c.exp=$('#rEx').value;if(b.disabled)return;b.disabled=true;await issue(c);dlg.close();render();approveAsk(c)};
   $('#dlgF').append(b);dlgOpen()}
 
 const CH=['โทรศัพท์','LINE','อีเมล','นัดเข้าไปหา','อื่นๆ'];
@@ -341,7 +351,7 @@ function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+(c.en||'')+(c.tax||'')+(
   return `<section class="card"><h2>ลูกค้า <span class="mut">${DB.cust.length} ราย</span><span class="sp"></span><input id="q" placeholder="ค้นหาชื่อบริษัท ผู้ดูแล อีเมล" value="${esc(Q)}" style="max-width:280px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></h2>
   ${L.length?table(L):'<p class="mut">ยังไม่มีลูกค้า กด “ลงทะเบียนลูกค้าใหม่” เพื่อเริ่ม</p>'}</section>
   <section class="card"><h2>ประวัติรหัสที่ออก (Serial number)<span class="sp"></span>${(DB.gone||[]).length?`<label class="mut" style="font-size:14px;font-weight:400;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="showGone"${SHOWGONE?' checked':''} style="width:auto;margin:0"> แสดงรหัสของลูกค้าที่ลบแล้ว (${DB.gone.reduce((n,g)=>n+(g.lics||[]).length,0)})</label>`:''}</h2><div class="tw"><table><thead><tr><th>Serial number / รหัสลูกค้า</th><th>วันที่ออก</th><th>บริษัท</th><th>แพ็กเกจ</th><th>ถึง</th><th>สถานะ</th><th></th></tr></thead><tbody>
-  ${[...DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))),...(SHOWGONE?DB.gone||[]:[]).flatMap(g=>(g.lics||[]).map(l=>({c:{co:g.co+' (ลบแล้ว '+thD(g.del)+')',pl:l.pl,mx:l.mx},l})))].sort((a,b)=>(b.l.iat||'').localeCompare(a.l.iat||'')||(b.l.ts||0)-(a.l.ts||0)).map(({c,l})=>`<tr><td>${esc(lk(l))}${l.no?`<br><span class="mut">${esc(l.id)}</span>`:''}</td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc((PLAN[l.pl||c.pl]||[''])[0])} · ${l.mx||c.mx} คน</td><td>${thD(l.exp)}</td><td>${isRev(l)?'<span class="pill p-bad">ยกเลิกแล้ว</span>':l.rev?'<span class="pill p-warn">รอประกาศยกเลิก</span>':''}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}${isRev(l)?'':l.rev?`<button class="sm" data-a="revask" data-v="${esc(lk(l))}">ข้อความแจ้ง Claude</button>`:`<button class="sm del" data-a="rev" data-v="${esc(lk(l))}">ยกเลิกรหัส</button>`}</td></tr>`).join('')}</tbody></table></div></section>`}
+  ${[...DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))),...(SHOWGONE?DB.gone||[]:[]).flatMap(g=>(g.lics||[]).map(l=>({c:{co:g.co+' (ลบแล้ว '+thD(g.del)+')',pl:l.pl,mx:l.mx},l})))].sort((a,b)=>(b.l.iat||'').localeCompare(a.l.iat||'')||(b.l.ts||0)-(a.l.ts||0)).map(({c,l})=>`<tr><td>${esc(lk(l))}${l.no?`<br><span class="mut">${esc(l.id)}</span>`:''}</td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc((PLAN[l.pl||c.pl]||[''])[0])} · ${l.mx||c.mx} คน</td><td>${thD(l.exp)}</td><td>${isRev(l)?'<span class="pill p-bad">ยกเลิกแล้ว</span>':l.rev?'<span class="pill p-warn">รอประกาศยกเลิก</span>':''}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}${c.id&&(c.lics||[]).length>1&&l===c.lics[c.lics.length-1]?`<button class="sm" data-a="appr" data-id="${c.id}">ข้อความอนุมัติ</button>`:''}${isRev(l)?'':l.rev?`<button class="sm" data-a="revask" data-v="${esc(lk(l))}">ข้อความแจ้ง Claude</button>`:`<button class="sm del" data-a="rev" data-v="${esc(lk(l))}">ยกเลิกรหัส</button>`}</td></tr>`).join('')}</tbody></table></div></section>`}
 function viewSet(){const S=DB.set;return `<section class="card"><h2>ข้อมูลผู้ขาย (ท้ายอีเมล)</h2><div class="g">
   <label>อีเมลผู้ส่ง (บัญชี Gmail ที่ใช้ส่งให้ลูกค้า)<input data-s="from" type="email" value="${esc(S.from)}"></label><label>บริษัทผู้ขาย<input data-s="company" value="${esc(S.company)}"></label><label>ชื่อผู้ส่ง<input data-s="sender" value="${esc(S.sender)}" placeholder="ฝ่ายขาย PENUM PM"></label><label>โทรศัพท์<input data-s="phone" value="${esc(S.phone)}"></label><label>LINE ID<input data-s="line" value="${esc(S.line)}"></label>
   <label>ที่อยู่โปรแกรม<input data-s="app" value="${esc(S.app)}"></label></div></section>
@@ -359,7 +369,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-tab]
   if(t.dataset.tab){TAB=t.dataset.tab;render();return}
   const c=DB.cust.find(x=>x.id===t.dataset.id),a=t.dataset.a;
   if(a==='new')custForm();if(a==='edit')custForm(c);if(a==='renew')renewForm(c);if(a==='mail')openMail(c,'welcome');if(a==='cp')copy(t.dataset.v);
-  if(a==='revask')revAsk([t.dataset.v]);
+  if(a==='revask')revAsk([t.dataset.v]);if(a==='appr'&&c)approveAsk(c);
   if(a==='rev'){const l=allLics().find(x=>lk(x)===t.dataset.v);if(l&&confirm(`ยกเลิกรหัส Serial number ${lk(l)}?${l.no?'':'\nรหัสรุ่นเก่านี้ไม่มี Serial number ยกเลิกแล้วรหัสอื่นของลูกค้ารายนี้จะถูกยกเลิกด้วย'}\nหลังประกาศแล้ว PENUM PM ที่ใช้รหัสนี้จะเปิดดูและพิมพ์ได้อย่างเดียว (ข้อมูลไม่ถูกลบ)\nถ้าลูกค้ายังต้องใช้ต่อ ให้ออกรหัสใหม่ให้ก่อน`)){l.rev=today();save();render();revAsk([lk(l)])}}
   if(a==='lock')lockNow();
   if(a==='rmkey'&&confirm('ลบกุญแจออกจากเครื่องนี้? เครื่องนี้จะออกรหัสไม่ได้จนกว่าจะเปิดไฟล์กุญแจใหม่ รายชื่อลูกค้ายังอยู่')){localStorage.removeItem(KK);lockNow()}
