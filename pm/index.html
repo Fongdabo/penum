@@ -419,7 +419,10 @@ const G_OPTS=()=>[['','–'],...Object.entries(BOQ_G)];
 
 /* ---------- storage ---------- */
 // ?demo=1 opens the sample company in its own storage, apart from the real company (3.17)
-const DEMOPG=/[?&]demo=1\b/.test(location.search),DSFX=DEMOPG?'.demo':'';
+// several companies on one device (3.49): each company has its own storage slot ('' = the first company, '2', '3'…).
+// The tab remembers its slot (sessionStorage) so two windows can show two companies; new windows open the last one used.
+const COSLOT=(()=>{try{const t=sessionStorage.getItem('pmSlot');if(t!=null)return t;return localStorage.getItem('penum.pm.slot')||''}catch(e){return ''}})();
+const DEMOPG=/[?&]demo=1\b/.test(location.search),DSFX=DEMOPG?'.demo':COSLOT?'.c'+COSLOT:'';
 const KEY='penum.pm.v1'+DSFX,MEP_LINK='penum.mep.link';
 const SUITE=/\.github\.io$/.test(location.hostname)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 let DB,P,saveT;
@@ -442,7 +445,7 @@ function load(){
   P=DB.projects[DB.cur];
 }
 function save(now){clearTimeout(saveT);const go=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){toast('บันทึกไม่ได้ พื้นที่เก็บข้อมูลเต็ม ลองลบรูปหรือสำรองข้อมูลแล้วลบโครงการเก่า')}};now?go():saveT=setTimeout(go,250)}
-addEventListener('pagehide',()=>save(true));
+addEventListener('pagehide',()=>{if(!window.__coDrop)save(true)});
 
 /* photos live in IndexedDB so the project data stays small */
 const IDB={db:null,
@@ -2059,7 +2062,8 @@ function loginScreen(){bandCtl(false);$('#tabs').innerHTML='';$('#modeSw').inner
   <label style="display:block;margin-bottom:10px">ชื่อผู้ใช้<select id="pinWho" style="width:100%;display:block;margin-top:4px"><option value="__admin">ผู้ดูแลระบบ</option>${L.map(s=>`<option value="${s.id}"${PINAUTH&&PINAUTH.last===s.id?' selected':''}>${esc(s.name||s.code)} · ${esc(s.role||'')}</option>`).join('')}</select></label>
   <label style="display:block">PIN<input id="pinVal" type="password" inputmode="numeric" autocomplete="current-password" style="width:100%;display:block;margin-top:4px;font-size:20px;letter-spacing:6px"></label>
   <div class="row" style="margin-top:12px"><button type="button" class="btn pri" data-a="pinIn">เข้าใช้งาน</button></div>
-  <p class="hint" style="margin-top:10px">ลืม PIN ให้ผู้ดูแลระบบตั้งใหม่ที่ ตั้งค่าบริษัท › เข้าระบบด้วย PIN</p></section>`;
+  <p class="hint" style="margin-top:10px">ลืม PIN ให้ผู้ดูแลระบบตั้งใหม่ที่ ตั้งค่าบริษัท › เข้าระบบด้วย PIN</p>
+  ${typeof coSlots==='function'&&coSlots().length>1?`<p style="margin-top:8px"><button type="button" class="btn sm" data-a="coPick">เปลี่ยนบริษัท</button></p>`:''}</section>`;
   setTimeout(()=>{const i=$('#pinVal');if(i)i.focus()},30);if(typeof cloudBadge==='function')cloudBadge()}
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='pinVal')ACT.pinIn()});
 ACT.pinIn=async()=>{const who=($('#pinWho')||{}).value,pin=(($('#pinVal')||{}).value||'').trim();if(!pin)return;
@@ -4192,7 +4196,7 @@ function sbDraw(){const el=$('#side');if(!el)return;const top=(el.querySelector(
   const projs=Object.values(DB.projects).sort((a,b)=>a.name.localeCompare(b.name,'th'));
   const C=CO();
   // the company's own logo and name head the menu; the P mark is only for a company without a logo
-  el.innerHTML=`<div class="sb-hd">${C.logo?`<img class="sb-logo" src="${sbLogo(C.logo)}" alt="">`:'<span class="mark" aria-hidden="true">P</span>'}<b class="sb-co">${esc(C.name||'PENUM PM')}<small>PENUM PM</small></b><span class="sp"></span><button type="button" class="sb-x" data-a="sbClose" aria-label="ปิดเมนู">✕</button></div>
+  el.innerHTML=`<div class="sb-hd"><button type="button" class="sb-cob" data-a="coPick" title="เลือกบริษัท" aria-label="เลือกบริษัท">${C.logo?`<img class="sb-logo" src="${sbLogo(C.logo)}" alt="">`:'<span class="mark" aria-hidden="true">P</span>'}<b class="sb-co">${esc(C.name||'PENUM PM')}<small>PENUM PM ▾</small></b></button><span class="sp"></span><button type="button" class="sb-x" data-a="sbClose" aria-label="ปิดเมนู">✕</button></div>
   ${pj&&!mini?`<div class="sb-pj"><label>โครงการ<select id="sbProj" aria-label="โครงการ">${projs.map(p=>`<option value="${p.id}"${p.id===P.id?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label><button type="button" class="btn sm ghost" data-a="newProj">+ โครงการใหม่</button></div>`:''}
   <nav class="sb-tree" role="tree" aria-label="ฝ่ายและแผนก">${sbTree()}</nav>
   <div class="sb-ft"><button type="button" class="sb-it" data-a="sbMini" title="${mini?'ขยายเมนู':'ย่อเมนูเหลือไอคอน'}">${sbSv(mini?'<path d="m9 6 6 6-6 6M4 4v16"/>':'<path d="m15 6-6 6 6 6M20 4v16"/>')}<span>${mini?'ขยายเมนู':'ย่อเมนู'}</span></button></div>`;
@@ -4227,6 +4231,12 @@ body.sb-mini{--sbw:64px}
 .sb-hd{display:flex;align-items:center;gap:9px;padding:14px 14px 10px;font-family:var(--f-display);font-size:15px}
 .sb-hd .mark{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;font-weight:800;flex:none}
 .sb-hd .sp{flex:1}
+.sb-cob{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;min-width:0;cursor:pointer;border-radius:10px;padding:3px 6px 3px 3px;margin:-3px -6px -3px -3px}
+.sb-cob:hover{background:var(--line,rgba(127,127,127,.12))}.sb-cob:focus-visible{outline:2px solid var(--accent)}
+.co-l{display:grid;gap:8px;margin:4px 0}.co-l button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line,#ccc);border-radius:12px;cursor:pointer}
+.co-l button:hover{border-color:var(--accent)}.co-l button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.co-l img,.co-l .mark{width:56px;height:36px;object-fit:contain;border-radius:8px;background:#fff;flex:none;display:grid;place-items:center}
+.co-l .mark{width:36px;background:var(--accent);color:#fff;font-weight:800}.co-l b{display:block}.co-l small{color:var(--muted)}.co-l .ck{margin-left:auto;color:var(--accent);font-weight:700}
 .sb-logo{height:46px;width:auto;max-width:104px;border-radius:12px;object-fit:contain;background:#fff;padding:3px;flex:none;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .sb-co{display:grid;line-height:1.25;font-size:14px;min-width:0}.sb-co small{font-family:var(--f-body,inherit);font-weight:500;font-size:11.5px;color:var(--muted);letter-spacing:.04em}
 body.sb-mini .sb-co{display:none}body.sb-mini .sb-logo{max-width:44px;height:auto;max-height:44px}
@@ -6761,9 +6771,33 @@ const licPendClear=()=>{try{sessionStorage.removeItem(LICSK)}catch(e){}};
 let LICHASH=!!licPend();
 function licFromLink(){if(!LICHASH||DEMOPG)return;LICHASH=false;
   if(dbEmpty()&&!DB.co.lic&&!folderOn()&&!cloudOn()){S.wiz=true;S.wizNew=true;S.noWelcome=false;DB.co.pfx=DB.co.pfx||{};return}
-  if(DB.co.lic){S.dept='set';pgGo(['co','coset','']);setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},80);return}
-  setTimeout(()=>dialog('รหัสเปิดใช้งาน',`<p>เครื่องนี้มีข้อมูลของบริษัทอื่นอยู่แล้ว รหัสเปิดใช้งานใช้กับบริษัทใหม่</p><p class="hint">เปิดลิงก์นี้ในเครื่องที่ยังไม่มีข้อมูล หรือกด “เริ่มบริษัทใหม่” (ระบบให้ดาวน์โหลดไฟล์สำรองก่อนล้างข้อมูล)</p>`,
-    `<button type="button" class="btn" data-a="coNew">เริ่มบริษัทใหม่</button>`),60)}
+  const other=()=>setTimeout(()=>dialog('รหัสเปิดใช้งาน',`<p>ลิงก์นี้เป็นของบริษัทอื่น ส่วนเครื่องนี้มีข้อมูลของ <b>${esc(DB.co.name||'บริษัทเดิม')}</b> อยู่แล้ว</p><p class="hint">กด “เพิ่มเป็นบริษัทใหม่” ระบบจะเปิดบริษัทนี้แยกไว้อีกชุด ข้อมูลบริษัทเดิมอยู่ครบ ไม่ถูกลบ สลับไปมาได้ที่ชื่อบริษัทมุมซ้ายบน</p>`,
+    `<button type="button" class="btn pri" data-a="coAddLic">เพิ่มเป็นบริษัทใหม่</button>`),60);
+  if(DB.co.lic){Promise.all([licCheck(licPend()),licCheck(DB.co.lic)]).then(([r,q])=>{const a=r&&r.p,b=q&&q.p||{};if(a&&b.id&&coBase(a.id)!==coBase(b.id)){other();return}
+    S.dept='set';pgGo(['co','coset','']);setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},80)}).catch(()=>{});return}
+  other()}
+const coBase=id=>String(id||'').replace(/-R\d+$/,'');
+
+/* --- several companies on one device (3.49): pick one from the company name at the top of the side menu ---
+   Each company lives in its own storage slot (COSLOT, see storage). Nothing in another slot is read except its name
+   and logo for the list, and nothing is ever deleted here. */
+function coSlots(){const r=[];try{for(let i=0;i<localStorage.length;i++){const m=/^penum\.pm\.v1(?:\.c(\d+))?$/.exec(localStorage.key(i)||'');if(m)r.push(m[1]||'')}}catch(e){}
+  if(!r.includes(COSLOT))r.push(COSLOT);return r.sort((a,b)=>(+a||1)-(+b||1))}
+function coPeek(sl){if(sl===COSLOT)return {name:DB.co.name,logo:DB.co.logo,lic:DB.co.lic};try{const d=JSON.parse(localStorage.getItem('penum.pm.v1'+(sl?'.c'+sl:''))||'null');const c=d&&d.co||{};return {name:c.name,logo:c.logo,lic:c.lic}}catch(e){return {}}}
+function coGo(sl,pend){const blank=COSLOT&&!DB.co.lic&&!DB.co.setupAt&&dbEmpty()&&!folderOn()&&!cloudOn();try{sessionStorage.setItem('pmSlot',sl);localStorage.setItem('penum.pm.slot',sl);if(pend)sessionStorage.setItem('pmLicPend'+(sl?'.c'+sl:''),pend)}catch(e){toast('สลับบริษัทไม่ได้');return}
+  // a company slot that was added but never set up leaves no entry behind in the list
+  if(blank){window.__coDrop=1;clearTimeout(saveT);try{localStorage.removeItem(KEY)}catch(e){}}else save(true);location.reload()}
+const coNewSlot=()=>String(Math.max(1,...coSlots().map(x=>+x||1))+1);
+ACT.coPick=()=>{if(DEMOPG){toast('หน้านี้เป็นบริษัทตัวอย่าง');return}const L=coSlots();
+  dialog('เลือกบริษัท',`<div class="co-l">${L.map(sl=>{const c=coPeek(sl);return `<button type="button" data-a="coSw" data-k="${sl}"${sl===COSLOT?' class="on" aria-current="true"':''}>${c.logo?`<img src="${esc(c.logo)}" alt="">`:'<span class="mark">P</span>'}<span><b>${esc(c.name||'(ยังไม่ได้ตั้งค่าบริษัท)')}</b><small>${sl===COSLOT?'กำลังใช้อยู่':'กดเพื่อสลับไปบริษัทนี้'}</small></span>${sl===COSLOT?'<span class="ck">✓</span>':''}</button>`}).join('')}</div>
+  <p class="hint">ข้อมูลแต่ละบริษัทแยกกัน รวมถึงโฟลเดอร์ที่เก็บข้อมูล ผู้ใช้และ PIN การสลับบริษัทไม่ลบข้อมูลใดๆ</p>`,
+  '<button type="button" class="btn pri" data-a="coAdd">+ เพิ่มบริษัท</button>')};
+ACT.coSw=b=>{const sl=b.dataset.k;if(sl===COSLOT){$('#dlg').close();return}coGo(sl)};
+ACT.coAdd=()=>dialog('เพิ่มบริษัท',`<p>ระบบจะเปิดบริษัทใหม่แยกไว้อีกชุด เริ่มจากหน้าว่าง แล้วพาตั้งค่าบริษัท (วางรหัสเปิดใช้งาน ตั้ง PIN เลือกที่เก็บข้อมูล)</p>
+  <p class="hint">ข้อมูลของ <b>${esc(DB.co.name||'บริษัทนี้')}</b> อยู่ครบเหมือนเดิม กลับมาได้ที่ชื่อบริษัทมุมซ้ายบน · ตอนเลือกที่เก็บข้อมูล ให้สร้างโฟลเดอร์ใหม่ของบริษัทนั้นเอง</p>`,
+  '<button type="button" class="btn pri" data-a="coAddGo">เพิ่มบริษัท</button>');
+ACT.coAddGo=()=>coGo(coNewSlot());
+ACT.coAddLic=()=>{const pend=licPend();licPendClear();coGo(coNewSlot(),pend)};
 
 /* --- 2) setup step 0: the code, checked as it is pasted --- */
 function licInfo(p,cls=''){const d=diffD(today(),p.exp);
