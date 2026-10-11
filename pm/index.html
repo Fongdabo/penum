@@ -6710,6 +6710,139 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   const m=h.match(/<section class="card" style="border-color:var\(--warn-c\)"><h2><span>เริ่มใช้งานบนมือถือ[\s\S]*?<\/section>/);
   return m?m[0]+mobCard()+(isPhone()?instCard():''):h}}
 
+/* ---------- 3.46 รหัสเปิดใช้งาน (licence code per customer company) ----------
+   We register each customer (company, administrator, e-mail, plan, users, expiry) and send a signed code, usually as a
+   link …/pm/#lic=<code>. The code is "PNM1.<payload>.<signature>", ECDSA P-256 over "PNM1.<payload>", checked here with
+   the public key only, so a changed company name or date makes it invalid. The code lives in DB.co.lic and travels with
+   the data, so every device (folder, phone, backup) re-checks it. Data without a code (ORIEN's own) and the demo are free.
+   After expiry + 7 days the data turns read-only: viewing, printing and backup download keep working, nothing is deleted. */
+const LIC_JWK={kty:'EC',crv:'P-256',x:'wyXLWhvzv-0vF50q9rOZ8sMoh2QIg9Nsr_5IpR8f7jo',y:'BI9uqpJjjWVmVLaEgAfXkpOXtdU-Ec7I-zQRJyUeDp4',ext:true,key_ops:['verify']};
+const LIC_PLAN={pilot:'ทดลองใช้ (Pilot)',starter:'Starter',std:'Standard',biz:'Business',ent:'Enterprise'};
+const LIC_GRACE=7,LIC_WARN=30;
+const licB64=s=>{s=String(s).replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u};
+let LICK=null;const LICV={};
+// → {ok:true,p} or {ok:false,err}
+async function licCheck(code){code=String(code||'').replace(/\s+/g,'').replace(/^.*#lic=/,'');if(!code)return {ok:false,err:'empty'};if(LICV[code])return LICV[code];
+  let r;try{const m=code.match(/^PNM1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/);if(!m)throw 0;
+    LICK=LICK||await crypto.subtle.importKey('jwk',LIC_JWK,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+    const ok=await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},LICK,licB64(m[2]),new TextEncoder().encode('PNM1.'+m[1]));if(!ok)throw 0;
+    const p=JSON.parse(new TextDecoder().decode(licB64(m[1])));if(p.v!==1||!p.co||!okD(p.exp))throw 0;r={ok:true,p,code}}
+  catch(e){r={ok:false,err:'bad',code}}
+  return LICV[code]=r}
+// the state of this data set, kept up to date by render (checking is async, so the last result is cached)
+let LIC={code:null,r:null};
+const licOn=()=>!DEMOPG&&!!(DB&&DB.co&&DB.co.lic);
+function licState(){if(!licOn())return 'none';if(LIC.code!==DB.co.lic||!LIC.r)return 'wait';if(!LIC.r.ok)return 'bad';
+  const d=diffD(today(),LIC.r.p.exp);return d<-LIC_GRACE?'ro':d<0?'grace':d<=LIC_WARN?'warn':'ok'}
+const licRO=()=>{const s=licState();return s==='ro'||s==='bad'};
+const licP=()=>licOn()&&LIC.r&&LIC.r.ok&&LIC.code===DB.co.lic?LIC.r.p:null;
+const licUsed=()=>1+CO().staff.filter(s=>s.active!==false&&s.pin).length;
+const licMax=()=>{const p=licP();return p&&n(p.mx)>0?n(p.mx):0};
+let LOCKSNAP=null,LOCKDB=null;
+function licSync(){if(!licOn()){LIC={code:null,r:null};LOCKSNAP=null;return}if(LIC.code===DB.co.lic&&LIC.r)return;const code=DB.co.lic;LIC={code,r:null};
+  licCheck(code).then(r=>{if(DB.co.lic!==code)return;LIC={code,r};LOCKSNAP=licRO()?JSON.stringify(DB):null;LOCKDB=DB;render()})}
+
+/* --- 1) a link with #lic= : keep the code for this tab, drop it from the address bar --- */
+const LICSK='pmLicPend'+DSFX;
+{const m=location.hash.match(/(?:^#|&)lic=([^&]+)/);if(m){try{sessionStorage.setItem(LICSK,decodeURIComponent(m[1]))}catch(e){}history.replaceState(null,'',location.pathname+location.search)}}
+const licPend=()=>{try{return sessionStorage.getItem(LICSK)||''}catch(e){return ''}};
+const licPendClear=()=>{try{sessionStorage.removeItem(LICSK)}catch(e){}};
+let LICHASH=!!licPend();
+function licFromLink(){if(!LICHASH||DEMOPG)return;LICHASH=false;
+  if(dbEmpty()&&!DB.co.lic){S.wiz=true;S.wizNew=true;S.noWelcome=false;DB.co.pfx=DB.co.pfx||{};return}
+  if(DB.co.lic){S.dept='set';pgGo(['co','coset','']);setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},80);return}
+  setTimeout(()=>dialog('รหัสเปิดใช้งาน',`<p>เครื่องนี้มีข้อมูลของบริษัทอื่นอยู่แล้ว รหัสเปิดใช้งานใช้กับบริษัทใหม่</p><p class="hint">เปิดลิงก์นี้ในเครื่องที่ยังไม่มีข้อมูล หรือกด “เริ่มบริษัทใหม่” (ระบบให้ดาวน์โหลดไฟล์สำรองก่อนล้างข้อมูล)</p>`,
+    `<button type="button" class="btn" data-a="coNew">เริ่มบริษัทใหม่</button>`),60)}
+
+/* --- 2) setup step 0: the code, checked as it is pasted --- */
+function licInfo(p,cls=''){const d=diffD(today(),p.exp);
+  return `<dl class="lic-i ${cls}"><div><dt>บริษัท</dt><dd>${esc(p.co)}</dd></div><div><dt>ผู้ดูแลระบบ</dt><dd>${esc(p.an||'')}${p.em?` <small>${esc(p.em)}</small>`:''}</dd></div>
+  <div><dt>แพ็กเกจ</dt><dd>${esc(LIC_PLAN[p.pl]||p.pl||'')}</dd></div><div><dt>ผู้ใช้งานได้</dt><dd>${n(p.mx)?fmt(n(p.mx))+' คน':'ไม่จำกัด'}</dd></div>
+  <div><dt>ใช้ได้ถึง</dt><dd>${thDL(p.exp)}${d<0?' <span class="pill bad">หมดอายุแล้ว</span>':d<=LIC_WARN?` <span class="pill warn">อีก ${d} วัน</span>`:''}</dd></div>${p.id?`<div><dt>เลขที่สิทธิ์</dt><dd>${esc(p.id)}</dd></div>`:''}</dl>`}
+function licStep(){const p=licP(),need=S.wizNew&&!p;
+  return `<section class="card" id="wzLicCard"><h2><span>0. รหัสเปิดใช้งาน${need?' *':''}</span><small>รหัสที่ได้จากผู้ให้บริการ PENUM PM ทางอีเมลหรือ LINE ถ้าเปิดจากลิงก์ รหัสจะใส่ไว้ให้แล้ว</small></h2>
+  ${p?licInfo(p)+'<p class="hint">ชื่อบริษัทและผู้ดูแลระบบล็อกตามรหัส ถ้าต้องแก้ ติดต่อผู้ให้บริการเพื่อออกรหัสใหม่</p>'
+  :`<textarea id="wzLic" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(licPend())}</textarea><div id="wzLicR" class="lic-r"></div>`}</section>`}
+async function licTry(code,out){const el=$(out);if(!el)return null;code=String(code||'').trim();if(!code){el.innerHTML='';return null}
+  el.innerHTML='<span class="hint">กำลังตรวจรหัส…</span>';const r=await licCheck(code);
+  if(!r.ok){el.innerHTML='<p class="lic-bad">รหัสไม่ถูกต้อง ติดต่อผู้ให้บริการ</p>';return null}
+  if(diffD(today(),r.p.exp)<0){el.innerHTML=licInfo(r.p)+'<p class="lic-bad">รหัสนี้หมดอายุแล้ว ติดต่อผู้ให้บริการเพื่อต่ออายุ</p>';return null}
+  el.innerHTML=licInfo(r.p,'ok');return r}
+async function wzLicGo(){const t=$('#wzLic');if(!t)return;const r=await licTry(t.value,'#wzLicR');if(!r)return;const C=DB.co;
+  C.lic=r.code;C.name=r.p.co;C.adminName=r.p.an||C.adminName||'';C.adminEmail=r.p.em||'';if(!C.email&&r.p.em)C.email=r.p.em;licPendClear();
+  LIC={code:r.code,r};save(true);render();toast('รหัสถูกต้อง ใส่ชื่อบริษัทและผู้ดูแลระบบให้แล้ว')}
+document.addEventListener('input',e=>{if(e.target.id==='wzLic'){clearTimeout(e.target._t);e.target._t=setTimeout(wzLicGo,250)}});
+{const f=wizView;wizView=function(){let h=f();if(DEMOPG)return h;const p=licP();
+  if(p)h=h.replace(/(data-p="co\.name"[^>]*?)>/,'$1 readonly title="ล็อกตามรหัสเปิดใช้งาน">').replace(/(data-p="co\.adminName"[^>]*?)>/,'$1 readonly title="ล็อกตามรหัสเปิดใช้งาน">');
+  return licStep()+h}}
+{const f=ACT.wizStart;ACT.wizStart=b=>{S.wizNew=dbEmpty()&&!DB.co.lic&&!DEMOPG;return f(b)}}
+{const f=ACT.coNewGo;ACT.coNewGo=async b=>{await f(b);if(S.wiz){S.wizNew=!DEMOPG;saveUI();render()}}}
+{const f=ACT.wizDone;ACT.wizDone=async b=>{if(!DEMOPG){const t=$('#wzLic'),typed=t&&t.value.trim();
+    if(typed&&!licP()){const r=await licTry(typed,'#wzLicR');if(!r){toast('รหัสไม่ถูกต้อง ติดต่อผู้ให้บริการ');t.focus();return}await wzLicGo();return}
+    if(S.wizNew&&!licP()){toast('ใส่รหัสเปิดใช้งานก่อน');if(t)t.focus();return}}
+  await f(b);S.wizNew=false;saveUI()}}
+// the company name stays the one on the code
+HOOK.push((p,v)=>{const L=licP();if(L&&p==='co.name'&&v!==L.co){DB.co.name=L.co;toast('ชื่อบริษัทล็อกตามรหัสเปิดใช้งาน');setTimeout(render,0)}});
+
+/* --- 3) sign-in: the administrator is shown by name --- */
+{const f=loginScreen;loginScreen=function(){const x=f.apply(this,arguments);const o=document.querySelector('#pinWho option[value="__admin"]'),p=licP(),nm=(p&&p.an)||DB.co.adminName;if(o&&nm)o.textContent=`${nm} · ผู้ดูแลระบบ`;return x}}
+
+/* --- 5) users: no more PINs than the plan allows --- */
+const licUpMsg=()=>dialog('ผู้ใช้งานครบตามแพ็กเกจแล้ว',`<p>แพ็กเกจ <b>${esc(LIC_PLAN[licP().pl]||licP().pl)}</b> ใช้งานได้ ${fmt(licMax())} คน (รวมผู้ดูแลระบบ) ตอนนี้ตั้ง PIN ครบแล้ว</p>
+  <p class="hint">ลบ PIN ของคนที่ไม่ได้ใช้แล้วที่ ตั้งค่า › เข้าระบบด้วย PIN หรือติดต่อผู้ให้บริการเพื่อเพิ่มจำนวนผู้ใช้ แล้วใส่รหัสใหม่ที่ ตั้งค่า › สิทธิ์การใช้งาน</p>`,'');
+{const f=ACT.pinSet;ACT.pinSet=async b=>{const id=b.dataset.id,s=CO().staff.find(x=>x.id===id);
+  if(licMax()&&id!=='admin'&&s&&!s.pin&&licUsed()>=licMax()){licUpMsg();return}return f(b)}}
+// people past the limit (e.g. after a smaller plan) cannot sign in; the earliest in the staff list keep their place
+const licAllowedIds=()=>{const m=licMax();const L=CO().staff.filter(s=>s.active!==false&&s.pin);return new Set((m?L.slice(0,Math.max(0,m-1)):L).map(s=>s.id))};
+{const f=ACT.pinIn;ACT.pinIn=async b=>{const who=($('#pinWho')||{}).value;if(licMax()&&who&&who!=='__admin'&&!licAllowedIds().has(who)){toast('ผู้ใช้งานเกินจำนวนตามแพ็กเกจ ให้ผู้ดูแลระบบติดต่อผู้ให้บริการ');return}return f(b)}}
+
+/* --- 4) ตั้งค่า › สิทธิ์การใช้งาน --- */
+function licCard(){const L=licP(),pend=licPend();if(!licOn()&&!pend)return '';const admin=!S.me,st=licState();
+  const head=`<section class="card" id="licCard"><h2><span>สิทธิ์การใช้งาน</span><small>รหัสเปิดใช้งานจากผู้ให้บริการ เก็บไว้กับข้อมูลบริษัท ทุกเครื่องที่ใช้ข้อมูลชุดนี้ตรวจรหัสเอง</small></h2>`;
+  const body=L?licInfo(L)+`<p style="margin:8px 0">ผู้ใช้งานตอนนี้ <b>${fmt(licUsed())}</b>${licMax()?` / ${fmt(licMax())}`:''} คน <small class="muted">(ผู้ดูแลระบบ + พนักงานที่ตั้ง PIN แล้ว)</small></p>`
+    :st==='bad'?'<p class="lic-bad">รหัสที่เก็บไว้ไม่ถูกต้อง ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ใส่รหัสใหม่จากผู้ให้บริการด้านล่าง</p>':'<p class="hint">กำลังตรวจรหัส…</p>';
+  const renew=admin?`<h3 class="wz-s">${L?'ต่ออายุหรือเปลี่ยนแพ็กเกจ':'ใส่รหัสใหม่'}</h3><p class="hint">วางรหัสใหม่ที่ได้จากผู้ให้บริการ (ต้องเป็นบริษัทเดียวกัน) รหัสใหม่จะแทนรหัสเดิม ข้อมูลทั้งหมดอยู่ครบ</p>
+    <textarea id="licNew" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(pend)}</textarea><div id="licNewR" class="lic-r"></div>
+    <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-a="licRenew">ใช้รหัสนี้</button></div>`:'<p class="hint">ผู้ดูแลระบบเป็นคนใส่รหัสต่ออายุ</p>';
+  return head+body+renew+'</section>'}
+ACT.licRenew=async()=>{const t=$('#licNew');if(!t||!t.value.trim()){toast('วางรหัสก่อน');return}const r=await licTry(t.value,'#licNewR');if(!r)return;
+  const cur=licP()?licP().co:(DB.co.name||'');if(DB.co.lic&&cur&&r.p.co!==cur){$('#licNewR').innerHTML+=`<p class="lic-bad">รหัสนี้เป็นของ “${esc(r.p.co)}” ไม่ใช่ “${esc(cur)}”</p>`;return}
+  if(!DB.co.lic&&!dbEmpty()&&!confirm(`ใส่รหัสของ “${r.p.co}” ให้ข้อมูลชุดนี้? ชื่อบริษัทจะล็อกตามรหัส`))return;
+  DB.co.lic=r.code;DB.co.name=r.p.co;if(r.p.an)DB.co.adminName=r.p.an;if(r.p.em)DB.co.adminEmail=r.p.em;LIC={code:r.code,r};LOCKSNAP=null;licPendClear();save(true);render();toast('ใช้รหัสใหม่แล้ว ใช้ได้ถึง '+thDL(r.p.exp))};
+{const f=CVIEWS.coset;CVIEWS.coset=()=>{const h=f();if(DEMOPG)return h;const c=licCard();return c+h}}
+{const f=CVIEWS.coset;CVIEWS.coset=()=>{let h=f();const p=licP();if(p)h=h.replace(/(data-p="co\.name"[^>]*?)>/,'$1 readonly title="ล็อกตามรหัสเปิดใช้งาน">');return h}}
+
+/* --- 6) expiry: warning, 7 days' grace, then read-only (view, print and backup still work) --- */
+{const s=save;save=function(now){
+  // data received from the company (phone receive, folder) replaces the whole set: that is reading, not editing
+  if(LOCKSNAP&&DB!==LOCKDB){LOCKDB=DB;if(licRO())LOCKSNAP=JSON.stringify(DB);return s(now)}
+  if(licRO()&&LOCKSNAP&&DB.co.lic===LIC.code){DB=JSON.parse(LOCKSNAP);LOCKDB=DB;P=DB.projects[DB.cur]||Object.values(DB.projects)[0];
+    toast('สิทธิ์การใช้งานหมดอายุ ข้อมูลเปิดดูและพิมพ์ได้อย่างเดียว ต่ออายุได้ที่ ตั้งค่า › สิทธิ์การใช้งาน');clearTimeout(save._t);save._t=setTimeout(()=>render(),0);return}
+  return s(now)}}
+function licBanner(){const st=licState(),p=licP(),admin=!S.me;if(st==='none'||st==='wait'||st==='ok')return '';
+  const go='<button type="button" class="btn sm" data-a="licGo">ตั้งค่า › สิทธิ์การใช้งาน</button>';
+  if(st==='warn'){if(!admin)return '';return `<div class="lic-ban warn">สิทธิ์การใช้งานหมดอายุ ${thDL(p.exp)} (อีก ${diffD(today(),p.exp)} วัน) ติดต่อผู้ให้บริการเพื่อต่ออายุ แล้วใส่รหัสใหม่ ${go}</div>`}
+  if(st==='grace'){const left=LIC_GRACE+diffD(today(),p.exp);return `<div class="lic-ban bad">สิทธิ์การใช้งานหมดอายุแล้วเมื่อ ${thDL(p.exp)} ใช้งานต่อได้อีก ${left} วัน หลังจากนั้นข้อมูลจะเปิดดูและพิมพ์ได้อย่างเดียว${admin?' '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
+  return `<div class="lic-ban bad">${st==='bad'?'รหัสเปิดใช้งานไม่ถูกต้อง':'สิทธิ์การใช้งานหมดอายุ'} ข้อมูลเปิดดู พิมพ์ และดาวน์โหลดไฟล์สำรองได้ แต่แก้ไขไม่ได้ ข้อมูลไม่ถูกลบ${admin?' ใส่รหัสใหม่ได้ที่ '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
+ACT.licGo=()=>{S.dept='set';pgGo(['co','coset','']);render();setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},60)};
+{const r=render;render=function(){try{if(typeof DB!=='undefined'&&DB&&DB.co){licSync();licFromLink()}}catch(e){console.error(e)}const x=r.apply(this,arguments);
+  try{const t=$('#wzLic'),o=$('#wzLicR');if(t&&o&&t.value.trim()&&!o.innerHTML)setTimeout(wzLicGo,0)}catch(e){}
+  try{if(!licOn()||(pinOn()&&!authOK()))return x;const v=$('#view');if(!v)return x;const b=licBanner();if(b)v.insertAdjacentHTML('afterbegin',b);
+    document.body.classList.toggle('lic-ro',licRO());
+    if(licRO())v.querySelectorAll('input,select,textarea').forEach(e=>{if(!e.closest('#licCard')&&e.type!=='search')e.disabled=true})}catch(e){console.error(e)}return x}}
+
+document.head.insertAdjacentHTML('beforeend',`<style>
+.lic-i{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 16px;margin:6px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px}
+.lic-i.ok{border-color:var(--good);background:color-mix(in srgb,var(--good) 8%,transparent)}
+.lic-i dt{font-size:12px;color:var(--muted)}.lic-i dd{margin:0;font-weight:600}.lic-i dd small{font-weight:400;color:var(--muted)}
+.lic-bad{color:var(--danger);font-weight:600;margin:6px 0}.lic-r{margin-top:6px}
+.lic-ban{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-radius:12px;margin:0 0 12px;font-size:14px}
+.lic-ban.warn{border:1px solid var(--warn-c);background:color-mix(in srgb,var(--warn-c) 10%,transparent)}
+.lic-ban.bad{border:1px solid var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+</style>`);
+// data received from the company (phone receive, folder, cloud) is filled into DB in place: let its next save through
+{const f=applyData;applyData=function(){const x=f.apply(this,arguments);LOCKDB={};return x}}
+
 /* ---------- start ---------- */
 load();
 if(DEMOPG)demoBoot();
