@@ -218,9 +218,19 @@ function custForm(c){const n=!c;c=c||{id:'',co:'',an:'',em:'',phone:'',line:'',p
   $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent=n?'บันทึกและออกรหัส':'บันทึก';
   b.onclick=async()=>{const x={co:$('#fCo').value.trim(),an:$('#fAn').value.trim(),em:$('#fEm').value.trim().toLowerCase(),phone:$('#fPh').value.trim(),line:$('#fLn').value.trim(),pl:$('#fPl').value,mx:Math.max(1,+$('#fMx').value||1),price:+$('#fPr').value||0,start:$('#fSt').value,exp:$('#fEx').value,note:$('#fNo').value};
     if(!x.co||!x.an||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.em)||!x.exp){toast('กรอกชื่อบริษัท ชื่อผู้ดูแล อีเมล และวันหมดอายุให้ครบ');return}
-    if(n){const nc=Object.assign({id:uid(),lics:[],sent:''},x);DB.cust.push(nc);await issue(nc);dlg.close();render();openMail(nc,'welcome')}
+    if(n){const dup=DB.cust.find(o=>o.co.trim().toLowerCase()===x.co.toLowerCase()||o.em===x.em);
+      if(dup&&!confirm(`มีลูกค้า “${dup.co}” (${dup.em}) ลงทะเบียนไว้แล้ว\nถ้าจะส่งรหัสใหม่ให้รายเดิม ให้กด ยกเลิก แล้วใช้ปุ่ม ต่ออายุ หรือ อีเมลเปิดใช้งาน ที่รายชื่อเดิม\n\nลงทะเบียนซ้ำอีกรายจริงไหม?`))return;
+      if(b.disabled)return;b.disabled=true;
+      const nc=Object.assign({id:uid(),lics:[],sent:''},x);DB.cust.push(nc);await issue(nc);dlg.close();render();openMail(nc,'welcome')}
     else{Object.assign(c,x);save();dlg.close();render();toast('บันทึกแล้ว')}};
-  $('#dlgF').append(b);dlgOpen()}
+  $('#dlgF').append(b);
+  if(!n){const d=document.createElement('button');d.className='del';d.textContent='ลบลูกค้ารายนี้';d.style.marginRight='auto';
+    d.onclick=()=>{const ids=(c.lics||[]).map(l=>l.id).join(', ')||'ไม่มี',T=DB.tix.filter(t=>t.cid===c.id).length;
+      if(!confirm(`ลบ “${c.co}” ออกจากรายชื่อลูกค้า?\nรหัสที่เคยออกให้: ${ids}${T?`\nเรื่องช่วยเหลือ ${T} เรื่องของลูกค้ารายนี้จะถูกลบด้วย`:''}\n\nรหัสที่ส่งไปแล้วยังใช้ได้จนหมดอายุ (ยกเลิกรหัสย้อนหลังไม่ได้) ประวัติรหัสจะเก็บไว้ในรายการ “ลบแล้ว”`))return;
+      DB.gone=DB.gone||[];DB.gone.push({co:c.co,em:c.em,del:today(),lics:c.lics||[]});
+      DB.cust=DB.cust.filter(o=>o!==c);DB.tix=DB.tix.filter(t=>t.cid!==c.id);save();dlg.close();render();toast('ลบแล้ว')};
+    $('#dlgF').prepend(d)}
+  dlgOpen()}
 function renewForm(c){$('#dlgT').textContent='ต่ออายุ / ออกรหัสใหม่: '+c.co;const base=c.exp&&days(c.exp)>0?c.exp:today();
   $('#dlgB').innerHTML=`<div class="g"><label>แพ็กเกจ<select id="rPl">${Object.entries(PLAN).map(([k,v])=>`<option value="${k}"${k===c.pl?' selected':''}>${v[0]}</option>`).join('')}</select></label>
   <label>จำนวนผู้ใช้สูงสุด<input id="rMx" type="number" min="1" value="${c.mx}"></label><label>ราคาต่อเดือน<input id="rPr" type="number" value="${c.price}"></label>
@@ -289,7 +299,7 @@ function viewDash(){const A=DB.cust,act=A.filter(c=>(c.lics||[]).length&&days(c.
   <section class="card"><h2>ต้องติดตาม</h2>${(soon.length+exp.length)?table([...exp,...soon].sort((a,b)=>a.exp<b.exp?-1:1)):'<p class="mut" style="margin:0">ยังไม่มีลูกค้าที่ใกล้หมดอายุ</p>'}</section>
   <section class="card"><h2>เริ่มขายลูกค้ารายใหม่</h2><ol style="margin:0;padding-left:20px"><li>กด <b>ลงทะเบียนลูกค้าใหม่</b> กรอกชื่อบริษัท ชื่อและอีเมลผู้ดูแล เลือกแพ็กเกจ</li><li>กด <b>บันทึกและออกรหัส</b> โปรแกรมจะเขียนอีเมลพร้อมลิงก์เข้าใช้งานครั้งแรกและลิงก์ติดตั้งให้</li><li>กด <b>เปิดใน Gmail</b> แนบไฟล์คู่มือ PDF แล้วกดส่ง</li></ol><div class="row" style="margin-top:10px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></div></section>`}
 function table(L){return `<div class="tw"><table><thead><tr><th>บริษัท</th><th>ผู้ดูแลระบบ</th><th>แพ็กเกจ</th><th class="n">บาท/เดือน</th><th>ใช้ได้ถึง</th><th>สถานะ</th><th>ส่งล่าสุด</th><th></th></tr></thead><tbody>${L.map(c=>{const s=status(c),d=days(c.exp);
-  return `<tr><td><a href="#" data-a="info" data-id="${c.id}" style="color:var(--acc2);font-weight:600">${esc(c.co)}</a>${c.note?`<br><span class="mut">${esc(c.note)}</span>`:''}</td><td>${esc(c.an)}<br><span class="mut">${esc(c.em)}${c.phone?' · '+esc(c.phone):''}</span></td>
+  return `<tr><td><a href="#" data-a="info" data-id="${c.id}" style="color:var(--acc2);font-weight:600">${esc(c.co)}</a>${(c.lics||[]).length?`<br><span class="mut">รหัส ${esc(c.lics[c.lics.length-1].id)}</span>`:''}${c.note?`<br><span class="mut">${esc(c.note)}</span>`:''}</td><td>${esc(c.an)}<br><span class="mut">${esc(c.em)}${c.phone?' · '+esc(c.phone):''}</span></td>
   <td>${esc((PLAN[c.pl]||[c.pl])[0])}<br><span class="mut">${c.mx} คน</span></td><td class="n">${baht(c.price)}</td><td>${thD(c.exp)}<br><span class="mut">${(c.lics||[]).length?(d>=0?'อีก '+d+' วัน':'เลยมา '+(-d)+' วัน'):''}</span></td>
   <td><span class="pill ${s[1]}">${s[0]}</span></td><td class="mut">${esc(c.sent||'–')}</td>
   <td><div class="row" style="flex-wrap:nowrap">${lastCode(c)?`<button class="sm" data-a="mail" data-id="${c.id}">อีเมลเปิดใช้งาน</button>`:''}<button class="sm" data-a="renew" data-id="${c.id}">${(c.lics||[]).length?'ต่ออายุ':'ออกรหัส'}</button><button class="sm" data-a="edit" data-id="${c.id}">แก้ไข</button></div></td></tr>`}).join('')}</tbody></table></div>`}
@@ -297,7 +307,7 @@ function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+c.an+c.em).toLowerCase()
   return `<section class="card"><h2>ลูกค้า <span class="mut">${DB.cust.length} ราย</span><span class="sp"></span><input id="q" placeholder="ค้นหาชื่อบริษัท ผู้ดูแล อีเมล" value="${esc(Q)}" style="max-width:280px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></h2>
   ${L.length?table(L):'<p class="mut">ยังไม่มีลูกค้า กด “ลงทะเบียนลูกค้าใหม่” เพื่อเริ่ม</p>'}</section>
   <section class="card"><h2>ประวัติรหัสที่ออก</h2><div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่ออก</th><th>บริษัท</th><th>แพ็กเกจ</th><th>ถึง</th><th></th></tr></thead><tbody>
-  ${DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))).sort((a,b)=>a.l.id<b.l.id?1:-1).map(({c,l})=>`<tr><td>${l.id}</td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc((PLAN[l.pl||c.pl]||[''])[0])} · ${l.mx||c.mx} คน</td><td>${thD(l.exp)}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}</td></tr>`).join('')}</tbody></table></div></section>`}
+  ${[...DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))),...(DB.gone||[]).flatMap(g=>(g.lics||[]).map(l=>({c:{co:g.co+' (ลบแล้ว '+thD(g.del)+')',pl:l.pl,mx:l.mx},l})))].sort((a,b)=>a.l.id<b.l.id?1:-1).map(({c,l})=>`<tr><td>${l.id}</td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc((PLAN[l.pl||c.pl]||[''])[0])} · ${l.mx||c.mx} คน</td><td>${thD(l.exp)}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}</td></tr>`).join('')}</tbody></table></div></section>`}
 function viewSet(){const S=DB.set;return `<section class="card"><h2>ข้อมูลผู้ขาย (ท้ายอีเมล)</h2><div class="g">
   <label>อีเมลผู้ส่ง (บัญชี Gmail ที่ใช้ส่งให้ลูกค้า)<input data-s="from" type="email" value="${esc(S.from)}"></label><label>บริษัทผู้ขาย<input data-s="company" value="${esc(S.company)}"></label><label>ชื่อผู้ส่ง<input data-s="sender" value="${esc(S.sender)}" placeholder="ฝ่ายขาย PENUM PM"></label><label>โทรศัพท์<input data-s="phone" value="${esc(S.phone)}"></label><label>LINE ID<input data-s="line" value="${esc(S.line)}"></label>
   <label>ที่อยู่โปรแกรม<input data-s="app" value="${esc(S.app)}"></label></div></section>
