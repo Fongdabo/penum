@@ -87,7 +87,7 @@ let TAB='dash',Q='';
 const b64u=u8=>{let s='';u8.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const ub64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4)),c=>c.charCodeAt(0));
 async function issue(c){
-  DB.seq++;const p={v:1,id:'L'+today().slice(2,4)+'-'+String(DB.seq).padStart(4,'0'),co:c.co,...(c.en?{en:c.en}:{}),an:c.an,em:c.em.toLowerCase(),pl:c.pl,mx:+c.mx||1,exp:c.exp,iat:today()};
+  DB.seq++;const p={v:1,id:'L'+today().slice(2,4)+'-'+String(DB.seq).padStart(4,'0'),co:c.co,...(c.en?{en:c.en}:{}),...(c.tax?{tx:c.tax}:{}),...(c.phone?{ph:c.phone}:{}),an:c.an,em:c.em.toLowerCase(),pl:c.pl,mx:+c.mx||1,exp:c.exp,iat:today()};
   const k=await crypto.subtle.importKey('jwk',PRI,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const body=b64u(new TextEncoder().encode(JSON.stringify(p))),msg=new TextEncoder().encode('PNM1.'+body);
   const sig=new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},k,msg));
@@ -200,11 +200,13 @@ function openMail(c,kind){const m=mail(c,kind);
   dlgOpen()}
 async function copy(t){try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.append(a);a.select();document.execCommand('copy');a.remove()}toast('คัดลอกแล้ว')}
 
-function custForm(c){const n=!c;c=c||{id:'',co:'',en:'',an:'',em:'',phone:'',line:'',pl:'pilot',mx:10,price:0,start:today(),exp:addM(today(),3),note:'',lics:[]};
+const taxOk=t=>{let s=0;for(let i=0;i<12;i++)s+=+t[i]*(13-i);return (11-s%11)%10===+t[12]};
+function custForm(c){const n=!c;c=c||{id:'',co:'',en:'',tax:'',addr:'',an:'',em:'',phone:'',line:'',pl:'pilot',mx:10,price:0,start:today(),exp:addM(today(),3),note:'',lics:[]};
   $('#dlgT').textContent=n?'ลงทะเบียนลูกค้าใหม่':'แก้ไขข้อมูลลูกค้า';
   $('#dlgB').innerHTML=`<div class="g">
   <label>ชื่อบริษัท ภาษาไทย (ตรงกับหัวเอกสาร) *<input id="fCo" value="${esc(c.co)}" placeholder="บริษัท ตัวอย่าง จำกัด"></label>
   <label>ชื่อบริษัท ภาษาอังกฤษ<input id="fEn" value="${esc(c.en||'')}" placeholder="Example Co., Ltd."></label>
+  <label>เลขประจำตัวผู้เสียภาษี 13 หลัก<input id="fTx" inputmode="numeric" maxlength="17" value="${esc(c.tax||'')}" placeholder="0105xxxxxxxxx"></label>
   <label>ชื่อผู้ดูแลระบบ *<input id="fAn" value="${esc(c.an)}"></label>
   <label>อีเมลผู้ดูแลระบบ *<input id="fEm" type="email" value="${esc(c.em)}"></label>
   <label>โทรศัพท์<input id="fPh" value="${esc(c.phone)}"></label>
@@ -214,13 +216,16 @@ function custForm(c){const n=!c;c=c||{id:'',co:'',en:'',an:'',em:'',phone:'',lin
   <label>ราคาต่อเดือน (บาท ไม่รวม VAT)<input id="fPr" type="number" min="0" value="${c.price}"></label>
   <label>เริ่มใช้<input id="fSt" type="date" value="${c.start}"></label>
   <label>ใช้ได้ถึง<input id="fEx" type="date" value="${c.exp}"></label></div>
+  <label>ที่อยู่บริษัท (สำหรับออกใบกำกับภาษี)<textarea id="fAd" rows="2" placeholder="เลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์">${esc(c.addr||'')}</textarea></label>
   <label>หมายเหตุ<textarea id="fNo">${esc(c.note)}</textarea></label>
   ${n?'':'<p class="mut" style="margin:0">ถ้าเปลี่ยนชื่อบริษัท แพ็กเกจ จำนวนผู้ใช้ หรือวันหมดอายุ ต้องกด “ออกรหัสใหม่” แล้วส่งให้ลูกค้าอีกครั้ง</p>'}`;
   $('#fPl').onchange=()=>{const P=PLAN[$('#fPl').value];$('#fMx').value=P[2];$('#fPr').value=P[1]};
   $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent=n?'บันทึกและออกรหัส':'บันทึก';
-  b.onclick=async()=>{const x={co:$('#fCo').value.trim(),en:$('#fEn').value.trim(),an:$('#fAn').value.trim(),em:$('#fEm').value.trim().toLowerCase(),phone:$('#fPh').value.trim(),line:$('#fLn').value.trim(),pl:$('#fPl').value,mx:Math.max(1,+$('#fMx').value||1),price:+$('#fPr').value||0,start:$('#fSt').value,exp:$('#fEx').value,note:$('#fNo').value};
+  b.onclick=async()=>{const x={co:$('#fCo').value.trim(),en:$('#fEn').value.trim(),tax:$('#fTx').value.replace(/\D/g,''),addr:$('#fAd').value.trim(),an:$('#fAn').value.trim(),em:$('#fEm').value.trim().toLowerCase(),phone:$('#fPh').value.trim(),line:$('#fLn').value.trim(),pl:$('#fPl').value,mx:Math.max(1,+$('#fMx').value||1),price:+$('#fPr').value||0,start:$('#fSt').value,exp:$('#fEx').value,note:$('#fNo').value};
     if(!x.co||!x.an||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.em)||!x.exp){toast('กรอกชื่อบริษัท ชื่อผู้ดูแล อีเมล และวันหมดอายุให้ครบ');return}
-    if(n){const dup=DB.cust.find(o=>o.co.trim().toLowerCase()===x.co.toLowerCase()||(x.en&&(o.en||'').trim().toLowerCase()===x.en.toLowerCase())||o.em===x.em);
+    if(x.tax&&x.tax.length!==13){toast('เลขประจำตัวผู้เสียภาษีต้องมี 13 หลัก (ตอนนี้มี '+x.tax.length+' หลัก)');$('#fTx').focus();return}
+    if(x.tax&&!taxOk(x.tax)&&!confirm('เลขประจำตัวผู้เสียภาษี '+x.tax+' หลักสุดท้ายไม่ตรงกับสูตรตรวจสอบ อาจพิมพ์ผิด\n\nใช้เลขนี้ต่อไหม?'))return;
+    if(n){const dup=DB.cust.find(o=>o.co.trim().toLowerCase()===x.co.toLowerCase()||(x.en&&(o.en||'').trim().toLowerCase()===x.en.toLowerCase())||(x.tax&&o.tax===x.tax)||o.em===x.em);
       if(dup&&!confirm(`มีลูกค้า “${dup.co}” (${dup.em}) ลงทะเบียนไว้แล้ว\nถ้าจะส่งรหัสใหม่ให้รายเดิม ให้กด ยกเลิก แล้วใช้ปุ่ม ต่ออายุ หรือ อีเมลเปิดใช้งาน ที่รายชื่อเดิม\n\nลงทะเบียนซ้ำอีกรายจริงไหม?`))return;
       if(b.disabled)return;b.disabled=true;
       const nc=Object.assign({id:uid(),lics:[],sent:''},x);DB.cust.push(nc);await issue(nc);dlg.close();render();openMail(nc,'welcome')}
@@ -287,7 +292,7 @@ function viewSup(){const T=DB.tix,op=T.filter(t=>t.st!=='done');
 function custInfo(c){$('#dlgT').textContent=c.co;const T=DB.tix.filter(t=>t.cid===c.id),s=status(c);
   $('#dlgB').innerHTML=`<div class="g"><div><span class="mut">ผู้ดูแลระบบ</span><br>${esc(c.an)}<br><span class="mut">${esc(c.em)}${c.phone?' · '+esc(c.phone):''}${c.line?' · LINE '+esc(c.line):''}</span></div>
   <div><span class="mut">แพ็กเกจตอนนี้</span><br><b>${esc((PLAN[c.pl]||[c.pl])[0])}</b> ${c.mx} คน · ${baht(c.price)} บาท/เดือน<br><span class="pill ${s[1]}">${s[0]}</span> ถึง ${thD(c.exp)}</div>
-  <div><span class="mut">เป็นลูกค้าตั้งแต่</span><br>${thD(c.start)}</div></div>${c.note?`<p class="mut" style="margin:0">${esc(c.note)}</p>`:''}
+  <div><span class="mut">เป็นลูกค้าตั้งแต่</span><br>${thD(c.start)}</div>${c.tax||c.addr?`<div><span class="mut">ข้อมูลออกใบกำกับภาษี</span><br>${c.en?esc(c.en)+'<br>':''}${c.tax?'เลขผู้เสียภาษี '+esc(c.tax)+'<br>':''}${esc(c.addr||'')}</div>`:''}</div>${c.note?`<p class="mut" style="margin:0">${esc(c.note)}</p>`:''}
   <h3 style="font-size:15px;margin:6px 0 0">ประวัติการซื้อ / ต่ออายุ</h3><div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่ออก</th><th>แพ็กเกจ</th><th class="n">บาท/เดือน</th><th>ใช้ได้ถึง</th></tr></thead><tbody>${(c.lics||[]).slice().reverse().map(l=>`<tr><td>${l.id}</td><td>${thD(l.iat)}</td><td>${esc((PLAN[l.pl||c.pl]||[''])[0])} · ${l.mx||c.mx} คน</td><td class="n">${l.price!=null?baht(l.price):'–'}</td><td>${thD(l.exp)}</td></tr>`).join('')||'<tr><td colspan="5" class="mut">ยังไม่ออกรหัส</td></tr>'}</tbody></table></div>
   <h3 style="font-size:15px;margin:6px 0 0">เรื่องที่ลูกค้าแจ้ง (${T.length})</h3>${tixTable(T,false)}`;
   $('#dlgF').innerHTML='';const B=(t,cls,f)=>{const b=document.createElement('button');b.textContent=t;if(cls)b.className=cls;b.onclick=f;$('#dlgF').append(b)};
@@ -301,11 +306,11 @@ function viewDash(){const A=DB.cust,act=A.filter(c=>(c.lics||[]).length&&days(c.
   <section class="card"><h2>ต้องติดตาม</h2>${(soon.length+exp.length)?table([...exp,...soon].sort((a,b)=>a.exp<b.exp?-1:1)):'<p class="mut" style="margin:0">ยังไม่มีลูกค้าที่ใกล้หมดอายุ</p>'}</section>
   <section class="card"><h2>เริ่มขายลูกค้ารายใหม่</h2><ol style="margin:0;padding-left:20px"><li>กด <b>ลงทะเบียนลูกค้าใหม่</b> กรอกชื่อบริษัท ชื่อและอีเมลผู้ดูแล เลือกแพ็กเกจ</li><li>กด <b>บันทึกและออกรหัส</b> โปรแกรมจะเขียนอีเมลพร้อมลิงก์เข้าใช้งานครั้งแรกและลิงก์ติดตั้งให้</li><li>กด <b>เปิดใน Gmail</b> แนบไฟล์คู่มือ PDF แล้วกดส่ง</li></ol><div class="row" style="margin-top:10px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></div></section>`}
 function table(L){return `<div class="tw"><table><thead><tr><th>บริษัท</th><th>ผู้ดูแลระบบ</th><th>แพ็กเกจ</th><th class="n">บาท/เดือน</th><th>ใช้ได้ถึง</th><th>สถานะ</th><th>ส่งล่าสุด</th><th></th></tr></thead><tbody>${L.map(c=>{const s=status(c),d=days(c.exp);
-  return `<tr><td><a href="#" data-a="info" data-id="${c.id}" style="color:var(--acc2);font-weight:600">${esc(c.co)}</a>${c.en?`<br><span class="mut">${esc(c.en)}</span>`:''}${(c.lics||[]).length?`<br><span class="mut">รหัส ${esc(c.lics[c.lics.length-1].id)}</span>`:''}${c.note?`<br><span class="mut">${esc(c.note)}</span>`:''}</td><td>${esc(c.an)}<br><span class="mut">${esc(c.em)}${c.phone?' · '+esc(c.phone):''}</span></td>
+  return `<tr><td><a href="#" data-a="info" data-id="${c.id}" style="color:var(--acc2);font-weight:600">${esc(c.co)}</a>${c.en?`<br><span class="mut">${esc(c.en)}</span>`:''}${c.tax?`<br><span class="mut">เลขผู้เสียภาษี ${esc(c.tax)}</span>`:''}${(c.lics||[]).length?`<br><span class="mut">รหัส ${esc(c.lics[c.lics.length-1].id)}</span>`:''}${c.note?`<br><span class="mut">${esc(c.note)}</span>`:''}</td><td>${esc(c.an)}<br><span class="mut">${esc(c.em)}${c.phone?' · '+esc(c.phone):''}</span></td>
   <td>${esc((PLAN[c.pl]||[c.pl])[0])}<br><span class="mut">${c.mx} คน</span></td><td class="n">${baht(c.price)}</td><td>${thD(c.exp)}<br><span class="mut">${(c.lics||[]).length?(d>=0?'อีก '+d+' วัน':'เลยมา '+(-d)+' วัน'):''}</span></td>
   <td><span class="pill ${s[1]}">${s[0]}</span></td><td class="mut">${esc(c.sent||'–')}</td>
   <td><div class="row" style="flex-wrap:nowrap">${lastCode(c)?`<button class="sm" data-a="mail" data-id="${c.id}">อีเมลเปิดใช้งาน</button>`:''}<button class="sm" data-a="renew" data-id="${c.id}">${(c.lics||[]).length?'ต่ออายุ':'ออกรหัส'}</button><button class="sm" data-a="edit" data-id="${c.id}">แก้ไข</button></div></td></tr>`}).join('')}</tbody></table></div>`}
-function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+(c.en||'')+c.an+c.em).toLowerCase().includes(Q.toLowerCase()));
+function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+(c.en||'')+(c.tax||'')+(c.addr||'')+(c.phone||'')+c.an+c.em).toLowerCase().includes(Q.toLowerCase()));
   return `<section class="card"><h2>ลูกค้า <span class="mut">${DB.cust.length} ราย</span><span class="sp"></span><input id="q" placeholder="ค้นหาชื่อบริษัท ผู้ดูแล อีเมล" value="${esc(Q)}" style="max-width:280px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></h2>
   ${L.length?table(L):'<p class="mut">ยังไม่มีลูกค้า กด “ลงทะเบียนลูกค้าใหม่” เพื่อเริ่ม</p>'}</section>
   <section class="card"><h2>ประวัติรหัสที่ออก<span class="sp"></span>${(DB.gone||[]).length?`<label class="mut" style="font-size:14px;font-weight:400;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="showGone"${SHOWGONE?' checked':''} style="width:auto;margin:0"> แสดงรหัสของลูกค้าที่ลบแล้ว (${DB.gone.reduce((n,g)=>n+(g.lics||[]).length,0)})</label>`:''}</h2><div class="tw"><table><thead><tr><th>เลขที่</th><th>วันที่ออก</th><th>บริษัท</th><th>แพ็กเกจ</th><th>ถึง</th><th></th></tr></thead><tbody>
@@ -334,7 +339,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-tab]
   if(a==='tcsv'){const rows=[['เลขที่','วันที่','บริษัท','ผู้แจ้ง','ช่องทาง','ประเภท','หัวข้อ','รายละเอียด','รุ่น','สถานะ','วิธีแก้','วันที่ปิด'],...DB.tix.map(t=>[t.id,t.date,cName(t.cid),t.who,t.ch,CAT[t.cat]||t.cat,t.title,t.detail,t.ver,TST[t.st][0],t.ans,t.closed])];
     const l=document.createElement('a');l.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')],{type:'text/csv'}));l.download='PENUM-เรื่องช่วยเหลือ-'+today()+'.csv';l.click()}
   if(a==='bk'||a==='csv'){let blob,name;if(a==='bk'){blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'});name='PENUM-ฝ่ายขาย-'+today()+'.json'}
-    else{const rows=[['บริษัท','ชื่ออังกฤษ','ผู้ดูแล','อีเมล','โทร','LINE','แพ็กเกจ','ผู้ใช้','บาท/เดือน','เริ่ม','ถึง','สถานะ'],...DB.cust.map(c=>[c.co,c.en||'',c.an,c.em,c.phone,c.line,(PLAN[c.pl]||[c.pl])[0],c.mx,c.price,c.start,c.exp,status(c)[0]])];
+    else{const rows=[['บริษัท','ชื่ออังกฤษ','เลขผู้เสียภาษี','ที่อยู่','ผู้ดูแล','อีเมล','โทร','LINE','แพ็กเกจ','ผู้ใช้','บาท/เดือน','เริ่ม','ถึง','สถานะ'],...DB.cust.map(c=>[c.co,c.en||'',c.tax||'',c.addr||'',c.an,c.em,c.phone,c.line,(PLAN[c.pl]||[c.pl])[0],c.mx,c.price,c.start,c.exp,status(c)[0]])];
       blob=new Blob(['﻿'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')],{type:'text/csv'});name='PENUM-ลูกค้า-'+today()+'.csv'}
     const l=document.createElement('a');l.href=URL.createObjectURL(blob);l.download=name;l.click()}
   if(a==='rs'){const f=$('#rsIn');f.onchange=async()=>{try{const j=JSON.parse(await f.files[0].text());if(!Array.isArray(j.cust))throw 0;j.tix=j.tix||[];j.tseq=j.tseq||0;DB=j;save();render();toast('เปิดไฟล์สำรองแล้ว '+j.cust.length+' ราย')}catch(x){toast('ไฟล์นี้ไม่ใช่ไฟล์สำรองของฝ่ายขาย')}};f.click()}});
