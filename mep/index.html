@@ -1155,7 +1155,7 @@ function plan(){
     row.ratio=need>0?row.inst/need:0;
     row.el=elec(row.unitKW,row.ph,e.len);
     rows.push(row);
-    if(row.q>0)loads.push({name:rm.name+' · '+(e.sys==='ahu'?'พัดลม AHU':S.label),qty:row.q,kw:row.unitKW,ph:row.ph,el:row.el});
+    if(row.q>0)loads.push({name:rm.name+' · '+(e.sys==='ahu'?'พัดลม AHU':S.label),qty:row.q,kw:row.unitKW,ph:row.ph,el:row.el,keys:tagSplit(rm.name).tags});
   });
   // VRF outdoor
   const vrf={indoorKW:vrfKW,units:vrfUnits,modules:[]};
@@ -1175,10 +1175,10 @@ function plan(){
     const N=Math.max(1,Math.round(n(pl.chN)||1));
     const each=Math.max(10,Math.ceil(ahuTR*(n(pl.chDiv)||1)/N/10)*10);
     Object.assign(ch,{N,each,type:pl.chType});ch.hyd=chwHyd(each,N,rows.filter(r=>r.sys==='ahu').map(r=>r.s/3412));
-    const add=(name,c,kw,pump)=>{const el=elec(kw,3,pl.plantLen);ch.list.push({name,c,kw,el,pump});loads.push({name,qty:c,kw,ph:3,el})};
-    if(pl.chType==='air'){add(`Chiller ${tl('ระบายความร้อนด้วยอากาศ','air-cooled')} ${each} TR`,N,each*1.15)}
-    else{add(`Chiller ${tl('ระบายความร้อนด้วยน้ำ','water-cooled')} ${each} TR`,N,each*0.65);add(tl('ปั๊มน้ำระบายความร้อน (CDWP)','Condenser water pump (CDWP)'),N,ch.hyd.ckw,1);add(tl('Cooling tower (พัดลม)','Cooling tower fan'),N,upMotor(each*0.05))}
-    add(tl('ปั๊มน้ำเย็น (CHWP)','Chilled water pump (CHWP)'),N,ch.hyd.kw,1);
+    const add=(name,c,kw,pump,kp)=>{const el=elec(kw,3,pl.plantLen);ch.list.push({name,c,kw,el,pump});loads.push({name,qty:c,kw,ph:3,el,keys:kp?Array.from({length:c},(_,i)=>kp+(i+1)):null})};
+    if(pl.chType==='air'){add(`Chiller ${tl('ระบายความร้อนด้วยอากาศ','air-cooled')} ${each} TR`,N,each*1.15,0,'CH-')}
+    else{add(`Chiller ${tl('ระบายความร้อนด้วยน้ำ','water-cooled')} ${each} TR`,N,each*0.65,0,'CH-');add(tl('ปั๊มน้ำระบายความร้อน (CDWP)','Condenser water pump (CDWP)'),N,ch.hyd.ckw,1);add(tl('Cooling tower (พัดลม)','Cooling tower fan'),N,upMotor(each*0.05))}
+    add(tl('ปั๊มน้ำเย็น (CHWP)','Chilled water pump (CHWP)'),N,ch.hyd.kw,1,'CHWP-');
   }
   const conn=loads.reduce((a,l)=>a+l.qty*l.kw,0);
   const dem=conn*(n(pl.df)||1);
@@ -1278,9 +1278,9 @@ function boq(){
     add('chw','chwSep','Air Separator and Chemical Feeder',tr('ชุด'),1,PR.chwSep.m,PR.chwSep.l,SV);
   }
   // electrical
-  const cbs={},cab={},cond={v:0};
+  const cbs={},cab={},cond={v:0},PW=pwLens();
   pl.loads.forEach(L=>{
-    const e=L.el;if(!e)return;
+    const e=L.el;if(!e)return;const dl=PW&&L.keys&&L.keys.length===L.qty&&L.keys.every(k=>PW[pwKey(k)])?L.keys.reduce((a,k)=>a+PW[pwKey(k)]+3,0):null;if(dl!=null)e.len=dl/L.qty;
     const ck=`${e.ph===1?'1P':'3P'} ${e.cb} A`;cbs[ck]=cbs[ck]||{q:0,a:e.cb};cbs[ck].q+=L.qty;
     cab[e.mm]=(cab[e.mm]||0)+L.qty*e.len*e.cores;
     cab[e.g]=(cab[e.g]||0)+L.qty*e.len;
@@ -1581,6 +1581,7 @@ function renderEditor(){
   </section>`;
   if(rm.mode==='detail') h+=detailCards(rm,d);
   else h+=`<section class="panel card"><h2><span>แผนภูมิไซโครเมตริก</span></h2><div id="psyBox" style="display:flex;flex-direction:column;gap:12px">${psyCard(rm)}</div></section>`;
+  h+=`<section class="panel card"><h2><span>แบบแปลนตัวอย่างของห้อง</span><small>วาดจากข้อมูลโหลดและเครื่องที่เลือก</small></h2><div id="rpBox" class="tbl-wrap">${roomPlanSVG(rm)||'<p class="hint" style="margin:0">ใส่พื้นที่หรือขนาดห้องก่อน</p>'}</div><p class="hint" style="margin:6px 0 0">เป็นแบบแนวคิดเบื้องต้น ตำแหน่งหัวจ่ายลม ช่องลมกลับ และแนวท่อจัดให้อัตโนมัติตามลมจ่ายและจำนวนเครื่อง ต้องปรับตามแบบสถาปัตย์และงานระบบอื่นก่อนใช้ก่อสร้าง</p></section>`;
   h+=`<section class="panel card"><h2><span>ไดอะแกรมระบบและการควบคุม</span><small>${esc(nm(rm))}</small></h2><div id="sdBox" style="display:flex;flex-direction:column;gap:14px">${diagCard(rm)}</div></section>`;
   $('editor').innerHTML=h;
   if(SD_MODE==='3d')mount3D(rm);
@@ -1736,6 +1737,88 @@ const sensor=(x,y,s)=>`<circle class="sens" cx="${x}" cy="${y}" r="12"/>${T(x,y+
 function sysInfo(rm){
   const pl=plan(),row=pl.rows.find(x=>x.rm.id===rm.id),ps=psyStates(rm),r=calc(rm);
   return {row,ps,r,sys:rm.eq.sys,clean:/iso/.test(rm.type),oa:(r.oaLps||0)*3.6,sup:r.supply*3.6,d:dOf(rm),rm};
+}
+/* ---------- sample room plan, drawn from the load and equipment data ---------- */
+function roomPlanSVG(rm){
+  const I=sysInfo(rm),{row,sys,clean,oa,sup,d}=I,{tx,ln,box}=svgT(),A0=n(rm.area),H=n(rm.height)||3;
+  let W=n(rm.dimW),L=n(rm.dimL),guess=false;
+  if(!(W>0&&L>0)){if(!(A0>0))return '';W=Math.round(Math.sqrt(A0/1.5)*10)/10;L=Math.round(A0/W*10)/10;guess=true}
+  const X=Math.max(W,L),Y=Math.min(W,L),air=['ducted','package','ahu'].includes(sys),vrf=sys==='vrf',ahu=sys==='ahu',pkg=sys==='package';
+  const nU=row&&row.q>0?row.q:0,pre=ahu?'AHU':pkg?'PAC':vrf?'VRF':'FCU',tags=nU?unitTags(rm,nU,pre):[],cap=nU?(ahu?fmt(row.s/12000,1)+' TR':sizeTxt(sys,row.s)):'';
+  const PW=600,PH=330,k=Math.min(PW/X,PH/Y),rw=X*k,rh=Y*k,x0=40+(PW-rw)/2,y0=130,x1=x0+rw,y1=y0+rh,wt=Math.max(4,Math.min(10,0.2*k));
+  let g='';const m=v=>v*k,ra=Math.max(0,sup-oa),cir=(X_,Y_,r_,t,c='ln fpbg')=>`<circle class="${c}" cx="${X_}" cy="${Y_}" r="${r_}"/>`+(t?tx(X_,Y_+3,t,{fs:7.5}):'');
+  /* walls, door, dimensions */
+  g+=`<rect class="ln hat" x="${x0-wt}" y="${y0-wt}" width="${rw+2*wt}" height="${rh+2*wt}"/><rect class="ln fpbg" x="${x0}" y="${y0}" width="${rw}" height="${rh}"/>`;
+  const dw=Math.max(16,m(0.9)),dx=x0+Math.max(10,m(0.6));
+  g+=`<rect class="fpbg" x="${dx}" y="${y1-1}" width="${dw}" height="${wt+2}" style="stroke:none"/>`+ln(`M${dx} ${y1} V${y1-dw} M${dx} ${y1-dw} A${dw} ${dw} 0 0 1 ${dx+dw} ${y1}`)+tx(dx+dw/2,y1+wt+12,'DOOR',{fs:7.5});
+  const dm=y1+wt+30;g+=ln(`M${x0} ${dm-5} V${dm+5} M${x1} ${dm-5} V${dm+5} M${x0} ${dm} H${x1}`)+tx((x0+x1)/2,dm-4,fmt(X,1)+' m',{fs:9});
+  const dv=x1+wt+22;g+=ln(`M${dv-5} ${y0} H${dv+5} M${dv-5} ${y1} H${dv+5} M${dv} ${y0} V${y1}`)+tx(dv+4,(y0+y1)/2,fmt(Y,1)+' m',{fs:9,r:-90});
+  g+=tx((x0+x1)/2,(y0+y1)/2+4,'',{});
+  /* room sensor + pressure gauge */
+  const sy=(y0+y1)/2;g+=cir(x0+12,sy,8,+d.hum?'T/H':'T')+tx(x0+24,sy+3,'',{a:'start'});
+  const dp=roomDp(rm);if(dp)g+=`<rect class="ln fpbg" x="${dx+dw+8}" y="${y1+wt+4}" width="24" height="14" rx="2"/>`+tx(dx+dw+20,y1+wt+14,'ΔP',{fs:7.5})+tx(dx+dw+36,y1+wt+14,(dp>0?'+':'')+dp+' Pa',{a:'start',fs:7.5});
+  let nG=0,per=0,nR=0,outLbl='';
+  if(air){
+    /* supply outlets on a grid, columns shared out to the units */
+    const pc=clean?n(P.assume.cmhHepa)||1500:n(P.assume.cmhDiff)||700,nD=Math.min(400,Math.max(nU||1,Math.ceil(sup/pc)||1));
+    let cols=Math.max(1,Math.round(Math.sqrt(nD*X/Y))),rows;if(nU>1&&nU<=8)cols=Math.ceil(Math.max(cols,nU)/nU)*nU;rows=Math.max(1,Math.ceil(nD/cols));
+    nG=cols*rows;per=sup/nG;outLbl=clean?'HEPA':'SUPPLY DIFFUSER';
+    const cw=rw/cols,ch=rh/rows,sz=Math.max(6,Math.min(m(0.6),cw*0.5,ch*0.5)),cx=c=>x0+cw*(c+0.5),cy=r_=>y0+ch*(r_+0.5);
+    const hy=y0+Math.min(ch*0.22,16),uOf=c=>nU>0?Math.min(nU-1,Math.floor(c*nU/cols)):0;
+    /* units: ducted units hang above the ceiling inside the room, package/AHU sit in a plant room outside */
+    const inside=sys==='ducted',uw=Math.min(84,Math.max(30,rw/Math.max(1,nU)-10)),uh=inside?Math.max(14,Math.min(26,m(0.6))):34;
+    const ux=u=>{const cs=[...Array(cols).keys()].filter(c=>uOf(c)===u);const mx=cs.length?(cx(cs[0])+cx(cs[cs.length-1]))/2:x0+rw*(u+0.5)/Math.max(1,nU);return Math.max(x0,Math.min(x1-uw,mx-uw/2))};
+    const uy=inside?hy+6:y0-wt-26-uh;
+    if(!inside&&nU)g+=tx(x0,uy-8,ahu?'MECHANICAL ROOM / AHU ROOM':'PLANT AREA',{a:'start',fs:8,c:'hl'});
+    for(let u=0;u<nU;u++){const X_=ux(u);g+=`<rect class="ln ${inside?'fpbg':'thk fpbg'}" x="${X_}" y="${uy}" width="${uw}" height="${uh}"${inside?' style="stroke-dasharray:5 3"':''}/>`+tx(X_+uw/2,uy+uh/2+(inside?3:-1),tags[u],{fs:tags[u].length>9?7:8.5,c:'b'})+(inside?'':tx(X_+uw/2,uy+uh/2+10,cap,{fs:7.5}));
+      const cs=[...Array(cols).keys()].filter(c=>uOf(c)===u);if(!cs.length)continue;
+      const a=cx(cs[0]),b=cx(cs[cs.length-1]),mid=X_+uw*0.35;
+      g+=ln(`M${mid} ${inside?uy+uh:uy+uh} V${hy} M${Math.min(a,mid)} ${hy} H${Math.max(b,mid)}`,'thk');
+      cs.forEach(c=>g+=ln(`M${cx(c)} ${hy} V${cy(rows-1)-sz/2}`));
+      const rx_=X_+uw*0.75;g+=`<path class="ln" style="stroke-dasharray:4 3" d="M${rx_} ${inside?uy+uh:uy+uh} V${inside?uy+uh+12:y0}"/>`;
+      if(!inside&&u===0)g+=tx(rx_+4,y0-wt-6,'RA',{a:'start',fs:7.5})+tx(mid-4,y0-wt-6,'SA',{a:'end',fs:7.5});
+      if(!inside&&oa>0&&u===0)g+=ln(`M${X_-18} ${uy+uh/2} H${X_}`)+`<polygon class="ah" points="${X_},${uy+uh/2} ${X_-6},${uy+uh/2-3} ${X_-6},${uy+uh/2+3}"/>`+tx(X_-20,uy+uh/2+3,'OA',{a:'end',fs:7.5});
+    }
+    for(let c=0;c<cols;c++)for(let r_=0;r_<rows;r_++){const X_=cx(c),Y_=cy(r_);g+=clean?`<rect class="ln hat" x="${X_-sz/2}" y="${Y_-sz/2}" width="${sz}" height="${sz}"/>`:`<rect class="ln fpbg" x="${X_-sz/2}" y="${Y_-sz/2}" width="${sz}" height="${sz}"/>`+ln(`M${X_-sz/2} ${Y_-sz/2} L${X_+sz/2} ${Y_+sz/2} M${X_+sz/2} ${Y_-sz/2} L${X_-sz/2} ${Y_+sz/2}`)}
+    /* return: low-level wall grilles in cleanrooms, ceiling grilles between outlets elsewhere */
+    nR=ra>0?Math.max(clean?2:1,Math.ceil(ra/(clean?2000:1200))):0;
+    if(nR){const rs=Math.max(6,Math.min(m(0.6),cw*0.4));
+      if(clean){const per_=Math.ceil(nR/2);[y0+3,y1-3-rs*0.4].forEach((Y_,s)=>{const cnt=s?nR-per_:per_;for(let i=0;i<cnt;i++){const X_=x0+rw*(i+0.5)/cnt;if(s&&X_>dx-rs&&X_<dx+dw+rs)continue;g+=`<rect class="ln hat" x="${X_-rs/2}" y="${Y_}" width="${rs}" height="${rs*0.4}"/>`}})}
+      else{const C=[];for(let c=0;c<Math.max(1,cols-1);c++)for(let r_=0;r_<Math.max(1,rows-1);r_++)C.push([cols>1?x0+cw*(c+1):x0+rw*0.8,rows>1?y0+ch*(r_+1):y1-Math.min(ch*0.2,14)]);
+        for(let i=0;i<Math.min(nR,C.length);i++){const [X_,Y_]=C[Math.floor(i*C.length/Math.min(nR,C.length))];g+=`<rect class="ln fpbg" x="${X_-rs/2}" y="${Y_-rs/4}" width="${rs}" height="${rs/2}"/>`+ln(`M${X_-rs/2+2} ${Y_} H${X_+rs/2-2}`)}}}
+    /* piping to the plant */
+    if(nU&&ahu){const px=ux(nU-1)+uw*0.6;g+=ln(`M${px} ${uy} V${uy-16} M${px+8} ${uy} V${uy-16}`)+tx(px+14,uy-8,'CHS / CHR → CHILLER',{a:'start',fs:7.5})}
+    if(nU&&inside){const oy=y0-wt-40;for(let u=0;u<nU;u++){const X_=ux(u)+uw/2;g+=box(X_-16,oy,32,22)+cir(X_,oy+11,7,'')+`<path class="ln" style="stroke-dasharray:2 2" d="M${X_+12} ${oy+22} V${uy}"/>`}g+=tx(x0,oy-6,'CONDENSING UNITS (OUTDOOR)',{a:'start',fs:8,c:'hl'})}
+  } else if(nU){
+    if(vrf){/* ceiling cassettes on a grid, one outdoor unit */
+      let cols=Math.max(1,Math.round(Math.sqrt(nU*X/Y))),rows=Math.ceil(nU/cols);const cw=rw/cols,ch=rh/rows,sz=Math.max(10,Math.min(m(0.84),cw*0.5,ch*0.5));
+      const oy=y0-wt-46;g+=box(x0,oy,46,30,'ln thk fpbg')+cir(x0+23,oy+15,10,'')+tx(x0+52,oy+18,'VRF ODU',{a:'start',fs:8,c:'b'});
+      g+=`<path class="ln" style="stroke-dasharray:6 3" d="M${x0+23} ${oy+30} V${y0+Math.min(ch*0.2,14)} H${x0+cw*(cols-0.5)}"/>`;
+      for(let i=0;i<nU;i++){const c=i%cols,r_=Math.floor(i/cols),X_=x0+cw*(c+0.5),Y_=y0+ch*(r_+0.5);g+=`<path class="ln" style="stroke-dasharray:6 3" d="M${X_} ${y0+Math.min(ch*0.2,14)} V${Y_-sz/2}"/>`+`<rect class="ln thk fpbg" x="${X_-sz/2}" y="${Y_-sz/2}" width="${sz}" height="${sz}"/>`+box(X_-sz/4,Y_-sz/4,sz/2,sz/2)+tx(X_,Y_+sz/2+10,tags[i],{fs:7.5})}
+    } else {/* wall-mounted indoor units on the long wall, condensing units outside */
+      const uw=Math.max(18,Math.min(m(0.9),rw/nU-8)),oy=y0-wt-40;
+      for(let i=0;i<nU;i++){const X_=x0+rw*(i+0.5)/nU;g+=`<rect class="ln thk fpbg" x="${X_-uw/2}" y="${y0+1}" width="${uw}" height="${Math.max(6,m(0.25))}"/>`+tx(X_,y0+Math.max(6,m(0.25))+12,tags[i],{fs:7.5})+[-0.3,0,0.3].map(f=>ln(`M${X_+uw*f} ${y0+Math.max(6,m(0.25))+16} v10`)).join('');
+        g+=box(X_-16,oy,32,22)+cir(X_,oy+11,7,'')+`<path class="ln" style="stroke-dasharray:6 3" d="M${X_} ${oy+22} V${y0}"/>`}
+      g+=tx(x0,oy-6,'CONDENSING UNITS (OUTDOOR)',{a:'start',fs:8,c:'hl'});
+    }
+  }
+  if(!nU)g+=tx((x0+x1)/2,(y0+y1)/2,'ยังไม่ได้เลือกเครื่องปรับอากาศ',{fs:10,c:'hl'});
+  /* title block */
+  const TX=690,R=[['ROOM',wrap2(nm(rm),24)[0]],['TYPE',tr(TYPES[rm.type].label).slice(0,26)],['SIZE',`${fmt(W,1)} × ${fmt(L,1)} × ${fmt(H,1)} m${guess?' *':''}`],['AREA',fmt(W*L,1)+' m²'],['COOLING LOAD',fmt(I.r.tr,2)+' TR'],['SYSTEM',SYS[sys].label],['UNITS',nU?`${nU} × ${cap}`:'-'],['SUPPLY AIR',fmt(sup)+' CMH'],['ACH',fmt(sup/(W*L*H),1)],['OUTDOOR AIR',fmt(oa)+' CMH']];
+  if(air&&nG)R.push([outLbl,`${nG} × ${fmt(per)} CMH`]);if(nR)R.push([clean?'RETURN (LOW WALL)':'RETURN GRILLE',nR+' NOS']);
+  R.push(['ROOM CONDITION',`${d.Ti} °C${+d.hum?' / '+d.RH+' %RH':''}`]);if(dp)R.push(['PRESSURE',(dp>0?'+':'')+dp+' Pa']);
+  const ty0=20,rh_=17;g+=box(TX,ty0,250,24,'ln thk')+tx(TX+125,ty0+16,'ROOM LAYOUT · SAMPLE',{fs:10.5,c:'b'});
+  R.forEach(([a,b],i)=>{const Y_=ty0+24+i*rh_;g+=box(TX,Y_,250,rh_)+tx(TX+6,Y_+12,a,{a:'start',fs:7.5})+tx(TX+98,Y_+12,b,{a:'start',fs:8})});
+  g+=ln(`M${TX+92} ${ty0+24} V${ty0+24+R.length*rh_}`);
+  /* legend */
+  let ly=ty0+24+R.length*rh_+22;const LG=[];
+  if(air){LG.push([clean?`<rect class="ln hat" x="-6" y="-6" width="12" height="12"/>`:`<rect class="ln fpbg" x="-6" y="-6" width="12" height="12"/><path class="ln" d="M-6 -6 L6 6 M6 -6 L-6 6"/>`,clean?'HEPA FILTER OUTLET':'4-WAY SUPPLY DIFFUSER']);if(nR)LG.push([`<rect class="ln ${clean?'hat':'fpbg'}" x="-7" y="-3" width="14" height="6"/>`,clean?'LOW-WALL RETURN GRILLE':'RETURN AIR GRILLE']);LG.push([`<path class="ln thk" d="M-10 0 H10"/>`,'SUPPLY DUCT']);LG.push([`<path class="ln" style="stroke-dasharray:4 3" d="M-10 0 H10"/>`,'RETURN AIR']);}
+  else if(nU)LG.push([`<path class="ln" style="stroke-dasharray:6 3" d="M-10 0 H10"/>`,'REFRIGERANT PIPE (INSULATED CU)']);
+  LG.push([`<circle class="ln fpbg" r="6"/>`,+d.hum?'ROOM TEMP/HUM SENSOR':'ROOM THERMOSTAT']);if(dp)LG.push([`<rect class="ln fpbg" x="-9" y="-6" width="18" height="12" rx="2"/>`,'DIFFERENTIAL PRESSURE GAUGE']);
+  g+=tx(TX,ly-8,'LEGEND',{a:'start',fs:8.5,c:'b'});LG.forEach(([s,t],i)=>{const Y_=ly+i*16;g+=`<g transform="translate(${TX+12} ${Y_})">${s}</g>`+tx(TX+30,Y_+3,t,{a:'start',fs:7.5})});
+  ly+=LG.length*16+6;g+=tx(TX,ly,'NOT TO SCALE · FOR CONCEPT ONLY',{a:'start',fs:7.5,c:'hl'});if(guess)g+=tx(TX,ly+12,'* SIZE ASSUMED FROM AREA',{a:'start',fs:7.5,c:'hl'});
+  const VH=Math.max(dm+20,ly+24);
+  return `<svg class="sd sdt" viewBox="0 0 960 ${VH}" role="img" aria-label="Sample room layout ${esc(nm(rm))}">${g}</svg>`;
 }
 /* ---------- technical system & control diagram (P&ID style) ---------- */
 function tagSplit(name){
@@ -2990,7 +3073,7 @@ function renderCad0(){
   const C=P.cad;
   if(!C){$('editor').innerHTML=`<div class="wide"><section class="panel card"><h2><span>แบบและโมเดล 3D</span><small>ดูงานออกแบบจากไฟล์ AutoCAD เป็นชั้นข้อมูลและ 3 มิติ</small></h2>
     <p class="hint" style="margin:0 0 10px">ยังไม่มีแบบในโครงการนี้ กดโหลดแบบตัวอย่างเพื่อดูการทำงาน หรือเปิดหัวข้อนำเข้าข้อมูลแบบด้านล่าง</p>
-    <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="cadSample">โหลดแบบตัวอย่าง: แผนกทันตกรรม</button></div>${cadImportBox()}</section></div>`;return}
+    <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="cadGen">สร้างแบบจากข้อมูลห้อง</button><button type="button" class="btn" data-act="cadSample">โหลดแบบตัวอย่าง: แผนกทันตกรรม</button></div><p class="hint" style="margin:8px 0 0">สร้างแบบจากข้อมูลห้อง: วางห้องตามขนาดที่กรอก แล้ววางเครื่อง ท่อลม หัวจ่าย คอยล์ร้อน ท่อน้ำยา Chiller ท่อน้ำเย็น ตู้ MCC และสายไฟให้ เป็นแบบแนวคิดสำหรับคุยกับลูกค้า ลากย้ายแก้ไขได้ และ BOQ ใช้ความยาวจากแบบ</p>${cadImportBox()}</section></div>`;return}
   const S=cadSys(C),Zs=cadSizes(C),CDc=cadDuctCmp(C),EQc=cadEqCmp(C),BQc=cadBoqCmp(C),V=cadV,len=C.ducts.reduce((a,d)=>a+Math.hypot(d[5]-d[3],d[6]-d[4])/1000,0);
   const seg=(act,list,cur)=>`<div class="seg">${list.map(([v,l])=>`<button type="button" data-act="${act}" data-v="${v}" class="${String(cur)===String(v)?'on':''}">${l}</button>`).join('')}</div>`;
   const ck=(k,l)=>`<label><input type="checkbox" data-cl="${k}" ${V.lay[k]?'checked':''}> ${l}</label>`;
@@ -3002,7 +3085,7 @@ function renderCad0(){
     <div><dt>หัวจ่ายและช่องดูด</dt><dd>${C.terms.filter(t=>t[2]==='SA').length} <small>หัวจ่าย</small> · ${C.terms.filter(t=>t[2]!=='SA').length} <small>ช่องดูด</small></dd></div>
     <div><dt>เครื่องและอุปกรณ์</dt><dd>${C.equip.length} <small>ชุด</small></dd></div>
   </dl>
-  <section class="panel card"><h2><span>${esc(C.title||'')}</span><small>ลากบนภาพเพื่อหมุนหรือเลื่อน</small></h2>
+  <section class="panel card"><h2><span>${esc(C.title||'')}</span><small>ลากบนภาพเพื่อหมุนหรือเลื่อน</small></h2>${C.gen?`<div class="row" style="margin:0 0 10px;gap:8px;align-items:center"><button type="button" class="btn" data-act="cadGen">สร้างแบบใหม่จากข้อมูลห้อง</button><span class="hint" style="margin:0">แบบแนวคิดสร้างจากข้อมูลห้อง ห้องหรือเครื่องเปลี่ยนแล้วกดสร้างใหม่ได้ ตำแหน่งที่ย้ายเองจะถูกแทนที่</span></div>`:''}
     <div class="sd-tools">${seg('cadMode',[['3d','3D'],['2d','แปลน']],V.mode)}${seg('cadFloor',[[0,'ทุกชั้น'],[1,'ชั้น 1'],[2,'ชั้น 2']],V.floor)}
       <div class="seg"><button type="button" data-act="cadZoom" data-v="1.25" aria-label="ขยาย">+</button><button type="button" data-act="cadZoom" data-v="0.8" aria-label="ย่อ">−</button><button type="button" data-act="cadReset">รีเซ็ตมุมมอง</button></div></div>
     <div class="pr-opts" style="margin:10px 0">${ck('arch','อาคาร')}${ck('wall','ผนังและประตู')}${ck('sa','ท่อลมจ่าย')}${ck('ea','ท่อลมระบาย')}${ck('pipe','ท่อน้ำยา')}${ck('term','หัวจ่ายและช่องดูด')}${ck('eq','เครื่อง')}${C.fp?ck('fp','ดับเพลิง'):''}${[['chw','น้ำเย็น'],['el','ไฟฟ้า'],['pl','สุขาภิบาล'],['cv','โยธา']].map(x=>sxOf(C)[x[0]]?ck(x[0],x[1]):'').join('')}${ck('lbl','ป้ายกำกับ')}</div>
@@ -4095,13 +4178,53 @@ function cvAll(){
   return {any:it.length>0,it}}
 
 /* ---------- drawing layers for chilled water, electrical and plumbing ---------- */
-const SX={chw:{c:'#1596A6',lt:{chw:'#1596A6'},z:550},el:{c:'#C98A00',lt:{lt:'#C98A00',rc:'#8A5FBF'},z:120},pl:{c:'#2B7FD9',lt:{cw:'#2B7FD9',dr:'#8B5A2B'},z:200},cv:{c:'#6B7280',lt:{},z:0},ar:{c:'#3E4C53',lt:{w:'#3E4C53'},z:0}};
+const SX={chw:{c:'#1596A6',lt:{chw:'#1596A6'},z:550},el:{c:'#C98A00',lt:{lt:'#C98A00',rc:'#8A5FBF',pw:'#D9480F'},z:120},pl:{c:'#2B7FD9',lt:{cw:'#2B7FD9',dr:'#8B5A2B'},z:200},cv:{c:'#6B7280',lt:{},z:0},ar:{c:'#3E4C53',lt:{w:'#3E4C53'},z:0}};
 const SX_SIZE={lt:2.5,rc:2.5,cw:20,dr:50,chw:50,w:100};
 function arSync(){const C=P.cad;C.sx=C.sx||{};const L={pts:[],lines:[],boxes:[]};[1,2].forEach(f=>((C.walls||{})[f]||[]).forEach(w=>L.lines.push([f,w[0],w[1],w[2],w[3],w[4]||100,'w'])));C.sx.ar=L}
 function arBack(){const C=P.cad,L=C.sx&&C.sx.ar;if(!L)return;C.walls=C.walls||{};[1,2].forEach(f=>{C.walls[f]=[]});L.lines.forEach(l=>{if(Math.hypot(l[3]-l[1],l[4]-l[2])<50)return;(C.walls[l[0]]=C.walls[l[0]]||[]).push([l[1],l[2],l[3],l[4],Math.max(50,+l[5]||100)])});['arch','cols','doors'].forEach(k=>{C[k]=C[k]||{};[1,2].forEach(f=>{C[k][f]=C[k][f]||[]})})}
-const SXB={tank:'#7FB2CF',pump:'#3F8FD0',ww:'#9A7B5B',db:'#C98A00',ahu:'#1596A6',ch:'#0F6E7A',ct:'#6FA8B5',facp:'#D43D3D',pad:'#A8AFB8',base:'#7C858F'};
+const SXB={mcc:'#D9480F',tank:'#7FB2CF',pump:'#3F8FD0',ww:'#9A7B5B',db:'#C98A00',ahu:'#1596A6',ch:'#0F6E7A',ct:'#6FA8B5',facp:'#D43D3D',pad:'#A8AFB8',base:'#7C858F'};
 const sxOf=C=>(C&&C.sx)||{};
-function sxCount(L){const o={lt:0,rc:0,sd:0,ms:0,bl:0,len:0};L.pts.forEach(p=>{if(o[p[1]]!==undefined)o[p[1]]++});L.lines.forEach(l=>o.len+=Math.hypot(l[3]-l[1],l[4]-l[2])/1000);return o}
+function sxCount(L){const o={lt:0,rc:0,sd:0,ms:0,bl:0,len:0};L.pts.forEach(p=>{if(o[p[1]]!==undefined)o[p[1]]++});L.lines.forEach(l=>{if(l[6]!=='pw')o.len+=Math.hypot(l[3]-l[1],l[4]-l[2])/1000});return o}
+const pwKey=k=>String(k).replace(/[\s\-]/g,'').toUpperCase();
+function pwLens(){const L=P.cad&&P.cad.sx&&P.cad.sx.el;if(!L)return null;const o={};let any=0;L.lines.forEach(l=>{if(l[6]!=='pw'||!l[7])return;const k=pwKey(l[7]);o[k]=(o[k]||0)+Math.hypot(l[3]-l[1],l[4]-l[2])/1000;any=1});return any?o:null}          // drawn AC power cable length per unit tag, in m
+function elHvac(C,L){          // AC power: MCC outside the building, one cable run per unit, chiller and pump
+  const pl=plan();if(!(pl.conn>0))return;const f=sxFloors(C)[0]||1,R=cadRooms(C,f);if(!R)return;const bb=R.bb,r50=v=>Math.round(v/50)*50,EQ=C.equip,key=pwKey;
+  const mx=r50(bb[0]-2500),my=r50(bb[1]+1500),ty=r50(bb[1]-800);L.boxes.push([f,'mcc',`MCC-AC ${pl.mainCB}AT`,mx-500,my-250,mx+500,my+250,2000]);
+  const run=(x,y,k,mm)=>{x=r50(x);y=r50(y);L.lines.push([f,mx,my,mx,ty,mm,'pw',k]);if(Math.abs(x-mx)>50)L.lines.push([f,mx,ty,x,ty,mm,'pw',k]);if(Math.abs(y-ty)>50)L.lines.push([f,x,ty,x,y,mm,'pw',k])};
+  const ctr=e=>[(e[3]+e[5])/2,(e[4]+e[6])/2];
+  pl.rows.forEach(r=>{if(!(r.q>0)||!r.el)return;tagSplit(r.rm.name).tags.slice(0,r.q).forEach(t=>{const ind=EQ.find(e=>key(e[2])===key(t)),out=EQ.find(e=>key(e[2])===key('CDU-'+t));const e=r.sys==='ahu'||r.sys==='package'?ind:(out||ind);if(e){const c=ctr(e);run(c[0],c[1],t,r.el.mm)}})});
+  const X=sxOf(C).chw;if(X)X.boxes.forEach(b=>{const m=/^(CH|CHWP)-(\d+)/.exec(b[2]);if(!m)return;const it=pl.ch.list.find(c=>m[1]==='CH'?!c.pump&&/^Chiller/.test(c.name):c.pump&&/CHWP/.test(c.name));if(it&&it.el)run((b[3]+b[5])/2,(b[4]+b[6])/2,m[1]+'-'+m[2],it.el.mm)})}
+/* ---------- drawing generated from the room list (no imported plan needed) ---------- */
+function cadFromRooms(){
+  const RS=P.rooms.map(rm=>{let W=n(rm.dimW),Lg=n(rm.dimL);const A=n(rm.area);if(!(W>0&&Lg>0)){if(!(A>0))return null;W=Math.sqrt(A/1.5);Lg=A/W}return {rm,w:Math.round(Math.max(W,Lg)*10)*100,d:Math.round(Math.min(W,Lg)*10)*100}}).filter(Boolean);
+  if(!RS.length)return 0;const tot=RS.reduce((a,o)=>a+o.w*o.d,0),maxW=Math.max(Math.max(...RS.map(o=>o.w)),Math.round(Math.sqrt(tot*2)/1000)*1000),COR=2400,hc=Math.max(...P.rooms.map(r=>n(r.height)||2.7))*1000;
+  const C={title:(P.name||'โครงการ')+' (แบบจากข้อมูลห้อง)',Z:{duct:Math.round(hc+300),ceil:Math.round(hc),L2:Math.round(hc+1500),wall:Math.round(hc+600),door:2000},ducts:[],terms:[],equip:[],arch:{1:[],2:[]},walls:{1:[],2:[]},cols:{1:[],2:[]},doors:{1:[],2:[]},pipes:[],termNote:'',boqBasis:'drawn',sx:{},txt:{1:[],2:[]},env:1,gen:1};
+  const wl=C.walls[1],dr=C.doors[1],ar=C.arch[1],tx=C.txt[1];
+  const hw=(y,x0,x1,gaps,t)=>{let a=x0;gaps.slice().sort((p,q)=>p[0]-q[0]).forEach(g=>{if(g[0]>a){wl.push([a,y,g[0],y,t]);ar.push(a,y,g[0],y)}dr.push([g[0],y,g[1],y,0]);a=g[1]});if(x1>a){wl.push([a,y,x1,y,t]);ar.push(a,y,x1,y)}};
+  const vw=(x,y0,y1,t)=>{wl.push([x,y0,x,y1,t]);ar.push(x,y0,x,y1)};
+  /* pack rooms into rows; each row faces a corridor so every room has a door */
+  const rows=[];let cur=[],cw=0;RS.forEach(o=>{if(cur.length&&cw+o.w>maxW){rows.push(cur);cur=[];cw=0}cur.push(o);cw+=o.w});if(cur.length)rows.push(cur);
+  let y=0,xMax=0,yC=null;rows.forEach((row,ri)=>{const d=Math.max(...row.map(o=>o.d)),down=ri%2===0;let x=0;
+    row.forEach(o=>{const x1=x+o.w,ya=down?y+d-o.d:y,yb=ya+o.d,doorY=down?yb:ya,gx=x+Math.min(800,o.w*0.15);
+      hw(down?ya:yb,x,x1,[],100);hw(doorY,x,x1,[[gx,gx+900]],100);vw(x,ya,yb,100);vw(x1,ya,yb,100);
+      o.rm.reg=[1,Math.round(x+o.w/2),Math.round((ya+yb)/2)];tx.push([Math.round(x+o.w/2),Math.round((ya+yb)/2),nm(o.rm),1]);x=x1});
+    xMax=Math.max(xMax,x);if(down&&yC==null)yC=y+d;y+=d+(down?COR:0)});
+  const D=y;
+  /* envelope with the entrance at the end of the first corridor */
+  hw(0,0,xMax,[],200);hw(D,0,xMax,[],200);vw(xMax,0,D,200);
+  {const e0=yC+300,e1=yC+COR-300;wl.push([0,0,0,e0,200]);ar.push(0,0,0,e0);dr.push([0,e0,0,e1,0]);wl.push([0,e1,0,D,200]);ar.push(0,e1,0,D)}
+  P.cad=C;
+  hvAuto();
+  /* outdoor units and refrigerant pipes for split, ducted and VRF rooms */
+  const bb=[0,0,xMax,D],r50=v=>Math.round(v/50)*50,taken=[];let odu=null;
+  plan().rows.forEach(r=>{if(!(r.q>0)||!['split','ducted','vrf'].includes(r.sys))return;tagSplit(r.rm.name).tags.slice(0,r.q).forEach(t=>{const e=C.equip.find(q=>pwKey(q[2])===pwKey(t));if(!e)return;const cx=r50((e[3]+e[5])/2),cy=r50((e[4]+e[6])/2),btu=Math.round(r.s||0);
+    if(r.sys==='vrf'){if(!odu){odu=[r50(xMax/2),-2200];C.equip.push([1,'CDU','VRF-ODU',odu[0]-600,odu[1]-450,odu[0]+600,odu[1]+450,0,1700,0,0])}C.pipes.push([1,t,btu,[[cx,cy],[cx,-900],[odu[0],-900],[odu[0],odu[1]+450]],1,3]);return}
+    let x=cx;while(taken.some(v=>Math.abs(v-x)<1100))x+=1100;taken.push(x);const oy=-1500;
+    C.equip.push([1,'CDU','CDU-'+t,x-450,oy-350,x+450,oy+350,0,800,0,btu]);C.pipes.push([1,t,btu,[[cx,cy],[cx,-600],[x,-600],[x,oy+350]],1,r.sys==='split'?2:3])})});
+  if(plan().ch.N)sxLayout('chw');
+  if(P.mep.el.zones.length)sxLayout('el');else{const L={pts:[],lines:[],boxes:[]};elHvac(C,L);if(L.boxes.length)C.sx.el=L}          // only the AC power layer unless the building electrical tab is in use
+  return RS.length}
+
 function sxLens(L){const o={cwm:0,cw:0,d100:0,d50:0};L.lines.forEach(l=>{const m=Math.hypot(l[3]-l[1],l[4]-l[2])/1000;if(l[6]==='cw'){if(l[5]>=32)o.cwm+=m;else o.cw+=m}else if(l[5]>=100)o.d100+=m;else o.d50+=m});return o}
 function cadRooms(C,f){
   const W=((C.walls||{})[f]||[]),cols=((C.cols||{})[f]||[]),cs=100;if(!W.length)return null;
@@ -4169,6 +4292,7 @@ function sxLayout(sys){
     ['pl','chw'].forEach(s=>{const X=sxOf(C)[s];if(!X)return;X.boxes.forEach(b=>{if(['tank','pump','ww','ch','ct'].includes(b[1]))pad(b[0],'BASE',b[3],b[4],b[5],b[6],'base')});X.pts.forEach(p=>{if(p[1]==='rs')L.pts.push([p[0],'sl',p[2],p[3]])})});
     if(C.fp)C.fp.risers.forEach(r=>L.pts.push([r[0],'sl',r[1],r[2]]));
     C.equip.forEach(e=>{if(e[1]==='FCU'&&e[9]>0||e[1]==='OAU'||e[1]==='EXH'||e[1]==='AHU'){const cx=r50((e[3]+e[5])/2);L.pts.push([e[0],'op',cx,r50(e[4]-300)]);L.pts.push([e[0],'op',cx,r50(e[6]+300)])}})}
+  if(sys==='el')elHvac(C,L);
   C.sx[sys]=L;sxAfter(sys)}
 function sxAfter(sys){const L=sxOf(P.cad)[sys];if(!L)return;if(sys==='ar'){arBack();return}if(sys==='pl'){const F=P.mep.pl.fx;Object.keys(PL_FX).forEach(k=>{F[k]=L.pts.filter(p=>p[1]===k).length})}}
 function sxSym(k,cx,cy,c){const s=`fill="var(--surface,#fff)" stroke="${c}" stroke-width="40"`;
@@ -4805,6 +4929,7 @@ function reportCore(){
       h+=`<p class="meta">${tl('ข้อมูลที่ใช้','Inputs')}: ${lines.join(' · ')}</p>`;
       const ps=psyStates(rm);if(ps.M)h+=`<p><b>${tl('สภาวะอากาศ (ไซโครเมตริก)','Psychrometrics')}</b> · ${tl('สัดส่วนอากาศภายนอก','outdoor air fraction')} ${fmt(ps.x*100,0)}% · ${tl('โหลดคอยล์','coil load')} ${fmt(ps.coil,1)} kW${ps.A?` · ADP ${fmt(ps.A.t,1)}°C · BF ${fmt(ps.bf,2)}`:''}</p><div style="max-width:640px">${psyChart(ps)}</div>`+psyTable(ps).replace('class="dt" style="min-width:560px"','');
     }
+    {const sv=roomPlanSVG(rm);if(sv)h+=`<p><b>${tl('แบบแปลนตัวอย่างของห้อง','Sample room layout')}</b></p><div style="max-width:760px">${sv}</div>`}
     {const Iq=sysInfo(rm),air=['ducted','package','ahu'].includes(Iq.sys);h+=`<p><b>${tl('ไดอะแกรมระบบและการควบคุม','System & control diagram')}</b> · ${tr(SYS[Iq.sys].label)}</p><div style="max-width:760px">${air?diagAir(Iq,rm):diagSplit(Iq,rm)}</div><ol>${controlSeq(Iq).map(x=>`<li>${esc(x)}</li>`).join('')}</ol><p class="meta">${tl('จุดควบคุม','Control points')}: ${ioPoints(Iq).map(([t,x])=>`${t} ${esc(tr(x))}`).join(' · ')}</p>`;}
   });
   const Bq=boq(),pl=Bq.pl;
@@ -4975,7 +5100,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=77,MEP_NAME='v77';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=79,MEP_NAME='v79';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -5024,6 +5149,7 @@ function refreshQ(){
   const rqb=$('rmEqBox');if(rqb&&!rqb.contains(document.activeElement))rqb.innerHTML=roomEqCard(rm);
   const sbx=$('stdBox');if(sbx){const op=sbx.querySelector('details');sbx.innerHTML=stdCard(rm);if(op&&!op.open)sbx.querySelector('details').open=false}
   const pb=$('psyBox');if(pb)pb.innerHTML=psyCard(rm);
+  {const rb=$('rpBox');if(rb)rb.innerHTML=roomPlanSVG(rm)||'<p class="hint" style="margin:0">ใส่พื้นที่หรือขนาดห้องก่อน</p>'}
   const sb=$('sdBox');if(sb){if(SD_MODE==='3d'){clearTimeout(window.__sdT);window.__sdT=setTimeout(()=>{const old=$('sd3d')&&$('sd3d')._st;sb.innerHTML=diagCard(room());mount3D(room(),old)},450)}else sb.innerHTML=diagCard(rm)}
   rm.walls.forEach((w,i)=>{const e=document.querySelector(`[data-q="w${i}"]`);if(e)e.textContent=fmt(wallQ(w,d))});
   rm.glass.forEach((g,i)=>{const e=document.querySelector(`[data-q="g${i}"]`);if(e){const q=glassQ(g,d);e.textContent=fmt(q.cond+q.sol)}});
@@ -5108,6 +5234,8 @@ document.addEventListener('click',async e=>{
     case 'tyApply':{if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='กดอีกครั้ง ทุกห้องจะใช้ BTU/m², ACH ขั้นต่ำ, แสงสว่าง, อุณหภูมิ ความชื้น ความดัน และระบบแอร์ ตามคลัง';setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent='นำค่าในคลังไปใช้กับห้องที่มีอยู่'}},5000);return}
       P.rooms.forEach(r=>{const t=TYPES[r.type];if(!t)return;r.rate=t.rate;r.light.wpm2=t.light;r.air.minAch=t.minAch;r.cond=Object.assign({},COND_DEF[r.type]||{});const sy=DEF_SYS[r.type]||'ducted';if(r.eq&&r.eq.sys!==sy){r.eq.sys=sy;r.eq.size='auto';r.eq.qty=null}});
       save();renderAll();$('toast').textContent='ปรับ '+P.rooms.length+' ห้องตามคลังแล้ว';return}
+    case 'cadGen':{if(P.cad&&!b.classList.contains('armed')){b.classList.add('armed');b.textContent=uiT('กดอีกครั้ง แบบเดิมจะถูกแทนที่');setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent=uiT('สร้างแบบใหม่จากข้อมูลห้อง')}},4000);return}
+      const k=cadFromRooms();if(!k){alert(uiT('ใส่พื้นที่หรือขนาดห้องอย่างน้อยหนึ่งห้องก่อน'));return}cadV.lay.el=1;cadV.floor=1;save();renderAll();return}
     case 'hidePre':{if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent=uiT('กดอีกครั้งเพื่อลบออกจากรายการ');setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent=uiT('ลบออกจากรายการ')}},4000);return}
       const h=preHidden();if(h.indexOf(b.dataset.id)<0)h.push(b.dataset.id);try{localStorage.setItem('hvac-prehide',JSON.stringify(h))}catch(e){}renderAll();return}
     case 'showPre':try{localStorage.removeItem('hvac-prehide')}catch(e){}renderAll();return;
