@@ -15,7 +15,7 @@ const APPS = [
   { dir: 'mep', name: 'PENUM MEP', short: 'PENUM MEP', desc: 'งานระบบอาคาร คำนวณ แบบ และ BOQ', theme: '#123A42', bg: '#F2F5F4', shim: true },
   { dir: 'bim', name: 'PENUM BIM', short: 'PENUM BIM', desc: 'โปรแกรมเขียนแบบ BIM ในเบราว์เซอร์', theme: '#1b2028', bg: '#eef1f5' },
   { dir: 'pm', name: 'PENUM PM', short: 'PENUM PM', desc: 'บริหารโครงการ แผนงาน จัดซื้อ งบ เบิกงวด หน้างาน และส่งมอบ', theme: '#123A42', bg: '#F2F5F4' },
-  { dir: 'sales', name: 'PENUM PM ฝ่ายขาย', short: 'ฝ่ายขาย', desc: 'ลงทะเบียนลูกค้า ออกรหัสใช้งาน และบันทึกงานช่วยเหลือ PENUM PM', theme: '#3F7F89', bg: '#F3F6F5' },
+  { dir: 'sales', name: 'ORIEN ฝ่ายขาย', short: 'ORIEN ขาย', desc: 'บริษัท โอเรียน จำกัด: ลงทะเบียนลูกค้า ออกรหัสใช้งาน และบันทึกงานช่วยเหลือ PENUM PM', theme: '#1B2440', bg: '#F3F5F8', ownIcons: true },
 ];
 
 // PENUM MEP saves files only through the Artifact host's downloads service and otherwise shows the text to copy.
@@ -27,6 +27,8 @@ const SHIM = `<script>if(!window.claude)window.claude={use:n=>n==='downloads'?Pr
 const BASE = ':root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}';
 
 for (const a of APPS) {
+  // an app with its own icons/ folder (the ORIEN sales app) uses those instead of the shared PENUM icons
+  const ic = a.ownIcons ? 'icons/' : '../icons/';
   const src = readFileSync(join(root, a.dir, 'index.html'), 'utf8');
   const ver = createHash('sha256').update(src).digest('hex').slice(0, 12);
   const dir = join(out, a.dir);
@@ -34,7 +36,7 @@ for (const a of APPS) {
   writeFileSync(join(dir, 'index.html'),
 `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="${a.theme}">
-<link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-192.png"><link rel="apple-touch-icon" href="../icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="${ic}icon-192.png"><link rel="apple-touch-icon" href="${ic}icon-192.png">
 <style>${BASE}</style>${a.shim ? SHIM : ''}</head><body>
 ${src}
 <script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
@@ -44,14 +46,14 @@ ${src}
     id: `./`, name: a.name, short_name: a.short, description: a.desc, lang: 'th',
     start_url: './', scope: './', display: 'standalone', theme_color: a.theme, background_color: a.bg,
     icons: [
-      { src: '../icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { src: '../icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-      { src: '../icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: `${ic}icon-192.png`, sizes: '192x192', type: 'image/png' },
+      { src: `${ic}icon-512.png`, sizes: '512x512', type: 'image/png' },
+      { src: `${ic}icon-maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }, null, 2));
   // documents an app links to (PENUM PM's forms library) are served next to it
-  for (const sub of ['files', 'help']) if (existsSync(join(root, a.dir, sub))) cpSync(join(root, a.dir, sub), join(dir, sub), { recursive: true });
-  writeFileSync(join(dir, 'sw.js'), readFileSync(join(root, 'tools', 'sw.js'), 'utf8').replace('__VERSION__', `${a.dir}-${ver}`));
+  for (const sub of ['files', 'help', 'icons']) if (existsSync(join(root, a.dir, sub))) cpSync(join(root, a.dir, sub), join(dir, sub), { recursive: true });
+  writeFileSync(join(dir, 'sw.js'), readFileSync(join(root, 'tools', 'sw.js'), 'utf8').replace('__VERSION__', `${a.dir}-${ver}`).replaceAll('../icons/', ic));
 }
 
 writeFileSync(join(out, 'index.html'), readFileSync(join(root, 'tools', 'landing.html'), 'utf8'));
