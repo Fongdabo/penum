@@ -3163,6 +3163,9 @@ const PIPE_SZ=[[18000,'1/4"','1/2"'],[24000,'1/4"','5/8"'],[48000,'3/8"','5/8"']
 function pipeDia(t){const a=t.replace('"','').split('-'),fr=x=>{const q=x.split('/');return q.length>1?q[0]/q[1]:+q[0]};return a.length>1?+a[0]+fr(a[1]):fr(a[0])}
 function pipeSize(btu){const r=PIPE_SZ.find(q=>btu<=q[0]);return {liq:r[1],gas:r[2]}}
 function cadPipes(C){return ((C&&C.pipes)||[]).map(q=>{let h=0;for(let i=1;i<q[3].length;i++)h+=Math.hypot(q[3][i][0]-q[3][i-1][0],q[3][i][1]-q[3][i-1][1]);h/=1000;const z=pipeSize(q[2]);return {f:q[0],name:q[1],btu:q[2],pts:q[3],drawn:q[4],h,v:q[5],tot:(h+q[5])*1.1,liq:z.liq,gas:z.gas}})}
+function pipe3D(C,f,r){const zc=n(C.Z.ceil)||2600,k=pwKey(r.name),u=C.equip.find(e=>e[0]===f&&e[1]!=='CDU'&&pwKey(e[2])===k),q0=r.pts[0],q1=r.pts[r.pts.length-1],
+    cd=C.equip.find(e=>e[0]===f&&e[1]==='CDU'&&q1[0]>=e[3]-150&&q1[0]<=e[5]+150&&q1[1]>=e[4]-150&&q1[1]<=e[6]+150),wall=u&&u[8]<=zc,zr=wall?u[7]+120:zc+150;          // v91: a wall unit's pipes leave the back of the unit and run outside at that height; a concealed unit's run above the ceiling; both drop onto the condensing unit
+  const o=[[q0[0],q0[1],u?(u[7]+u[8])/2:zc]].concat(r.pts.map(q=>[q[0],q[1],zr]));if(cd)o.push([q1[0],q1[1],cd[8]]);return o}
 function cadPipeSizes(C){const M={};cadPipes(C).forEach(r=>[r.liq,r.gas].forEach(t=>{const m=M[t]=M[t]||{t,d:pipeDia(t),len:0};m.len+=r.tot}));return Object.values(M).sort((a,b)=>a.d-b.d)}
 /* ---------- drawing vs recommendation ---------- */
 const REC={fr:1.25,v:7,tab:10};
@@ -3221,7 +3224,7 @@ function cadImportBox(){return `<details class="fold" style="margin-top:12px"><s
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"><button type="button" class="btn primary" data-act="cadLoad">นำเข้า</button>
   <button type="button" class="btn" data-act="cadSample">โหลดแบบตัวอย่าง: แผนกทันตกรรม</button>${P.cad?`<button type="button" class="btn danger" data-act="cadClear">ลบแบบออกจากโครงการ</button>`:''}<span class="toast" id="toast" role="status"></span></div></details>`}
 function airLegend(C){const S=airStats(C),L=[tl('ลมถึงดี','well reached'),tl('ลมถึง','reached'),tl('ขอบระยะลม','edge of throw'),tl('ลมไปไม่ถึง (อุ่นกว่า)','not reached (warmer)')];
-  return `<div class="legend air-lg" style="margin-top:8px"><span><i style="background:#2B6CD9;height:3px"></i>${tl('ลมจ่ายจากหัวจ่าย','supply air from diffusers')}</span><span><i style="background:#E8603C;height:3px"></i>${tl('ลมกลับเข้าช่องดูด','air back to grilles')}</span>${L.map((l,i)=>`<span><i style="background:${AIRC[i]};opacity:.6"></i>${l}${S?' '+fmt(S[i],0)+'%':''}</span>`).join('')}</div>
+  return `<div class="legend air-lg" style="margin-top:8px"><span><i style="background:repeating-linear-gradient(90deg,#3D9BE9 0 5px,transparent 5px 9px);height:3px"></i>${tl('ทิศทางลมจ่าย (เส้นประ ไม่ใช่ท่อลม)','supply air direction (dashed, not a duct)')}</span><span><i style="background:repeating-linear-gradient(90deg,#E8603C 0 5px,transparent 5px 9px);height:3px"></i>${tl('ลมกลับเข้าช่องดูด','air back to grilles')}</span>${L.map((l,i)=>`<span><i style="background:${AIRC[i]};opacity:.6"></i>${l}${S?' '+fmt(S[i],0)+'%':''}</span>`).join('')}</div>
   <p class="hint" style="margin:4px 0 0">${tl('ระยะลมประมาณจากปริมาณลมของแต่ละหัวจ่าย ถึงความเร็วปลายลม 0.25 m/s ใช้ดูภาพรวมว่าลมกระจายทั่วห้องหรือไม่ ไม่ใช่การจำลอง CFD','Throw is estimated from each diffuser\'s airflow to a 0.25 m/s terminal velocity. Use it to see whether air reaches the whole room; it is not a CFD simulation.')}</p>`}
 function diffTable(C){          // supply diffusers per room: how many, airflow each and spacing, so the even spread can be checked
   const SA=C.terms.filter(t=>t[2]==='SA');if(!SA.length)return '';const key=v=>String(v).replace(/[\s\-]/g,'').toUpperCase();
@@ -3319,8 +3322,8 @@ const airThrow=q=>Math.max(1200,Math.min(5000,1500*Math.sqrt(Math.max(n(q),50)/1
 let airMemo=null;
 function airSrc(C,f,R){const zc=n(C.Z.ceil)||2600,o=C.terms.filter(t=>t[0]===f&&t[2]==='SA').map(t=>[t[3],t[4],airThrow(t[5]),0,0]);
   C.equip.forEach(e=>{if(e[0]!==f||e[1]!=='FCU'||!(e[7]<zc))return;const x=(e[3]+e[5])/2,y=(e[4]+e[6])/2,g=R&&R.regs.find(q=>R.inR(q,x,y));let dx=0,dy=0,rg=9000;
-    if(g){const vx=(g.x0+g.x1)/2-x,vy=(g.y0+g.y1)/2-y;if((e[5]-e[3])>=(e[6]-e[4])){dy=Math.sign(vy)||1;rg=dy>0?g.y1-y:y-g.y0}else{dx=Math.sign(vx)||1;rg=dx>0?g.x1-x:x-g.x0}}          // a wall unit blows across the room, away from its wall
-    o.push([x,y,Math.min(9000,3500+n(e[10])/12000*2200),dx,dy,rg])});return o}
+    if(g){const W4=[[x-g.x0,1,0,g.x1-x],[g.x1-x,-1,0,x-g.x0],[y-g.y0,0,1,g.y1-y],[g.y1-y,0,-1,y-g.y0]].sort((a,b)=>a[0]-b[0])[0];dx=W4[1];dy=W4[2];rg=W4[3]}          // a wall unit blows across the room, away from the wall it hangs on (v91: the nearest wall, whichever way the box is drawn)
+    o.push([x,y,Math.min(9000,3500+n(e[10])/12000*2200),dx,dy,rg,g?[g.x0,g.y0,g.x1,g.y1]:null])});return o}
 // each floor cell gets throw ÷ distance to the nearest diffuser; mixing is good at throw/half-spacing ≈ 0.8 (ADPI), and a grid square's corner sits √2 further out
 function airCells(C,f){const key=f+'|'+JSON.stringify(C.terms).length+'|'+JSON.stringify(C.equip).length+'|'+JSON.stringify((C.walls||{})[f]||[]).length;if(airMemo&&airMemo.C===C&&airMemo[key])return airMemo[key];
   if(!airMemo||airMemo.C!==C)airMemo={C};const R=cadRooms(C,f),SA=airSrc(C,f,R),out=[];out.src=SA;
@@ -3374,9 +3377,9 @@ function cadDraw(){
     if(LY.eq)C.equip.forEach(e=>{if(e[0]!==f)return;if(!(is3&&e[8]<=2100)){box([[e[3],e[4]],[e[5],e[4]],[e[5],e[6]],[e[3],e[6]]],e[7],e[8],EQ[e[1]]||mut,.9);hit(e[2],e[3],e[4],e[5],e[6],e[7],e[8])}
       if(e[1]!=='AC'&&(e[5]-e[3])*s>40)labels.push([e[2],is3?pr((e[3]+e[5])/2+ox,(e[4]+e[6])/2,zb+e[8]+350):pr((e[3]+e[5])/2+ox,(e[4]+e[6])/2),1])});
     faces.sort((a,b)=>b.d-a.d).forEach(F=>poly(F.pts,F.col,F.dark,F.alpha));
-    if(LY.pipe)cadPipes(C).forEach(r=>{if(r.f!==f)return;const zp=zb+Z.ceil+150;g.beginPath();
-      if(is3){const a=pr(r.pts[0][0]+ox,r.pts[0][1],zb+900);g.moveTo(a[0],a[1])}
-      r.pts.forEach((q,i)=>{const a=pr(q[0]+ox,q[1],zp);(i||is3)?g.lineTo(a[0],a[1]):g.moveTo(a[0],a[1])});
+    if(LY.pipe)cadPipes(C).forEach(r=>{if(r.f!==f)return;g.beginPath();
+      if(is3)pipe3D(C,f,r).forEach((q,i)=>{const a=pr(q[0]+ox,q[1],zb+q[2]);i?g.lineTo(a[0],a[1]):g.moveTo(a[0],a[1])});
+      else r.pts.forEach((q,i)=>{const a=pr(q[0]+ox,q[1]);i?g.lineTo(a[0],a[1]):g.moveTo(a[0],a[1])});
       g.strokeStyle='#C9A227';g.lineWidth=is3?3:2.5;g.setLineDash(r.drawn?[]:[6,4]);g.stroke();g.setLineDash([]);
       if(!is3){const m=r.pts[Math.floor((r.pts.length-1)/2)],m2=r.pts[Math.floor((r.pts.length-1)/2)+1]||m;labels.push([r.liq+' + '+r.gas,pr((m[0]+m2[0])/2+ox,(m[1]+m2[1])/2+260),1])}});
     if(LY.fp&&C.fp){const zp=zb+Z.ceil+320;
@@ -3396,12 +3399,14 @@ function cadDraw(){
       faces.sort((a,b)=>b.d-a.d).forEach(F=>poly(F.pts,F.col,F.dark,F.alpha));faces.length=0;g.lineCap='round';
       SL.lines.forEach(l=>{if(l[0]!==f)return;const z=l[6]==='dr'?zb-300:zc,a=pr(l[1]+ox,l[2],z),b=pr(l[3]+ox,l[4],z);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.strokeStyle=D.lt[l[6]]||D.c;g.lineWidth=sy==='el'?1:l[5]>=65?3:l[5]>=40?2.2:1.4;g.stroke()});
       SL.pts.forEach(q=>{if(q[0]!==f)return;const z=q[1]==='rs'?zc:sy==='el'&&q[1]!=='rc'?zb+Z.ceil:zb+(q[1]==='rc'?300:0),a=pr(q[2]+ox,q[3],z);g.beginPath();g.arc(a[0],a[1],q[1]==='rs'?4:Math.max(1.5,Math.min(3.5,s*150)),0,6.3);g.fillStyle=sy==='el'?(q[1]==='lt'?'#F2C94C':q[1]==='sd'?'#D43D3D':'#8A5FBF'):D.c;g.fill()});g.lineCap='butt'});
-    if(LY.air){const arrow=(pts,col,w)=>{const P2=pts.map(q=>pr(q[0]+ox,q[1],zb+q[2]));g.beginPath();P2.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.strokeStyle=col;g.lineWidth=w;g.globalAlpha=.9;g.stroke();
+    if(LY.air){const arrow=(pts,col,w)=>{const P2=pts.map(q=>pr(q[0]+ox,q[1],zb+q[2]));g.beginPath();P2.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.strokeStyle=col;g.lineWidth=w;g.globalAlpha=.9;g.setLineDash([5,4]);g.stroke();g.setLineDash([]);          // v91 dashed, so airflow never reads as a duct or pipe
         const a=P2[P2.length-2],b=P2[P2.length-1],L=Math.hypot(b[0]-a[0],b[1]-a[1])||1,ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L,h=Math.max(4,Math.min(9,w*2.6));g.beginPath();g.moveTo(b[0],b[1]);g.lineTo(b[0]-ux*h-uy*h*.55,b[1]-uy*h+ux*h*.55);g.lineTo(b[0]-ux*h+uy*h*.55,b[1]-uy*h-ux*h*.55);g.closePath();g.fillStyle=col;g.fill();g.globalAlpha=1};
       const zc=Z.ceil,SAf=C.terms.filter(t=>t[0]===f&&t[2]==='SA');C.terms.forEach(t=>{if(t[0]!==f)return;const x=t[3],y=t[4];
-        if(t[2]==='SA'){let nn=1e9;SAf.forEach(o=>{if(o!==t){const d=Math.max(Math.abs(o[3]-x),Math.abs(o[4]-y));if(d>100&&d<nn)nn=d}});const R=Math.min(airThrow(t[5]),Math.max(500,nn*0.55));[[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>arrow(is3?[[x+dx*250,y+dy*250,zc-60],[x+dx*R*.55,y+dy*R*.55,zc-250],[x+dx*R*.85,y+dy*R*.85,zc-900],[x+dx*R,y+dy*R,zc-1600]]:[[x+dx*300,y+dy*300,0],[x+dx*R,y+dy*R,0]],'#2B6CD9',is3?1.6:1.3))}
+        if(t[2]==='SA'){let nn=1e9;SAf.forEach(o=>{if(o!==t){const d=Math.max(Math.abs(o[3]-x),Math.abs(o[4]-y));if(d>100&&d<nn)nn=d}});const R=Math.min(airThrow(t[5]),Math.max(500,nn*0.55));[[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>arrow(is3?[[x+dx*250,y+dy*250,zc-60],[x+dx*R*.55,y+dy*R*.55,zc-250],[x+dx*R*.85,y+dy*R*.85,zc-900],[x+dx*R,y+dy*R,zc-1600]]:[[x+dx*300,y+dy*300,0],[x+dx*R,y+dy*R,0]],'#3D9BE9',is3?1.6:1.3))}
         else arrow(is3?[[x+500,y+500,zc-1700],[x+250,y+250,zc-900],[x,y,zc-80]]:[[x+900,y+900,0],[x+200,y+200,0]],'#E8603C',1.4)});
-      (airCells(C,f).src||[]).forEach(a=>{if(!(a[3]||a[4]))return;const R=Math.min(a[2]*0.8,(a[5]||9000)*0.85);[-0.45,0,0.45].forEach(t=>{const c=Math.cos(t),sn=Math.sin(t),dx=a[3]*c-a[4]*sn,dy=a[3]*sn+a[4]*c;arrow(is3?[[a[0],a[1],2250],[a[0]+dx*R*.45,a[1]+dy*R*.45,2100],[a[0]+dx*R*.8,a[1]+dy*R*.8,1600],[a[0]+dx*R,a[1]+dy*R,1100]]:[[a[0]+dx*400,a[1]+dy*400,0],[a[0]+dx*R,a[1]+dy*R,0]],'#2B6CD9',is3?1.8:1.4)})})}
+      (airCells(C,f).src||[]).forEach(a=>{if(!(a[3]||a[4]))return;const R0=Math.min(a[2]*0.8,(a[5]||9000)*0.85),B=a[6];[-0.35,0,0.35].forEach(t=>{const c=Math.cos(t),sn=Math.sin(t),dx=a[3]*c-a[4]*sn,dy=a[3]*sn+a[4]*c;let R=R0;
+          if(B){const m=300;if(dx>0)R=Math.min(R,(B[2]-m-a[0])/dx);if(dx<0)R=Math.min(R,(B[0]+m-a[0])/dx);if(dy>0)R=Math.min(R,(B[3]-m-a[1])/dy);if(dy<0)R=Math.min(R,(B[1]+m-a[1])/dy)}if(!(R>600))return;          // stays inside its own room
+          arrow(is3?[[a[0],a[1],2250],[a[0]+dx*R*.45,a[1]+dy*R*.45,2100],[a[0]+dx*R*.8,a[1]+dy*R*.8,1600],[a[0]+dx*R,a[1]+dy*R,1100]]:[[a[0]+dx*400,a[1]+dy*400,0],[a[0]+dx*R,a[1]+dy*R,0]],'#3D9BE9',is3?1.8:1.4)})})}
     if(LY.lbl)((C.txt||{})[f]||[]).forEach(t=>labels.push([t[2],pr(t[0]+ox,t[1],zb+(is3?50:0)),1,4]));
     {const pri=l=>l[3]!=null?l[3]:/^\d+"x\d+"$/.test(l[0])?1:/ · /.test(l[0])?0:/"/.test(l[0])?2:3,taken=[],F0=g.font;          // most important first; a label that would overlap one already drawn is left out
       labels.map((l,i)=>[pri(l),i,l]).sort((a,b)=>b[0]-a[0]||a[1]-b[1]).forEach(([p,,l])=>{g.font=p===4?'600 12px '+(cadCol('--f-body')||'sans-serif'):F0;const w=g.measureText(l[0]).width+8,h=p===4?17:15,x=l[1][0]-w/2,y=l[1][1]-h/2;
@@ -3555,7 +3560,7 @@ function cad3dSVG(C,only,M){
       box([[E[0]+nx,E[1]+ny],[E[2]+nx,E[3]+ny],[E[2]-nx,E[3]-ny],[E[0]-nx,E[1]-ny]],Z.duct-h,Z.duct+h,d[2]==='SA'?'var(--s1)':'var(--s2)',1)});
     C.terms.forEach(t=>{if(t[0]!==f)return;const r=t[2]==='SA'?300:150;box([[t[3]-r,t[4]-r],[t[3]+r,t[4]-r],[t[3]+r,t[4]+r],[t[3]-r,t[4]+r]],Z.ceil,Z.ceil+120,t[2]==='SA'?'var(--s1)':'var(--s2)',.55)});
     C.equip.forEach(e=>{if(e[0]===f&&e[8]>2100)box([[e[3],e[4]],[e[5],e[4]],[e[5],e[6]],[e[3],e[6]]],e[7],e[8],CADEQ[e[1]]||'var(--muted)',.9)});flush();
-    cadPipes(C).forEach(r=>{if(r.f!==f)return;const zp=zb+Z.ceil+150,pp=[pr(r.pts[0][0],r.pts[0][1],zb+900)].concat(r.pts.map(q=>pr(q[0],q[1],zp)));
+    cadPipes(C).forEach(r=>{if(r.f!==f)return;const pp=pipe3D(C,f,r).map(q=>pr(q[0],q[1],zb+q[2]));
       out.push(`<polyline points="${pp.map(a=>Math.round(a[0])+','+Math.round(a[1])).join(' ')}" fill="none" stroke="#C9A227" stroke-width="70" stroke-linejoin="round"${r.drawn?'':' stroke-dasharray="220 140"'}/>`)});
     if(M==='fp'&&C0.fp){const L=C0.fp,zp=zb+Z.ceil+320,PLt=fpPlant(C0),ln=(a,b,w)=>out.push(`<line x1="${Math.round(a[0])}" y1="${Math.round(a[1])}" x2="${Math.round(b[0])}" y2="${Math.round(b[1])}" stroke="${FPC}" stroke-width="${w}" stroke-linecap="round"/>`),T=(t,p,fs)=>txt.push(`<text x="${Math.round(p[0])}" y="${Math.round(p[1])}" font-size="${fs}" font-weight="600" text-anchor="middle" fill="var(--ink,#1D2B33)" paint-order="stroke" stroke="var(--surface,#fff)" stroke-width="90" stroke-linejoin="round">${t}</text>`);
       if(PLt&&f===PLt.r1[0]){PLt.B.forEach(q=>box([[q.b[0],q.b[1]],[q.b[2],q.b[1]],[q.b[2],q.b[3]],[q.b[0],q.b[3]]],0,q.h,FPB[q.k],.92));flush();
@@ -5418,7 +5423,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=90,MEP_NAME='v90';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=91,MEP_NAME='v91';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
