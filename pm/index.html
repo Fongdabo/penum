@@ -8035,7 +8035,7 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'คว�
 const CHK='penum.pm.chat'+DSFX,CHDK='penum.pm.chatDev'+DSFX;
 let CHDEV='';try{CHDEV=localStorage.getItem(CHDK)||''}catch(e){}
 if(!CHDEV){CHDEV=Math.random().toString(36).slice(2,8);try{localStorage.setItem(CHDK,CHDEV)}catch(e){}}
-const CH={F:{},mt:{},dirty:new Set(),phq:new Set(),open:false,view:'list',room:'',q:'',att:null,last:0,busy:false,err:'',months:new Set(),oldM:0,oldAt:0,pend:false};
+const CH={F:{},mt:{},dirty:new Set(),phq:new Set(),open:false,view:'list',room:'',q:'',att:null,last:0,busy:false,err:'',months:new Set(),oldM:0,oldAt:0,allAt:0,pend:false};
 {try{const J=JSON.parse(localStorage.getItem(CHK)||'{}');Object.assign(CH.F,J.own||{});(J.dirty||[]).forEach(p=>CH.dirty.add(p));(J.phq||[]).forEach(p=>CH.phq.add(p))}catch(e){}}
 const chMonth=at=>String(at).slice(0,7);
 // the file name is <person>_<device>.json: PENUM cloud (Supabase storage) refuses "~" in a name, which 3.68–3.69.1 used,
@@ -8202,7 +8202,8 @@ function chAttHtml(u){const p=DB.projects[CH.attP]||P,G=[['bills','ใบเบ�
   <div class="ch-bd"><label class="ch-ps">โครงการ<select id="chAttP">${Object.values(DB.projects).sort((a,b)=>a.name.localeCompare(b.name,'th')).map(x=>`<option value="${x.id}"${x.id===p.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
   ${it(p.id,'proj',cmDoc(p.id,'proj'))}${sec||'<p class="hint">โครงการนี้ยังไม่มีเอกสาร</p>'}${Q.length?`<p class="ch-h">ใบเสนอราคา</p>${Q.map(x=>it('',x.ref,x.D)).join('')}`:''}</div>`}
 
-/* moving messages: write my own files, read everyone's. While the window is open every few seconds, otherwise once a minute. */
+/* moving messages: write my own files, read everyone's. 3.70.2: every 2 s while the window is open, every 15 s while it
+   is closed (was 4 s / 45 s). The quick rounds read only this month's folder (one listing); earlier months once a minute. */
 async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;
   for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');
     const md=await d.getDirectoryHandle(m,{create:true});CH.mt[p]=await fWrite(md,nm,JSON.stringify(f));CH.dirty.delete(p)}
@@ -8210,7 +8211,8 @@ async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chD
   chKeep()}
 async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
   const now=new Date(),cur=chMonth(now.toISOString()),prev=chMonth(new Date(now.getFullYear(),now.getMonth()-1,15).toISOString());[cur,prev].forEach(m=>CH.months.add(m));
-  for(const m of CH.months){let md;try{md=await d.getDirectoryHandle(m)}catch(e){continue}
+  const all=Date.now()-CH.allAt>6e4;if(all)CH.allAt=Date.now();
+  for(const m of CH.months){if(!all&&m!==cur)continue;let md;try{md=await d.getDirectoryHandle(m)}catch(e){continue}
     for await(const [nm,eh] of md.entries()){if(eh.kind!=='file'||!nm.endsWith('.json'))continue;const p=m+'/'+nm;
       try{const f=await eh.getFile();if(CH.mt[p]===f.lastModified)continue;const J=JSON.parse(await f.text());CH.mt[p]=f.lastModified;
         if(chMine(p)){const o=CH.F[p];if(o){const have=new Set(o.msgs.map(x=>x.id));(J.msgs||[]).forEach(x=>{if(!have.has(x.id)){o.msgs.push(x);ch=true}});
@@ -8220,7 +8222,7 @@ async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
     const n=M.filter(m=>!CH.months.has(m)).length;if(n!==CH.oldM){CH.oldM=n;ch=true}}
   return ch}
 let chPT=0;const chPushSoon=()=>{clearTimeout(chPT);chPT=setTimeout(()=>chSync(true),300)};
-async function chSync(force){if(CH.busy||document.hidden&&!force)return;const due=CH.open?4000:45000;if(!force&&Date.now()-CH.last<due)return;
+async function chSync(force){if(CH.busy||document.hidden&&!force)return;const due=CH.open?2000:15000;if(!force&&Date.now()-CH.last<due)return;
   CH.busy=true;CH.last=Date.now();let ch=false;const had=CH.dirty.size;
   try{if(chShared()&&FS.state!=='perm'&&!await chDir())throw new Error(CH.dirErr||'เปิดที่เก็บข้อมูลไม่ได้');
     await chPush();ch=await chPull()||had>0&&!CH.dirty.size;CH.err='';if(chShared())CH.okAt=Date.now()}catch(e){console.warn('chat sync',e);CH.err=navigator.onLine?'รับส่งข้อความไม่ได้ จะลองใหม่อัตโนมัติ'+(e&&e.message?` (${String(e.message).slice(0,80)})`:''):'ออฟไลน์ ข้อความจะส่งเมื่อมีอินเทอร์เน็ต'}
@@ -8255,8 +8257,8 @@ ACT.chNetRun=async()=>{const u=cmMe();if(!u)return;CH.net={run:1};chDraw();const
   catch(e){console.warn('chat check',e);CH.net={at,ok:0,msg:e&&e.message}}
   finally{CH.busy=false}chBadge();chDraw()};
 ACT.chOlder=async()=>{const d=await chDir();if(d){const M=[];try{for await(const [nm,eh] of d.entries())if(eh.kind==='directory'&&/^\d{4}-\d\d$/.test(nm))M.push(nm)}catch(e){}
-    const O=M.filter(m=>!CH.months.has(m)).sort().reverse();if(O.length){CH.months.add(O[0]);CH.oldM=O.length-1;await chPull()}else{CH.oldM=0;toast('ไม่มีข้อความเก่ากว่านี้')}}else CH.oldM=0;chDraw()};
-setInterval(()=>chSync(false),2000);
+    const O=M.filter(m=>!CH.months.has(m)).sort().reverse();if(O.length){CH.months.add(O[0]);CH.oldM=O.length-1;CH.allAt=0;await chPull()}else{CH.oldM=0;toast('ไม่มีข้อความเก่ากว่านี้')}}else CH.oldM=0;chDraw()};
+setInterval(()=>chSync(false),1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){chSync(true);if(CH.open&&CH.view==='room')chSeen()}});
 {const r=render;render=function(){const x=r.apply(this,arguments);chBadge();if(CH.open&&!$('#chPop').contains(document.activeElement))chDraw();return x}}
 // after the first sync of the data (folder or cloud), fetch the messages too
@@ -8506,7 +8508,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.1',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.2',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
