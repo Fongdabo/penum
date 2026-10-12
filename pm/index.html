@@ -8275,6 +8275,7 @@ function chAttHtml(u){const p=DB.projects[CH.attP]||P,G=[['bills','ใบเบ�
 /* moving messages: write my own files, read everyone's. 3.70.5: every 2 s while the window is open, every 15 s while it
    is closed (was 4 s / 45 s). The quick rounds read only this month's folder (one listing); earlier months once a minute. */
 async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;const sent=CH.dirty.size;
+  if(sent)await chBcSend([...CH.dirty]).catch(e=>console.warn('chat live',e));// the text goes first over ส่งถึงทันที, the file follows
   for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');f.w=Math.max(Date.now(),(f.w||0)+1);
     const md=await d.getDirectoryHandle(m,{create:true});CH.mt[p]=await fWrite(md,nm,JSON.stringify(f));CH.dirty.delete(p)}
   if(CH.phq.size){const pd=await d.getDirectoryHandle('ph',{create:true});for(const k of [...CH.phq]){const v=await IDB.get(k).catch(()=>null);if(v)await fWrite(pd,k+'.txt',v);CH.phq.delete(k)}}
@@ -8289,7 +8290,9 @@ async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
         if(o&&o.w&&!(J.w>o.w)&&!chMine(p)){const k=p+'@'+f.lastModified;CH.stl[k]=(CH.stl[k]||0)+1;if(CH.stl[k]<4){if(eh.path){SBSTALE.add(eh.path);SBC.delete(eh.path)}continue}}CH.mt[p]=f.lastModified;
         if(chMine(p)){const o=CH.F[p];if(o){const have=new Set(o.msgs.map(x=>x.id));(J.msgs||[]).forEach(x=>{if(!have.has(x.id)){o.msgs.push(x);ch=true}});
             for(const [r,v] of Object.entries(J.rd||{}))if(!o.rd[r]||o.rd[r]<v)o.rd[r]=v}else{CH.F[p]=J;ch=true}}
-        else{if(JSON.stringify(CH.F[p])!==JSON.stringify(J)){CH.F[p]=J;ch=true}}}catch(e){}}}
+        else{const o2=CH.F[p];if(o2){const have=new Set((J.msgs||[]).map(x=>x.id));for(const x of o2.msgs||[])if(x._lv&&!have.has(x.id))(J.msgs=J.msgs||[]).push(x);
+            J.rd=J.rd||{};for(const [r,v] of Object.entries(o2.rd||{}))if(!J.rd[r]||J.rd[r]<v)J.rd[r]=v}
+          if(JSON.stringify(CH.F[p])!==JSON.stringify(J)){CH.F[p]=J;ch=true}}}catch(e){}}}
   if(Date.now()-CH.oldAt>3e5){CH.oldAt=Date.now();const M=[];try{for await(const [nm,eh] of d.entries())if(eh.kind==='directory'&&/^\d{4}-\d\d$/.test(nm))M.push(nm)}catch(e){}
     const n=M.filter(m=>!CH.months.has(m)).length;if(n!==CH.oldM){CH.oldM=n;ch=true}}
   return ch}
@@ -8340,7 +8343,37 @@ if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('messa
    company. After writing my chat file I send a short signal without the message text ("someone wrote"); the others read
    the cloud right away instead of waiting for their next round (2 s with the window open, 15 s closed, longer on a phone
    that throttles). No connection (OneDrive folder, offline, blocked) = the rounds go on exactly as before. */
-const RT={ws:null,ok:false,ref:0,jr:'',hb:0,try:0,t:0,got:0};
+const RT={ws:null,ok:false,ref:0,jr:'',hb:0,try:0,t:0,got:0,n:0,lv:0};
+/* 3.70.10 the message itself over ส่งถึงทันที: the last few messages and read marks of each file I am about to write go out
+   on the channel first, so the others show them at once without waiting for the cloud file (which a cache on the way
+   held back 30–60 s for some users). They are encrypted (AES-GCM) with the company's chat key, chat/key.txt in the
+   company's cloud folder, which only members can read; someone who only knows the channel name sees nothing. The
+   files stay the record: a message that came live is kept until the file has it. */
+const CHKK='penum.pm.chatKey'+DSFX;let CHKEY=null,CHKT=0;
+const chB64e=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
+const chB64d=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+async function chKey(make,fresh){if(CHKEY&&!fresh)return CHKEY;if(!sbOn()||!(window.crypto&&crypto.subtle))return null;const ck=CHKK+':'+SB.cid;let raw='';
+  if(!fresh)try{raw=localStorage.getItem(ck)||''}catch(e){}
+  if(!raw){if(fresh&&Date.now()-CHKT<3e4)return CHKEY;CHKT=Date.now();const d=await chDir();if(!d)return null;
+    try{raw=(await (await (await d.getFileHandle('key.txt')).getFile()).text()).trim()}catch(e){}
+    if(!raw&&make){raw=chB64e(crypto.getRandomValues(new Uint8Array(32)));await fWrite(d,'key.txt',raw)}
+    if(!raw)return null;try{localStorage.setItem(ck,raw)}catch(e){}}
+  try{CHKEY=await crypto.subtle.importKey('raw',chB64d(raw),'AES-GCM',false,['encrypt','decrypt'])}catch(e){CHKEY=null}return CHKEY}
+async function chBcSend(paths){if(!RT.ok)return;const k=await chKey(true);if(!k)return;
+  const items=paths.map(p=>{const f=CH.F[p];return f&&{p,user:f.user,dev:f.dev,m:f.m,msgs:(f.msgs||[]).slice(-5),rd:f.rd||{}}}).filter(Boolean);if(!items.length)return;
+  const iv=crypto.getRandomValues(new Uint8Array(12)),e=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(items))));
+  rtSend('broadcast',{type:'broadcast',event:'chat',payload:{u:cmMe(),dev:CHDEV,iv:chB64e(iv),e:chB64e(e)}})}
+async function chBcGot(p){let L=null;for(const fresh of [false,true]){const k=await chKey(false,fresh);if(!k)break;
+    try{L=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:chB64d(p.iv)},k,chB64d(p.e))));break}catch(e){CHKEY=null}}
+  if(!Array.isArray(L)){setTimeout(()=>chSync(true),1500);return}// no key or another key: the file brings it
+  let ch=false;for(const it of L){if(!it||typeof it.p!=='string'||!/^\d{4}-\d\d\/[^/]+\.json$/.test(it.p)||chMine(it.p))continue;
+    const o=CH.F[it.p]||(CH.F[it.p]={v:1,user:it.user,dev:it.dev,m:it.m,msgs:[],rd:{}});o.msgs=o.msgs||[];o.rd=o.rd||{};
+    for(const x of it.msgs||[]){if(!x||!x.id||x.by!==o.user)continue;const y=Object.assign({},x,{_lv:1}),i=o.msgs.findIndex(z=>z.id===x.id);
+      if(i<0){o.msgs.push(y);ch=true}else if(JSON.stringify(Object.assign({},o.msgs[i],{_lv:1}))!==JSON.stringify(y)){o.msgs[i]=y;ch=true}}
+    for(const [r,v] of Object.entries(it.rd||{}))if(typeof v==='string'&&(!o.rd[r]||o.rd[r]<v)){o.rd[r]=v;ch=true}}
+  if(ch){RT.lv=Date.now();chBadge();chDraw();chNotify()}}
+// a key kept from an earlier visit is checked against the cloud once per visit (two devices could have made one each)
+setTimeout(()=>{if(sbOn())chKey(false,true).catch(()=>{})},4000);
 const rtTopic=()=>'realtime:pmchat-'+SB.cid;
 function rtSend(ev,pl){const w=RT.ws;if(!w||w.readyState!==1||!RT.ok)return false;try{w.send(JSON.stringify({topic:rtTopic(),event:ev,payload:pl,ref:String(++RT.ref),join_ref:RT.jr}));return true}catch(e){return false}}
 async function rtOpen(){RT.t=0;if(RT.ws||!sbOn()||document.hidden||typeof WebSocket!=='function')return;let tok='';try{tok=await sbTok()}catch(e){rtRetry();return}
@@ -8350,7 +8383,8 @@ async function rtOpen(){RT.t=0;if(RT.ws||!sbOn()||document.hidden||typeof WebSoc
     clearInterval(RT.hb);RT.hb=setInterval(()=>{if(w.readyState===1)w.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:String(++RT.ref)}))},25000)};
   w.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(x){return}if(!m||m.topic!==topic)return;
     if(m.event==='phx_reply'&&m.ref===RT.jr){if(m.payload&&m.payload.status==='ok'){RT.ok=true;RT.try=0;RT.why='';chSync(true)}else{RT.why='คลาวด์ไม่รับ: '+String((m.payload&&m.payload.response&&(m.payload.response.reason||JSON.stringify(m.payload.response)))||'').slice(0,80);w.close()}return}
-    if(m.event==='broadcast'&&m.payload&&m.payload.event==='chat'){const p=m.payload.payload||{};if(p.dev===CHDEV)return;RT.got=Date.now();chSync(true);return}
+    if(m.event==='broadcast'&&m.payload&&m.payload.event==='chat'){const p=m.payload.payload||{};if(p.dev===CHDEV)return;RT.got=Date.now();RT.n=(RT.n||0)+1;
+      if(p.e)chBcGot(p);else chSync(true);return}
     if(m.event==='phx_error'||m.event==='phx_close')w.close()};
   w.onclose=w.onerror=e=>{if(RT.ws!==w)return;if(!RT.ok&&!RT.why)RT.why='ต่อไม่ได้'+(e&&e.code?' ('+e.code+')':'');RT.ws=null;RT.ok=false;clearInterval(RT.hb);try{w.close()}catch(x){}rtRetry()}}
 function rtRetry(){clearTimeout(RT.t);RT.t=setTimeout(rtOpen,Math.min(60000,2000*2**RT.try++))}
@@ -8367,7 +8401,7 @@ function chNetHtml(u){const where=sbOn()?'คลาวด์ PENUM':folderOn()?'
   const row=(k,v)=>`<div class="ch-nr"><span>${k}</span><b>${v}</b></div>`;
   return `<header class="ch-rh"><button type="button" class="ch-bk" data-a="chBack" aria-label="กลับไปรายการห้อง">‹</button><span class="ch-di ch-apic" aria-hidden="true">ⓘ</span><div><b>การเชื่อมต่อแชท</b><small>ให้ทุกเครื่องตรวจหน้านี้แล้วเทียบกัน</small></div><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button></header>
   <div class="ch-bd">${chNote()}<div class="ch-net">${row('บริษัท',esc(CO().name||''))}${row('ที่เก็บข้อความ',esc(where))}${row('คุณคือ',esc(cmName(u)))}${row('รหัสเครื่องนี้',esc(CHDEV))}
-    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}${sbOn()?row('ส่งถึงทันที',RT.ok?'เชื่อมต่อแล้ว ✓':'ยังไม่เชื่อมต่อ <small>(เช็คเป็นรอบแทน'+(RT.why?' · '+esc(RT.why):'')+')</small>'):''}</div>
+    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}${sbOn()?row('ส่งถึงทันที',RT.ok?'เชื่อมต่อแล้ว ✓'+(RT.n?` <small>· ได้รับ ${RT.n} ครั้ง ล่าสุด ${esc(new Date(RT.got).toLocaleTimeString('th-TH'))}</small>`:''):'ยังไม่เชื่อมต่อ <small>(เช็คเป็นรอบแทน'+(RT.why?' · '+esc(RT.why):'')+')</small>'):''}</div>
     ${u==='admin'&&P.admin&&P.admin.d.size>1?'<p class="ch-warn">มีมากกว่า 1 เครื่องที่เข้าเป็นผู้ดูแลระบบ ในแชททุกเครื่องนี้คือคนเดียวกัน ถ้าอีกเครื่องเป็นของคนอื่น ข้อความจะขึ้นเป็นของตัวเองและไม่มีแจ้งเตือน ให้คนอื่นเข้าระบบด้วยชื่อของตัวเอง</p>':''}
     <button type="button" class="btn" data-a="chNetRun"${N.run?' disabled':''}>${N.run?'กำลังตรวจ…':'ตรวจตอนนี้'}</button>
     ${N.at&&!N.run?`<p class="${N.ok?'ch-ok':'ch-warn'}">${N.ok?`✓ ส่งขึ้นและอ่านกลับได้ (${esc(chHM(N.at))}) พบไฟล์แชท ${N.n} ไฟล์ในเดือนนี้`:'✕ '+esc(N.msg||'ตรวจไม่ผ่าน')}</p>`:''}
@@ -8638,7 +8672,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.9',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.10',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
