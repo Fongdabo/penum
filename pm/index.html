@@ -7903,7 +7903,8 @@ let CMP=null;
 function cmPick(ta){const box=ta.parentElement.querySelector('.cm-pick');if(!box)return;const v=ta.value,pos=ta.selectionStart,pre=v.slice(0,pos),m=pre.match(/(^|[\s(])@([^\s@]{0,24})$/);
   if(!m){box.hidden=true;CMP=null;return}
   const q=m[2].toLowerCase(),pj=ta.dataset.cmp,L=cmPeople().filter(s=>!q||[s.name,s.code,s.role,s.email].some(x=>String(x||'').toLowerCase().includes(q)))
-    .sort((a,b)=>(b.proj===pj&&!!pj)-(a.proj===pj&&!!pj)).slice(0,8);// people on this project first
+    .map(s=>{const n=String(s.name||'').toLowerCase().replace(/^(ดร\.|นาย|นางสาว|นาง|น\.ส\.|คุณ)\s*/,'');return [s,!q?0:n.startsWith(q)?0:n.split(/\s+/).some(w=>w.startsWith(q))?1:n.includes(q)?2:3]})
+    .sort((a,b)=>a[1]-b[1]||(b[0].proj===pj&&!!pj)-(a[0].proj===pj&&!!pj)).map(x=>x[0]).slice(0,8);// names that start with what was typed, then people on this project
   if(!L.length){box.innerHTML='<div class="cm-pe">ไม่พบชื่อนี้ในรายชื่อพนักงาน</div>';box.hidden=false;CMP={ta,L:[],i:0,at:pos-m[2].length-1};cmPickAt(box);return}
   CMP={ta,L,i:Math.min(CMP&&CMP.ta===ta?CMP.i:0,L.length-1),at:pos-m[2].length-1};cmPickDraw()}
 function cmPickDraw(){if(!CMP)return;const box=CMP.ta.parentElement.querySelector('.cm-pick');
@@ -7924,7 +7925,7 @@ document.addEventListener('keydown',e=>{const ta=e.target;if(!(ta.matches&&ta.ma
     if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();CMP.i=(CMP.i+(e.key==='ArrowDown'?1:CMP.L.length-1))%CMP.L.length;cmPickDraw();return}
     if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();cmPickPut(CMP.i);return}}
   if(e.key==='Escape'&&CMP){e.preventDefault();e.stopPropagation();const b=ta.parentElement.querySelector('.cm-pick');if(b)b.hidden=true;CMP=null;return}
-  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();const w=ta.closest('.cm-wrap');ACT.cmPost(w.querySelector('[data-a="cmPost"]'))}},true);
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){const w=ta.closest('.cm-wrap');if(!w)return;e.preventDefault();ACT.cmPost(w.querySelector('[data-a="cmPost"]'))}},true);
 document.addEventListener('click',e=>{if(CMP&&!e.target.closest('.cm-box,[data-a="cmAt"]')){const b=CMP.ta.parentElement.querySelector('.cm-pick');if(b)b.hidden=true;CMP=null}});
 document.addEventListener('selectionchange',()=>{const a=document.activeElement;if(CMP&&a===CMP.ta)cmPick(a)});
 
@@ -8021,6 +8022,262 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'คว�
   'เขียนความเห็น… พิมพ์ @ แล้วเลือกชื่อ เพื่อเรียกคนที่เกี่ยวข้อง':'Write a comment… type @ and pick a name to call someone',
   'ผู้ดูแลระบบเห็นทุกความเห็นใหม่ในบริษัท':'The administrator sees every new comment in the company','กดที่รายการเพื่ออ่านและตอบ':'Tap an item to read and reply',
   'เข้าระบบด้วยชื่อของคุณก่อน จึงจะเขียนความเห็นได้':'Sign in with your name to write comments','ไม่พบชื่อนี้ในรายชื่อพนักงาน':'No staff member with this name'});
+
+/* ---------- 3.68 แชท: a chat that pops up over the page (company room, project rooms, direct chat) ----------
+   The round headset button in the corner opens it; the page underneath stays as it is.
+   Messages do not go into the company data file (it would grow and be re-sent on every change). Each person on each
+   device writes only their own file, chat/<YYYY-MM>/<person>~<device>.json, next to penum-pm.json in the shared place
+   (คลาวด์ PENUM or the OneDrive folder, through the same folder handle as the data), and reads everyone else's. Nobody
+   ever writes someone else's file, so nothing is lost when two people send at once. Photos go to chat/ph/<id>.txt.
+   A company that keeps its data on this device only can still use it, but the messages stay on this device until a
+   shared place is set up (they are sent then). A message: {id, r: room, by, at, t, men, ph:[photo ids], doc:{p,ref}, del}.
+   Rooms: 'co' (everyone), 'p:<project id>', 'd:<id>|<id>' (two people, ids sorted). */
+const CHK='penum.pm.chat'+DSFX,CHDK='penum.pm.chatDev'+DSFX;
+let CHDEV='';try{CHDEV=localStorage.getItem(CHDK)||''}catch(e){}
+if(!CHDEV){CHDEV=Math.random().toString(36).slice(2,8);try{localStorage.setItem(CHDK,CHDEV)}catch(e){}}
+const CH={F:{},mt:{},dirty:new Set(),phq:new Set(),open:false,view:'list',room:'',q:'',att:null,last:0,busy:false,err:'',months:new Set(),oldM:0,oldAt:0,pend:false};
+{try{const J=JSON.parse(localStorage.getItem(CHK)||'{}');Object.assign(CH.F,J.own||{});(J.dirty||[]).forEach(p=>CH.dirty.add(p));(J.phq||[]).forEach(p=>CH.phq.add(p))}catch(e){}}
+const chMonth=at=>String(at).slice(0,7);
+const chMine=path=>path.endsWith('~'+CHDEV+'.json');
+function chKeep(){const own={};for(const [p,f] of Object.entries(CH.F))if(chMine(p))own[p]=f;
+  try{localStorage.setItem(CHK,JSON.stringify({own,dirty:[...CH.dirty],phq:[...CH.phq]}))}catch(e){toast('พื้นที่ในเครื่องเต็ม บันทึกแชทไม่ได้')}}
+function chOwn(m,u){const p=`${m}/${u}~${CHDEV}.json`;if(!CH.F[p])CH.F[p]={v:1,user:u,dev:CHDEV,m,msgs:[],rd:{}};return {p,f:CH.F[p]}}
+const chShared=()=>folderOn()&&!DEMOPG;
+async function chDir(){if(!chShared())return null;try{if(!await fPerm(false))return null;const h=await dirH();return h?await h.getDirectoryHandle('chat',{create:true}):null}catch(e){return null}}
+
+/* what is in the loaded files */
+function chMsgs(room){const M=new Map();for(const [p,f] of Object.entries(CH.F))for(const x of f.msgs||[])if(x.r===room&&(!M.has(x.id)||chMine(p)))M.set(x.id,x);
+  return [...M.values()].filter(x=>!x.del).sort((a,b)=>String(a.at).localeCompare(String(b.at)))}
+function chRd(room,u){let r='';for(const f of Object.values(CH.F))if(f.user===u){const v=(f.rd||{})[room];if(v&&v>r)r=v}return r}
+const CHNEW=14;// a room never opened counts messages of the last two weeks as new
+function chUnread(room,u,L){if(!u)return 0;L=L||chMsgs(room);let r=chRd(room,u);if(!r)r=new Date(Date.now()-CHNEW*864e5).toISOString();return L.filter(x=>x.by!==u&&x.at>r).length}
+const chDm=(a,b)=>'d:'+[a,b].sort().join('|');
+const chOther=(room,u)=>room.slice(2).split('|').find(x=>x!==u)||'';
+function chPjOk(p,u){if(u==='admin'||!me())return true;const s=me();return allowed('pj','dash')||s.proj===p.id}
+function chRooms(u){const R=[{id:'co',k:'co',name:'ห้องบริษัท',sub:(CO().name||'').trim()}];
+  Object.values(DB.projects).filter(p=>!p.closed&&chPjOk(p,u)).sort((a,b)=>a.name.localeCompare(b.name,'th')).forEach(p=>R.push({id:'p:'+p.id,k:'p',name:p.name,pid:p.id,sub:'ห้องโครงการ'}));
+  if(u&&u!=='admin'){const seen=new Set();for(const f of Object.values(CH.F))for(const x of f.msgs||[])if(x.r.startsWith('d:')&&x.r.slice(2).split('|').includes(u))seen.add(x.r);
+    if(CH.room.startsWith('d:'))seen.add(CH.room);
+    seen.forEach(r=>{const o=chOther(r,u),s=CO().staff.find(z=>z.id===o);R.push({id:r,k:'d',name:s?s.name:'(ไม่ทราบชื่อ)',who:o,sub:s?s.role||'':''})})}
+  R.forEach(r=>{const L=chMsgs(r.id);r.lastM=L[L.length-1]||null;r.n=chUnread(r.id,u,L);r.at=r.lastM?r.lastM.at:'';r.atMe=r.n&&L.slice(-r.n).some(x=>(x.men||[]).includes(u))});return R}
+const chTotal=()=>{const u=cmMe();return u?chRooms(u).reduce((a,r)=>a+r.n,0):0};
+function chRoomInfo(id,u){if(id==='co')return {name:'ห้องบริษัท',sub:chAll(),pid:'',av:['บ',200]};
+  if(id.startsWith('p:')){const p=DB.projects[id.slice(2)],n=CO().staff.filter(s=>s.active!==false&&s.proj===(p&&p.id)).length;return {name:p?p.name:'(โครงการถูกลบแล้ว)',sub:LANG==='en'?'Project room'+(n?` · ${n} on site`:''):`ห้องโครงการ${n?' · '+n+' คนประจำโครงการ':''}`,pid:p?p.id:'',av:[(p?p.name:'?').replace(/^[เแโใไ]/,'')[0],chHue(id)]}}
+  const o=chOther(id,u),s=CO().staff.find(z=>z.id===o);return {name:s?s.name:'(ไม่ทราบชื่อ)',sub:'คุยส่วนตัว'+(s&&s.role?' · '+s.role:''),pid:s&&s.proj||'',who:o}}
+const chAll=()=>{const n=CO().staff.filter(s=>s.active!==false).length;return LANG==='en'?`Everyone · ${n}`:`ทุกคน ${n} คน`};
+function chHue(id){let h=0;for(const x of String(id))h=(h*31+x.charCodeAt(0))%360;return h}
+const chAv=(r,u)=>r.k==='d'||r.who?cmAv(r.who||chOther(r.id,u)):`<span class="cm-av" style="--h:${r.k==='co'?200:chHue(r.id)}" aria-hidden="true">${esc(r.k==='co'?'บ':String(r.name||'?').replace(/^[เแโใไ]/,'')[0]||'?')}</span>`;
+const chTime=at=>{const d=new Date(at);if(isNaN(d))return '';const D=iso(d);return D===today()?d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):D===addD(today(),-1)?'เมื่อวาน':thD(D)};
+const chHM=at=>{const d=new Date(at);return isNaN(d)?'':d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})};
+const chDay=D=>D===today()?'วันนี้':D===addD(today(),-1)?'เมื่อวาน':thDL(D);
+const chFirst=u=>{const n=cmName(u).replace(/^(ดร\.|นาย|นางสาว|นาง|น\.ส\.|คุณ)\s*/,'');return u==='admin'?'ผู้ดูแลระบบ':n.split(/\s+/)[0]};
+const chSnip=x=>x?(x.ph&&x.ph.length&&!x.t?'📷 รูปภาพ':x.doc&&!x.t?'📎 '+cmTitle(cmDoc(x.doc.p,x.doc.ref)):String(x.t||'').replace(/\s+/g,' ')).slice(0,60):'';
+
+/* the button and the window */
+const CHI={chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>',
+  head:'<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6" rx="1.5"/><rect x="17.5" y="13" width="4" height="6" rx="1.5"/><path d="M20 19a3 3 0 0 1-3 3h-3"/>',
+  co:'<path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4M9 10h6M9 14h6"/>',pj:'<path d="M2 20h20M5 20V8l7-5 7 5v12"/><path d="M9 20v-5h6v5"/>',
+  dm:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',cam:'<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l2-3h4l2 3"/>',
+  clip:'<path d="m21 12-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/>',send:'<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'};
+const chSv=(p,s=22)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+document.body.insertAdjacentHTML('beforeend',`<button type="button" id="chFab" class="ch-fab" data-a="chToggle" aria-label="แชท" aria-expanded="false" aria-controls="chPop" title="แชท">${chSv(CHI.head,28)}<b class="ch-n" hidden>0</b></button><section id="chPop" class="ch-pop" role="dialog" aria-label="แชท" hidden></section>`);
+function chBadge(){const b=$('#chFab');if(!b)return;const k=chTotal(),n=b.querySelector('.ch-n');n.textContent=k>99?'99+':k;n.hidden=!k;b.title=k?`แชท · ข้อความใหม่ ${k}`:'แชท';b.setAttribute('aria-label',b.title)}
+ACT.chToggle=()=>{CH.open=!CH.open;const p=$('#chPop');p.hidden=!CH.open;$('#chFab').setAttribute('aria-expanded',CH.open);if(CH.open){chDraw();chSync(true)}};
+ACT.chClose=()=>{if(CH.open)ACT.chToggle()};
+ACT.chBack=()=>{CH.view=CH.view==='att'?'room':'list';if(CH.view==='list'){CH.room='';CH.att=null}chDraw()};
+ACT.chGo=b=>{CH.room=b.dataset.r;CH.view='room';CH.att=null;chDraw()};
+ACT.chView=b=>{CH.view=b.dataset.k;CH.q='';chDraw();const q=$('#chPop .ch-q input');if(q&&!matchMedia('(pointer:coarse)').matches)q.focus()};
+ACT.chDm=b=>{const u=cmMe();if(!u||u==='admin')return;CH.room=chDm(u,b.dataset.id);CH.view='room';CH.att=null;chDraw()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&CH.open&&!e.defaultPrevented&&!document.querySelector('dialog[open]')&&e.target.closest&&e.target.closest('#chPop')){e.preventDefault();CH.view==='list'?ACT.chClose():ACT.chBack()}});
+
+function chDraw(){const el=$('#chPop');if(!el||!CH.open)return;
+  if(CMP&&CMP.ta&&el.contains(CMP.ta)){CH.pend=true;return}CH.pend=false;
+  const u=cmMe(),a=document.activeElement,keep=a&&el.contains(a)&&a.tagName==='TEXTAREA'?{s:a.selectionStart,e:a.selectionEnd}:null,
+    qf=a&&el.contains(a)&&a.matches('.ch-q input')?{s:a.selectionStart}:null,body=el.querySelector('.ch-msgs'),
+    stick=!body||body.scrollHeight-body.scrollTop-body.clientHeight<60,top=body?body.scrollTop:0,same=el.dataset.r===CH.room&&el.dataset.v===CH.view;
+  el.dataset.r=CH.room;el.dataset.v=CH.view;
+  el.innerHTML=!u?chHello(u)+'<div class="ch-bd"><p class="hint">เข้าระบบด้วยชื่อของคุณก่อน จึงจะใช้แชทได้</p></div>':
+    CH.view==='room'&&CH.room?chRoomHtml(u):CH.view==='att'?chAttHtml(u):chListHtml(u);
+  const b2=el.querySelector('.ch-msgs');if(b2)b2.scrollTop=same&&!stick?top:b2.scrollHeight;
+  const ta=el.querySelector('textarea');if(ta&&keep){ta.focus();try{ta.setSelectionRange(keep.s,keep.e)}catch(e){}}
+  const q=el.querySelector('.ch-q input');if(q&&qf){q.focus();try{q.setSelectionRange(qf.s,qf.s)}catch(e){}}
+  chFillPh(el);if(CH.view==='room'&&CH.room)chSeen()}
+function chNote(){if(DEMOPG)return '<p class="ch-warn">หน้าตัวอย่าง ข้อความอยู่ในเครื่องนี้เท่านั้น</p>';
+  if(!chShared())return `<p class="ch-warn">บริษัทนี้ยังเก็บข้อมูลไว้ในเครื่องนี้เท่านั้น ข้อความจะยังไม่ถึงคนอื่น <button type="button" class="btn sm" data-a="chSetup">ตั้งที่เก็บข้อมูลกลาง</button></p>`;
+  if(FS.state==='perm')return `<p class="ch-warn">ต้องเปิดโฟลเดอร์ข้อมูลอีกครั้งจึงจะรับส่งข้อความได้ <button type="button" class="btn sm" data-a="fGo">เปิดโฟลเดอร์</button></p>`;
+  return CH.err?`<p class="ch-warn">${esc(CH.err)}</p>`:''}
+ACT.chSetup=()=>{ACT.chClose();S.mode='co';S.ctab='coset';render();setTimeout(()=>{const c=$('#folderCard');if(c)c.scrollIntoView({behavior:'smooth'})},60)};
+const chHello=u=>`<header class="ch-hd"><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button><small>${LANG==='en'?'Hello':'สวัสดี คุณ'}${LANG==='en'?' ':''}${esc(u?chFirst(u):'')} 👋</small><h3>คุยกับทีมงานในบริษัท</h3></header>`;
+function chListHtml(u){const R=chRooms(u),q=CH.q.trim().toLowerCase(),v=CH.view,dmOk=u!=='admin';
+  const row=r=>`<button type="button" class="ch-r${r.n?' new':''}" data-a="chGo" data-r="${esc(r.id)}">${chAv(r,u)}<span class="ch-rt"><b>${esc(r.name)}</b><small>${r.lastM?esc((r.k==='d'?'':chFirst(r.lastM.by)+': ')+chSnip(r.lastM)):esc(r.sub||'ยังไม่มีข้อความ')}</small></span><span class="ch-rm">${r.at?esc(chTime(r.at)):''}${r.n?`<i${r.atMe?' class="at"':''}>${r.atMe?'@':''}${r.n}</i>`:''}</span></button>`;
+  const pjN=R.filter(r=>r.k==='p').reduce((a,r)=>a+r.n,0),dmN=R.filter(r=>r.k==='d').reduce((a,r)=>a+r.n,0),coR=R[0];
+  const tile=(k,ic,l,s,n,a)=>`<button type="button" class="ch-t${CH.view===k?' on':''}" ${a}>${chSv(ic,24)}<b>${l}</b><small>${s}</small>${n?`<i>${n}</i>`:''}</button>`;
+  let list;
+  if(v==='pj')list=`<p class="ch-h">ห้องโครงการ</p>${R.filter(r=>r.k==='p'&&(!q||r.name.toLowerCase().includes(q))).map(row).join('')||'<p class="hint">ไม่มีโครงการที่เปิดอยู่</p>'}`;
+  else if(v==='dm'){const P=cmPeople().filter(s=>s.id!==u&&(!q||[s.name,s.role,s.code].some(x=>String(x||'').toLowerCase().includes(q))));
+    list=`<p class="ch-h">คุยส่วนตัวกับ</p>${P.map(s=>{const r=R.find(x=>x.id===chDm(u,s.id));return `<button type="button" class="ch-r${r&&r.n?' new':''}" data-a="chDm" data-id="${s.id}">${cmAv(s.id)}<span class="ch-rt"><b>${esc(s.name)}</b><small>${esc([s.role,s.dept].filter(Boolean).join(' · '))}</small></span><span class="ch-rm">${r&&r.at?esc(chTime(r.at)):''}${r&&r.n?`<i>${r.n}</i>`:''}</span></button>`}).join('')||'<p class="hint">ไม่พบชื่อนี้</p>'}
+      <p class="hint ch-priv">ข้อความส่วนตัวแสดงเฉพาะสองคนในแอป แต่ยังเก็บอยู่ในที่เก็บข้อมูลของบริษัท อย่าส่งรหัสผ่านหรือข้อมูลลับทางนี้</p>`}
+  else{const L=R.filter(r=>!q||r.name.toLowerCase().includes(q)||(r.lastM&&String(r.lastM.t||'').toLowerCase().includes(q))),act=L.filter(r=>r.at).sort((a,b)=>b.at.localeCompare(a.at)),rest=L.filter(r=>!r.at);
+    list=`${act.length?`<p class="ch-h">ล่าสุด</p>${act.map(row).join('')}`:''}${rest.length?`<p class="ch-h">${act.length?'ห้องอื่น':'ห้องแชท'}</p>${rest.map(row).join('')}`:''}${!L.length?'<p class="hint">ไม่พบห้องที่ค้นหา</p>':''}`}
+  return chHello(u)+`<div class="ch-bd">${chNote()}<div class="ch-tiles">${tile('co',CHI.co,'ห้องบริษัท',chAll(),coR.n,'data-a="chGo" data-r="co"')}${tile('pj',CHI.pj,'ห้องโครงการ',(n=>LANG==='en'?n+(n===1?' project':' projects'):n+' โครงการ')(R.filter(r=>r.k==='p').length),pjN,'data-a="chView" data-k="pj"')}${dmOk?tile('dm',CHI.dm,'คุยส่วนตัว','เลือกคน',dmN,'data-a="chView" data-k="dm"'):''}</div>
+    <label class="ch-q"><input type="search" placeholder="${esc(trS(v==='dm'?'ค้นหาชื่อคน':'ค้นหาห้องหรือข้อความ'))}" value="${esc(CH.q)}" aria-label="ค้นหา"><span aria-hidden="true">🔍</span></label>
+    ${v!=='list'?'<button type="button" class="btn sm ghost ch-all" data-a="chView" data-k="list">‹ ห้องทั้งหมด</button>':''}${list}</div>`}
+document.addEventListener('input',e=>{if(e.target.matches&&e.target.matches('#chPop .ch-q input')){CH.q=e.target.value;chDraw()}});
+
+/* one room */
+const CHDOC={bills:['฿','#3F8C96'],pos:['PO','#d08a2b'],prs:['PR','#8a6db8'],rfis:['RFI','#c0564b'],vos:['VO','#4a7fb5'],subm:['SUB','#5d8f4f'],quotes:['QT','#7a6a4f'],proj:['P','#3F8C96']};
+function chRoomHtml(u){const id=CH.room,I=chRoomInfo(id,u),L=chMsgs(id),pid=I.pid||'',dk=cmKey(pid,'chat:'+id);let h='',day='',prev=null;
+  for(const x of L){const D=iso(new Date(x.at));if(D!==day){day=D;h+=`<div class="ch-day"><span>${esc(chDay(D))}</span></div>`;prev=null}
+    const mine=x.by===u,cont=prev&&prev.by===x.by&&new Date(x.at)-new Date(prev.at)<5*60e3,own=mine&&Object.entries(CH.F).some(([p,f])=>chMine(p)&&(f.msgs||[]).some(y=>y.id===x.id));
+    const doc=x.doc?(()=>{const D2=cmDoc(x.doc.p,x.doc.ref),k=String(x.doc.ref).split(':')[0],c=CHDOC[k]||['•','#888'],pj=cmPj(x.doc.p);
+      return D2.ok?`<button type="button" class="ch-doc" data-a="cmGo" data-cmp="${esc(x.doc.p||'')}" data-cmr="${esc(x.doc.ref)}"><span class="ch-di" style="background:${c[1]}">${c[0]}</span><span><b>${esc(cmTitle(D2))}</b><small>${esc([D2.sub,pj&&x.doc.ref!=='proj'&&!id.endsWith(pj.id)?pj.name:''].filter(Boolean).join(' · '))||'กดเพื่อเปิดเอกสาร'}</small></span></button>`:'<span class="ch-doc gone">เอกสารนี้ถูกลบแล้ว</span>'})():'';
+    h+=`<div class="ch-m${mine?' me':''}${cont?' cont':''}${!mine&&(x.men||[]).includes(u)?' atme':''}">${mine?'':cont?'<span class="cm-av ph"></span>':cmAv(x.by)}<div class="ch-mb">${cont?'':`<div class="ch-mh">${mine?'':`<b>${esc(cmName(x.by))}</b> `}<small>${esc(chHM(x.at))}</small></div>`}
+      ${x.t?`<div class="ch-bb">${cmText(x)}</div>`:''}${(x.ph||[]).length?`<div class="ch-ph">${x.ph.map(k=>`<button type="button" data-a="chPh" data-id="${esc(k)}" aria-label="ดูรูป"><img data-chph="${esc(k)}" alt=""></button>`).join('')}</div>`:''}${doc}
+      ${own?`<button type="button" class="ch-del" data-a="chDel" data-id="${x.id}" title="ลบข้อความนี้" aria-label="ลบข้อความนี้">✕</button>`:''}</div></div>`;prev=x}
+  const att=CH.att?(()=>{const D2=cmDoc(CH.att.p,CH.att.ref);return D2.ok?`<div class="ch-chip">📎 ${esc(cmTitle(D2))}<button type="button" class="x" data-a="chAttX" aria-label="เอาเอกสารออก">✕</button></div>`:''})():'';
+  return `<header class="ch-rh"><button type="button" class="ch-bk" data-a="chBack" aria-label="กลับไปรายการห้อง">‹</button>${chAv(Object.assign({id,k:id[0]==='d'?'d':id==='co'?'co':'p'},I),u)}<div><b>${esc(I.name)}</b><small>${esc(I.sub)}</small></div><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button></header>
+  ${chNote()}<div class="ch-msgs" aria-live="polite">${CH.oldM>0&&L.length?`<button type="button" class="btn sm ghost ch-old" data-a="chOlder">ดูข้อความเก่ากว่า</button>`:''}${h||`<p class="ch-empty">ยังไม่มีข้อความในห้องนี้ เริ่มคุยได้เลย พิมพ์ @ชื่อ เพื่อเรียกคน ส่งรูปหน้างาน หรือแนบใบเบิกงวด PO และ RFI ให้คนอื่นกดเปิดได้</p>`}</div>
+  <footer class="ch-ft">${att}<div class="ch-row"><label class="ch-ib" title="ส่งรูป" aria-label="ส่งรูป">${chSv(CHI.cam,19)}<input type="file" accept="image/*" multiple hidden data-chfile="1"></label><button type="button" class="ch-ib" data-a="chAtt" title="แนบเอกสารจากระบบ" aria-label="แนบเอกสารจากระบบ">${chSv(CHI.clip,19)}</button>
+    <div class="cm-box ch-box"><textarea class="cm-in ch-ta" rows="1" data-cmr="chat:${esc(id)}" data-cmp="${esc(pid)}" aria-label="พิมพ์ข้อความ" placeholder="${esc(trS('พิมพ์ข้อความ… @ เรียกคน'))}">${esc(CMD[dk]||'')}</textarea><div class="cm-pick" role="listbox" hidden></div></div>
+    <button type="button" class="ch-ib send" data-a="chSend" title="ส่ง" aria-label="ส่ง">${chSv(CHI.send,18)}</button></div></footer>`}
+// the room you look at is read (only while the page is on screen)
+let chST=0;function chSeen(){clearTimeout(chST);chST=setTimeout(()=>{const u=cmMe();if(!u||!CH.open||CH.view!=='room'||document.hidden)return;const L=chMsgs(CH.room),x=L[L.length-1];if(!x||chRd(CH.room,u)>=x.at)return;
+  const o=chOwn(chMonth(new Date().toISOString()),u);o.f.rd[CH.room]=x.at;CH.dirty.add(o.p);chKeep();chBadge();chPushSoon()},700)}
+
+/* sending */
+async function chSendNow(){const el=$('#chPop'),ta=el&&el.querySelector('.ch-ta'),u=cmMe();if(!ta||!u)return;const t=ta.value.trim();
+  if(!t&&!CH.att&&!CH.phSel)return;if(t.length>4000){toast('ข้อความยาวเกินไป (ไม่เกิน 4,000 ตัวอักษร)');return}
+  const at=new Date().toISOString(),x={id:uid(),r:CH.room,by:u,at,t,men:cmMen(t).filter(i=>i!==u)};if(CH.att)x.doc=CH.att;if(CH.phSel)x.ph=CH.phSel;
+  const o=chOwn(chMonth(at),u);o.f.msgs.push(x);o.f.rd[CH.room]=at;CH.dirty.add(o.p);delete CMD[cmKey(ta.dataset.cmp,ta.dataset.cmr)];ta.value='';CH.att=null;CH.phSel=null;
+  chKeep();chDraw();chBadge();chPushSoon();const t2=$('#chPop .ch-ta');if(t2&&!matchMedia('(pointer:coarse)').matches)t2.focus()}
+ACT.chSend=()=>chSendNow();
+document.addEventListener('keydown',e=>{const ta=e.target;if(!(ta.matches&&ta.matches('.ch-ta'))||e.defaultPrevented||e.isComposing)return;
+  if(e.key==='Enter'&&!e.shiftKey&&(e.ctrlKey||e.metaKey||!matchMedia('(pointer:coarse)').matches)){e.preventDefault();chSendNow()}});
+document.addEventListener('input',e=>{const ta=e.target;if(ta.matches&&ta.matches('.ch-ta')){ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px'}});
+ACT.chDel=b=>{const u=cmMe();for(const [p,f] of Object.entries(CH.F)){if(!chMine(p))continue;const x=(f.msgs||[]).find(y=>y.id===b.dataset.id&&y.by===u);
+  if(x){if(!confirm('ลบข้อความนี้?'))return;x.del=1;x.t='';delete x.ph;delete x.doc;CH.dirty.add(p);chKeep();chDraw();chPushSoon();return}}};
+// photos: made smaller here, kept in this browser, and sent as their own small files
+document.addEventListener('change',async e=>{const f=e.target;if(!(f.dataset&&f.dataset.chfile))return;const L=[...f.files].slice(0,6);f.value='';if(!L.length)return;
+  const ids=[];for(const file of L){try{const d=await shrink(file,1600,.75),k='chph-'+uid();await IDB.put(k,d);phCache[k]=d;CH.phq.add(k);ids.push(k)}catch(e){toast('เปิดรูปนี้ไม่ได้')}}
+  if(!ids.length)return;CH.phSel=ids;await chSendNow();CH.phSel=null});
+async function chPhGet(k){if(phCache[k])return phCache[k];let v=await IDB.get(k).catch(()=>null);
+  if(!v){const d=await chDir();if(d){try{const r=await fRead(await d.getDirectoryHandle('ph',{create:true}),k+'.txt');if(r&&r.txt.startsWith('data:image')){v=r.txt;IDB.put(k,v).catch(()=>{})}}catch(e){}}}
+  if(v)phCache[k]=v;return v||''}
+function chFillPh(root){root.querySelectorAll('img[data-chph]').forEach(async im=>{const v=await chPhGet(im.dataset.chph);if(v)im.src=v;else im.closest('button').classList.add('wait')})}
+ACT.chPh=async b=>{const v=await chPhGet(b.dataset.id);if(!v){toast('รูปนี้ยังมาไม่ถึง ลองใหม่อีกครั้ง');return}dialog('รูปภาพ',`<img src="${v}" alt="" style="max-width:100%;border-radius:10px;display:block;margin:auto">`)};
+// attach a document of the system: the room's project first, any project can be picked
+ACT.chAtt=()=>{const I=chRoomInfo(CH.room,cmMe());CH.attP=I.pid||CH.attP||P.id;CH.view='att';chDraw()};
+ACT.chAttX=()=>{CH.att=null;chDraw()};
+ACT.chAttPick=b=>{CH.att={p:b.dataset.p,ref:b.dataset.ref};CH.view='room';chDraw()};
+document.addEventListener('change',e=>{if(e.target.id==='chAttP'){CH.attP=e.target.value;chDraw()}});
+function chAttHtml(u){const p=DB.projects[CH.attP]||P,G=[['bills','ใบเบิกงวด'],['pos','ใบสั่งซื้อ (PO)'],['prs','ใบขอซื้อ (PR)'],['rfis','RFI'],['vos','งานเพิ่มลด (VO)'],['subm','เอกสารส่งอนุมัติ']];
+  const it=(pid,ref,D)=>`<button type="button" class="ch-r" data-a="chAttPick" data-p="${esc(pid)}" data-ref="${esc(ref)}"><span class="ch-di" style="background:${(CHDOC[ref.split(':')[0]]||['','#888'])[1]}">${(CHDOC[ref.split(':')[0]]||['•'])[0]}</span><span class="ch-rt"><b>${esc(cmTitle(D))}</b><small>${esc(D.sub||'')}</small></span></button>`;
+  const sec=G.map(([k,l])=>{const L=(p[k]||[]).slice().reverse().map(r=>({ref:k+':'+r.id,D:cmDoc(p.id,k+':'+r.id)})).filter(x=>x.D.ok);return L.length?`<p class="ch-h">${l}</p>${L.slice(0,12).map(x=>it(p.id,x.ref,x.D)).join('')}`:''}).join('');
+  const Q=(CO().quotes||[]).slice().reverse().slice(0,8).map(q=>({ref:'quotes:'+q.id,D:cmDoc('','quotes:'+q.id)})).filter(x=>x.D.ok);
+  return `<header class="ch-rh"><button type="button" class="ch-bk" data-a="chBack" aria-label="กลับ">‹</button><div><b>แนบเอกสารจากระบบ</b><small>เลือกเอกสาร คนในห้องกดเปิดได้ทันที</small></div><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button></header>
+  <div class="ch-bd"><label class="ch-ps">โครงการ<select id="chAttP">${Object.values(DB.projects).sort((a,b)=>a.name.localeCompare(b.name,'th')).map(x=>`<option value="${x.id}"${x.id===p.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+  ${it(p.id,'proj',cmDoc(p.id,'proj'))}${sec||'<p class="hint">โครงการนี้ยังไม่มีเอกสาร</p>'}${Q.length?`<p class="ch-h">ใบเสนอราคา</p>${Q.map(x=>it('',x.ref,x.D)).join('')}`:''}</div>`}
+
+/* moving messages: write my own files, read everyone's. While the window is open every few seconds, otherwise once a minute. */
+async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;
+  for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');
+    const md=await d.getDirectoryHandle(m,{create:true});CH.mt[p]=await fWrite(md,nm,JSON.stringify(f));CH.dirty.delete(p)}
+  if(CH.phq.size){const pd=await d.getDirectoryHandle('ph',{create:true});for(const k of [...CH.phq]){const v=await IDB.get(k).catch(()=>null);if(v)await fWrite(pd,k+'.txt',v);CH.phq.delete(k)}}
+  chKeep()}
+async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
+  const now=new Date(),cur=chMonth(now.toISOString()),prev=chMonth(new Date(now.getFullYear(),now.getMonth()-1,15).toISOString());[cur,prev].forEach(m=>CH.months.add(m));
+  for(const m of CH.months){let md;try{md=await d.getDirectoryHandle(m)}catch(e){continue}
+    for await(const [nm,eh] of md.entries()){if(eh.kind!=='file'||!nm.endsWith('.json'))continue;const p=m+'/'+nm;
+      try{const f=await eh.getFile();if(CH.mt[p]===f.lastModified)continue;const J=JSON.parse(await f.text());CH.mt[p]=f.lastModified;
+        if(chMine(p)){const o=CH.F[p];if(o){const have=new Set(o.msgs.map(x=>x.id));(J.msgs||[]).forEach(x=>{if(!have.has(x.id)){o.msgs.push(x);ch=true}});
+            for(const [r,v] of Object.entries(J.rd||{}))if(!o.rd[r]||o.rd[r]<v)o.rd[r]=v}else{CH.F[p]=J;ch=true}}
+        else{if(JSON.stringify(CH.F[p])!==JSON.stringify(J)){CH.F[p]=J;ch=true}}}catch(e){}}}
+  if(Date.now()-CH.oldAt>3e5){CH.oldAt=Date.now();const M=[];try{for await(const [nm,eh] of d.entries())if(eh.kind==='directory'&&/^\d{4}-\d\d$/.test(nm))M.push(nm)}catch(e){}
+    const n=M.filter(m=>!CH.months.has(m)).length;if(n!==CH.oldM){CH.oldM=n;ch=true}}
+  return ch}
+let chPT=0;const chPushSoon=()=>{clearTimeout(chPT);chPT=setTimeout(()=>chSync(true),300)};
+async function chSync(force){if(CH.busy||document.hidden&&!force)return;const due=CH.open?4000:45000;if(!force&&Date.now()-CH.last<due)return;
+  CH.busy=true;CH.last=Date.now();let ch=false;
+  try{await chPush();ch=await chPull();CH.err=''}catch(e){CH.err=navigator.onLine?'รับส่งข้อความไม่ได้ จะลองใหม่อัตโนมัติ':'ออฟไลน์ ข้อความจะส่งเมื่อมีอินเทอร์เน็ต'}
+  finally{CH.busy=false}
+  if(ch||CH.pend){chBadge();chDraw()}else if(CH.open&&CH.err)chDraw()}
+ACT.chOlder=async()=>{const d=await chDir();if(d){const M=[];try{for await(const [nm,eh] of d.entries())if(eh.kind==='directory'&&/^\d{4}-\d\d$/.test(nm))M.push(nm)}catch(e){}
+    const O=M.filter(m=>!CH.months.has(m)).sort().reverse();if(O.length){CH.months.add(O[0]);CH.oldM=O.length-1;await chPull()}else{CH.oldM=0;toast('ไม่มีข้อความเก่ากว่านี้')}}else CH.oldM=0;chDraw()};
+setInterval(()=>chSync(false),2000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){chSync(true);if(CH.open&&CH.view==='room')chSeen()}});
+{const r=render;render=function(){const x=r.apply(this,arguments);chBadge();if(CH.open&&!$('#chPop').contains(document.activeElement))chDraw();return x}}
+// after the first sync of the data (folder or cloud), fetch the messages too
+setTimeout(()=>chSync(true),1500);
+
+document.head.insertAdjacentHTML('beforeend',`<style>
+.ch-fab{position:fixed;right:22px;bottom:22px;width:60px;height:60px;border-radius:50%;border:0;background:#1e2a36;color:#34d3a0;display:grid;place-items:center;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:880;cursor:pointer;transition:transform .15s}
+.ch-fab:hover{transform:scale(1.06)}.ch-fab[aria-expanded="true"]{background:#2f7f88;color:#fff}
+.ch-fab .ch-n{position:absolute;top:-3px;right:-3px;background:#e5484d;color:#fff;border-radius:999px;min-width:22px;height:22px;padding:0 5px;font-size:12px;font-weight:700;display:grid;place-items:center;box-shadow:0 0 0 2px var(--bg,#fff)}
+.ch-pop{position:fixed;right:22px;bottom:94px;width:400px;max-width:calc(100vw - 24px);height:min(660px,calc(100vh - 120px));display:flex;flex-direction:column;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;z-index:890}
+.ch-pop[hidden]{display:none}
+.pin-lock .ch-fab,.pin-lock .ch-pop{display:none!important}
+#view{padding-bottom:84px}/* the last rows are not left under the button */
+@media print{.ch-fab,.ch-pop{display:none!important}}
+.ch-hd{background:linear-gradient(120deg,#2f7f88,#4a6fa5);color:#fff;padding:20px 20px 22px;position:relative;flex:none}
+.ch-hd small{font-size:15px;opacity:.95}.ch-hd h3{margin:6px 0 0;font-size:21px;line-height:1.35}
+.ch-x{position:absolute;right:12px;top:12px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(255,255,255,.2);color:#fff;font:inherit;cursor:pointer}
+.ch-rh .ch-x{position:static;flex:none}
+.ch-bd{padding:12px 14px 16px;display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1}
+.ch-h{font-size:13.5px;font-weight:700;margin:12px 0 4px}
+.ch-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:8px}
+.ch-t{border:1px solid var(--line);background:var(--sunk);color:inherit;font:inherit;border-radius:14px;padding:11px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;position:relative}
+.ch-t b{font-size:13px}.ch-t small{color:var(--muted);font-size:11.5px}.ch-t svg{color:var(--accent)}.ch-t.on{border-color:var(--accent);background:var(--accent-soft)}
+.ch-t i,.ch-rm i{font-style:normal;background:#e5484d;color:#fff;border-radius:999px;min-width:19px;height:19px;padding:0 5px;font-size:11px;font-weight:700;display:grid;place-items:center}.ch-t i{position:absolute;top:6px;right:8px}
+.ch-rm i.at{background:var(--accent)}
+.ch-q{display:flex;align-items:center;border:1px solid var(--line-2);border-radius:12px;padding:0 10px;margin:4px 0}.ch-q input{flex:1;border:0;background:none;font:inherit;padding:9px 2px;color:inherit;outline:none;min-width:0}
+.ch-all{align-self:flex-start;margin-top:4px}
+.ch-r{display:flex;gap:10px;align-items:center;padding:8px 6px;border:0;border-bottom:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;width:100%;cursor:pointer;border-radius:8px}
+.ch-r:hover{background:var(--sunk)}.ch-r .cm-av,.ch-r .ch-di{width:38px;height:38px}
+.ch-rt{flex:1;min-width:0;display:flex;flex-direction:column}.ch-rt b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ch-rt small{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch-r.new .ch-rt small{color:var(--ink);font-weight:600}
+.ch-rm{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:11.5px;color:var(--muted);flex:none}
+.ch-priv{margin-top:10px}
+.ch-warn{margin:8px 12px 4px;padding:8px 10px;border-radius:10px;background:var(--warn-soft,#fff4e0);color:var(--ink);font-size:12.5px;line-height:1.5}.ch-warn .btn{margin-left:4px}
+.ch-bd .ch-warn{margin:0 0 8px}
+.ch-rh{display:flex;align-items:center;gap:10px;padding:10px 12px;background:linear-gradient(120deg,#2f7f88,#4a6fa5);color:#fff;flex:none}
+.ch-rh>div{display:flex;flex-direction:column;flex:1;min-width:0}.ch-rh b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ch-rh small{opacity:.88;font-size:12px}
+.ch-bk{border:0;background:none;color:#fff;font-size:26px;line-height:1;padding:0 6px;cursor:pointer}
+.ch-rh .cm-av{box-shadow:0 0 0 2px rgba(255,255,255,.5)}
+.ch-msgs{flex:1;overflow:auto;background:var(--sunk);padding:10px 12px 14px;display:flex;flex-direction:column;gap:8px}
+.ch-old{align-self:center}.ch-empty{color:var(--muted);font-size:13px;text-align:center;margin:auto 10px;line-height:1.6}
+.ch-day{text-align:center;margin:4px 0}.ch-day span{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:1px 10px;font-size:11.5px;color:var(--muted)}
+.ch-m{display:flex;gap:8px;max-width:86%;align-items:flex-start}.ch-m.cont{margin-top:-4px}.ch-m.me{align-self:flex-end;flex-direction:row-reverse}
+.ch-m .cm-av{width:30px;height:30px;font-size:12.5px}.cm-av.ph{visibility:hidden}
+.ch-mb{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;position:relative}.ch-m.me .ch-mb{align-items:flex-end}
+.ch-mh{font-size:12px}.ch-mh small{color:var(--muted)}
+.ch-bb{background:var(--surface);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:7px 11px;line-height:1.5;font-size:14px;overflow-wrap:anywhere}
+.ch-m.me .ch-bb{background:#2f7f88;color:#fff;border-color:transparent;border-radius:14px 4px 14px 14px}.ch-m.me .cm-at{background:rgba(255,255,255,.22);color:#fff}
+.ch-m.atme .ch-bb{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.ch-ph{display:flex;gap:5px;flex-wrap:wrap}.ch-ph button{border:0;padding:0;background:var(--line);border-radius:10px;overflow:hidden;width:96px;height:72px;cursor:zoom-in}.ch-ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ch-ph button.wait::after{content:'…';display:grid;place-items:center;height:100%;color:var(--muted)}
+.ch-doc{display:flex;gap:9px;align-items:center;background:var(--surface);border:1px solid var(--line-2);border-radius:12px;padding:7px 11px;font:inherit;color:inherit;text-align:left;cursor:pointer;max-width:100%}
+.ch-doc:hover{border-color:var(--accent)}.ch-doc>span:last-child{display:flex;flex-direction:column;min-width:0}.ch-doc b{font-size:13px}.ch-doc small{color:var(--muted);font-size:11.5px}.ch-doc.gone{color:var(--muted);font-size:12px;cursor:default}
+.ch-di{flex:none;width:32px;height:32px;border-radius:9px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:11px}
+.ch-del{position:absolute;top:0;right:100%;margin-right:4px;border:0;background:none;color:var(--muted);opacity:0;cursor:pointer;font-size:12px}.ch-m:hover .ch-del,.ch-del:focus{opacity:.8}
+@media (pointer:coarse){.ch-del{opacity:.5}}
+.ch-ft{border-top:1px solid var(--line);padding:8px 10px;flex:none;background:var(--surface)}
+.ch-row{display:flex;gap:6px;align-items:flex-end}
+.ch-ib{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--accent);border:1px solid var(--line-2);background:var(--surface);cursor:pointer}
+.ch-ib.send{background:#2f7f88;color:#fff;border:0}
+.ch-box{flex:1;min-width:0}.ch-ta{min-height:36px!important;height:36px;max-height:120px;border-radius:18px!important;padding:7px 14px!important;resize:none!important;line-height:1.45}
+.ch-chip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);border-radius:999px;padding:3px 6px 3px 12px;font-size:12.5px;margin:0 0 6px}
+.ch-ps{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+@media (max-width:640px){.ch-fab{right:14px;bottom:14px;width:56px;height:56px}.ch-pop{right:8px;left:8px;width:auto;max-width:none;bottom:80px;height:calc(100vh - 96px);height:calc(100dvh - 96px)}}
+</style>`);
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'แชท':'Chat','คุยกับทีมงานในบริษัท':'Talk with your team','ห้องบริษัท':'Company room','ห้องโครงการ':'Project rooms','คุยส่วนตัว':'Direct chat','เลือกคน':'Pick someone',
+  'ล่าสุด':'Recent','ห้องอื่น':'Other rooms','ห้องแชท':'Rooms','‹ ห้องทั้งหมด':'‹ All rooms','คุยส่วนตัวกับ':'Chat with','ดูข้อความเก่ากว่า':'Show older messages','แนบเอกสารจากระบบ':'Attach a document',
+  'เลือกเอกสาร คนในห้องกดเปิดได้ทันที':'Pick a document; people in the room can open it','ส่งรูป':'Send photo','ส่ง':'Send','ยังไม่มีข้อความ':'No messages yet','รูปภาพ':'Photo',
+  'ค้นหาห้องหรือข้อความ':'Search rooms or messages','ค้นหาชื่อคน':'Search people','พิมพ์ข้อความ… @ เรียกคน':'Type a message… @ to mention','ตั้งที่เก็บข้อมูลกลาง':'Set up shared storage','เปิดโฟลเดอร์':'Open folder',
+  'บริษัทนี้ยังเก็บข้อมูลไว้ในเครื่องนี้เท่านั้น ข้อความจะยังไม่ถึงคนอื่น':'This company keeps its data on this device only; messages will not reach others yet',
+  'ข้อความส่วนตัวแสดงเฉพาะสองคนในแอป แต่ยังเก็บอยู่ในที่เก็บข้อมูลของบริษัท อย่าส่งรหัสผ่านหรือข้อมูลลับทางนี้':'Direct messages show only to the two of you in the app, but they are stored in the company\'s storage. Do not send passwords or secrets here.',
+  'เข้าระบบด้วยชื่อของคุณก่อน จึงจะใช้แชทได้':'Sign in with your name to use chat',
+  'ต้องเปิดโฟลเดอร์ข้อมูลอีกครั้งจึงจะรับส่งข้อความได้':'Open the data folder again to send and receive messages','หน้าตัวอย่าง ข้อความอยู่ในเครื่องนี้เท่านั้น':'Sample page: messages stay on this device',
+  'คุยส่วนตัว · ':'Direct · ','ลบข้อความนี้':'Delete this message','กดเพื่อเปิดเอกสาร':'Click to open','เอกสารนี้ถูกลบแล้ว':'This document was deleted','โครงการนี้ยังไม่มีเอกสาร':'This project has no documents yet','ใบเสนอราคา':'Quotations','วันนี้':'Today','เมื่อวาน':'Yesterday','📷 รูปภาพ':'📷 Photo','ไม่มีโครงการที่เปิดอยู่':'No open projects','ไม่พบชื่อนี้':'No one by that name','ไม่พบห้องที่ค้นหา':'No room found'});
 
 /* ---------- start ---------- */
 load();
@@ -8128,7 +8385,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.67',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.68',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
