@@ -5841,7 +5841,8 @@ const impNum=v=>{if(typeof v==='number')return v;let s=String(v??'').replace(/[,
 const impIsNum=v=>{const s=String(v??'').trim();return s!==''&&s!=='-'&&!isNaN(impNum(s))};
 // PDFs often carry Thai marks as private-use glyphs (U+F700–F71A) and ำ as ํ+า; put them back so headers and words match
 const IMPPUA='\u0E10\u0E34\u0E35\u0E36\u0E37\u0E48\u0E49\u0E4A\u0E4B\u0E4C\u0E48\u0E49\u0E4A\u0E4B\u0E4C\u0E0D\u0E31\u0E4D\u0E47\u0E48\u0E49\u0E4A\u0E4B\u0E4C\u0E38\u0E39\u0E3A';
-const impThai=s=>s.replace(/[\uF700-\uF71A]/g,c=>IMPPUA[c.charCodeAt(0)-0xF700]).replace(/\u0E4D([\u0E48-\u0E4B]?)\u0E32/g,'$1\u0E33').replace(/\s+(?=[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])/g,'');
+// Windows "Microsoft Print to PDF" writes some tone marks as É Ê … ("สืÉอสาร" = สื่อสาร, "นํÊา" = น้ำ)
+const impThai=s=>s.replace(/([\u0E01-\u0E4E])([\u00C9-\u00CD])/g,(x,a,b)=>a+'\u0E48\u0E49\u0E4A\u0E4B\u0E4C'[b.charCodeAt(0)-0xC9]).replace(/[\uF700-\uF71A]/g,c=>IMPPUA[c.charCodeAt(0)-0xF700]).replace(/\u0E4D([\u0E48-\u0E4B]?)\u0E32/g,'$1\u0E33').replace(/\s+(?=[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])/g,'');
 const impTxt=v=>impThai(String(v??'')).replace(/\s+/g,' ').trim();
 // ---- readers ----
 async function impReadSheet(file){await libLoad('xlsx.full.min.js');const buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellDates:false,codepage:874});
@@ -5858,6 +5859,8 @@ async function impReadPdf(file){await libLoad('pdf.min.js');pdfjsLib.GlobalWorke
     pages.push(L.sort((a,b)=>b.y-a.y).map(l=>{l.it.sort((a,b)=>a.x-b.x);const cells=[];l.it.forEach(t=>{const c=cells[cells.length-1];
       if(c&&t.x-c.e<4.5){c.s+=(t.x-c.e>1.5&&!mark.test(t.s)?' ':'')+t.s;c.e=Math.max(c.e,t.e)}else cells.push({x:t.x,e:t.e,s:t.s})});return {y:l.y,cells,pg}}))}
   if(chars<20)return {scan:true};
+  // fonts without a character map read as junk ("G(VV4..4ÿ9W/4"): a priced table always has a 1,234 somewhere
+  if(chars>200&&!pages.some(L=>L.some(l=>l.cells.some(c=>/\d,\d{3}/.test(c.s)))))return {junk:true};
   const txt=l=>l.cells.map(c=>impTxt(c.s)).join('').replace(/\s/g,''),num=l=>l.cells.some(c=>impIsNum(c.s)),isHdr=l=>impHits(l.cells.map(c=>c.s))>=2&&!num(l)&&l.cells.some(c=>/รายการ|รายละเอียด|description|จำนวน(?!เงิน)|ปริมาณ|q'?ty|quantity/i.test(impTxt(c.s)));
   // running headers/footers (address, e-mail) repeat on every page: drop them
   const seen={};pages.forEach((L,pi)=>L.forEach(l=>{(seen[txt(l)]=seen[txt(l)]||new Set()).add(pi)}));
@@ -5917,6 +5920,11 @@ function impPairs(rows,hr,two,map){if(['m','l','up'].some(f=>map.includes(f))||!
     D.forEach(r=>{const q=impNum(r[qc]),x=impNum(r[a]),y=impNum(r[b]);if(!(q>0)||isNaN(x)||isNaN(y)||!x||!y)return;tot++;if(Math.abs(y-q*x)<=Math.max(1,y*0.005))ok++});
     if(tot>=2&&ok>=tot*0.6){P.push([a,b]);break}}}
   const M=map.slice();if(P.length===1)M[P[0][0]]='up';else if(P.length>=2){M[P[0][0]]='m';M[P[1][0]]='l'}return M}
+// no column is headed "รายการ" (a PDF header split over three lines): the description is the column with the longest text
+function impDescCol(rows,hr,two,map){if(map.includes('desc'))return map;const D=rows.slice(hr+(two?2:1),hr+(two?2:1)+80);let best=-1,bl=5;
+  map.forEach((f,c)=>{if(f)return;const T=D.map(r=>impTxt(r[c])).filter(t=>t&&!impIsNum(t));if(T.length<3)return;const a=T.reduce((x,t)=>x+t.length,0)/T.length;if(a>bl){bl=a;best=c}});
+  if(best<0)return map;const M=map.slice();M[best]='desc';return M}
+const impMapFor=(rows,hr,two,lab)=>impPairs(rows,hr,two,impDescCol(rows,hr,two,impMapOf(lab)));
 const impSig=lab=>lab.map(t=>t.slice(0,24)).join('|');
 function impMapOf(lab){try{const M=JSON.parse(localStorage.getItem(IMPKEY)||'{}')[impSig(lab)];if(M&&M.length===lab.length)return M}catch(e){}return impGuess(lab)}
 function impRemember(lab,map){try{const M=JSON.parse(localStorage.getItem(IMPKEY)||'{}');M[impSig(lab)]=map;const k=Object.keys(M);if(k.length>40)delete M[k[0]];localStorage.setItem(IMPKEY,JSON.stringify(M))}catch(e){}}
@@ -5924,7 +5932,7 @@ const IMPEXTRA=/^(safety|ค่าความปลอดภัย|over ?head|�
 const IMPSKIP=/^(รวม|ยอดรวม|รวมทั้งสิ้น|รวมเงิน|รวมราคา|รวมค่า|มูลค่ารวม|ภาษี|vat|total|toltal|sub ?total|sum\b|grand total|ส่วนลด|discount|หมายเหตุ|note|safety|ค่าความปลอดภัย|over ?head|ค่าดำเนินการ|ค่าใช้จ่ายทั่วไป|กำไร|profit)/i;
 const IMPEND=/^(grand total|รวมทั้งสิ้น|มูลค่ารวม|toltal|vat|ภาษีมูลค่าเพิ่ม)/i;
 const impNoOk=t=>/^(\d+(\.\d+)*\.?|[a-zก-ฮ][.)]?)$/i.test(t);
-function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const c=col(f);return c<0?'':r[c]};const out=[];let g='',hd='',hdNo='',sub='',numbered=false,stop=false;
+function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const c=col(f);return c<0?'':r[c]};const out=[],heads=new Set();let g='',hd='',hdNo='',sub='',numbered=false,stop=false;
   // the description is all the text between the number column and the first price/quantity column: PDFs and merged
   // cells often spread it over several columns ("- 15,400 BTU/hr" | "Cassette Type Model : FDT45KXE6F")
   const dc=col('desc'),nc=col('no'),stopC=map.findIndex((f,i)=>i>Math.max(dc,nc)&&f&&f!=='desc'&&f!=='no'),
@@ -5941,12 +5949,14 @@ function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const
     if(IMPSKIP.test(text)||IMPSKIP.test(no))return;
     if(!has(q)&&!has(m)&&!has(l)&&!has(up)&&!has(amt)){if(text.length<2)return;// a heading: group (1), sub-heading (1.1) or a plain line under it
       const t=impTxt((no?no+' ':'')+desc).slice(0,80);
-      if(/^\d+$/.test(no)){g=desc.slice(0,80)||t;hd='';hdNo='';sub='';numbered=true}else if(no){hd=t;hdNo=no;sub='';numbered=true}else if(numbered)sub=desc.slice(0,60);else g=t;return}
+      if(/^\d+$/.test(no)){g=desc.slice(0,80)||t;hd='';hdNo='';sub='';numbered=true;heads.add(no)}else if(no){hd=t;hdNo=no;sub='';numbered=true}else if(numbered)sub=desc.slice(0,60);else g=t;return}
     if(/^\d+(\.\d+)+$/.test(no)&&hdNo&&!no.startsWith(hdNo+'.')){hd='';sub='';hdNo=''}
-    let Q=has(q)?q:1,M=has(m)?m:0,Lb=has(l)?l:0;if(!M&&!Lb){M=has(up)?up:(has(amt)?amt/Q:0)}
+    // no quantity and a blank / '-' amount ("SOCKET OUTLET  SET  234  -  85  -  -"): priced but not counted
+    let Q=has(q)?q:(col('q')>=0&&col('amt')>=0&&!has(amt)&&(has(m)||has(l)||has(up))?0:1),M=has(m)?m:0,Lb=has(l)?l:0;if(!M&&!Lb){M=has(up)?up:(has(amt)?amt/Q:0)}
     if(/by owner|โดยเจ้าของ|ผู้ว่าจ้าง/i.test(r.join(' '))&&!M&&!Lb)desc+=' (By Owner)';
-    out.push({on:true,g,head:[hd,sub].filter(Boolean).join(' · '),desc:desc||no,unit:impTxt(get(r,'unit'))||(has(q)?'':'งาน'),q:Q,m:Math.round(M*100)/100,l:Math.round(Lb*100)/100})});
-  return out}
+    out.push({on:true,top:/^\d+$/.test(no)?no:'',g,head:[hd,sub].filter(Boolean).join(' · '),desc:desc||no,unit:impTxt(get(r,'unit'))||(has(q)?'':'งาน'),q:Q,m:Math.round(M*100)/100,l:Math.round(Lb*100)/100})});
+  // a summary block ("1 Air Handling Unit  1 LOT  848,240") whose numbers come back later as headings with the detail: keep the detail only
+  return out.filter(i=>!(i.top&&heads.has(i.top)))}
 // below-the-line rows anywhere in the file (often on the summary page): overhead/profit, discount, and the totals to check against
 function impExtras(sheets){const ex={},dc={},tot=new Set();Object.values(sheets||{}).forEach(rows=>rows.forEach((r,i)=>{const lab=impTxt(r.find(c=>impTxt(c)&&!impIsNum(c))),nums=r.filter(impIsNum).map(impNum).filter(v=>v>0);
     if(!lab)return;if(IMPEXTRA.test(lab)&&nums.length)ex[lab]=nums[nums.length-1];else if(IMPDISC.test(lab)&&nums.length)dc[lab]=nums[nums.length-1];
@@ -5966,7 +5976,8 @@ ACT.impFile=b=>{Object.keys(IMP).forEach(k=>delete IMP[k]);Object.assign(IMP,{t:
   <div id="impBody"></div>`,`<button type="button" class="btn pri" data-a="impGo" id="impGoBtn" disabled>นำเข้า</button>`);dlgWide(true)};
 const dlgWide=on=>{const d=$('#dlg');if(d)d.classList.toggle('dlg-wide',on)};
 ACT.impPick=()=>pickFile(async file=>{const nm=file.name,el=$('#impName');if(el)el.textContent='กำลังอ่าน '+nm+' …';IMP.name=nm;IMP.file=file;
-  try{let r;if(/\.pdf$/i.test(nm)||file.type==='application/pdf'){r=await impReadPdf(file);if(r.scan){impMsg('ไฟล์ PDF นี้เป็นภาพสแกน ไม่มีตัวอักษรให้อ่าน ให้ส่งไฟล์ให้ AI (เช่น Claude) อ่านออกมาเป็นตาราง แล้ววางในช่อง “หรือวางตาราง…” ด้านบน หรือใช้ปุ่ม วางจาก AI ในใบเสนอราคา');if(el)el.textContent=nm;return}r=r.sheets}
+  try{let r;if(/\.pdf$/i.test(nm)||file.type==='application/pdf'){r=await impReadPdf(file);if(r.scan){impMsg('ไฟล์ PDF นี้เป็นภาพสแกน ไม่มีตัวอักษรให้อ่าน ให้ส่งไฟล์ให้ AI (เช่น Claude) อ่านออกมาเป็นตาราง แล้ววางในช่อง “หรือวางตาราง…” ด้านบน หรือใช้ปุ่ม วางจาก AI ในใบเสนอราคา');if(el)el.textContent=nm;return}
+      if(r.junk){impMsg('ไฟล์ PDF นี้ใช้ฟอนต์ที่อ่านตัวอักษรออกมาไม่ได้ (ได้เป็นตัวอักษรเพี้ยน) ขอไฟล์ Excel ต้นฉบับจากผู้ส่ง หรือส่งไฟล์ให้ AI (เช่น Claude) อ่านออกมาเป็นตาราง แล้ววางในช่อง “หรือวางตาราง…” ด้านบน');if(el)el.textContent=nm;return}r=r.sheets}
     else if(/\.(csv|txt|tsv)$/i.test(nm))r=impReadText(await impDecode(file));else r=await impReadSheet(file);
     if(el)el.textContent=nm;impOpen(r)}catch(e){impMsg('อ่านไฟล์ไม่ได้: '+e.message);if(el)el.textContent=nm}});
 ACT.impPaste=()=>{IMP.name='ตารางที่วาง';impOpen(impReadText($('#impTxt').value))};
@@ -5974,10 +5985,18 @@ const impMsg=t=>{const b=$('#impBody');if(b)b.innerHTML=`<p class="hint" style="
 function impOpen(sheets){const names=Object.keys(sheets||{});if(!names.length){impMsg('ไม่พบตารางในไฟล์นี้');return}
   IMP.sheets=sheets;IMP.ex=impExtras(sheets);
   // the sheet / PDF table with the most line items (a detailed BOQ over its one-page summary)
-  const cnt=nm=>{try{const R=sheets[nm],hr=impHeaderRow(R),{two,lab}=impLabels(R,hr);return impItems(R,hr,two,impPairs(R,hr,two,impMapOf(lab))).length}catch(e){return 0}};
-  IMP.sheet=names.reduce((b,nm)=>cnt(nm)>cnt(b)?nm:b,names[0]);impSetSheet()}
-function impSetSheet(){const rows=IMP.sheets[IMP.sheet];IMP.hr=impHeaderRow(rows);impLay()}
-function impLay(){const rows=IMP.sheets[IMP.sheet],{two,lab}=impLabels(rows,IMP.hr);IMP.two=two;IMP.lab=lab;IMP.map=impPairs(rows,IMP.hr,two,impMapOf(lab));impShow()}
+  const cnt=nm=>{try{return impSheetItems(nm).length}catch(e){return 0}};
+  IMP.sheet=names.reduce((b,nm)=>cnt(nm)>cnt(b)?nm:b,names[0]);
+  // a BOQ split over several tables (air conditioning, then electrical) whose sum is the file's total: take them all
+  if(names.length>1){const A=impAll();if(A.used>1&&IMP.ex.tot.some(v=>Math.abs(v-A.sum)<1))IMP.sheet=IMPALL}
+  impSetSheet()}
+const IMPALL='*';
+function impSheetItems(nm){const R=IMP.sheets[nm],hr=impHeaderRow(R),{two,lab}=impLabels(R,hr);return impItems(R,hr,two,impMapFor(R,hr,two,lab))}
+// every table together, each with its own columns; a table whose total is the sum of the others is the summary page
+function impAll(){const T=Object.keys(IMP.sheets).map(nm=>{let it=[];try{it=impSheetItems(nm)}catch(e){}return {it,s:sum(it,r=>r.q*(r.m+r.l))}}).filter(t=>t.it.length),S=sum(T,t=>t.s);
+  const big=T.reduce((b,t)=>t.it.length>b.it.length?t:b,T[0]),K=T.filter(t=>!(t!==big&&t.s>0&&Math.abs(2*t.s-S)<1)&&!(t.s===0&&S>0));return {rows:K.flatMap(t=>t.it),used:K.length,sum:sum(K,t=>t.s)}}
+function impSetSheet(){if(IMP.sheet===IMPALL){impShow();return}const rows=IMP.sheets[IMP.sheet];IMP.hr=impHeaderRow(rows);impLay()}
+function impLay(){const rows=IMP.sheets[IMP.sheet],{two,lab}=impLabels(rows,IMP.hr);IMP.two=two;IMP.lab=lab;IMP.map=impMapFor(rows,IMP.hr,two,lab);impShow()}
 // the imported total against the totals written in the file, and the overhead / discount rows the file carries
 function impCheck(){const S0=sum(IMP.rows.filter(r=>r.on),r=>n(r.q)*(n(r.m)+n(r.l))),E=IMP.ex||{tot:[]},t=IMP.t;let h='';
   if(S0&&E.tot.length){const hit=E.tot.find(v=>Math.abs(v-S0)<1);if(hit)h+=`<p class="hint" style="color:var(--ok-c,#1a7f37)">✓ ยอดรวมตรงกับยอดในไฟล์ ${fmt(hit,2)} บาท</p>`;
@@ -5985,14 +6004,14 @@ function impCheck(){const S0=sum(IMP.rows.filter(r=>r.on),r=>n(r.q)*(n(r.m)+n(r.
   if((E.extra||E.disc)&&(t==='q'||t==='pj')&&S0)h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impEx" checked> <span><b>ใส่ค่าดำเนินการและส่วนลดตามไฟล์ด้วย</b>${E.extra?` · <span>ค่าดำเนินการ/กำไร ${fmt(E.extra,2)} บาท (${fmt(E.extra/S0*100,2)}%)</span>`:''}${E.disc?` · <span>ส่วนลด ${fmt(E.disc,2)} บาท</span>`:''} · <span>ยอดก่อน VAT ${fmt(S0+E.extra-E.disc,2)} บาท</span> <small class="muted">(${esc(E.labs.join(', '))})</small></span></label>`;
   if(E.pay&&E.pay.length&&t==='q')h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impPayOn" checked> <span><b>ใส่งวดชำระเงินตามไฟล์ด้วย</b> · <span>${E.pay.length} งวด (${E.pay.map(x=>x.pct+'%').join(' / ')})</span>${E.valid?` · <span>ยืนราคา ${E.valid} วัน</span>`:''}</span></label>`;
   return h}
-function impShow(){const rows=IMP.sheets[IMP.sheet],names=Object.keys(IMP.sheets);IMP.rows=impItems(rows,IMP.hr,IMP.two,IMP.map);
-  const ok=IMP.map.includes('desc')&&IMP.rows.length,tgt=impTarget(),btn=$('#impGoBtn');if(btn)btn.disabled=!ok;
-  $('#impBody').innerHTML=`<div class="form" style="margin-top:12px">${names.length>1?`<label>ชีต / ตาราง<select id="impSheet">${names.map(n=>`<option${n===IMP.sheet?' selected':''}>${esc(n)}</option>`).join('')}</select></label>`:''}
-    <label>หัวตารางอยู่แถวที่<input id="impHr" type="number" min="1" value="${IMP.hr+1}" style="width:90px"></label>
+function impShow(){const all=IMP.sheet===IMPALL,rows=all?[]:IMP.sheets[IMP.sheet],names=Object.keys(IMP.sheets);IMP.rows=all?impAll().rows:impItems(rows,IMP.hr,IMP.two,IMP.map);
+  const ok=(all||IMP.map.includes('desc'))&&IMP.rows.length,tgt=impTarget(),btn=$('#impGoBtn');if(btn)btn.disabled=!ok;
+  $('#impBody').innerHTML=`<div class="form" style="margin-top:12px">${names.length>1?`<label>ชีต / ตาราง<select id="impSheet"><option value="${IMPALL}"${all?' selected':''}>ทุกตารางรวมกัน</option>${names.map(n=>`<option${n===IMP.sheet?' selected':''}>${esc(n)}</option>`).join('')}</select></label>`:''}
+    ${all?'':`<label>หัวตารางอยู่แถวที่<input id="impHr" type="number" min="1" value="${IMP.hr+1}" style="width:90px"></label>`}
     ${tgt&&tgt.has?`<label>รายการเดิม ${tgt.has} รายการ<select id="impMode"><option value="rep">แทนที่ทั้งหมด</option><option value="add">เพิ่มต่อท้าย</option></select></label>`:''}</div>
-  <h3 style="font-size:15px;margin:12px 0 6px">คอลัมน์ไหนคืออะไร</h3><div class="tw"><table class="imp-map"><thead><tr>${IMP.lab.map((t,c)=>`<th><select data-impc="${c}" aria-label="คอลัมน์ ${c+1}">${IMPF.map(([k,l])=>`<option value="${k}"${IMP.map[c]===k?' selected':''}>${l}</option>`).join('')}</select><small>${esc(t||'คอลัมน์ '+(c+1))}</small></th>`).join('')}</tr></thead>
+  ${all?'<p class="hint">รวมรายการจากทุกตารางในไฟล์ (ข้ามหน้าสรุปให้แล้ว) ถ้ารายการผิด ให้เลือกทีละตารางเพื่อแก้คอลัมน์ แล้วนำเข้าแบบ เพิ่มต่อท้าย</p>':`<h3 style="font-size:15px;margin:12px 0 6px">คอลัมน์ไหนคืออะไร</h3><div class="tw"><table class="imp-map"><thead><tr>${IMP.lab.map((t,c)=>`<th><select data-impc="${c}" aria-label="คอลัมน์ ${c+1}">${IMPF.map(([k,l])=>`<option value="${k}"${IMP.map[c]===k?' selected':''}>${l}</option>`).join('')}</select><small>${esc(t||'คอลัมน์ '+(c+1))}</small></th>`).join('')}</tr></thead>
   <tbody>${rows.slice(IMP.hr+(IMP.two?2:1),IMP.hr+(IMP.two?2:1)+4).map(r=>`<tr>${IMP.lab.map((_,c)=>`<td>${esc(impTxt(r[c]).slice(0,40))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-  ${IMP.map.includes('desc')?'':'<p class="hint" style="color:var(--warn-c)">เลือกคอลัมน์ “รายการ” อย่างน้อยหนึ่งคอลัมน์</p>'}
+  ${IMP.map.includes('desc')?'':'<p class="hint" style="color:var(--warn-c)">เลือกคอลัมน์ “รายการ” อย่างน้อยหนึ่งคอลัมน์</p>'}`}
   <h3 style="font-size:15px;margin:12px 0 6px">ตรวจรายการก่อนนำเข้า <small class="muted">${IMP.rows.length} รายการ · รวม ${fmt(sum(IMP.rows,r=>r.q*(r.m+r.l)),2)} บาท · แถวรวม/ภาษีถูกข้ามให้แล้ว แก้ไขหรือเอาเครื่องหมายออกได้</small></h3>
   <div id="impChk">${impCheck()}</div>
   <div class="tw" style="max-height:340px;overflow:auto"><table class="imp-pv"><thead><tr><th></th><th>หมวด</th><th>หัวข้อย่อย</th><th>รายการ</th><th class="r">จำนวน</th><th>หน่วย</th><th class="r">ค่าวัสดุ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">รวม</th></tr></thead><tbody>
@@ -6007,7 +6026,7 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||!$('#impBody')||!
 function impTarget(){const t=IMP.t;if(t==='q'){const Q=CO().quotes.find(x=>x.id===IMP.id);return Q&&{has:Q.items.length,o:Q}}
   if(t==='td'){const T=typeof tdById==='function'&&tdById(IMP.id);return T&&{has:(T.items||[]).length,o:T}}if(t==='pj')return {has:P.boq.items.length,o:P};return null}
 ACT.impGo=()=>{const tg=impTarget();if(!tg)return;const add=($('#impMode')||{}).value==='add',src='นำเข้าจาก '+(IMP.name||'ไฟล์');
-  impRemember(IMP.lab,IMP.map);
+  if(IMP.sheet!==IMPALL)impRemember(IMP.lab,IMP.map);
   const L=IMP.rows.filter(r=>r.on&&impTxt(r.desc)).map(r=>({g:impTxt(r.g),head:impTxt(r.head),type:'',desc:impTxt(r.desc),unit:impTxt(r.unit),q:n(r.q),m:n(r.m),l:n(r.l),t:n(r.q)*(n(r.m)+n(r.l))}));
   if(!L.length){toast('ไม่มีรายการที่เลือกไว้');return}
   const E=IMP.ex||{},useEx=!!($('#impEx')||{}).checked,S0=sum(L,i=>i.t);
