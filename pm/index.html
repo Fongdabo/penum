@@ -5845,11 +5845,14 @@ const IMPPUA='\u0E10\u0E34\u0E35\u0E36\u0E37\u0E48\u0E49\u0E4A\u0E4B\u0E4C\u0E48
 const impThai=s=>s.replace(/([\u0E01-\u0E4E])([\u00C9-\u00CD])/g,(x,a,b)=>a+'\u0E48\u0E49\u0E4A\u0E4B\u0E4C'[b.charCodeAt(0)-0xC9]).replace(/[\uF700-\uF71A]/g,c=>IMPPUA[c.charCodeAt(0)-0xF700]).replace(/\u0E4D([\u0E48-\u0E4B]?)\u0E32/g,'$1\u0E33').replace(/\s+(?=[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])/g,'');
 const impTxt=v=>impThai(String(v??'')).replace(/\s+/g,' ').trim();
 // ---- readers ----
-async function impReadSheet(file){await libLoad('xlsx.full.min.js');const buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellDates:false,codepage:874});
-  const out={};wb.SheetNames.forEach(n=>{const ws=wb.Sheets[n],rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+async function impReadSheet(file){await libLoad('xlsx.full.min.js');const buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellDates:false,codepage:874,cellStyles:true});
+  const out={};wb.SheetNames.forEach(n=>{const ws=wb.Sheets[n];if(!ws['!ref'])return;const r0=XLSX.utils.decode_range(ws['!ref']).s.r,
+    rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:'',blankrows:true}),hid=ws['!rows']||[];
+    if(r0)rows.unshift(...Array(r0).fill(null).map(()=>[]));
     // a merged header cell is copied across the columns it covers, so two-row headers read as "ค่าวัสดุ ราคาต่อหน่วย"
     (ws['!merges']||[]).forEach(m=>{const v=(rows[m.s.r]||[])[m.s.c];for(let r=m.s.r;r<=m.e.r;r++)for(let c=m.s.c;c<=m.e.c;c++){rows[r]=rows[r]||[];if(rows[r][c]===''||rows[r][c]==null)rows[r][c]=v}});
-    const R=rows.filter(r=>r&&r.some(c=>impTxt(c)));if(R.length)out[n]=R});return out}
+    // rows hidden in Excel (filter details the sender folded away) are not part of what the customer sees
+    const R=rows.filter((r,i)=>r&&!(hid[i]&&hid[i].hidden)&&r.some(c=>impTxt(c)));if(R.length)out[n]=R});return out}
 async function impReadPdf(file){await libLoad('pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc='files/lib/pdf.worker.min.js';
   const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise,pages=[];let chars=0;
   const mark=/^[ัิ-ฺ็-๎-]/;// a Thai vowel/tone mark that belongs to the letter before it
@@ -5928,11 +5931,11 @@ const impMapFor=(rows,hr,two,lab)=>impPairs(rows,hr,two,impDescCol(rows,hr,two,i
 const impSig=lab=>lab.map(t=>t.slice(0,24)).join('|');
 function impMapOf(lab){try{const M=JSON.parse(localStorage.getItem(IMPKEY)||'{}')[impSig(lab)];if(M&&M.length===lab.length)return M}catch(e){}return impGuess(lab)}
 function impRemember(lab,map){try{const M=JSON.parse(localStorage.getItem(IMPKEY)||'{}');M[impSig(lab)]=map;const k=Object.keys(M);if(k.length>40)delete M[k[0]];localStorage.setItem(IMPKEY,JSON.stringify(M))}catch(e){}}
-const IMPEXTRA=/^(safety|ค่าความปลอดภัย|over ?head|ค่าดำเนินการ|ค่าใช้จ่ายทั่วไป|กำไร|profit|factor)/i,IMPDISC=/^(discount|ส่วนลด)/i;
+const IMPEXTRA=/^(safety|ค่าความปลอดภัย|over ?head|ค่าดำเนินการ|ค่าใช้จ่ายทั่วไป|กำไร(?!.*สุทธิ)|profit|factor|transportation|ค่าขนส่ง)/i,IMPDISC=/^(discount|ส่วนลด)/i;
 const IMPSKIP=/^(รวม|ยอดรวม|รวมทั้งสิ้น|รวมเงิน|รวมราคา|รวมค่า|มูลค่ารวม|ภาษี|vat|total|toltal|sub ?total|sum\b|grand total|ส่วนลด|discount|หมายเหตุ|note|safety|ค่าความปลอดภัย|over ?head|ค่าดำเนินการ|ค่าใช้จ่ายทั่วไป|กำไร|profit)/i;
 const IMPEND=/^(grand total|รวมทั้งสิ้น|มูลค่ารวม|toltal|vat|ภาษีมูลค่าเพิ่ม)/i;
 const impNoOk=t=>/^(\d+(\.\d+)*\.?|[a-zก-ฮ][.)]?)$/i.test(t);
-function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const c=col(f);return c<0?'':r[c]};const out=[],heads=new Set();let g='',hd='',hdNo='',sub='',numbered=false,stop=false;
+function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const c=col(f);return c<0?'':r[c]};const out=[],heads=new Set();let g='',sys='',sec='',hd='',hdNo='',sub='',numbered=false,stop=false;
   // the description is all the text between the number column and the first price/quantity column: PDFs and merged
   // cells often spread it over several columns ("- 15,400 BTU/hr" | "Cassette Type Model : FDT45KXE6F")
   const dc=col('desc'),nc=col('no'),stopC=map.findIndex((f,i)=>i>Math.max(dc,nc)&&f&&f!=='desc'&&f!=='no'),
@@ -5947,27 +5950,32 @@ function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const
     const has=v=>!isNaN(v)&&v!==0,text=desc||no;
     if(IMPEND.test(text)){stop=true;return}
     if(IMPSKIP.test(text)||IMPSKIP.test(no))return;
+    if(/^(transportation|ค่าขนส่ง)/i.test(text)&&!has(q))return;// a below-the-line charge, read by impExtras
     if(!has(q)&&!has(m)&&!has(l)&&!has(up)&&!has(amt)){if(text.length<2)return;// a heading: group (1), sub-heading (1.1) or a plain line under it
       const t=impTxt((no?no+' ':'')+desc).slice(0,80);
-      if(/^\d+$/.test(no)){g=desc.slice(0,80)||t;hd='';hdNo='';sub='';numbered=true;heads.add(no)}else if(no){hd=t;hdNo=no;sub='';numbered=true}else if(numbered)sub=desc.slice(0,60);else g=t;return}
+      if(/^\d+$/.test(no)){g=desc.slice(0,80)||t;sec=t;hd='';hdNo='';sub='';numbered=true;heads.add(no)}else if(no){hd=t;hdNo=no;sub='';numbered=true}else if(numbered)sub=desc.slice(0,60);else g=sys=t;return}
     if(/^\d+(\.\d+)+$/.test(no)&&hdNo&&!no.startsWith(hdNo+'.')){hd='';sub='';hdNo=''}
     // no quantity and a blank / '-' amount ("SOCKET OUTLET  SET  234  -  85  -  -"): priced but not counted
     let Q=has(q)?q:(col('q')>=0&&col('amt')>=0&&!has(amt)&&(has(m)||has(l)||has(up))?0:1),M=has(m)?m:0,Lb=has(l)?l:0;if(!M&&!Lb){M=has(up)?up:(has(amt)?amt/Q:0)}
     if(/by owner|โดยเจ้าของ|ผู้ว่าจ้าง/i.test(r.join(' '))&&!M&&!Lb)desc+=' (By Owner)';
-    out.push({on:true,top:/^\d+$/.test(no)?no:'',g,head:[hd,sub].filter(Boolean).join(' · '),desc:desc||no,unit:impTxt(get(r,'unit'))||(has(q)?'':'งาน'),q:Q,m:Math.round(M*100)/100,l:Math.round(Lb*100)/100})});
+    out.push({on:true,top:/^\d+$/.test(no)?no:'',pre:!numbered,sys,sec,no,g,head:[hd,sub].filter(Boolean).join(' · '),desc:desc||no,unit:impTxt(get(r,'unit'))||(has(q)?'':'งาน'),q:Q,m:Math.round(M*100)/100,l:Math.round(Lb*100)/100})});
   // a summary block ("1 Air Handling Unit  1 LOT  848,240") whose numbers come back later as headings with the detail: keep the detail only
-  return out.filter(i=>!(i.top&&heads.has(i.top)))}
+  const S=out.filter(i=>i.pre&&i.top);if(!S.some(i=>heads.has(i.top)))return out;
+  // that is the original's layout: a system ("ระบบปรับอากาศ") summed by sections 1, 2, 3 … then the detail.
+  // Keep it: the system is the group and the section ("1 Air Handling Unit") the first heading line
+  return out.filter(i=>!S.includes(i)).map(i=>i.sys&&i.sec?{...i,g:i.sys,head:[i.sec,i.head].filter(Boolean).join(' · '),desc:/^\d+\.\d+$/.test(i.no)?i.no+' '+i.desc:i.desc}:i)}
 // below-the-line rows anywhere in the file (often on the summary page): overhead/profit, discount, and the totals to check against
-function impExtras(sheets){const ex={},dc={},tot=new Set();Object.values(sheets||{}).forEach(rows=>rows.forEach((r,i)=>{const lab=impTxt(r.find(c=>impTxt(c)&&!impIsNum(c))),nums=r.filter(impIsNum).map(impNum).filter(v=>v>0);
-    if(!lab)return;if(IMPEXTRA.test(lab)&&nums.length)ex[lab]=nums[nums.length-1];else if(IMPDISC.test(lab)&&nums.length)dc[lab]=nums[nums.length-1];
-    else if(/^(รวม|ยอดรวม|มูลค่ารวม|toltal|total|sub ?total|sum\b|รวมเป็นเงิน|รวมทั้งหมด)/i.test(lab)&&!/vat|ภาษี/i.test(lab)){const N=nums.length?nums:(rows[i+1]||[]).every(c=>!impTxt(c)||impIsNum(c))?(rows[i+1]||[]).filter(impIsNum).map(impNum):[];N.forEach(v=>tot.add(Math.round(v*100)/100))}}));
+// overhead / discount count only below a TOTAL line: a side box ("OVERHEAD & PROJECT MANAGEMENT  1,105,683") above the table is not one
+function impExtras(sheets){const ex={},dc={},tot=new Set();Object.values(sheets||{}).forEach(rows=>{let below=false;rows.forEach((r,i)=>{const lab=impTxt(r.find(c=>impTxt(c)&&!impIsNum(c))),nums=r.filter(impIsNum).map(impNum).filter(v=>v>0);
+    if(!lab)return;if(/^(total|รวม|มูลค่ารวม|toltal|sum\b)/i.test(lab))below=true;if(IMPEXTRA.test(lab)&&nums.length){if(below)ex[lab]=nums[nums.length-1]}else if(IMPDISC.test(lab)&&nums.length){if(below)dc[lab]=nums[nums.length-1]}
+    else if(/^(รวม|ยอดรวม|มูลค่ารวม|toltal|total|sub ?total|sum\b|รวมเป็นเงิน|รวมทั้งหมด)/i.test(lab)&&!/vat|ภาษี/i.test(lab)){const N=nums.length?nums:(rows[i+1]||[]).every(c=>!impTxt(c)||impIsNum(c))?(rows[i+1]||[]).filter(impIsNum).map(impNum):[];N.forEach(v=>tot.add(Math.round(v*100)/100))}})});
   return {extra:Object.values(ex).reduce((a,b)=>a+b,0),disc:Object.values(dc).reduce((a,b)=>a+b,0),labs:[...Object.keys(ex),...Object.keys(dc)],rows:Object.entries(ex),tot:[...tot],...impPay(sheets)}}
 // payment terms ("10% Down Payment With PO", "20% เมื่อ…") and the validity days, wherever they sit in the file
 function impPay(sheets){let pay=[],valid=0;Object.values(sheets||{}).forEach(rows=>{rows.forEach((r,i)=>{const t=impTxt(r.join(' '));
     if(!valid){const v=t.match(/(?:validity|ยืนราคา|กำหนดยืน)\D{0,30}?(\d{1,3})\s*วัน/i);if(v)valid=+v[1]}
     if(pay.length||!/payment|ชำระเงิน|งวดการจ่าย|เงื่อนไขการชำระ/i.test(t))return;const L=[];
     for(let k=i;k<Math.min(rows.length,i+15);k++){const x=impTxt(rows[k].join(' ')),m=(k===i?x.match(/(\d{1,3}(?:\.\d+)?)\s*%\s*(.+)$/):x.match(/^(\d{1,3}(?:\.\d+)?)\s*%\s*(.+)$/));if(!m){if(L.length)break;continue}L.push({pct:+m[1],desc:m[2].slice(0,120)})}
-    if(L.length>=2&&Math.abs(L.reduce((a,b)=>a+b.pct,0)-100)<0.01)pay=L})});return {pay,valid}}
+    if(L.length&&Math.abs(L.reduce((a,b)=>a+b.pct,0)-100)<0.01)pay=L})});return {pay,valid}}
 // ---- the dialog ----
 ACT.impFile=b=>{Object.keys(IMP).forEach(k=>delete IMP[k]);Object.assign(IMP,{t:b.dataset.t,id:b.dataset.id||''});
   dialog('นำเข้ารายการจากไฟล์',`<p class="hint" style="margin-top:0">เลือกไฟล์ Excel (.xlsx .xls) CSV หรือ PDF ที่ทำจากโปรแกรมอื่น ระบบอ่านในเครื่องนี้ ไม่ส่งไฟล์ออกไปไหน</p>
@@ -6164,11 +6172,11 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
   const sumG=(g,k)=>`<tr class="xgb"><td></td><td class="l">Sum ${k}</td><td></td><td></td>${sp?`<td></td>${M(G[g].m)}<td></td>${M(G[g].l)}`:'<td></td>'}${M(G[g].t)}${rm}</tr>`;
   Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null)body.push(empty,sumG(lg,gi),empty);else body.push(empty);gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(`<tr><td class="c">${gi}</td><td>${gName(i.g)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}
     const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
-    if(h1!==lh){if(lh&&h1)body.push(empty);lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);body.push(`<tr><td class="c">${m?m[1]:gi+'.'+hi}</td><td>${esc(m?m[2]:h1)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}}
-    if(h2!==ls){ls=h2;if(h2)body.push(`<tr><td></td><td>${esc(h2)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}
-    li++;const L=qLine(Q,i),d=esc([i.type,i.desc].filter(Boolean).join(' '));let num='';
-    if(G4)num=gi+'.'+li;else if(!lh){hi++;num=gi+'.'+hi;if(li>1)body.push(empty)}
-    body.push(`<tr><td class="c">${num}</td><td>${lh&&!/^[-–]/.test(d)?'- ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${sp?M(L.mu,1)+M(L.mt)+M(L.lu,1)+M(L.lt):M(L.u)}${M(L.t)}${rm}</tr>`)});
+    if(h1!==lh){if(lh&&h1)body.push(empty);lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);body.push(`<tr><td class="c">${m?m[1]:gi+'.'+hi}</td><td>${esc(m?m[2]:h1)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}}
+    if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr><td class="c">${m?m[1]:''}</td><td>${esc(m?m[2]:h2)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}
+    li++;const L=qLine(Q,i);let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
+    if(G4)num=gi+'.'+li;else if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi;if(li>1)body.push(empty)}
+    body.push(`<tr><td class="c">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'- ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${sp?M(L.mu,1)+M(L.mt)+M(L.lu,1)+M(L.lt):M(L.u)}${M(L.t)}${rm}</tr>`)});
   if(lg!==null)body.push(empty,sumG(lg,gi),empty);
   body.push(`<tr class="xgb"><td></td><td class="l">มูลค่ารวม<br>Total</td><td></td><td></td>${sp?`<td></td>${M(T.m)}<td></td>${M(T.l)}`:'<td></td>'}${M(T.t)}${rm}</tr>`);
   const bhead=`<tr class="hd"><th colspan="${nc}"><div class="xb-h">${C.logo?`<img src="${C.logo}" alt="">`:`<b style="font-size:16px">${esc(C.name||'')}</b>`}<div></div></div><div class="xb-a" style="font-size:9.5px;line-height:1.6">${lines.map(esc).join('<br>')}</div></th></tr>
@@ -8522,7 +8530,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.2',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.3',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
