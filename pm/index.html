@@ -7332,7 +7332,8 @@ function SBF(path,name,meta){return {kind:'file',name,
     return {lastModified:m,async text(){const c=SBC.get(path);if(c&&c.m===m)return c.t;const r=await sbReq('/storage/v1/object/authenticated/pm/'+sbEnc(path));if(!r.ok)throw new Error('ดาวน์โหลดจากคลาวด์ไม่ได้ ('+r.status+')');const t=await r.text();SBC.set(path,{m,t});return t}}},
   async createWritable(){let buf='';return {async write(x){buf+=typeof x==='string'?x:await new Blob([x]).text()},
     async close(){const r=await sbReq('/storage/v1/object/pm/'+sbEnc(path),{method:'POST',headers:{'x-upsert':'true','Content-Type':path.endsWith('.json')?'application/json':'text/plain'},body:buf});
-      if(!r.ok)throw new Error(r.status===413?'ไฟล์ใหญ่เกินที่คลาวด์รับได้':'บันทึกขึ้นคลาวด์ไม่ได้ ('+r.status+')');const m=await sbStat(path);SBC.set(path,{m,t:buf})}}}}}
+      if(!r.ok)throw new Error(r.status===413?'ไฟล์ใหญ่เกินที่คลาวด์รับได้':'บันทึกขึ้นคลาวด์ไม่ได้ ('+r.status+')');const m=await sbStat(path);SBC.set(path,{m,t:buf});
+      if(m)meta={updated_at:new Date(m).toISOString()}}}}}} // the getFile() right after a write (fWrite) needs no second look-up
 function SBD(cid,sub=''){const base=cid+(sub?'/'+sub:'');return {kind:'directory',_sb:1,name:sub?sub.split('/').pop():'คลาวด์ PENUM',
   async queryPermission(){return SB.rt?'granted':'prompt'},async requestPermission(){try{await sbTok();return 'granted'}catch(e){return 'denied'}},
   async getDirectoryHandle(n){return SBD(cid,(sub?sub+'/':'')+n)},
@@ -8269,11 +8270,11 @@ function chAttHtml(u){const p=DB.projects[CH.attP]||P,G=[['bills','ใบเบ�
 
 /* moving messages: write my own files, read everyone's. 3.70.5: every 2 s while the window is open, every 15 s while it
    is closed (was 4 s / 45 s). The quick rounds read only this month's folder (one listing); earlier months once a minute. */
-async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;
+async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;const sent=CH.dirty.size;
   for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');
     const md=await d.getDirectoryHandle(m,{create:true});CH.mt[p]=await fWrite(md,nm,JSON.stringify(f));CH.dirty.delete(p)}
   if(CH.phq.size){const pd=await d.getDirectoryHandle('ph',{create:true});for(const k of [...CH.phq]){const v=await IDB.get(k).catch(()=>null);if(v)await fWrite(pd,k+'.txt',v);CH.phq.delete(k)}}
-  chKeep()}
+  chKeep();if(sent)rtSend('broadcast',{type:'broadcast',event:'chat',payload:{u:cmMe(),dev:CHDEV}})}
 async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
   const now=new Date(),cur=chMonth(now.toISOString()),prev=chMonth(new Date(now.getFullYear(),now.getMonth()-1,15).toISOString());[cur,prev].forEach(m=>CH.months.add(m));
   const all=Date.now()-CH.allAt>6e4;if(all)CH.allAt=Date.now();
@@ -8286,13 +8287,36 @@ async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
   if(Date.now()-CH.oldAt>3e5){CH.oldAt=Date.now();const M=[];try{for await(const [nm,eh] of d.entries())if(eh.kind==='directory'&&/^\d{4}-\d\d$/.test(nm))M.push(nm)}catch(e){}
     const n=M.filter(m=>!CH.months.has(m)).length;if(n!==CH.oldM){CH.oldM=n;ch=true}}
   return ch}
-let chPT=0;const chPushSoon=()=>{clearTimeout(chPT);chPT=setTimeout(()=>chSync(true),300)};
-async function chSync(force){if(CH.busy||document.hidden&&!force)return;const due=CH.open?2000:15000;if(!force&&Date.now()-CH.last<due)return;
+let chPT=0;const chPushSoon=()=>{clearTimeout(chPT);chPT=setTimeout(()=>chSync(true),100)};
+async function chSync(force){if(CH.busy){if(force)CH.again=true;return}if(document.hidden&&!force)return;const due=CH.open?2000:15000;if(!force&&Date.now()-CH.last<due)return;
   CH.busy=true;CH.last=Date.now();let ch=false;const had=CH.dirty.size;
   try{if(chShared()&&FS.state!=='perm'&&!await chDir())throw new Error(CH.dirErr||'เปิดที่เก็บข้อมูลไม่ได้');
     await chPush();ch=await chPull()||had>0&&!CH.dirty.size;CH.err='';if(chShared())CH.okAt=Date.now()}catch(e){console.warn('chat sync',e);CH.err=navigator.onLine?'รับส่งข้อความไม่ได้ จะลองใหม่อัตโนมัติ'+(e&&e.message?` (${String(e.message).slice(0,80)})`:''):'ออฟไลน์ ข้อความจะส่งเมื่อมีอินเทอร์เน็ต'}
   finally{CH.busy=false}
-  if(ch||CH.pend){chBadge();chDraw()}else if(CH.open&&CH.err)chDraw()}
+  if(ch||CH.pend){chBadge();chDraw()}else if(CH.open&&CH.err)chDraw();
+  // a send or a signal that came in while this round ran gets its own round right away (it used to wait for the next one)
+  if(CH.again){CH.again=false;setTimeout(()=>chSync(true),0)}}
+/* 3.70.7 ส่งถึงทันที: on PENUM cloud each device also keeps one Supabase Realtime connection, a broadcast channel for the
+   company. After writing my chat file I send a short signal without the message text ("someone wrote"); the others read
+   the cloud right away instead of waiting for their next round (2 s with the window open, 15 s closed, longer on a phone
+   that throttles). No connection (OneDrive folder, offline, blocked) = the rounds go on exactly as before. */
+const RT={ws:null,ok:false,ref:0,jr:'',hb:0,try:0,t:0,got:0};
+const rtTopic=()=>'realtime:pmchat-'+SB.cid;
+function rtSend(ev,pl){const w=RT.ws;if(!w||w.readyState!==1||!RT.ok)return false;try{w.send(JSON.stringify({topic:rtTopic(),event:ev,payload:pl,ref:String(++RT.ref),join_ref:RT.jr}));return true}catch(e){return false}}
+async function rtOpen(){RT.t=0;if(RT.ws||!sbOn()||document.hidden||typeof WebSocket!=='function')return;let tok='';try{tok=await sbTok()}catch(e){rtRetry();return}
+  if(RT.ws||!sbOn())return;let w;try{w=new WebSocket(SBCFG.url.replace(/^http/,'ws')+'/realtime/v1/websocket?apikey='+encodeURIComponent(SBCFG.key)+'&vsn=1.0.0')}catch(e){rtRetry();return}
+  RT.ws=w;RT.ok=false;const topic=rtTopic();
+  w.onopen=()=>{RT.jr=String(++RT.ref);w.send(JSON.stringify({topic,event:'phx_join',payload:{config:{broadcast:{self:false,ack:false},presence:{key:'',enabled:false},postgres_changes:[],private:false},access_token:tok},ref:RT.jr,join_ref:RT.jr}));
+    clearInterval(RT.hb);RT.hb=setInterval(()=>{if(w.readyState===1)w.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:String(++RT.ref)}))},25000)};
+  w.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(x){return}if(!m||m.topic!==topic)return;
+    if(m.event==='phx_reply'&&m.ref===RT.jr){if(m.payload&&m.payload.status==='ok'){RT.ok=true;RT.try=0;chSync(true)}else w.close();return}
+    if(m.event==='broadcast'&&m.payload&&m.payload.event==='chat'){const p=m.payload.payload||{};if(p.dev===CHDEV)return;RT.got=Date.now();chSync(true);return}
+    if(m.event==='phx_error'||m.event==='phx_close')w.close()};
+  w.onclose=w.onerror=()=>{if(RT.ws!==w)return;RT.ws=null;RT.ok=false;clearInterval(RT.hb);try{w.close()}catch(x){}rtRetry()}}
+function rtRetry(){clearTimeout(RT.t);RT.t=setTimeout(rtOpen,Math.min(60000,2000*2**RT.try++))}
+setInterval(()=>{if(!RT.ws&&!RT.t&&sbOn()&&!document.hidden)rtOpen()},5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!RT.ws&&sbOn()){clearTimeout(RT.t);RT.try=0;rtOpen()}});
+setTimeout(rtOpen,2500);
 /* 3.69.4 ตรวจการเชื่อมต่อแชท: where the messages go, who this device is in the chat, and who else the shared place
    has messages from. Do it on both phones: someone missing from the list has not opened the chat yet, or is in
    another company or another shared place. "ตรวจตอนนี้" writes this device's file, reads the folder back and pulls. */
@@ -8303,7 +8327,7 @@ function chNetHtml(u){const where=sbOn()?'คลาวด์ PENUM':folderOn()?'
   const row=(k,v)=>`<div class="ch-nr"><span>${k}</span><b>${v}</b></div>`;
   return `<header class="ch-rh"><button type="button" class="ch-bk" data-a="chBack" aria-label="กลับไปรายการห้อง">‹</button><span class="ch-di ch-apic" aria-hidden="true">ⓘ</span><div><b>การเชื่อมต่อแชท</b><small>ให้ทุกเครื่องตรวจหน้านี้แล้วเทียบกัน</small></div><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button></header>
   <div class="ch-bd">${chNote()}<div class="ch-net">${row('บริษัท',esc(CO().name||''))}${row('ที่เก็บข้อความ',esc(where))}${row('คุณคือ',esc(cmName(u)))}${row('รหัสเครื่องนี้',esc(CHDEV))}
-    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}</div>
+    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}${sbOn()?row('ส่งถึงทันที',RT.ok?'เชื่อมต่อแล้ว ✓':'ยังไม่เชื่อมต่อ <small>(เช็คเป็นรอบแทน)</small>'):''}</div>
     ${u==='admin'&&P.admin&&P.admin.d.size>1?'<p class="ch-warn">มีมากกว่า 1 เครื่องที่เข้าเป็นผู้ดูแลระบบ ในแชททุกเครื่องนี้คือคนเดียวกัน ถ้าอีกเครื่องเป็นของคนอื่น ข้อความจะขึ้นเป็นของตัวเองและไม่มีแจ้งเตือน ให้คนอื่นเข้าระบบด้วยชื่อของตัวเอง</p>':''}
     <button type="button" class="btn" data-a="chNetRun"${N.run?' disabled':''}>${N.run?'กำลังตรวจ…':'ตรวจตอนนี้'}</button>
     ${N.at&&!N.run?`<p class="${N.ok?'ch-ok':'ch-warn'}">${N.ok?`✓ ส่งขึ้นและอ่านกลับได้ (${esc(chHM(N.at))}) พบไฟล์แชท ${N.n} ไฟล์ในเดือนนี้`:'✕ '+esc(N.msg||'ตรวจไม่ผ่าน')}</p>`:''}
@@ -8573,7 +8597,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.6',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70.7',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
