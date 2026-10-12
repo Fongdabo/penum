@@ -8466,7 +8466,91 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.69.3',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
+</script>
+<script>/* ---------- 3.70 undo / redo: ↶ ย้อนกลับ and ↷ ทำซ้ำ in the header, Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) ----------
+   Every edit already ends in save() and render(); shortly after, the data is compared with the copy from before and
+   what changed (field by field; a list that grew or shrank as a whole list) becomes one step. Undo puts back the old
+   values of those fields only, so data that arrived meanwhile from the cloud, the shared folder or another device stays.
+   Only changes that follow a click or a key press count; data that arrives by itself (sync) is taken in without a step.
+   Undo also opens the page where that edit was made. The steps live until the page is closed or reloaded. */
+(()=>{
+const U={u:[],r:[],base:null,ref:null,t:0,gest:0,ext:false,ph:new Map(),max:60};
+const snap=()=>JSON.stringify(DB);
+// [path, before, after] for each place that differs; a list whose length changed counts as one change
+function diff(a,b,p,out){if(a===b)return out;
+  const oa=a!==null&&typeof a==='object',ob=b!==null&&typeof b==='object';
+  if(oa&&ob&&Array.isArray(a)===Array.isArray(b)&&(!Array.isArray(a)||a.length===b.length)){
+    for(const k of new Set([...Object.keys(a),...Object.keys(b)]))diff(a[k],b[k],p.concat(k),out);return out}
+  out.push([p,a,b]);return out}
+const cl=v=>v===undefined?v:JSON.parse(JSON.stringify(v));
+function put(path,v){let o=DB;for(let i=0;i<path.length-1;i++){o=o[path[i]];if(o==null||typeof o!=='object')return}
+  const k=path[path.length-1];if(v===undefined){if(Array.isArray(o))o[k]=null;else delete o[k]}else o[k]=cl(v)}
+// where you are: the page to open again on undo
+const NK=['mode','tab','ctab','dept'];
+function here(){const h={cur:DB.cur,crumb:(($('#crumb .last')||{}).textContent||'').trim(),sub:Object.assign({},S.sub),dpage:Object.assign({},S.dpage||{}),sel:{}};
+  NK.forEach(k=>h[k]=S[k]);for(const [k,v] of Object.entries(S.sel||{}))if(typeof v==='string'&&/^k[0-9a-z]{5,}$/.test(v))h.sel[k]=v;return h}
+function goHere(h){if(!h)return;if(h.cur&&DB.projects[h.cur]&&DB.cur!==h.cur){DB.cur=h.cur;P=DB.projects[h.cur]}
+  NK.forEach(k=>{if(h[k]!==undefined)S[k]=h[k]});S.sub=Object.assign(S.sub||{},h.sub);S.dpage=Object.assign(S.dpage||{},h.dpage);S.sel=Object.assign(S.sel||{},h.sel)}
+const samePage=h=>h&&NK.every(k=>S[k]===h[k])&&(S.sub||{})[S.mode==='co'?S.ctab:S.tab]===h.sub[h.mode==='co'?h.ctab:h.tab]&&(S.mode==='co'||DB.cur===h.cur);
+// take in what changed since the last look
+function cp(){clearTimeout(U.t);U.t=0;if(typeof DB==='undefined'||!DB)return;
+  if(U.ref!==DB){U.ref=DB;U.base=snap();U.u=[];U.r=[];U.ext=false;draw();return}// a different data set (new company, data received from the company)
+  const s=snap();if(s===U.base)return;
+  const user=!U.ext&&Date.now()-U.gest<4000;U.ext=false;
+  if(user){// a new object or list that only appears (a page filling in its defaults) is not an edit
+    const d=diff(JSON.parse(U.base),JSON.parse(s),[],[]).filter(([p,a,b])=>p[0]!=='cur'&&!(a===undefined&&b!==null&&typeof b==='object'));
+    if(d.length){U.u.push({d,at:U.pend||here()});if(U.u.length>U.max)U.u.shift();U.r=[]}}
+  U.pend=null;U.base=s;draw()}
+const later=()=>{if(!U.pend&&Date.now()-U.gest<4000)U.pend=here();clearTimeout(U.t);U.t=setTimeout(cp,300)};
+function step(back){cp();const A=back?U.u:U.r,B=back?U.r:U.u,st=A.pop();if(!st){toast(back?'ไม่มีอะไรให้ย้อนกลับ':'ไม่มีอะไรให้ทำซ้ำ');return}
+  const D=back?st.d.slice().reverse():st.d;D.forEach(([p,a,b])=>put(p,back?a:b));B.push(st);
+  if(!DB.projects[DB.cur])DB.cur=Object.keys(DB.projects)[0];P=DB.projects[DB.cur];
+  // photos removed by that edit come back from the copy kept when they were deleted
+  const s=snap();for(const [k,v] of U.ph)if(s.includes(k))IDB.put(k,v).catch(()=>{});
+  const moved=!samePage(st.at);goHere(st.at);
+  U.base=s;U.gest=0;save();render();if(moved)scrollTo({top:0});U.base=snap();draw();
+  toast((back?'ย้อนกลับแล้ว':'ทำซ้ำแล้ว')+(st.at&&st.at.crumb?' · '+st.at.crumb:'')+(back&&U.u.length?` (ย้อนได้อีก ${U.u.length} ครั้ง)`:''))}
+const locked=()=>typeof pinOn==='function'&&pinOn()&&typeof authOK==='function'&&!authOK();
+ACT.undo=()=>{if(!locked())step(true)};ACT.redo=()=>{if(!locked())step(false)};
+const SV=d=>`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+function draw(){let g=$('#undoBox');
+  if(!g){const a=$('#userSel');if(!a)return;a.insertAdjacentHTML('beforebegin',`<div class="undo-g" id="undoBox" role="group" aria-label="ย้อนกลับการแก้ไข">
+    <button type="button" class="bbtn" id="undoBtn" data-a="undo" title="ย้อนกลับการแก้ไขล่าสุด (Ctrl+Z)" aria-label="ย้อนกลับ">${SV('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>')}<span>ย้อนกลับ</span></button>
+    <button type="button" class="bbtn" id="redoBtn" data-a="redo" title="ทำซ้ำ (Ctrl+Y)" aria-label="ทำซ้ำ">${SV('<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>')}</button></div>`);g=$('#undoBox')}
+  // on a computer it heads the buttons on the right; on a phone or tablet it sits on the first row, next to the page name
+  const narrow=innerWidth<1000,cr=$('#crumb'),cb=$('#cloudBtn');
+  if(narrow&&cr){if(cr.nextElementSibling!==g)cr.after(g)}else if(!narrow){const a=cb&&cb.parentNode===$('#userSel').parentNode?cb:$('#userSel');if(a.previousElementSibling!==g)a.before(g)}
+  const last=U.u[U.u.length-1],next=U.r[U.r.length-1];
+  $('#undoBtn').disabled=!last;$('#redoBtn').disabled=!next;
+  $('#undoBtn').title=last?`ย้อนกลับการแก้ไขล่าสุด${last.at&&last.at.crumb?' ที่ '+last.at.crumb:''} (Ctrl+Z)`:'ยังไม่มีการแก้ไขให้ย้อนกลับ';
+  $('#redoBtn').title=next?`ทำซ้ำ${next.at&&next.at.crumb?' ที่ '+next.at.crumb:''} (Ctrl+Y)`:'ไม่มีอะไรให้ทำซ้ำ'}
+// every save and redraw is a chance to take in an edit (wrapped last, so after everything else has run)
+{const s=save;save=function(){const x=s.apply(this,arguments);later();return x}}
+{const r=render;render=function(){const x=r.apply(this,arguments);try{draw()}catch(e){}later();return x}}
+// data from the cloud or the shared folder: an edit still waiting is taken in first, the received data never becomes a step
+{const f=applyData;applyData=function(){try{cp()}catch(e){}const x=f.apply(this,arguments);U.ext=true;later();return x}}
+// keep a deleted photo for this session so undo can bring it back
+{const d=IDB.del.bind(IDB);IDB.del=async k=>{try{const v=(typeof phCache==='object'&&phCache[k])||await IDB.get(k);if(v){U.ph.set(k,v);if(U.ph.size>40)U.ph.delete(U.ph.keys().next().value)}}catch(e){}return d(k)}}
+for(const ev of ['pointerdown','keydown','change','input','paste','drop'])document.addEventListener(ev,e=>{if(e.isTrusted)U.gest=Date.now()},true);
+// Ctrl+Z / Ctrl+Y: inside a box still being typed in, the box's own undo works as usual
+document.addEventListener('keydown',e=>{if(!(e.ctrlKey||e.metaKey)||e.altKey)return;const k=e.key.toLowerCase();if(k!=='z'&&k!=='y')return;
+  const t=e.target;if(t&&t.closest&&(t.closest('dialog,#chPop')||(t.matches('input:not([type=checkbox]):not([type=radio]),textarea,[contenteditable=""],[contenteditable=true]')&&(t.isContentEditable||t.value!==t.defaultValue))))return;
+  if(document.querySelector('dialog[open]'))return;
+  e.preventDefault();if(k==='y'||e.shiftKey)ACT.redo();else ACT.undo()});
+document.head.insertAdjacentHTML('beforeend',`<style>
+.undo-g{display:inline-flex;gap:4px}
+.undo-g .bbtn{min-height:34px;padding:6px 10px;font-size:13px;cursor:pointer}
+.undo-g .bbtn:disabled{opacity:.45;cursor:default}
+.undo-g #redoBtn{padding:6px 8px}
+@media (max-width:999px){.undo-g span{display:none}.undo-g .bbtn{padding:6px 8px}body.sb .brand>.crumb{flex:1 1 calc(100% - 150px)}.brand>.undo-g{flex:none}}
+.pin-lock #undoBox{display:none!important}
+</style>`);
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ย้อนกลับ':'Undo','ทำซ้ำ':'Redo','ย้อนกลับการแก้ไข':'Undo edits','ย้อนกลับแล้ว':'Undone','ทำซ้ำแล้ว':'Redone',
+  'ไม่มีอะไรให้ย้อนกลับ':'Nothing to undo','ไม่มีอะไรให้ทำซ้ำ':'Nothing to redo','ยังไม่มีการแก้ไขให้ย้อนกลับ':'No edits to undo yet'});
+addEventListener('resize',()=>{clearTimeout(draw.t);draw.t=setTimeout(()=>{try{draw()}catch(e){}},150)});
+cp();draw();
+})();
 </script>
