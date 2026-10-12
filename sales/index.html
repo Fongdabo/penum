@@ -84,7 +84,12 @@ fetch('https://fongdabo.github.io/penum/pm/files/revoked.json',{cache:'no-store'
 // รหัสลูกค้า: fixed per customer (L26-0005). Serial number: a new 10-digit number for every code issued.
 const snOf=c=>c.sn||String(((c.lics||[])[0]||{}).id||'').replace(/-R\d+$/,'');
 const lk=l=>l.no||l.id;// the code's own number: its serial, or its old id
-const isRev=l=>PUBREV.some(x=>x===l.no||x===l.id||x===String(l.id).replace(/-R\d+$/,''));
+// an entry is a serial number, a customer code (all of its codes), or "customer code<YYYY-MM-DD" (only its codes issued before
+// that day). PENUM PM reads the list with the same rule.
+const revHit=(x,l)=>{const id=String(l.id),m=/^(.+)<(\d{4}-\d\d-\d\d)$/.exec(x);
+  if(m)return (m[1]===id||m[1]===id.replace(/-R\d+$/,''))&&String(l.iat||'')<m[2];
+  return x===l.no||x===id||x===id.replace(/-R\d+$/,'')};
+const isRev=l=>PUBREV.some(x=>revHit(x,l));
 // approval: the newest code, encrypted once for each older code of this customer (PENUM PM holding that code can read it)
 async function licPack(c){const L=(c.lics||[]).filter(l=>l.code),nw=L[L.length-1];if(!nw||L.length<2)return null;const e={};
   const sha=async t=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));
@@ -95,6 +100,10 @@ async function licPack(c){const L=(c.lics||[]).filter(l=>l.code),nw=L[L.length-1
 async function approveAsk(c){const t=await licPack(c);if(!t)return openMail(c,'welcome');
   dlgMsg('อนุมัติแล้ว',`<p>ออกรหัสใหม่ให้ <b>${esc(c.co)}</b> แล้ว (Serial number ${esc(lk(c.lics[c.lics.length-1]))})</p><p><b>ขั้นต่อไป:</b> กด “คัดลอกข้อความ” แล้ววางส่งให้ Claude ในโปรเจกต์ PENUM Claude จะประกาศให้ PENUM PM ของลูกค้าอัปเดตรหัสเองเมื่อเปิดโปรแกรมตอนต่อเน็ต ลูกค้าไม่ต้องวางรหัส</p><p class="mut">ข้อความนี้เข้ารหัสไว้ เปิดอ่านได้เฉพาะโปรแกรมของลูกค้ารายนี้</p>`,t);
   const m=document.createElement('button');m.textContent='ส่งอีเมลแจ้งลูกค้าด้วย';m.onclick=()=>openMail(c,'renew');$('#dlgF').append(m)}
+// a new customer code never reuses one given out before (also by a deleted customer) or one in the published revoked list,
+// since a revoked customer code would also stop the new customer's codes
+function newCustId(){const yy='L'+today().slice(2,4)+'-',used=new Set([...allLics().map(l=>String(l.id).replace(/-R\d+$/,'')),...DB.cust.map(c=>c.sn),...PUBREV.map(x=>x.split('<')[0])]);
+  let id;do{DB.seq++;id=yy+String(DB.seq).padStart(4,'0')}while(used.has(id));return id}
 function newSerial(){const used=new Set(allLics().map(l=>l.no));let s;do{const r=crypto.getRandomValues(new Uint32Array(2));s=String(1+r[0]%9)+String(r[1]%1e9).padStart(9,'0')}while(used.has(s));return s}
 const allLics=()=>[...DB.cust.flatMap(c=>c.lics||[]),...(DB.gone||[]).flatMap(g=>g.lics||[])];
 const revWait=()=>allLics().filter(l=>l.rev&&!isRev(l)).map(lk);
@@ -112,7 +121,7 @@ const b64u=u8=>{let s='';u8.forEach(b=>s+=String.fromCharCode(b));return btoa(s)
 const ub64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4)),c=>c.charCodeAt(0));
 async function issue(c){
   // one serial number per customer; a renewal or package change keeps it and adds -R1, -R2 … so each code can still be told apart
-  let id=snOf(c);if(!id){DB.seq++;id='L'+today().slice(2,4)+'-'+String(DB.seq).padStart(4,'0')}c.sn=id;const no=newSerial();
+  let id=snOf(c);if(!id)id=newCustId();c.sn=id;const no=newSerial();
   const p={v:1,id,no,co:c.co,...(c.en?{en:c.en}:{}),...(c.tax?{tx:c.tax}:{}),...(c.phone?{ph:c.phone}:{}),an:c.an,em:c.em.toLowerCase(),pl:c.pl,mx:+c.mx||1,exp:c.exp,iat:today()};
   const k=await crypto.subtle.importKey('jwk',PRI,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const body=b64u(new TextEncoder().encode(JSON.stringify(p))),msg=new TextEncoder().encode('PNM1.'+body);
@@ -157,7 +166,8 @@ function lockNow(){PRI=null;$('#lock').hidden=false;hasKey()?lockPin():lockSetup
 
 const lastCode=c=>{const l=(c.lics||[]).slice().reverse().find(x=>x.code);return l&&l.code};
 const actLink=c=>DB.set.app+'#lic='+lastCode(c);
-function status(c){if(!(c.lics||[]).length)return ['ยังไม่ออกรหัส','p-mut'];const d=days(c.exp);
+function status(c){if(!(c.lics||[]).length)return ['ยังไม่ออกรหัส','p-mut'];const nw=c.lics[c.lics.length-1];
+  if(isRev(nw))return ['ยกเลิกแล้ว','p-bad'];if(nw.rev)return ['รอประกาศยกเลิก','p-warn'];const d=days(c.exp);
   if(d<-7)return ['หมดอายุ','p-bad'];if(d<0)return ['ช่วงผ่อนผัน','p-bad'];if(d<=30)return ['ใกล้หมดอายุ','p-warn'];return ['ใช้งานอยู่','p-ok']}
 
 const LONGNOTE='(ลิงก์ยาวเพราะมีรหัสใช้งานของบริษัทอยู่ในลิงก์ เป็นเรื่องปกติ กดที่ลิงก์ได้เลย ถ้าคัดลอกไปวางเอง ต้องคัดลอกให้ครบทั้งลิงก์)';
@@ -342,7 +352,7 @@ function custInfo(c){$('#dlgT').innerHTML=(c.logo?`<img src="${c.logo}" alt="" s
   B('บันทึกเรื่องใหม่','pri',()=>tixForm(null,c.id));B('ต่ออายุ / เปลี่ยนแพ็กเกจ','',()=>renewForm(c));B('แก้ไขข้อมูลลูกค้า','',()=>custForm(c));
   dlgOpen()}
 
-function viewDash(){const A=DB.cust,act=A.filter(c=>(c.lics||[]).length&&days(c.exp)>=0),soon=A.filter(c=>(c.lics||[]).length&&days(c.exp)>=0&&days(c.exp)<=30),exp=A.filter(c=>(c.lics||[]).length&&days(c.exp)<0);
+function viewDash(){const A=DB.cust,live=c=>(c.lics||[]).length&&!isRev(c.lics[c.lics.length-1]),act=A.filter(c=>live(c)&&days(c.exp)>=0),soon=A.filter(c=>live(c)&&days(c.exp)>=0&&days(c.exp)<=30),exp=A.filter(c=>(c.lics||[]).length&&days(c.exp)<0);
   const mrr=act.reduce((s,c)=>s+(+c.price||0),0);
   return `<dl class="kpi"><div><dt>ลูกค้าทั้งหมด</dt><dd>${A.length}</dd></div><div><dt>ใช้งานอยู่</dt><dd>${act.length}</dd></div><div><dt>ใกล้หมดอายุ (30 วัน)</dt><dd style="color:var(--warn)">${soon.length}</dd></div><div><dt>หมดอายุแล้ว</dt><dd style="color:var(--bad)">${exp.length}</dd></div><div><dt>รายได้ต่อเดือน (ไม่รวม VAT)</dt><dd>${baht(mrr)}</dd></div><div><dt>เรื่องช่วยเหลือค้าง</dt><dd style="color:var(--bad)">${DB.tix.filter(t=>t.st!=='done').length}</dd></div></dl>
   ${DB.tix.some(t=>t.st!=='done')?`<section class="card"><h2>เรื่องที่ลูกค้าแจ้งและยังไม่ปิด</h2>${tixTable(DB.tix.filter(t=>t.st!=='done'))}</section>`:''}
