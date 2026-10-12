@@ -8466,7 +8466,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.70',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.71',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
@@ -8552,5 +8552,239 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ย้�
   'ไม่มีอะไรให้ย้อนกลับ':'Nothing to undo','ไม่มีอะไรให้ทำซ้ำ':'Nothing to redo','ยังไม่มีการแก้ไขให้ย้อนกลับ':'No edits to undo yet'});
 addEventListener('resize',()=>{clearTimeout(draw.t);draw.t=setTimeout(()=>{try{draw()}catch(e){}},150)});
 cp();draw();
+})();
+</script>
+<script>/* ---------- 3.71 ผู้ช่วย AI: a Claude assistant next to the chat button that works the program for you ----------
+   Type what you need in Thai ("ร่างรายงานประจำวันวันนี้", "ใบขอซื้ออยู่ไหน", "PO ไหนของยังไม่เข้า"). Claude answers through a
+   Supabase Edge Function (tools/penum-ai/index.ts, the API key stays there) and asks the page to do things with a small set of
+   actions: find and open pages, read what is on screen, read projects and records, and propose changes. Reading and opening
+   pages happen at once; every change is shown as a card with ยืนยัน / ยกเลิก and is made only when the person confirms, through
+   the same save as a manual edit, so ↶ ย้อนกลับ undoes it. Documents it drafts are marked "AI ร่าง" (d.ai) and keep the
+   existing rule: a person presses ตรวจแล้ว before they print as final. It sees only the pages the person's position may open.
+   Limits per device and month: tools/ai-setup.sql. The conversation is kept on this device until ล้างแชท. */
+(()=>{
+const AIURL=()=>SBCFG.url+'/functions/v1/penum-ai';
+const AK='penum.pm.ai'+DSFX,AUTHK='penum.pm.aiAuth';
+const AI={open:false,busy:false,msgs:[],log:[],pend:null,left:null,err:null};
+try{const o=JSON.parse(localStorage.getItem(AK)||'null');if(o&&Array.isArray(o.msgs)){AI.msgs=o.msgs;AI.log=o.log||[]}}catch(e){}
+// a confirmation that was still waiting when the page closed is not made
+AI.log.forEach(x=>{if(x.k==='c'&&x.st==='wait')x.st='old'});
+const keep=()=>{try{localStorage.setItem(AK,JSON.stringify({msgs:AI.msgs,log:AI.log.slice(-200)}))}catch(e){}};
+
+// collections the assistant may read or draft: [Thai name, page id, selected-record key, AI document kind, read only]
+const AIC={daily:['รายงานประจำวัน','pj.site.daily','daily','daily'],rfis:['RFI','pj.site.rfi'],vos:['งานเพิ่มลด (VO)','pj.site.vo',0,'vo'],
+  safe:['ตรวจความปลอดภัย','pj.site.safe'],permits:['ใบอนุญาตทำงาน','pj.site.wp'],incid:['อุบัติเหตุ','pj.site.inc'],
+  prs:['ใบขอซื้อ','pj.buy.pr','pr','pr'],pos:['ใบสั่งซื้อ','pj.buy.po','po','po'],vendors:['ผู้ขาย','pj.buy.ven'],tasks:['แผนงาน','pj.sched'],
+  costs:['ค่าใช้จ่ายอื่น','pj.cost.exp'],wir:['ขอตรวจงาน (WIR)','pj.qa.wir','wir'],ncr:['NCR','pj.qa.ncr','ncr'],punch:['Punch list','pj.hand.punch'],
+  subm:['เอกสารส่งอนุมัติ','pj.docs'],bills:['เบิกงวด','pj.cost.bill','bill',0,1],boq:['รายการ BOQ','pj.setup',0,0,1],
+  'co.quotes':['ใบเสนอราคา','co.sales.quote','quote','quote'],'co.customers':['ลูกค้า','co.sales.cust'],'co.leads':['งานที่กำลังติดตาม','co.sales.lead'],
+  'co.tickets':['งานซ่อม/บริการ','co.svc.job',0,'job'],'co.staff':['พนักงาน','co.hr.staff',0,0,1]};
+// fields the assistant never writes: approvals, review marks, signatures, photos, status (people press those buttons)
+const NOSET=/^(id|appr|ai|rev|status|photos|caps|sign|sig|esig|pin|pass|lic|paid|ok)$/i;
+// fields it never reads
+const NOREAD=/^(photos|caps|sign|sig|esig|pin|adminPin|pass|logo|shot|img|data)$/i;
+const STAFF_KEEP=['id','code','name','nick','dept','role','phone','email','proj','active','since'];
+
+const pageAllowed=pid=>{const [m,t]=String(pid).split('.');if(m==='co'&&t==='hr')return hrFull();return allowed(m,t)};
+const projOf=id=>id&&DB.projects[id]?DB.projects[id]:id?null:P;
+function arrOf(key,p){if(key==='boq')return p.boq.items;if(key.startsWith('co.')){const k=key.slice(3);CO()[k]=CO()[k]||[];return CO()[k]}p[key]=p[key]||[];return p[key]}
+function collOk(key,write){const c=AIC[key];if(!c)throw new Error(`ไม่รู้จัก collection "${key}" ใช้ได้: ${Object.keys(AIC).join(', ')}`);
+  if(!pageAllowed(c[1]))throw new Error(`no access: ตำแหน่งของผู้ใช้นี้เปิดหน้า${c[0]}ไม่ได้`);
+  if(write&&c[4])throw new Error(`${c[0]} อ่านได้อย่างเดียว ให้คนแก้ในหน้านั้น`);
+  if(write&&typeof licRO==='function'&&licRO())throw new Error('โปรแกรมอยู่ในโหมดอ่านอย่างเดียว (รหัสเปิดใช้งานหมดอายุ) แก้ข้อมูลไม่ได้');return c}
+const nowPage=()=>{const t=curTab();return [S.mode,t,(S.sub||{})[t]].filter(Boolean).join('.')};
+const crumb=()=>(($('#crumb')||{}).textContent||'').replace(/\s+/g,' ').trim();
+function ctxLine(){const u=me();return `[หน้าจอ] วันที่ ${today()} · ผู้ใช้ ${u?`${u.name||u.code} (${u.role||u.dept||''})`:'ผู้ดูแลระบบ'} · บริษัท ${CO().name||'-'} · โครงการที่เปิด ${P.name} (project_id ${P.id}) · หน้า ${crumb()||'-'} (page_id ${nowPage()})`}
+
+function clean(v,depth=0){if(Array.isArray(v))return v.slice(0,60).map(x=>clean(x,depth+1));
+  if(v&&typeof v==='object'){const o={};for(const [k,x] of Object.entries(v)){if(NOREAD.test(k)||(typeof x==='string'&&x.startsWith('data:')))continue;o[k]=depth>3?(typeof x==='object'?'…':x):clean(x,depth+1)}return o}
+  return typeof v==='string'&&v.length>1500?v.slice(0,1500)+'…':v}
+const cap=(o,max=30000)=>{let s=JSON.stringify(o);if(s.length<=max)return s;if(Array.isArray(o.records)){while(o.records.length>1&&s.length>max){o.records.pop();o.more=true;s=JSON.stringify(o)}}return s.length>max?s.slice(0,max)+'…':s};
+const label=it=>[it.pg[0],it.pg[1],it.sub].filter(Boolean).join('.');
+
+// ---- the actions Claude may ask for ----
+const TOOL={
+  find_pages({query}){const L=String(query||'').trim()?sbFind(query):sbIndex();return {pages:L.slice(0,query?9:200).map(x=>({page_id:label(x),label:x.label,path:x.path.join(' › ')}))}},
+  open_page({page_id,project_id,record_id}){const L=sbIndex(),x=L.find(z=>label(z)===page_id)||L.find(z=>label(z).startsWith(page_id+'.'))||L.find(z=>z.pg[0]+'.'+z.pg[1]===String(page_id).split('.').slice(0,2).join('.'));
+    if(!x)throw new Error(`ไม่พบหน้า ${page_id} หรือผู้ใช้นี้เปิดไม่ได้ ลอง find_pages`);
+    if(project_id&&x.pg[0]==='pj'){if(!DB.projects[project_id])throw new Error('ไม่พบโครงการ '+project_id);if(DB.cur!==project_id){DB.cur=project_id;P=DB.projects[project_id];S.sel={};save()}}
+    const d=NAVD.find(z=>z[0]===x.d),i=sbPages(d).indexOf(x.pg);S.dept=d[0];S.dpage=S.dpage||{};S.dpage[d[0]]=i;pgGo(x.pg);if(x.sub)S.sub[x.pg[1]]=x.sub;
+    if(record_id){const c=Object.values(AIC).find(c=>c[1]===label(x)&&c[2]);if(c)S.sel[c[2]]=record_id}
+    render();scrollTo({top:0});return {opened:x.path.join(' › '),project:x.pg[0]==='pj'?P.name:undefined}},
+  read_screen(){const v=$('#view');if(!v)return {text:''};const F=[];
+    v.querySelectorAll('input[data-p],select[data-p],textarea[data-p]').forEach(el=>{if(F.length>=150||el.type==='file')return;
+      const l=el.getAttribute('aria-label')||(el.closest('label')?.firstChild?.textContent||'').trim()||el.dataset.p;
+      const val=el.type==='checkbox'?(el.checked?'✓':'–'):el.tagName==='SELECT'?(el.selectedOptions[0]?.textContent||''):el.value;if(val!=='')F.push(`${l}: ${String(val).slice(0,200)}`)});
+    return {page:crumb(),page_id:nowPage(),project:S.mode==='pj'?P.name:undefined,text:v.innerText.replace(/\n{3,}/g,'\n\n').slice(0,9000),fields:F}},
+  list_projects(){return {open_now:P.id,projects:projects().map(p=>withP(p,()=>{let prog=null;try{if(p.tasks.length)prog=+sched().act().toFixed(1)}catch(e){}
+    return {project_id:p.id,name:p.name,client:p.info.client,site:p.info.site,start:p.info.start,finish:p.info.finish,contract:Math.round(contract().total),progress_pct:prog}}))}},
+  project_summary({project_id}){const p=projOf(project_id);if(!p)throw new Error('ไม่พบโครงการ '+project_id);if(!allowed('pj','dash'))throw new Error('no access: ผู้ใช้นี้ไม่เห็นภาพรวมโครงการ');
+    const t=aiContext(p);return t.length>24000?t.slice(0,24000)+'\n…':t},
+  read_records({collection,project_id,search,limit}){const c=collOk(collection),co=collection.startsWith('co.'),p=co?P:projOf(project_id);if(!p)throw new Error('ไม่พบโครงการ '+project_id);
+    return cap(withP(p,()=>{const arr=arrOf(collection,p),k=collection.split('.').pop();let tmpl=null;try{tmpl=NEW[k]?Object.keys(NEW[k](arr)):null}catch(e){}
+      let R=arr.slice();if(R.some(r=>r&&r.date))R.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));else R.reverse();
+      const q=String(search||'').trim().toLowerCase();if(q)R=R.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+      const tot=R.length;R=R.slice(0,Math.min(50,limit||12)).map(r=>collection==='co.staff'?Object.fromEntries(STAFF_KEEP.filter(f=>r[f]!=null).map(f=>[f,r[f]])):clean(r));
+      return {collection,name:c[0],project:co?undefined:{project_id:p.id,name:p.name},new_record_fields:tmpl,total:tot,records:R}}))},
+  propose_changes(inp){return aiPropose(inp)}};
+const TOOL_SAY={find_pages:i=>`ค้นหาหน้า “${i.query||'ทั้งหมด'}”`,open_page:i=>{const x=sbIndex().find(z=>label(z)===i.page_id);return `เปิดหน้า ${x?x.path.join(' › '):i.page_id}`},read_screen:()=>'อ่านหน้าจอ',list_projects:()=>'ดูรายชื่อโครงการ',
+  project_summary:()=>'อ่านสรุปโครงการ',read_records:i=>`อ่าน${(AIC[i.collection]||[i.collection])[0]}${i.search?` “${i.search}”`:''}`,propose_changes:()=>'เสนอการแก้ไข'};
+
+// ---- changes: check, show, and make them only after ยืนยัน ----
+function chkChange(ch){const c=collOk(ch.collection,true),co=ch.collection.startsWith('co.'),p=co?P:projOf(ch.project_id);if(!p)throw new Error('ไม่พบโครงการ '+ch.project_id);
+  const f=Object.assign({},ch.fields||{}),bad=Object.keys(f).filter(k=>NOSET.test(k));bad.forEach(k=>delete f[k]);
+  if(!Object.keys(f).length&&ch.op==='update')throw new Error('ไม่มีช่องที่แก้ได้'+(bad.length?` (${bad.join(', ')} ต้องให้คนกดเอง)`:''));
+  let rec=null;if(ch.op==='update'){rec=withP(p,()=>arrOf(ch.collection,p).find(r=>r.id===ch.record_id));if(!rec)throw new Error(`ไม่พบ ${c[0]} record_id ${ch.record_id}`)}
+  else if(ch.op!=='create')throw new Error('op ต้องเป็น create หรือ update');
+  return {op:ch.op,key:ch.collection,name:c[0],p:co?null:p,rec,f,skip:bad,why:ch.why||''}}
+const FL={date:'วันที่',work:'งานที่ทำ',plan:'แผนพรุ่งนี้',issue:'ปัญหา',safety:'ความปลอดภัย',visit:'ผู้เข้าเยี่ยม',men:'แรงงาน',wam:'อากาศเช้า',wpm:'อากาศบ่าย',desc:'รายละเอียด',need:'ต้องใช้ก่อน',
+  note:'หมายเหตุ',items:'รายการ',subject:'เรื่อง',q:'คำถาม / จำนวน',to:'ถึง',due:'กำหนด',ans:'คำตอบ',amt:'มูลค่า',type:'ประเภท',days:'จำนวนวัน',title:'ชื่องาน',cust:'ลูกค้า',site:'สถานที่',
+  valid:'ยืนราคา (วัน)',vid:'ผู้ขาย',credit:'เครดิต (วัน)',name:'ชื่อ',problem:'อาการ',by:'ผู้ทำ',no:'เลขที่',phone:'โทร',contact:'ผู้ติดต่อ',pct:'ความคืบหน้า %',dur:'จำนวนวัน',start:'เริ่ม'};
+// a list of rows shows as "ช่างแอร์ 6, ช่างท่อลม 4"
+const show=v=>v==null?'':Array.isArray(v)?(v.length&&typeof v[0]==='object'?v.map(r=>Object.values(r||{}).filter(x=>typeof x!=='object').slice(0,2).join(' ')).join(', '):v.join(', ')):typeof v==='object'?'…':String(v);
+function aiPropose({title,changes}){if(!Array.isArray(changes)||!changes.length)throw new Error('ไม่มีรายการที่จะแก้');
+  const L=changes.map(chkChange),id=uid();
+  AI.log.push({k:'c',id,st:'wait',title:String(title||'แก้ไขข้อมูล'),L:L.map(x=>({op:x.op,name:x.name,pj:x.p?x.p.name:'',no:x.rec?(x.rec.no||x.rec.name||x.rec.title||thD(x.rec.date)):'',why:x.why,skip:x.skip,
+    f:Object.entries(x.f).filter(([,v])=>v!==''&&v!=null).slice(0,14).map(([k,v])=>[FL[k]||k,show(v).slice(0,200)]),items:Array.isArray(x.f.items)?x.f.items.slice(0,8).map(i=>[i.desc||i.name||'',i.q,i.unit,i.p??i.sp??i.bud]):null}))});
+  const pr=new Promise(ok=>{AI.pend={id,L,ok}});keep();draw();return pr}
+function ids(v){if(Array.isArray(v))return v.map(ids);if(v&&typeof v==='object'){const o={};for(const [k,x] of Object.entries(v))o[k]=ids(x);if(!o.id&&('desc' in o||'name' in o||'trade' in o||'q' in o))o.id=uid();return o}return v}
+function apply(L){const done=[];
+  L.forEach(x=>{const p=x.p||P;withP(p,()=>{const arr=arrOf(x.key,p),k=x.key.split('.').pop(),kind=AIC[x.key][3];let r;
+    if(x.op==='create'){r=Object.assign({id:uid()},NEW[k]?NEW[k](arr):{});for(const [f,v] of Object.entries(x.f))r[f]=ids(v);arr.push(r)}
+    else{r=x.rec;const base=x.key.startsWith('co.')?x.key:x.key==='boq'?'boq.items':x.key;for(const [f,v] of Object.entries(x.f)){const path=`${base}.${r.id}.${f}`;setPath(path,ids(v));HOOK.forEach(h=>{try{h(path,r[f],r)}catch(e){}})}}
+    // drafted or edited by the assistant: a person checks it before it prints as final
+    if(kind){const L2=aiList().filter(a=>a.active!==false),by=(L2.find(a=>a.dept===AIDOC[kind].d)||L2[0]||{}).id||'assist';r.ai={by,at:today()}}
+    done.push({op:x.op,collection:x.key,record_id:r.id,no:r.no||undefined,project_id:x.p?x.p.id:undefined})})});
+  save();
+  // open the page of the first document
+  const f=done[0],c=f&&AIC[f.collection];if(c&&pageAllowed(c[1])){try{TOOL.open_page({page_id:c[1],project_id:f.project_id,record_id:f.record_id})}catch(e){render()}}else render();
+  return done}
+ACT.aiOk=b=>{const P0=AI.pend;if(!P0||P0.id!==b.dataset.id)return;const e=AI.log.find(x=>x.id===P0.id);AI.pend=null;let res;
+  try{const d=apply(P0.L);e.st='ok';res={result:'applied',changes:d,note:'Drafts are marked AI ร่าง; a person must press ตรวจแล้ว before final print. ↶ ย้อนกลับ undoes this.'};toast('ทำตามที่ผู้ช่วย AI เสนอแล้ว · กด ↶ ย้อนกลับ ได้')}
+  catch(err){e.st='no';res={result:'failed',error:err.message}}keep();draw();P0.ok(res)};
+ACT.aiNo=b=>{const P0=AI.pend;if(!P0||P0.id!==b.dataset.id)return;AI.log.find(x=>x.id===P0.id).st='no';AI.pend=null;keep();draw();P0.ok({result:'cancelled',note:'The person pressed ยกเลิก. Nothing was changed.'})};
+
+// ---- talking to Claude ----
+async function aiAuth(){if(typeof sbOn==='function'&&sbOn())return sbTok();
+  let a={};try{a=JSON.parse(localStorage.getItem(AUTHK)||'{}')||{}}catch(e){}if(a.at&&Date.now()<a.exp)return a.at;
+  const go=async(path,body)=>{const r=await fetch(SBCFG.url+'/auth/v1/'+path,{method:'POST',headers:{apikey:SBCFG.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.msg||j.error_description||j.message||('เข้าระบบไม่ได้ ('+r.status+')'));
+    a={at:j.access_token,rt:j.refresh_token,exp:Date.now()+((j.expires_in||3600)-60)*1000};try{localStorage.setItem(AUTHK,JSON.stringify(a))}catch(e){}return a.at};
+  if(a.rt){try{return await go('token?grant_type=refresh_token',{refresh_token:a.rt})}catch(e){}}return go('signup',{data:{}})}
+const ERR={nokey:'ยังไม่ได้ใส่รหัส Claude API ใน Supabase (Edge Functions › Secrets › ANTHROPIC_API_KEY)',nosql:'ยังไม่ได้รันไฟล์ตั้งค่า ai-setup.sql ใน Supabase',
+  off:'ผู้ดูแลระบบปิดผู้ช่วย AI ไว้',month:'เดือนนี้ใช้ผู้ช่วย AI ครบโควตาของบริษัทแล้ว',badkey:'รหัส Claude API ไม่ถูกต้องหรือถูกยกเลิก ให้ผู้ดูแลระบบตรวจที่ console.anthropic.com',
+  rate:'Claude มีคนใช้มาก รอสักครู่แล้วกด ลองอีกครั้ง',busy:'ติดต่อ Claude ไม่ได้ชั่วคราว กด ลองอีกครั้ง',toolong:'บทสนทนายาวเกินไป กด ล้างแชท แล้วเริ่มใหม่',signin:'เข้าระบบคลาวด์ไม่ได้ ลองรีเฟรชหน้า'};
+async function call(){let t;try{t=await aiAuth()}catch(e){throw new Error(navigator.onLine?'เข้าระบบคลาวด์ PENUM ไม่ได้: '+e.message:'ออฟไลน์อยู่ ผู้ช่วย AI ต้องใช้อินเทอร์เน็ต')}
+  let r;try{r=await fetch(AIURL(),{method:'POST',headers:{apikey:SBCFG.key,Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({messages:AI.msgs})})}
+  catch(e){throw new Error(navigator.onLine?'ติดต่อผู้ช่วย AI ไม่ได้ (ผู้ดูแลระบบอาจยังไม่ได้ติดตั้ง Edge Function penum-ai)':'ออฟไลน์อยู่ ผู้ช่วย AI ต้องใช้อินเทอร์เน็ต')}
+  const j=await r.json().catch(()=>({}));
+  if(r.status===404)throw new Error('ยังไม่ได้เปิดผู้ช่วย AI: ผู้ดูแลระบบต้องติดตั้ง Edge Function "penum-ai" ตามคู่มือ');
+  if(r.status===401&&!j.error){localStorage.removeItem(AUTHK);throw new Error('Edge Function "penum-ai" ไม่รับการเข้าระบบ: ผู้ดูแลระบบต้องปิด Verify JWT ของ function นี้ตามคู่มือ ข้อ 4')}
+  if(!r.ok){if(j.error==='day')throw new Error(`วันนี้เครื่องนี้ใช้ผู้ช่วย AI ครบ ${j.max||''} ครั้งแล้ว ใช้ได้อีกพรุ่งนี้`);
+    if(j.error==='bad'&&/credit|balance|billing/i.test(j.detail||''))throw new Error('เครดิต Claude API หมด ให้ผู้ดูแลระบบเติมที่ console.anthropic.com › Billing');
+    throw new Error(ERR[j.error]||('ผู้ช่วย AI ตอบกลับผิดพลาด ('+r.status+')'+(j.detail?' '+j.detail:'')))}
+  if(j.left!=null)AI.left=j.left;return j}
+// every tool use Claude asked for gets an answer, even one left open when the page closed
+function openUses(){const a=AI.msgs[AI.msgs.length-1];return a&&a.role==='assistant'&&Array.isArray(a.content)?a.content.filter(b=>b.type==='tool_use'):[]}
+async function run(){if(AI.busy)return;AI.busy=true;AI.err=null;draw();
+  try{for(let i=0;i<16;i++){const j=await call();AI.msgs.push({role:'assistant',content:j.content});
+      const txt=j.content.filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();if(txt)AI.log.push({k:'a',t:txt});
+      if(j.stop_reason==='refusal'){AI.log.push({k:'e',t:'ผู้ช่วย AI ตอบคำขอนี้ไม่ได้ ลองถามใหม่ด้วยคำอื่น'});break}
+      if(j.stop_reason==='pause_turn'){keep();draw();continue}
+      const U=openUses();if(!U.length)break;const res=[];
+      for(const u of U){AI.log.push({k:'t',t:(TOOL_SAY[u.name]||(()=>u.name))(u.input||{})});keep();draw();let out,bad=false;
+        try{if(!TOOL[u.name])throw new Error('unknown tool');out=await TOOL[u.name](u.input||{})}catch(e){out={error:e.message};bad=true;AI.log.push({k:'t',t:'⚠ '+e.message,bad:1})}
+        res.push(Object.assign({type:'tool_result',tool_use_id:u.id,content:typeof out==='string'?out:cap(out)},bad?{is_error:true}:{}))}
+      AI.msgs.push({role:'user',content:res});keep();draw();
+      if(i===15)AI.log.push({k:'e',t:'งานนี้ยาวเกินไป ผู้ช่วยหยุดไว้ก่อน พิมพ์ “ทำต่อ” เพื่อให้ทำต่อ'})}}
+  catch(e){AI.err=e.message}
+  AI.busy=false;keep();draw()}
+function send(text){text=String(text||'').trim();if(!text||AI.busy||AI.pend)return;
+  if(JSON.stringify(AI.msgs).length>700000){AI.msgs=[];AI.log.push({k:'e',t:'บทสนทนายาวมากแล้ว ผู้ช่วยเริ่มบทสนทนาใหม่ (จำเรื่องก่อนหน้าไม่ได้)'})}
+  const block={type:'text',text:ctxLine()+'\n\n'+text},last=AI.msgs[AI.msgs.length-1],U=openUses();
+  if(U.length)AI.msgs.push({role:'user',content:[...U.map(u=>({type:'tool_result',tool_use_id:u.id,content:'{"result":"cancelled","note":"The page was closed before this finished."}',is_error:true})),block]});
+  else if(last&&last.role==='user')last.content=[...(Array.isArray(last.content)?last.content:[{type:'text',text:String(last.content)}]),block];// the request before this one failed
+  else AI.msgs.push({role:'user',content:[block]});
+  AI.log.push({k:'u',t:text});keep();run()}
+
+// ---- the window ----
+const SPARK='<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/><path d="M5 15.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>';
+const ic=(d,s=22)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+document.body.insertAdjacentHTML('beforeend',`<button type="button" id="aiFab" class="ai-fab" data-a="aiToggle" aria-label="ผู้ช่วย AI" aria-expanded="false" aria-controls="aiPop" title="ผู้ช่วย AI · สั่งงานโปรแกรมด้วยข้อความ">${ic(SPARK,26)}<b>AI</b></button><section id="aiPop" class="ai-pop" role="dialog" aria-label="ผู้ช่วย AI" hidden></section>`);
+const md=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>').split('\n').map(l=>/^\s*[-•*]\s+/.test(l)?`<li>${l.replace(/^\s*[-•*]\s+/,'')}</li>`:l).join('\n')
+  .replace(/(<li>.*<\/li>\n?)+/g,m=>`<ul>${m.replace(/\n/g,'')}</ul>`).replace(/\n/g,'<br>');
+const HINTS=['สรุปความคืบหน้าโครงการนี้','ร่างรายงานประจำวันวันนี้','ใบขอซื้ออยู่ตรงไหน','PO ไหนของยังไม่เข้าหน้างาน','RFI ไหนยังไม่ได้คำตอบ'];
+function card(x){const st={wait:'',ok:'<p class="ai-st ok">✓ ยืนยันแล้ว · ทำแล้ว (กด ↶ ย้อนกลับ ได้)</p>',no:'<p class="ai-st">ยกเลิกแล้ว ไม่มีการแก้ไข</p>',old:'<p class="ai-st">หมดเวลา ไม่มีการแก้ไข</p>'}[x.st];
+  return `<div class="ai-card${x.st==='wait'?' wait':''}"><b class="ai-ct">${esc(x.title)}</b>${x.L.map(c=>`<div class="ai-ch"><span class="pill ${c.op==='create'?'ok':''}">${c.op==='create'?'สร้างใหม่':'แก้ไข'}</span> <b>${esc(c.name)}</b>${c.no?' '+esc(c.no):''}${c.pj?` <small>· ${esc(c.pj)}</small>`:''}
+    ${c.why?`<small class="ai-why">${esc(c.why)}</small>`:''}<dl>${c.f.filter(([k])=>k!=='รายการ'||!c.items).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    ${c.items?`<table class="ai-it"><tr><th>รายการ</th><th>จำนวน</th><th>หน่วย</th><th>ราคา</th></tr>${c.items.map(i=>`<tr>${i.map(v=>`<td>${esc(v??'')}</td>`).join('')}</tr>`).join('')}</table>`:''}
+    ${c.skip&&c.skip.length?`<small class="ai-why">ข้ามช่อง ${esc(c.skip.join(', '))} (ต้องให้คนกดเอง)</small>`:''}</div>`).join('')}
+    ${x.st==='wait'?`<p class="ai-note">เอกสารที่ AI ร่างจะมีป้าย “AI ร่าง” ต้องให้คนกด ตรวจแล้ว ก่อนพิมพ์ฉบับจริง</p><div class="ai-btns"><button type="button" class="btn pri" data-a="aiOk" data-id="${x.id}">ยืนยัน</button><button type="button" class="btn" data-a="aiNo" data-id="${x.id}">ยกเลิก</button></div>`:st}</div>`}
+function draw(){const el=$('#aiPop');if(!el)return;const fab=$('#aiFab');fab.classList.toggle('busy',AI.busy);fab.classList.toggle('wait',!!AI.pend);if(!AI.open)return;
+  const ta=$('#aiTa'),keepTxt=ta?ta.value:'',foc=document.activeElement===ta,body=$('#aiBd'),atEnd=!body||body.scrollHeight-body.scrollTop-body.clientHeight<60;
+  const L=AI.log.map(x=>x.k==='u'?`<div class="ai-u">${esc(x.t).replace(/\n/g,'<br>')}</div>`:x.k==='a'?`<div class="ai-a">${md(x.t)}</div>`:x.k==='t'?`<div class="ai-t${x.bad?' bad':''}">${ic(x.bad?'<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>':'<path d="M20 6 9 17l-5-5"/>',14)}${esc(x.t)}</div>`:x.k==='c'?card(x):`<div class="ai-e">${esc(x.t)}</div>`).join('');
+  el.innerHTML=`<header class="ai-hd"><span class="ai-av">${ic(SPARK,24)}</span><div><b>ผู้ช่วย AI</b><small>พิมพ์สั่งงานได้เลย · เปิดหน้า อ่านข้อมูล ร่างเอกสาร</small></div>
+    <button type="button" class="ai-hb" data-a="aiNew" title="ล้างแชท เริ่มบทสนทนาใหม่" aria-label="ล้างแชท">${ic('<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',18)}</button><button type="button" class="ai-hb" data-a="aiToggle" aria-label="ปิด">✕</button></header>
+  <div class="ai-bd" id="aiBd">${AI.log.length?'':`<div class="ai-hi"><p>สวัสดีครับ ผมช่วยทำงานในโปรแกรมให้ได้ เช่น หาเมนู เปิดหน้า สรุปโครงการ หรือร่างเอกสาร ทุกครั้งที่จะแก้ข้อมูล ผมจะให้คุณกด <b>ยืนยัน</b> ก่อน</p>
+    <div class="ai-chips">${HINTS.map(h=>`<button type="button" class="ai-chip" data-a="aiHint">${esc(h)}</button>`).join('')}</div></div>`}${L}
+    ${AI.busy&&!AI.pend?`<div class="ai-a ai-dots" aria-label="กำลังคิด"><i></i><i></i><i></i></div>`:''}${AI.err?`<div class="ai-e">${esc(AI.err)}<br><button type="button" class="btn sm" data-a="aiRetry">ลองอีกครั้ง</button></div>`:''}</div>
+  <form class="ai-in"><textarea id="aiTa" rows="1" placeholder="${AI.pend?'กด ยืนยัน หรือ ยกเลิก ด้านบนก่อน':'พิมพ์สิ่งที่ต้องการให้ช่วย…'}" aria-label="ข้อความถึงผู้ช่วย AI"${AI.pend?' disabled':''}></textarea>
+    <button type="button" class="ai-go" data-a="aiSend" aria-label="ส่ง"${AI.busy||AI.pend?' disabled':''}>${ic('<path d="M5 12h14M13 6l6 6-6 6"/>',20)}</button></form>
+  <p class="ai-ft">AI อาจผิดพลาดได้ ตรวจก่อนใช้งานจริง${AI.left!=null?` · วันนี้ถามได้อีก ${AI.left} ครั้ง`:''}</p>`;
+  const t2=$('#aiTa');t2.value=keepTxt;if(foc||AI.open&&!AI.busy&&!AI.pend&&!keepTxt)t2.focus({preventScroll:true});const b2=$('#aiBd');if(atEnd)b2.scrollTop=b2.scrollHeight}
+ACT.aiToggle=()=>{AI.open=!AI.open;const p=$('#aiPop');p.hidden=!AI.open;$('#aiFab').setAttribute('aria-expanded',AI.open);
+  if(AI.open&&typeof CH==='object'&&CH.open)ACT.chToggle();draw();if(AI.open){const b=$('#aiBd');if(b)b.scrollTop=b.scrollHeight}};
+// one window at a time: opening the chat closes the assistant
+{const f=ACT.chToggle;if(f)ACT.chToggle=b=>{if(!CH.open&&AI.open){AI.open=false;$('#aiPop').hidden=true;$('#aiFab').setAttribute('aria-expanded',false)}return f(b)}}
+ACT.aiSend=()=>{const t=$('#aiTa');if(!t)return;const v=t.value;t.value='';send(v)};
+ACT.aiHint=b=>send(b.textContent);
+ACT.aiRetry=()=>{AI.err=null;if(AI.msgs.length&&AI.msgs[AI.msgs.length-1].role==='user')run();else draw()};
+ACT.aiNew=()=>{if(AI.busy)return;if(AI.pend)ACT.aiNo({dataset:{id:AI.pend.id}});AI.msgs=[];AI.log=[];AI.err=null;keep();draw()};
+document.addEventListener('keydown',e=>{if(e.target.id!=='aiTa')return;if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ACT.aiSend()}else if(e.key==='Escape'&&AI.open)ACT.aiToggle()});
+document.addEventListener('input',e=>{if(e.target.id!=='aiTa')return;const t=e.target;t.style.height='auto';t.style.height=Math.min(140,t.scrollHeight)+'px'});
+document.addEventListener('submit',e=>{if(e.target.matches('.ai-in')){e.preventDefault();ACT.aiSend()}});
+document.head.insertAdjacentHTML('beforeend',`<style>
+.ai-fab{position:fixed;right:94px;bottom:26px;width:52px;height:52px;border-radius:50%;border:0;background:linear-gradient(135deg,#7c4dff,#2f7f88);color:#fff;display:grid;place-items:center;box-shadow:0 8px 22px rgba(80,40,160,.35);z-index:880;cursor:pointer;transition:transform .15s;padding:0}
+.ai-fab:hover{transform:scale(1.07)}.ai-fab[aria-expanded="true"]{outline:3px solid color-mix(in srgb,#7c4dff 35%,transparent)}
+.ai-fab b{position:absolute;bottom:-4px;right:-4px;background:#fff;color:#5b34d6;border-radius:999px;font-size:10.5px;font-weight:800;padding:1px 5px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.ai-fab.busy svg{animation:aiSpin 1.6s linear infinite}.ai-fab.wait b{background:#f5a524;color:#fff}
+@keyframes aiSpin{to{transform:rotate(360deg)}}
+.ai-pop{position:fixed;right:22px;bottom:94px;width:420px;max-width:calc(100vw - 24px);height:min(680px,calc(100vh - 120px));display:flex;flex-direction:column;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;z-index:890}
+.ai-pop[hidden]{display:none}
+.ai-hd{display:flex;align-items:center;gap:10px;padding:14px 12px 14px 16px;background:linear-gradient(120deg,#5b34d6,#2f7f88);color:#fff;flex:none}
+.ai-hd>div{flex:1;min-width:0;display:grid}.ai-hd b{font-size:17px}.ai-hd small{font-size:12.5px;opacity:.9}
+.ai-av{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);display:grid;place-items:center;flex:none}
+.ai-hb{width:32px;height:32px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font:inherit;cursor:pointer;display:grid;place-items:center;flex:none}
+.ai-bd{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.ai-hi p{margin:0 0 10px;line-height:1.6;font-size:14px}.ai-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ai-chip{border:1px solid color-mix(in srgb,#7c4dff 35%,var(--line));background:color-mix(in srgb,#7c4dff 8%,transparent);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.ai-chip:hover{background:color-mix(in srgb,#7c4dff 16%,transparent)}
+.ai-u{align-self:flex-end;max-width:85%;background:#5b34d6;color:#fff;border-radius:16px 16px 4px 16px;padding:8px 12px;font-size:14px;line-height:1.5;white-space:normal;word-break:break-word}
+.ai-a{align-self:flex-start;max-width:92%;background:var(--sunk);border-radius:16px 16px 16px 4px;padding:9px 12px;font-size:14px;line-height:1.6;word-break:break-word}
+.ai-a ul{margin:4px 0;padding-left:18px}.ai-a code{background:var(--surface);border-radius:4px;padding:0 4px}
+.ai-t{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);padding-left:4px}.ai-t svg{color:#2f9e6e;flex:none}.ai-t.bad svg{color:#e5484d}
+.ai-e{background:color-mix(in srgb,#e5484d 10%,transparent);color:var(--ink);border:1px solid color-mix(in srgb,#e5484d 35%,transparent);border-radius:12px;padding:8px 12px;font-size:13.5px;line-height:1.5}
+.ai-e .btn{margin-top:6px}
+.ai-card{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface);font-size:13.5px}
+.ai-card.wait{border-color:#7c4dff;box-shadow:0 0 0 3px color-mix(in srgb,#7c4dff 14%,transparent)}
+.ai-ct{display:block;font-size:14.5px;margin-bottom:6px}.ai-ch{border-top:1px dashed var(--line);padding:6px 0}
+.ai-ch dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 0}.ai-ch dt{color:var(--muted);font-size:12px}.ai-ch dd{margin:0;white-space:pre-wrap;word-break:break-word}
+.ai-why{display:block;color:var(--muted);margin-top:3px}
+.ai-it{width:100%;border-collapse:collapse;margin-top:6px;font-size:12.5px}.ai-it th,.ai-it td{border-bottom:1px solid var(--line);padding:3px 4px;text-align:left}.ai-it th{color:var(--muted);font-weight:600}
+.ai-note{font-size:12px;color:var(--muted);margin:8px 0 6px}.ai-btns{display:flex;gap:8px}.ai-btns .btn{flex:1}
+.ai-st{margin:6px 0 0;font-size:12.5px;color:var(--muted)}.ai-st.ok{color:#2f9e6e;font-weight:600}
+.ai-dots{display:flex;gap:4px;padding:12px 14px}.ai-dots i{width:7px;height:7px;border-radius:50%;background:#7c4dff;opacity:.4;animation:aiDot 1.2s infinite}.ai-dots i:nth-child(2){animation-delay:.2s}.ai-dots i:nth-child(3){animation-delay:.4s}
+@keyframes aiDot{40%{opacity:1;transform:translateY(-3px)}}
+.ai-in{display:flex;gap:8px;align-items:flex-end;padding:10px 12px 4px;border-top:1px solid var(--line);flex:none}
+.ai-in textarea{flex:1;min-height:40px;max-height:140px;border-radius:20px;padding:9px 14px;resize:none;font:inherit;font-size:14px;line-height:1.45;border:1px solid var(--line);background:var(--sunk);color:var(--ink)}
+.ai-go{width:40px;height:40px;border-radius:50%;border:0;background:#5b34d6;color:#fff;display:grid;place-items:center;cursor:pointer;flex:none}.ai-go:disabled{opacity:.45;cursor:default}
+.ai-ft{margin:0;padding:2px 14px 10px;font-size:11.5px;color:var(--muted);flex:none}
+.pin-lock .ai-fab,.pin-lock .ai-pop{display:none!important}
+@media print{.ai-fab,.ai-pop{display:none!important}}
+@media (max-width:640px){.ai-fab{right:80px;bottom:16px;width:50px;height:50px}.ai-pop{right:8px;left:8px;width:auto;max-width:none;bottom:80px;height:calc(100vh - 96px);height:calc(100dvh - 96px)}}
+</style>`);
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ผู้ช่วย AI':'AI assistant','ยืนยัน':'Confirm','ล้างแชท':'Clear chat'});
+draw();
+window.__penumAI={AI,TOOL,send,run};
 })();
 </script>
