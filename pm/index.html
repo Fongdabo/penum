@@ -408,7 +408,10 @@ const thD=s=>okD(s)?pd(s).toLocaleDateString('th-TH',{day:'numeric',month:'short
 const thDL=s=>okD(s)?pd(s).toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'}):'–';
 const sum=(a,f)=>a.reduce((s,x)=>s+n(f?f(x):x),0);
 // a company can set its own prefix for each kind of document (DB.co.pfx); numbers already issued keep counting either way
+// 3.60 documents that leave the company count across every project, so two projects never both issue INV-001 (RFI, VO, WIR, NCR … stay per project)
+const NO_CO={'INV-':p=>p.bills,'PO-':p=>p.pos,'PR-':p=>p.prs,'DN-':p=>(p.fdoc||{}).dn,'WO-':p=>(p.fdoc||{}).wo,'SC-':p=>(p.fdoc||{}).sc,'HO-':p=>(p.fdoc||{}).ho};
 const nextNo=(pre,list)=>{const px=String(typeof DB!=='undefined'&&DB&&DB.co&&DB.co.pfx&&DB.co.pfx[pre]||'').trim()||pre;
+  if(NO_CO[pre]&&typeof DB!=='undefined'&&DB&&DB.projects)list=list.concat(...Object.values(DB.projects).map(p=>NO_CO[pre](p)||[]));
   return px+pad(list.reduce((m,x)=>{let s=String(x.no||'');s=s.startsWith(px)?s.slice(px.length):s.startsWith(pre)?s.slice(pre.length):s;const k=parseInt(s.replace(/\D+/g,''));return isFinite(k)&&k>m?k:m},0)+1)};
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2600)}
 
@@ -1283,9 +1286,10 @@ function demoProject(o={}){
   p.vos=[{id:uid(),no:'VO-001',date:addD(st,28),desc:'เพิ่มเครื่องปรับอากาศห้อง Server 2 ชุด',type:'add',amt:185000,days:0,status:'ok',rfi:''},{id:uid(),no:'VO-002',date:addD(td,-6),desc:'ลดหัวจ่ายลมโถงชั้น 2 ตามแบบแก้ไข',type:'omit',amt:24000,days:0,status:'pending',rfi:''}];
   p.info.billMode='qty';
   P=p;ACT.instGen.call(null);
-  p.bills=[{id:uid(),no:'INV-001',date:addD(st,3),kind:'adv',qty:{},vo:{},status:'paid',paid:addD(st,18),note:''}];
-  const b1={id:uid(),no:'INV-002',date:addD(st,31),kind:'prog',qty:{},vo:{},status:'paid',paid:addD(st,50),note:''};
-  const b2={id:uid(),no:'INV-003',date:td,kind:'prog',qty:{},vo:{},status:'draft',paid:'',note:''};p.bills.push(b1,b2);
+  // claim numbers run on from the company's other projects (3.60), so a second demo project does not repeat INV-001
+  p.bills=[];p.bills.push({id:uid(),no:nextNo('INV-',p.bills),date:addD(st,3),kind:'adv',qty:{},vo:{},status:'paid',paid:addD(st,18),note:''});
+  const b1={id:uid(),no:nextNo('INV-',p.bills),date:addD(st,31),kind:'prog',qty:{},vo:{},status:'paid',paid:addD(st,50),note:''};p.bills.push(b1);
+  const b2={id:uid(),no:nextNo('INV-',p.bills),date:td,kind:'prog',qty:{},vo:{},status:'draft',paid:'',note:''};p.bills.push(b2);
   ACT.billFill({dataset:{id:b2.id}});b2.vo[p.vos[0].id]=50;
   Object.entries(b2.qty).forEach(([k,v])=>{b1.qty[k]=Math.round(v*55)/100});
   // site, documents, handover
@@ -1315,7 +1319,7 @@ function demoCompany(){const C=DB.co;if(C.customers.length)return C.customers;
   return c}
 ACT.loadDemo=()=>{const fresh=!DB.co.customers.length,c=demoCompany();const p=demoProject({cust:c[0].id});
   if(fresh){const C=DB.co;C.staff.slice(0,6).forEach(s=>s.proj=p.id);const w=monday(today());for(let k=-14;k<0;k++){const d=addD(today(),k);if(pd(d).getDay()===0)continue;C.staff.slice(2,6).forEach((s,i)=>C.ts.push({id:uid(),date:d,staff:s.id,proj:p.id,h:8+((k+i)%4===0?2:0)}))}
-    const pm=C.staff[0];reqSkills(pm).forEach((x,i)=>pm.sk[x.k]=Math.max(1,x.req-(i%5===2?1:0)));const ch=C.staff[3];reqSkills(ch).forEach((x,i)=>ch.sk[x.k]=Math.max(1,x.req-(i%4===1?2:i%3===0?1:0)));pm.kpi=88;pm.beh=90;ch.kpi=78;ch.beh=85;const A=payCfg().allow;pm['a_'+A[1].id]=true;C.staff[1]['a_'+A[0].id]=true;C.staff[2]['a_'+A[3].id]=true}if(Object.keys(DB.projects).length<3){const p2=demoProject({name:'โรงงานสยามฟู้ด อาคารผลิต 1',client:c[1].name,cust:c[1].id,age:150,no:'CT-2026-007',site:'นิคมฯ บางปู สมุทรปราการ'});DB.projects[p2.id]=p2}DB.projects[p.id]=p;DB.cur=p.id;P=p;S.sel={};S.mode='pj';S.tab='dash';save();render();toast('เปิดโครงการตัวอย่างแล้ว ลองกดดูแต่ละแท็บได้เลย')};
+    const pm=C.staff[0];reqSkills(pm).forEach((x,i)=>pm.sk[x.k]=Math.max(1,x.req-(i%5===2?1:0)));const ch=C.staff[3];reqSkills(ch).forEach((x,i)=>ch.sk[x.k]=Math.max(1,x.req-(i%4===1?2:i%3===0?1:0)));pm.kpi=88;pm.beh=90;ch.kpi=78;ch.beh=85;const A=payCfg().allow;pm['a_'+A[1].id]=true;C.staff[1]['a_'+A[0].id]=true;C.staff[2]['a_'+A[3].id]=true}const few=Object.keys(DB.projects).length<3;DB.projects[p.id]=p;if(few){const p2=demoProject({name:'โรงงานสยามฟู้ด อาคารผลิต 1',client:c[1].name,cust:c[1].id,age:150,no:'CT-2026-007',site:'นิคมฯ บางปู สมุทรปราการ'});DB.projects[p2.id]=p2}DB.projects[p.id]=p;DB.cur=p.id;P=p;S.sel={};S.mode='pj';S.tab='dash';save();render();toast('เปิดโครงการตัวอย่างแล้ว ลองกดดูแต่ละแท็บได้เลย')};
 
 
 /* ================= company level ================= */
@@ -7432,6 +7436,41 @@ ACT.demoClearGo=async()=>{const sel=DMX.filter(r=>r.on);if(!sel.length)return;
   if(!DB.projects[DB.cur])DB.cur=Object.keys(DB.projects)[0];P=DB.projects[DB.cur];S.sel={};DMX=[];$('#dlg').close();save(true);render();
   toast(`ล้างข้อมูลตัวอย่างแล้ว ${sel.length} รายการ`)};
 
+/* ---------- 3.60 เลขที่เอกสารไม่ชนกันข้ามโครงการ ----------
+   Claims (INV-), POs, PRs and the project forms (DN/WO/SC/HO) used to count inside one project, so every project started at INV-001.
+   nextNo() now counts them across the company (NO_CO at the top). A number already issued is never changed by itself:
+   one used twice is flagged "เลขซ้ำ" in its list, and claims still in ร่าง get the next free number in one click. */
+const NO_K={bill:'INV-',po:'PO-',pr:'PR-',fddn:'DN-',fdwo:'WO-',fdsc:'SC-',fdho:'HO-'};
+const noKey=s=>String(s||'').trim().toUpperCase();
+function noDups(pre){const g=NO_CO[pre],M=new Map();if(!g)return M;
+  projects().forEach(p=>(g(p)||[]).forEach(d=>{const k=noKey(d.no);if(!k)return;if(!M.has(k))M.set(k,[]);M.get(k).push({p,d})}));
+  for(const [k,v] of [...M])if(v.length<2)M.delete(k);return M}
+// the claim drafts that would get a new number: every draft sharing a number with an issued claim, and all but the earliest of drafts sharing one
+function noFixList(){const L=[];for(const v of noDups('INV-').values()){const dr=v.filter(x=>x.d.status==='draft'),iss=v.length>dr.length;
+  dr.sort((a,b)=>(a.d.date||'').localeCompare(b.d.date||'')||(a.p.info.start||'').localeCompare(b.p.info.start||'')).slice(iss?0:1).forEach(x=>L.push(x))}
+  return L.sort((a,b)=>(a.d.date||'').localeCompare(b.d.date||''))}
+function markDups(h){const ks=Object.keys(NO_K).filter(k=>h.includes(`data-k="${k}"`));if(!ks.length)return h;
+  ks.forEach(k=>{const M=noDups(NO_K[k]);if(!M.size)return;const by=new Map();for(const v of M.values())v.forEach(x=>by.set(x.d.id,v));
+    h=h.replace(new RegExp(`(data-a="sel" data-k="${k}" data-id="([^"]+)"[^>]*>[\\s\\S]*?</button>)`,'g'),(m,a,id)=>{const v=by.get(id);if(!v)return m;
+      const o=v.filter(x=>x.d.id!==id).map(x=>`${x.p.name}${x.p.id===P.id?' (โครงการนี้)':''}`);
+      return a+` <span class="pill warn no-dup" title="${esc('เลขเดียวกับ: '+o.join(', '))}">เลขซ้ำ</span>`})});
+  return h}
+{const f=VIEWS.cost;VIEWS.cost=()=>{let h=markDups(f());if((S.sub.cost||'sum')!=='bill')return h;
+  const M=noDups('INV-'),mine=[...M.values()].filter(v=>v.some(x=>x.p.id===P.id));if(!mine.length)return h;
+  const fix=noFixList(),at=h.indexOf('<div class="tw"><table class="bl-list">');if(at<0)return h;
+  const nb=`<div class="no-warn"><b>เลขที่ใบเบิกงวดซ้ำกับใบอื่น ${mine.length} เลข</b> (${mine.map(v=>esc(v[0].d.no)).join(', ')}) ตั้งแต่รุ่นนี้ใบใหม่จะรันเลขต่อกันทั้งบริษัท ไม่เริ่ม INV-001 ใหม่ทุกโครงการ
+    <br>${fix.length?`ใบที่ยังเป็น <b>ร่าง</b> ${fix.length} ใบ ให้เลขใหม่ได้เลย `:''}ใบที่ส่งเบิกหรือรับเงินแล้วคงเลขเดิมไว้ ถ้าจะแก้ ให้พิมพ์ที่ช่อง “เลขที่” ของใบนั้นแล้วแจ้งลูกค้า
+    ${fix.length?`<div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="noFix">ให้เลขใหม่กับใบร่างที่ซ้ำ (${fix.length} ใบ)</button></div>`:''}</div>`;
+  return h.slice(0,at)+nb+h.slice(at)}}
+{const f=VIEWS.buy;VIEWS.buy=()=>markDups(f())}
+{const f=VIEWS.forms;VIEWS.forms=()=>markDups(f())}
+ACT.noFix=()=>{const L=noFixList();if(!L.length)return;
+  if(!confirm(`เปลี่ยนเลขใบเบิกงวดที่ยังเป็นร่าง ${L.length} ใบ เป็นเลขถัดไปของบริษัท?\n\n${L.map(x=>`${x.p.name}: ${x.d.no}`).join('\n')}`))return;
+  const ch=L.map(x=>{const old=x.d.no;x.d.no=nextNo('INV-',[]);return `<tr><td>${esc(x.p.name)}</td><td>${esc(old)}</td><td><b>${esc(x.d.no)}</b></td></tr>`});
+  save();render();dialog('เปลี่ยนเลขใบร่างแล้ว',`<div class="tw"><table><thead><tr><th>โครงการ</th><th>เลขเดิม</th><th>เลขใหม่</th></tr></thead><tbody>${ch.join('')}</tbody></table></div>`,'')};
+document.head.insertAdjacentHTML('beforeend',`<style>.no-warn{border:1px solid var(--warn-c);background:var(--warn-soft);border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:14px;line-height:1.6}.pill.no-dup{font-size:11px;padding:1px 7px;vertical-align:middle;cursor:help}</style>`);
+Object.assign(SBKW,{'pj.cost.bill':(SBKW['pj.cost.bill']||'')+' เลขซ้ำ เลขที่ชน รันเลข duplicate number'});
+
 /* ---------- start ---------- */
 load();
 if(DEMOPG)demoBoot();
@@ -7538,7 +7577,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.58',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.60',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
