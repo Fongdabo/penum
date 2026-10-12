@@ -2486,17 +2486,32 @@ function instActual(L){const C=contract(),pct=P.info.billMode==='pct',prog=bills
   return L.map(r=>{const m=pct?prog.find(y=>y.b.inst===r.x.id):prog.find(y=>y.run>=r.cumAmt-0.5);return m?{b:m.b,date:m.b.date,paid:m.b.status==='paid'?(m.b.paid||m.b.date):'',rc:billRecv(m.b),net:m.c.net}:null})}
 ACT.instDates=q=>{const s=sched(),span=Math.max(1,(pd(s.fin)-pd(s.st))/864e5);let cum=0,k=0;(P.inst||[]).forEach(x=>{cum+=n(x.pct);if(okD(x.date)||x.task)return;
   let d=s.st;for(let i=0;i<=span+1;i++){d=addD(s.st,i);if(s.planAt(d)>=Math.min(99.9,cum)-0.01)break}x.date=d;k++});save();render();if(q!=='quiet')toast(k?`ตั้งวันตามแผนงานให้ ${k} งวด`:'ทุกงวดมีวันแล้ว')};
-function payChart(R,A){const pts=[],td=today(),bl=billsSorted().filter(b=>(b.kind||'prog')==='prog'&&b.status!=='draft');if(!R.some(r=>r.d))return '';
-  const ds=[...R.map(r=>r.d),...bl.map(b=>b.date),td].filter(okD).sort(),d0=ds[0],d1=ds[ds.length-1],span=Math.max(1,(pd(d1)-pd(d0))/864e5),C=contract(),mx=Math.max(1,C.total,sum(bl,b=>billCalc(b).amt));
-  const wd=900,ht=220,l=70,r=14,t=12,bt=26,X=d=>l+(pd(d)-pd(d0))/864e5/span*(wd-l-r),Y=v=>t+(ht-t-bt)*(1-v/mx);
-  const step=(L)=>{let v=0,s=`M${X(d0).toFixed(1)},${Y(0).toFixed(1)}`;L.forEach(([d,a])=>{s+=`L${X(d).toFixed(1)},${Y(v).toFixed(1)}`;v+=a;s+=`L${X(d).toFixed(1)},${Y(v).toFixed(1)}`});return s+`L${X(d1).toFixed(1)},${Y(v).toFixed(1)}`};
-  const plan=step(R.filter(r=>r.d).sort((a,b)=>a.d.localeCompare(b.d)).map(r=>[r.d,r.amt])),act=step(bl.map(b=>[b.date,billCalc(b).amt])),rc=step(bl.flatMap(b=>{const c=billCalc(b);return c.net?billRcList(b).map(x=>[x.date,c.amt*x.amt/c.net]):[]}).sort((a,b)=>a[0].localeCompare(b[0])));
+function payChart(R,A){const td=today(),bl=billsSorted().filter(b=>(b.kind||'prog')==='prog'&&b.status!=='draft');if(!R.some(r=>r.d))return '';
+  // 3.62: labelled like the S-Curve: each instalment's date and running total, today's planned / billed / received figures, and plain baht on the axis
+  const ds=[...R.map(r=>r.d),...bl.map(b=>b.date),td].filter(okD).sort(),d0=ds[0],d1=ds[ds.length-1],span=Math.max(1,(pd(d1)-pd(d0))/864e5),C=contract(),top=Math.max(1,C.total,sum(bl,b=>billCalc(b).amt));
+  const st0=top/4,mg=10**Math.floor(Math.log10(st0)),stp=[1,2,2.5,5,10].map(k=>k*mg).find(v=>v>=st0),mx=Math.ceil(top/stp-1e-9)*stp;
+  const wd=900,ht=240,l=78,r=14,t=14,bt=26,X=d=>l+(pd(d)-pd(d0))/864e5/span*(wd-l-r),Y=v=>t+(ht-t-bt)*(1-v/mx);
+  const mb=v=>Math.abs(v)>=1e6?`${(v/1e6).toLocaleString('th-TH',{maximumFractionDigits:2})} ล้าน`:fmt(v);
+  const steps=(L,end)=>{let v=0;const o=[[d0,0]];L.forEach(([d,a])=>{if(d>end)return;o.push([d,v]);v+=a;o.push([d,v])});o.push([end,v]);return {o,v}};
+  const end=td<d1?td:d1,PR=R.filter(r=>r.d).sort((a,b)=>a.d.localeCompare(b.d));
+  const PLs=steps(PR.map(r=>[r.d,r.amt]),d1),BI=steps(bl.map(b=>[b.date,billCalc(b).amt]),end),RC=steps(bl.flatMap(b=>{const c=billCalc(b);return c.net?billRcList(b).map(x=>[x.date,c.amt*x.amt/c.net]):[]}).sort((a,b)=>a[0].localeCompare(b[0])),end);
+  const path=o=>o.map(([d,v],i)=>`${i?'L':'M'}${X(d).toFixed(1)},${Y(v).toFixed(1)}`).join(''),planNow=sum(PR.filter(r=>r.d<=td),r=>r.amt);
   const mons=[];let m=pd(d0.slice(0,7)+'-01');while(iso(m)<=d1){if(iso(m)>=d0)mons.push(iso(m));m.setMonth(m.getMonth()+1)}
-  return `<svg class="chart" viewBox="0 0 ${wd} ${ht}" role="img" aria-label="แผนงวดเงินเทียบเบิกจริง">${[0,.25,.5,.75,1].map(f=>`<line x1="${l}" x2="${wd-r}" y1="${Y(mx*f)}" y2="${Y(mx*f)}" stroke="var(--line)"/><text x="${l-6}" y="${Y(mx*f)+4}" text-anchor="end" font-size="10.5" fill="var(--muted)">${fmt(mx*f/1e6,1)} ล.</text>`).join('')}
-  ${mons.filter((_,i)=>mons.length<=14||i%2===0).map(d=>`<text x="${X(d)}" y="${ht-8}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${thM(d.slice(0,7))}</text>`).join('')}
-  <line x1="${X(td)}" x2="${X(td)}" y1="${t}" y2="${ht-bt}" stroke="var(--warn-c)" stroke-dasharray="4 3"/>
-  <path d="${plan}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 4"/><path d="${act}" fill="none" stroke="var(--accent)" stroke-width="2.5"/><path d="${rc}" fill="none" stroke="var(--good)" stroke-width="2.5"/></svg>
-  <div class="legend"><span><i style="background:var(--muted)"></i>ตามแผนงวดเงิน</span><span><i style="background:var(--accent)"></i>เบิกจริงสะสม</span><span><i style="background:var(--good)"></i>รับเงินแล้วสะสม</span><span>เส้นประสีส้ม = วันนี้</span></div>`}
+  const grid=Array.from({length:Math.round(mx/stp)+1},(_,i)=>i*stp).map(v=>`<line x1="${l}" x2="${wd-r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l-6}" y="${Y(v)+4}" text-anchor="end" font-size="10.5" fill="var(--muted)">${mb(v)}</text>`).join('');
+  const inT=td>=d0&&td<=d1,tx=inT?`<line x1="${X(td)}" x2="${X(td)}" y1="${t}" y2="${ht-bt}" stroke="var(--danger)" stroke-dasharray="4 3"/><text x="${X(td)+(X(td)+36>wd-r?-4:4)}" y="${t+10}" font-size="11" text-anchor="${X(td)+36>wd-r?'end':'start'}" fill="var(--danger)">วันนี้</text>`:'';
+  let cum=0;const dots=PR.map(x=>{cum+=x.amt;return {x,cum}});
+  const LB=[],lab=(x,y,tt,col,o={})=>LB.push(Object.assign({x,y,t:tt,col,fs:11,w:600},o));
+  if(inT){lab(X(td),Y(planNow),`ควรเบิกถึงวันนี้ ${mb(planNow)}`,'var(--muted)',{pri:2});if(bl.length){lab(X(end),Y(BI.v),`เบิกแล้ว ${mb(BI.v)}`,'var(--accent)',{pri:2});if(Math.abs(BI.v-RC.v)>0.5)lab(X(end),Y(RC.v),`รับแล้ว ${mb(RC.v)}`,'var(--good)',{pri:2})}}
+  dots.forEach(({x,cum})=>lab(X(x.d),Y(cum),`งวด ${x.x.no} · ${thD(x.d).replace(/ \d+$/,'')} · ${mb(cum)}`,'var(--muted)',{fs:10.5,w:500,side:'l'}));
+  const SG=[],xy=o=>o.map(([d,v])=>[X(d),Y(v)]);chartSeg(SG,xy(PLs.o));if(bl.length){chartSeg(SG,xy(BI.o));chartSeg(SG,xy(RC.o))}
+  const box=inT?[[X(td)+36>wd-r?X(td)-34:X(td)+2,t-2,32,15]]:[],labels=chartLabels(LB,SG,box,{wd,ht,L:l,T:t,B:bt});
+  const gap=planNow-BI.v,wait=BI.v-RC.v;
+  return `<svg class="chart" viewBox="0 0 ${wd} ${ht}" role="img" aria-label="แผนงวดเงินเทียบเบิกจริง">${grid}
+  ${mons.filter((_,i)=>mons.length<=14||i%2===0).map(d=>`<text x="${X(d)}" y="${ht-8}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${thM(d.slice(0,7))}</text>`).join('')}${tx}
+  <path d="${path(PLs.o)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 4"/>${dots.map(({x,cum})=>`<circle cx="${X(x.d)}" cy="${Y(cum)}" r="3.5" fill="var(--surface)" stroke="var(--muted)" stroke-width="1.5"><title>งวด ${esc(x.x.no)} · ${thD(x.d)} · ${fmt(x.amt)} บาท (สะสม ${fmt(cum)})</title></circle>`).join('')}
+  ${bl.length?`<path d="${path(BI.o)}" fill="none" stroke="var(--accent)" stroke-width="2.5"/><path d="${path(RC.o)}" fill="none" stroke="var(--good)" stroke-width="2.5"/>`:''}${labels}</svg>
+  <div class="legend"><span><i style="background:var(--muted)"></i>ตามแผนงวดเงิน (สะสม)</span><span><i style="background:var(--accent)"></i>เบิกจริงสะสม ${fmt(BI.v)} บาท</span><span><i style="background:var(--good)"></i>รับเงินแล้วสะสม ${fmt(RC.v)} บาท</span>
+  ${inT?`<span style="color:${gap>0.5?'var(--danger)':'var(--good)'}">${gap>0.5?`เบิกช้ากว่าแผน ${fmt(gap)} บาท`:'เบิกตามแผนหรือเร็วกว่า'}</span>`:''}${wait>0.5?`<span>รอรับเงิน ${fmt(wait)} บาท</span>`:''}<span class="muted">เส้นประสีแดง = วันนี้ ${thD(td)} · ยอดไม่รวม VAT</span></div>`}
 function costPlan(){P.inst=P.inst||[];const R=instPlan(),A=instActual(R),C=contract(),td=today(),tp=sum(P.inst,x=>x.pct),s=sched();
   const late=R.filter((r,i)=>!A[i]&&r.d&&r.d<td),next=R.find((r,i)=>!A[i]&&r.d&&r.d>=td);
   const billed=sum(billsSorted().filter(b=>(b.kind||'prog')==='prog'&&b.status!=='draft'),b=>billCalc(b).amt),planNow=sum(R.filter(r=>r.d&&r.d<=td),r=>r.amt);
@@ -2545,6 +2560,19 @@ VIEWS.cost=()=>{const {cur,html}=subTabs('cost',[['sum','สรุปงบป�
 {const f=ACT.loadDemo;ACT.loadDemo=b=>{const r=f(b);CO().quotes.forEach(Q=>{qEnsure(Q);if(!Q.sow.length)sowFill(Q,sowDetect(Q));if(!Q.qpay.length)Q.qpay=PAYSTD.map(([d,p],i)=>({id:uid(),no:String(i+1),desc:d,pct:p}))});
   const keep=P;projects().forEach(p=>{if(!(p.inst||[]).length||!p.tasks.length)return;P=p;ACT.instDates('quiet')});P=keep;save();render();return r}}
 
+/* 3.62: chart labels placed so they overlap neither each other nor any chart line; each sits on a small card */
+function chartSeg(SG,o){for(let i=1;i<o.length;i++)SG.push([o[i-1][0],o[i-1][1],o[i][0],o[i][1]])}
+function chartLabels(LB,SG,box,{wd,ht,L,T,B}){const tw=(t,fs)=>t.replace(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g,'').length*fs*0.5+6;LB.sort((p,q)=>(q.pri||0)-(p.pri||0));
+  const onLine=(x1,y1,w,h)=>SG.some(([ax,ay,bx,by])=>{if(Math.max(ax,bx)<x1||Math.min(ax,bx)>x1+w||Math.max(ay,by)<y1||Math.min(ay,by)>y1+h)return false;
+    const n=Math.max(2,Math.ceil(Math.hypot(bx-ax,by-ay)/2));for(let k=0;k<=n;k++){const x=ax+(bx-ax)*k/n,y=ay+(by-ay)*k/n;if(x>=x1&&x<=x1+w&&y>=y1&&y<=y1+h)return true}return false});
+  const hit=(x1,y1,w,h)=>box.some(([a1,b1,w1,h1])=>x1<a1+w1&&a1<x1+w&&y1<b1+h1&&b1<y1+h);
+  const LN=[],TX=LB.map(l=>{const w=tw(l.t,l.fs),h=l.fs+7,DY=[];for(let k=0;k<9;k++){const u=k*14;DY.push(...(l.dn?[u+14,-u-10]:[-u-8,u+10]))}
+    const fitR=l.x+8+w<wd-2,pref=l.side!=='l'&&fitR,sides=[pref,...((pref?l.x-6-w>=L+2:fitR)?[!pref]:[])];
+    const xs=r=>r?l.x+6:Math.max(L+2,l.x-6-w),cand=[];for(const dy of DY)for(const r of sides)cand.push([r,Math.max(T,Math.min(ht-B-h,l.y+dy-h/2)),Math.abs(dy)]);
+    const [right,best]=cand.find(([r,yb,dd])=>dd<=40&&!hit(xs(r),yb,w,h)&&!onLine(xs(r),yb,w,h))||cand.find(([r,yb])=>!hit(xs(r),yb,w,h))||[sides[0],Math.max(T,l.y-6-h/2)],x0=xs(right);
+    box.push([x0,best,w,h]);const ty=best+h-4,far=Math.abs(best+h/2-l.y)>12||Math.abs((right?x0:x0+w)-l.x)>10;
+    if(far)LN.push(`<line x1="${l.x}" y1="${l.y}" x2="${right?x0:x0+w}" y2="${best+h/2}" stroke="${l.col}" stroke-width=".8" opacity=".7"/>`);
+    return `<rect x="${x0-1}" y="${best}" width="${w+2}" height="${h}" rx="3" fill="var(--surface)" opacity=".82"/><text x="${right?x0+2:x0+w-2}" y="${ty}" text-anchor="${right?'start':'end'}" font-size="${l.fs}" font-weight="${l.w}" fill="${l.col}" stroke="var(--surface)" stroke-width="2" paint-order="stroke" stroke-linejoin="round">${esc(l.t)}</text>`});return LN.join('')+TX.join('')}
 /* ---------- round 2.3: S-curve also shows money: instalment plan, billed and received ---------- */
 function scurve(wd=760,ht=260){
   const s=sched();if(!P.tasks.length)return '<p class="empty">ยังไม่มีแผนงาน</p>';
@@ -2576,12 +2604,10 @@ function scurve(wd=760,ht=260){
   lab(X(s.fin),Y(100),`แผนเสร็จ ${thD(s.fin)}`,'var(--plan)',{fs:10,w:500,side:'l',dn:1});
   if(bl.length){const same=Math.abs(BI.v-RC.v)<0.05;lab(X(end),Y(BI.v),same?`ตั้งเบิก/รับเงิน ${fmt(BI.v,1)}%`:`ตั้งเบิก ${fmt(BI.v,1)}%`,'var(--warn-c)',{fs:10.5});if(!same)lab(X(end),Y(RC.v),`รับเงิน ${fmt(RC.v,1)}%`,'var(--good)',{fs:10.5})}
   R.forEach(r=>lab(X(r.d),Y(P_(r.cumAmt)),`งวด ${r.x.no} · ${fmt(P_(r.cumAmt),0)}% · ${thD(r.d).replace(/ \d+$/,'')}`,'var(--muted)',{fs:9.5,w:500,side:'l'}));
-  LB.sort((p,q)=>(q.pri||0)-(p.pri||0));
-  const hit=(x1,y1,w,h)=>box.some(([a1,b1,w1,h1])=>x1<a1+w1&&a1<x1+w&&y1<b1+h1&&b1<y1+h);
-  const labels=LB.map(l=>{const w=tw(l.t,l.fs),h=l.fs+7,right=l.side!=='l'&&l.x+8+w<wd-2,x0=right?l.x+6:Math.max(L+2,l.x-6-w);
-    let best=null;for(const dy of (l.dn?[14,-10,28,-24,42]:[-8,10,-22,24,-36,38,-50,52])){const yb=Math.max(T,Math.min(ht-B-h,l.y+dy-h/2));if(!hit(x0,yb,w,h)){best=yb;break}}if(best==null)best=Math.max(T,l.y-6-h/2);
-    box.push([x0,best,w,h]);const ty=best+h-4,far=Math.abs(best+h/2-l.y)>12;
-    return `${far?`<line x1="${l.x}" y1="${l.y}" x2="${right?x0:x0+w}" y2="${best+h/2}" stroke="${l.col}" stroke-width=".8" opacity=".7"/>`:''}<text x="${right?x0+2:x0+w-2}" y="${ty}" text-anchor="${right?'start':'end'}" font-size="${l.fs}" font-weight="${l.w}" fill="${l.col}" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">${esc(l.t)}</text>`}).join('');
+  // 3.62: labels also keep clear of the chart lines
+  const SG=[],xy=o=>o.map(([d,v])=>[X(d),Y(v)]);chartSeg(SG,pts.map(d=>[X(d),Y(s.planAt(d))]));chartSeg(SG,xy(ah));if(bl.length){chartSeg(SG,xy(BI.o));chartSeg(SG,xy(RC.o))}if(PL)chartSeg(SG,xy(PL.o));
+  if(tx)box.push([X(td)+2,T-2,tw('วันนี้',11),15]);
+  const labels=chartLabels(LB,SG,box,{wd,ht,L,T,B});
   return `<svg class="chart" viewBox="0 0 ${wd} ${ht}" role="img" aria-label="กราฟ S-Curve ความคืบหน้างานเทียบเงินที่เบิกและรับ">${grid}${mx}${tx}${area}
     ${PL?`<path d="${path(PL.o)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="6 4"/>${dots}`:''}
     <path d="${plan}" fill="none" stroke="var(--plan)" stroke-width="2.5"/><path d="${act}" fill="none" stroke="var(--act)" stroke-width="3"/>
@@ -2591,6 +2617,12 @@ function scurve(wd=760,ht=260){
     ${PL?`<span><i style="background:var(--muted)"></i>แผนงวดเงิน (เส้นประ)</span>`:''}<span><i style="background:var(--warn-c)"></i>ตั้งเบิกแล้ว ${fmt(BI.v,1)}%</span><span><i style="background:var(--good)"></i>รับเงินแล้ว ${fmt(RC.v,1)}%</span>
     ${wait>0.05?`<span><i style="background:var(--warn-c);opacity:.35"></i>ตั้งเบิกแล้วรอรับเงิน ${fmt(wait*tot/100)} บาท</span>`:''}<span class="muted">เงินคิดเป็น % ของมูลค่าสัญญา ไม่รวม VAT</span></div>`;
 }
+
+/* 3.62: printed charts always use light-theme colours, so a PDF made from the dark theme
+   doesn't get dark halos behind chart labels (S-Curve) or dark grid lines on white paper */
+document.head.insertAdjacentHTML('beforeend',`<style>@media print{#print,#print *{--surface:#FFFFFF;--sunk:#F5F9FC;--ink:#102A3A;--muted:#567080;--line:#D5DEE5;--line-2:#EBF2F7;
+ --plan:#64748B;--act:#0891B2;--crit:#EA580C;--base:#CBD8E1;--good:#059669;--warn-c:#B45309;--danger:#DC2626;color-scheme:light}
+ #print svg.chart{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`);
 
 /* ---------- round 2.4: every company form can be filled, numbered, saved and printed in the app ---------- */
 DOC_EN.unshift([/ใบส่งของ/,'DELIVERY NOTE'],[/ใบสั่งงาน/,'WORK ORDER'],[/สัญญาจ้าง/,'SUBCONTRACT AGREEMENT'],[/ใบส่งมอบงาน/,'HANDOVER CERTIFICATE'],[/ใบวางบิล/,'BILLING NOTE'],[/ใบลา/,'LEAVE REQUEST'],[/โครงสร้างเงินเดือน/,'SALARY STRUCTURE'],[/ผลประเมินประจำปี/,'ANNUAL PERFORMANCE REVIEW'],[/แผนพัฒนา/,'INDIVIDUAL DEVELOPMENT PLAN']);
@@ -7696,7 +7728,7 @@ window.penumFB={init(o){Object.assign(C,o||{})},
 </script>
 <!-- PENUM-FB:end -->
 <script>// 3.58 the feedback box: เมนู › แจ้งปัญหา / ความคิดเห็น (shared code above, from tools/feedback.js)
-penumFB.init({app:'PM',name:'PENUM PM',ver:'3.61',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
+penumFB.init({app:'PM',name:'PENUM PM',ver:'3.62',sfx:DSFX,info:()=>{const p=licP();return {company:(CO()||{}).name||'',lic:p?String(p.id||''):'',page:(($('#crumb')||{}).textContent||'').trim()}}});
 ACT.fb=()=>penumFB.open();
 {const m=document.querySelector('#moreMenu .menu hr');if(m)m.insertAdjacentHTML('beforebegin','<button type="button" data-a="fb">แจ้งปัญหา / ความคิดเห็น</button>')}
 </script>
