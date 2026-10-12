@@ -7327,11 +7327,15 @@ async function sbList(dir,search){const out=[];for(let off=0;;off+=1000){
     if(!r.ok)throw new Error('อ่านข้อมูลบนคลาวด์ไม่ได้ ('+r.status+')');const L=await r.json();out.push(...L);if(L.length<1000)return out}}
 const SBC=new Map(); // path → {m: mtime, t: text}: download a file only when it changed
 async function sbStat(path){const i=path.lastIndexOf('/'),dir=path.slice(0,i),nm=path.slice(i+1);const it=(await sbList(dir,nm)).find(x=>x.name===nm&&x.id);return it?Date.parse(it.updated_at||it.created_at)||1:0}
-function SBF(path,name,meta){return {kind:'file',name,
+let SBVQ=true;const SBSTALE=new Set(); // 3.70.9: paths whose last download looked like an old copy; the next one asks past any cache
+function SBF(path,name,meta){return {kind:'file',name,path,
   async getFile(){const m=meta?Date.parse(meta.updated_at||meta.created_at)||1:await sbStat(path);meta=null;if(!m)throw new DOMException('ไม่มีไฟล์','NotFoundError');
-    return {lastModified:m,async text(){const c=SBC.get(path);if(c&&c.m===m)return c.t;const r=await sbReq('/storage/v1/object/authenticated/pm/'+sbEnc(path));if(!r.ok)throw new Error('ดาวน์โหลดจากคลาวด์ไม่ได้ ('+r.status+')');const t=await r.text();SBC.set(path,{m,t});return t}}},
+    return {lastModified:m,async text(){const c=SBC.get(path);if(c&&c.m===m)return c.t;const u='/storage/v1/object/authenticated/pm/'+sbEnc(path);let r=null;
+      // the file's time goes into the address, so a cache between here and the cloud can never hand back an older version
+      // (3.70.9: users saw a teammate's chat file stuck at an old copy for many minutes); if the cloud refuses it, the plain address
+      if(SBVQ){const v=SBSTALE.has(path)?Date.now():m;SBSTALE.delete(path);r=await sbReq(u+'?v='+v).catch(()=>null);if(r&&!r.ok){if(r.status===400)SBVQ=false;r=null}}if(!r)r=await sbReq(u);if(!r.ok)throw new Error('ดาวน์โหลดจากคลาวด์ไม่ได้ ('+r.status+')');const t=await r.text();SBC.set(path,{m,t});return t}}},
   async createWritable(){let buf='';return {async write(x){buf+=typeof x==='string'?x:await new Blob([x]).text()},
-    async close(){const r=await sbReq('/storage/v1/object/pm/'+sbEnc(path),{method:'POST',headers:{'x-upsert':'true','Content-Type':path.endsWith('.json')?'application/json':'text/plain'},body:buf});
+    async close(){const r=await sbReq('/storage/v1/object/pm/'+sbEnc(path),{method:'POST',headers:{'x-upsert':'true','cache-control':'no-cache','Content-Type':path.endsWith('.json')?'application/json':'text/plain'},body:buf});
       if(!r.ok)throw new Error(r.status===413?'ไฟล์ใหญ่เกินที่คลาวด์รับได้':'บันทึกขึ้นคลาวด์ไม่ได้ ('+r.status+')');const m=await sbStat(path);SBC.set(path,{m,t:buf});
       if(m)meta={updated_at:new Date(m).toISOString()}}}}}} // the getFile() right after a write (fWrite) needs no second look-up
 function SBD(cid,sub=''){const base=cid+(sub?'/'+sub:'');return {kind:'directory',_sb:1,name:sub?sub.split('/').pop():'คลาวด์ PENUM',
@@ -8101,7 +8105,7 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'คว�
 const CHK='penum.pm.chat'+DSFX,CHDK='penum.pm.chatDev'+DSFX;
 let CHDEV='';try{CHDEV=localStorage.getItem(CHDK)||''}catch(e){}
 if(!CHDEV){CHDEV=Math.random().toString(36).slice(2,8);try{localStorage.setItem(CHDK,CHDEV)}catch(e){}}
-const CH={F:{},mt:{},dirty:new Set(),phq:new Set(),open:false,view:'list',room:'',q:'',att:null,last:0,busy:false,err:'',months:new Set(),oldM:0,oldAt:0,allAt:0,pend:false};
+const CH={F:{},mt:{},dirty:new Set(),phq:new Set(),open:false,view:'list',room:'',q:'',att:null,last:0,busy:false,err:'',months:new Set(),oldM:0,oldAt:0,allAt:0,pend:false,stl:{}};
 {try{const J=JSON.parse(localStorage.getItem(CHK)||'{}');Object.assign(CH.F,J.own||{});(J.dirty||[]).forEach(p=>CH.dirty.add(p));(J.phq||[]).forEach(p=>CH.phq.add(p))}catch(e){}}
 const chMonth=at=>String(at).slice(0,7);
 // the file name is <person>_<device>.json: PENUM cloud (Supabase storage) refuses "~" in a name, which 3.68–3.69.1 used,
@@ -8271,7 +8275,7 @@ function chAttHtml(u){const p=DB.projects[CH.attP]||P,G=[['bills','ใบเบ�
 /* moving messages: write my own files, read everyone's. 3.70.5: every 2 s while the window is open, every 15 s while it
    is closed (was 4 s / 45 s). The quick rounds read only this month's folder (one listing); earlier months once a minute. */
 async function chPush(){if(!CH.dirty.size&&!CH.phq.size)return;const d=await chDir();if(!d)return;const sent=CH.dirty.size;
-  for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');
+  for(const p of [...CH.dirty]){const f=CH.F[p];if(!f){CH.dirty.delete(p);continue}const [m,nm]=p.split('/');f.w=Math.max(Date.now(),(f.w||0)+1);
     const md=await d.getDirectoryHandle(m,{create:true});CH.mt[p]=await fWrite(md,nm,JSON.stringify(f));CH.dirty.delete(p)}
   if(CH.phq.size){const pd=await d.getDirectoryHandle('ph',{create:true});for(const k of [...CH.phq]){const v=await IDB.get(k).catch(()=>null);if(v)await fWrite(pd,k+'.txt',v);CH.phq.delete(k)}}
   chKeep();if(sent)rtSend('broadcast',{type:'broadcast',event:'chat',payload:{u:cmMe(),dev:CHDEV}})}
@@ -8280,7 +8284,9 @@ async function chPull(){const d=await chDir();if(!d)return false;let ch=false;
   const all=Date.now()-CH.allAt>6e4;if(all)CH.allAt=Date.now();
   for(const m of CH.months){if(!all&&m!==cur)continue;let md;try{md=await d.getDirectoryHandle(m)}catch(e){continue}
     for await(const [nm,eh] of md.entries()){if(eh.kind!=='file'||!nm.endsWith('.json'))continue;const p=m+'/'+nm;
-      try{const f=await eh.getFile();if(CH.mt[p]===f.lastModified)continue;const J=JSON.parse(await f.text());CH.mt[p]=f.lastModified;
+      try{const f=await eh.getFile();if(CH.mt[p]===f.lastModified)continue;const J=JSON.parse(await f.text()),o=CH.F[p];
+        // each write stamps w; a file under a newer time that is not newer inside is an old copy (a cache on the way): read it again past the cache
+        if(o&&o.w&&!(J.w>o.w)&&!chMine(p)){const k=p+'@'+f.lastModified;CH.stl[k]=(CH.stl[k]||0)+1;if(CH.stl[k]<4){if(eh.path){SBSTALE.add(eh.path);SBC.delete(eh.path)}continue}}CH.mt[p]=f.lastModified;
         if(chMine(p)){const o=CH.F[p];if(o){const have=new Set(o.msgs.map(x=>x.id));(J.msgs||[]).forEach(x=>{if(!have.has(x.id)){o.msgs.push(x);ch=true}});
             for(const [r,v] of Object.entries(J.rd||{}))if(!o.rd[r]||o.rd[r]<v)o.rd[r]=v}else{CH.F[p]=J;ch=true}}
         else{if(JSON.stringify(CH.F[p])!==JSON.stringify(J)){CH.F[p]=J;ch=true}}}catch(e){}}}
@@ -8291,7 +8297,9 @@ let chPT=0;const chPushSoon=()=>{clearTimeout(chPT);chPT=setTimeout(()=>chSync(t
 async function chSync(force){if(CH.busy){if(force)CH.again=true;return}if(document.hidden&&!force)return;const due=CH.open?2000:15000;if(!force&&Date.now()-CH.last<due)return;
   CH.busy=true;CH.last=Date.now();let ch=false;const had=CH.dirty.size;
   try{if(chShared()&&FS.state!=='perm'&&!await chDir())throw new Error(CH.dirErr||'เปิดที่เก็บข้อมูลไม่ได้');
-    await chPush();ch=await chPull()||had>0&&!CH.dirty.size;CH.err='';if(chShared())CH.okAt=Date.now()}catch(e){console.warn('chat sync',e);CH.err=navigator.onLine?'รับส่งข้อความไม่ได้ จะลองใหม่อัตโนมัติ'+(e&&e.message?` (${String(e.message).slice(0,80)})`:''):'ออฟไลน์ ข้อความจะส่งเมื่อมีอินเทอร์เน็ต'}
+    let wd;const stuck=new Promise((_,no)=>{wd=setTimeout(()=>no(new Error('คลาวด์ตอบช้า')),25000)});
+    try{ch=await Promise.race([(async()=>{await chPush();return await chPull()})(),stuck])||had>0&&!CH.dirty.size}finally{clearTimeout(wd)}
+    CH.err='';if(chShared())CH.okAt=Date.now()}catch(e){console.warn('chat sync',e);CH.err=navigator.onLine?'รับส่งข้อความไม่ได้ จะลองใหม่อัตโนมัติ'+(e&&e.message?` (${String(e.message).slice(0,80)})`:''):'ออฟไลน์ ข้อความจะส่งเมื่อมีอินเทอร์เน็ต'}
   finally{CH.busy=false}
   if(ch||CH.pend){chBadge();chDraw()}else if(CH.open&&CH.err)chDraw();
   if(ch||!CHNS)chNotify();
@@ -8341,10 +8349,10 @@ async function rtOpen(){RT.t=0;if(RT.ws||!sbOn()||document.hidden||typeof WebSoc
   w.onopen=()=>{RT.jr=String(++RT.ref);w.send(JSON.stringify({topic,event:'phx_join',payload:{config:{broadcast:{self:false,ack:false},presence:{key:'',enabled:false},postgres_changes:[],private:false},access_token:tok},ref:RT.jr,join_ref:RT.jr}));
     clearInterval(RT.hb);RT.hb=setInterval(()=>{if(w.readyState===1)w.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:String(++RT.ref)}))},25000)};
   w.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(x){return}if(!m||m.topic!==topic)return;
-    if(m.event==='phx_reply'&&m.ref===RT.jr){if(m.payload&&m.payload.status==='ok'){RT.ok=true;RT.try=0;chSync(true)}else w.close();return}
+    if(m.event==='phx_reply'&&m.ref===RT.jr){if(m.payload&&m.payload.status==='ok'){RT.ok=true;RT.try=0;RT.why='';chSync(true)}else{RT.why='คลาวด์ไม่รับ: '+String((m.payload&&m.payload.response&&(m.payload.response.reason||JSON.stringify(m.payload.response)))||'').slice(0,80);w.close()}return}
     if(m.event==='broadcast'&&m.payload&&m.payload.event==='chat'){const p=m.payload.payload||{};if(p.dev===CHDEV)return;RT.got=Date.now();chSync(true);return}
     if(m.event==='phx_error'||m.event==='phx_close')w.close()};
-  w.onclose=w.onerror=()=>{if(RT.ws!==w)return;RT.ws=null;RT.ok=false;clearInterval(RT.hb);try{w.close()}catch(x){}rtRetry()}}
+  w.onclose=w.onerror=e=>{if(RT.ws!==w)return;if(!RT.ok&&!RT.why)RT.why='ต่อไม่ได้'+(e&&e.code?' ('+e.code+')':'');RT.ws=null;RT.ok=false;clearInterval(RT.hb);try{w.close()}catch(x){}rtRetry()}}
 function rtRetry(){clearTimeout(RT.t);RT.t=setTimeout(rtOpen,Math.min(60000,2000*2**RT.try++))}
 setInterval(()=>{if(!RT.ws&&!RT.t&&sbOn()&&!document.hidden)rtOpen()},5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!RT.ws&&sbOn()){clearTimeout(RT.t);RT.try=0;rtOpen()}});
@@ -8359,7 +8367,7 @@ function chNetHtml(u){const where=sbOn()?'คลาวด์ PENUM':folderOn()?'
   const row=(k,v)=>`<div class="ch-nr"><span>${k}</span><b>${v}</b></div>`;
   return `<header class="ch-rh"><button type="button" class="ch-bk" data-a="chBack" aria-label="กลับไปรายการห้อง">‹</button><span class="ch-di ch-apic" aria-hidden="true">ⓘ</span><div><b>การเชื่อมต่อแชท</b><small>ให้ทุกเครื่องตรวจหน้านี้แล้วเทียบกัน</small></div><button type="button" class="ch-x" data-a="chClose" aria-label="ปิดแชท">✕</button></header>
   <div class="ch-bd">${chNote()}<div class="ch-net">${row('บริษัท',esc(CO().name||''))}${row('ที่เก็บข้อความ',esc(where))}${row('คุณคือ',esc(cmName(u)))}${row('รหัสเครื่องนี้',esc(CHDEV))}
-    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}${sbOn()?row('ส่งถึงทันที',RT.ok?'เชื่อมต่อแล้ว ✓':'ยังไม่เชื่อมต่อ <small>(เช็คเป็นรอบแทน)</small>'):''}</div>
+    ${row('รับส่งได้ล่าสุด',CH.okAt?esc(chHM(new Date(CH.okAt).toISOString())):'ยังไม่เคย')}${sbOn()?row('ส่งถึงทันที',RT.ok?'เชื่อมต่อแล้ว ✓':'ยังไม่เชื่อมต่อ <small>(เช็คเป็นรอบแทน'+(RT.why?' · '+esc(RT.why):'')+')</small>'):''}</div>
     ${u==='admin'&&P.admin&&P.admin.d.size>1?'<p class="ch-warn">มีมากกว่า 1 เครื่องที่เข้าเป็นผู้ดูแลระบบ ในแชททุกเครื่องนี้คือคนเดียวกัน ถ้าอีกเครื่องเป็นของคนอื่น ข้อความจะขึ้นเป็นของตัวเองและไม่มีแจ้งเตือน ให้คนอื่นเข้าระบบด้วยชื่อของตัวเอง</p>':''}
     <button type="button" class="btn" data-a="chNetRun"${N.run?' disabled':''}>${N.run?'กำลังตรวจ…':'ตรวจตอนนี้'}</button>
     ${N.at&&!N.run?`<p class="${N.ok?'ch-ok':'ch-warn'}">${N.ok?`✓ ส่งขึ้นและอ่านกลับได้ (${esc(chHM(N.at))}) พบไฟล์แชท ${N.n} ไฟล์ในเดือนนี้`:'✕ '+esc(N.msg||'ตรวจไม่ผ่าน')}</p>`:''}
