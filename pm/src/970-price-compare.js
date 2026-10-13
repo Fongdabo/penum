@@ -4,7 +4,7 @@
    (x.pin: a picked price is not replaced by later imports, which only add prices to compare). The value compared is the
    material price, or the labour price for a source that only gives labour (กรมบัญชีกลาง). */
 Object.assign(PL_SK,{sup:['ใบเสนอราคาผู้ขาย','ok'],dealer:['ผู้แทนจำหน่าย','ok'],bb:['สำนักงบประมาณ','info'],cgd:['กรมบัญชีกลาง','info'],egp:['e-GP','info'],shop:['ร้านออนไลน์','']});
-const PL_ORD=['moc','bb','cgd','egp','dealer','sup','po','shop','mep','td','xls','file','hand','demo'];
+const PL_ORD=['moc','bb','cgd','egp','dealer','sup','po','shop','mep','td','qt','xls','file','hand','demo'];
 function plOffs(x){const O=Object.entries(x.o||{}).map(([k,v])=>Object.assign({k},v));
   return O.length?O:[{k:plOK(x.sk,x.src),s:x.sk||'hand',src:x.src||'',m:n(x.m),l:n(x.l),d:x.date||''}]}
 const plOV=o=>n(o.m)>0?n(o.m):n(o.l);

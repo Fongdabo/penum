@@ -70,20 +70,23 @@ function tdLibMatch(t,i){const o=(t.plx||{})[i.id];if(o==='none')return null;con
   const u=plKey(i.unit||''),b=plKey(i.br||''),C=[...(I.ix.get(plKey(itemName(i)))||[]),...(I.ix.get(plKey(i.desc))||[])].filter(x=>!u||!x.unit||plKey(x.unit)===u);
   const x=C.find(z=>plKey(z.br||'')===b)||(!b&&C[0]);if(x)return {x,s:1};
   const c=tdLibCands(i)[0];return c&&c.s>=.5?c:null}
-ACT.tdLib=b=>{const t=tdById(b.dataset.id);if(!t)return;const only=b.dataset.i;let k=0;
+// the same card serves a quotation (ใบเสนอราคา, private jobs): its buttons and selects carry data-tk="q"
+const tdLibJob=b=>b.dataset.tk==='q'?CO().quotes.find(q=>q.id===b.dataset.id):tdById(b.dataset.id);
+ACT.tdLib=b=>{const t=tdLibJob(b),q=b.dataset.tk==='q';if(!t)return;// a quotation prices from the line total (i.t), so it follows the new cost
+  const only=b.dataset.i;let k=0;
   t.items.forEach(i=>{if(only&&i.id!==only)return;if(!only&&!$(`#tlc-${i.id}`)?.checked)return;const m=tdLibMatch(t,i);if(!m)return;
-    if(n(m.x.m)>0)i.m=n(m.x.m);if(n(m.x.l)>0)i.l=n(m.x.l);if(m.x.br)i.br=m.x.br;i.mSrc=`คลังราคา · ${m.x.src||''}`;k++});
+    if(n(m.x.m)>0)i.m=n(m.x.m);if(n(m.x.l)>0)i.l=n(m.x.l);if(m.x.br)i.br=m.x.br;i.mSrc=`คลังราคา · ${m.x.src||''}`;if(q)i.t=n(i.q)*(n(i.m)+n(i.l));k++});
   save();render();toast(k?`ใช้ราคาจากคลัง ${k} รายการ`:'ยังไม่ได้เลือกรายการ')};
-ACT.tdToLib=b=>{const t=tdById(b.dataset.id);if(!t||!t.items.length)return;
-  const r=plMerge(t.items.map(i=>({g:i.g,name:itemName(i),br:i.br,unit:i.unit,m:i.m,l:i.l})),{src:`${t.no} ${t.title||''}`.trim(),sk:'td'});plSay(r,'บันทึกราคางานนี้เข้าคลัง')};
+ACT.tdToLib=b=>{const t=tdLibJob(b);if(!t||!t.items.length)return;const q=b.dataset.tk==='q';
+  const r=plMerge(t.items.map(i=>({g:i.g,name:itemName(i),br:i.br,unit:i.unit,m:i.m,l:i.l})),{src:`${t.no} ${t.title||''}`.trim(),sk:q?'qt':'td'});plSay(r,'บันทึกราคางานนี้เข้าคลัง')};
 document.addEventListener('change',e=>{const el=e.target;
-  if(el.dataset&&el.dataset.tli){const t=curTd();if(t){(t.plx=t.plx||{})[el.dataset.tli]=el.value;save();render()}}
+  if(el.dataset&&el.dataset.tli){const t=el.dataset.tk==='q'?CO().quotes.find(q=>q.id===el.dataset.id):curTd();if(t){(t.plx=t.plx||{})[el.dataset.tli]=el.value;save();render()}}
   else if(el.id==='tlAll')document.querySelectorAll('.tlc').forEach(c=>c.checked=el.checked);
   else if(el.id==='tlShow'){S.sel.tlShow=el.value;render()}
   else if(el.dataset&&el.dataset.tdpg){const t=curTd();if(!t||!el.value)return;t.items.forEach(i=>{if(i.g===el.dataset.tdpg)i.part=el.value});save();render()}});
-function tdLibCard(t){const L=plCfg(),b=`co.tenders.${t.id}.items`;
-  const head=`<section class="card"><h2><span>ราคาจากคลังราคากลาง</span><small>จับคู่จากชื่อ หน่วย และยี่ห้อ · ${fmt(L.length)} รายการในคลัง</small><span class="sp"></span>
-    <button type="button" class="btn sm" data-a="tdToLib" data-id="${t.id}">บันทึกราคางานนี้เข้าคลัง</button><button type="button" class="btn sm" data-a="go" data-m="co" data-k="tender" data-s="plib">เปิดคลังราคากลาง</button></h2>`;
+function tdLibCard(t,o){o=o||{};const L=plCfg(),b=o.b||`co.tenders.${t.id}.items`,tk=o.tk?` data-tk="${o.tk}"`:'';
+  const head=`<section class="card"><h2><span>${o.title||'ราคาจากคลังราคากลาง'}</span><small>จับคู่จากชื่อ หน่วย และยี่ห้อ · ${fmt(L.length)} รายการในคลัง</small><span class="sp"></span>
+    <button type="button" class="btn sm" data-a="tdToLib" data-id="${t.id}"${tk}>บันทึกราคางานนี้เข้าคลัง</button><button type="button" class="btn sm" data-a="go" data-m="co" data-k="tender" data-s="plib">เปิดคลังราคากลาง</button></h2>`;
   if(!L.length)return head+`<p class="hint">คลังยังว่าง เปิดคลังราคากลางเพื่อเติมราคาก่อน หรือกด “บันทึกราคางานนี้เข้าคลัง”</p></section>`;
   const R=t.items.map(i=>({i,m:tdLibMatch(t,i)})),hit=R.filter(r=>r.m),show=S.sel.tlShow||'hit',
     same=r=>n(r.m.x.m)>0&&n(r.m.x.m)!==n(r.i.m)||n(r.m.x.l)>0&&n(r.m.x.l)!==n(r.i.l),Ls=show==='all'?R:show==='diff'?hit.filter(same):show==='miss'?R.filter(r=>!r.m):hit;
@@ -91,15 +94,15 @@ function tdLibCard(t){const L=plCfg(),b=`co.tenders.${t.id}.items`;
   return head+`<dl class="stats" style="margin-bottom:10px"><div><dt>จับคู่กับคลังได้</dt><dd>${hit.length} / ${t.items.length}</dd></div><div><dt>ราคาต่างจากคลัง</dt><dd>${hit.filter(same).length} รายการ</dd></div>
     <div><dt>ค่าวัสดุและค่าแรงถ้าใช้ราคาคลัง</dt><dd>${fmt(cost)}</dd></div><div><dt>ต่างจากตอนนี้</dt><dd style="color:${cost>now?'var(--danger)':'var(--good)'}">${cost>=now?'+':''}${fmt(cost-now)}</dd></div></dl>
   <div class="row" style="margin-bottom:8px"><select id="tlShow" aria-label="แสดง">${[['hit','เฉพาะที่จับคู่ได้'],['diff','เฉพาะที่ราคาต่างจากคลัง'],['miss','เฉพาะที่ไม่มีในคลัง'],['all','ทุกรายการ']].map(([k,l])=>`<option value="${k}"${k===show?' selected':''}>${l}</option>`).join('')}</select>
-    <button type="button" class="btn sm pri" data-a="tdLib" data-id="${t.id}">ใช้ราคาคลังกับรายการที่เลือก</button></div>
+    <button type="button" class="btn sm pri" data-a="tdLib" data-id="${t.id}"${tk}>ใช้ราคาคลังกับรายการที่เลือก</button></div>
   <div class="tw" style="max-height:440px;overflow:auto"><table><thead><tr><th><input type="checkbox" id="tlAll" aria-label="เลือกทั้งหมด"></th><th>รายการใน BOQ</th><th>ยี่ห้อ / รุ่น</th><th class="r">วัสดุ / แรง (งานนี้)</th><th>รายการในคลัง</th><th class="r">วัสดุ / แรง (คลัง)</th><th></th></tr></thead><tbody>
   ${Ls.map(({i,m})=>{const C=tdLibCands(i),d=m&&same({i,m});
     return `<tr><td>${m?`<input type="checkbox" class="tlc" id="tlc-${i.id}" aria-label="เลือก">`:''}</td><td style="min-width:220px">${esc(itemName(i))}<br><small class="muted">${esc(i.unit)}${i.mSrc?' · ราคาจาก '+esc(i.mSrc):''}</small></td>
       <td style="min-width:120px"><input data-p="${b}.${i.id}.br" value="${esc(i.br||'')}" aria-label="ยี่ห้อ" placeholder="–"></td><td class="r" style="white-space:nowrap">${fmt(i.m,2)} / ${fmt(i.l,2)}</td>
-      <td style="min-width:240px"><select data-tli="${i.id}" aria-label="จับคู่กับ"><option value="none"${!m?' selected':''}>– ไม่มีในคลัง –</option>${(m&&!C.some(c=>c.x.id===m.x.id)?[m]:[]).concat(C).map(c=>`<option value="${c.x.id}"${m&&m.x.id===c.x.id?' selected':''}>${esc(c.x.name)}${c.x.br?' · '+esc(c.x.br):''} (${esc(c.x.unit)})</option>`).join('')}</select></td>
+      <td style="min-width:240px"><select data-tli="${i.id}" data-id="${t.id}"${tk} aria-label="จับคู่กับ"><option value="none"${!m?' selected':''}>– ไม่มีในคลัง –</option>${(m&&!C.some(c=>c.x.id===m.x.id)?[m]:[]).concat(C).map(c=>`<option value="${c.x.id}"${m&&m.x.id===c.x.id?' selected':''}>${esc(c.x.name)}${c.x.br?' · '+esc(c.x.br):''} (${esc(c.x.unit)})</option>`).join('')}</select></td>
       <td class="r" style="white-space:nowrap${d?';color:var(--crit)':''}">${m?`${fmt(m.x.m,2)} / ${fmt(m.x.l,2)}<br><small class="muted">${esc(PL_SK[plSrcK(m.x)][0])} ${thD(m.x.date)}</small>`:''}</td>
-      <td>${m?`<button type="button" class="btn sm" data-a="tdLib" data-id="${t.id}" data-i="${i.id}">ใช้</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="muted">ไม่มีรายการที่ตรงเงื่อนไข</td></tr>'}</tbody></table></div>
-  <p class="hint">ตรวจคู่ที่โปรแกรมเลือกก่อนกดใช้ เปลี่ยนคู่ได้จากช่องเลือก · ใช้ราคาคลังแทนค่าวัสดุและค่าแรงที่คลังมีราคา (ราคาพาณิชย์มีแต่ค่าวัสดุ ค่าแรงเดิมคงไว้) · ยี่ห้อพิมพ์ในช่องหมายเหตุของ ปร.4</p></section>`}
+      <td>${m?`<button type="button" class="btn sm" data-a="tdLib" data-id="${t.id}"${tk} data-i="${i.id}">ใช้</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="muted">ไม่มีรายการที่ตรงเงื่อนไข</td></tr>'}</tbody></table></div>
+  <p class="hint">ตรวจคู่ที่โปรแกรมเลือกก่อนกดใช้ เปลี่ยนคู่ได้จากช่องเลือก · ใช้ราคาคลังแทนค่าวัสดุและค่าแรงที่คลังมีราคา (ราคาพาณิชย์มีแต่ค่าวัสดุ ค่าแรงเดิมคงไว้)${o.hint??' · ยี่ห้อพิมพ์ในช่องหมายเหตุของ ปร.4'}</p></section>`}
 
 // --- buildings, purpose and the forms on the bid ---
 function tdPartCard(t){if(!Array.isArray(t.parts))t.parts=[];const b=`co.tenders.${t.id}`,P=t.parts,c=tdCalc(t),F=t.mode!=='pvt'?c.F:c.mk,ref=tdRef(t),Ps=tdParts(t);
