@@ -3,11 +3,12 @@
    - In the same browser the apps still share localStorage (penum.mep.link and the rest); this is for other computers.
    - Each PENUM MEP project has its own code (P.lid), 20 characters of Crockford base32 shown as XXXXX-XXXXX-XXXXX-XXXXX.
      A PM project or a BIM project that is given the code reads that MEP project's data, wherever MEP was used.
-   - The data goes to ORIEN's Supabase (tools/link-setup.sql, run once) in slots: 'mep' = what MEP writes to penum.mep.link.
+   - The data goes to ORIEN's Supabase (tools/link-setup.sql, run once) in slots: 'mep' = what MEP writes to penum.mep.link,
+     'bim' = the PENUM BIM project linked to it (what BIM keeps in saoek.v2), 'hand' = the project MEP last sent to BIM (penum.handoff).
      A row is found by the first 16 bytes of sha256('penum-link:' + code) and encrypted (AES-GCM) with sha256('penum-link-key:' + code),
      so only someone who has the code can find or read it; ORIEN cannot. Anyone with the code may also overwrite it.
    window.penumLink: make() a new code · norm(text) the code in a text (a pasted code or a link with #mep=) or '' · show(code)
-   put(code, slot, obj) → {at} or {err} · get(code, slot) → {data, at} or null (none yet) or {err} · at([codes]) → {code: {slot: at}} or {err}
+   put(code, slot, obj or its JSON text) → {at} or {err} · get(code, slot) → {data, at} or null (none yet) or {err} · at([codes]) → {code: {slot: at}} or {err}
    err: 'offline' (no internet or Supabase down), 'nosql' (ORIEN has not run tools/link-setup.sql yet), 'big' (over 3 MB encrypted),
    'full' (the table reached 200 MB, so no new projects), 'bad'. */
 (()=>{if(window.penumLink)return;
@@ -32,7 +33,7 @@ async function rpc(fn,body){let r;try{r=await fetch(SB.url+'/rest/v1/rpc/'+fn,{m
   let t='';try{t=await r.text()}catch(e){}if(r.status===404||/PGRST202|does not exist|Could not find the function/i.test(t))return {err:'nosql'};
   return {err:/"full"|\bfull\b/.test(t)?'full':r.status===413||/too long|too large/i.test(t)?'big':r.status>=500?'offline':'bad'}}
 async function put(code,slot,obj){const c=norm(code);if(!c||!SLOTS.includes(slot))return {err:'bad'};
-  try{const {k,key}=await ids(c),raw=te.encode(JSON.stringify(obj)),z=!!window.CompressionStream,body=z?await gzip(raw):raw,pt=new Uint8Array(body.length+1);pt[0]=z?1:0;pt.set(body,1);
+  try{const {k,key}=await ids(c),raw=te.encode(typeof obj==='string'?obj:JSON.stringify(obj)),z=!!window.CompressionStream,body=z?await gzip(raw):raw,pt=new Uint8Array(body.length+1);pt[0]=z?1:0;pt.set(body,1);
     const iv=crypto.getRandomValues(new Uint8Array(12)),ct=b64u(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,pt)));if(ct.length>MAX)return {err:'big'};
     const r=await rpc('penum_link_put',{p_k:k,p_s:slot,p_iv:b64u(iv),p_ct:ct});return r.err?r:{at:String(r.j||'')}}catch(e){return {err:'bad'}}}
 async function get(code,slot){const c=norm(code);if(!c||!SLOTS.includes(slot))return {err:'bad'};
