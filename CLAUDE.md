@@ -31,7 +31,8 @@ MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
 ## Linking across computers
 
 - Each MEP project has a รหัสเชื่อมโครงการ (`P.lid`); `shared/link.js` (apps with `"cloud": true`) sends and reads a project's data in ORIEN's
-  Supabase (`tools/link-setup.sql`), encrypted with that code. PM keeps the linked MEP project in `P.mep` (`pm/src/920-mep-link.js`).
+  Supabase (`tools/link-setup.sql`), encrypted with that code. PM keeps the linked MEP project in `P.mep` (`pm/src/920-mep-link.js`);
+  BIM keeps it in `P.mepLid` and writes slot `bim`; MEP's "ส่งแบบไป BIM" also writes slot `hand`. Details: docs/apps.md.
 
 ## Licence codes
 
