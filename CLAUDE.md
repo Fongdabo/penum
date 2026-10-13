@@ -28,6 +28,11 @@ MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
 - Never rename the shared storage keys (`penum.mep.link`, `penum.handoff`, `saoek.v2`, `penum.licences`), the `/penum/<app>/`
   paths or the manifest ids: installed apps and customers' saved data depend on them.
 
+## Linking across computers
+
+- Each MEP project has a รหัสเชื่อมโครงการ (`P.lid`); `shared/link.js` (apps with `"cloud": true`) sends and reads a project's data in ORIEN's
+  Supabase (`tools/link-setup.sql`), encrypted with that code. PM keeps the linked MEP project in `P.mep` (`pm/src/920-mep-link.js`).
+
 ## Licence codes
 
 - One code per customer company; payload `ap` lists the apps it opens (no `ap` = PENUM PM only). ORIEN issues codes in

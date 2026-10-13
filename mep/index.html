@@ -1169,6 +1169,7 @@ function ensure(){
   try{cadMigrate()}catch(e){}
   P.ducts=P.ducts||[];P.ductSet=Object.assign({fr:0.8,unit:'mm',boq:'ratio',mat:'gi'},P.ductSet||{});
   P.rooms.forEach(rm=>{const sc=SCHED[rm.type]||[10,6];if(rm.eq.hours==null)rm.eq.hours=sc[0];if(rm.eq.days==null)rm.eq.days=sc[1]});
+  if(!P.lid&&window.penumLink)P.lid=penumLink.make();          // รหัสเชื่อมโครงการ: PENUM PM and BIM on other computers read this project by it (shared/link.js)
   P.info=Object.assign({job:'new',status:'quote',industry:'food',client:P.design.client||'',location:'',company:'',code:'',rev:'0',date:new Date().toISOString().slice(0,10),engineer:P.design.engineer||'',checker:'',scope:'',existing:''},P.info||{});
 }
 ensure();
@@ -2729,7 +2730,7 @@ function renderBoq(){
     <div><dt>ต่อตันความเย็นติดตั้ง</dt><dd>${B.pl.installed>0?fmt(B.grand/B.pl.installed):'–'} <small>บาท/TR</small></dd></div>
     <div><dt>ต่อพื้นที่</dt><dd>${fmt(B.grand/Math.max(1,P.rooms.reduce((a,r)=>a+n(r.area),0)))} <small>บาท/m²</small></dd></div>
   </dl>
-  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><span class="toast" id="toast" role="status"></span></div>${boqLeftCard(B)}
+  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><span class="toast" id="toast" role="status"></span></div>${pnCloudCard()}${boqLeftCard(B)}
   <section class="panel card"><h2><span>ใบประมาณราคา (BOQ)</span><small>ช่องว่าง = ค่าคำนวณอัตโนมัติ พิมพ์ทับได้ แก้แล้วกด Enter</small></h2>
   <p class="exnote" style="margin:0 0 8px">ราคาต่อหน่วยตั้งต้นเป็นตัวเลขตัวอย่างเพื่อทดลองใช้ ไม่ใช่ราคาตลาด ใส่ราคาของคุณในตารางราคาด้านล่างก่อนใช้งานจริง</p>
   <div class="grid" style="margin:0 0 10px">${fld('กำไรค่าของทุกรายการ (%)',pIn('data-as="profitM" id="as-pfm"',A.profitM))}${fld('กำไรค่าแรงทุกรายการ (%)',pIn('data-as="profitL" id="as-pfl"',A.profitL))}</div>
@@ -5332,7 +5333,7 @@ const PN_T="{\"wall\":[{\"id\":1,\"name\":\"ผนังก่ออิฐฉา
 /* ---------- export to PENUM BIM: geometry and services drawn here, with the loads and prices of this app as the reference ---------- */
 function pnLink(){
   const pl=plan(),B=boq(),rows=pl.rows.map(r=>({name:r.rm.name,area:n(r.rm.area),btu:Math.round(r.r.btu),tr:Math.round(r.r.tr*100)/100,cmh:Math.round(r.r.supply*3.6),sys:r.sys,qty:r.q,size:Math.round(r.s||0)}));
-  return {app:'PENUM MEP',fmt:1,project:P.name,date:new Date().toISOString().slice(0,10),design:{to:n(P.design.To),twb:n(P.design.Twb),ti:n(P.design.Ti),rh:+P.design.hum?n(P.design.RH):null,sf:n(P.design.SF)},
+  return {app:'PENUM MEP',fmt:1,project:P.name,lid:P.lid||'',date:new Date().toISOString().slice(0,10),design:{to:n(P.design.To),twb:n(P.design.Twb),ti:n(P.design.Ti),rh:+P.design.hum?n(P.design.RH):null,sf:n(P.design.SF)},
     loads:{tr:Math.round(rows.reduce((a,r)=>a+r.tr,0)*10)/10,rooms:rows},
     boq:{sub:Math.round(B.sub),ohp:Math.round(B.ohp),vat:Math.round(B.vat),grand:Math.round(B.grand),items:B.items.map(i=>({g:i.g,group:BOQ_G[i.g]||'',head:i.sub||'',type:i.typ||'',desc:i.desc,unit:i.unit,q:n(i.q),m:n(i.m),l:n(i.l),pm:i.pm,pl:i.pl,total:Math.round(i.t)}))},
     prices:P.prices}}
@@ -5397,7 +5398,24 @@ function pnOutCard(){
 const PN_SUITE=/\.github\.io$/.test(location.hostname)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?1:0,          // both apps on one site share browser storage
   PN_KEY='saoek.v2',PN_LINK='penum.mep.link',PN_HAND='penum.handoff';let pnLinkT=0,pnSeen='';
 function pnPeer(){if(!PN_SUITE)return null;try{const o=JSON.parse(localStorage.getItem(PN_KEY)||'null');return o&&o.P&&o.P.fmt==='saoek'?o.P:null}catch(e){return null}}
-function pnPush(){if(!PN_SUITE)return;clearTimeout(pnLinkT);pnLinkT=setTimeout(()=>{if(SBX)return;try{localStorage.setItem(PN_LINK,JSON.stringify(Object.assign(pnLink(),{at:Date.now()})))}catch(e){}},1200)}
+let pnLS={s:'',at:0};          // the link as last written and when its content last changed: the same time here and in the cloud copy
+function pnStamp(L){const s=JSON.stringify(L);if(s!==pnLS.s)pnLS={s,at:Date.now()};return Object.assign(L,{at:pnLS.at})}
+function pnPush(){if(!PN_SUITE)return;clearTimeout(pnLinkT);pnLinkT=setTimeout(()=>{if(SBX)return;try{localStorage.setItem(PN_LINK,JSON.stringify(pnStamp(pnLink())))}catch(e){}pnCloud()},1200)}
+/* ---------- across computers: the same results go to ORIEN's cloud under this project's link code (shared/link.js, encrypted with the code),
+   a few seconds after the last change, so PENUM PM on any computer that was given the code pulls this project's BOQ ---------- */
+let pnCT=0,pnCS='',pnC={st:''};          // st: '' not sent yet · busy · ok · offline · nosql (ORIEN has not set it up) · big · full · bad
+const pnCOn=()=>!!(PN_SUITE&&window.penumLink&&P.lid&&!SBX&&!penumLink.locked());
+function pnCloud(now){if(!pnCOn())return;clearTimeout(pnCT);pnCT=setTimeout(async()=>{const L=pnLink(),s=JSON.stringify(L);if(s===pnCS&&pnC.st==='ok')return;
+  pnC={st:'busy',at:pnC.at};pnCSt();const r=await penumLink.put(L.lid,'mep',pnStamp(L));
+  if(r.err)pnC={st:r.err,at:pnC.at};else{pnC={st:'ok',at:r.at};if(L.lid===P.lid)pnCS=s}pnCSt()},now?0:5000)}
+function pnCTxt(){const t=pnC.at?new Date(pnC.at):null,hm=t&&!isNaN(t)?t.toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  return {busy:'กำลังส่งขึ้นคลาวด์',ok:'ส่งขึ้นคลาวด์แล้ว '+hm,offline:'ยังส่งไม่ได้ ไม่มีอินเทอร์เน็ต จะส่งให้เองเมื่อต่อเน็ต',nosql:'ORIEN ยังไม่ได้เปิดบริการเชื่อมข้ามเครื่อง',big:'โครงการใหญ่เกินกว่าจะส่งขึ้นคลาวด์',full:'พื้นที่เชื่อมข้ามเครื่องของ ORIEN เต็ม แจ้ง ORIEN ที่ปุ่มแจ้งปัญหา',bad:'ส่งขึ้นคลาวด์ไม่ได้'}[pnC.st]||(hm?'ส่งขึ้นคลาวด์แล้ว '+hm:'ยังไม่ได้ส่ง')}
+function pnCSt(){const e=document.getElementById('pnCSt');if(e)e.textContent=pnCTxt()}
+function pnCloudCard(){if(!pnCOn())return '';const code=penumLink.show(P.lid);
+  return `<section class="panel card" data-noxl><h2><span>ส่ง BOQ ให้ PENUM PM เครื่องอื่น</span><small id="pnCSt">${esc(pnCTxt())}</small></h2>
+  <p style="margin:0 0 10px">รหัสเชื่อมโครงการนี้ <b class="mono" style="letter-spacing:.04em">${code}</b></p>
+  <div class="row"><button type="button" class="btn primary" data-act="pnCopyLink">คัดลอกลิงก์สำหรับ PENUM PM</button><button type="button" class="btn" data-act="pnCopyCode">คัดลอกรหัส</button><span class="toast" id="pnCToast" role="status"></span></div>
+  <p class="hint">ส่งลิงก์นี้ทาง LINE หรืออีเมลให้คนที่ใช้ PENUM PM เปิด แล้วเลือกโครงการใน PM ที่จะรับ BOQ (ทำครั้งเดียวต่อโครงการ) จากนั้นทุกครั้งที่แก้ที่นี่ PENUM PM ทุกเครื่องที่เชื่อมไว้จะดึง BOQ ล่าสุดของโครงการนี้ได้ ข้อมูลเข้ารหัสด้วยรหัสนี้ คนที่ไม่มีรหัสเปิดดูไม่ได้</p></section>`}
 function pnPull(){const J=pnPeer();if(!J)return false;const lv=pnInfo(J).rows.filter(r=>r.wall);if(!lv.length)return false;IM={name:(J.info&&J.info.name||'PENUM BIM')+'.json',kind:'penum',pj:J,l1:lv[0].l.id,l2:lv[1]?lv[1].l.id:'',mep:1,live:1};return true}
 function pnSend(){const X=pnExport(!!(IM&&IM.kind==='penum'&&IM.pj));if(!X)return false;try{localStorage.setItem(PN_HAND,JSON.stringify(X.J));pnPush();return true}catch(e){return false}}
 function pnLiveCard(){
@@ -5406,7 +5424,7 @@ function pnLiveCard(){
   ${J?`<p style="margin:0 0 10px">โครงการใน PENUM BIM: <b>${esc((J.info&&J.info.name)||'')}</b> · ผนัง ${n} · ห้อง ${J.els.filter(e=>e.cat==='room').length}</p>`:''}
   <div class="row">${J?`<button type="button" class="btn primary" data-act="pnPull">ดึงแบบล่าสุดจาก PENUM BIM</button>`:''}${P.cad?`<button type="button" class="btn" data-act="pnSend">ส่งแบบและงานระบบไปเปิดใน PENUM BIM</button>`:''}<button type="button" class="btn ghost" data-act="pnGo">ไปที่ PENUM BIM</button></div>
   <p class="hint">ผลคำนวณ ราคา และ BOQ ของ PENUM MEP ถูกส่งให้ PENUM BIM อัตโนมัติทุกครั้งที่มีการแก้ไข การส่งแบบไปเปิดใน PENUM BIM จะแทนที่โครงการที่เปิดอยู่ใน PENUM BIM</p></section>`}
-function pnSuiteInit(){if(!PN_SUITE)return;pnPush();
+function pnSuiteInit(){if(!PN_SUITE)return;pnPush();addEventListener('online',()=>pnCloud(1));document.addEventListener('visibilitychange',()=>{if(!document.hidden&&pnC.st&&pnC.st!=='ok'&&pnC.st!=='busy')pnCloud(1)});
   addEventListener('storage',e=>{if(e.key===PN_KEY&&view==='cad'){$('toast').textContent='แบบใน PENUM BIM มีการแก้ไข กดดึงแบบล่าสุดได้';imRender()}})}
 /* ---------- session ---------- */
 function imStats(){const S=IM.S,G=IM.G;G.forEach(g=>{g.n=0;g.len=0});let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
@@ -5937,7 +5955,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=105,MEP_NAME='v105';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=106,MEP_NAME='v106';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -6039,6 +6057,8 @@ document.addEventListener('click',async e=>{
     case 'rlang':P.reportLang=b.dataset.v;break;
     case 'fxroom':FX_ROOM=b.dataset.id;break;
     case 'copyEnergy':{try{await navigator.clipboard.writeText(energyTSV());$('toast').textContent='คัดลอกแล้ว วางใน Excel ได้เลย'}catch(err){$('toast').textContent='เบราว์เซอร์ไม่อนุญาตให้คัดลอก ใช้หน้ารายงานแทน'}return}
+    case 'pnCopyLink':case 'pnCopyCode':{const t=a==='pnCopyLink'?penumLink.url('pm',P.lid):penumLink.show(P.lid),o=$('pnCToast');pnCloud(1);
+      try{await navigator.clipboard.writeText(t);if(o)o.textContent=a==='pnCopyLink'?'คัดลอกลิงก์แล้ว วางส่งใน LINE ได้เลย':'คัดลอกรหัสแล้ว'}catch(err){if(o)o.textContent=t}return}
     case 'copyBoq':{try{await navigator.clipboard.writeText(boqTSV());$('toast').textContent='คัดลอก BOQ แล้ว วางใน Excel ได้เลย'}catch(err){$('toast').textContent='เบราว์เซอร์ไม่อนุญาตให้คัดลอก ใช้หน้ารายงานแทน'}return}
     case 'addExtra':P.boqExtra.push({desc:'รายการเพิ่มเติม',unit:'งาน',q:1,m:0,l:0});break;
     case 'delExtra':P.boqExtra.splice(+b.dataset.i,1);break;

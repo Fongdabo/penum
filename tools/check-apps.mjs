@@ -8,7 +8,7 @@
 //  - the apps its header buttons open in their own window (app.json "opens") still have those buttons
 //  - the feedback box copy matches shared/feedback.js (run node tools/sync-feedback.mjs after editing it)
 //  - for an app with "licence" (MEP, BIM): the storage keys it names are still in the source, so the check still guards the work
-// And once: shared/licence.js parses, and it, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
+// And once: shared/licence.js and shared/link.js parse, and licence.js, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
 // For an app split into files (<app>/src, PENUM PM) also:
 //  - every file is named NNN-what.html|css|js, is not empty and ends with a line break
 //  - every .js file parses on its own, so an error names the file and line
@@ -72,6 +72,7 @@ for (const a of APPS) {
 
 const LICJS = readFileSync(join(root, 'shared', 'licence.js'), 'utf8');
 try { new Script(LICJS, { filename: 'shared/licence.js' }); } catch (e) { errors.push(`shared/licence.js:${errLine(e)} does not parse: ${e.message}`); }
+try { new Script(readFileSync(join(root, 'shared', 'link.js'), 'utf8'), { filename: 'shared/link.js' }); } catch (e) { errors.push(`shared/link.js:${errLine(e)} does not parse: ${e.message}`); }
 const KX = (LICJS.match(/x:'([A-Za-z0-9_-]{43})'/) || [])[1], KY = (LICJS.match(/y:'([A-Za-z0-9_-]{43})'/) || [])[1];
 if (!KX || !KY) errors.push('shared/licence.js: public key (x:\'…\', y:\'…\') not found');
 else for (const d of ['pm', 'sales']) { const b = APPS.find(x => x.dir === d), s = b && source(b); if (s && (!s.includes(KX) || (d === 'pm' && !s.includes(KY)))) errors.push(`${d}: its licence public key differs from shared/licence.js`); }
