@@ -1,5 +1,5 @@
 /* PENUM feedback box (กล่องแจ้งปัญหาและแสดงความคิดเห็น), shared by PENUM PM, MEP and BIM.
-   Source of truth: tools/feedback.js. node tools/sync-feedback.mjs copies it into each app between the PENUM-FB markers.
+   Source of truth: shared/feedback.js. node tools/sync-feedback.mjs copies it into each app between the PENUM-FB markers.
    A message goes to ORIEN's Supabase through the rpc penum_fb_send (tools/feedback-setup.sql): the public key can only add
    messages, never read them; ORIEN ฝ่ายขาย reads them with its reader code. Offline, or before the SQL has been run,
    the same text can go by LINE OA or e-mail instead.
