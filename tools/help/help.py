@@ -14,30 +14,36 @@ PAGE = {k['key']: k['page'] for k in KEYS}
 # tab -> [(section number, [page keys it covers])]
 TABS = {
  'co.exec':  [('3-1', []), ('3-2', []), ('3-3', [])],
- 'co.sales': [('4-3', ['co.sales.quote']), ('4-2', ['co.sales.lead']), ('4-1', ['co.sales.cust'])],
- 'co.tender':[('4-4', ['co.tender.bid', 'co.tender.tf']), ('4-5', ['co.tender.k'])],
- 'co.acct':  [('8-1', ['co.acct.ar']), ('8-2', ['co.acct.bn']), ('8-3', ['co.acct.ap', 'co.acct.cf']),
-              ('8-4', ['co.acct.vat', 'co.acct.wht']), ('8-6', ['co.acct.xp']), ('8-5', ['co.acct.lg'])],
- 'co.hr':    [('2-5', ['co.hr.staff']), ('9-1', ['co.hr.ts']), ('9-2', ['co.hr.leave']), ('9-3', ['co.hr.pay']),
-              ('9-4', ['co.hr.ben']), ('9-5', ['co.hr.skill', 'co.hr.eval', 'co.hr.prof', 'co.hr.gap', 'co.hr.rev', 'co.hr.band'])],
- 'co.svc':   [('7-1', ['co.svc.job']), ('7-2', ['co.svc.con', 'co.svc.eqp'])],
- 'co.org':   [('11-1', ['co.org.chart', 'co.org.flow']), ('11-2', ['co.org.forms', 'co.org.env'])],
- 'co.coset': [('12-1', []), ('2-4', []), ('2-6', []), ('2-8', []), ('14-1', []), ('14-2', [])],
- 'pj.dash':  [('5-1', []), ('1-5', [])],
- 'pj.sched': [('5-2', ['pj.sched.g']), ('5-3', ['pj.sched.la', 'pj.sched.mp'])],
- 'pj.buy':   [('6-1', []), ('6-2', ['pj.buy.boq']), ('6-3', ['pj.buy.pr']), ('6-4', ['pj.buy.po']),
-              ('6-5', ['pj.buy.dl']), ('6-6', ['pj.buy.stock']), ('6-7', ['pj.buy.ven'])],
- 'pj.cost':  [('5-4', ['pj.cost.sum', 'pj.cost.sub', 'pj.cost.exp']), ('5-5', ['pj.cost.plan']), ('5-6', ['pj.cost.bill'])],
- 'pj.site':  [('5-7', ['pj.site.daily']), ('5-8', ['pj.site.rfi', 'pj.site.vo']), ('10-1', ['pj.site.safe']),
-              ('10-2', ['pj.site.wp', 'pj.site.inc']), ('13-2', [])],
- 'pj.docs':  [('4-7', ['pj.docs.mat', 'pj.docs.shop', 'pj.docs.ms', 'pj.docs.calc', 'pj.docs.asb'])],
- 'pj.qa':    [('5-9', ['pj.qa.itp', 'pj.qa.wir', 'pj.qa.ncr'])],
- 'pj.forms': [('5-10', ['pj.forms.dn', 'pj.forms.wo', 'pj.forms.sc', 'pj.forms.ho'])],
- 'pj.hand':  [('5-11', ['pj.hand.tc', 'pj.hand.tab', 'pj.hand.punch', 'pj.hand.om', 'pj.hand.war'])],
- 'pj.setup': [('5-12', []), ('4-6', [])],
+ 'co.mine':  [('3-2', []), ('4-1', []), ('4-2', []), ('4-3', [])],
+ 'co.sales': [('5-3', ['co.sales.quote']), ('5-2', ['co.sales.lead']), ('5-1', ['co.sales.cust'])],
+ 'co.tender':[('5-4', ['co.tender.bid', 'co.tender.tf']), ('5-5', ['co.tender.k'])],
+ 'co.des':   [('5-6', [])],
+ 'co.acct':  [('9-1', ['co.acct.ar']), ('9-2', ['co.acct.pc']), ('9-3', ['co.acct.bn']), ('9-4', ['co.acct.ap', 'co.acct.cf']),
+              ('9-5', ['co.acct.vat', 'co.acct.wht']), ('9-7', ['co.acct.xp']), ('9-6', ['co.acct.lg'])],
+ 'co.hr':    [('2-5', ['co.hr.staff']), ('10-1', ['co.hr.ts']), ('10-2', ['co.hr.leave']), ('10-3', ['co.hr.ot']),
+              ('10-4', ['co.hr.rec', 'co.hr.quit', 'co.hr.hrl']), ('10-5', ['co.hr.pay']), ('10-6', ['co.hr.ben']),
+              ('10-7', ['co.hr.skill', 'co.hr.eval', 'co.hr.prof', 'co.hr.gap', 'co.hr.rev', 'co.hr.band']), ('7-7', ['co.hr.tool'])],
+ 'co.svc':   [('8-1', ['co.svc.job']), ('8-2', ['co.svc.con', 'co.svc.eqp'])],
+ 'co.org':   [('12-1', ['co.org.chart', 'co.org.flow']), ('12-2', ['co.org.forms', 'co.org.env'])],
+ 'co.coset': [('13-1', []), ('2-4', []), ('2-6', []), ('2-7', []), ('2-9', []), ('4-4', []), ('4-5', []), ('15-1', []), ('15-2', [])],
+ 'pj.pjall': [('6-1', [])],
+ 'pj.dash':  [('6-2', []), ('1-5', [])],
+ 'pj.sched': [('6-3', ['pj.sched.g']), ('6-4', ['pj.sched.la', 'pj.sched.mp'])],
+ 'pj.buy':   [('7-1', []), ('7-2', ['pj.buy.boq']), ('7-3', ['pj.buy.pr']), ('7-4', ['pj.buy.po']),
+              ('7-5', ['pj.buy.dl']), ('7-6', ['pj.buy.stock']), ('7-7', ['pj.buy.ven'])],
+ 'pj.cost':  [('6-5', ['pj.cost.sum', 'pj.cost.sub', 'pj.cost.exp']), ('6-6', ['pj.cost.plan']), ('6-7', ['pj.cost.bill'])],
+ 'pj.site':  [('6-8', ['pj.site.daily']), ('6-9', ['pj.site.rfi', 'pj.site.vo']), ('11-1', ['pj.site.safe']),
+              ('11-2', ['pj.site.wp', 'pj.site.inc']), ('14-2', [])],
+ 'pj.docs':  [('5-7', ['pj.docs.all', 'pj.docs.mat', 'pj.docs.shop', 'pj.docs.ms', 'pj.docs.calc', 'pj.docs.asb', 'pj.docs.oth'])],
+ 'pj.qa':    [('6-10', ['pj.qa.itp', 'pj.qa.wir', 'pj.qa.ncr'])],
+ 'pj.forms': [('6-11', ['pj.forms.dn', 'pj.forms.wo', 'pj.forms.sc', 'pj.forms.ho'])],
+ 'pj.hand':  [('6-12', ['pj.hand.tc', 'pj.hand.tab', 'pj.hand.punch', 'pj.hand.om', 'pj.hand.war'])],
+ 'pj.setup': [('6-13', []), ('5-6', [])],
 }
+# tabs whose clip is a topic clip rather than their own
+VALIAS = {'co.mine': 'chat'}
 # general topics, linked from every page's footer
-GENERAL = [('1-3', 'หาเมนูไม่เจอ ให้ใช้ช่องค้นหา'), ('13-1', 'ติดตั้งบนมือถือ'), ('14-1', 'สำรองข้อมูล'), ('17-1', 'ปัญหาที่พบบ่อย')]
+GENERAL = [('1-3', 'หาเมนูไม่เจอ ให้ใช้ช่องค้นหา'), ('14-1', 'ติดตั้งบนมือถือ'), ('15-1', 'สำรองข้อมูล'), ('18-1', 'ปัญหาที่พบบ่อย')]
 
 def block(s, start):
     """Return the balanced <div>…</div> that opens at index start."""
@@ -71,6 +77,9 @@ if VID and os.path.exists(os.path.join(VID, 'index.json')):
         for ext in ('.mp4', '.jpg'):
             p = os.path.join(VID, v['file'][:-4] + ext)
             if os.path.exists(p): shutil.copy(p, os.path.join(OUT, 'video', k + ext))
+
+def vkey(tab):
+    return tab if tab in vids else (VALIAS[tab] if VALIAS.get(tab) in vids else None)
 
 def fix(h):
     h = re.sub(r'img/([\w\-]+)\.jpg', r'img/\1.webp', h)
@@ -116,8 +125,8 @@ def page(tab, secs):
         h = fix(h).replace(f'<div class="sec" id="s{sn}">', f'<div class="sec" id="s{sn}">{anchors}', 1)
         body.append(h)
         jump.append(f'<a href="#s{sn}">{name}</a>')
-    v = vids.get(tab)
-    vb = (f'<div class="vbox"><b>▶ วิดีโอสอน: {title}</b><video controls preload="none" playsinline poster="video/{tab}.jpg" src="video/{tab}.mp4"></video></div>' if v else '')
+    vk = vkey(tab)
+    vb = (f'<div class="vbox"><b>▶ วิดีโอสอน: {vids[vk]["title"] if vk != tab else title}</b><video controls preload="none" playsinline poster="video/{vk}.jpg" src="video/{vk}.mp4"></video></div>' if vk else '')
     more = ' '.join(f'<a href="index.html#s{sn}">{t}</a>' for sn, t in GENERAL)
     return f'''<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>คู่มือ · {title}</title>{FONTS}<style>{css}{HCSS}</style></head><body style="--cc:{cc}">
@@ -128,10 +137,11 @@ def page(tab, secs):
 ix = {'index': 'index.html'}
 for tab, secs in TABS.items():
     open(os.path.join(OUT, tab + '.html'), 'w', encoding='utf-8').write(page(tab, secs))
-    ix[tab] = {'url': f'{tab}.html#{tab}', 'video': f'video/{tab}.mp4'} if tab in vids else f'{tab}.html#{tab}'
+    vk = vkey(tab)
+    ix[tab] = {'url': f'{tab}.html#{tab}', 'video': f'video/{vk}.mp4'} if vk else f'{tab}.html#{tab}'
     for _, keys in secs:
         for k in keys:
-            ix[k] = {'url': f'{tab}.html#{k}', 'video': f'video/{tab}.mp4'} if tab in vids else f'{tab}.html#{k}'
+            ix[k] = {'url': f'{tab}.html#{k}', 'video': f'video/{vk}.mp4'} if vk else f'{tab}.html#{k}'
 # the tab anchor = top of page
 for tab in TABS:
     p = os.path.join(OUT, tab + '.html'); s = open(p, encoding='utf-8').read()
@@ -140,10 +150,10 @@ for tab in TABS:
 # full manual as index.html, plus a "หน้าในโปรแกรม" list of tab pages
 full = re.sub(r'img/([\w\-]+)\.jpg', r'img/\1.webp', src)
 links = ''.join(f'<a href="{t}.html">{PAGE.get(t, t)}</a>' for t in TABS)
-vfirst = ''.join(f'<div class="vbox"><b>▶ {vids[k]["title"]}</b><video controls preload="none" playsinline poster="video/{k}.jpg" src="video/{k}.mp4"></video></div>' for k in ('start', 'mobile') if k in vids)
+vfirst = ''.join(f'<div class="vbox"><b>▶ {vids[k]["title"]}</b><video controls preload="none" playsinline poster="video/{k}.jpg" src="video/{k}.mp4"></video></div>' for k in ('start', 'chat', 'mobile') if k in vids)
 vfirst = f'<div class="vgrid">{vfirst}</div>' if vfirst else ''
 full = full.replace('<nav class="toc">', f'<nav class="toc"><div class="byp"><h1>คู่มือแยกตามหน้า</h1><div class="jump">{links}</div>{vfirst}</div>', 1)
-full = full.replace('</style>', '.byp{margin-bottom:26px}.vgrid{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:16px;align-items:start}.vgrid video{width:100%;border-radius:10px;background:#000}.vgrid b{display:block;font-size:14px;margin-bottom:6px}@media (max-width:640px){.vgrid{grid-template-columns:1fr}}.byp .jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.byp .jump a{font-size:14px;padding:4px 12px;border-radius:99px;background:#E6F6F7;border:1px solid #A7DADE;color:#0B5F66;font-weight:500}@media print{.byp{display:none}}</style>', 1)
+full = full.replace('</style>', '.byp{margin-bottom:26px}.vgrid{display:grid;grid-template-columns:2fr 2fr 1fr;gap:14px;margin-top:16px;align-items:start}.vgrid video{width:100%;border-radius:10px;background:#000}.vgrid b{display:block;font-size:14px;margin-bottom:6px}@media (max-width:640px){.vgrid{grid-template-columns:1fr}}.byp .jump{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.byp .jump a{font-size:14px;padding:4px 12px;border-radius:99px;background:#E6F6F7;border:1px solid #A7DADE;color:#0B5F66;font-weight:500}@media print{.byp{display:none}}</style>', 1)
 open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(full)
 json.dump(ix, open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
