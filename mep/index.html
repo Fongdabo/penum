@@ -42,7 +42,7 @@ h1,h2,h3,.tile .val,.stats dd,.hero .num-big,.big b,.cv-fig dd{font-family:var(-
 h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance}
 button{font:inherit;cursor:pointer}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.wrap{margin:0 auto;padding-top:20px}          /* full window width on every screen (v109); the side gutter is the body padding */
+.wrap{margin:0 auto;padding-top:20px}          /* full window width on every screen (v115); the side gutter is the body padding */
 
 /* app band */
 .band{background:var(--band);-webkit-backdrop-filter:saturate(1.5) blur(14px);backdrop-filter:saturate(1.5) blur(14px);color:var(--band-ink);margin-inline:-16px;padding:16px 16px 0;border-bottom:1px solid var(--band-line);box-shadow:var(--band-shadow)}
@@ -1204,7 +1204,10 @@ function ensure(){
   P.rooms.forEach(rm=>{const sc=SCHED[rm.type]||[10,6];if(rm.eq.hours==null)rm.eq.hours=sc[0];if(rm.eq.days==null)rm.eq.days=sc[1]});
   if(!P.lid&&window.penumLink)P.lid=penumLink.make();          // รหัสเชื่อมโครงการ: PENUM PM and BIM on other computers read this project by it (shared/link.js)
   P.info=Object.assign({job:'new',status:'quote',industry:'food',client:P.design.client||'',location:'',company:'',code:'',rev:'0',date:new Date().toISOString().slice(0,10),engineer:P.design.engineer||'',checker:'',scope:'',existing:''},P.info||{});
+  if(!P.info.company&&!P.info.coFill){const c=pnCompany();if(c){P.info.company=c.name;P.info.coFill=1}}          // the company PENUM PM keeps on this device, once per project (cleared stays cleared)
 }
+/* the customer's company from PENUM PM on this device ('penum.company', written by PM), so it is not typed again here */
+function pnCompany(){try{const o=JSON.parse(localStorage.getItem('penum.company')||'null');return o&&o.name?o:null}catch(e){return null}}
 ensure();
 let view='cover';
 const VCAT={cover:'gen',dash:'gen',cad:'dw',draft:'dw',boq:'cost',compare:'cost',concept:'doc',formula:'doc',report:'doc',print:'doc',backup:'gen',room:'ac',types:'ac',equip:'ac',duct:'ac',smoke:'ac',chw:'ac',energy:'ac',fire:'fp',elec:'el',plumb:'pl',civil:'cv'},catLast={};
@@ -5430,19 +5433,39 @@ function pnOutCard(){
 /* ---------- live link with PENUM BIM when both pages are served from the same place (shared browser storage) ---------- */
 const PN_SUITE=/\.github\.io$/.test(location.hostname)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?1:0,          // both apps on one site share browser storage
   PN_KEY='saoek.v2',PN_LINK='penum.mep.link',PN_HAND='penum.handoff';let pnLinkT=0,pnSeen='';
-function pnPeer(){if(!PN_SUITE)return null;try{const o=JSON.parse(localStorage.getItem(PN_KEY)||'null');return o&&o.P&&o.P.fmt==='saoek'?o.P:null}catch(e){return null}}
+function pnLocal(){if(!PN_SUITE)return null;try{const o=JSON.parse(localStorage.getItem(PN_KEY)||'null');return o&&o.P&&o.P.fmt==='saoek'?o.P:null}catch(e){return null}}
+const pnMine=J=>!!(J&&J.mepLid&&J.mepLid===P.lid);          // the BIM project is linked to this project (BIM V1.67 keeps the code in P.mepLid)
+function pnPeer(){const J=pnLocal();if(pnMine(J))return J;
+  if(pnCOn()){const m=pnBC.lid===P.lid?pnBC:null;pnBFetch();if(m&&m.J)return m.J}          // linked on another computer: its copy in the cloud
+  return J&&!J.mepLid?J:null}          // BIM in this browser, unless it is linked to another MEP project
+/* the PENUM BIM project linked to this project on another computer: BIM sends it to the cloud under this project's code ('bim') */
+let pnBC={};
+async function pnBFetch(force){if(!pnCOn())return;const c=P.lid;if(pnBC.lid!==c)pnBC={lid:c};const m=pnBC;if(m.busy||(!force&&Date.now()-(m.t||0)<60e3))return;m.busy=1;const was=m.at;
+  try{const a=await penumLink.at([c]);if(a.err)m.err=a.err;else{const at=(a[c]||{}).bim;if(!at)m.err='none';else if(at!==m.at||!m.J){const r=await penumLink.get(c,'bim');
+    if(r&&!r.err&&r.data&&r.data.fmt==='saoek'&&Array.isArray(r.data.els)){m.J=r.data;m.at=r.at;m.err=''}else m.err=r&&r.err||'none'}else m.err=''}}
+  catch(e){m.err='bad'}finally{m.busy=0;m.t=Date.now()}
+  if(m.at!==was&&pnBC===m&&view==='cad'&&!pnMine(pnLocal())){if(was){const t=$('toast');if(t)t.textContent='แบบใน PENUM BIM (เครื่องอื่น) มีการแก้ไข กดดึงแบบล่าสุดได้'}imRender()}}
 let pnLS={s:'',at:0};          // the link as last written and when its content last changed: the same time here and in the cloud copy
-function pnStamp(L){const s=JSON.stringify(L);if(s!==pnLS.s)pnLS={s,at:Date.now()};return Object.assign(L,{at:pnLS.at})}
+// per project code: h = fingerprint of the results, at = when they last changed, c = fingerprint last sent to the cloud; so reopening MEP
+// neither re-dates nor re-sends results that did not change
+const PN_SENT='penum.mep.sent',pnHash=s=>{let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const k=s.charCodeAt(i);a=Math.imul(a^k,2654435761);b=Math.imul(b^k,1597334677)}
+  a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return (b>>>0).toString(36)+'.'+(a>>>0).toString(36)+'.'+s.length};
+const pnFp=L=>{const o=Object.assign({},L);delete o.at;delete o.date;return pnHash(JSON.stringify(o))};          // the results, not the day they were written
+const pnMem=()=>{try{const o=JSON.parse(localStorage.getItem(PN_SENT)||'{}');return o&&typeof o==='object'&&!Array.isArray(o)?o:{}}catch(e){return {}}};
+function pnMemSet(lid,f){if(!lid)return;const o=pnMem(),e=o[lid];delete o[lid];o[lid]=Object.assign({},e,f);const k=Object.keys(o);for(const x of k.slice(0,Math.max(0,k.length-100)))delete o[x];try{localStorage.setItem(PN_SENT,JSON.stringify(o))}catch(e){}}
+function pnStamp(L){const s=JSON.stringify(L);if(s!==pnLS.s){const h=pnFp(L),e=pnMem()[L.lid]||{};pnLS={s,at:e.h===h&&e.at?e.at:Date.now()};if(e.h!==h)pnMemSet(L.lid,{h,at:pnLS.at})}return Object.assign(L,{at:pnLS.at})}
 function pnPush(){if(!PN_SUITE)return;clearTimeout(pnLinkT);pnLinkT=setTimeout(()=>{if(SBX)return;try{localStorage.setItem(PN_LINK,JSON.stringify(pnStamp(pnLink())))}catch(e){}pnCloud()},1200)}
 /* ---------- across computers: the same results go to ORIEN's cloud under this project's link code (shared/link.js, encrypted with the code),
    a few seconds after the last change, so PENUM PM on any computer that was given the code pulls this project's BOQ ---------- */
 let pnCT=0,pnCS='',pnC={st:''};          // st: '' not sent yet · busy · ok · offline · nosql (ORIEN has not set it up) · big · full · bad
 const pnCOn=()=>!!(PN_SUITE&&window.penumLink&&P.lid&&!SBX&&!penumLink.locked());
-function pnCloud(now){if(!pnCOn())return;clearTimeout(pnCT);pnCT=setTimeout(async()=>{const L=pnLink(),s=JSON.stringify(L);if(s===pnCS&&pnC.st==='ok')return;
+function pnCloud(now,force){if(!pnCOn())return;clearTimeout(pnCT);pnCT=setTimeout(async()=>{const L=pnLink(),s=JSON.stringify(L),h=pnFp(L);if(!force&&s===pnCS&&(pnC.st==='ok'||pnC.st==='same'))return;
+  if((pnMem()[L.lid]||{}).c===h){let has=!force;if(force){const a=await penumLink.at([L.lid]);has=!a.err&&!!(a[L.lid]||{}).mep}          // sent from this browser already; the copy buttons check the cloud still has it
+    if(has){if(pnC.st!=='ok')pnC={st:'same'};pnCS=s;pnCSt();return}}
   pnC={st:'busy',at:pnC.at};pnCSt();const r=await penumLink.put(L.lid,'mep',pnStamp(L));
-  if(r.err)pnC={st:r.err,at:pnC.at};else{pnC={st:'ok',at:r.at};if(L.lid===P.lid)pnCS=s}pnCSt()},now?0:5000)}
+  if(r.err)pnC={st:r.err,at:pnC.at};else{pnC={st:'ok',at:r.at};pnMemSet(L.lid,{c:h});if(L.lid===P.lid)pnCS=s}pnCSt()},now?0:5000)}
 function pnCTxt(){const t=pnC.at?new Date(pnC.at):null,hm=t&&!isNaN(t)?t.toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-  return {busy:'กำลังส่งขึ้นคลาวด์',ok:'ส่งขึ้นคลาวด์แล้ว '+hm,offline:'ยังส่งไม่ได้ ไม่มีอินเทอร์เน็ต จะส่งให้เองเมื่อต่อเน็ต',nosql:'ORIEN ยังไม่ได้เปิดบริการเชื่อมข้ามเครื่อง',big:'โครงการใหญ่เกินกว่าจะส่งขึ้นคลาวด์',full:'พื้นที่เชื่อมข้ามเครื่องของ ORIEN เต็ม แจ้ง ORIEN ที่ปุ่มแจ้งปัญหา',bad:'ส่งขึ้นคลาวด์ไม่ได้'}[pnC.st]||(hm?'ส่งขึ้นคลาวด์แล้ว '+hm:'ยังไม่ได้ส่ง')}
+  return {busy:'กำลังส่งขึ้นคลาวด์',ok:'ส่งขึ้นคลาวด์แล้ว '+hm,same:'อยู่บนคลาวด์แล้ว ไม่มีการแก้ไขตั้งแต่ส่งครั้งล่าสุด',offline:'ยังส่งไม่ได้ ไม่มีอินเทอร์เน็ต จะส่งให้เองเมื่อต่อเน็ต',nosql:'ORIEN ยังไม่ได้เปิดบริการเชื่อมข้ามเครื่อง',big:'โครงการใหญ่เกินกว่าจะส่งขึ้นคลาวด์',full:'พื้นที่เชื่อมข้ามเครื่องของ ORIEN เต็ม แจ้ง ORIEN ที่ปุ่มแจ้งปัญหา',bad:'ส่งขึ้นคลาวด์ไม่ได้'}[pnC.st]||(hm?'ส่งขึ้นคลาวด์แล้ว '+hm:'ยังไม่ได้ส่ง')}
 function pnCSt(){const e=document.getElementById('pnCSt');if(e)e.textContent=pnCTxt()}
 function pnCloudCard(){if(!pnCOn())return '';const code=penumLink.show(P.lid);
   return `<section class="panel card" data-noxl><h2><span>ส่ง BOQ ให้ PENUM PM เครื่องอื่น</span><small id="pnCSt">${esc(pnCTxt())}</small></h2>
@@ -5450,15 +5473,19 @@ function pnCloudCard(){if(!pnCOn())return '';const code=penumLink.show(P.lid);
   <div class="row"><button type="button" class="btn primary" data-act="pnCopyLink">คัดลอกลิงก์สำหรับ PENUM PM</button><button type="button" class="btn" data-act="pnCopyCode">คัดลอกรหัส</button><span class="toast" id="pnCToast" role="status"></span></div>
   <p class="hint">ส่งลิงก์นี้ทาง LINE หรืออีเมลให้คนที่ใช้ PENUM PM เปิด แล้วเลือกโครงการใน PM ที่จะรับ BOQ (ทำครั้งเดียวต่อโครงการ) จากนั้นทุกครั้งที่แก้ที่นี่ PENUM PM ทุกเครื่องที่เชื่อมไว้จะดึง BOQ ล่าสุดของโครงการนี้ได้ ข้อมูลเข้ารหัสด้วยรหัสนี้ คนที่ไม่มีรหัสเปิดดูไม่ได้</p></section>`}
 function pnPull(){const J=pnPeer();if(!J)return false;const lv=pnInfo(J).rows.filter(r=>r.wall);if(!lv.length)return false;IM={name:(J.info&&J.info.name||'PENUM BIM')+'.json',kind:'penum',pj:J,l1:lv[0].l.id,l2:lv[1]?lv[1].l.id:'',mep:1,live:1};return true}
-function pnSend(){const X=pnExport(!!(IM&&IM.kind==='penum'&&IM.pj));if(!X)return false;try{localStorage.setItem(PN_HAND,JSON.stringify(X.J));pnPush();return true}catch(e){return false}}
+function pnSend(){const X=pnExport(!!(IM&&IM.kind==='penum'&&IM.pj));if(!X)return false;X.J.hid=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  if(pnCOn())penumLink.put(P.lid,'hand',X.J).then(r=>{const t=$('toast');if(t)t.textContent=r.err?'ส่งแบบให้ PENUM BIM เครื่องอื่นไม่ได้ ('+({offline:'ไม่มีอินเทอร์เน็ต',big:'แบบใหญ่เกินไป',nosql:'ORIEN ยังไม่ได้เปิดบริการ'}[r.err]||'ลองอีกครั้ง')+')':'ส่งแบบแล้ว PENUM BIM ที่เชื่อมโครงการนี้ไว้จะถามให้เปิดแบบนี้'});
+  try{localStorage.setItem(PN_HAND,JSON.stringify(X.J));pnPush();return true}catch(e){return false}}
 function pnLiveCard(){
-  if(!PN_SUITE)return '';const J=pnPeer(),n=J?J.els.filter(e=>e.cat==='wall').length:0;
-  return `<section class="panel card" data-noxl><h2><span>เชื่อมต่อกับ PENUM BIM</span><small>${J?'เชื่อมอยู่':'ยังไม่มีโครงการใน PENUM BIM'}</small></h2>
-  ${J?`<p style="margin:0 0 10px">โครงการใน PENUM BIM: <b>${esc((J.info&&J.info.name)||'')}</b> · ผนัง ${n} · ห้อง ${J.els.filter(e=>e.cat==='room').length}</p>`:''}
+  if(!PN_SUITE)return '';const J=pnPeer(),n=J?J.els.filter(e=>e.cat==='wall').length:0,far=!!(J&&pnBC.J===J),cl=pnCOn();
+  const when=far&&pnBC.at?new Date(pnBC.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  return `<section class="panel card" data-noxl><h2><span>เชื่อมต่อกับ PENUM BIM</span><small>${J?(far?'เชื่อมอยู่ (PENUM BIM เครื่องอื่น)':'เชื่อมอยู่'):'ยังไม่มีโครงการใน PENUM BIM'}</small></h2>
+  ${J?`<p style="margin:0 0 10px">โครงการใน PENUM BIM: <b>${esc((J.info&&J.info.name)||'')}</b> · ผนัง ${n} · ห้อง ${J.els.filter(e=>e.cat==='room').length}${when?' · แก้ไขล่าสุด '+when:''}</p>`:''}
+  ${cl?`<p style="margin:0 0 10px">ใช้ PENUM BIM เครื่องอื่น: ส่งลิงก์นี้ให้คนที่ใช้ PENUM BIM เปิดครั้งเดียว <button type="button" class="btn" data-act="pnCopyBim">คัดลอกลิงก์สำหรับ PENUM BIM</button> <span class="toast" id="pnBToast" role="status"></span></p>`:''}
   <div class="row">${J?`<button type="button" class="btn primary" data-act="pnPull">ดึงแบบล่าสุดจาก PENUM BIM</button>`:''}${P.cad?`<button type="button" class="btn" data-act="pnSend">ส่งแบบและงานระบบไปเปิดใน PENUM BIM</button>`:''}<button type="button" class="btn ghost" data-act="pnGo">ไปที่ PENUM BIM</button></div>
-  <p class="hint">ผลคำนวณ ราคา และ BOQ ของ PENUM MEP ถูกส่งให้ PENUM BIM อัตโนมัติทุกครั้งที่มีการแก้ไข การส่งแบบไปเปิดใน PENUM BIM จะแทนที่โครงการที่เปิดอยู่ใน PENUM BIM</p></section>`}
-function pnSuiteInit(){if(!PN_SUITE)return;pnPush();addEventListener('online',()=>pnCloud(1));document.addEventListener('visibilitychange',()=>{if(!document.hidden&&pnC.st&&pnC.st!=='ok'&&pnC.st!=='busy')pnCloud(1)});
-  addEventListener('storage',e=>{if(e.key===PN_KEY&&view==='cad'){$('toast').textContent='แบบใน PENUM BIM มีการแก้ไข กดดึงแบบล่าสุดได้';imRender()}})}
+  <p class="hint">ผลคำนวณ ราคา และ BOQ ของ PENUM MEP ถูกส่งให้ PENUM BIM อัตโนมัติทุกครั้งที่มีการแก้ไข การส่งแบบไปเปิดใน PENUM BIM จะแทนที่โครงการที่เปิดอยู่ใน PENUM BIM${cl?' ส่วน PENUM BIM เครื่องอื่นที่เชื่อมโครงการนี้ไว้ จะได้ผลคำนวณและแบบที่ส่งไปเช่นกัน และส่งแบบกลับมาที่นี่ได้':''}</p></section>`}
+function pnSuiteInit(){if(!PN_SUITE)return;pnPush();addEventListener('online',()=>pnCloud(1));document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(pnC.st&&!['ok','same','busy'].includes(pnC.st))pnCloud(1);if(view==='cad')pnBFetch()});
+  addEventListener('storage',e=>{if(e.key===PN_KEY&&view==='cad'){const J=pnLocal();if(J&&(!J.mepLid||J.mepLid===P.lid))$('toast').textContent='แบบใน PENUM BIM มีการแก้ไข กดดึงแบบล่าสุดได้';imRender()}})}
 /* ---------- session ---------- */
 function imStats(){const S=IM.S,G=IM.G;G.forEach(g=>{g.n=0;g.len=0});let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
   for(let i=0;i<S.length;i+=5){const g=G[S[i+4]],l=Math.hypot(S[i+2]-S[i],S[i+3]-S[i+1]);g.n++;g.len+=l;if(S[i]<x0)x0=S[i];if(S[i]>x1)x1=S[i];if(S[i+2]<x0)x0=S[i+2];if(S[i+2]>x1)x1=S[i+2];if(S[i+1]<y0)y0=S[i+1];if(S[i+1]>y1)y1=S[i+1];if(S[i+3]<y0)y0=S[i+3];if(S[i+3]>y1)y1=S[i+3]}
@@ -5988,7 +6015,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=109,MEP_NAME='v109';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=115,MEP_NAME='v115';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -6090,7 +6117,8 @@ document.addEventListener('click',async e=>{
     case 'rlang':P.reportLang=b.dataset.v;break;
     case 'fxroom':FX_ROOM=b.dataset.id;break;
     case 'copyEnergy':{try{await navigator.clipboard.writeText(energyTSV());$('toast').textContent='คัดลอกแล้ว วางใน Excel ได้เลย'}catch(err){$('toast').textContent='เบราว์เซอร์ไม่อนุญาตให้คัดลอก ใช้หน้ารายงานแทน'}return}
-    case 'pnCopyLink':case 'pnCopyCode':{const t=a==='pnCopyLink'?penumLink.url('pm',P.lid):penumLink.show(P.lid),o=$('pnCToast');pnCloud(1);
+    case 'pnCopyBim':{const t=penumLink.url('bim',P.lid),o=$('pnBToast');pnCloud(1,1);try{await navigator.clipboard.writeText(t);if(o)o.textContent='คัดลอกลิงก์แล้ว วางส่งใน LINE ได้เลย'}catch(err){if(o)o.textContent=t}return}
+    case 'pnCopyLink':case 'pnCopyCode':{const t=a==='pnCopyLink'?penumLink.url('pm',P.lid):penumLink.show(P.lid),o=$('pnCToast');pnCloud(1,1);
       try{await navigator.clipboard.writeText(t);if(o)o.textContent=a==='pnCopyLink'?'คัดลอกลิงก์แล้ว วางส่งใน LINE ได้เลย':'คัดลอกรหัสแล้ว'}catch(err){if(o)o.textContent=t}return}
     case 'copyBoq':{try{await navigator.clipboard.writeText(boqTSV());$('toast').textContent='คัดลอก BOQ แล้ว วางใน Excel ได้เลย'}catch(err){$('toast').textContent='เบราว์เซอร์ไม่อนุญาตให้คัดลอก ใช้หน้ารายงานแทน'}return}
     case 'addExtra':P.boqExtra.push({desc:'รายการเพิ่มเติม',unit:'งาน',q:1,m:0,l:0});break;
@@ -6222,7 +6250,7 @@ renderAll();
 $('btnTheme').addEventListener('click',()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;try{localStorage.setItem('penum.mep.theme',t)}catch(e){}});
 hiLoad();hiBtns();$('btnUndo').addEventListener('click',hiUndo);$('btnRedo').addEventListener('click',hiRedo);
 mountLangPicker();uiObs.observe(document.body,{childList:true,subtree:true,characterData:true});if(uiLang()!=='th')uiApply();
-/* v109 easier to use: a search box (/ or the header button) over pages, rooms, commands and the cards of this page; the room card shows only what must be filled
+/* v115 easier to use: a search box (/ or the header button) over pages, rooms, commands and the cards of this page; the room card shows only what must be filled
    (the rest under "ตั้งค่าเพิ่มเติม", kept open per device in penum.mep.adv); a ? beside hard fields explains them; a short tour the first time (penum.mep.tour) */
 const UXHELP={
  'อุณหภูมิภายนอก DB (°C)':'อุณหภูมิอากาศภายนอกของวันที่ร้อนที่สุดตามที่ตั้ง (เทอร์โมมิเตอร์ธรรมดา) กรุงเทพฯ ใช้ประมาณ 35°C',
