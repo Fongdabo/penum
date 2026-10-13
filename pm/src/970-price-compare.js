@@ -1,4 +1,4 @@
-/* ---------- 3.84 เทียบราคาทุกแหล่ง: every source's price for a library line, side by side ----------
+/* ---------- 3.85 เทียบราคาทุกแหล่ง: every source's price for a library line, side by side ----------
    960-price-library.js keeps each source's price on the line (x.o, filled by plMerge) beside the price in use. Here they are shown
    one column per kind of source with the lowest, the highest and the spread, and the estimator picks which one the library uses
    (x.pin: a picked price is not replaced by later imports, which only add prices to compare). The value compared is the
