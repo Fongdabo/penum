@@ -211,18 +211,26 @@ function licCard(){const L=licP(),pend=licPend();if(!licOn()&&!pend)return '';co
     <textarea id="licNew" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(pend)}</textarea><div id="licNewR" class="lic-r"></div>
     <div class="row" style="margin-top:8px"><button type="button" class="btn pri" data-a="licRenew">ใช้รหัสนี้</button></div>${L?'</details>':''}`:'<p class="hint">รหัสต่ออายุจะเข้ามาเองเมื่อผู้ให้บริการอนุมัติ</p>';
   return head+body+planCard(L,admin)+renew+'</section>'}
-/* approved renewals: ORIEN publishes the new code in files/licences.json, encrypted with a key made from the code this company
-   already holds (so only this company can read it); PM picks it up when it opens online */
+/* approved renewals: ORIEN publishes the new code encrypted with a key made from the code this company already holds (so only
+   this company can read it), in ORIEN's Supabase (ส่งให้ลูกค้าอัตโนมัติ in ORIEN ฝ่ายขาย, tools/licence-setup.sql) or in
+   files/licences.json. PM picks it up when it opens online and when it comes back to the front, so the customer does nothing:
+   a renewal looks like the same code with a later date */
 const licNorm=c=>String(c||'').replace(/\s+/g,'').replace(/^.*#lic=/,'');
 const sha=async t=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));
-async function licAuto(){try{if(DEMOPG||!licOn())return;const cur=licNorm(DB.co.lic);
-  const j=await (await fetch('files/licences.json',{cache:'no-store'})).json(),idx=[...(await sha('i'+cur)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join(''),e=j&&j.e&&j.e[idx];if(!e)return;
-  const k=await crypto.subtle.importKey('raw',await sha('k'+cur),'AES-GCM',false,['decrypt']);
-  const code=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:licB64(e.iv)},k,licB64(e.ct)));
-  const r=await licCheck(code),o=await licCheck(cur);if(!r.ok||!o.ok||r.p.co!==o.p.co||code===cur||String(r.p.iat)<String(o.p.iat)||DB.co.lic!==cur&&licNorm(DB.co.lic)!==cur)return;
+async function licPub(idx){const E=[],sb=typeof SBCFG==='object'&&SBCFG&&SBCFG.url&&SBCFG.key?SBCFG:null;
+  await Promise.all([sb&&fetch(sb.url+'/rest/v1/rpc/penum_lic_get',{method:'POST',cache:'no-store',headers:{apikey:sb.key,'Content-Type':'application/json'},body:JSON.stringify({p_k:[idx]})})
+      .then(r=>r.ok?r.json():null).then(j=>{if(j&&j[idx])E.push(j[idx])}).catch(()=>{}),
+    fetch('files/licences.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.e&&j.e[idx])E.push(j.e[idx])}).catch(()=>{})]);
+  return E}
+async function licAuto(){licAuto.t=Date.now();try{if(DEMOPG||!licOn())return;const cur=licNorm(DB.co.lic),o=await licCheck(cur);if(!o.ok)return;
+  const idx=[...(await sha('i'+cur)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join(''),k=await crypto.subtle.importKey('raw',await sha('k'+cur),'AES-GCM',false,['decrypt']);
+  const rk=p=>String(p.iat)+'|'+String(p.exp);let r=null;
+  for(const e of await licPub(idx)){try{const x=await licCheck(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:licB64(e.iv)},k,licB64(e.ct))));
+    if(x.ok&&x.p.co===o.p.co&&x.code!==cur&&String(x.p.iat)>=String(o.p.iat)&&(!r||rk(x.p)>rk(r.p)))r=x}catch(e){}}
+  if(!r||DB.co.lic!==cur&&licNorm(DB.co.lic)!==cur)return;
   DB.co.lic=r.code;if(r.p.an)DB.co.adminName=r.p.an;if(r.p.em)DB.co.adminEmail=r.p.em;LIC={code:r.code,r};LOCKSNAP=null;save(true);render();
-  toast(`ได้รับรหัสใหม่จากผู้ให้บริการแล้ว: ${LIC_PLAN[r.p.pl]||r.p.pl} ${fmt(r.p.mx)} คน ใช้ได้ถึง ${thDL(r.p.exp)}`)}catch(e){}}
-if(!DEMOPG)setTimeout(licAuto,1500);
+  toast(`อัปเดตสิทธิ์การใช้งานจากผู้ให้บริการแล้ว: ${LIC_PLAN[r.p.pl]||r.p.pl} ${fmt(r.p.mx)} คน ใช้ได้ถึง ${thDL(r.p.exp)}`)}catch(e){}}
+if(!DEMOPG){setTimeout(licAuto,1500);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-(licAuto.t||0)>30*60e3)licAuto()})}
 /* packages on offer, from files/plans.json (ORIEN edits prices there); a request goes to ORIEN by e-mail or LINE */
 let PLANS=(()=>{try{return JSON.parse(localStorage.getItem('penum.plans')||'null')}catch(e){return null}})()||{contact:{email:'fong101dt@gmail.com',line:''},vat:'ราคาต่อเดือน ไม่รวม VAT 7%',plans:[{k:'pilot',name:'ทดลองใช้ (Pilot)',price:0,users:10,txt:'ฟรีช่วงทดลอง'},{k:'starter',name:'Starter',price:1490,users:10},{k:'std',name:'Standard',price:3900,users:30},{k:'biz',name:'Business',price:7900,users:80},{k:'ent',name:'Enterprise',price:null,users:200,txt:'ติดต่อฝ่ายขาย'}]};
 if(!DEMOPG)fetch('files/plans.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.plans))return;const t=JSON.stringify(j);if(t===JSON.stringify(PLANS))return;PLANS=j;try{localStorage.setItem('penum.plans',t)}catch(e){}if(S.ctab==='coset')render()}).catch(()=>{});
