@@ -92,7 +92,7 @@ let pushT;const schedPush=()=>{if(!cloudOn())return;clearTimeout(pushT);CS.state
 {const s=save;save=function(now){s(now);if(cloudOn())schedPush()}}
 
 /* photos: data URLs in IndexedDB here, text files in PENUM-PM/photos/ there */
-const photoKeys=()=>{const K=new Set();Object.values(DB.projects).forEach(p=>{['daily','punch','safe','incid','wir','ncr'].forEach(c=>(p[c]||[]).forEach(r=>(r.photos||[]).forEach(k=>K.add(k))));(p.bills||[]).forEach(b=>(b.rcpts||[]).forEach(r=>(r.photos||[]).forEach(k=>K.add(k))))});return [...K]};
+const photoKeys=()=>{const K=new Set();Object.values(DB.projects).forEach(p=>{['daily','punch','safe','incid','wir','ncr','att'].forEach(c=>(p[c]||[]).forEach(r=>(r.photos||[]).forEach(k=>K.add(k))));(p.bills||[]).forEach(b=>(b.rcpts||[]).forEach(r=>(r.photos||[]).forEach(k=>K.add(k))))});return [...K]};
 async function pushPhotos(){const done=new Set(CL.ph||[]);for(const k of photoKeys()){if(done.has(k))continue;const v=await IDB.get(k).catch(()=>null);if(!v)continue;
     const r=await gfetch(itemPath(`photos/${k}.txt`)+'/content',{method:'PUT',headers:{'Content-Type':'text/plain'},body:v});if(r.ok){done.add(k);CL.ph=[...done];clSave()}}}
 {const f=phSrc;phSrc=async k=>{const v=await f(k);if(v||!cloudOn())return v;
