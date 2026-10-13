@@ -1,7 +1,7 @@
 // Build the GitHub Pages site: wrap each app's Artifact source in a full HTML page,
 // add a web app manifest and a service worker so Edge/Chrome can install it as a desktop app.
 // Each app is a folder with its source (index.html, or src/ for an app split into files) and app.json (its name, colours, version pattern, links); see docs/apps.md.
-// The parts every app shares (update box, licence check, service worker, icons, home page) live in shared/.
+// The parts every app shares (update box, licence check, project link code, service worker, icons, home page) live in shared/.
 // Usage: node tools/build-pages.mjs [outDir] [app …]   (default: site, every app; naming apps builds only those, e.g. `site pm`)
 import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -23,6 +23,8 @@ if (unknown.length) { console.error('no such app:', unknown.join(', '), '· apps
 const UPD = readFileSync(join(SHARED, 'update.js'), 'utf8').replaceAll('</script', '<\\/script');
 // รหัสเปิดใช้งาน: apps with "licence" in app.json (MEP, BIM) carry shared/licence.js in <head>, before the app, with their own settings
 const LIC = readFileSync(join(SHARED, 'licence.js'), 'utf8').replaceAll('</script', '<\\/script');
+// รหัสเชื่อมโครงการ: apps with "cloud": true in app.json (MEP, PM, BIM) carry shared/link.js in <head>, to pass a project's data across computers
+const LINK = readFileSync(join(SHARED, 'link.js'), 'utf8').replaceAll('</script', '<\\/script');
 // the program's storage keys that stay unwritten while it is locked: its own (licence.keys) and the links it writes for the others
 const licCfg = a => ({ app: a.dir, name: a.name, keys: [...new Set([...(a.licence.keys || []), ...(a.links?.writes || [])])],
   ...(a.licence.work ? { work: a.licence.work } : {}), ...(a.licence.sample ? { sample: a.licence.sample } : {}), ...(a.licence.skip ? { skip: a.licence.skip } : {}) });
@@ -42,7 +44,7 @@ for (const a of APPS) {
   // an app with its own icons/ folder (the ORIEN sales app) uses those instead of the shared PENUM icons
   const ic = a.ownIcons ? 'icons/' : '../icons/';
   const src = source(a);
-  const lic = a.licence ? `<script>window.PENUM_LIC=${JSON.stringify(licCfg(a))};\n${LIC}</script>` : '';
+  const lic = (a.licence ? `<script>window.PENUM_LIC=${JSON.stringify(licCfg(a))};\n${LIC}</script>` : '') + (a.cloud ? `<script>${LINK}</script>` : '');
   const ver = createHash('sha256').update(src).update(UPD).update(lic).digest('hex').slice(0, 12);
   const vname = (a.ver && (src.match(new RegExp(a.ver)) || [])[1]) || lastChange(a.dir) || ver.slice(0, 7);
   const site = `window.PENUM_SITE={app:${JSON.stringify(a.dir)},title:${JSON.stringify(a.name)},hash:${JSON.stringify(ver)},name:${JSON.stringify(vname)}${a.save ? `,save:()=>{${a.save}}` : ''}};`;
