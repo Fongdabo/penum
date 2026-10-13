@@ -1,6 +1,6 @@
 // Build the GitHub Pages site: wrap each app's Artifact source in a full HTML page,
 // add a web app manifest and a service worker so Edge/Chrome can install it as a desktop app.
-// Each app is a folder with index.html (its source) and app.json (its name, colours, version pattern, links); see docs/apps.md.
+// Each app is a folder with its source (index.html, or src/ for an app split into files) and app.json (its name, colours, version pattern, links); see docs/apps.md.
 // The parts every app shares (update box, service worker, icons, home page) live in shared/.
 // Usage: node tools/build-pages.mjs [outDir] [app …]   (default: site, every app; naming apps builds only those, e.g. `site pm`)
 import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 
-import { APPS, root } from './apps.mjs';
+import { APPS, root, source } from './apps.mjs';
 const out = resolve(root, process.argv[2] || 'site');
 const only = process.argv.slice(3);
 const SHARED = join(root, 'shared');
@@ -36,7 +36,7 @@ for (const a of APPS) {
   if (only.length && !only.includes(a.dir)) continue;
   // an app with its own icons/ folder (the ORIEN sales app) uses those instead of the shared PENUM icons
   const ic = a.ownIcons ? 'icons/' : '../icons/';
-  const src = readFileSync(join(root, a.dir, 'index.html'), 'utf8');
+  const src = source(a);
   const ver = createHash('sha256').update(src).update(UPD).digest('hex').slice(0, 12);
   const vname = (a.ver && (src.match(new RegExp(a.ver)) || [])[1]) || lastChange(a.dir) || ver.slice(0, 7);
   const site = `window.PENUM_SITE={app:${JSON.stringify(a.dir)},title:${JSON.stringify(a.name)},hash:${JSON.stringify(ver)},name:${JSON.stringify(vname)}${a.save ? `,save:()=>{${a.save}}` : ''}};`;
