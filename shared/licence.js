@@ -50,7 +50,14 @@ const T={menu:['สิทธิ์การใช้งาน','Licence'],sub:['
   lineD:['คัดลอกข้อความไว้แล้ว เปิด LINE › เพิ่มเพื่อน › ค้นหาไอดี {0} › เปิดแชท › วาง (Ctrl+V) › ส่ง หรือสแกน QR ในหน้าที่เพิ่งเปิดด้วยมือถือ','The message is copied. Open LINE › Add friend › search the ID {0} › open the chat › paste (Ctrl+V) › send, or scan the QR code on the page that just opened.'],
   askH:['ขอรหัสเปิดใช้งาน {0}','Activation code for {0}'],
   askB:['บริษัท: \nผู้ติดต่อ: \nโทร: \nต้องการ: ทดลองใช้ฟรี / เช่าใช้','Company: \nContact person: \nPhone: \nWanted: free trial / rental'],
-  renewT:['ORIEN อัปเดตสิทธิ์การใช้งานให้แล้ว ใช้ได้ถึง {0}','ORIEN updated your licence, valid until {0}'],close:['ปิด','Close']};
+  renewT:['ORIEN อัปเดตสิทธิ์การใช้งานให้แล้ว ใช้ได้ถึง {0}','ORIEN updated your licence, valid until {0}'],close:['ปิด','Close'],
+  upT:['ยังไม่ได้ใช้ {0}?','Not using {0} yet?'],upB:['ขอเพิ่ม {0}','Add {0}'],upH:['ขอเพิ่มโปรแกรม {0}','Add {0} to our licence'],upFrom:['เริ่มต้น','from'],
+  upP:['ORIEN จะเพิ่ม {0} ในรหัสเดียวกับที่บริษัทใช้อยู่ เมื่ออนุมัติแล้ว รหัสใหม่จะมาถึงเครื่องนี้เอง ไม่ต้องพิมพ์','ORIEN adds {0} to the code your company already uses. Once approved, the new code reaches this device by itself: nothing to type.'],
+  upNow:['ใช้อยู่','Using now'],upAdd:['ต้องการเพิ่ม','Add'],upWho:['ผู้ติดต่อ: \nโทร: ','Contact person: \nPhone: ']};
+// what each program would do where another one links to it (the hint below); PENUM PM shows its own about PENUM MEP (pm/src/920-mep-link.js)
+const PITCH={pm:['ใช้ BOQ ที่ออกแบบที่นี่ทำสัญญา เบิกงวด จัดซื้อ และติดตามโครงการได้ทันที ไม่ต้องพิมพ์ซ้ำ','Turn the BOQ designed here into contracts, progress claims, purchasing and project tracking at once, without typing it again'],
+  mep:['คำนวณโหลดความเย็น ออกแบบงานระบบ และทำ BOQ แล้วผลคำนวณรายห้องกับ BOQ จะมาที่โครงการนี้เอง','Cooling loads, building services design and the BOQ, with the room results and the BOQ sent to this project by themselves'],
+  bim:['ขึ้นแบบอาคาร 3 มิติจากงานระบบที่ออกแบบที่นี่ และส่งแบบอาคารกลับมาให้ได้','A 3D building model from the services designed here, which sends the building back here too']};
 const t=(k,...a)=>T[k][EN()?1:0].replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pad=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
@@ -156,7 +163,14 @@ const CSS=`html.plk-hide body{visibility:hidden!important}html.plk-hide #plk,htm
 :root[data-theme="dark"] .plk-top small,:root[data-theme="dark"] .plk-pr{color:#67E8F9;background:rgba(34,211,238,.12)}
 :root[data-theme="dark"] .plk-ask .plk-b:not(.ln){background:#0F1621;color:#EEF3F9;border-color:#1D2735;box-shadow:none}
 @media (max-width:420px){#plk{padding:12px 10px calc(12px + env(safe-area-inset-bottom,0px))}.plk-c{padding:24px 18px 18px;border-radius:22px}#plk h1{font-size:21px}}
-@media print{#plk,.plk-ban,.plk-toast{display:none!important}}`.replace(/FONT/g,'"IBM Plex Sans Thai","Anuphan","Sarabun","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif');
+/* the hint about a program the company does not rent yet (upsell), inside MEP's and BIM's own pages */
+.plk-up{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:12px 0 0;padding:12px 14px;border-radius:14px;border:1px solid #D5E3F3;text-align:left;
+  background:linear-gradient(120deg,rgba(20,184,166,.09),rgba(14,165,233,.08) 55%,rgba(99,102,241,.10));font:14px/1.5 FONT;color:#0F1E2E}
+.plk-up>div{flex:1 1 240px;min-width:0}.plk-up b{display:block;font-size:14.5px;font-weight:700}.plk-up span{display:block;color:#5B697C;font-size:13.5px}
+.plk-up .plk-b{min-height:38px;padding:6px 16px;font-weight:600;color:#0B6E7A;border-color:rgba(14,165,233,.45)}
+:root[data-theme="dark"] .plk-up{border-color:#1D2735;background:linear-gradient(120deg,rgba(34,211,238,.10),rgba(129,140,248,.12));color:#EEF3F9}
+:root[data-theme="dark"] .plk-up span{color:#95A5BA}:root[data-theme="dark"] .plk-up .plk-b{background:#0F1621;color:#67E8F9;border-color:#1D2735;box-shadow:none}
+@media print{#plk,.plk-ban,.plk-toast,.plk-up{display:none!important}}`.replace(/FONT/g,'"IBM Plex Sans Thai","Anuphan","Sarabun","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif');
 {const st=document.createElement('style');st.textContent=CSS;(document.head||document.documentElement).appendChild(st)}
 
 function toast(m){let el=document.querySelector('.plk-toast');if(!el){if(!document.body)return;el=document.createElement('div');el.className='plk-toast';el.setAttribute('data-noxl','');el.setAttribute('role','status');document.body.appendChild(el)}
@@ -192,10 +206,11 @@ async function tryCode(v,out){v=norm(v);if(!out)return;if(!v){out.innerHTML='';r
 const own=el=>{['keydown','keyup','keypress','input','change','paste','copy','cut','click'].forEach(k=>el.addEventListener(k,e=>{if(k==='input'&&/^plk(In|New)$/.test(e.target.id)){const x=e.target;clearTimeout(x._t);x._t=setTimeout(()=>tryCode(x.value,el.querySelector(x.id==='plkIn'?'#plkR':'#plkNewR')),250)}
   if(k==='click')act(e);e.stopPropagation()}))};
 async function act(e){const b=e.target.closest&&e.target.closest('[data-plk]');if(!b)return;const k=b.dataset.plk,c=contact(),out=b.closest('.plk-ask')&&b.closest('.plk-ask').querySelector('[data-plk-ask]');
-  if(k==='line'){const id=String(c.lineOA).startsWith('@')?c.lineOA:'@'+c.lineOA;if(mob()){open(`https://line.me/R/oaMessage/${encodeURIComponent(id)}/?${encodeURIComponent(askText())}`,'_blank');return}
-    await copyT(askText());open(`https://line.me/R/ti/p/${encodeURIComponent(id)}`,'_blank');if(out)out.textContent=t('lineD',id)}
-  if(k==='mail')location.href=`mailto:${c.email}?subject=${encodeURIComponent(t('askH',C.name))}&body=${encodeURIComponent(askText())}`;
-  if(k==='fb'&&window.penumFB){try{if(!get('penum.fb.draft'))put('penum.fb.draft',askText())}catch(x){}penumFB.open('other')}
+  const ap=APPN[b.dataset.app]?b.dataset.app:'',txt=ap?reqText(ap):askText(),sub=ap?t('upH',APPN[ap]):t('askH',C.name);          // data-app: a request to add that program
+  if(k==='line'){const id=String(c.lineOA).startsWith('@')?c.lineOA:'@'+c.lineOA;if(mob()){open(`https://line.me/R/oaMessage/${encodeURIComponent(id)}/?${encodeURIComponent(txt)}`,'_blank');return}
+    await copyT(txt);open(`https://line.me/R/ti/p/${encodeURIComponent(id)}`,'_blank');if(out)out.textContent=t('lineD',id)}
+  if(k==='mail')location.href=`mailto:${c.email}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(txt)}`;
+  if(k==='fb'&&window.penumFB){try{const d=get('penum.fb.draft');if(!d||d.includes('[PENUM-PLAN]'))put('penum.fb.draft',txt)}catch(x){}if(ap&&AD)AD.close();penumFB.open('other')}
   if(k==='close'){const d=b.closest('dialog');d&&d.close()}
   if(k==='open')openDlg();
   if(k==='hide'){S.st==='warn'?put('penum.lic.ban.'+C.app,today()):ss('penum.lic.ban.'+C.app,S.st);paintBan()}}
@@ -234,6 +249,30 @@ function openDlg(){if(!DLG){DLG=document.createElement('dialog');DLG.className='
   if(!DLG.open){try{DLG.showModal()}catch(e){DLG.setAttribute('open','')}}
   const v=ss(PEND);if(v)tryCode(v,DLG.querySelector('#plkNewR'))}
 
+// round 3 of รหัสเชื่อมโครงการ: where this program links to another one the company does not rent yet, a short hint says what that one
+// would do here, with a button that asks ORIEN to add it to the company's code (the request PENUM PM's ขอเปลี่ยนแพ็กเกจ sends: [PENUM-PLAN] … +app)
+const pmHere=()=>{try{for(let i=0;i<LSO.length;i++){const k=LSO.key(i);if(!/^penum\.pm\.v1(\.c\d+)?$/.test(k))continue;const d=JSON.parse(get(k)||'null'),c=d&&d.co||{};
+  if(c.lic||c.setupAt||String(c.name||'').trim()||d&&d.projects&&Object.keys(d.projects).length)return true}}catch(e){}return false};          // PENUM PM keeps a company here (ORIEN's demo, ?demo=1, does not count)
+// true: this device opens program a (a code here lists it, it is free here, or PENUM PM keeps a company here) · false: the codes here leave it out
+// · null: no hint at all (this program is free here, or has no code yet)
+function covers(a){if(FREE||!S.p)return null;if(all().some(x=>has(x.p,a)&&!revoked(x.p)))return true;
+  let F={};try{F=JSON.parse(get(FIRST)||'{}')||{}}catch(e){}return !!(F[a]&&F[a].free)||a==='pm'&&pmHere()}
+function upsell(a){if(!APPN[a]||a===C.app||covers(a)!==false)return '';
+  return `<div class="plk-up" data-noxl><div><b>${t('upT',APPN[a])}</b><span>${esc(PITCH[a][EN()?1:0])}</span></div><button type="button" class="plk-b" data-penum-ask="${a}">${t('upB',APPN[a])}</button></div>`}
+function priceOf(a){const P=PL||{};if(a==='pm'){const L=(Array.isArray(P.plans)?P.plans:[]).map(x=>x&&+x.price).filter(v=>v>0);return L.length?`${APPN.pm} ${t('upFrom')} ${fmt(Math.min(...L))} ${t('month')}`:''}
+  const A=(Array.isArray(P.apps)?P.apps:[]).find(x=>x&&x.k===a);return A&&A.price!=null?`${esc(A.name||APPN[a])} ${fmt(A.price)} ${t('month')}`:''}
+function reqText(a){const p=S.p||{},cust=p.sn||base(p.id)||'-',no=p.no||p.id||'-';
+  return [t('upH',APPN[a]),'',`${t('co')}: ${p.co||''}`,`${t('cust')}: ${cust}`,`Serial number: ${no}`,`${t('upNow')}: ${(S.p?apOf(p):[]).map(x=>APPN[x]||x).join(', ')}`,`${t('upAdd')}: ${APPN[a]}`,t('upWho'),'',
+    `[PENUM-PLAN] ${cust} ${no} ${p.pl||''}>${p.pl||''} +${a}`].join('\n')}
+let AD=null;
+function openAsk(a){if(!APPN[a])return;if(!AD){AD=document.createElement('dialog');AD.className='plk-dlg';AD.setAttribute('data-noxl','');document.body.appendChild(AD);own(AD)}
+  const c=contact(),pr=[priceOf(a),PL&&PL.bundle&&PL.bundle.txt?esc(PL.bundle.txt):''].filter(Boolean);
+  AD.innerHTML=`<div class="plk-hd"><b>${t('upH',APPN[a])}</b><small>${esc((S.p&&S.p.co)||C.name)}</small></div>
+  <div class="plk-bd"><p>${esc(PITCH[a][EN()?1:0])}</p><p class="plk-mut">${t('upP',APPN[a])}</p>
+  <div class="plk-ask">${pr.length?`<div class="plk-pr">${pr.join(' · ')}</div>`:''}<div class="plk-row">${c.lineOA?`<button type="button" class="plk-b ln" data-plk="line" data-app="${a}">${t('line')}</button>`:''}${c.email?`<button type="button" class="plk-b" data-plk="mail" data-app="${a}">${t('mail')}</button>`:''}${window.penumFB?`<button type="button" class="plk-b" data-plk="fb" data-app="${a}">${t('fb')}</button>`:''}</div><div class="plk-hint" data-plk-ask></div></div></div>
+  <div class="plk-ft"><button type="button" class="plk-b" data-plk="close" style="margin-left:auto">${t('close')}</button></div>`;
+  if(!AD.open){try{AD.showModal()}catch(e){AD.setAttribute('open','')}}}
+
 function paint(was){paintGate();paintBan();
   if(S.st==='ro'){lockF(document.body);fObs.observe(document.body,{childList:true,subtree:true})}else{fObs.disconnect();document.querySelectorAll('[data-plk-ro]').forEach(e=>{e.disabled=false;e.removeAttribute('data-plk-ro')})}
   if(DLG&&DLG.open&&was!==S.st)openDlg()}
@@ -254,6 +293,7 @@ async function renewals(){renewals.t=Date.now();const L=regGet();if(!L.length)re
 
 function start(){UI=true;
   document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-penum-lic]');if(!b)return;const d=b.closest('details');if(d)d.open=false;openDlg()});
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-penum-ask]');if(!b)return;e.preventDefault();openAsk(b.dataset.penumAsk)});
   putMenu();new MutationObserver(()=>{if(!document.querySelector('[data-penum-lic]'))putMenu()}).observe(document.body,{childList:true,subtree:true});
   paint('');recheck();
   // a renewal link opened in a program that already has a code
@@ -273,5 +313,6 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',sta
 {let fb;const add=()=>S.p?{company:S.p.co,lic:S.p.sn||base(S.p.id)}:{};
   try{Object.defineProperty(window,'penumFB',{configurable:true,enumerable:true,get:()=>fb,set(v){if(v&&typeof v.init==='function'&&!v.__plk){const f=v.init;
     v.init=function(o){o=Object.assign({},o);const g=o.info;o.info=()=>{let x={};try{x=(g&&g())||{}}catch(e){}return Object.assign(add(),x)};return f.call(this,o)};v.__plk=1}fb=v}})}catch(e){}}
-window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[]}),open:openDlg,check:recheck};
+window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[]}),open:openDlg,check:recheck,
+  has:covers,upsell,ask:openAsk};          // the other programs: whether this device opens one, the hint about one it does not, its request dialog
 })();
