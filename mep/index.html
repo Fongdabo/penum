@@ -2766,7 +2766,7 @@ function renderBoq(){
     <div><dt>ต่อตันความเย็นติดตั้ง</dt><dd>${B.pl.installed>0?fmt(B.grand/B.pl.installed):'–'} <small>บาท/TR</small></dd></div>
     <div><dt>ต่อพื้นที่</dt><dd>${fmt(B.grand/Math.max(1,P.rooms.reduce((a,r)=>a+n(r.area),0)))} <small>บาท/m²</small></dd></div>
   </dl>
-  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><span class="toast" id="toast" role="status"></span></div>${pnCloudCard()}${boqLeftCard(B)}
+  <div class="report-actions" style="margin:0"><button type="button" class="btn primary" data-act="copyBoq">คัดลอก BOQ (วางใน Excel)</button><button type="button" class="btn" data-act="boqXl" data-v="0" title="ไฟล์ Excel ตามแบบฟอร์ม BOQ มาตรฐาน ORIEN: หน้าสรุป และ BOQ แยกค่าวัสดุ/ค่าแรง นำเข้า PENUM PM ได้ครบทุกบรรทัด">ดาวน์โหลด Excel (ส่งลูกค้า)</button><button type="button" class="btn" data-act="boqXl" data-v="1" title="เพิ่มชีตราคาทุน ราคาขาย และกำไรต่อรายการ สำหรับใช้ในบริษัท">Excel ฉบับภายใน (ราคาทุน)</button><span class="toast" id="toast" role="status"></span></div>${pnCloudCard()}${boqLeftCard(B)}
   <section class="panel card"><h2><span>ใบประมาณราคา (BOQ)</span><small>ช่องว่าง = ค่าคำนวณอัตโนมัติ พิมพ์ทับได้ แก้แล้วกด Enter</small></h2>
   <p class="exnote" style="margin:0 0 8px">ราคาต่อหน่วยตั้งต้นเป็นตัวเลขตัวอย่างเพื่อทดลองใช้ ไม่ใช่ราคาตลาด ใส่ราคาของคุณในตารางราคาด้านล่างก่อนใช้งานจริง</p>
   <div class="grid" style="margin:0 0 10px">${fld('กำไรค่าของทุกรายการ (%)',pIn('data-as="profitM" id="as-pfm"',A.profitM))}${fld('กำไรค่าแรงทุกรายการ (%)',pIn('data-as="profitL" id="as-pfl"',A.profitL))}</div>
@@ -2841,6 +2841,20 @@ function boqTSV(){
   rows.push([],['','รวมค่าของและค่าแรง','','','','','','',Math.round(B.cost),'','',Math.round(B.sub)],['','กำไรที่บวกเพิ่ม',...e9,Math.round(B.profit)],['',`ค่าดำเนินการและกำไร ${P.assume.ohp}%`,...e9,Math.round(B.ohp)],['',`VAT ${P.assume.vat}%`,...e9,Math.round(B.vat)],['','รวมทั้งสิ้น',...e9,Math.round(B.grand)]);
   return rows.map(r=>r.join('\t')).join('\n');
 }
+
+// v114 ORIEN standard BOQ form as an Excel file (pm/files/lib/orien-boq.js, shared with PENUM PM, which reads it back line for line)
+async function boqXl(internal){
+  const lib='../pm/files/lib/';if(!window.orienBoq)await new Promise((ok,no)=>{const s=document.createElement('script');s.src=lib+'orien-boq.js';s.onload=ok;s.onerror=()=>no(new Error('ทำไฟล์ Excel ได้เมื่อเปิดจากเว็บ PENUM และต่ออินเทอร์เน็ต ใช้ปุ่มคัดลอก BOQ แทน'));document.head.appendChild(s)});
+  const X=await orienBoq.load(lib),B=boq(),A=P.assume,I=P.info,ord=Object.keys(BOQ_G);
+  const items=B.items.slice().sort((a,b)=>ord.indexOf(a.g)-ord.indexOf(b.g)).map(it=>({g:it.g,gname:BOQ_G[it.g]||it.g,head:it.sub||'',type:it.typ||'',desc:it.desc,unit:it.unit,q:n(it.q),mc:n(it.m),lc:n(it.l),ms:n(it.m)*it.km,ls:n(it.l)*it.kl}));
+  if(!items.length)throw new Error('ยังไม่มีรายการใน BOQ');
+  const doc={co:{name:I.company||'',lines:[]},meta:{src:'PENUM MEP',pname:P.name||'',cust:I.client||'',no:I.code||'',date:I.date||'',site:I.location||'',vat:n(A.vat)},items,
+    sum:{rows:B.ohp?[{name:`ค่าดำเนินการและกำไร ${n(A.ohp)}%`,v:B.ohp,pct:n(A.ohp)}]:[],disc:0}};
+  const data=orienBoq.bytes(X,orienBoq.build(X,doc,internal)),name=`PENUM-BOQ-${String(I.code||P.name||'project').replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'project'}${internal?'-internal':''}.xlsx`;
+  try{if(!pnDL&&window.claude&&window.claude.use)pnDL=await Promise.race([window.claude.use('downloads'),new Promise(r=>setTimeout(()=>r(null),6000))])}catch(e){pnDL=null}
+  if(!pnDL)throw new Error('บันทึกไฟล์ในหน้านี้ไม่ได้ ใช้ปุ่มคัดลอก BOQ แทน');
+  try{await pnDL.save({filename:name,data:new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})})}catch(e){if(e&&e.code==='declined')return 'ยกเลิกการบันทึก';throw e}
+  return (internal?'บันทึก Excel ฉบับภายในแล้ว (มีราคาทุน อย่าส่งให้ลูกค้า) ':'บันทึก Excel แบบ ORIEN แล้ว ')+name}
 
 /* ---------- cover ---------- */
 const JOB=[['new','สร้างใหม่'],['renovate','รีโนเวท / ปรับปรุง'],['expand','ขยายพื้นที่'],['replace','เปลี่ยนเครื่องทดแทน'],['service','งานซ่อมบำรุง']];
@@ -6117,6 +6131,7 @@ document.addEventListener('click',async e=>{
     case 'rlang':P.reportLang=b.dataset.v;break;
     case 'fxroom':FX_ROOM=b.dataset.id;break;
     case 'copyEnergy':{try{await navigator.clipboard.writeText(energyTSV());$('toast').textContent='คัดลอกแล้ว วางใน Excel ได้เลย'}catch(err){$('toast').textContent='เบราว์เซอร์ไม่อนุญาตให้คัดลอก ใช้หน้ารายงานแทน'}return}
+    case 'boqXl':{const t=$('toast');if(t)t.textContent='กำลังทำไฟล์ Excel';try{t.textContent=await boqXl(b.dataset.v==='1')}catch(err){if(t)t.textContent=err.message||'ทำไฟล์ Excel ไม่สำเร็จ'}return}
     case 'pnCopyBim':{const t=penumLink.url('bim',P.lid),o=$('pnBToast');pnCloud(1,1);try{await navigator.clipboard.writeText(t);if(o)o.textContent='คัดลอกลิงก์แล้ว วางส่งใน LINE ได้เลย'}catch(err){if(o)o.textContent=t}return}
     case 'pnCopyLink':case 'pnCopyCode':{const t=a==='pnCopyLink'?penumLink.url('pm',P.lid):penumLink.show(P.lid),o=$('pnCToast');pnCloud(1,1);
       try{await navigator.clipboard.writeText(t);if(o)o.textContent=a==='pnCopyLink'?'คัดลอกลิงก์แล้ว วางส่งใน LINE ได้เลย':'คัดลอกรหัสแล้ว'}catch(err){if(o)o.textContent=t}return}
