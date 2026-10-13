@@ -69,6 +69,8 @@ ${UPD}</script>
     // an installed app could take over another app's start page; each app gets its own path
     id: `/penum/${a.dir}/`, name: a.name, short_name: a.short, description: a.desc, lang: 'th',
     start_url: './', scope: './', display: 'standalone', theme_color: a.theme, background_color: a.bg,
+    // an installed app opens its own saved files by double-click (app.json fileTypes: {mime: [extensions]}; the page reads them with launchQueue)
+    ...(a.fileTypes ? { file_handlers: [{ action: './', accept: a.fileTypes, launch_type: 'single-client' }] } : {}),
     icons: [
       { src: `${ic}icon-192.png`, sizes: '192x192', type: 'image/png' },
       { src: `${ic}icon-512.png`, sizes: '512x512', type: 'image/png' },
