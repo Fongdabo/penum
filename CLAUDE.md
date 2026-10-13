@@ -25,5 +25,12 @@ MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
   `node tools/build-pages.mjs site` (or `site pm` for one app). CI runs both on every PR and before every deploy.
 - Test in Chromium: copy `site/` to `<dir>/penum`, serve `<dir>` (`python3 -m http.server -d <dir>`), open `/penum/pm/`.
 - Feedback box: edit `shared/feedback.js`, then run `node tools/sync-feedback.mjs`.
-- Never rename the shared storage keys (`penum.mep.link`, `penum.handoff`, `saoek.v2`), the `/penum/<app>/` paths or
-  the manifest ids: installed apps and customers' saved data depend on them.
+- Never rename the shared storage keys (`penum.mep.link`, `penum.handoff`, `saoek.v2`, `penum.licences`), the `/penum/<app>/`
+  paths or the manifest ids: installed apps and customers' saved data depend on them.
+
+## Licence codes
+
+- One code per customer company; payload `ap` lists the apps it opens (no `ap` = PENUM PM only). ORIEN issues codes in
+  `sales/`. PM checks them in `pm/src/810-licence.js`; MEP and BIM in `shared/licence.js`, which the build puts in their
+  `<head>` because their `app.json` has a `licence` field. The public key must match in all three (`check-apps` checks).
+- Never commit or publish the private signing key. Test with a throwaway key pair swapped into the built pages.

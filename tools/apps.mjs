@@ -2,7 +2,9 @@
 // In app.json: name/short/desc/theme/bg → the installed app; ver: where the app's own version name is in its source (a regex);
 // save: what the update button runs before reloading; shim: stand in for the Artifact downloads service; ownIcons: the app's own icons/ folder;
 // copy: extra files served next to the app {published path: source path}; links: the shared browser-storage keys it writes and reads;
-// opens: the apps its header buttons open in their own window. See docs/apps.md.
+// opens: the apps its header buttons open in their own window; licence: put shared/licence.js (licence code check) in the page,
+// with keys (work keys not saved without a licence), work (the key that shows the device already used the app), sample (BIM's
+// untouched sample project) and skip (a location.hash regex left unchecked). See docs/apps.md.
 //
 // An app's page source is its index.html, or, for an app split into small files (PENUM PM), the files in <app>/src joined in
 // name order. Each file there is a run of whole lines of the page, named NNN-what.ext (ext: html, css or js for what it holds).

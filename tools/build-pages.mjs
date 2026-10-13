@@ -1,7 +1,7 @@
 // Build the GitHub Pages site: wrap each app's Artifact source in a full HTML page,
 // add a web app manifest and a service worker so Edge/Chrome can install it as a desktop app.
 // Each app is a folder with its source (index.html, or src/ for an app split into files) and app.json (its name, colours, version pattern, links); see docs/apps.md.
-// The parts every app shares (update box, service worker, icons, home page) live in shared/.
+// The parts every app shares (update box, licence check, service worker, icons, home page) live in shared/.
 // Usage: node tools/build-pages.mjs [outDir] [app …]   (default: site, every app; naming apps builds only those, e.g. `site pm`)
 import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -21,6 +21,11 @@ if (unknown.length) { console.error('no such app:', unknown.join(', '), '· apps
 
 // ปุ่มอัปเดตโปรแกรม: every app page carries shared/update.js and its own {hash, name}; version.json beside it holds the newest
 const UPD = readFileSync(join(SHARED, 'update.js'), 'utf8').replaceAll('</script', '<\\/script');
+// รหัสเปิดใช้งาน: apps with "licence" in app.json (MEP, BIM) carry shared/licence.js in <head>, before the app, with their own settings
+const LIC = readFileSync(join(SHARED, 'licence.js'), 'utf8').replaceAll('</script', '<\\/script');
+// the program's storage keys that stay unwritten while it is locked: its own (licence.keys) and the links it writes for the others
+const licCfg = a => ({ app: a.dir, name: a.name, keys: [...new Set([...(a.licence.keys || []), ...(a.links?.writes || [])])],
+  ...(a.licence.work ? { work: a.licence.work } : {}), ...(a.licence.sample ? { sample: a.licence.sample } : {}), ...(a.licence.skip ? { skip: a.licence.skip } : {}) });
 // an app without a version name in its source shows the date of its last change instead
 const lastChange = dir => { try { return execFileSync('git', ['log', '-1', '--format=%cs', '--', dir], { cwd: root, encoding: 'utf8' }).trim(); } catch { return ''; } };
 
@@ -37,7 +42,8 @@ for (const a of APPS) {
   // an app with its own icons/ folder (the ORIEN sales app) uses those instead of the shared PENUM icons
   const ic = a.ownIcons ? 'icons/' : '../icons/';
   const src = source(a);
-  const ver = createHash('sha256').update(src).update(UPD).digest('hex').slice(0, 12);
+  const lic = a.licence ? `<script>window.PENUM_LIC=${JSON.stringify(licCfg(a))};\n${LIC}</script>` : '';
+  const ver = createHash('sha256').update(src).update(UPD).update(lic).digest('hex').slice(0, 12);
   const vname = (a.ver && (src.match(new RegExp(a.ver)) || [])[1]) || lastChange(a.dir) || ver.slice(0, 7);
   const site = `window.PENUM_SITE={app:${JSON.stringify(a.dir)},title:${JSON.stringify(a.name)},hash:${JSON.stringify(ver)},name:${JSON.stringify(vname)}${a.save ? `,save:()=>{${a.save}}` : ''}};`;
   const dir = join(out, a.dir);
@@ -46,7 +52,7 @@ for (const a of APPS) {
 `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="${a.theme}">
 <link rel="icon" type="image/png" sizes="192x192" href="${ic}icon-192.png"><link rel="apple-touch-icon" href="${ic}icon-192.png">
-<style>${BASE}</style>${a.shim ? SHIM : ''}</head><body>
+<style>${BASE}</style>${a.shim ? SHIM : ''}${lic}</head><body>
 ${src}
 <script>${site}
 ${UPD}</script>
