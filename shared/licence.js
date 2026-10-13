@@ -111,32 +111,49 @@ apply(decide(all()));
   try{history.replaceState(null,'',location.pathname+location.search+location.hash.replace(/(^#|&)lic=[^&]*/,'$1').replace(/^#&/,'#').replace(/^#$/,''))}catch(e){}}}
 
 const CSS=`html.plk-hide body{visibility:hidden!important}html.plk-hide #plk,html.plk-hide .pfb,html.plk-hide .pu-bar,html.plk-hide .pu-dlg,html.plk-hide .plk-toast{visibility:visible!important}
-#plk{position:fixed;inset:0;z-index:2147482000;display:flex;padding:16px;overflow:auto;color:#1F2A30;font:15px/1.55 "IBM Plex Sans Thai","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif;
-  background:radial-gradient(600px 420px at 12% 18%,rgba(108,99,255,.32),transparent 70%),radial-gradient(560px 420px at 88% 22%,rgba(0,184,217,.26),transparent 70%),linear-gradient(160deg,#0E1426,#1B2747)}
+/* look shared with PENUM MEP v103: light page with soft colour glows, a raised white card, gradient accents; :root[data-theme="dark"] gets the dark variant */
+#plk{--k-ink:#0F1E2E;--k-mut:#5B697C;--k-line:#E2E8F1;--k-sunk:#F5F7FB;--k-card:#fff;--k-acc:#0B7F8C;--k-g:linear-gradient(120deg,#14B8A6 0%,#0EA5E9 55%,#6366F1 100%);
+  position:fixed;inset:0;z-index:2147482000;display:flex;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));overflow:auto;color:var(--k-ink);font:15px/1.6 FONT;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(520px 420px at 0% 0%,rgba(20,184,166,.20),transparent 65%),radial-gradient(520px 460px at 100% 12%,rgba(99,102,241,.18),transparent 65%),radial-gradient(600px 420px at 50% 105%,rgba(14,165,233,.16),transparent 65%),#F4F6FB}
 #plk *,.plk-dlg *{box-sizing:border-box}
-.plk-c{margin:auto;background:#fff;border-radius:20px;padding:24px 22px 20px;width:100%;max-width:480px;display:flex;flex-direction:column;gap:10px;box-shadow:0 30px 80px rgba(3,8,25,.55)}
-.plk-top{display:flex;gap:12px;align-items:center}.plk-top img{width:44px;height:44px;border-radius:11px}.plk-top b{display:block;font-size:17px}.plk-top small{color:#5E6E75;font-size:13px}
-#plk h1{margin:4px 0 0;font-size:21px;line-height:1.35}#plk p{margin:0}
-.plk-c textarea,.plk-dlg textarea{font:12.5px/1.45 ui-monospace,Consolas,monospace;color:#1F2A30;padding:9px 11px;border:1.5px solid #CBD5E1;border-radius:12px;background:#F8FAFC;width:100%;resize:vertical;min-height:74px}
-.plk-c textarea:focus,.plk-dlg textarea:focus{outline:none;border-color:#00A3C4;background:#fff;box-shadow:0 0 0 4px rgba(0,184,217,.16)}
-.plk-note{background:#FFF4E5;border:1px solid #F3C98B;color:#7A4A0B;border-radius:10px;padding:8px 12px;font-size:14px}
-.plk-bad{color:#B23B3B;font-weight:600;margin:6px 0 0!important}.plk-mut{color:#5E6E75;font-size:13.5px}
-.plk-i{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 16px;margin:4px 0 0;padding:10px 12px;border:1px solid #D5DEE7;border-radius:12px}
-.plk-i.ok{border-color:#2E7D4F;background:#EEF8F1}.plk-i dt{font-size:12px;color:#5E6E75}.plk-i dd{margin:0;font-weight:600;font-size:14px;overflow-wrap:anywhere}
-.plk-pill{display:inline-block;font-size:12px;font-weight:600;padding:0 8px;border-radius:999px}.plk-pill.warn{background:#FBEEDD;color:#A45A12}.plk-pill.bad{background:#F8E3E3;color:#B23B3B}
-.plk-ask{border-top:1px solid #E3E9EE;margin-top:4px;padding-top:12px;display:flex;flex-direction:column;gap:6px;font-size:14px}.plk-pr{color:#0A6479;font-weight:600}
-.plk-row{display:flex;gap:8px;flex-wrap:wrap}.plk-hint{color:#5E6E75;font-size:13px}
-.plk-b{font:inherit;font-size:14px;padding:7px 13px;border-radius:10px;border:1px solid #CBD5E1;background:#fff;color:#1F2A30;cursor:pointer;white-space:nowrap}.plk-b.pri{background:#0B7F99;border-color:#0B7F99;color:#fff;font-weight:600}.plk-b.ln{background:#06C755;border-color:#06C755;color:#fff}
-.plk-ban{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147481000;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:min(560px,calc(100% - 24px));padding:8px 8px 8px 14px;border-radius:12px;
-  font:13.5px/1.45 "IBM Plex Sans Thai","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif;color:#1F2A30;box-shadow:0 10px 30px rgba(8,20,40,.25)}
-.plk-ban span{flex:1 1 220px}.plk-ban.warn{background:#FFF4E5;border:1px solid #F3C98B}.plk-ban.bad{background:#FDECEC;border:1px solid #E9B8AE}
-.plk-ban .plk-b{padding:4px 10px;font-size:13px}.plk-x{border:none;background:none;font-size:20px;line-height:1;cursor:pointer;color:#5E6E75;padding:0 6px}
-.plk-dlg{border:none;border-radius:16px;padding:0;width:min(500px,calc(100% - 24px));max-height:calc(100% - 24px);color:#1F2A30;background:#fff;box-shadow:0 24px 70px rgba(8,20,40,.35);font:15px/1.55 "IBM Plex Sans Thai","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif}
-.plk-dlg::backdrop{background:rgba(10,20,30,.45)}.plk-hd{padding:16px 18px 10px;border-bottom:1px solid #E3E9EE;background:linear-gradient(120deg,#EAF6F9,#F4F1FF)}.plk-hd b{font-size:17px;display:block}.plk-hd small{color:#5E6E75;font-size:13px}
-.plk-bd{padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow:auto;max-height:calc(100vh - 180px)}.plk-bd p{margin:0}.plk-bd details summary{cursor:pointer;color:#0A6479;font-weight:600;font-size:14px}.plk-bd details[open] summary{margin-bottom:6px}
-.plk-ft{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid #E3E9EE}
-.plk-toast{position:fixed;left:50%;bottom:calc(70px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483001;max-width:calc(100% - 24px);background:#2B3A40;color:#fff;padding:8px 16px;border-radius:999px;font:14px/1.45 "IBM Plex Sans Thai","Noto Sans Thai",Tahoma,sans-serif;opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}.plk-toast.on{opacity:1}
-@media print{#plk,.plk-ban,.plk-toast{display:none!important}}`;
+.plk-c{position:relative;margin:auto;background:var(--k-card);border:1px solid rgba(226,232,241,.9);border-radius:24px;padding:26px 22px 22px;width:100%;max-width:460px;display:flex;flex-direction:column;gap:12px;overflow:hidden;
+  box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(15,30,46,.05),0 12px 24px -12px rgba(15,30,46,.12),0 40px 80px -30px rgba(15,30,46,.35)}
+.plk-c::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--k-g)}
+.plk-top{display:flex;gap:14px;align-items:center}.plk-top img{width:52px;height:52px;border-radius:14px;box-shadow:0 8px 18px -8px rgba(15,30,46,.5)}.plk-top b{display:block;font-size:18px;letter-spacing:.01em}
+.plk-top small{display:inline-block;margin-top:2px;color:var(--k-acc);background:rgba(20,184,166,.12);font-size:12.5px;font-weight:600;padding:1px 10px;border-radius:999px}
+#plk h1{margin:6px 0 0;font-size:23px;line-height:1.35;font-weight:700}#plk p{margin:0}#plk h1+p{color:var(--k-mut);font-size:14.5px}
+.plk-c textarea,.plk-dlg textarea{font:14px/1.5 ui-monospace,Consolas,monospace;color:var(--k-ink,#0F1E2E);padding:12px 14px;border:1.5px solid var(--k-line,#E2E8F1);border-radius:14px;background:var(--k-sunk,#F5F7FB);width:100%;resize:vertical;min-height:84px;transition:border-color .15s,box-shadow .15s}
+.plk-c textarea::placeholder{color:#94A3B8}
+.plk-c textarea:focus,.plk-dlg textarea:focus{outline:none;border-color:#0EA5E9;background:var(--k-card,#fff);box-shadow:0 0 0 4px rgba(14,165,233,.16)}
+.plk-note{background:#FFF7EA;border:1px solid #F6D9A8;border-left:4px solid #F59E0B;color:#7A4A0B;border-radius:12px;padding:10px 14px;font-size:14px}
+.plk-bad{color:#B42318;font-weight:600;margin:6px 0 0!important}.plk-mut{color:#5B697C;font-size:13.5px}
+.plk-i{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 16px;margin:4px 0 0;padding:12px 14px;border:1px solid #E2E8F1;border-radius:14px;background:#F8FAFD}
+.plk-i.ok{border-color:#9FD8B5;background:#EEF8F1}.plk-i dt{font-size:12px;color:#5B697C}.plk-i dd{margin:0;font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.plk-pill{display:inline-block;font-size:12px;font-weight:600;padding:0 8px;border-radius:999px}.plk-pill.warn{background:#FBEEDD;color:#A45A12}.plk-pill.bad{background:#F8E3E3;color:#B42318}
+.plk-ask{margin-top:4px;padding:14px;border-radius:16px;background:var(--k-sunk,#F5F7FB);border:1px solid var(--k-line,#E2E8F1);display:flex;flex-direction:column;gap:8px;font-size:14px}
+.plk-ask>b{font-size:15px}.plk-ask>span{color:var(--k-mut,#5B697C)}
+.plk-pr{align-self:flex-start;color:#0B6E7A;font-weight:600;background:rgba(20,184,166,.12);border-radius:10px;padding:6px 10px;line-height:1.5}
+.plk-row{display:flex;gap:8px;flex-wrap:wrap}.plk-row .plk-b{flex:1 1 130px}.plk-hint{color:#5B697C;font-size:13px}
+.plk-b{font:inherit;font-size:14px;min-height:42px;padding:8px 14px;border-radius:12px;border:1px solid #E2E8F1;background:#fff;color:#0F1E2E;cursor:pointer;white-space:nowrap;box-shadow:0 1px 0 #fff inset,0 2px 6px -2px rgba(15,30,46,.14);transition:transform .15s,box-shadow .15s,border-color .15s}
+.plk-b:hover{border-color:#0EA5E9}.plk-b:active{transform:translateY(1px)}
+.plk-b.pri{background:linear-gradient(120deg,#14B8A6,#0EA5E9 55%,#6366F1);border-color:transparent;color:#fff;font-weight:600;box-shadow:0 8px 18px -8px rgba(14,165,233,.7)}
+.plk-b.ln{background:linear-gradient(135deg,#22D36B,#06C755);border-color:transparent;color:#fff;font-weight:600;box-shadow:0 8px 18px -8px rgba(6,199,85,.7)}
+.plk-ban{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147481000;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:min(560px,calc(100% - 24px));padding:8px 8px 8px 14px;border-radius:14px;
+  font:13.5px/1.45 FONT;color:#0F1E2E;box-shadow:0 12px 30px -10px rgba(8,20,40,.35)}
+.plk-ban span{flex:1 1 220px}.plk-ban.warn{background:#FFF7EA;border:1px solid #F6D9A8}.plk-ban.bad{background:#FDECEC;border:1px solid #E9B8AE}
+.plk-ban .plk-b{min-height:0;padding:4px 10px;font-size:13px}.plk-x{border:none;background:none;font-size:20px;line-height:1;cursor:pointer;color:#5B697C;padding:0 6px}
+.plk-dlg{border:none;border-radius:20px;padding:0;width:min(500px,calc(100% - 24px));max-height:calc(100% - 24px);color:#0F1E2E;background:#fff;box-shadow:0 30px 80px -20px rgba(8,20,40,.45);font:15px/1.55 FONT;overflow:hidden}
+.plk-dlg::backdrop{background:rgba(15,30,46,.4);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}.plk-hd{padding:18px 18px 12px;border-bottom:1px solid #E2E8F1;background:linear-gradient(120deg,#E7F8F6,#EAF4FE 55%,#EEEEFE);border-top:5px solid transparent;border-image:linear-gradient(120deg,#14B8A6,#0EA5E9 55%,#6366F1) 1 0 0 0}.plk-hd b{font-size:17px;display:block}.plk-hd small{color:#5B697C;font-size:13px}
+.plk-bd{padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow:auto;max-height:calc(100vh - 180px)}.plk-bd p{margin:0}.plk-bd details summary{cursor:pointer;color:#0B7F8C;font-weight:600;font-size:14px}.plk-bd details[open] summary{margin-bottom:6px}
+.plk-ft{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid #E2E8F1}
+.plk-toast{position:fixed;left:50%;bottom:calc(70px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483001;max-width:calc(100% - 24px);background:#0F1E2E;color:#fff;padding:9px 18px;border-radius:999px;font:14px/1.45 FONT;opacity:0;transition:opacity .2s;pointer-events:none;text-align:center;box-shadow:0 10px 24px -8px rgba(0,0,0,.4)}.plk-toast.on{opacity:1}
+:root[data-theme="dark"] #plk{--k-ink:#EEF3F9;--k-mut:#95A5BA;--k-line:#1D2735;--k-sunk:#0B111A;--k-card:#0F1621;--k-acc:#22D3EE;
+  background:radial-gradient(520px 420px at 0% 0%,rgba(34,211,238,.14),transparent 65%),radial-gradient(520px 460px at 100% 12%,rgba(129,140,248,.14),transparent 65%),#070B12}
+:root[data-theme="dark"] .plk-c{border-color:#1D2735;box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 40px 80px -30px rgba(0,0,0,.9)}
+:root[data-theme="dark"] .plk-top small,:root[data-theme="dark"] .plk-pr{color:#67E8F9;background:rgba(34,211,238,.12)}
+:root[data-theme="dark"] .plk-ask .plk-b:not(.ln){background:#0F1621;color:#EEF3F9;border-color:#1D2735;box-shadow:none}
+@media (max-width:420px){#plk{padding:12px 10px calc(12px + env(safe-area-inset-bottom,0px))}.plk-c{padding:24px 18px 18px;border-radius:22px}#plk h1{font-size:21px}}
+@media print{#plk,.plk-ban,.plk-toast{display:none!important}}`.replace(/FONT/g,'"IBM Plex Sans Thai","Anuphan","Sarabun","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif');
 {const st=document.createElement('style');st.textContent=CSS;(document.head||document.documentElement).appendChild(st)}
 
 function toast(m){let el=document.querySelector('.plk-toast');if(!el){if(!document.body)return;el=document.createElement('div');el.className='plk-toast';el.setAttribute('data-noxl','');el.setAttribute('role','status');document.body.appendChild(el)}
