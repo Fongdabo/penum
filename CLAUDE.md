@@ -33,4 +33,6 @@ MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
 - One code per customer company; payload `ap` lists the apps it opens (no `ap` = PENUM PM only). ORIEN issues codes in
   `sales/`. PM checks them in `pm/src/810-licence.js`; MEP and BIM in `shared/licence.js`, which the build puts in their
   `<head>` because their `app.json` has a `licence` field. The public key must match in all three (`check-apps` checks).
+- Renewals reach customers by themselves: ORIEN ฝ่ายขาย sends the encrypted new code to ORIEN's Supabase (`tools/licence-setup.sql`,
+  rpc `penum_lic_put` / `penum_lic_get`); `pm/files/licences.json` is still read too.
 - Never commit or publish the private signing key. Test with a throwaway key pair swapped into the built pages.

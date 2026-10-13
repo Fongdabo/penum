@@ -10,14 +10,17 @@
    - A notice 30 days before the expiry date, then 7 days' grace, then read-only: the program opens, shows and prints, but
      saves nothing (the storage keys in PENUM_LIC.keys are not written) and typed fields are locked; work saved earlier is
      never touched. A code listed in pm/files/revoked.json (the list PENUM PM reads) turns read-only the same way.
-   - A renewal ORIEN publishes in pm/files/licences.json (encrypted for the holder of the old code) arrives when the program
-     opens online, as in PENUM PM. A link …/mep/#lic=<code> opens the program with the code filled in.
+   - A renewal ORIEN sends from ORIEN ฝ่ายขาย to its Supabase, or publishes in pm/files/licences.json (encrypted for the
+     holder of the old code), arrives when the program opens online or comes back to the front, as in PENUM PM, so the
+     customer does nothing. A link …/mep/#lic=<code> opens the program with the code filled in.
    - Pages matching PENUM_LIC.skip (MEP's 3D view links, #v3d=, which customers send to their own clients) never ask for a code.
    Client-side only, like PENUM PM's licence: it keeps honest customers honest; it cannot stop someone editing the page. */
 (()=>{const C=window.PENUM_LIC;if(!C||window.penumLic)return;
 if(C.skip&&new RegExp(C.skip).test(location.hash)){window.penumLic={state:()=>({st:'skip'})};return}
 const JWK={kty:'EC',crv:'P-256',x:'wyXLWhvzv-0vF50q9rOZ8sMoh2QIg9Nsr_5IpR8f7jo',y:'BI9uqpJjjWVmVLaEgAfXkpOXtdU-Ec7I-zQRJyUeDp4',ext:true,key_ops:['verify']};
 const GRACE=7,WARN=30,REG='penum.licences',FIRST='penum.licences.first',PEND='penum.lic.pend.'+C.app,FILES='../pm/files/';
+// ORIEN's Supabase (the feedback box's project): renewals sent from ORIEN ฝ่ายขาย, read with the public key (tools/licence-setup.sql)
+const SB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
 const APPN={pm:'PENUM PM',mep:'PENUM MEP',bim:'PENUM BIM'};
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={menu:['สิทธิ์การใช้งาน','Licence'],sub:['รหัสเปิดใช้งาน','Activation code'],
@@ -47,7 +50,7 @@ const T={menu:['สิทธิ์การใช้งาน','Licence'],sub:['
   lineD:['คัดลอกข้อความไว้แล้ว เปิด LINE › เพิ่มเพื่อน › ค้นหาไอดี {0} › เปิดแชท › วาง (Ctrl+V) › ส่ง หรือสแกน QR ในหน้าที่เพิ่งเปิดด้วยมือถือ','The message is copied. Open LINE › Add friend › search the ID {0} › open the chat › paste (Ctrl+V) › send, or scan the QR code on the page that just opened.'],
   askH:['ขอรหัสเปิดใช้งาน {0}','Activation code for {0}'],
   askB:['บริษัท: \nผู้ติดต่อ: \nโทร: \nต้องการ: ทดลองใช้ฟรี / เช่าใช้','Company: \nContact person: \nPhone: \nWanted: free trial / rental'],
-  renewT:['ได้รับรหัสใหม่จาก ORIEN แล้ว ใช้ได้ถึง {0}','A new code from ORIEN arrived, valid until {0}'],close:['ปิด','Close']};
+  renewT:['ORIEN อัปเดตสิทธิ์การใช้งานให้แล้ว ใช้ได้ถึง {0}','ORIEN updated your licence, valid until {0}'],close:['ปิด','Close']};
 const t=(k,...a)=>T[k][EN()?1:0].replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pad=n=>String(n).padStart(2,'0'),today=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
@@ -235,12 +238,15 @@ function paint(was){paintGate();paintBan();
   if(S.st==='ro'){lockF(document.body);fObs.observe(document.body,{childList:true,subtree:true})}else{fObs.disconnect();document.querySelectorAll('[data-plk-ro]').forEach(e=>{e.disabled=false;e.removeAttribute('data-plk-ro')})}
   if(DLG&&DLG.open&&was!==S.st)openDlg()}
 
-// renewals ORIEN approved: pm/files/licences.json holds each new code encrypted with a key made from the code it replaces
+// renewals ORIEN approved: ORIEN's Supabase and pm/files/licences.json hold each new code encrypted with a key made from the code it replaces
 const sha=async s=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));
+const hex=u=>[...u.slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join('');
 // every code on this device is looked up, so an approval that adds this program to a PENUM PM code also arrives here
-async function renewals(){const L=regGet();if(!L.length)return;let E;
-  try{const j=await (await fetch(FILES+'licences.json',{cache:'no-store'})).json();E=j&&j.e}catch(e){}if(!E)return;
-  for(const cur of L){try{const e=E[[...(await sha('i'+cur)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join('')];if(!e)continue;
+async function renewals(){renewals.t=Date.now();const L=regGet();if(!L.length)return;const ix=await Promise.all(L.map(async c=>hex(await sha('i'+c))));
+  const [P,F]=await Promise.all([
+    fetch(SB.url+'/rest/v1/rpc/penum_lic_get',{method:'POST',cache:'no-store',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({p_k:ix})}).then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch(FILES+'licences.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>j&&j.e).catch(()=>null)]);
+  for(let i=0;i<L.length;i++)for(const e of [P&&P[ix[i]],F&&F[ix[i]]]){if(!e)continue;const cur=L[i];try{
     const k=await crypto.subtle.importKey('raw',await sha('k'+cur),'AES-GCM',false,['decrypt']);
     const code=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.ct)));
     const r=await verify(code),o=await verify(cur);if(!r.ok||!o.ok||r.p.co!==o.p.co||rank(r.p)<=rank(o.p))continue;
@@ -256,7 +262,9 @@ function start(){UI=true;
     if(JSON.stringify(L)===JSON.stringify(REV))return;REV=L;put('penum.revoked',JSON.stringify(L));recheck()}).catch(()=>{});
   fetch(FILES+'plans.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.plans))return;const s=JSON.stringify(j);if(s===JSON.stringify(PL))return;
     PL=j;put('penum.plans',s);if(S.st==='none')paintGate()}).catch(()=>{});
-  setTimeout(renewals,1500)}
+  setTimeout(renewals,1500);
+  // a program left open for days still gets a renewal: look again when it comes back to the front, at most every 30 minutes
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-(renewals.t||0)>30*60e3)renewals()})}
 // another window (PENUM PM, or this program on another screen) added a code or a newer revoked list
 addEventListener('storage',e=>{if(e.key===REG)recheck();if(e.key==='penum.revoked'){try{REV=JSON.parse(e.newValue||'[]').map(String)}catch(x){}recheck()}});
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start):start();

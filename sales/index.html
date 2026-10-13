@@ -138,16 +138,48 @@ const revHit=(x,l)=>{const id=String(l.id),m=/^(.+)<(\d{4}-\d\d-\d\d)$/.exec(x);
   if(m)return (m[1]===id||m[1]===id.replace(/-R\d+$/,''))&&String(l.iat||'')<m[2];
   return x===l.no||x===id||x===id.replace(/-R\d+$/,'')};
 const isRev=l=>PUBREV.some(x=>revHit(x,l));
-// approval: the newest code, encrypted once for each older code of this customer (PENUM PM holding that code can read it)
-async function licPack(c){const L=(c.lics||[]).filter(l=>l.code),nw=L[L.length-1];if(!nw||L.length<2)return null;const e={};
+// approval: the newest code, encrypted once for each older code of this customer (a program holding that code can read it)
+async function licEntries(c){const L=(c.lics||[]).filter(l=>l.code),nw=L[L.length-1];if(!nw||L.length<2)return null;const e={};
   const sha=async t=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)));
   for(const l of L.slice(0,-1)){const idx=[...(await sha('i'+l.code)).slice(0,12)].map(b=>b.toString(16).padStart(2,'0')).join('');
     const k=await crypto.subtle.importKey('raw',await sha('k'+l.code),'AES-GCM',false,['encrypt']),iv=crypto.getRandomValues(new Uint8Array(12));
     e[idx]={iv:b64u(iv),ct:b64u(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(nw.code))))}}
-  return `อนุมัติรหัสใหม่ ${c.co} รหัสลูกค้า ${snOf(c)} Serial number ${lk(nw)}\n[PENUM-LIC]${JSON.stringify(e)}`}
-async function approveAsk(c){const t=await licPack(c);if(!t)return openMail(c,'welcome');
-  dlgMsg('อนุมัติแล้ว',`<p>ออกรหัสใหม่ให้ <b>${esc(c.co)}</b> แล้ว (Serial number ${esc(lk(c.lics[c.lics.length-1]))})</p><p><b>ขั้นต่อไป:</b> กด “คัดลอกข้อความ” แล้ววางส่งให้ Claude ในโปรเจกต์ PENUM Claude จะประกาศให้ PENUM PM ของลูกค้าอัปเดตรหัสเองเมื่อเปิดโปรแกรมตอนต่อเน็ต ลูกค้าไม่ต้องวางรหัส</p><p class="mut">ข้อความนี้เข้ารหัสไว้ เปิดอ่านได้เฉพาะโปรแกรมของลูกค้ารายนี้</p>`,t);
-  const m=document.createElement('button');m.textContent='ส่งอีเมลแจ้งลูกค้าด้วย';m.onclick=()=>openMail(c,'renew');$('#dlgF').append(m)}
+  return {e,nw}}
+// the same entries as text for Claude to publish in pm/files/licences.json (the way before ส่งให้ลูกค้าอัตโนมัติ)
+async function licPack(c){const x=await licEntries(c);if(!x)return null;
+  return `อนุมัติรหัสใหม่ ${c.co} รหัสลูกค้า ${snOf(c)} Serial number ${lk(x.nw)}\n[PENUM-LIC]${JSON.stringify(x.e)}`}
+async function approveAsk(c){if(!await licEntries(c))return openMail(c,'welcome');pubAsk(c)}
+/* ---- ส่งให้ลูกค้าอัตโนมัติ: an approval goes to ORIEN's Supabase (tools/licence-setup.sql, the feedback box's project). The
+   customer's PENUM PM, MEP and BIM look it up by the code they hold whenever they open online and switch to the new code by
+   themselves, so to the customer it is the same code with a new date. Adding needs the ORIEN code the SQL prints (DB.set.fbcode,
+   the one กล่องรับเรื่อง uses); an entry can only be found and opened with the older code it was made for. ---- */
+async function pubAsk(c){const x=await licEntries(c);if(!x)return;if(!DB.set.fbcode)return pubSetup(c,'');
+  try{await fbRpc('penum_lic_put',{p_code:DB.set.fbcode,p_e:x.e})}catch(e){return pubSetup(c,e.message)}
+  x.nw.pub=today();c.sent=today()+' ส่งรหัสอัตโนมัติ';save();render();pubDone(c,x.nw)}
+const dlgBtn=(t,cls,f)=>{const b=document.createElement('button');b.textContent=t;if(cls)b.className=cls;b.onclick=f;$('#dlgF').append(b);return b};
+function pubSetup(c,err){
+  // only offline: the ORIEN code is fine, so just say so and offer another try (the code stays approved here)
+  if(err==='offline'&&DB.set.fbcode){$('#dlgT').textContent='ยังส่งให้ลูกค้าไม่ได้';
+    $('#dlgB').innerHTML=`<p style="margin:0;color:var(--bad);font-weight:600">ไม่มีอินเทอร์เน็ต ยังส่งไม่ได้ ต่อเน็ตแล้วกดส่งอีกครั้ง</p><p class="mut" style="margin:0">รหัสอนุมัติไว้แล้ว ส่งทีหลังได้ที่ แท็บ ลูกค้า › ประวัติรหัสที่ออก › ส่งให้ลูกค้าอัตโนมัติ</p>`;
+    $('#dlgF').innerHTML='';dlgBtn('ส่งอีกครั้ง','pri',ev=>{ev.currentTarget.disabled=true;pubAsk(c)});dlgBtn('ปิด','',()=>dlg.close());dlgOpen();return}
+  const why={nosql:'ยังไม่ได้ตั้งค่าใน Supabase ทำตามขั้นตอนด้านล่างครั้งเดียว',badcode:'รหัส ORIEN ไม่ถูกต้อง คัดลอกจากผลลัพธ์ของคำสั่ง SQL ใหม่อีกครั้ง',offline:'ไม่มีอินเทอร์เน็ต ยังส่งไม่ได้ ต่อเน็ตแล้วกดส่งอีกครั้ง'}[err]||(err?'ส่งไม่ได้: '+err:'');
+  $('#dlgT').textContent=err==='offline'?'ยังส่งให้ลูกค้าไม่ได้':'ตั้งค่าส่งให้ลูกค้าอัตโนมัติ (ทำครั้งเดียว)';
+  $('#dlgB').innerHTML=`${why?`<p style="margin:0;color:var(--bad);font-weight:600">${esc(why)}</p>`:''}
+  <p style="margin:0">อนุมัติต่ออายุหรือเปลี่ยนแพ็กเกจแล้ว ระบบส่งให้ลูกค้าเอง ลูกค้าไม่ต้องใส่รหัสใหม่ PENUM PM, MEP และ BIM ของลูกค้าจะเปลี่ยนเองเมื่อเปิดโปรแกรมตอนต่อเน็ต ส่งผ่าน Supabase ของ ORIEN (โปรเจกต์ penum-pm ตัวเดียวกับกล่องรับเรื่อง)</p>
+  <ol style="margin:0 0 0 20px;line-height:1.9"><li>กด <b>คัดลอกคำสั่ง SQL</b></li><li>เปิด <a href="https://supabase.com/dashboard/project/uejnlxwjqsadbnzdncvb/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> วาง (Ctrl+V) แล้วกด <b>Run</b></li>
+  <li>ด้านล่างจะมีตารางผลลัพธ์ 1 ช่อง คัดลอกรหัสในช่องนั้นมาวางที่ช่องด้านล่าง แล้วกด <b>บันทึกและส่งให้ลูกค้า</b> (ถ้าตั้งกล่องรับเรื่องไว้แล้ว เป็นรหัสเดียวกันและใส่ไว้ให้แล้ว)</li></ol>
+  <label>รหัส ORIEN (รหัสเดียวกับรหัสอ่านกล่อง)<input id="pubCode" value="${esc(DB.set.fbcode||'')}" placeholder="วางรหัส 36 ตัวจาก Supabase" autocomplete="off"></label>
+  <p class="mut" style="margin:0">ยังไม่ตั้งค่าตอนนี้ก็ได้ กด <b>คัดลอกข้อความให้ Claude</b> แล้ววางส่งให้ Claude ในโปรเจกต์ PENUM แบบเดิม</p>`;
+  $('#dlgF').innerHTML='';
+  dlgBtn('บันทึกและส่งให้ลูกค้า','pri',async ev=>{const v=$('#pubCode').value.trim();if(!v){toast('วางรหัส ORIEN ก่อน');return}ev.currentTarget.disabled=true;DB.set.fbcode=v;save();await pubAsk(c)});
+  dlgBtn('คัดลอกคำสั่ง SQL','',async()=>{try{const r=await fetch('files/licence-setup.sql',{cache:'no-store'});if(!r.ok)throw 0;copy(await r.text())}catch(e){toast('โหลดคำสั่ง SQL ไม่ได้ ขอไฟล์ licence-setup.sql จาก Claude')}});
+  dlgBtn('คัดลอกข้อความให้ Claude','',async()=>copy(await licPack(c)));
+  dlgOpen()}
+function pubDone(c,l){$('#dlgT').textContent='ส่งให้ลูกค้าแล้ว';
+  $('#dlgB').innerHTML=`<p style="margin:0"><b>${esc(c.co)}</b>: ${esc(pkgTxt(l,c))} ใช้ได้ถึง <b>${thDL(l.exp)}</b></p>
+  <p style="margin:0">ลูกค้าไม่ต้องใส่รหัสใหม่ ${esc(apOf(l).map(a=>APN[a]).join(', '))} ของลูกค้าจะเปลี่ยนเองเมื่อเปิดโปรแกรมตอนต่อเน็ต เครื่องที่ไม่ต่อเน็ตจะเปลี่ยนเมื่อต่อเน็ตครั้งถัดไป</p>
+  <p class="mut" style="margin:0">รหัสลูกค้า ${esc(snOf(c))} เหมือนเดิม · Serial number ใหม่ ${esc(lk(l))}</p>`;
+  $('#dlgF').innerHTML='';dlgBtn('ปิด','pri',()=>dlg.close());dlgBtn('ส่งอีเมลแจ้งลูกค้าด้วย','',()=>openMail(c,'renew'));dlgOpen()}
 // a new customer code never reuses one given out before (also by a deleted customer) or one in the published revoked list,
 // since a revoked customer code would also stop the new customer's codes
 function newCustId(){const yy='L'+today().slice(2,4)+'-',used=new Set([...allLics().map(l=>String(l.id).replace(/-R\d+$/,'')),...DB.cust.map(c=>c.sn),...PUBREV.map(x=>x.split('<')[0])]);
@@ -224,6 +256,7 @@ const LONGNOTE='(ลิงก์ยาวเพราะมีรหัสใช
 function mail(c,kind){const S=DB.set,sig=[S.sender,S.company,S.phone&&('โทร '+S.phone),S.line&&('LINE '+S.line),S.from&&('อีเมล '+S.from)].filter(Boolean).join('\n');
   const head=`เรียน ${c.an}\n\n`,ap=apOf(c),pm=ap.includes('pm'),oth=ap.filter(a=>a!=='pm'),othN=oth.map(a=>APN[a]).join(' และ ');
   const title=ap.length===3?'PENUM (PM, MEP, BIM)':ap.map(a=>APN[a]).join(' และ ');
+  const auto=((c.lics||[]).slice().reverse().find(x=>x.code)||{}).pub;// sent by ส่งให้ลูกค้าอัตโนมัติ: nothing to type
   const plan=`แพ็กเกจ: ${pkgTxt(c)}  ใช้ได้ถึง ${thDL(c.exp)}`,links=oth.map(a=>`${APN[a]}\n${actLink(c,a)}`).join('\n\n');
   const inst=`- คอมพิวเตอร์: เปิดลิงก์ด้วย Edge หรือ Chrome แล้วกดไอคอน "ติดตั้ง" ท้ายช่องที่อยู่เว็บ\n- Android: เปิดด้วย Chrome กด ⋮ > ติดตั้งแอป\n- iPhone: เปิดด้วย Safari กด แชร์ > เพิ่มไปยังหน้าจอโฮม`;
   // MEP and BIM only: one link per program, opened once on each computer that uses it
@@ -232,7 +265,7 @@ function mail(c,kind){const S=DB.set,sig=[S.sender,S.company,S.phone&&('โท�
 `1) เปิดใช้งาน (ทำครั้งเดียวต่อเครื่อง)\nเปิดลิงก์ด้านล่างบนคอมพิวเตอร์ที่จะใช้ ด้วย Microsoft Edge หรือ Google Chrome รหัสจะใส่ไว้ให้เอง${oth.length>1?' ใส่ครั้งเดียวเปิดได้ทั้ง '+othN:''}\n\n${links}\n\n${LONGNOTE}\n\nเครื่องอื่นในบริษัทใช้ลิงก์เดียวกันได้ หรือคัดลอกรหัสนี้ไปวางในหน้าใส่รหัสของโปรแกรม\n${lastCode(c)}\n\n`+
 `2) ติดตั้งโปรแกรมไว้ที่หน้าจอ (ไม่บังคับ)\n${inst}\n\nติดขัดตรงไหนติดต่อได้ทันทีครับ\n\n${sig}`}}
   const more=oth.length?`\n\n${othN} (ใช้รหัสเดียวกัน)\nเครื่องที่เปิด PENUM PM ของบริษัทแล้ว เปิด ${othN} ได้เลย ไม่ต้องใส่รหัสซ้ำ เครื่องอื่นเปิดลิงก์ด้านล่างครั้งเดียวต่อเครื่อง\n\n${links}`:'';
-  if(kind==='renew')return {su:`ต่ออายุ ${title} ของ ${c.co}`,body:head+`ต่ออายุการใช้งาน ${title} ให้ ${c.co} แล้วครับ\n${plan}\n\nวิธีใส่รหัสใหม่: ผู้ดูแลระบบเปิดลิงก์ด้านล่างบนคอมพิวเตอร์ที่ใช้ PENUM PM อยู่ แล้วกด "ใช้รหัสนี้"\n\n${actLink(c)}\n\n${LONGNOTE}\n\nหรือคัดลอกรหัสด้านล่างไปวางที่ ตั้งค่า › สิทธิ์การใช้งาน › ต่ออายุหรือเปลี่ยนแพ็กเกจ แล้วกด "ใช้รหัสนี้"\n${lastCode(c)}${more}\n\nข้อมูลเดิมอยู่ครบ ไม่ต้องตั้งค่าใหม่\n\n${sig}`};
+  if(kind==='renew')return {su:`ต่ออายุ ${title} ของ ${c.co}`,body:head+`ต่ออายุการใช้งาน ${title} ให้ ${c.co} แล้วครับ\n${plan}\n\n`+(auto?`ไม่ต้องใส่รหัสใหม่ PENUM PM จะเปลี่ยนเองเมื่อเปิดโปรแกรมตอนต่อเน็ต\nถ้าผ่านไป 1 วันแล้วยังไม่เปลี่ยน ผู้ดูแลระบบเปิดลิงก์ด้านล่างบนคอมพิวเตอร์ที่ใช้ PENUM PM อยู่ แล้วกด "ใช้รหัสนี้"`:`วิธีใส่รหัสใหม่: ผู้ดูแลระบบเปิดลิงก์ด้านล่างบนคอมพิวเตอร์ที่ใช้ PENUM PM อยู่ แล้วกด "ใช้รหัสนี้"`)+`\n\n${actLink(c)}\n\n${LONGNOTE}\n\nหรือคัดลอกรหัสด้านล่างไปวางที่ ตั้งค่า › สิทธิ์การใช้งาน › ต่ออายุหรือเปลี่ยนแพ็กเกจ แล้วกด "ใช้รหัสนี้"\n${lastCode(c)}${more}\n\nข้อมูลเดิมอยู่ครบ ไม่ต้องตั้งค่าใหม่\n\n${sig}`};
   return {su:`เปิดใช้งาน ${title} สำหรับ ${c.co}`,body:head+`ขอบคุณที่เลือกใช้ ${title} ครับ เราเปิดสิทธิ์ให้ ${c.co} เรียบร้อยแล้ว\n${plan}\n\n`+
 `1) เริ่มใช้งานครั้งแรก (สำหรับผู้ดูแลระบบ ทำครั้งเดียว)\nเปิดลิงก์นี้บนคอมพิวเตอร์ ด้วย Microsoft Edge หรือ Google Chrome\n\n${actLink(c)}\n\n${LONGNOTE}\n\nเมื่อเปิดลิงก์แล้ว หน้าจอจะพาทำ 3 ขั้น\nก. กรอกข้อมูลบริษัท (รหัสใช้งานใส่ไว้ให้แล้ว)\nข. ตั้ง PIN ของผู้ดูแลระบบ\nค. เลือกที่เก็บข้อมูล กด \"✦ เก็บข้อมูลบนคลาวด์ PENUM\" (แนะนำ ไม่ต้องสร้างโฟลเดอร์ ทุกเครื่องในบริษัทเห็นข้อมูลชุดเดียวกัน)\nเสร็จแล้วที่ ตั้งค่า › ที่เก็บข้อมูล กด \"ลิงก์ผู้ดูแล\" แล้วเก็บไว้ (เช่น ส่งเข้า LINE ตัวเอง) ใช้เปิดข้อมูลบริษัทบนคอมเครื่องอื่นของผู้ดูแลระบบ\n\n`+
 `2) ลิงก์ติดตั้งโปรแกรม (สำหรับทุกคนในบริษัท)\n${S.app}\nพนักงานเริ่มใช้ด้วย \"ลิงก์เชิญ\" ที่ผู้ดูแลระบบส่งให้ (วิธีอยู่ท้ายข้อนี้)\n- คอมพิวเตอร์: เปิดลิงก์ด้วย Edge หรือ Chrome แล้วกดไอคอน "ติดตั้ง" ท้ายช่องที่อยู่เว็บ\n- Android: เปิดด้วย Chrome กด ⋮ > ติดตั้งแอป\n- iPhone: เปิดด้วย Safari กด แชร์ > เพิ่มไปยังหน้าจอโฮม\n\nพนักงานเริ่มใช้อย่างไร: ผู้ดูแลระบบเพิ่มชื่อพนักงานและตั้ง PIN ให้ แล้วกด \"ลิงก์เชิญ\" ที่ ตั้งค่า › เข้าระบบด้วย PIN ส่งลิงก์นั้นทาง LINE ให้พนักงาน พนักงานกดลิงก์ เลือกชื่อตัวเอง ใส่ PIN ก็ใช้ข้อมูลบริษัทชุดเดียวกันได้ทันที ไม่ต้องตั้งค่าอะไรเอง\n\n`+
@@ -351,7 +384,7 @@ function renewForm(c){$('#dlgT').textContent='อนุมัติ ต่ออ
   <div class="row"><span class="mut">ต่อจากวันหมดอายุเดิม:</span><button class="sm" data-m="1">1 เดือน</button><button class="sm" data-m="3">3 เดือน</button><button class="sm" data-m="6">6 เดือน</button><button class="sm" data-m="12">1 ปี</button></div>`;
   $('#dlgB').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>$('#rEx').value=addM(base,+b.dataset.m));
   pkgWire('r');
-  $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent='อนุมัติและออกรหัสใหม่';
+  $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent='อนุมัติและส่งให้ลูกค้า';
   b.onclick=async()=>{const ap=apRead('rAp');if(!ap.length){toast('เลือกโปรแกรมที่ลูกค้าเช่าอย่างน้อย 1 โปรแกรม');return}
     c.ap=ap;c.pl=$('#rPl').value;c.mx=Math.max(1,+$('#rMx').value||1);c.price=+$('#rPr').value||0;c.exp=$('#rEx').value;if(b.disabled)return;b.disabled=true;await issue(c);dlg.close();render();approveAsk(c)};
   $('#dlgF').append(b);dlgOpen()}
@@ -429,7 +462,7 @@ function viewCust(){const L=DB.cust.filter(c=>!Q||(c.co+(c.en||'')+(c.tax||'')+(
   return `<section class="card"><h2>ลูกค้า <span class="mut">${DB.cust.length} ราย</span><span class="sp"></span><input id="q" placeholder="ค้นหาชื่อบริษัท ผู้ดูแล อีเมล" value="${esc(Q)}" style="max-width:280px"><button class="pri" data-a="new">ลงทะเบียนลูกค้าใหม่</button></h2>
   ${L.length?table(L):'<p class="mut">ยังไม่มีลูกค้า กด “ลงทะเบียนลูกค้าใหม่” เพื่อเริ่ม</p>'}</section>
   <section class="card"><h2>ประวัติรหัสที่ออก (Serial number)<span class="sp"></span>${(DB.gone||[]).length?`<label class="mut" style="font-size:14px;font-weight:400;display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="showGone"${SHOWGONE?' checked':''} style="width:auto;margin:0"> แสดงรหัสของลูกค้าที่ลบแล้ว (${DB.gone.reduce((n,g)=>n+(g.lics||[]).length,0)})</label>`:''}</h2><div class="tw"><table><thead><tr><th>รหัสลูกค้า / Serial number</th><th>วันที่ออก</th><th>บริษัท</th><th>แพ็กเกจ</th><th>ถึง</th><th>สถานะ</th><th></th></tr></thead><tbody>
-  ${[...DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))),...(SHOWGONE?DB.gone||[]:[]).flatMap(g=>(g.lics||[]).map(l=>({c:{co:g.co+' (ลบแล้ว '+thD(g.del)+')',pl:l.pl,mx:l.mx},l})))].sort((a,b)=>(b.l.iat||'').localeCompare(a.l.iat||'')||(b.l.ts||0)-(a.l.ts||0)).map(({c,l})=>`<tr><td><b>${esc(l.id)}</b><br><span class="mut">${l.no?esc(l.no):'— (รหัสรุ่นเก่า ไม่มี Serial)'}</span></td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc(pkgTxt(l,c))}</td><td>${thD(l.exp)}</td><td>${isRev(l)?'<span class="pill p-bad">ยกเลิกแล้ว</span>':l.rev?'<span class="pill p-warn">รอประกาศยกเลิก</span>':''}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}${c.id&&(c.lics||[]).length>1&&l===c.lics[c.lics.length-1]?`<button class="sm" data-a="appr" data-id="${c.id}">ข้อความอนุมัติ</button>`:''}${isRev(l)?'':l.rev?`<button class="sm" data-a="revask" data-v="${esc(lk(l))}">ข้อความแจ้ง Claude</button>`:`<button class="sm del" data-a="rev" data-v="${esc(lk(l))}">ยกเลิกรหัส</button>`}</td></tr>`).join('')}</tbody></table></div></section>`}
+  ${[...DB.cust.flatMap(c=>(c.lics||[]).map(l=>({c,l}))),...(SHOWGONE?DB.gone||[]:[]).flatMap(g=>(g.lics||[]).map(l=>({c:{co:g.co+' (ลบแล้ว '+thD(g.del)+')',pl:l.pl,mx:l.mx},l})))].sort((a,b)=>(b.l.iat||'').localeCompare(a.l.iat||'')||(b.l.ts||0)-(a.l.ts||0)).map(({c,l})=>`<tr><td><b>${esc(l.id)}</b><br><span class="mut">${l.no?esc(l.no):'— (รหัสรุ่นเก่า ไม่มี Serial)'}</span></td><td>${thD(l.iat)}</td><td>${esc(c.co)}</td><td>${esc(pkgTxt(l,c))}</td><td>${thD(l.exp)}</td><td>${isRev(l)?'<span class="pill p-bad">ยกเลิกแล้ว</span>':l.rev?'<span class="pill p-warn">รอประกาศยกเลิก</span>':l.pub?`<span class="pill p-ok" title="ส่ง ${thD(l.pub)}">ส่งให้ลูกค้าแล้ว</span>`:''}</td><td>${l.code?`<button class="sm" data-a="cp" data-v="${esc(l.code)}">คัดลอกรหัส</button>`:''}${c.id&&(c.lics||[]).length>1&&l===c.lics[c.lics.length-1]&&!isRev(l)&&!l.rev?(l.pub?`<button class="sm" data-a="pub" data-id="${c.id}">ส่งอีกครั้ง</button>`:`<button class="sm pri" data-a="pub" data-id="${c.id}">ส่งให้ลูกค้าอัตโนมัติ</button>`):''}${isRev(l)?'':l.rev?`<button class="sm" data-a="revask" data-v="${esc(lk(l))}">ข้อความแจ้ง Claude</button>`:`<button class="sm del" data-a="rev" data-v="${esc(lk(l))}">ยกเลิกรหัส</button>`}</td></tr>`).join('')}</tbody></table></div></section>`}
 function viewSet(){const S=DB.set;return `<section class="card"><h2>ข้อมูลผู้ขาย (ท้ายอีเมล)</h2><div class="g">
   <label>อีเมลผู้ส่ง (บัญชี Gmail ที่ใช้ส่งให้ลูกค้า)<input data-s="from" type="email" value="${esc(S.from)}"></label><label>บริษัทผู้ขาย<input data-s="company" value="${esc(S.company)}"></label><label>ชื่อผู้ส่ง<input data-s="sender" value="${esc(S.sender)}" placeholder="ฝ่ายขาย PENUM PM"></label><label>โทรศัพท์<input data-s="phone" value="${esc(S.phone)}"></label><label>LINE ID<input data-s="line" value="${esc(S.line)}"></label>
   <label>ที่อยู่โปรแกรม<input data-s="app" value="${esc(S.app)}"></label></div></section>
@@ -507,7 +540,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-tab]
   if(t.dataset.tab){TAB=t.dataset.tab;render();return}
   const c=DB.cust.find(x=>x.id===t.dataset.id),a=t.dataset.a;
   if(a==='new')custForm();if(a==='edit')custForm(c);if(a==='renew')renewForm(c);if(a==='mail')openMail(c,'welcome');if(a==='cp')copy(t.dataset.v);
-  if(a==='revask')revAsk([t.dataset.v]);if(a==='appr'&&c)approveAsk(c);
+  if(a==='revask')revAsk([t.dataset.v]);if(a==='pub'&&c)pubAsk(c);
   if(a==='rev'){const l=allLics().find(x=>lk(x)===t.dataset.v);if(l&&confirm(`ยกเลิกรหัส Serial number ${lk(l)}?${l.no?'':'\nรหัสรุ่นเก่านี้ไม่มี Serial number ยกเลิกแล้วรหัสอื่นของลูกค้ารายนี้จะถูกยกเลิกด้วย'}\nหลังประกาศแล้ว PENUM PM ที่ใช้รหัสนี้จะเปิดดูและพิมพ์ได้อย่างเดียว (ข้อมูลไม่ถูกลบ)\nถ้าลูกค้ายังต้องใช้ต่อ ให้ออกรหัสใหม่ให้ก่อน`)){l.rev=today();save();render();revAsk([lk(l)])}}
   if(a==='lock')lockNow();
   if(a==='rmkey'&&confirm('ลบกุญแจออกจากเครื่องนี้? เครื่องนี้จะออกรหัสไม่ได้จนกว่าจะเปิดไฟล์กุญแจใหม่ รายชื่อลูกค้ายังอยู่')){localStorage.removeItem(KK);lockNow()}
