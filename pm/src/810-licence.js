@@ -5,7 +5,7 @@
    the data, so every device (folder, phone, backup) re-checks it. Data without a code (ORIEN's own) and the demo are free.
    After expiry + 7 days the data turns read-only: viewing, printing and backup download keep working, nothing is deleted. */
 const LIC_JWK={kty:'EC',crv:'P-256',x:'wyXLWhvzv-0vF50q9rOZ8sMoh2QIg9Nsr_5IpR8f7jo',y:'BI9uqpJjjWVmVLaEgAfXkpOXtdU-Ec7I-zQRJyUeDp4',ext:true,key_ops:['verify']};
-const LIC_PLAN={pilot:'ทดลองใช้ (Pilot)',starter:'Starter',std:'Standard',biz:'Business',ent:'Enterprise'};
+const LIC_PLAN={pilot:'ทดลองใช้ (Pilot)',starter:'Starter',std:'Standard',biz:'Business',ent:'Enterprise',rent:'เช่ารายเดือน'};
 const LIC_GRACE=7,LIC_WARN=30;
 const licB64=s=>{s=String(s).replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u};
 let LICK=null;const LICV={};
@@ -25,6 +25,22 @@ const licRevHit=(x,p)=>{const id=String(p.id),m=/^(.+)<(\d{4}-\d\d-\d\d)$/.exec(
   if(m)return (m[1]===id||m[1]===id.replace(/-R\d+$/,''))&&String(p.iat||'')<m[2];
   return x===p.no||x===id||x===p.sn||x===id.replace(/-R\d+$/,'')};
 {const v=r=>r.ok&&LICREV.some(x=>licRevHit(x,r.p))?Object.assign({},r,{ok:false,err:'rev'}):r;const f=licCheck;licCheck=async c=>v(await f(c))}
+// 3.73 one company code can open several PENUM programs: payload.ap lists them (["pm","mep","bim"]); a code without ap is PENUM PM only.
+// PM takes only a code that includes PM; the rest are for PENUM MEP and BIM (shared/licence.js), which read the codes a device holds
+// from 'penum.licences', where PM also puts its company's code, so a code with MEP or BIM is not typed again there.
+const LIC_APPS={pm:'PENUM PM',mep:'PENUM MEP',bim:'PENUM BIM'};
+const licAp=p=>Array.isArray(p&&p.ap)&&p.ap.length?p.ap.map(String):['pm'];
+const licApTxt=p=>licAp(p).map(a=>LIC_APPS[a]||a).join(' · ');
+{const f=licCheck;licCheck=async c=>{const r=await f(c);return r.ok&&!licAp(r.p).includes('pm')?Object.assign({},r,{ok:false,err:'app'}):r}}
+const LICDEV='penum.licences';
+const licPeek=c=>{try{return JSON.parse(new TextDecoder().decode(licB64(String(c).split('.')[1])))}catch(e){return null}};
+// one code per customer, the newest (the same rule as shared/licence.js)
+function licDevAdd(code){code=String(code||'').replace(/\s+/g,'').replace(/^.*#lic=/,'');const p=licPeek(code);if(!p||!p.co)return;try{
+  let L=JSON.parse(localStorage.getItem(LICDEV)||'[]');if(!Array.isArray(L))L=[];if(L.includes(code))return;
+  const who=q=>String(q.id||'').replace(/-R\d+$/,'')||q.co,rk=q=>String(q.iat||'')+'|'+String(q.exp||''),same=L.filter(c=>{const q=licPeek(c);return !q||who(q)===who(p)});
+  if(same.some(c=>{const q=licPeek(c);return q&&rk(q)>rk(p)}))return;localStorage.setItem(LICDEV,JSON.stringify(L.filter(c=>!same.includes(c)).concat(code)))}catch(e){}}
+const licDevCodes=()=>{try{const L=JSON.parse(localStorage.getItem(LICDEV)||'[]');return (Array.isArray(L)?L:[]).map(c=>({c,p:licPeek(c)})).filter(x=>x.p&&x.p.co&&licAp(x.p).includes('pm'))}catch(e){return []}};
+const licOpenApps=p=>licAp(p).filter(a=>a!=='pm').map(a=>`<a class="btn sm" href="../${a}/" target="penum-${a}">เปิด ${esc(LIC_APPS[a]||a)}</a>`).join(' ');
 if(!DEMOPG)fetch('files/revoked.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j||!Array.isArray(j.ids))return;const L=j.ids.map(String);
   if(JSON.stringify(L)===JSON.stringify(LICREV))return;LICREV=L;try{localStorage.setItem('penum.revoked',JSON.stringify(L))}catch(e){}LIC={code:null,r:null};render()}).catch(()=>{});
 // the state of this data set, kept up to date by render (checking is async, so the last result is cached)
@@ -144,14 +160,17 @@ ACT.coAddLic=()=>{const pend=licPend();licPendClear();coGo(coNewSlot(),pend)};
 /* --- 2) setup step 0: the code, checked as it is pasted --- */
 function licInfo(p,cls=''){const d=diffD(today(),p.exp);
   return `<dl class="lic-i ${cls}"><div><dt>บริษัท</dt><dd>${esc(p.co)}</dd></div><div><dt>ผู้ดูแลระบบ</dt><dd>${esc(p.an||'')}${p.em?` <small>${esc(p.em)}</small>`:''}</dd></div>
-  <div><dt>แพ็กเกจ</dt><dd>${esc(LIC_PLAN[p.pl]||p.pl||'')}</dd></div><div><dt>ผู้ใช้งานได้</dt><dd>${n(p.mx)?fmt(n(p.mx))+' คน':'ไม่จำกัด'}</dd></div>
+  <div><dt>แพ็กเกจ</dt><dd>${esc(LIC_PLAN[p.pl]||p.pl||'')}</dd></div><div><dt>โปรแกรม</dt><dd>${esc(licApTxt(p))}</dd></div>${licAp(p).includes('pm')?`<div><dt>ผู้ใช้งานได้</dt><dd>${n(p.mx)?fmt(n(p.mx))+' คน':'ไม่จำกัด'}</dd></div>`:''}
   <div><dt>ใช้ได้ถึง</dt><dd>${thDL(p.exp)}${d<0?' <span class="pill bad">หมดอายุแล้ว</span>':d<=LIC_WARN?` <span class="pill warn">อีก ${d} วัน</span>`:''}</dd></div>${p.id?`<div><dt>รหัสลูกค้า</dt><dd>${esc(p.sn||String(p.id).replace(/-R\d+$/,''))}</dd></div>`:''}${p.no?`<div><dt>Serial number</dt><dd>${esc(p.no)}</dd></div>`:''}</dl>`}
 function licStep(){const p=licP(),need=S.wizNew&&!p;
   return `<section class="card" id="wzLicCard"><h2><span>0. รหัสเปิดใช้งาน${need?' *':''}</span><small>รหัสที่ได้จากผู้ให้บริการ PENUM PM ทางอีเมลหรือ LINE ถ้าเปิดจากลิงก์ รหัสจะใส่ไว้ให้แล้ว</small></h2>
   ${p?licInfo(p)+'<p class="hint">ชื่อบริษัทและผู้ดูแลระบบล็อกตามรหัส ถ้าต้องแก้ ติดต่อผู้ให้บริการเพื่อออกรหัสใหม่</p>'
-  :`<textarea id="wzLic" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(licPend())}</textarea><div id="wzLicR" class="lic-r"></div>`}</section>`}
+  :`<textarea id="wzLic" rows="3" style="width:100%;font-family:monospace;font-size:12.5px" placeholder="PNM1.…">${esc(licPend())}</textarea><div id="wzLicR" class="lic-r"></div>
+  ${licPend()?'':licDevCodes().slice(-3).map(x=>`<p class="hint" style="margin:6px 0 0"><button type="button" class="btn sm" data-a="licUseDev" data-k="${esc(x.c)}">ใช้รหัสของ ${esc(x.p.co)}</button> ที่ใส่ไว้ใน PENUM MEP หรือ BIM บนเครื่องนี้</p>`).join('')}`}</section>`}
+ACT.licUseDev=b=>{const t=$('#wzLic');if(!t)return;t.value=b.dataset.k;wzLicGo()};
 async function licTry(code,out){const el=$(out);if(!el)return null;code=String(code||'').trim();if(!code){el.innerHTML='';return null}
   el.innerHTML='<span class="hint">กำลังตรวจรหัส…</span>';const r=await licCheck(code);
+  if(r.err==='app'){licDevAdd(r.code);el.innerHTML=licInfo(r.p)+`<p class="lic-bad">รหัสนี้ใช้กับ ${esc(licApTxt(r.p))} ไม่รวม PENUM PM</p><p class="hint">เก็บรหัสไว้ในเครื่องนี้ให้แล้ว ${licOpenApps(r.p)}</p>`;return null}
   if(!r.ok){el.innerHTML=`<p class="lic-bad">${r.err==='rev'?'รหัสนี้ถูกยกเลิกแล้ว':'รหัสไม่ถูกต้อง'} ติดต่อผู้ให้บริการ</p>`;return null}
   if(diffD(today(),r.p.exp)<0){el.innerHTML=licInfo(r.p)+'<p class="lic-bad">รหัสนี้หมดอายุแล้ว ติดต่อผู้ให้บริการเพื่อต่ออายุ</p>';return null}
   el.innerHTML=licInfo(r.p,'ok');return r}
@@ -210,12 +229,18 @@ if(!DEMOPG)fetch('files/plans.json',{cache:'no-store'}).then(r=>r.ok?r.json():nu
 const planPrice=x=>x.price==null?(x.txt||'ติดต่อฝ่ายขาย'):n(x.price)?fmt(x.price)+' บาท/เดือน':(x.txt||'ฟรี');
 function planCard(L,admin){if(!L)return '';
   return `<h3 class="wz-s">แพ็กเกจที่มี</h3><div class="tw"><table><thead><tr><th>แพ็กเกจ</th><th class="r">ผู้ใช้งานได้</th><th class="r">ราคา</th></tr></thead><tbody>${PLANS.plans.map(x=>`<tr${x.k===L.pl?' style="font-weight:700"':''}><td>${esc(x.name)}${x.k===L.pl?' <span class="pill ok">ใช้อยู่</span>':''}</td><td class="r">${fmt(x.users)} คน</td><td class="r">${esc(planPrice(x))}</td></tr>`).join('')}</tbody></table></div>
-  <p class="hint">${esc(PLANS.vat||'')} · อยากเปลี่ยนแพ็กเกจ ส่งคำขอให้ผู้ให้บริการ แล้วจะได้รับใบวางบิลและรหัสใหม่ทางอีเมล</p>${admin?'<div class="row" style="margin-bottom:6px"><button type="button" class="btn" data-a="planReq">ขอเปลี่ยนแพ็กเกจ</button></div>':''}`}
+  ${planApps(L)}<p class="hint">${esc(PLANS.vat||'')} · อยากเปลี่ยนแพ็กเกจหรือเพิ่มโปรแกรม ส่งคำขอให้ผู้ให้บริการ แล้วจะได้รับใบวางบิลและรหัสใหม่ทางอีเมล</p>${admin?'<div class="row" style="margin-bottom:6px"><button type="button" class="btn" data-a="planReq">ขอเปลี่ยนแพ็กเกจ / เพิ่มโปรแกรม</button></div>':''}`}
+const planAppList=()=>(Array.isArray(PLANS.apps)?PLANS.apps:[]).filter(x=>x&&x.k&&x.k!=='pm');
+function planApps(L){const A=planAppList(),mine=licAp(L);if(!A.length)return '';
+  return `<h3 class="wz-s">โปรแกรมอื่นของ PENUM</h3><div class="tw"><table><thead><tr><th>โปรแกรม</th><th class="r">ราคา</th></tr></thead><tbody>${A.map(x=>`<tr${mine.includes(x.k)?' style="font-weight:700"':''}><td>${esc(x.name)}${mine.includes(x.k)?' <span class="pill ok">ใช้อยู่</span>':''}${x.txt?`<br><small class="muted">${esc(x.txt)}</small>`:''}</td><td class="r">${esc(planPrice(x))}</td></tr>`).join('')}</tbody></table></div>
+  ${PLANS.bundle&&PLANS.bundle.txt?`<p class="hint">${esc(PLANS.bundle.txt)}</p>`:''}${mine.length>1?`<p class="hint">รหัสนี้เปิด ${esc(licApTxt(L))} ในเครื่องที่ใช้ PENUM PM ของบริษัทนี้ได้เลย ไม่ต้องใส่รหัสซ้ำ ${licOpenApps(L)}</p>`:''}`}
 function planTxt(){const L=licP(),C=DB.co,to=PLANS.plans.find(x=>x.k===($('#plTo')||{}).value)||{},cur=PLANS.plans.find(x=>x.k===L.pl)||{name:L.pl},note=(($('#plNo')||{}).value||'').trim();
+  const add=[...document.querySelectorAll('#dlg .plAdd:checked')].map(x=>x.value);
   const cust=L.sn||String(L.id).replace(/-R\d+$/,'');
-  return ['เรียน ฝ่ายขาย PENUM PM','','ขอเปลี่ยนแพ็กเกจ PENUM PM','',`บริษัท: ${L.co}`,`รหัสลูกค้า: ${cust}`,`Serial number: ${L.no||L.id}`,`แพ็กเกจปัจจุบัน: ${cur.name} (${fmt(L.mx)} คน ใช้ได้ถึง ${thDL(L.exp)})`,`แพ็กเกจที่ต้องการ: ${to.name||''} (${fmt(to.users)} คน ${planPrice(to)})`,...(note?['หมายเหตุ: '+note]:[]),'',`ผู้ติดต่อ: ${C.adminName||L.an||''}${C.phone?' โทร '+C.phone:''}${C.email||L.em?' '+(C.email||L.em):''}`,'','กรุณาส่งใบวางบิลและรหัสใหม่กลับมาทางอีเมลนี้','',`[PENUM-PLAN] ${cust} ${L.no||L.id} ${L.pl}>${to.k||''}`].join('\n')}
-ACT.planReq=()=>{const L=licP();if(!L)return;const o=PLANS.plans.filter(x=>x.k!==L.pl);const c=PLANS.contact||{};
-  dialog('ขอเปลี่ยนแพ็กเกจ',`<label>แพ็กเกจที่ต้องการ<select id="plTo">${o.map(x=>`<option value="${x.k}">${esc(x.name)} · ${fmt(x.users)} คน · ${esc(planPrice(x))}</option>`).join('')}</select></label>
+  return ['เรียน ฝ่ายขาย PENUM PM','',add.length?'ขอเปลี่ยนแพ็กเกจ / เพิ่มโปรแกรม PENUM':'ขอเปลี่ยนแพ็กเกจ PENUM PM','',`บริษัท: ${L.co}`,`รหัสลูกค้า: ${cust}`,`Serial number: ${L.no||L.id}`,`แพ็กเกจปัจจุบัน: ${cur.name} (${fmt(L.mx)} คน ใช้ได้ถึง ${thDL(L.exp)})`,`แพ็กเกจที่ต้องการ: ${to.name||''} (${fmt(to.users)} คน ${planPrice(to)})`,...(add.length?['เพิ่มโปรแกรม: '+add.map(a=>LIC_APPS[a]||a).join(', ')]:[]),...(note?['หมายเหตุ: '+note]:[]),'',`ผู้ติดต่อ: ${C.adminName||L.an||''}${C.phone?' โทร '+C.phone:''}${C.email||L.em?' '+(C.email||L.em):''}`,'','กรุณาส่งใบวางบิลและรหัสใหม่กลับมาทางอีเมลนี้','',`[PENUM-PLAN] ${cust} ${L.no||L.id} ${L.pl}>${to.k||''}${add.length?' +'+add.join(','):''}`].join('\n')}
+ACT.planReq=()=>{const L=licP();if(!L)return;const o=[...PLANS.plans.filter(x=>x.k===L.pl),...PLANS.plans.filter(x=>x.k!==L.pl)];const c=PLANS.contact||{},add=planAppList().filter(x=>!licAp(L).includes(x.k));
+  dialog('ขอเปลี่ยนแพ็กเกจ / เพิ่มโปรแกรม',`<label>แพ็กเกจ PENUM PM<select id="plTo">${o.map(x=>`<option value="${x.k}">${esc(x.name)}${x.k===L.pl?' (ใช้อยู่)':''} · ${fmt(x.users)} คน · ${esc(planPrice(x))}</option>`).join('')}</select></label>
+  ${add.length?`<div style="margin-top:8px"><span class="hint">เพิ่มโปรแกรม (ใช้รหัสเดียวกับ PM)</span>${add.map(x=>`<label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" class="plAdd" value="${x.k}" style="width:auto"> ${esc(x.name)} · ${esc(planPrice(x))}</label>`).join('')}</div>`:''}
   <label style="margin-top:8px;display:block">หมายเหตุ (ถ้ามี)<textarea id="plNo" rows="2" style="width:100%" placeholder="เช่น ต้องการเริ่มเดือนหน้า"></textarea></label>
   <p class="hint">${c.lineOA?`กด “ส่งทาง LINE” บนมือถือ ระบบจะเปิดแชท LINE ${esc(c.lineOA)} พร้อมข้อความให้แล้ว กดส่งได้เลย บนคอมพิวเตอร์ ระบบจะคัดลอกข้อความให้ แล้วเปิดหน้า QR ของ ${esc(c.lineOA)} ให้เปิด LINE ค้นหาไอดีนี้แล้ววางข้อความ`:`กด “ส่งอีเมล” ระบบจะเปิดอีเมลที่เขียนไว้ให้แล้ว ส่งถึง ${esc(c.email||'')} หรือกด “คัดลอกข้อความ” แล้ววางส่งทาง LINE${c.line?' '+esc(c.line):''}`}</p>`,
   (c.lineOA?'<button type="button" class="btn pri" data-a="planLine">ส่งทาง LINE</button><button type="button" class="btn" data-a="planMail">ส่งอีเมล</button>':'<button type="button" class="btn pri" data-a="planMail">ส่งอีเมล</button>')+'<button type="button" class="btn" data-a="planCopy">คัดลอกข้อความ</button>')};
@@ -231,7 +256,7 @@ ACT.planLine=async()=>{let id=String((PLANS.contact||{}).lineOA||'').trim();if(!
   <textarea readonly rows="6" style="width:100%">${esc(t)}</textarea>`,'<button type="button" class="btn pri" data-a="planLineCopy">คัดลอกข้อความอีกครั้ง</button>');
   const ta=$('#dlg textarea');ta&&ta.addEventListener('focus',()=>ta.select())};
 ACT.planLineCopy=async()=>{const ta=$('#dlg textarea');toast(ta&&await copyText(ta.value)?'คัดลอกแล้ว':'คัดลอกไม่ได้')};
-ACT.planMail=()=>{const L=licP(),to=PLANS.plans.find(x=>x.k===$('#plTo').value)||{};location.href=`mailto:${(PLANS.contact||{}).email||''}?subject=${encodeURIComponent(`ขอเปลี่ยนแพ็กเกจ PENUM PM: ${L.co} → ${to.name||''}`)}&body=${encodeURIComponent(planTxt())}`};
+ACT.planMail=()=>{const L=licP(),to=PLANS.plans.find(x=>x.k===$('#plTo').value)||{},add=[...document.querySelectorAll('#dlg .plAdd:checked')].map(x=>LIC_APPS[x.value]||x.value);location.href=`mailto:${(PLANS.contact||{}).email||''}?subject=${encodeURIComponent(`ขอเปลี่ยนแพ็กเกจ PENUM PM: ${L.co} → ${to.name||''}${add.length?' + '+add.join(', '):''}`)}&body=${encodeURIComponent(planTxt())}`};
 ACT.planCopy=async()=>{toast(await copyText(planTxt())?'คัดลอกแล้ว วางส่งทาง LINE ได้เลย':'คัดลอกไม่ได้')};
 ACT.licRenew=async()=>{const t=$('#licNew');if(!t||!t.value.trim()){toast('วางรหัสก่อน');return}const r=await licTry(t.value,'#licNewR');if(!r)return;
   const cur=licP()?licP().co:(DB.co.name||'');if(DB.co.lic&&cur&&r.p.co!==cur){$('#licNewR').innerHTML+=`<p class="lic-bad">รหัสนี้เป็นของ “${esc(r.p.co)}” ไม่ใช่ “${esc(cur)}”</p>`;return}
@@ -253,7 +278,7 @@ function licBanner(){const st=licState(),p=licP(),admin=!S.me;if(st==='none'||st
   if(st==='grace'){const left=LIC_GRACE+diffD(today(),p.exp);return `<div class="lic-ban bad">สิทธิ์การใช้งานหมดอายุแล้วเมื่อ ${thDL(p.exp)} ใช้งานต่อได้อีก ${left} วัน หลังจากนั้นข้อมูลจะเปิดดูและพิมพ์ได้อย่างเดียว${admin?' '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
   return `<div class="lic-ban bad">${st==='bad'?'รหัสเปิดใช้งานไม่ถูกต้อง':st==='rev'?'รหัสเปิดใช้งานถูกยกเลิก':'สิทธิ์การใช้งานหมดอายุ'} ข้อมูลเปิดดู พิมพ์ และดาวน์โหลดไฟล์สำรองได้ แต่แก้ไขไม่ได้ ข้อมูลไม่ถูกลบ${admin?' ใส่รหัสใหม่ได้ที่ '+go:' แจ้งผู้ดูแลระบบ'}</div>`}
 ACT.licGo=()=>{S.dept='set';pgGo(['co','coset','']);render();setTimeout(()=>{const c=$('#licCard');if(c)c.scrollIntoView({behavior:'smooth'})},60)};
-{const r=render;render=function(){try{if(typeof DB!=='undefined'&&DB&&DB.co){licSync();licFromLink()}}catch(e){console.error(e)}const x=r.apply(this,arguments);
+{const r=render;render=function(){try{if(typeof DB!=='undefined'&&DB&&DB.co){licSync();licFromLink();if(licP()&&licDevAdd.last!==DB.co.lic){licDevAdd.last=DB.co.lic;licDevAdd(DB.co.lic)}}}catch(e){console.error(e)}const x=r.apply(this,arguments);
   try{const t=$('#wzLic'),o=$('#wzLicR');if(t&&o&&t.value.trim()&&!o.innerHTML)setTimeout(wzLicGo,0)}catch(e){}
   try{if(!licOn()||(pinOn()&&!authOK()))return x;const v=$('#view');if(!v)return x;const b=licBanner();if(b)v.insertAdjacentHTML('afterbegin',b);
     document.body.classList.toggle('lic-ro',licRO());

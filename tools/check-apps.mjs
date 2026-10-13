@@ -7,6 +7,8 @@
 //  - the shared browser-storage keys it writes and reads (app.json "links") are still in the source, and every key read is written by some app
 //  - the apps its header buttons open in their own window (app.json "opens") still have those buttons
 //  - the feedback box copy matches shared/feedback.js (run node tools/sync-feedback.mjs after editing it)
+//  - for an app with "licence" (MEP, BIM): the storage keys it names are still in the source, so the check still guards the work
+// And once: shared/licence.js parses, and it, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
 // For an app split into files (<app>/src, PENUM PM) also:
 //  - every file is named NNN-what.html|css|js, is not empty and ends with a line break
 //  - every .js file parses on its own, so an error names the file and line
@@ -60,8 +62,19 @@ for (const a of APPS) {
     if (!src.includes(`goApp('${o}')`) && !src.includes(`target="penum-${o}"`)) fail(a.dir, `no button opens ${o} in its own window (app.json opens)`);
   const block = src.match(/<!-- PENUM-FB:start[^>]*-->\n<script>\n([\s\S]*?)\n<\/script>\n<!-- PENUM-FB:end -->/);
   if (block && block[1] !== fb) fail(a.dir, 'feedback box differs from shared/feedback.js: run node tools/sync-feedback.mjs');
+  if (a.licence) {
+    for (const k of new Set([...(a.licence.keys || []), ...(a.licence.work ? [a.licence.work] : [])]))
+      if (!src.includes(`'${k}'`) && !src.includes(`"${k}"`)) fail(a.dir, `licence key '${k}' (app.json licence) is no longer in the source`);
+    if (a.licence.skip) try { new RegExp(a.licence.skip); } catch (e) { fail(a.dir, `app.json licence.skip is not a regex: ${e.message}`); }
+  }
   console.log(`${a.dir}: ${n} scripts checked${isSplit(a) ? `, ${parts(a).length} files in ${a.dir}/src` : ''}`);
 }
+
+const LICJS = readFileSync(join(root, 'shared', 'licence.js'), 'utf8');
+try { new Script(LICJS, { filename: 'shared/licence.js' }); } catch (e) { errors.push(`shared/licence.js:${errLine(e)} does not parse: ${e.message}`); }
+const KX = (LICJS.match(/x:'([A-Za-z0-9_-]{43})'/) || [])[1], KY = (LICJS.match(/y:'([A-Za-z0-9_-]{43})'/) || [])[1];
+if (!KX || !KY) errors.push('shared/licence.js: public key (x:\'…\', y:\'…\') not found');
+else for (const d of ['pm', 'sales']) { const b = APPS.find(x => x.dir === d), s = b && source(b); if (s && (!s.includes(KX) || (d === 'pm' && !s.includes(KY)))) errors.push(`${d}: its licence public key differs from shared/licence.js`); }
 
 if (errors.length) { console.error('\n' + errors.join('\n')); process.exit(1); }
 console.log('all apps OK');
