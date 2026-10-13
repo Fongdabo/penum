@@ -1,4 +1,4 @@
-/* ---------- 3.76 ORIEN standard BOQ form, round 1: quotation → Excel file in the ORIEN form (summary page, BOQ with material
+/* ---------- 3.80 ORIEN standard BOQ form, round 1: quotation → Excel file in the ORIEN form (summary page, BOQ with material
    and labour apart, and for the company only a cost / sell / profit sheet), the same file read back line for line by
    นำเข้าจากไฟล์ (PENUM MEP writes it too), and an internal print with cost and profit. The writer is files/lib/orien-boq.js. ---------- */
 const OB_ID='ORIEN-BOQ/1',OB_LIB='files/lib/';
