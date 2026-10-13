@@ -76,7 +76,7 @@ Object.defineProperty(BENPOL.meta,'title',{get(){return 'ระเบียบ�
   <p class="hint">${(PFX.filter(([k])=>(DB.co.pfx||{})[k]).map(([k,l])=>`${l} ${esc(DB.co.pfx[k])}`).join(' · '))||'ใช้ตัวหน้าเลขที่มาตรฐาน (QT- PO- INV- …)'} · ${DB.co.vatReg===false?'ไม่ได้จด VAT':'จด VAT'}</p></section>`}
 
 document.head.insertAdjacentHTML('beforeend',`<style>
-.wl{max-width:980px;margin:12px auto}.wl-h h1{font-size:26px;margin:0 0 6px}.wl-h p{color:var(--muted);margin:0 0 16px}
+.wl{margin:12px 0}.wl-h h1{font-size:26px;margin:0 0 6px}.wl-h p{color:var(--muted);margin:0 0 16px}
 .wl-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .wl-c{display:grid;gap:6px;text-align:left;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);cursor:pointer;font:inherit}
 .wl-c b{font-size:16px}.wl-c span{color:var(--muted);font-size:13.5px;line-height:1.5}.wl-c:hover{border-color:var(--pri,#2A7F8C)}
