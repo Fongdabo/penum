@@ -1784,7 +1784,7 @@ function guideHTML(rm){
   <div class="g-i"><span class="g-l">อัตราเปลี่ยนอากาศ (ACH)</span><b>${fmt(ach,1)}</b><span class="pill ${s2[0]}">${s2[1]}</span><small>แนะนำ ${t.achR[0]}–${t.achR[1]} ครั้ง/ชม.${/iso/.test(rm.type)?' (ตั้งด้วยช่อง ACH ขั้นต่ำ)':''}</small></div></div>`;
 }
 /* ---------- design-criteria check per room (reference values; the designer confirms against the current edition and project spec) ---------- */
-const STD_SRC={a55:'ASHRAE 55',a62:'ASHRAE 62.1-2019 ตาราง 6-1',a170:'ASHRAE 170-2017',iest:'IEST-RP-CC012 / ISO 14644-4',tc99:'ASHRAE TC 9.9',app:'ASHRAE HVAC Applications',a90:'ASHRAE 90.1-2019 (Space-by-space)',rot:'ค่าแนะนำทั่วไป (rule of thumb)',usp:'USP <797> / <800> (ห้องผสมยา)',fgi:'FGI Guidelines 2018',
+const STD_SRC={a55:'ASHRAE 55',a62:'ASHRAE 62.1-2019 ตาราง 6-1',a170:'ASHRAE 170-2017',iest:'IEST-RP-CC012 / ISO 14644-4',tc99:'ASHRAE TC 9.9',app:'ASHRAE HVAC Applications',a90:'ASHRAE 90.1-2019 (Space-by-space)',rot:'ค่าแนะนำทั่วไป (rule of thumb)',oa100:'ASHRAE 170 ดูดทิ้งทั้งหมด · แบบไทยนิยมอากาศภายนอก 100%',usp:'USP <797> / <800> (ห้องผสมยา)',fgi:'FGI Guidelines 2018',
   th:'แบบห้องผ่าตัดในไทย (Class 10,000 + HEPA)',moph:'ASHRAE 170 ห้องแยกโรคติดเชื้อทางอากาศ (AII) + แนวทางกระทรวงสาธารณสุข'};
 const STDT={          // T °C, RH %, hum = humidity must be controlled, oa = [L/s per person, L/s per m²] or {ach}, ach = minimum supply ACH, lpd W/m²
   office:{T:[23,26],RH:[40,60],ts:'a55',oa:[2.5,0.3],lpd:8.1},
@@ -1865,6 +1865,7 @@ Object.assign(STDT,{          // MEP v121 hospital spaces
   waste:{T:[21,30],RH:[30,80],ts:'rot',oa:'nr',ach:0,press:-1,exh:{ach:10,all:1,src:'a170'},lpd:null},
   janitor:{T:[21,30],RH:[30,80],ts:'rot',oa:'nr',ach:0,press:-1,exh:{ach:10,all:1,src:'a170'},lpd:null}
 });
+['orneg','aiir','aiirpe','bronch','erwait','autopsy','chemo'].forEach(k=>{STDT[k].oa100=1});          // rooms drawn with 100% outdoor air
 const STD_ST={ok:['ok','ผ่าน','Pass','#1a7f37'],bad:['crit','ไม่ผ่าน','Fail','#b42318'],warn:['bad','ควรตรวจสอบ','Check','#b54708'],na:['info','ไม่บังคับ','n/a','#667085'],note:['info','ข้อกำหนดแบบ','Design rule','#175cd3']};
 function stdRows(rm,row){
   const S=STDT[rm.type]||STDT[tyBase(rm.type)]||STDT.office,d=dOf(rm),r=row?row.r:calc(rm),vol=r.vol,a=n(rm.area),out=[];
@@ -1894,18 +1895,23 @@ function stdRows(rm,row){
       st=clean||b==='hosp'?'ok':fl>=3?(ahu?'ok':'bad'):fl===2?(ahu?'ok':dct?'warn':'bad'):(ahu||dct?'ok':'warn');
     add(tl('ระบบกรองอากาศ','Filtration'),S.filt,have,st,S.fl===3&&S.achSrc==='th'?'th':S.achSrc||'a170')}
   if(S.norec)add(tl('เครื่องหมุนเวียนลมในห้อง','Room recirculating units'),tl('ห้ามใช้ Split / FCU / VRF ในห้อง','no split / FCU / VRF in the room'),SYS[sy]?SYS[sy].label:sy,sy==='split'||sy==='vrf'?'bad':'ok','a170');
-  const dp=roomDp(rm);
+  const dp=roomDp(rm),oaC0=oaLps(rm)*3.6,eaC0=n(rm.air.ea)*vol,net=oaC0-eaC0,
+    bal=oaC0||eaC0?tl(` · อากาศภายนอกเข้า ${fmt(oaC0)} − ดูดทิ้ง ${fmt(eaC0)} = ${net>0?'+':''}${fmt(net)} CMH`,` · outdoor air in ${fmt(oaC0)} − exhaust ${fmt(eaC0)} = ${net>0?'+':''}${fmt(net)} CMH`):'';          // air balance behind the room pressure
   if(S.press===-1){const eaC=n(rm.air.ea)*vol,oaC=oaLps(rm)*3.6;
     add(tl('ความดันห้อง','Room pressure'),tl('ลบเทียบห้องข้างเคียง (≈ −2.5 ถึง −15 Pa)','negative to adjacent spaces (≈ −2.5 to −15 Pa)')+(S.ante?tl(' · มีห้องกั้น (anteroom)',' · with anteroom'):''),
-      dpTxt(rm)+(dp<0&&eaC<=oaC?tl(' · ลมดูดทิ้งต้องมากกว่าอากาศภายนอก',' · exhaust must exceed outdoor air'):''),dp<0?(eaC>oaC?(dp<=-2.5?'ok':'warn'):'bad'):'bad',S.exh?S.exh.src:'a170')}
+      dpTxt(rm)+bal+(dp<0&&eaC<=oaC?tl(' · ลมดูดทิ้งต้องมากกว่าอากาศภายนอก',' · exhaust must exceed outdoor air'):''),dp<0?(eaC>oaC?(dp<=-2.5?'ok':'warn'):'bad'):'bad',S.exh?S.exh.src:'a170')}
   else if(S.press){const okSys=S.press===1?ahu:(ahu||dct);
     add(tl('ความดันห้อง','Room pressure'),S.press===1?tl('บวกเทียบห้องข้างเคียง (≈ +10 ถึง +15 Pa)','positive to adjacent spaces (≈ +10 to +15 Pa)'):tl('บวกเทียบห้องข้างเคียง (≈ +2.5 Pa ขึ้นไป)','positive to adjacent spaces (≈ +2.5 Pa or more)'),
-      dpTxt(rm)+(okSys?'':tl(' · ระบบนี้คุมความดันไม่ได้',' · this system cannot hold pressure')),
+      dpTxt(rm)+bal+(okSys?'':tl(' · ระบบนี้คุมความดันไม่ได้',' · this system cannot hold pressure')),
       okSys&&dp>0?(dp>=(S.press===1?5:2.5)?'ok':'warn'):S.press===2&&dp>0?'warn':'bad',S.achSrc&&S.achSrc!=='th'?S.achSrc:'a170')}
-  else if(roomDp(rm))add(tl('ความดันห้อง','Room pressure'),tl('ตามที่ผู้ออกแบบกำหนด','as set by the designer'),dpTxt(rm),rm.eq.sys==='ahu'||rm.eq.sys==='package'||rm.eq.sys==='ducted'?'ok':'warn','rot');
+  else if(roomDp(rm))add(tl('ความดันห้อง','Room pressure'),tl('ตามที่ผู้ออกแบบกำหนด','as set by the designer'),dpTxt(rm)+bal,rm.eq.sys==='ahu'||rm.eq.sys==='package'||rm.eq.sys==='ducted'?'ok':'warn','rot');
+  else add(tl('ความดันห้อง','Room pressure'),tl('ไม่กำหนด (สมดุลกับห้องข้างเคียง)','not required (neutral to adjacent spaces)'),dpTxt(rm)+bal,'na',S.ts==='a170'?'a170':'rot');
   if(S.exh){const e=n(rm.air.ea),eaC=e*vol,need=S.exh.ach;
     add(tl('ลมดูดทิ้ง (EA)','Exhaust air (EA)'),`≥ ${S.exh.ach} ACH = ${fmt(S.exh.ach*vol)} CMH`+(S.exh.all?tl(' · ดูดทิ้งออกนอกอาคารทั้งหมด ไม่นำกลับ',' · all exhausted outdoors, not recirculated'):''),
       `${fmt(e,1)} ACH = ${fmt(eaC)} CMH`,a<=0?'warn':e>=need*0.98?'ok':'bad',S.exh.src)}
+  else{const e=n(rm.air.ea);add(tl('ลมดูดทิ้ง (EA)','Exhaust air (EA)'),tl('ไม่บังคับ','not required'),e>0?`${fmt(e,1)} ACH = ${fmt(e*vol)} CMH`:tl('ไม่มี','none'),'na',S.ts==='a170'?'a170':'rot')}
+  {const sup=r.supply*3.6,fr=sup>0?Math.min(1,oaC0/sup):0,txt=sup>0?`${fmt(fr*100)}% (${fmt(oaC0)} / ${fmt(sup)} CMH)`:'–';          // share of the supply air that is outdoor air; 100% where the room air may not return
+    add(tl('สัดส่วนอากาศภายนอกในลมจ่าย','Outdoor air share of supply'),S.oa100?tl('อากาศภายนอก 100% ไม่นำลมกลับ','100% outdoor air, no return air'):tl('นำลมกลับได้ ไม่บังคับ 100%','return air allowed'),txt,S.oa100?(sup>0&&fr>=0.98?'ok':'warn'):'na',S.oa100?'oa100':'rot')}
   if(S.laf)add(tl('การจ่ายลมในห้อง','Room air distribution'),tl('หัวจ่ายแบบ Laminar คลุมเตียงผ่าตัด เลยขอบเตียงออกไป 0.3 m · ช่องลมกลับต่ำใกล้พื้น อย่างน้อย 2 จุด คนละฝั่ง','laminar (non-aspirating) array over the table, 0.3 m beyond it · at least 2 low returns on opposite sides'),
     tl('ผู้ออกแบบจัดในแบบ','set out in the drawings'),'note','a170');
   if(row){const ratio=row.ratio||0;add(tl('ขนาดเครื่องเทียบโหลด','Installed vs load'),'100–130%',r.btu>0?`${fmt(ratio*100)}%`:'–',r.btu<=0?'warn':ratio<0.98?'bad':ratio>1.3?'warn':'ok','rot');
@@ -6265,7 +6271,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=121,MEP_NAME='v121';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=122,MEP_NAME='v122';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
