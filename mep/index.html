@@ -6364,7 +6364,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=124,MEP_NAME='v124';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=125,MEP_NAME='v125';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -6962,6 +6962,7 @@ function pjCards(){const g=$('pjGrid');if(!g)return;let L=pjRows();const all=L.l
   projHead()}
 function renderProjects(){$('results').hidden=true;const fs=PJ_F&&PJ_F.ok;
   $('editor').innerHTML=`<div class="pj">
+  ${TM_ON?`<section class="panel card" id="pjTeamC"><h2><span>โครงการของบริษัท</span><small id="pjTeamN" data-noxl></small></h2><p class="hint" style="margin:0 0 10px">ทุกคนในบริษัทเดียวกัน (รหัสเปิดใช้งานเดียวกัน) เห็นรายการนี้ เปิดต่อจากเพื่อนร่วมงานได้ และเห็นว่าใครกำลังแก้อยู่ ถ้ามีคนแก้อยู่ เครื่องนี้เปิดดูได้แต่จะไม่ส่งทับ</p><div id="pjTeam" data-noxl></div></section>`:''}
   <section class="panel card"><h2><span>โครงการทั้งหมดในเครื่องนี้</span><small id="pjCount" data-noxl></small></h2>
     ${PJ.ok?'':'<p class="note" style="margin:0 0 10px">เบราว์เซอร์นี้เก็บรายการโครงการไม่ได้ (เช่น หน้าต่างแบบไม่ระบุตัวตน) จึงแสดงเฉพาะโครงการที่เปิดอยู่ ให้บันทึกลงเครื่องเก็บไว้</p>'}
     <div class="pj-top"><input type="search" id="pjQ" placeholder="ค้นหาชื่อโครงการ ลูกค้า หรือเลขที่โครงการ" value="${esc(PJ.q)}" aria-label="ค้นหาโครงการ">
@@ -7020,6 +7021,40 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('pjStart')&&!docu
 {let go=true;try{go=!sessionStorage.getItem('mep-started')}catch(e){}if(location.hash.indexOf('#v3d=')===0||(()=>{try{return window.self!==window.top}catch(e){return true}})())go=false;
   if(go)Promise.resolve(PJ.ip).catch(()=>{}).then(()=>setTimeout(()=>{if(!PJ.launch)pjsShow()},150))}
 if('launchQueue' in window)launchQueue.setConsumer(async q=>{if(q&&q.files&&q.files.length)PJ.launch=1;try{await PJ.ip}catch(e){}for(const h of (q&&q.files)||[]){try{const f=await h.getFile();await pjImport(await f.text(),f.name)}catch(e){}}});
+/* v125 โครงการของบริษัท (shared/team.js, app.json "team": true): the projects of everyone in the company (the same licence code),
+   from every computer, in one list at the top of the projects page and on the start page, with who saved each one last and who
+   has it open now. A project is known by its link code (P.lid) on every computer; its pid stays this browser's own (left out of what
+   goes up). The open project goes up a few seconds after a change and before another one opens; the other projects in this browser
+   go up once (empty projects and samples never). A newer version saved on another computer replaces the open one while it is
+   unchanged here; otherwise penumTeam asks, and "use theirs" keeps this browser's version as a copy in the list. */
+const TM_ON=!!(window.penumTeam&&PN_SUITE);
+function tmText(Q){return JSON.stringify(Q,function(k,v){return this===Q&&k==='pid'?undefined:v})}
+function tmSample(Q){if(!Q.smp)return false;if(Q.smp===1)return true;if(Q!==P)return true;try{return Q.smp===pnFp(pnLink())}catch(e){return true}}
+function tmCur(){if(!P||SBX||!P.lid||pjRO()||pjBlank(P)||tmSample(P))return null;const I=P.info||{};
+  return {id:P.lid,name:String(P.name||'').trim(),client:I.client||'',code:I.code||'',sum:pjSum(),text:()=>tmText(P)}}
+function tmParse(text){let Q=null;try{Q=JSON.parse(text)}catch(e){}return Q&&Array.isArray(Q.rooms)&&Q.design?Q:null}
+async function tmApply(text){const Q=tmParse(text);if(!Q)return;Q.pid=P.pid;Q.lid=P.lid;const y=scrollY,v=view;pjUse(Q,{view:v,fresh:1});scrollTo({top:y})}
+const tmHas=id=>pjRows().some(m=>m.lid&&m.lid===id&&!m.del);
+async function tmOpenLocal(id){const m=pjRows().find(x=>x.lid===id&&!x.del);if(!m)return;if(m.pid===P.pid){pjsClose();view='cover';renderAll();scrollTo({top:0});return}await pjOpen(m.pid)}
+async function tmOpen(text,mt){if(pjNo())return false;const Q=tmParse(text);if(!Q){pjSnack(uiT('ไฟล์นี้ไม่ใช่ไฟล์โครงการ PENUM MEP'));return false}if(PJ.busy)return false;PJ.busy=1;
+  try{await pjLeave();if(!Q.pid||PJ.list.some(x=>x.pid===Q.pid))Q.pid=pjId();if(mt.id)Q.lid=mt.id;if(!Q.made)Q.made=Date.now();PJ.prev=P.pid;pjUse(Q,{view:'cover',fresh:1});
+    pjSnack(uiT('เปิดโครงการของบริษัทแล้ว')+': '+P.name)}finally{PJ.busy=0}return true}
+/* a project of its own from the company's version (new pid and link code): opened (ทำสำเนาเป็นงานของฉัน), or only kept in the list */
+async function tmCopy(text,mt,keep){if(pjNo())return;const Q=tmParse(text);if(!Q)return;const src=String(Q.name||mt.name||'').trim();
+  Q.pid=pjId();delete Q.lid;delete Q.smp;delete Q.imp;Q.name=pjUniq(src+(keep?' ('+uiT('ฉบับของฉัน')+')':' ('+uiT('สำเนา')+')'));Q.from={k:'copy',n:src};Q.made=Date.now();
+  const sum=pjSumOf(Q),s=JSON.stringify(Q),m=pjMeta(Q,s,sum,null);m.at=Date.now();await pjPut(m,s);pjSet(m);if(view==='projects')pjCards();projHead();
+  if(keep)pjSnack(uiT('เก็บฉบับของคุณไว้เป็นอีกโครงการแล้ว')+': '+Q.name);else await pjOpen(Q.pid)}
+async function tmLocals(){if(!PJ.ok)return [];return pjLive().filter(m=>m.lid&&m.pid!==P.pid&&m.sum&&m.sum.rooms&&!(m.from&&m.from.k==='sample')).map(m=>({id:m.lid,name:m.name,client:m.client,code:m.code,sum:m.sum,
+  text:async()=>{const Q=tmParse(await pjData(m.pid));return Q&&!Q.smp&&!pjBlank(Q)?tmText(Q):''}}))}
+const tmSum=s=>[s.rooms?fmt(s.rooms)+' '+uiT('ห้อง'):'',s.tr?fmt(s.tr,1)+' TR':'',s.boq?'BOQ '+fmt(s.boq):''].filter(Boolean).join(' · ');
+if(TM_ON){penumTeam.attach({app:'mep',cur:tmCur,apply:tmApply,has:tmHas,openLocal:tmOpenLocal,open:tmOpen,copy:(x,m)=>tmCopy(x,m,0),keep:x=>tmCopy(x,{},1),locals:tmLocals,sumTxt:tmSum});
+  {const s=save;save=function(){s.apply(this,arguments);if(!SBX)penumTeam.soon()}}
+  {const f=pjLeave;pjLeave=async function(){try{await Promise.race([penumTeam.tick(),new Promise(r=>setTimeout(r,4000))])}catch(e){}return f.apply(this,arguments)}}          // the project being left goes up as it is now
+  {const f=renderProjects;renderProjects=function(){f.apply(this,arguments);const e=$('pjTeam');if(e)penumTeam.render(e,{count:'pjTeamN'})}}
+  {const f=pjsShow;pjsShow=function(){f.apply(this,arguments);const s=document.querySelector('#pjStart .pjs-g');if(!s||$('pjsTeamS'))return;
+    const c=document.createElement('section');c.className='pjs-tm';c.id='pjsTeamS';c.innerHTML=`<h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${uiT('โครงการของบริษัท')}</span><button type="button" class="btn sm ghost" data-pjs="team">${uiT('ดูทั้งหมด')}</button></h2><div id="pjsTeam" data-noxl></div>`;
+    s.after(c);penumTeam.render($('pjsTeam'),{compact:1,max:5})}}
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#pjStart [data-pjs="team"]');if(!b)return;pjsClose();view='projects';renderAll();const c=$('pjTeamC');if(c)c.scrollIntoView({block:'start'})})}
 document.addEventListener('dragover',e=>{const t=e.dataTransfer;if(t&&[...t.items||[]].some(i=>i.kind==='file')&&!(e.target.closest&&e.target.closest('#imCard')))e.preventDefault()});
 document.addEventListener('drop',async e=>{if(e.defaultPrevented||(e.target.closest&&e.target.closest('#imCard')))return;const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(!f)return;e.preventDefault();
   if(!/\.(penmep|json|txt)$/i.test(f.name)){pjSnack(uiT('ไฟล์นี้ไม่ใช่ไฟล์โครงการ PENUM MEP'));return}pjImport(await f.text(),f.name)});

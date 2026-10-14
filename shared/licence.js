@@ -14,6 +14,7 @@
      holder of the old code), arrives when the program opens online or comes back to the front, as in PENUM PM, so the
      customer does nothing. A link …/mep/#lic=<code> opens the program with the code filled in.
    - Pages matching PENUM_LIC.skip (MEP's 3D view links, #v3d=, which customers send to their own clients) never ask for a code.
+   state().code / .cid: the code in use and its customer (the company), for โครงการของบริษัท (shared/team.js).
    Client-side only, like PENUM PM's licence: it keeps honest customers honest; it cannot stop someone editing the page. */
 (()=>{const C=window.PENUM_LIC;if(!C||window.penumLic)return;
 if(C.skip&&new RegExp(C.skip).test(location.hash)){window.penumLic={state:()=>({st:'skip'})};return}
@@ -313,6 +314,6 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',sta
 {let fb;const add=()=>S.p?{company:S.p.co,lic:S.p.sn||base(S.p.id)}:{};
   try{Object.defineProperty(window,'penumFB',{configurable:true,enumerable:true,get:()=>fb,set(v){if(v&&typeof v.init==='function'&&!v.__plk){const f=v.init;
     v.init=function(o){o=Object.assign({},o);const g=o.info;o.info=()=>{let x={};try{x=(g&&g())||{}}catch(e){}return Object.assign(add(),x)};return f.call(this,o)};v.__plk=1}fb=v}})}catch(e){}}
-window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[]}),open:openDlg,check:recheck,
+window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[],code:S.code||'',cid:S.p?who(S.p):''}),open:openDlg,check:recheck,
   has:covers,upsell,ask:openAsk};          // the other programs: whether this device opens one, the hint about one it does not, its request dialog
 })();

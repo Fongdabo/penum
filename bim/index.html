@@ -13521,7 +13521,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=83,V1_NAME='V1.73';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=84,V1_NAME='V1.74';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -16722,6 +16722,33 @@ document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&$('#bimStart')&&!
 setTimeout(()=>{let go=true;try{go=!sessionStorage.getItem('bim-started')}catch(e){}try{if(window.self!==window.top)go=false}catch(e){go=false}if(go&&!BS.launch&&P)bsShow()},250);
 if('launchQueue' in window)launchQueue.setConsumer(async q=>{const h=q&&q.files&&q.files[0];if(!h)return;BS.launch=1;bsClose();let f;try{f=await h.getFile()}catch(e){return}const txt=await f.text();
   const run=()=>{if(!P||!$('#panes')){setTimeout(run,200);return}fileText(txt,f.name)};run()});
+/* V1.74 โครงการของบริษัท (shared/team.js, app.json "team": true): the projects of everyone in the company (the same licence code),
+   from every computer, on the start page and in เมนู › โครงการของบริษัท, with who saved each one last and who has it open now.
+   A project is known by P.guid. The open project goes up a few seconds after it is saved (the sample house and empty projects never);
+   a newer version saved on another computer replaces it while it is unchanged here (Ctrl+Z goes back), otherwise penumTeam asks,
+   and "use theirs" first saves this computer's version as a file of its own (บันทึกลงเครื่อง, or a download). */
+const TM_ON=!!(window.penumTeam&&/\.github\.io$|^(localhost|127\.0\.0\.1)$/.test(location.hostname));
+const tmL=(th,en)=>ui.lang==='en'?en:th;
+function tmCur(){if(!P||!P.guid||!P.els.length||mlSample()||(window.penumLink&&penumLink.locked()))return null;const I=P.info||{};
+  return {id:P.guid,name:String(I.name||'').trim(),client:I.client||'',code:I.number||'',sum:{lv:P.levels.length,els:P.els.length},text:projStr}}
+function tmParse(text){let o=null;try{o=JSON.parse(text)}catch(e){}const p=o&&migrate(o,ui.lang==='en');return p||null}
+async function tmApply(text){const p=tmParse(text);if(!p)return;p.guid=P.guid;cadTake(p);setProject(p,true);saveNow()}
+function tmAsk(go){return new Promise(res=>{let done=false;bsReplace('team',()=>{done=true;go();res(true)});if(!done&&$('#dlg').open)$('#dlg').addEventListener('close',()=>setTimeout(()=>res(done),0),{once:true});else if(!done)res(false)})}
+async function tmOpen(text){const p=tmParse(text);if(!p){toast(t('open_invalid'));return false}
+  return tmAsk(()=>{cadTake(p);setProject(p,true);saveNow();toast(tmL('เปิดโครงการของบริษัทแล้ว: ','Opened from your company: ')+(p.info.name||''))})}
+async function tmCopy(text,m,keep){const p=tmParse(text);if(!p)return;const nm=String(p.info.name||m.name||'').trim();p.guid=projGuid();p.info.name=nm+(keep?tmL(' (ฉบับของฉัน)',' (my version)'):tmL(' (สำเนา)',' (copy)'));
+  if(keep){const txt=JSON.stringify(p);let ok=false;if(BF&&BF.ok){const r=await BF.save({name:p.info.name,ext:'.penbim',text:txt,isMine:()=>false});ok=!!r.file}if(!ok)await saveFile(p.info.name+'.penbim',txt,'application/json');
+    toast(tmL('เก็บฉบับของคุณเป็นไฟล์แล้ว: ','Your version is kept as a file: ')+p.info.name,6000);return}
+  await tmAsk(()=>{cadTake(p);setProject(p,true);saveNow()})}
+const tmSum=s=>[s.lv?s.lv+' '+tmL('ชั้น','levels'):'',s.els?s.els+' '+tmL('ชิ้นส่วน','elements'):''].filter(Boolean).join(' · ');
+function tmBox(){$('#appMenu').open=false;openDlg(tmL('โครงการของบริษัท','Company projects'),`<p class="note">${tmL('ทุกคนในบริษัทเดียวกัน (รหัสเปิดใช้งานเดียวกัน) เห็นรายการนี้ เปิดต่อจากเพื่อนร่วมงานได้ และเห็นว่าใครกำลังแก้อยู่','Everyone in your company (the same activation code) sees this list: carry on from a colleague and see who is editing what.')}</p><div id="bimTeam" style="width:min(760px,calc(100vw - 80px))"></div>`,
+  `<button class="btn primary" data-close="1">${t('close')}</button>`,{},'');penumTeam.render($('#bimTeam'),{close:closeDlg})}
+if(TM_ON){penumTeam.attach({app:'bim',cur:tmCur,apply:tmApply,has:id=>!!P&&P.guid===id,openLocal:()=>bsClose(),open:tmOpen,copy:(x,m)=>tmCopy(x,m,0),keep:x=>tmCopy(x,{},1),sumTxt:tmSum});
+  {const f=saveNow;saveNow=function(){f.apply(this,arguments);penumTeam.soon()}}
+  {const b=document.createElement('button');b.type='button';b.id='menuTeam';b.addEventListener('click',tmBox);const fb=$('#menuFb');fb.parentNode.insertBefore(b,fb.previousElementSibling&&fb.previousElementSibling.tagName==='HR'?fb.previousElementSibling:fb);
+    const lab=()=>{b.textContent=tmL('โครงการของบริษัท','Company projects')};lab();$('#appMenu').addEventListener('toggle',lab)}
+  {const f=bsShow;bsShow=function(){f.apply(this,arguments);const g=document.querySelector('#bimStart .bs-g');if(!g||$('#bsTeamS'))return;
+    const c=document.createElement('section');c.id='bsTeamS';c.innerHTML=`<h2>${tmL('โครงการของบริษัท','Company projects')}</h2><div id="bsTeam"></div>`;g.after(c);penumTeam.render($('#bsTeam'),{compact:1,max:6})}}}
 async function saveProject(){const txt=projectJSON();
   if(BF&&BF.ok){const r=await BF.save({name:P.info.name||'penum',ext:'.penbim',text:txt,isMine:bfMine(P.guid)});
     if(r.file){toast(t('bf_saved',r.dir+' › '+r.file),5000);return true}if(r.err==='cancel')return false;if(r.err==='denied'){toast(t('bf_denied'),6000);return false}}
