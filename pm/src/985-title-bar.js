@@ -1,8 +1,8 @@
 /* ---------- 3.90 แถบบน + แท็บชื่องาน: the same AutoCAD-style bar and project tabs as PENUM MEP and BIM (shared/titlebar.js) ----------
    The bar runs across the top of the window: the PM logo with the program menu, quick buttons (ใหม่ เปิด บันทึก บันทึกเป็น พิมพ์
    ย้อนกลับ ทำซ้ำ แชร์), the open project's name in the middle, the search (the sidebar's page search moves here; / or Ctrl+K),
-   the user, the cart kept for ORIEN's form shop (coming soon), then the header's own buttons (cloud, colour mode, bell, คู่มือ, เมนู,
-   language). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
+   the user (a button with a menu, as in MEP and BIM: switch user, ลายเซ็นของฉัน, สแกนนิ้ว, ออกจากระบบ), the cart kept for ORIEN's form
+   shop (coming soon), then the header's own buttons as icons (cloud, bell, colour mode, คู่มือ), language and เมนู (3.92). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
    it deletes nothing. * = changed since this project was last saved as a file (.penpm, 925); only people who may save files see it.
    The header band keeps the house button and the page name. Only when the build put shared/titlebar.js in <head> (app.json "titlebar"). */
 const TB={on:false,last:''};
@@ -30,9 +30,28 @@ function tbPrint(){const B=[...document.querySelectorAll('#view button[data-a]')
     const h=b.closest('section,.card');const t=h&&h.querySelector('h2,h3');return t?t.textContent.trim().split('\n')[0]:''};
   const a=document.querySelector('#ptbw .ptb-print');
   penumBar.pop(a&&a.offsetParent?a:document.querySelector('#ptbw .ptb-logo'),B.slice(0,14).map(b=>{const x=at(b),l=b.textContent.replace(/\s+/g,' ').trim()||'พิมพ์';return {t:(x?l+' · '+x:l).slice(0,90),run:()=>b.click()}}))}
-function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;TB.box=$('#userSel').parentNode;const I=k=>penumBar.icon(k),go=a=>()=>{if(typeof ACT[a]==='function')ACT[a]({dataset:{}})};
+// the user: one button with a menu, like MEP and BIM; #userSel and ออกจากระบบ (#outBtn, 290) stay in the page, hidden, and do the work
+const tbSV=d=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+function tbUserName(){const us=$('#userSel');if(S.me&&typeof staffName==='function')return staffName(S.me)||'';const o=us&&us.selectedOptions&&us.selectedOptions[0];return o?o.textContent.replace(/\s*\(.*\)\s*$/,'').trim():'ผู้ใช้งาน'}
+function tbUserMenu(){const us=$('#userSel'),out=$('#outBtn'),mm=a=>{const b=$(`#moreMenu [data-a="${a}"]`);return b&&!b.hidden?b:null},L=[];
+  L.push({html:`<b>${esc(tbUserName())}</b>${us&&us.disabled&&us.title?`<br><small>${esc(us.title)}</small>`:''}`});
+  if(us&&!us.disabled&&!us.hidden&&us.options.length>1){L.push('-');for(const o of us.options)L.push({t:o.textContent,on:o.value===us.value,run:()=>{us.value=o.value;us.dispatchEvent(new Event('change',{bubbles:true}))}})}
+  const sig=mm('esigEdit'),bio=mm('bioAdd');if(sig||bio)L.push('-');if(sig)L.push({t:sig.textContent.trim(),run:()=>sig.click()});if(bio)L.push({t:bio.textContent.trim(),run:()=>bio.click()});
+  if(innerWidth<=720){const c=$('#cloudBtn');L.push('-');if(c)L.push({t:c.getAttribute('aria-label')||c.textContent.trim(),run:()=>c.click()});          // phones: the cloud and the colour mode live here
+    for(const b of document.querySelectorAll('#themeSw [data-k]'))L.push({t:b.title||b.textContent.trim(),ic:(b.querySelector('svg')||{}).outerHTML||'',on:b.getAttribute('aria-pressed')==='true',run:()=>b.click()})}
+  if(out&&!out.hidden)L.push('-',{t:'ออกจากระบบ',ic:tbSV('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17-5-5 5-5"/><path d="M5 12h12"/>'),run:()=>out.click()});
+  penumBar.pop($('#tbUser'),L)}
+// colour mode: one button that shows the mode in use; the three modes of #themeSw in its menu
+function tbThemeMenu(){penumBar.pop($('#tbTheme'),[...document.querySelectorAll('#themeSw [data-k]')].map(b=>({t:b.title||b.textContent.trim(),ic:(b.querySelector('svg')||{}).outerHTML||'',on:b.getAttribute('aria-pressed')==='true',run:()=>b.click()})))}
+function tbChrome(){const u=$('#tbUser');if(u){const n=tbUserName(),us=$('#userSel');u.innerHTML=tbSV('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>')+`<span>${esc(n)}</span>`;u.title=n;u.hidden=!!(us&&us.hidden)}
+  const t=$('#tbTheme'),on=$('#themeSw [aria-pressed="true"]');if(t&&on){const g=on.querySelector('svg');t.innerHTML=g?g.outerHTML:'◐';t.title=t.ariaLabel=on.title||'โหมดสี'}
+  const c=$('#cloudBtn');if(c){const x=c.textContent.trim();c.dataset.st=/ไม่ได้|ต้องล็อกอิน|ผิดพลาด/.test(x)?'bad':/ยังไม่/.test(x)?'off':/กำลัง|รอ/.test(x)?'busy':'ok';if(c.title!==x&&!/^☁?\s*$/.test(x))c.title=x;c.setAttribute('aria-label',x)}}
+{const f=cloudBadge;cloudBadge=function(){const x=f.apply(this,arguments);try{tbChrome()}catch(e){}return x}}
+function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;const I=k=>penumBar.icon(k),go=a=>()=>{if(typeof ACT[a]==='function')ACT[a]({dataset:{}})};
   const logo=document.createElement('span');logo.innerHTML='<svg viewBox="0 0 26 26" aria-hidden="true"><defs><linearGradient id="ptbPm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22B8CF"/><stop offset="1" stop-color="#0E6E7E"/></linearGradient></defs><rect width="26" height="26" rx="7" fill="url(#ptbPm)"/><path d="M9 19V7h5.2a3.9 3.9 0 0 1 0 7.8H9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const link=id=>{const a=$('#'+id);return ()=>{if(a)a.click()}};
+  const uc=document.createElement('button');uc.type='button';uc.id='tbUser';uc.className='bbtn tb-uc';uc.setAttribute('aria-haspopup','menu');uc.addEventListener('click',tbUserMenu);
+  const tt=document.createElement('button');tt.type='button';tt.id='tbTheme';tt.className='bbtn tb-ic';tt.setAttribute('aria-haspopup','menu');tt.addEventListener('click',tbThemeMenu);
   const bar=penumBar.mount({app:'pm',appName:'PENUM PM',key:'penum.pm.tabs'+DSFX,tag:'PM',ver:'PENUM PM '+((window.PENUM_SITE||{}).name||''),accent:'#0891B2',logo:logo.firstChild,
     dark:()=>document.documentElement.dataset.theme==='dark',note:m=>toast(m),
     menu:()=>[{t:'โครงการใหม่',ic:I('new'),run:go('newProj')},{t:'เปิดไฟล์โครงการ…',ic:I('open'),run:go('pfOpen')},
@@ -45,13 +64,13 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
       {k:'saveas',t:'บันทึกเป็น… (Ctrl+Shift+S)',run:tbSaveAs},{k:'print',t:'พิมพ์เอกสารในหน้านี้',run:tbPrint},
       ...($('#undoBtn')?[{k:'undo',node:$('#undoBtn')},{k:'redo',node:$('#redoBtn')}]:[{k:'undo',t:'ย้อนกลับ (Ctrl+Z)',run:go('undo')},{k:'redo',t:'ทำซ้ำ (Ctrl+Y)',run:go('redo')}]),
       {k:'share',t:'แชร์ไฟล์โครงการ',run:tbShare}],
-    title:()=>tbCur()?P.name:((CO()||{}).name||'PENUM PM'),titleTip:()=>(tbCur()?P.name:'')+' · ทุกโครงการ',titleClick:tbAll,
+    title:()=>S.dept!=='home'&&P?P.name:((CO()||{}).name||'PENUM PM'),titleTip:()=>(S.dept!=='home'&&P?P.name+' · ':'')+'ทุกโครงการ',titleClick:tbAll,
     search:{index:()=>projects().map(p=>({id:p.id,ic:'▣',t:p.name,sub:'โครงการ'+(p.info&&p.info.client?' · '+p.info.client:''),k:[p.name,p.info&&p.info.client,p.info&&p.info.contractNo].filter(Boolean).join(' '),go:()=>tbOpen(p.id)})),
       first:ix=>{const L=penumBar.ids();return ix.filter(o=>L.includes(o.id))},
       find:(q,ix)=>{const ws=q.toLowerCase().split(/\s+/).filter(Boolean),pj=ix.filter(o=>ws.every(w=>o.k.toLowerCase().includes(w)));
         return [...pj.slice(0,4),...sbFind(q).map(x=>({ic:'›',t:x.label,sub:x.path.join(' › '),go:()=>{const d=NAVD.find(z=>z[0]===x.d),i=sbPages(d).indexOf(x.pg);
           S.dept=d[0];S.dpage=S.dpage||{};S.dpage[d[0]]=i;pgGo(x.pg);if(x.sub)S.sub[x.pg[1]]=x.sub;ACT.sbClose();render();scrollTo({top:0})}}))]}},
-    user:$('#userSel'),right:[$('#cloudBtn'),$('#themeSw'),$('#cmBell'),$('#helpBtn'),$('#moreMenu'),$('#langSw')],
+    user:uc,right:[$('#cloudBtn'),$('#cmBell'),tt,$('#helpBtn'),$('#langSw'),$('#moreMenu')],
     tabs:{cur:tbCur,start:()=>S.dept==='home',has:id=>!!DB.projects[id],name:id=>(DB.projects[id]||{}).name||'',
       open:id=>tbOpen(id),
       close:id=>{if(id===tbCur()){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(nx)tbOpen(nx);else ACT.goHome()}penumBar.forget(id)},          // the last tab: หน้าแรก
@@ -59,12 +78,8 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
       add:go('newProj'),home:go('goHome'),
       lost:()=>'ถ้าไม่บันทึก ข้อมูลโครงการยังอยู่ในโปรแกรมครบ เปิดต่อได้ทุกเมื่อ เพียงแต่ไฟล์ .penpm ในเครื่องยังเป็นรุ่นเก่า'}});
   for(const o of penumBar.ids())if(!DB.projects[o])penumBar.forget(o);
-  document.body.prepend(bar);tbPlace();addEventListener('resize',tbPlace);TB.last='';tbSync()}
-// phones: the user and the cloud button stay in the header band, where they were; the bar has no room for them
-function tbPlace(){const u=$('#userSel'),c=$('#cloudBtn'),ph=innerWidth<=720,bar=$('#ptbw');if(!u||!bar||!TB.box)return;
-  if(ph&&u.parentNode!==TB.box){if(c)TB.box.prepend(c);TB.box.insertBefore(u,c?c.nextSibling:TB.box.firstChild)}
-  else if(!ph&&u.parentNode===TB.box){bar.querySelector('.ptb-u').appendChild(u);if(c)bar.querySelector('.ptb-a').prepend(c)}}
-function tbSync(){if(!TB.on)return;const c=tbCur();if(c&&c!==TB.last){penumBar.use(c);penumBar.check(c,JSON.stringify(P))}TB.last=c;penumBar.refresh()}
+  document.body.prepend(bar);TB.last='';tbSync()}
+function tbSync(){if(!TB.on)return;const c=tbCur();if(c&&c!==TB.last){penumBar.use(c);penumBar.check(c,JSON.stringify(P))}TB.last=c;tbChrome();penumBar.refresh()}
 {const r=render;render=function(){const x=r.apply(this,arguments);try{tbSync()}catch(e){console.error(e)}return x}}
 {const s=save;save=function(){const x=s.apply(this,arguments);if(TB.on&&tbCur()&&tbFile()){const id=P.id;penumBar.soon(id,()=>JSON.stringify(DB.projects[id]))}return x}}
 {const f=pfSaveOne;pfSaveOne=async function(p){const s0=JSON.stringify(p),r=await f.apply(this,arguments);if(TB.on&&r&&!r.err&&p&&p.id)penumBar.clean(p.id,s0);return r}}          // saved as a file: no *
@@ -83,20 +98,25 @@ html.ptb-on .sb-s,html.ptb-on #sbRes,html.ptb-on #undoBox{display:none!important
 #ptbw .bbtn{height:30px;min-height:30px;padding:0 9px;border-radius:8px;border:1px solid var(--tb-line);background:transparent;color:var(--tb-ink);box-shadow:none;font-size:13px;gap:5px;white-space:nowrap}
 #ptbw .bbtn:hover{background:var(--tb-hov)}
 #ptbw .ptb-a{display:flex;align-items:center;gap:5px}
-#ptbw #userSel{height:30px;min-height:30px;max-width:220px;padding:0 26px 0 9px;border-radius:8px;border:1px solid var(--tb-line);background-color:var(--tb-inp);color:var(--tb-ink);font-size:13px;box-shadow:none}
-#ptbw #themeSw{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--tb-line);border-radius:9px;background:transparent;height:30px;box-sizing:border-box}
-#ptbw #themeSw button{width:28px;height:24px;min-height:0;padding:0;border:0;border-radius:6px;display:grid;place-items:center;background:transparent;color:var(--tb-mut)}
-#ptbw #themeSw button[aria-pressed=true]{background:var(--tb-acc);color:#fff}
-#ptbw .help-btn b{width:18px;height:18px;font-size:11px;border-color:currentColor}
-#ptbw .cm-bell{padding:0 7px}
+html.ptb-on #userSel,html.ptb-on #outBtn,html.ptb-on #themeSw{display:none!important}
+#ptbw .tb-uc{max-width:200px}#ptbw .tb-uc span{overflow:hidden;text-overflow:ellipsis}#ptbw .tb-uc svg{flex:none}
+#ptbw .tb-ic,#ptbw .cm-bell,#ptbw #helpBtn,#ptbw #cloudBtn{width:32px;padding:0;justify-content:center;border-color:transparent}
+#ptbw .tb-ic svg{width:16px;height:16px}
+#ptbw #helpBtn{font-size:0;gap:0}#ptbw .help-btn b{width:18px;height:18px;font-size:11px;margin:0;border-color:currentColor}
+#ptbw #cloudBtn{position:relative;font-size:0;overflow:hidden}
+#ptbw #cloudBtn::before{content:'';width:18px;height:18px;background:currentColor;-webkit-mask:var(--tb-cloud) center/contain no-repeat;mask:var(--tb-cloud) center/contain no-repeat}
+#ptbw #cloudBtn::after{content:'';position:absolute;right:5px;bottom:6px;width:7px;height:7px;border-radius:50%;background:#16A34A;box-shadow:0 0 0 2px var(--tb-bg)}
+#ptbw #cloudBtn[data-st=off]::after{background:#94A3B8}#ptbw #cloudBtn[data-st=busy]::after{background:#F59E0B}#ptbw #cloudBtn[data-st=bad]::after{background:#DC2626}
+#ptbw{--tb-cloud:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9z'/%3E%3C/svg%3E")}
+body.pin-lock #tbUser{display:none!important}
 #ptbw details.more{position:relative}#ptbw details.more .menu{z-index:50}
 #ptbw .lang-dd summary{padding:0 7px}#ptbw .lang-dd .lg-t small{display:none}#ptbw .lang-dd .lg-t{font-size:12.5px}
 body.pin-lock #ptbw .ptb-qs,body.pin-lock #ptbw .ptb-x,body.pin-lock #ptbw .ptb-c,body.pin-lock #ptbw .ptb-s,body.pin-lock #ptbw .ptb-cart,body.pin-lock #ptbw .pdt,body.pin-lock #ptbw .ptb-logo>svg{display:none!important}
 body.pin-lock #ptbw .ptb-logo{pointer-events:none}
 html.ptb-on body.sb .band{padding-top:10px;padding-bottom:10px}
-@media (max-width:1700px){#ptbw .lang-dd .lg-t,#ptbw .help-btn>:not(b){display:none}#ptbw .help-btn{font-size:0;gap:0;padding:0 6px}#ptbw #userSel{max-width:170px}#ptbw #cloudBtn{max-width:150px;overflow:hidden;text-overflow:ellipsis}}
-@media (max-width:1280px){#ptbw #cloudBtn{max-width:120px;overflow:hidden;text-overflow:ellipsis}#ptbw #userSel{max-width:150px}}
-@media (max-width:980px){#ptbw #themeSw,#ptbw #helpBtn{display:none}#ptbw #userSel{max-width:120px}#ptbw #cloudBtn{position:relative;width:32px;padding:0;color:transparent;overflow:hidden}#ptbw #cloudBtn::before{content:'☁';position:absolute;inset:0;display:grid;place-items:center;color:var(--tb-ink)}}
-@media (max-width:720px){#ptbw #moreMenu summary{padding:0 7px;font-size:0;gap:0}#ptbw #moreMenu summary svg{width:16px;height:16px}}
+@media (max-width:1440px){#ptbw .lang-dd .lg-t{display:none}}
+@media (max-width:1280px){#ptbw .tb-uc{max-width:140px}}
+@media (max-width:980px){#ptbw #helpBtn{display:none}#ptbw .tb-uc span{display:none}#ptbw .tb-uc{padding:0 7px}}
+@media (max-width:720px){#ptbw #tbTheme,#ptbw #cloudBtn{display:none}#ptbw #moreMenu summary{padding:0 7px;font-size:0;gap:0}#ptbw #moreMenu summary svg{width:16px;height:16px}}
 @media print{html.ptb-on body{padding-top:0}}
 </style>`);
