@@ -1,4 +1,4 @@
-/* ---------- 3.85 ราคากลางควรอัปเดต: when each kind of source was last updated, and a reminder when it is due ----------
+/* ---------- 3.87 ราคากลางควรอัปเดต: when each kind of source was last updated, and a reminder when it is due ----------
    กระทรวงพาณิชย์ publishes every month (the price is dated the 1st of its month, so it is due 45 days on), online shops change
    often, dealer price lists and e-GP results are due after 6 months, the yearly government lists (สำนักงบประมาณ, กรมบัญชีกลาง)
    after a year. Only sources the library already holds are checked, so a company that never used one is not reminded about it.

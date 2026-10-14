@@ -1,4 +1,4 @@
-/* ---------- 3.85 คลังราคากลางในใบเสนอราคา: the price library works for private jobs too ----------
+/* ---------- 3.87 คลังราคากลางในใบเสนอราคา: the price library works for private jobs too ----------
    ทำราคาประมูล already takes prices from the library for government and private bids (965-reference-price.js). A quotation
    (ฝ่ายขาย › ใบเสนอราคา) gets the same card under its lines: the cost per unit (material + labour) is matched to the library
    by name, unit and brand and replaced on the lines picked; the selling price follows from the markup as before, and a line
