@@ -23,7 +23,11 @@ const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={
   title:['โครงการของบริษัท','Company projects'],
   sub:['ทุกคนในบริษัทเดียวกันเห็นรายการนี้ เปิดต่อจากเพื่อนร่วมงานได้ และเห็นว่าใครกำลังแก้อยู่','Everyone in your company sees this list: carry on from a colleague and see who is editing what.'],
-  you:['ชื่อของคุณ','Your name'],youP:['ชื่อที่เพื่อนร่วมงานจะเห็น','The name your colleagues see'],save:['บันทึก','Save'],
+  you:['ผู้ใช้งาน','Signed in as'],chg:['เปลี่ยน','Change'],
+  uT:['ผู้ใช้งาน','Who is using this computer'],uP:['ชื่อนี้แสดงให้เพื่อนร่วมงานเห็นในโครงการของบริษัท ว่าใครบันทึกและใครกำลังแก้','Colleagues see this name in your company projects: who saved and who is editing.'],
+  uPick:['เลือกจากรายชื่อพนักงานใน PENUM PM ({0})','Pick from the staff list in PENUM PM ({0})'],uNone:['— ไม่เลือก —','— none —'],
+  uType:['ชื่อของคุณ','Your name'],uType2:['หรือพิมพ์ชื่อ','Or type a name'],uPm:['PENUM PM ในเครื่องนี้ใช้งานในชื่อ {0}','PENUM PM on this computer is signed in as {0}'],
+  uSet:['ใส่ชื่อผู้ใช้','Set your name'],uTip:['ผู้ใช้งาน','User'],youP:['ชื่อที่เพื่อนร่วมงานจะเห็น','The name your colleagues see'],save:['บันทึก','Save'],
   anon:['ไม่ระบุชื่อ ({0})','No name ({0})'],needName:['ใส่ชื่อของคุณ เพื่อนร่วมงานจะได้รู้ว่าใครแก้','Type your name so colleagues know who edited'],
   load:['กำลังโหลดรายการของบริษัท…','Loading your company list…'],
   nolic:['ใช้ได้เมื่อเครื่องนี้มีรหัสเปิดใช้งานของบริษัท (รหัสเดียวกับที่เพื่อนร่วมงานใช้) เมนู › สิทธิ์การใช้งาน','Works when this device has your company\'s activation code (the one your colleagues use): Menu › Licence.'],
@@ -81,8 +85,22 @@ async function rpc(fn,body,keep){let r;try{r=await fetch(SB.url+'/rest/v1/rpc/'+
 function ld(){try{const o=JSON.parse(localStorage.getItem(K)||'{}');return o&&typeof o==='object'?o:{}}catch(e){return {}}}
 function sv(o){try{localStorage.setItem(K,JSON.stringify(o))}catch(e){}}
 let DEV='';function dev(){if(DEV)return DEV;const o=ld();if(!/^[0-9a-f]{24}$/.test(o.dev||'')){o.dev=hex(crypto.getRandomValues(new Uint8Array(12)));sv(o)}return DEV=o.dev}
-const name=()=>String(ld().name||'').trim().slice(0,60);
-function setName(v){const o=ld();o.name=String(v||'').trim().slice(0,60);sv(o);ST.lw='';if(CFG)soon()}
+// PENUM PM in this browser (read only): the company whose licence matches this one (else PM's open company), its staff, and who
+// is signed in there (PIN sign-in, else the user picked in PM's header), so MEP and BIM show the same person without asking
+const b64j=s=>{try{return JSON.parse(td.decode(ub64(s)))}catch(e){return null}};
+function licCid(code){const m=/^PNM1\.([A-Za-z0-9_-]+)\./.exec(String(code||'').replace(/\s+/g,''));const p=m&&b64j(m[1]);return p?String(p.id||'').replace(/-R\d+$/,'')||String(p.co||''):''}
+let PMC=null,PMT=0;          // PM's data can be large: read again only after a minute or when another window changed it
+function pm(){if(PMT&&Date.now()-PMT<60000)return PMC;PMT=Date.now();return PMC=pm0()}
+function pm0(){const s=lic(),cid=s&&(s.cid||s.co)||'';let cur='';try{const l=localStorage.getItem('penum.pm.slot')||'';cur=l?'.c'+l:''}catch(e){}let best=null;
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=/^penum\.pm\.v1((?:\.c\d+)?)$/.exec(k||'');if(!m)continue;let D=null;try{D=JSON.parse(localStorage.getItem(k)||'null')}catch(e){}
+    const c=D&&D.co;if(!c||!Array.isArray(c.staff))continue;if(cid&&c.lic&&licCid(c.lic)!==cid)continue;/* another company's PM */const sc=(cid&&licCid(c.lic)===cid?2:0)+(m[1]===cur?1:0);if(!best||sc>best.sc)best={sc,sfx:m[1],c}}}catch(e){}
+  if(!best)return null;const staff=best.c.staff.filter(x=>x&&x.active!==false&&String(x.name||'').trim()).map(x=>({id:x.id,name:String(x.name).trim(),role:x.role||''}));
+  let id='';try{const a=JSON.parse(localStorage.getItem('penum.pm.auth'+best.sfx)||'null');if(best.c.pinOn&&a&&a.id)id=a.id}catch(e){}
+  if(!id)try{id=(JSON.parse(localStorage.getItem('penum.pm.ui'+best.sfx)||'{}')||{}).me||''}catch(e){}
+  const me=staff.find(x=>x.id===id);return {co:String(best.c.name||''),staff,me:me?me.name:''}}
+const own=()=>String(ld().name||'').trim().slice(0,60);
+const name=()=>own()||((pm()||{}).me||'').slice(0,60);
+function setName(v,sid){const o=ld();o.name=String(v||'').trim().slice(0,60);o.sid=sid||'';o.asked=1;sv(o);ST.lw='';chips();VIEWS.forEach(paint);if(CFG)soon()}
 const shown=()=>name()||t('anon',dev().slice(0,4).toUpperCase());
 const recK=p=>CFG.app+':'+p;
 function rec(p){return (ld().s||{})[recK(p)]||null}
@@ -120,6 +138,7 @@ async function release(keep){const p=ST.held;ST.held='';if(!p||!TM)return;await 
 async function tick0(){
   const c=CFG.cur();if(!c||!c.id){await release();Object.assign(ST,{p:'',id:'',other:null,conf:null,err:''});return}
   const T=await team();if(T.err){ST.st=T.err;return}ST.st='ok';
+  if(!ST.nameAsk&&!name()&&!ld().asked&&!document.querySelector('dialog[open]')){ST.nameAsk=1;setTimeout(userBox,0)}
   const p=await pk(c.id);if(ST.p!==p){if(ST.held&&ST.held!==p)await release();ST.p=p;ST.id=c.id;ST.other=null;ST.conf=null;ST.err=''}
   if(Date.now()-ST.act>IDLE&&document.visibilityState!=='visible'){await release();return}          // not used for a while: others may take it
   const txt=c.text(),h=hs(txt),R=rec(p);
@@ -170,11 +189,11 @@ function when(s){const d=new Date(s);if(isNaN(d))return '–';const ms=Date.now(
   return d.toLocaleDateString(L,{day:'numeric',month:'short',year:'2-digit'})+' '+hm}
 async function render(el,opt){if(!el||!CFG)return;opt=opt||{};VIEWS.add(el);el.classList.add('ptm');el._ptm=opt;
   if(!el._ptmOn){el._ptmOn=1;el.addEventListener('click',ev=>click(el,ev));el.addEventListener('input',ev=>{if(ev.target.dataset.ptmq!=null){el._q=ev.target.value;el._qf=1;paint(el)}});
-    el.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target.dataset.ptmn!=null){ev.preventDefault();el.querySelector('[data-ptm="name"]').click()}})}
+}
   if(!el._d)el.innerHTML=`<p class="ptm-h">${esc(t('load'))}</p>`;
   const r=await list();el._d=r;paint(el);if(!r.err)share(r.rows)}
 function paint(el){const r=el._d,opt=el._ptm||{};if(!r)return;
-  const head=`<div class="ptm-me"><label><span>${esc(t('you'))}</span><input type="text" data-ptmn maxlength="60" value="${esc(name())}" placeholder="${esc(t('youP'))}"></label><button type="button" class="btn sm" data-ptm="name">${esc(t('save'))}</button>${name()?'':`<small class="ptm-warn">${esc(t('needName'))}</small>`}</div>`;
+  const head=`<div class="ptm-me"><span>${esc(t('you'))}: <b>${esc(shown())}</b></span><button type="button" class="btn sm" data-ptm="name">${esc(t('chg'))}</button>${name()?'':`<small class="ptm-warn">${esc(t('needName'))}</small>`}</div>`;
   if(r.err){el.innerHTML=(opt.compact?'':head)+`<p class="ptm-note">${esc(t(r.err==='nolic'||r.err==='offline'||r.err==='nosql'?r.err:'bad'))}</p>${r.err==='nolic'?'':`<button type="button" class="btn sm" data-ptm="retry">${esc(t('retry'))}</button>`}`;return}
   const q=String(el._q||'').trim().toLowerCase().split(/\s+/).filter(Boolean),live=r.rows.filter(x=>!x.off),off=r.rows.filter(x=>x.off);
   let L=live.filter(x=>{const s=[x.m.name,x.m.client,x.m.code,x.m.by,x.lk&&x.lk.n].join(' ').toLowerCase();return q.every(w=>s.includes(w))});
@@ -192,7 +211,7 @@ function paint(el){const r=el._d,opt=el._ptm||{};if(!r)return;
 function refresh(){for(const el of [...VIEWS]){if(!el.isConnected){VIEWS.delete(el);continue}render(el,el._ptm)}}
 async function click(el,ev){const b=ev.target.closest('[data-ptm]');if(!b)return;const k=b.dataset.ptm,x=((el._d||{}).rows||[]).find(r=>r.p===b.dataset.p);
   if(k==='retry'){TM=null;el._d=null;render(el,el._ptm);return}
-  if(k==='name'){const i=el.querySelector('[data-ptmn]');setName(i?i.value:'');paint(el);return}
+  if(k==='name'){userBox();return}
   if(!x)return;const T=await team();if(T.err)return;
   if(k==='hide'){if(await dlg(t('hideT',x.m.name||''),`<p>${esc(t('hideP'))}</p>`,[['go',t('hide'),1],['',t('cancel')]])!=='go')return;
     await rpc('penum_team_off',{p_t:T.t,p_p:x.p,p_off:true});if(x.p===ST.p){ST.held='';ST.other=null}refresh();return}
@@ -217,12 +236,25 @@ async function share(rows){if(SHARED||!CFG.locals)return;SHARED=1;const T=await 
 // small question boxes and a note, styled here so they look the same in MEP and BIM
 function dlg(title,html,btns){return new Promise(res=>{const d=document.createElement('dialog');d.className='ptm-dlg';
   d.innerHTML=`<h3>${esc(title)}</h3><div class="ptm-db">${html}</div><div class="ptm-df">${btns.map(([k,l,p])=>`<button type="button" class="ptm-b${p?' pri':''}" value="${esc(k)}">${esc(l)}</button>`).join('')}</div>`;
-  d.addEventListener('click',e=>{const b=e.target.closest('button[value]');if(b)d.close(b.value)});d.addEventListener('close',()=>{const v=d.returnValue||'';d.remove();res(v)});
+  d.addEventListener('click',e=>{const b=e.target.closest('button[value]');if(b)d.close(b.value)});d.addEventListener('close',()=>{const v=d.returnValue||'';dlg.v={};d.querySelectorAll('[name]').forEach(x=>{dlg.v[x.name]=x.value});d.remove();res(v)});
   document.body.appendChild(d);d.showModal()})}
+// ผู้ใช้งาน: a button in the app's header with the name colleagues see (like PENUM PM's user box); it opens a box to pick a name from
+// PENUM PM's staff list (when PM is used in this browser) or to type one. Asked once by itself when the company list first works.
+async function userBox(){PMT=0;const P=pm(),cur=own()||name(),sid=ld().sid||'',L=P?P.staff:[],pick=L.find(x=>x.id===sid||x.name===cur);
+  const body=`<p style="margin:0 0 10px">${esc(t('uP'))}</p>${L.length?`<label class="ptm-f"><span>${esc(t('uPick',P.co||'PENUM PM'))}</span><select name="sid"><option value="">${esc(t('uNone'))}</option>${L.map(x=>`<option value="${esc(x.id)}"${pick&&pick.id===x.id?' selected':''}>${esc(x.name)}${x.role?' · '+esc(x.role):''}</option>`).join('')}</select></label>`:''}
+    <label class="ptm-f"><span>${esc(t(L.length?'uType2':'uType'))}</span><input name="nm" type="text" maxlength="60" value="${esc(pick?'':cur)}" placeholder="${esc(t('youP'))}"></label>${P&&P.me?`<p class="ptm-h" style="margin:8px 0 0">${esc(t('uPm',P.me))}</p>`:''}`;
+  const k=await dlg(t('uT'),body,[['ok',t('save'),1],['',t('cancel')]]);if(k!=='ok'){const o=ld();o.asked=1;sv(o);return}/* asked once only, whatever the answer */const v=dlg.v||{},x=v.sid&&L.find(y=>y.id===v.sid),typed=String(v.nm||'').trim();
+  const nm=typed||(x?x.name:'');if(nm)setName(nm,!typed&&x?x.id:'');else{const o=ld();o.asked=1;sv(o)}}
+const CHIPS=[];
+function chip(cls){const b=document.createElement('button');b.type='button';b.className=(cls||'')+' ptm-chip';b.dataset.noxl='';b.addEventListener('click',userBox);CHIPS.push(b);chips();return b}
+function chips(){const nm=name();for(const b of CHIPS){b.classList.toggle('none',!nm);b.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>${esc(nm||t('uSet'))}</span>`;
+  b.title=t('uTip')+(nm?': '+nm:'');b.setAttribute('aria-label',b.title)}}
 function note(msg){let e=document.getElementById('ptmNote');if(!e){e=document.createElement('div');e.id='ptmNote';e.className='ptm-toast';e.setAttribute('role','status');document.body.appendChild(e)}
   e.textContent=msg;e.classList.add('on');clearTimeout(note.t);note.t=setTimeout(()=>e.classList.remove('on'),4500)}
 
-const CSS=`.ptm-me{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:0 0 10px}.ptm-me label{display:flex;flex-direction:column;gap:2px;font-size:13px;flex:1 1 200px;max-width:320px}
+const CSS=`.ptm-me{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;font-size:14px}
+.ptm-f{display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin:0 0 10px}.ptm-f select,.ptm-f input{font:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:1px solid #CBD5E1;background:#fff;color:#0F1E2E}
+.ptm-chip{display:inline-flex;align-items:center;gap:6px;max-width:200px}.ptm-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:640px){.ptm-chip span{display:none}}.ptm-chip.none{color:#B45309!important;border-color:#F6D9A8!important;background:#FFF7EA!important}.ptm-me label{display:flex;flex-direction:column;gap:2px;font-size:13px;flex:1 1 200px;max-width:320px}
 .ptm-me input,.ptm-q{font:inherit;font-size:14px;padding:7px 10px;border-radius:10px;border:1px solid rgba(127,140,160,.45);background:transparent;color:inherit;min-width:0}
 .ptm-q{width:100%;box-sizing:border-box;margin:0 0 10px}.ptm-warn{color:#B45309;font-size:12.5px;flex-basis:100%}
 .ptm-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
@@ -250,5 +282,7 @@ function attach(cfg){if(CFG)return;CFG=cfg;
   const act=()=>{ST.act=Date.now()};['pointerdown','keydown'].forEach(k=>addEventListener(k,act,{passive:true,capture:true}));
   addEventListener('focus',()=>{act();tick()});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){act();tick()}});
   addEventListener('pagehide',()=>{release(true)})}
-window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,setName,shown};
+new MutationObserver(chips).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});          // the app switched language
+addEventListener('storage',e=>{if(e.key===K||/^penum\.pm\.(ui|auth|v1|slot)/.test(e.key||'')){PMT=0;ST.lw='';chips()}});          // a name picked in another window, or PENUM PM signing someone in
+window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,setName,shown,chip,userBox};
 })();
