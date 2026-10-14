@@ -7,13 +7,15 @@
    - A file whose name is taken by another project, or any file the app did not write, is never overwritten, moved or deleted:
      the new file gets " (2)", " (3)"… instead. A file is the app's own when isMine(its text) says so (e.g. the same project id).
    - Phones, Safari and Firefox have no folder access: save() downloads the file instead and openFile() picks one file.
-   window.penumFiles: ok (folder access works here) · init(app) · folder(ask) → handle or null · pick() · name() → the folder's name
-   save({name, ext, text, isMine}) → {file, dir} or {file, dl: true} (downloaded) or {err: 'cancel'|'denied'|'bad'}
+   - init(app, {sub, avoid}): sub = the folder's name instead of PENUM-<APP>; avoid(handle) → a message when the picked folder must
+     not be used (PENUM PM: its shared data folder PENUM-PM, which must hold only the company's data), else ''.
+   window.penumFiles: ok (folder access works here) · init(app, opt) · folder(ask) → handle or null · pick() · name() → the folder's name
+   save({name, ext, text, isMine}) → {file, dir} or {file, dl: true} (downloaded) or {err: 'cancel'|'denied'|'bad'|'avoid', why}
    list(ext) → [{file, at, size}] newest first · read(file) → text · openFile(accept) → {file, text} or null · download(file, text) */
 (()=>{if(window.penumFiles)return;
-let APP='',H=null;
+let APP='',H=null,O={},WHY='';
 const ok=typeof window.showDirectoryPicker==='function'&&(()=>{try{return window.self===window.top}catch(e){return false}})();          // a page inside another site's frame may not pick folders
-const SUB=()=>'PENUM-'+APP.toUpperCase();
+const SUB=()=>O.sub||'PENUM-'+APP.toUpperCase();
 function db(){return new Promise((res,rej)=>{let r;try{r=indexedDB.open('penum-files',1)}catch(e){rej(e);return}
   r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function kv(v){const d=await db();return new Promise((res,rej)=>{const t=d.transaction('h',v===undefined?'readonly':'readwrite'),s=t.objectStore('h');let q;
@@ -25,8 +27,9 @@ async function folder(ask){if(!ok||!APP)return null;
   if(!H){try{H=await kv()||null}catch(e){H=null}}
   if(!H){if(!ask)return null;return pick()}
   return await allowed(H,ask)?H:null}
-async function pick(){if(!ok||!APP)return null;let h;try{h=await window.showDirectoryPicker({id:'penum-'+APP,mode:'readwrite',startIn:'documents'})}catch(e){return null}
+async function pick(){WHY='';if(!ok||!APP)return null;let h;try{h=await window.showDirectoryPicker({id:'penum-'+APP,mode:'readwrite',startIn:'documents'})}catch(e){return null}
   if(!await allowed(h,true))return null;
+  if(O.avoid){try{WHY=await O.avoid(h)||''}catch(e){WHY=''}if(WHY)return null}
   if(h.name!==SUB()){try{h=await h.getDirectoryHandle(SUB(),{create:true})}catch(e){return null}}          // a new folder of its own; nothing else in the picked folder is touched
   H=h;try{await kv(h)}catch(e){}return h}
 const name=()=>H?H.name:'';
@@ -37,7 +40,7 @@ function download(file,text){const b=text instanceof Blob?text:new Blob([text],{
   try{const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=file;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return Promise.resolve(true)}catch(e){return Promise.resolve(false)}}
 async function save({name:n,ext,text,isMine}){const base=safe(n);
   if(!ok){const f=base+ext;return await download(f,text)?{file:f,dl:true}:{err:'bad'}}
-  const d=await folder(true);if(!d)return {err:H?'denied':'cancel'};
+  const d=await folder(true);if(!d)return WHY?{err:'avoid',why:WHY}:{err:H?'denied':'cancel'};
   let f='';for(let i=1;i<200&&!f;i++){const c=base+(i>1?` (${i})`:'')+ext;let fh=null;try{fh=await d.getFileHandle(c)}catch(e){f=c;break}
     const t=await textOf(fh);if(t!=null&&isMine&&(()=>{try{return !!isMine(t)}catch(e){return false}})())f=c}          // the same project saved before: write over that file only
   if(!f)return {err:'bad'};
@@ -49,5 +52,5 @@ async function read(file){const d=await folder(true);if(!d)return null;try{retur
 function openFile(accept){return new Promise(res=>{const i=document.createElement('input');i.type='file';i.accept=accept||'.json,.txt,application/json';i.style.display='none';
   i.onchange=async()=>{const f=i.files&&i.files[0];i.remove();if(!f){res(null);return}try{res({file:f.name,text:await f.text()})}catch(e){res(null)}};
   document.body.appendChild(i);i.click()})}
-window.penumFiles={ok,init:a=>{APP=String(a||'');H=null},folder,pick,name,save,list,read,openFile,download,safe};
+window.penumFiles={ok,init:(a,o)=>{APP=String(a||'');O=o||{};H=null;WHY=''},why:()=>WHY,folder,pick,name,save,list,read,openFile,download,safe};
 })();
