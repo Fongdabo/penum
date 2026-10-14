@@ -55,7 +55,7 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
   const bar=penumBar.mount({app:'pm',appName:'PENUM PM',key:'penum.pm.tabs'+DSFX,tag:'PM',ver:'PENUM PM '+((window.PENUM_SITE||{}).name||''),accent:'#0891B2',logo:logo.firstChild,
     dark:()=>document.documentElement.dataset.theme==='dark',note:m=>toast(m),
     menu:()=>[{t:'โครงการใหม่',ic:I('new'),run:go('newProj')},{t:'เปิดไฟล์โครงการ…',ic:I('open'),run:go('pfOpen')},
-      {t:'บันทึกโครงการนี้ลงเครื่อง',ic:I('save'),kbd:'Ctrl+S',run:go('pfSave')},{t:'บันทึกเป็น…',ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},{t:'บันทึกทุกโครงการลงเครื่อง',ic:I('save'),run:go('pfSaveAll')},
+      {t:'บันทึกโครงการนี้ลงเครื่อง',ic:I('save'),kbd:'Ctrl+S',run:go('pfSave')},{t:'บันทึกเป็น…',ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},{t:'บันทึกทุกโครงการลงเครื่อง',ic:I('save'),run:go('pfSaveAll')},{t:'สำรองคลาวด์ลงเครื่อง…',ic:I('save'),run:go('cbStart')},
       {t:'พิมพ์เอกสารในหน้านี้',ic:I('print'),run:tbPrint},{t:'แชร์ไฟล์โครงการ',ic:I('share'),run:tbShare},'-',
       {t:'หน้าแรก',run:go('goHome')},{t:'ทุกโครงการ',run:tbAll},'-',
       {t:'PENUM MEP ↗',run:link('lnkMep')},{t:'PENUM BIM ↗',run:link('lnkBim')},'-',
