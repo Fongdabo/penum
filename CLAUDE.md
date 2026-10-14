@@ -38,6 +38,8 @@ Their header, and PM's top bar (`pm/src/985-title-bar.js`), is `shared/titlebar.
 
 - โครงการของบริษัท: `shared/team.js` (apps with `"team": true`, MEP and BIM) keeps every project of one licence code's company in
   ORIEN's Supabase (`tools/team-setup.sql`), encrypted with a company key found through the code, with an edit lock per project.
+  Once the company signs in (PM staff PINs), each project has an owner (`m.own`): others only look (`penumTeam.ro()` blocks MEP/BIM saves)
+  until the owner or the administrator approves an edit request (a `k:'req'` row). Each project keeps its last 20 saves (`m.h`) for the updates tab.
 
 ## Licence codes
 
