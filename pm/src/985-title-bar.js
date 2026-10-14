@@ -54,7 +54,7 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
     user:$('#userSel'),right:[$('#cloudBtn'),$('#themeSw'),$('#cmBell'),$('#helpBtn'),$('#moreMenu'),$('#langSw')],
     tabs:{cur:tbCur,start:()=>S.dept==='home',has:id=>!!DB.projects[id],name:id=>(DB.projects[id]||{}).name||'',
       open:id=>tbOpen(id),
-      close:id=>{if(id===tbCur()){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(!nx)return;tbOpen(nx)}penumBar.forget(id)},
+      close:id=>{if(id===tbCur()){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(nx)tbOpen(nx);else ACT.goHome()}penumBar.forget(id)},          // the last tab: หน้าแรก
       save:async id=>{const p=DB.projects[id];if(!p||pfNo())return false;const r=await pfSaveOne(p),m=pfSaid(r);if(m)toast(m);return !!r&&!r.err},
       add:go('newProj'),home:go('goHome'),
       lost:()=>'ถ้าไม่บันทึก ข้อมูลโครงการยังอยู่ในโปรแกรมครบ เปิดต่อได้ทุกเมื่อ เพียงแต่ไฟล์ .penpm ในเครื่องยังเป็นรุ่นเก่า'}});

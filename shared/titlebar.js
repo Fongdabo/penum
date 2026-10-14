@@ -16,7 +16,7 @@
    after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed,
    find(text, index) → the hits for what was typed, when the app ranks them itself}
    · user (element) · right: [elements] · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
-   close(id) after the bar asked about unsaved changes, save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
+   close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
 (()=>{if(window.penumBar)return;
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={start:['เริ่มต้น','Start'],add:['โครงการใหม่','New project'],all:['แท็บที่เปิดอยู่','Open tabs'],others:['ปิดแท็บอื่นทั้งหมด','Close the other tabs'],
@@ -154,9 +154,9 @@ function focusSearch(){const i=W&&W.querySelector('.ptb-si');if(!i||!i.offsetPar
 function title(){if(!W)return;const c=cur(),tn=W.querySelector('.ptb-tn'),st=W.querySelector('.ptb-st'),tt=W.querySelector('.ptb-tt');
   let s='';try{s=C.title?C.title():nameOf(c)}catch(e){}tn.textContent=s;st.hidden=!dirty(c);tt.title=(C.titleTip?C.titleTip():s)+(dirty(c)?' · '+t('dirty'):'');
   try{if(C.appName)document.title=(s?s+(dirty(c)?'*':'')+' – ':'')+(C.appName||'PENUM')}catch(e){}}
-function refresh(){if(!W)return;const L=ids(),c=cur(),st=C.tabs.start(),s=W.querySelector('.pdt-s'),sl=s.scrollLeft,one=L.length<2;
+function refresh(){if(!W)return;const L=ids(),c=cur(),st=C.tabs.start(),s=W.querySelector('.pdt-s'),sl=s.scrollLeft;
   s.innerHTML=`<button type="button" class="pdt-t pdt-st${st?' on':''}" role="tab" aria-selected="${st}">${esc(t('start'))}</button>`+L.map(id=>{const on=!st&&id===c,d=dirty(id),n=nameOf(id);
-    return `<div class="pdt-t${on?' on':''}${d?' dt':''}" role="tab" tabindex="0" aria-selected="${on}" data-id="${esc(id)}" title="${esc(n+(d?' · '+t('dirty'):''))}"><span class="pdt-n">${esc(n)}</span>${d?'<span class="pdt-d" aria-hidden="true">*</span>':''}${one?'':`<button type="button" class="pdt-x" title="${esc(t('close'))}" aria-label="${esc(t('close')+' '+n)}">${IC.x}</button>`}</div>`}).join('');
+    return `<div class="pdt-t${on?' on':''}${d?' dt':''}" role="tab" tabindex="0" aria-selected="${on}" data-id="${esc(id)}" title="${esc(n+(d?' · '+t('dirty'):''))}"><span class="pdt-n">${esc(n)}</span>${d?'<span class="pdt-d" aria-hidden="true">*</span>':''}<button type="button" class="pdt-x" title="${esc(t('close'))}" aria-label="${esc(t('close')+' '+n)}">${IC.x}</button></div>`}).join('');
   s.scrollLeft=sl;const on=s.querySelector('.on');if(on&&refresh.on!==(on.dataset.id||'start')){refresh.on=on.dataset.id||'start';on.scrollIntoView({block:'nearest',inline:'nearest'})}
   W.querySelector('.pdt-m').title=t('all');W.querySelector('.pdt-add').title=t('add');W.querySelector('.ptb-logo').title=t('menu');W.querySelector('.ptb-cart').title=t('cart')+' · '+t('soon');
   W.querySelector('.ptb-si').placeholder=t('ph');
@@ -208,8 +208,8 @@ const CSS=`
 .pdt-t:hover{background:var(--tb-hov);color:var(--tb-ink)}.pdt-t:focus-visible{box-shadow:inset 0 0 0 2px var(--tb-acc)}
 .pdt-t.on{background:var(--tb-tab);color:var(--tb-ink);font-weight:600;border-color:var(--tb-line);box-shadow:inset 0 2px 0 var(--tb-acc);margin-bottom:-1px;height:31px}
 .pdt-st{padding:0 14px}.pdt-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.pdt-d{color:var(--tb-acc);font-weight:800;margin-left:1px}
-.pdt-x{display:grid;place-items:center;width:20px;height:20px;margin-left:4px;border:none;border-radius:5px;background:none;color:inherit;opacity:.55}.pdt-x:hover{opacity:1;background:var(--tb-hov)}
-.pdt-t:not(.on):not(:hover) .pdt-x{opacity:.3}
+.pdt-x{display:grid;place-items:center;width:20px;height:20px;margin-left:4px;border:none;border-radius:5px;background:none;color:inherit;opacity:.75}.pdt-x:hover{opacity:1;background:var(--tb-hov)}
+.pdt-t:not(.on):not(:hover) .pdt-x{opacity:.5}
 .ptb-pop{position:fixed;z-index:2147482500;min-width:220px;max-width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 70px);overflow:auto;margin:0;padding:5px;list-style:none;box-sizing:border-box;
   background:var(--tb-bg,#fff);color:var(--tb-ink,#1e293b);border:1px solid var(--tb-line,#dde3eb);border-radius:12px;box-shadow:0 18px 44px -14px rgba(8,20,40,.4);font:13.5px/1.35 system-ui,-apple-system,'Segoe UI','Noto Sans Thai',sans-serif}
 .ptb-pop{--tb-bg:#fff;--tb-ink:#1e293b;--tb-mut:#64748b;--tb-line:#dde3eb;--tb-hov:rgba(15,23,42,.07);--tb-acc:var(--ptb-acc,#0d9488)}
