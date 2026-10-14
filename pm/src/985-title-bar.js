@@ -4,7 +4,7 @@
    the user (a button with a menu, as in MEP and BIM: switch user, ลายเซ็นของฉัน, สแกนนิ้ว, ออกจากระบบ), the cart kept for ORIEN's form
    shop (coming soon), then the header's own buttons as icons (cloud, bell, colour mode, คู่มือ), language and เมนู (3.92), placed and drawn as in MEP and BIM (3.96). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
    it deletes nothing. * = changed since this project was last saved as a file (.penpm, 925); only people who may save files see it.
-   A company on the cloud (3.96): * = not in the cloud yet, and บันทึก / Ctrl+S send it there now.
+   A company on the cloud or its OneDrive folder (3.96): * = not there yet, and บันทึก / Ctrl+S send it there now.
    The header band keeps the house button and the page name. Only when the build put shared/titlebar.js in <head> (app.json "titlebar"). */
 const TB={on:false,last:'',sv:0};
 const tbCur=()=>P&&S.mode==='pj'&&S.tab!=='pjall'&&!document.body.classList.contains('pin-lock')?P.id:'';
@@ -31,13 +31,17 @@ function tbPrint(){const B=[...document.querySelectorAll('#view button[data-a]')
     const h=b.closest('section,.card');const t=h&&h.querySelector('h2,h3');return t?t.textContent.trim().split('\n')[0]:''};
   const a=document.querySelector('#ptbw .ptb-print');
   penumBar.pop(a&&a.offsetParent?a:document.querySelector('#ptbw .ptb-logo'),B.slice(0,14).map(b=>{const x=at(b),l=b.textContent.replace(/\s+/g,' ').trim()||'พิมพ์';return {t:(x?l+' · '+x:l).slice(0,90),run:()=>b.click()}}))}
-// 3.96 the company's data in the cloud (คลาวด์ PENUM, 830, or OneDrive, 280): the main copy is there, so บันทึก (the quick button,
-// Ctrl+S and the question when a tab closes) sends it now and * means not in the cloud yet; บันทึกโครงการนี้ลงเครื่อง still saves a .penpm file
-const tbCl=()=>((typeof sbOn==='function'&&sbOn())||cloudOn())&&!(typeof licRO==='function'&&licRO());
+// 3.96 the company's data in the cloud (คลาวด์ PENUM, 830; OneDrive, 280; or its PENUM-PM folder in OneDrive, 290): the main copy is
+// there, so บันทึก (the quick button, Ctrl+S and the question when a tab closes) sends it now, with no folder picker, and * means not
+// there yet; บันทึกโครงการนี้ลงเครื่อง in the logo menu still saves a .penpm file
+const tbSB=()=>typeof sbOn==='function'&&sbOn();
+const tbCl=()=>(tbSB()||cloudOn()||folderOn())&&!(typeof licRO==='function'&&licRO());
 const tbSt=()=>folderOn()?FS:CS;
-async function tbCloud(){for(let i=0;i<80&&(FS.busy||CS.busy);i++)await new Promise(r=>setTimeout(r,250));
+async function tbCloud(){const od=folderOn()&&!tbSB();          // the OneDrive folder on this computer: the OneDrive program sends it up
+  if(folderOn()&&!await fPerm(true)){toast('ยังเปิดโฟลเดอร์ที่เก็บข้อมูลไม่ได้ กด อนุญาต เพื่อให้บันทึกลงโฟลเดอร์ '+(CL.dirName||'PENUM-PM')+' ได้');return false}
+  for(let i=0;i<80&&(FS.busy||CS.busy);i++)await new Promise(r=>setTimeout(r,250));
   if(folderOn())await folderSync();else if(cloudOn())await cloudSync();const st=tbSt(),ok=st.state==='ok';
-  toast(ok?'บันทึกขึ้นคลาวด์แล้ว':`ยังบันทึกขึ้นคลาวด์ไม่ได้${st.msg?' ('+st.msg+')':''} ข้อมูลยังอยู่ในเครื่องนี้ครบ จะส่งขึ้นเองเมื่อต่ออินเทอร์เน็ตได้`);return ok}
+  toast(ok?(od?`บันทึกลงโฟลเดอร์ ${CL.dirName||'PENUM-PM'} แล้ว OneDrive จะส่งขึ้นคลาวด์ให้เอง`:'บันทึกขึ้นคลาวด์แล้ว'):`ยังบันทึกขึ้นคลาวด์ไม่ได้${st.msg?' ('+st.msg+')':''} ข้อมูลยังอยู่ในเครื่องนี้ครบ จะส่งขึ้นเองเมื่อต่ออินเทอร์เน็ตได้`);return ok}
 const tbMain=()=>tbCl()?tbCloud():ACT.pfSave();
 // a sync that went through: every open tab is in the cloud as it was (as it is now, when nothing was typed meanwhile)
 {const w=f=>async function(){const go=TB.on&&tbCl()&&!(FS.busy||CS.busy),n0=TB.sv,S0={};if(go)for(const id of penumBar.ids())if(DB.projects[id])S0[id]=JSON.stringify(DB.projects[id]);
