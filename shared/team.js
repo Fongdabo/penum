@@ -24,6 +24,7 @@
      (pmPut, a row k:'pm' with no data), and PM's chat lists the edit requests with อนุมัติ / ไม่อนุมัติ (reqs, decide). It fires 'penumteam'.
    window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · me() · chip(cls) · signIn() · signOut()
    · ro() the open project is someone else's and not approved: the app does not save it · roNote() says so
+   · dump(prog) every MEP and BIM project of the company with its data (PM's สำรองคลาวด์ลงเครื่อง)
    cfg (the app): app 'mep'|'bim' · cur() → null (nothing to share: a sample, read-only) or {id, name, client, code, sum, text()}
    · apply(text, meta) the company's newer version replaces the open one · has(id) · openLocal(id) · open(text, meta) → bool
    · copy(text, meta) a project of its own with a new id · keep(text) keep this device's version as a copy · sumTxt(sum) · locals()
@@ -678,5 +679,11 @@ function attach(cfg){if(CFG)return;CFG=cfg;
   addEventListener('pagehide',()=>{release(true)})}
 new MutationObserver(chips).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});          // the app switched language
 addEventListener('storage',e=>{if(e.key===K||/^(penum\.pm\.(auth|v1|slot|bio)|pmSB)/.test(e.key||'')){PMT=0;ST.lw='';chips();VIEWS.forEach(paint);gate();if(CFG){rqCard();bar()}}});          // signed in or out in another window, or in PENUM PM
-window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,apps:APPS};
+// everything the company keeps here, for PENUM PM's สำรองคลาวด์ลงเครื่อง (pm/src/940-cloud-backup.js): every MEP and BIM project with
+// its data (the same text a .penmep / .penbim file holds), read one by one; prog(done, all) after each one
+async function dump(prog){if(!CFG)return {err:'nolic'};const T=await team();if(T.err)return T;const L=[];
+  for(const a of ['mep','bim']){const r=await lst(a,1);if(r.err)return r;r.rows.forEach(x=>L.push(Object.assign({},x,{app:a})))}
+  const out=[];for(const x of L){const g=await get(T,x.p);out.push({app:x.app,p:x.p,m:x.m,at:x.at,off:x.off,d:g?g.d:null});if(prog)prog(out.length,L.length)}
+  return {rows:out,co:T.co}}
+window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
 })();
