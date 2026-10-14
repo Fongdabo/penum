@@ -10,9 +10,11 @@
      without use). Another device opens it to look: its own changes stay on that device until the lock is free, and it can make
      its own copy or take over. A save is refused when the company's copy changed since this device's version (the server checks
      the version), so the device asks: use the newest (its own version kept as a copy) or send its own over it.
-   - Who: the name typed in the list (localStorage 'penum.team', with this device's random id and the company keys, shared by MEP
-     and BIM); without one, "ไม่ระบุชื่อ" and 4 letters of the device id.
-   window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · setName(v)
+   - Who: the person signed in with the company's PENUM PM staff accounts (name + PIN, or PM's fingerprint / face passkey; or PENUM PM
+     signed in on this browser). A company whose staff have PINs asks everyone to sign in first, like PM. No sign-in: "ไม่ระบุชื่อ"
+     and 4 letters of the device id. localStorage 'penum.team' (shared by MEP and BIM) keeps the device id, company keys, the
+     sign-in (auth) and the staff list (dir).
+   window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · me() · chip(cls) · signIn() · signOut()
    cfg (the app): app 'mep'|'bim' · cur() → null (nothing to share: a sample, read-only) or {id, name, client, code, sum, text()}
    · apply(text, meta) the company's newer version replaces the open one · has(id) · openLocal(id) · open(text, meta) → bool
    · copy(text, meta) a project of its own with a new id · keep(text) keep this device's version as a copy · sumTxt(sum) · locals() */
@@ -23,12 +25,16 @@ const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={
   title:['โครงการของบริษัท','Company projects'],
   sub:['ทุกคนในบริษัทเดียวกันเห็นรายการนี้ เปิดต่อจากเพื่อนร่วมงานได้ และเห็นว่าใครกำลังแก้อยู่','Everyone in your company sees this list: carry on from a colleague and see who is editing what.'],
-  you:['ผู้ใช้งาน','Signed in as'],chg:['เปลี่ยน','Change'],
-  uT:['ผู้ใช้งาน','Who is using this computer'],uP:['ชื่อนี้แสดงให้เพื่อนร่วมงานเห็นในโครงการของบริษัท ว่าใครบันทึกและใครกำลังแก้','Colleagues see this name in your company projects: who saved and who is editing.'],
-  uPick:['เลือกจากรายชื่อพนักงานใน PENUM PM ({0})','Pick from the staff list in PENUM PM ({0})'],uNone:['— ไม่เลือก —','— none —'],
-  uType:['ชื่อของคุณ','Your name'],uType2:['หรือพิมพ์ชื่อ','Or type a name'],uPm:['PENUM PM ในเครื่องนี้ใช้งานในชื่อ {0}','PENUM PM on this computer is signed in as {0}'],
-  uSet:['ใส่ชื่อผู้ใช้','Set your name'],uTip:['ผู้ใช้งาน','User'],youP:['ชื่อที่เพื่อนร่วมงานจะเห็น','The name your colleagues see'],save:['บันทึก','Save'],
-  anon:['ไม่ระบุชื่อ ({0})','No name ({0})'],needName:['ใส่ชื่อของคุณ เพื่อนร่วมงานจะได้รู้ว่าใครแก้','Type your name so colleagues know who edited'],
+  you:['ผู้ใช้งาน','Signed in as'],chg:['เปลี่ยนผู้ใช้','Change user'],uT:['ผู้ใช้งาน','User'],uTip:['ผู้ใช้งาน','User'],uSet:['เข้าสู่ระบบ','Sign in'],
+  admin:['ผู้ดูแลระบบ','Administrator'],hi:['สวัสดีครับ {0}','Hello {0}'],
+  inT:['เข้าใช้งาน {0}','Sign in to {0}'],inP:['{0} · ใช้ชื่อและ PIN เดียวกับ PENUM PM','{0} · use the same name and PIN as in PENUM PM'],inWho:['ชื่อผู้ใช้','Name'],
+  inForgot:['ลืม PIN ให้ผู้ดูแลระบบตั้งใหม่ใน PENUM PM › ตั้งค่าบริษัท › เข้าระบบด้วย PIN','Forgot your PIN? The administrator sets a new one in PENUM PM › Company settings › PIN sign-in'],
+  inGo:['เข้าใช้งาน','Sign in'],inBio:['สแกนนิ้ว / ใบหน้า','Fingerprint / face'],inBad:['PIN ไม่ถูกต้อง','Wrong PIN'],inWait:['ใส่ PIN ผิดหลายครั้ง รอ 30 วินาทีแล้วลองใหม่','Too many wrong PINs. Wait 30 seconds and try again'],
+  inBioBad:['สแกนไม่สำเร็จ ลองใหม่หรือใช้ PIN','The scan did not work. Try again or use your PIN'],
+  uIs:['เข้าใช้งานในชื่อ {0}','Signed in as {0}'],viaPm:['เข้าระบบผ่าน PENUM PM ในเครื่องนี้','Signed in through PENUM PM on this computer'],viaPin:['เข้าระบบด้วย PIN','Signed in with a PIN'],viaBio:['เข้าระบบด้วยการสแกน','Signed in with a scan'],
+  uSwitch:['เปลี่ยนผู้ใช้','Change user'],uOut:['ออกจากระบบ','Sign out'],outDone:['ออกจากระบบแล้ว','Signed out'],
+  uNoDir:['บริษัทยังไม่ได้ตั้ง PIN ให้พนักงาน จึงยังไม่มีชื่อผู้ใช้ ผู้ดูแลระบบตั้งได้ที่ PENUM PM › ตั้งค่าบริษัท › เข้าระบบด้วย PIN แล้วเปิด PENUM MEP หรือ BIM บนเครื่องนั้นหนึ่งครั้ง รายชื่อจะไปถึงทุกเครื่องของบริษัทเอง','Your company has not given staff PINs yet, so there is no user name. The administrator sets them in PENUM PM › Company settings › PIN sign-in, then opens PENUM MEP or BIM once on that computer; the list reaches every computer of the company by itself.'],
+  anon:['ไม่ระบุชื่อ ({0})','No name ({0})'],needName:['เข้าสู่ระบบ เพื่อนร่วมงานจะได้เห็นว่าใครแก้','Sign in so colleagues see who edited'],
   load:['กำลังโหลดรายการของบริษัท…','Loading your company list…'],
   nolic:['ใช้ได้เมื่อเครื่องนี้มีรหัสเปิดใช้งานของบริษัท (รหัสเดียวกับที่เพื่อนร่วมงานใช้) เมนู › สิทธิ์การใช้งาน','Works when this device has your company\'s activation code (the one your colleagues use): Menu › Licence.'],
   offline:['ต่ออินเทอร์เน็ตไม่ได้ จึงยังไม่เห็นรายการของบริษัท โครงการในเครื่องนี้ใช้ได้ตามปกติ','No internet connection, so the company list is not shown. Projects on this device work as usual.'],
@@ -85,23 +91,6 @@ async function rpc(fn,body,keep){let r;try{r=await fetch(SB.url+'/rest/v1/rpc/'+
 function ld(){try{const o=JSON.parse(localStorage.getItem(K)||'{}');return o&&typeof o==='object'?o:{}}catch(e){return {}}}
 function sv(o){try{localStorage.setItem(K,JSON.stringify(o))}catch(e){}}
 let DEV='';function dev(){if(DEV)return DEV;const o=ld();if(!/^[0-9a-f]{24}$/.test(o.dev||'')){o.dev=hex(crypto.getRandomValues(new Uint8Array(12)));sv(o)}return DEV=o.dev}
-// PENUM PM in this browser (read only): the company whose licence matches this one (else PM's open company), its staff, and who
-// is signed in there (PIN sign-in, else the user picked in PM's header), so MEP and BIM show the same person without asking
-const b64j=s=>{try{return JSON.parse(td.decode(ub64(s)))}catch(e){return null}};
-function licCid(code){const m=/^PNM1\.([A-Za-z0-9_-]+)\./.exec(String(code||'').replace(/\s+/g,''));const p=m&&b64j(m[1]);return p?String(p.id||'').replace(/-R\d+$/,'')||String(p.co||''):''}
-let PMC=null,PMT=0;          // PM's data can be large: read again only after a minute or when another window changed it
-function pm(){if(PMT&&Date.now()-PMT<60000)return PMC;PMT=Date.now();return PMC=pm0()}
-function pm0(){const s=lic(),cid=s&&(s.cid||s.co)||'';let cur='';try{const l=localStorage.getItem('penum.pm.slot')||'';cur=l?'.c'+l:''}catch(e){}let best=null;
-  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=/^penum\.pm\.v1((?:\.c\d+)?)$/.exec(k||'');if(!m)continue;let D=null;try{D=JSON.parse(localStorage.getItem(k)||'null')}catch(e){}
-    const c=D&&D.co;if(!c||!Array.isArray(c.staff))continue;if(cid&&c.lic&&licCid(c.lic)!==cid)continue;/* another company's PM */const sc=(cid&&licCid(c.lic)===cid?2:0)+(m[1]===cur?1:0);if(!best||sc>best.sc)best={sc,sfx:m[1],c}}}catch(e){}
-  if(!best)return null;const staff=best.c.staff.filter(x=>x&&x.active!==false&&String(x.name||'').trim()).map(x=>({id:x.id,name:String(x.name).trim(),role:x.role||''}));
-  let id='';try{const a=JSON.parse(localStorage.getItem('penum.pm.auth'+best.sfx)||'null');if(best.c.pinOn&&a&&a.id)id=a.id}catch(e){}
-  if(!id)try{id=(JSON.parse(localStorage.getItem('penum.pm.ui'+best.sfx)||'{}')||{}).me||''}catch(e){}
-  const me=staff.find(x=>x.id===id);return {co:String(best.c.name||''),staff,me:me?me.name:''}}
-const own=()=>String(ld().name||'').trim().slice(0,60);
-const name=()=>own()||((pm()||{}).me||'').slice(0,60);
-function setName(v,sid){const o=ld();o.name=String(v||'').trim().slice(0,60);o.sid=sid||'';o.asked=1;sv(o);ST.lw='';chips();VIEWS.forEach(paint);if(CFG)soon()}
-const shown=()=>name()||t('anon',dev().slice(0,4).toUpperCase());
 const recK=p=>CFG.app+':'+p;
 function rec(p){return (ld().s||{})[recK(p)]||null}
 function recSet(p,r){const o=ld();o.s=o.s||{};if(r)o.s[recK(p)]=Object.assign({},r,{u:Date.now()});else delete o.s[recK(p)];
@@ -123,12 +112,111 @@ async function team(){const s=lic();if(!s||!s.code||s.st==='none'||s.st==='ro'||
   catch(e){return {err:'bad'}}}
 const pk=async id=>hex((await sha('penum-team-p:'+CFG.app+':'+id)).slice(0,16));
 async function who(T,lw){if(!lw)return '';try{return String((await dec(T.key,lw)).n||'')}catch(e){return ''}}
-async function lockWho(T){if(!ST.lw||ST.lwN!==shown()){ST.lwN=shown();ST.lw=await enc(T.key,{n:ST.lwN})}return ST.lw}
-function metaOf(c){return {id:c.id,name:c.name||'',client:c.client||'',code:c.code||'',sum:c.sum||null,by:shown(),dev:dev(),at:Date.now()}}
+async function lockWho(T){if(!ST.lw||ST.lwN!==shown()){ST.lwN=shown();const m=me();ST.lw=await enc(T.key,m?{n:ST.lwN,u:m.id}:{n:ST.lwN})}return ST.lw}
+function metaOf(c){const m=me();return {id:c.id,name:c.name||'',client:c.client||'',code:c.code||'',sum:c.sum||null,by:shown(),uid:m?m.id:null,dev:dev(),at:Date.now()}}
 async function put(T,p,c,txt,base){const d=await enc(T.key,txt,1);if(d.length>MAX)return {err:'big'};
   const r=await rpc('penum_team_put',{p_t:T.t,p_p:p,p_a:CFG.app,p_m:await enc(T.key,metaOf(c)),p_d:d,p_base:base||null,p_dev:dev()});return r.err?r:(r.j||{})}
 async function get(T,p){const r=await rpc('penum_team_get',{p_t:T.t,p_p:p});if(r.err||!r.j)return null;
   try{return {d:await dec(T.key,r.j.d,1),at:String(r.j.at||''),m:await dec(T.key,r.j.m)}}catch(e){return null}}
+
+// who is working: signed in with the company's PENUM PM staff accounts (the same name and PIN, or the same fingerprint / face
+// passkey made in PM on this browser), never a typed name. The staff list (names, roles, PIN hashes, passkey public keys) comes
+// from PENUM PM in this browser when its licence is this company's, and goes into the company list encrypted (one row, see dirP)
+// so computers without PM get it too. PENUM PM signed in here (PIN, or a cloud invite) signs MEP and BIM in as the same person.
+// Like PM's PIN it puts a checked name on the work; it does not encrypt anything.
+const b64j=s=>{try{return JSON.parse(td.decode(ub64(s)))}catch(e){return null}};
+function licCid(code){const m=/^PNM1\.([A-Za-z0-9_-]+)\./.exec(String(code||'').replace(/\s+/g,''));const p=m&&b64j(m[1]);return p?String(p.id||'').replace(/-R\d+$/,'')||String(p.co||''):''}
+const cust=()=>{const s=lic();return s&&s.code&&!['none','ro','wait'].includes(s.st)?String(s.cid||s.co||''):''};
+const jl=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(e){return null}};
+const keys=L=>(Array.isArray(L)?L:[]).filter(k=>k&&k.id&&k.pk).map(k=>({id:k.id,pk:k.pk,alg:k.alg||-7}));
+let PMC=null,PMT=0;          // PM's data can be large: read again only after a minute or when another window changed it
+function pm(){if(PMT&&Date.now()-PMT<60000)return PMC;PMT=Date.now();try{return PMC=pm0()}catch(e){return PMC=null}}
+function pm0(){const cid=cust();if(!cid)return null;let cur='';try{const l=localStorage.getItem('penum.pm.slot')||'';cur=l?'.c'+l:''}catch(e){}let best=null;
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=/^penum\.pm\.v1((?:\.c\d+)?)$/.exec(k||'');if(!m)continue;const D=jl(k),c=D&&D.co;
+    if(!c||!Array.isArray(c.staff)||licCid(c.lic)!==cid)continue;/* only this company's PM */if(!best||m[1]===cur)best={sfx:m[1],c}}
+  if(!best)return null;const c=best.c,sfx=best.sfx;
+  const staff=c.staff.filter(x=>x&&x.id&&x.active!==false&&String(x.name||'').trim()).map(x=>({id:String(x.id),name:String(x.name).trim().slice(0,60),role:String(x.role||'').slice(0,60),pin:x.pin||'',bio:keys(x.bio)}));
+  const dir={co:String(c.name||''),admin:{pin:c.adminPin||'',bio:keys(c.adminBio)},staff};
+  // who PM has signed in here: a cloud device joined by invite, else PIN sign-in while PM asks for PINs (PM's own rules)
+  let who=null;const sb=jl('pmSB'+sfx)||{},nm=id=>id===''?t('admin'):(staff.find(x=>x.id===id)||{}).name||'';
+  if(sb.on&&sb.cid&&sb.rt){if(sb.role==='admin')who={id:''};else if(sb.role==='staff'&&sb.who)who={id:String(sb.who)};if(who)who.k='sb:'+sfx+':'+(sb.uid||'')+':'+who.id}
+  else if(c.pinOn&&c.adminPin){const a=jl('penum.pm.auth'+sfx);if(a&&typeof a.id==='string')who={id:a.id,k:'pin:'+sfx+':'+(a.at||'')+':'+a.id}}
+  if(who){who.n=nm(who.id);if(!who.n)who=null}
+  const bl=(jl('penum.pm.bio'+sfx)||[]).filter(x=>x&&x.c&&typeof x.w==='string');
+  return {dir,who,bio:bl}}
+// the staff list in use: PM's in this browser, else the company's copy this device last fetched
+function dir(){const c=cust();if(!c)return null;const P=pm();if(P)return P.dir;const d=(ld().dir||{})[c];return d&&Array.isArray(d.staff)?d:null}
+const creds=D=>!!D&&(!!D.admin.pin||D.admin.bio.length>0||D.staff.some(x=>x.pin||x.bio.length));
+const dirP=async()=>hex((await sha('penum-team-p:dir:staff')).slice(0,16));
+// the company's copy: a device with PM sends PM's list when it differs; others keep the newest. A row under 'mep' marked k:'dir'.
+let DIRT=0;
+async function syncDir(T,force){const c=cust();if(!c||(!force&&Date.now()-DIRT<5*60e3))return;DIRT=Date.now();PMT=0;
+  const p=await dirP(),g=await get(T,p);let cloud=null;try{cloud=g&&JSON.parse(g.d)}catch(e){}const P=pm(),o=ld();
+  if(P){const L=JSON.stringify(P.dir);if(!cloud||JSON.stringify(cloud)!==L){
+      const r=await rpc('penum_team_put',{p_t:T.t,p_p:p,p_a:'mep',p_m:await enc(T.key,{k:'dir',name:'',by:shown(),at:Date.now()}),p_d:await enc(T.key,L,1),p_base:g?g.at:null,p_dev:dev()});
+      if(r.err||!(r.j||{}).at)DIRT=Date.now()-4*60e3}          // someone else is sending it right now: again in a minute
+    o.dir={[c]:P.dir}}
+  else if(cloud&&Array.isArray(cloud.staff))o.dir={[c]:cloud};sv(o);chips();gate()}
+// the person signed in on this device: own sign-in (PIN or scan) for this company, else PENUM PM's sign-in here
+function me(){const c=cust();if(!c)return null;const D=dir(),P=pm(),o=ld(),a=o.auth;
+  if(a&&a.c===c&&D){if(a.id===''&&(D.admin.pin||D.admin.bio.length))return {id:'',n:t('admin'),via:a.via};const s=D.staff.find(x=>x.id===a.id);if(s)return {id:s.id,n:s.name,via:a.via}}
+  if(P&&P.who&&o.out!==P.who.k)return {id:P.who.id,n:P.who.n,via:'pm'};
+  return null}
+const name=()=>{const m=me();return m?m.n:''};
+const shown=()=>name()||t('anon',dev().slice(0,4).toUpperCase());
+// a company with PINs set asks everyone to sign in before using the program, like PENUM PM
+const gated=()=>{const D=dir();return creds(D)&&!me()};
+function gate(){if(CFG&&gated()&&!document.querySelector('dialog.ptm-in'))signIn(true)}
+async function pinHash(salt,pin){return hex(await sha('penum-pm|'+salt+'|'+pin))}          // the same as PENUM PM (pm/src/290-folder-pin.js)
+function signed(id,via){const o=ld();o.auth={c:cust(),id,via,at:Date.now()};delete o.out;sv(o);ST.lw='';chips();VIEWS.forEach(paint);if(CFG)soon();note(t('hi',name()))}
+function signOut(){const o=ld(),m=me();o.auth=null;if(m&&m.via==='pm'){const P=pm();if(P&&P.who)o.out=P.who.k}sv(o);ST.lw='';chips();VIEWS.forEach(paint);gate()}
+// scan: a passkey PENUM PM made on this browser (same site, so the browser offers it here too), checked against its public key
+function bioRaw(d){let i=2;if(d[1]&0x80)i+=d[1]&0x7f;const o=new Uint8Array(64);
+  for(let j=0;j<2;j++){i++;const n=d[i++];let v=d.slice(i,i+n);i+=n;while(v.length>32&&v[0]===0)v=v.slice(1);o.set(v,32*j+32-v.length)}return o}
+const bioKey=(D,w,id)=>((w===''?D.admin.bio:((D.staff.find(x=>x.id===w)||{}).bio||[]))).find(k=>k.id===id);
+function bioHere(){const D=dir(),P=pm();if(!D||!P||!window.PublicKeyCredential)return [];return P.bio.filter(x=>bioKey(D,x.w,x.c))}
+async function bioCheck(k,a,ch){try{const r=a.response,cd=JSON.parse(td.decode(r.clientDataJSON)),ad=new Uint8Array(r.authenticatorData);
+  if(cd.type!=='webauthn.get'||cd.challenge!==b64u(ch)||cd.origin!==location.origin)return false;
+  const rp=await sha(location.hostname);if(ad.length<37||rp.some((v,i)=>v!==ad[i])||(ad[32]&5)!==5)return false;
+  const h=new Uint8Array(await crypto.subtle.digest('SHA-256',r.clientDataJSON)),data=new Uint8Array(ad.length+32);data.set(ad);data.set(h,ad.length);
+  const ec=k.alg!==-257,key=await crypto.subtle.importKey('spki',ub64(k.pk),ec?{name:'ECDSA',namedCurve:'P-256'}:{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']),sig=new Uint8Array(r.signature);
+  return await crypto.subtle.verify(ec?{name:'ECDSA',hash:'SHA-256'}:'RSASSA-PKCS1-v1_5',key,ec?bioRaw(sig):sig,data)}catch(e){return false}}
+async function bioGo(L){const D=dir(),ch=crypto.getRandomValues(new Uint8Array(32));
+  const a=await navigator.credentials.get({publicKey:{challenge:ch,allowCredentials:L.map(x=>({type:'public-key',id:ub64(x.c),transports:['internal','hybrid']})),userVerification:'required',timeout:60000}});
+  const id=b64u(new Uint8Array(a.rawId)),hit=L.find(x=>x.c===id),k=hit&&bioKey(D,hit.w,id);return k&&await bioCheck(k,a,ch)?hit.w:null}
+// the sign-in box: pick your name, type your PIN (or scan). Forced = the program waits behind it, as PENUM PM does.
+let FAILS=0,WAIT=0;
+function signIn(forced){const D=dir();if(!creds(D))return;const app=CFG&&CFG.app==='bim'?'PENUM BIM':'PENUM MEP',a=ld().auth||{},P=pm();
+  const L=[...(D.admin.pin||D.admin.bio.length?[{id:'',name:t('admin'),role:''}]:[]),...D.staff.filter(x=>x.pin||x.bio.length)];
+  const bl=bioHere(),last=a.id!=null?a.id:P&&P.who?P.who.id:ld().last!=null?ld().last:bl.length?bl[0].w:'';
+  const d=document.createElement('dialog');d.className='ptm-dlg ptm-in';
+  d.innerHTML=`<h3>${esc(t('inT',app))}</h3><div class="ptm-db"><p style="margin:0 0 10px">${esc(t('inP',D.co||''))}</p>
+    <label class="ptm-f"><span>${esc(t('inWho'))}</span><select name="who">${L.map(x=>`<option value="${esc(x.id)}"${x.id===last?' selected':''}>${esc(x.name)}${x.role?' · '+esc(x.role):''}</option>`).join('')}</select></label>
+    <label class="ptm-f"><span>PIN</span><input name="pin" type="password" inputmode="numeric" autocomplete="current-password" class="ptm-pin"></label>
+    <p class="ptm-err" role="alert"></p><p class="ptm-h" style="margin:6px 0 0">${esc(t('inForgot'))}</p></div>
+    <div class="ptm-df"><button type="button" class="ptm-b pri" data-in="go">${esc(t('inGo'))}</button>${bl.length?`<button type="button" class="ptm-b" data-in="bio">${esc(t('inBio'))}</button>`:''}${forced?'':`<button type="button" class="ptm-b" data-in="x">${esc(t('cancel'))}</button>`}</div>`;
+  const err=m=>{d.querySelector('.ptm-err').textContent=m||''},pin=d.querySelector('[name=pin]'),sel=d.querySelector('[name=who]');
+  const go=async()=>{if(Date.now()<WAIT){err(t('inWait'));return}const id=sel.value,v=pin.value.trim();if(!v){pin.focus();return}
+    const want=id===''?D.admin.pin:(D.staff.find(x=>x.id===id)||{}).pin;
+    if(want&&await pinHash(id||'admin',v)===want){FAILS=0;const o=ld();o.last=id;sv(o);d.close();signed(id,'pin')}
+    else{FAILS++;if(FAILS>=5){FAILS=0;WAIT=Date.now()+30e3;err(t('inWait'))}else err(t('inBad'));pin.value='';pin.focus()}};
+  d.addEventListener('click',async e=>{const b=e.target.closest('[data-in]');if(!b)return;const k=b.dataset.in;
+    if(k==='x')d.close();else if(k==='go')go();
+    else if(k==='bio'){const w0=sel.value,mine=bl.filter(x=>x.w===w0);try{const w=await bioGo(mine.length?mine:bl);if(w==null){err(t('inBioBad'));return}d.close();signed(w,'bio')}catch(e){err(t('inBioBad'))}}});
+  pin.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
+  d.addEventListener('cancel',e=>{if(forced)e.preventDefault()});d.addEventListener('close',()=>{d.remove();if(forced&&gated())setTimeout(gate,0)});
+  document.body.appendChild(d);d.showModal();setTimeout(()=>pin.focus(),30)}
+// the header button: who is signed in, and sign out / change user; or how a company starts using sign-in
+async function userBox(){PMT=0;const m=me(),D=dir();
+  if(m){const k=await dlg(t('uT'),`<p>${esc(t('uIs',m.n))}</p><p class="ptm-h" style="margin:6px 0 0">${esc(t(m.via==='pm'?'viaPm':m.via==='bio'?'viaBio':'viaPin'))}</p>`,
+      [['sw',t('uSwitch'),1],['out',t('uOut')],['',t('close')]]);
+    if(k==='out'){signOut();if(!gated())note(t('outDone'))}else if(k==='sw'){signOut();if(!document.querySelector('dialog.ptm-in'))signIn(false)}return}
+  if(creds(D)){signIn(false);return}
+  await dlg(t('uT'),`<p>${esc(t(cust()?'uNoDir':'nolic'))}</p>`,[['',t('close'),1]])}
+const CHIPS=[];
+function chip(cls){const b=document.createElement('button');b.type='button';b.className=(cls||'')+' ptm-chip';b.dataset.noxl='';b.addEventListener('click',userBox);CHIPS.push(b);chips();return b}
+function chips(){const nm=name();for(const b of CHIPS){b.classList.toggle('none',!nm);b.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>${esc(nm||t('uSet'))}</span>`;
+  b.title=t('uTip')+(nm?': '+nm:'');b.setAttribute('aria-label',b.title)}}
 
 // the open project, every 50 s and a few seconds after a change: hold it, send it, or take the company's newer version
 let CFG=null;const ST={st:'',p:'',id:'',held:'',other:null,conf:null,asked:{},busy:0,act:Date.now(),err:'',lw:'',lwN:'',shared:0,pend:0,hideBar:''};
@@ -136,9 +224,9 @@ let soonT=0;function soon(){ST.act=Date.now();clearTimeout(soonT);soonT=setTimeo
 async function tick(){if(!CFG)return;if(ST.busy){ST.pend=1;return}ST.busy=1;try{await tick0()}catch(e){}finally{ST.busy=0;bar();if(ST.pend){ST.pend=0;soon()}}}
 async function release(keep){const p=ST.held;ST.held='';if(!p||!TM)return;await rpc('penum_team_unlock',{p_t:TM.t,p_p:p,p_dev:dev()},keep)}
 async function tick0(){
+  {const T=await team();if(!T.err)await syncDir(T);gate()}          // the staff list, and sign-in when the company asks for it
   const c=CFG.cur();if(!c||!c.id){await release();Object.assign(ST,{p:'',id:'',other:null,conf:null,err:''});return}
   const T=await team();if(T.err){ST.st=T.err;return}ST.st='ok';
-  if(!ST.nameAsk&&!name()&&!ld().asked&&!document.querySelector('dialog[open]')){ST.nameAsk=1;setTimeout(userBox,0)}
   const p=await pk(c.id);if(ST.p!==p){if(ST.held&&ST.held!==p)await release();ST.p=p;ST.id=c.id;ST.other=null;ST.conf=null;ST.err=''}
   if(Date.now()-ST.act>IDLE&&document.visibilityState!=='visible'){await release();return}          // not used for a while: others may take it
   const txt=c.text(),h=hs(txt),R=rec(p);
@@ -181,7 +269,7 @@ document.addEventListener('click',async ev=>{const b=ev.target.closest&&ev.targe
 // the company list: in MEP's projects page and start page, and BIM's start page and menu
 const VIEWS=new Set();
 async function list(){const T=await team();if(T.err)return T;const r=await rpc('penum_team_list',{p_t:T.t,p_a:CFG.app});if(r.err)return r;
-  const rows=(await Promise.all((r.j||[]).map(async x=>{let m;try{m=await dec(T.key,x.m)}catch(e){return null}
+  const rows=(await Promise.all((r.j||[]).map(async x=>{let m;try{m=await dec(T.key,x.m)}catch(e){return null}if(m&&m.k==='dir')return null;
     return {p:x.p,m,at:x.at,off:!!x.off,lk:x.ld?{me:x.ld===dev(),n:await who(T,x.lw),at:x.lat}:null}}))).filter(Boolean);
   return {rows:rows.filter(x=>!x.m.k),co:T.co}}          // rows marked k are not projects (k:'prices' the price library, shared/prices.js)
 function when(s){const d=new Date(s);if(isNaN(d))return '–';const ms=Date.now()-d,L=EN()?'en-GB':'th-TH',hm=d.toLocaleTimeString(L,{hour:'2-digit',minute:'2-digit'});
@@ -193,7 +281,7 @@ async function render(el,opt){if(!el||!CFG)return;opt=opt||{};VIEWS.add(el);el.c
   if(!el._d)el.innerHTML=`<p class="ptm-h">${esc(t('load'))}</p>`;
   const r=await list();el._d=r;paint(el);if(!r.err)share(r.rows)}
 function paint(el){const r=el._d,opt=el._ptm||{};if(!r)return;
-  const head=`<div class="ptm-me"><span>${esc(t('you'))}: <b>${esc(shown())}</b></span><button type="button" class="btn sm" data-ptm="name">${esc(t('chg'))}</button>${name()?'':`<small class="ptm-warn">${esc(t('needName'))}</small>`}</div>`;
+  const head=`<div class="ptm-me"><span>${esc(t('you'))}: <b>${esc(shown())}</b></span><button type="button" class="btn sm" data-ptm="name">${esc(t(name()?'chg':'uSet'))}</button>${name()?'':`<small class="ptm-warn">${esc(t(creds(dir())?'needName':'uNoDir'))}</small>`}</div>`;
   if(r.err){el.innerHTML=(opt.compact?'':head)+`<p class="ptm-note">${esc(t(r.err==='nolic'||r.err==='offline'||r.err==='nosql'?r.err:'bad'))}</p>${r.err==='nolic'?'':`<button type="button" class="btn sm" data-ptm="retry">${esc(t('retry'))}</button>`}`;return}
   const q=String(el._q||'').trim().toLowerCase().split(/\s+/).filter(Boolean),live=r.rows.filter(x=>!x.off),off=r.rows.filter(x=>x.off);
   let L=live.filter(x=>{const s=[x.m.name,x.m.client,x.m.code,x.m.by,x.lk&&x.lk.n].join(' ').toLowerCase();return q.every(w=>s.includes(w))});
@@ -238,22 +326,12 @@ function dlg(title,html,btns){return new Promise(res=>{const d=document.createEl
   d.innerHTML=`<h3>${esc(title)}</h3><div class="ptm-db">${html}</div><div class="ptm-df">${btns.map(([k,l,p])=>`<button type="button" class="ptm-b${p?' pri':''}" value="${esc(k)}">${esc(l)}</button>`).join('')}</div>`;
   d.addEventListener('click',e=>{const b=e.target.closest('button[value]');if(b)d.close(b.value)});d.addEventListener('close',()=>{const v=d.returnValue||'';dlg.v={};d.querySelectorAll('[name]').forEach(x=>{dlg.v[x.name]=x.value});d.remove();res(v)});
   document.body.appendChild(d);d.showModal()})}
-// ผู้ใช้งาน: a button in the app's header with the name colleagues see (like PENUM PM's user box); it opens a box to pick a name from
-// PENUM PM's staff list (when PM is used in this browser) or to type one. Asked once by itself when the company list first works.
-async function userBox(){PMT=0;const P=pm(),cur=own()||name(),sid=ld().sid||'',L=P?P.staff:[],pick=L.find(x=>x.id===sid||x.name===cur);
-  const body=`<p style="margin:0 0 10px">${esc(t('uP'))}</p>${L.length?`<label class="ptm-f"><span>${esc(t('uPick',P.co||'PENUM PM'))}</span><select name="sid"><option value="">${esc(t('uNone'))}</option>${L.map(x=>`<option value="${esc(x.id)}"${pick&&pick.id===x.id?' selected':''}>${esc(x.name)}${x.role?' · '+esc(x.role):''}</option>`).join('')}</select></label>`:''}
-    <label class="ptm-f"><span>${esc(t(L.length?'uType2':'uType'))}</span><input name="nm" type="text" maxlength="60" value="${esc(pick?'':cur)}" placeholder="${esc(t('youP'))}"></label>${P&&P.me?`<p class="ptm-h" style="margin:8px 0 0">${esc(t('uPm',P.me))}</p>`:''}`;
-  const k=await dlg(t('uT'),body,[['ok',t('save'),1],['',t('cancel')]]);if(k!=='ok'){const o=ld();o.asked=1;sv(o);return}/* asked once only, whatever the answer */const v=dlg.v||{},x=v.sid&&L.find(y=>y.id===v.sid),typed=String(v.nm||'').trim();
-  const nm=typed||(x?x.name:'');if(nm)setName(nm,!typed&&x?x.id:'');else{const o=ld();o.asked=1;sv(o)}}
-const CHIPS=[];
-function chip(cls){const b=document.createElement('button');b.type='button';b.className=(cls||'')+' ptm-chip';b.dataset.noxl='';b.addEventListener('click',userBox);CHIPS.push(b);chips();return b}
-function chips(){const nm=name();for(const b of CHIPS){b.classList.toggle('none',!nm);b.innerHTML=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>${esc(nm||t('uSet'))}</span>`;
-  b.title=t('uTip')+(nm?': '+nm:'');b.setAttribute('aria-label',b.title)}}
 function note(msg){let e=document.getElementById('ptmNote');if(!e){e=document.createElement('div');e.id='ptmNote';e.className='ptm-toast';e.setAttribute('role','status');document.body.appendChild(e)}
   e.textContent=msg;e.classList.add('on');clearTimeout(note.t);note.t=setTimeout(()=>e.classList.remove('on'),4500)}
 
 const CSS=`.ptm-me{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;font-size:14px}
 .ptm-f{display:flex;flex-direction:column;gap:3px;font-size:13.5px;margin:0 0 10px}.ptm-f select,.ptm-f input{font:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:1px solid #CBD5E1;background:#fff;color:#0F1E2E}
+.ptm-in::backdrop{background:rgba(8,20,40,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}.ptm-err{color:#B91C1C;font-size:13.5px;margin:0;min-height:1.2em}.ptm-pin{letter-spacing:6px;font-size:20px!important}
 .ptm-chip{display:inline-flex;align-items:center;gap:6px;max-width:200px}.ptm-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:640px){.ptm-chip span{display:none}}.ptm-chip.none{color:#B45309!important;border-color:#F6D9A8!important;background:#FFF7EA!important}.ptm-me label{display:flex;flex-direction:column;gap:2px;font-size:13px;flex:1 1 200px;max-width:320px}
 .ptm-me input,.ptm-q{font:inherit;font-size:14px;padding:7px 10px;border-radius:10px;border:1px solid rgba(127,140,160,.45);background:transparent;color:inherit;min-width:0}
 .ptm-q{width:100%;box-sizing:border-box;margin:0 0 10px}.ptm-warn{color:#B45309;font-size:12.5px;flex-basis:100%}
@@ -278,11 +356,11 @@ const CSS=`.ptm-me{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin
 .ptm-toast.on{opacity:1}`;
 function attach(cfg){if(CFG)return;CFG=cfg;
   const s=document.createElement('style');s.textContent=CSS;document.head.appendChild(s);
-  setInterval(tick,BEAT);setTimeout(tick,2500);
+  setInterval(tick,BEAT);setTimeout(tick,2500);setTimeout(gate,600);          // the staff list may already be here (PM in this browser, or fetched before)
   const act=()=>{ST.act=Date.now()};['pointerdown','keydown'].forEach(k=>addEventListener(k,act,{passive:true,capture:true}));
   addEventListener('focus',()=>{act();tick()});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){act();tick()}});
   addEventListener('pagehide',()=>{release(true)})}
 new MutationObserver(chips).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});          // the app switched language
-addEventListener('storage',e=>{if(e.key===K||/^penum\.pm\.(ui|auth|v1|slot)/.test(e.key||'')){PMT=0;ST.lw='';chips()}});          // a name picked in another window, or PENUM PM signing someone in
-window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,setName,shown,chip,userBox};
+addEventListener('storage',e=>{if(e.key===K||/^(penum\.pm\.(auth|v1|slot|bio)|pmSB)/.test(e.key||'')){PMT=0;ST.lw='';chips();VIEWS.forEach(paint);gate()}});          // signed in or out in another window, or in PENUM PM
+window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut};
 })();
