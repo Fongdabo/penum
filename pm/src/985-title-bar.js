@@ -64,7 +64,7 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
       {k:'saveas',t:'บันทึกเป็น… (Ctrl+Shift+S)',run:tbSaveAs},{k:'print',t:'พิมพ์เอกสารในหน้านี้',run:tbPrint},
       ...($('#undoBtn')?[{k:'undo',node:$('#undoBtn')},{k:'redo',node:$('#redoBtn')}]:[{k:'undo',t:'ย้อนกลับ (Ctrl+Z)',run:go('undo')},{k:'redo',t:'ทำซ้ำ (Ctrl+Y)',run:go('redo')}]),
       {k:'share',t:'แชร์ไฟล์โครงการ',run:tbShare}],
-    title:()=>S.dept!=='home'&&P?P.name:((CO()||{}).name||'PENUM PM'),titleTip:()=>(S.dept!=='home'&&P?P.name+' · ':'')+'ทุกโครงการ',titleClick:tbAll,
+    title:()=>P?P.name:((CO()||{}).name||'PENUM PM'),titleTip:()=>(P?P.name+' · ':'')+'ทุกโครงการ',titleClick:tbAll,company:()=>(CO()||{}).name||'',
     search:{index:()=>projects().map(p=>({id:p.id,ic:'▣',t:p.name,sub:'โครงการ'+(p.info&&p.info.client?' · '+p.info.client:''),k:[p.name,p.info&&p.info.client,p.info&&p.info.contractNo].filter(Boolean).join(' '),go:()=>tbOpen(p.id)})),
       first:ix=>{const L=penumBar.ids();return ix.filter(o=>L.includes(o.id))},
       find:(q,ix)=>{const ws=q.toLowerCase().split(/\s+/).filter(Boolean),pj=ix.filter(o=>ws.every(w=>o.k.toLowerCase().includes(w)));

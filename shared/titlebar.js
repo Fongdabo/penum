@@ -15,7 +15,7 @@
    · extra: [elements] after the quick buttons (wide screens only) · title() → text · titleTip · titleClick() · titleNode (an element shown
    after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed,
    find(text, index) → the hits for what was typed, when the app ranks them itself}
-   · user (element) · right: [elements] · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
+   · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
    close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
 (()=>{if(window.penumBar)return;
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
@@ -26,7 +26,7 @@ const T={start:['เริ่มต้น','Start'],add:['โครงการ�
   new:['ใหม่','New'],open:['เปิด','Open'],saveas:['บันทึกเป็น','Save as'],print:['พิมพ์','Print'],undo:['ย้อนกลับ','Undo'],redo:['ทำซ้ำ','Redo'],share:['แชร์','Share'],
   ph:['พิมพ์คำค้นหา','Type a keyword'],none:['ไม่พบ ลองคำอื่น','Nothing found, try another word'],srch:['ค้นหา','Search'],
   cart:['ร้านฟอร์มเอกสาร ORIEN','ORIEN form shop'],cartP:['เลือกซื้อแบบฟอร์มเอกสารพร้อมโลโก้บริษัทของคุณ ใช้ได้ทันทีในโปรแกรม','Document forms with your company logo, ready to use in the program'],
-  soon:['เร็ว ๆ นี้','Coming soon'],menu:['เมนูโปรแกรม','Program menu'],tabs:['แท็บชื่องาน','Project tabs']};
+  soon:['เร็ว ๆ นี้','Coming soon'],co:['บริษัท','Company'],menu:['เมนูโปรแกรม','Program menu'],tabs:['แท็บชื่องาน','Project tabs']};
 const t=(k,...a)=>(T[k]?T[k][EN()?1:0]:k).replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hash=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)+'.'+s.length.toString(36)};
@@ -45,6 +45,7 @@ const IC={
   burger:sv(0,'<path d="M4 6h16M4 12h16M4 18h16"/>'),
   plus:sv(0,'<path d="M12 5v14M5 12h14"/>'),
   x:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  co:sv(0,'<path d="M3 21h18M5 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M15 9h3a1 1 0 0 1 1 1v11"/><path d="M8 8h1M11 8h1M8 12h1M11 12h1M8 16h1M11 16h1"/>'),
   chev:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'};
 
 let C=null,W=null,S={o:[],b:{},d:{},n:{}},soonT=0,soonF=null;
@@ -103,7 +104,7 @@ function qb(it){let b=it.node;if(!b){b=document.createElement('button');b.type='
 function build(){const w=document.createElement('div');w.className='ptbw';w.id='ptbw';w.dataset.noxl='';
   w.innerHTML=`<div class="ptb" role="toolbar"><div class="ptb-l"><button type="button" class="ptb-logo" aria-haspopup="menu"><span class="ptb-lg"></span><b>${esc(C.tag||'')}</b>${IC.chev}</button><span class="ptb-qs"></span><span class="ptb-x"></span></div>
     <div class="ptb-c"><button type="button" class="ptb-tt"><span class="ptb-tn"></span><span class="ptb-st" hidden>*</span></button></div>
-    <div class="ptb-r"><div class="ptb-s"><button type="button" class="ptb-sb">${IC.srch}</button><input type="search" class="ptb-si" autocomplete="off" spellcheck="false"></div><span class="ptb-u"></span>
+    <div class="ptb-r"><div class="ptb-s"><button type="button" class="ptb-sb">${IC.srch}</button><input type="search" class="ptb-si" autocomplete="off" spellcheck="false"></div><span class="ptb-co" hidden>${IC.co}<span class="ptb-cn"></span></span><span class="ptb-u"></span>
       <button type="button" class="ptb-cart">${IC.cart}</button><span class="ptb-a"></span></div></div>
     <div class="pdt" role="tablist"><button type="button" class="pdt-m">${IC.burger}</button><div class="pdt-s"></div><button type="button" class="pdt-add">${IC.plus}</button></div>`;
   const lg=w.querySelector('.ptb-lg');if(C.logo){const c=C.logo.cloneNode(true);c.removeAttribute('width');c.removeAttribute('height');c.removeAttribute('style');lg.appendChild(c)}
@@ -151,8 +152,14 @@ function srch(w){const box=w.querySelector('.ptb-s'),inp=box.querySelector('inpu
 function focusSearch(){const i=W&&W.querySelector('.ptb-si');if(!i||!i.offsetParent&&!W.querySelector('.ptb-sb').offsetParent)return false;
   if(i.offsetParent)i.focus();else W.querySelector('.ptb-sb').click();return true}
 
+// บริษัท: the same spot in every app, beside the user; the app's own answer (PM: the company open), else the one PENUM PM keeps on
+// this device ('penum.company'), else the company on the licence code
+function coName(){let n='';try{if(C.company)n=String(C.company()||'').trim()}catch(e){}
+  if(!n)try{const o=JSON.parse(localStorage.getItem('penum.company')||'null');n=o&&o.name?String(o.name).trim():''}catch(e){}
+  if(!n)try{n=String((window.penumLic&&window.penumLic.state().co)||'').trim()}catch(e){}return n}
 function title(){if(!W)return;const c=cur(),tn=W.querySelector('.ptb-tn'),st=W.querySelector('.ptb-st'),tt=W.querySelector('.ptb-tt');
   let s='';try{s=C.title?C.title():nameOf(c)}catch(e){}tn.textContent=s;st.hidden=!dirty(c);tt.title=(C.titleTip?C.titleTip():s)+(dirty(c)?' · '+t('dirty'):'');
+  const co=coName(),ce=W.querySelector('.ptb-co');ce.hidden=!co;ce.querySelector('.ptb-cn').textContent=co;ce.title=t('co')+': '+co;
   try{if(C.appName)document.title=(s?s+(dirty(c)?'*':'')+' – ':'')+(C.appName||'PENUM')}catch(e){}}
 function refresh(){if(!W)return;const L=ids(),c=cur(),st=C.tabs.start(),s=W.querySelector('.pdt-s'),sl=s.scrollLeft;
   s.innerHTML=`<button type="button" class="pdt-t pdt-st${st?' on':''}" role="tab" aria-selected="${st}">${esc(t('start'))}</button>`+L.map(id=>{const on=!st&&id===c,d=dirty(id),n=nameOf(id);
@@ -171,6 +178,7 @@ function mount(cfg){if(W)return W;C=cfg;load();W=build();document.documentElemen
   if(window.ResizeObserver)new ResizeObserver(height).observe(W);addEventListener('resize',()=>{height();popClose()});
   document.addEventListener('keydown',e=>{if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return;const x=e.target;if(x&&(x.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(x.tagName)))return;
     if(document.querySelector('dialog[open]'))return;if(focusSearch()){e.preventDefault();e.stopImmediatePropagation()}},true);
+  addEventListener('storage',e=>{if(e.key==='penum.company')title()});          // PENUM PM changed the company in another window
   setTimeout(()=>{refresh();height()},0);return W}
 
 const CSS=`
@@ -199,6 +207,8 @@ const CSS=`
 .ptb-si:focus{border-color:var(--tb-acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--tb-acc) 22%,transparent)}.ptb-si::placeholder{color:var(--tb-mut);font-style:italic}
 .ptb-sb{position:absolute;left:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:26px;height:26px;border:none;background:none;color:var(--tb-mut);pointer-events:none}.ptb-sb svg{width:15px;height:15px}
 .ptb-u .ptm-chip{height:30px;border-radius:8px!important}
+.ptb-co{display:flex;align-items:center;gap:5px;max-width:240px;min-width:0;padding:0 4px 0 2px;color:var(--tb-mut);font-size:12.5px;white-space:nowrap;cursor:default}.ptb-co[hidden]{display:none}
+.ptb-co svg{flex:none;width:16px;height:16px}.ptb-cn{overflow:hidden;text-overflow:ellipsis}
 .ptb-cart{position:relative;display:grid;place-items:center;width:32px;height:30px;border:none;border-radius:8px;background:none;color:var(--tb-ink)}.ptb-cart:hover{background:var(--tb-hov)}
 .pdt{display:flex;align-items:flex-end;gap:2px;height:34px;padding:0 6px;background:var(--tb-bg2);border-bottom:1px solid var(--tb-line)}
 .pdt button{font:inherit;color:inherit;cursor:pointer}
@@ -229,6 +239,8 @@ const CSS=`
 .ptb-f input{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--tb-line);background:none;color:inherit}
 .ptb-note{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:2147482600;padding:9px 16px;border-radius:12px;background:#1e293b;color:#fff;font:14px system-ui,'Noto Sans Thai',sans-serif;transition:.2s}.ptb-note.on{opacity:1;transform:translate(-50%,0)}
 @media (max-width:1440px){.ptb-x{display:none!important}.ptb-s{width:190px}}
+@media (max-width:1440px){.ptb-co{max-width:180px}}
+@media (max-width:1180px){.ptb-co{display:none!important}}
 @media (max-width:1280px){.ptb-q.ptb-share span{display:none}.ptb-u .ptm-chip{max-width:120px}.ptb-q.ptb-share{padding:0 5px;margin-left:0}.ptb-s{width:150px}}
 @media (max-width:980px){.ptb-q.ptb-saveas,.ptb-q.ptb-print,.ptb-q.ptb-share{display:none}.ptb-s{width:130px}.ptb-u .ptm-chip span{display:none}}
 @media (max-width:860px){.ptb-q.ptb-new,.ptb-q.ptb-open{display:none}.ptb-q.ptb-undo{margin-left:0}}
