@@ -11,6 +11,7 @@
    · title() · soon(id, text(), opt()) a moment after a change · flush() · check(id, text, {unsaved}) · clean(id, text or null) · ask(title, html, [[value, label, primary]])
    · saveAs({name, ext, text, type}) → {file} | {file, dl: true} | null · pop(anchor, items) a small menu · note(msg)
    · lang({cur() → 'th', list: [[code, name]], pick(code)}) → a language button (flag, name, ▾) for the right side; b.draw() redraws it
+   · langs: every language the apps offer [[code, own name]] (PM's codes, PM's order); flag(code) → its round flag
    cfg: app · key · logo (an element to copy) · tag ('MEP') · ver · accent · dark() → bool · menu() → [{t, run, kbd} | '-'] the logo's menu
    · quick: [{k: new|open|save|saveas|print|undo|redo|share, t, run} or {k, node} (the app's own button, kept with its handlers)]
    · extra: [elements] after the quick buttons (wide screens only) · title() → text · titleTip · titleClick() · titleNode (an element shown
@@ -275,10 +276,39 @@ const CSS=`
 // o = {cur:()=>'th', list:[['th','ภาษาไทย'],['en','English']], pick:k=>…}; call b.draw() after the language changes elsewhere
 const FL={th:'<rect width="24" height="24" fill="#A51931"/><rect y="4" width="24" height="16" fill="#F4F5F8"/><rect y="8" width="24" height="8" fill="#2D2A4A"/>',
   en:'<rect width="24" height="24" fill="#012169"/><path d="M0 0L24 24M24 0L0 24" stroke="#fff" stroke-width="5"/><path d="M0 0L24 24M24 0L0 24" stroke="#C8102E" stroke-width="2"/><path d="M12 0V24M0 12H24" stroke="#fff" stroke-width="7"/><path d="M12 0V24M0 12H24" stroke="#C8102E" stroke-width="4"/>'};
-const flag=k=>`<svg class="flag" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="ptbf-${k}"><circle cx="12" cy="12" r="12"/></clipPath></defs><g clip-path="url(#ptbf-${k})">${FL[k]||''}</g><circle cx="12" cy="12" r="11.5" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
+// the other languages PENUM PM offers (the same flags as PM's, drawn on a 20-unit square)
+const FL20={ja:'<path fill="#fff" d="M0 0h20v20H0z"/><circle cx="10" cy="10" r="5" fill="#BC002D"/>',
+ zh:'<path fill="#DE2910" d="M0 0h20v20H0z"/><path fill="#FFDE00" d="M6 3.2l1.1 3.3h3.4l-2.8 2 1.1 3.3L6 9.8l-2.8 2 1.1-3.3-2.8-2h3.4z"/>',
+ zht:'<path fill="#B31B1B" d="M0 0h20v20H0z"/><text x="10" y="14.4" font-size="12" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="700">繁</text>',
+ ko:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#CD2E3A" d="M5.5 10a4.5 4.5 0 0 1 9 0z"/><path fill="#0047A0" d="M5.5 10a4.5 4.5 0 0 0 9 0z"/><circle cx="7.75" cy="10" r="2.25" fill="#CD2E3A"/><circle cx="12.25" cy="10" r="2.25" fill="#0047A0"/>',
+ vi:'<path fill="#DA251D" d="M0 0h20v20H0z"/><path fill="#FF0" d="M10 4.5l1.3 4h4.2l-3.4 2.5 1.3 4-3.4-2.5-3.4 2.5 1.3-4-3.4-2.5h4.2z"/>',
+ my:'<path fill="#FECB00" d="M0 0h20v6.7H0z"/><path fill="#34B233" d="M0 6.7h20v6.6H0z"/><path fill="#EA2839" d="M0 13.3h20V20H0z"/><path fill="#fff" d="M10 4.6l1.3 4h4.2l-3.4 2.5 1.3 4L10 12.6l-3.4 2.5 1.3-4-3.4-2.5h4.2z"/>',
+ lo:'<path fill="#CE1126" d="M0 0h20v20H0z"/><path fill="#002868" d="M0 5h20v10H0z"/><circle cx="10" cy="10" r="3.2" fill="#fff"/>',
+ ms:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#CC0001" d="M0 0h20v2.5H0zM0 5h20v2.5H0zM0 10h20v2.5H0zM0 15h20v2.5H0z"/><path fill="#010066" d="M0 0h11v11.25H0z"/><path fill="#FC0" d="M5.4 2.3a3.4 3.4 0 1 0 0 6.6 2.7 2.7 0 1 1 0-6.6z"/><path fill="#FC0" d="M8.4 3.6l.5 1.3 1.3-.4-.8 1.1 1.1.8-1.3.1.1 1.4-.9-1-.9 1 .1-1.4-1.3-.1 1.1-.8-.8-1.1 1.3.4z"/>',
+ id:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#CE1126" d="M0 0h20v10H0z"/>',
+ fil:'<path fill="#0038A8" d="M0 0h20v10H0z"/><path fill="#CE1126" d="M0 10h20v10H0z"/><path fill="#fff" d="M0 0l11 10L0 20z"/><circle cx="4" cy="10" r="1.8" fill="#FCD116"/>',
+ hi:'<path fill="#FF9933" d="M0 0h20v6.7H0z"/><path fill="#fff" d="M0 6.7h20v6.6H0z"/><path fill="#138808" d="M0 13.3h20V20H0z"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="#000080" stroke-width=".7"/><circle cx="10" cy="10" r=".6" fill="#000080"/>',
+ bn:'<path fill="#006A4E" d="M0 0h20v20H0z"/><circle cx="9" cy="10" r="5" fill="#F42A41"/>',
+ ta:'<path fill="#FF9933" d="M0 0h20v6.7H0z"/><path fill="#fff" d="M0 6.7h20v6.6H0z"/><path fill="#138808" d="M0 13.3h20V20H0z"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="#000080" stroke-width=".7"/><circle cx="10" cy="10" r=".6" fill="#000080"/>',
+ ne:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#003893" d="M3 1l13 8.2H7.6L16 19H3z"/><path fill="#DC143C" d="M4 3l9.3 5.4H5.8L13.3 18H4z"/><circle cx="7" cy="7.3" r="1.2" fill="#fff"/><circle cx="7" cy="13.8" r="1.5" fill="#fff"/>',
+ ur:'<path fill="#01411C" d="M0 0h20v20H0z"/><path fill="#fff" d="M0 0h5v20H0z"/><circle cx="12.5" cy="10" r="4.6" fill="#fff"/><circle cx="13.8" cy="8.9" r="4" fill="#01411C"/><path fill="#fff" d="M15.6 6.2l.4 1.2 1.3-.2-1 .8.5 1.2-1.1-.7-1 .8.3-1.2-1.1-.7 1.3-.1z"/>',
+ ar:'<path fill="#006C35" d="M0 0h20v20H0z"/><path fill="#fff" d="M5 8.2h10v.9H5zM5 13.2h9.4l.6-.8H5z"/><path fill="#fff" d="M6 6.4h1v1.2H6zm2.2 0h1v1.2h-1zm2.2 0h1v1.2h-1zm2.2 0h1v1.2h-1z"/>',
+ fr:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#002395" d="M0 0h6.7v20H0z"/><path fill="#ED2939" d="M13.3 0H20v20h-6.7z"/>',
+ de:'<path fill="#000" d="M0 0h20v6.7H0z"/><path fill="#DD0000" d="M0 6.7h20v6.6H0z"/><path fill="#FFCE00" d="M0 13.3h20V20H0z"/>',
+ es:'<path fill="#AA151B" d="M0 0h20v20H0z"/><path fill="#F1BF00" d="M0 5h20v10H0z"/>',
+ pt:'<path fill="#FF0000" d="M0 0h20v20H0z"/><path fill="#006600" d="M0 0h8v20H0z"/><circle cx="8" cy="10" r="3" fill="#FFCC00"/><circle cx="8" cy="10" r="1.8" fill="#fff" stroke="#FF0000" stroke-width=".6"/>',
+ it:'<path fill="#fff" d="M0 0h20v20H0z"/><path fill="#009246" d="M0 0h6.7v20H0z"/><path fill="#CE2B37" d="M13.3 0H20v20h-6.7z"/>',
+ nl:'<path fill="#AE1C28" d="M0 0h20v6.7H0z"/><path fill="#fff" d="M0 6.7h20v6.6H0z"/><path fill="#21468B" d="M0 13.3h20V20H0z"/>',
+ pl:'<path fill="#fff" d="M0 0h20v10H0z"/><path fill="#DC143C" d="M0 10h20v10H0z"/>',
+ ru:'<path fill="#fff" d="M0 0h20v6.7H0z"/><path fill="#0039A6" d="M0 6.7h20v6.6H0z"/><path fill="#D52B1E" d="M0 13.3h20V20H0z"/>',
+ tr:'<path fill="#E30A17" d="M0 0h20v20H0z"/><circle cx="8.5" cy="10" r="4.2" fill="#fff"/><circle cx="9.6" cy="10" r="3.4" fill="#E30A17"/><path fill="#fff" d="M13 8l.5 1.4h1.5l-1.2.9.5 1.5-1.3-.9-1.2.9.4-1.5-1.2-.9h1.5z"/>',
+ km:'<path fill="#032EA1" d="M0 0h20v20H0z"/><path fill="#E00025" d="M0 5h20v10H0z"/><path fill="#fff" d="M6 13h8v-1.2h-.8V9.6h-.8V8.2h-.7V6.8H8.3v1.4h-.7v1.4h-.8v2.2H6z"/>'};
+// every language the PENUM apps offer, in PM's order: [code, name in its own language]; PM's codes (zht = 繁體中文)
+const LANGS=[['th','ภาษาไทย'],['en','English'],['zh','简体中文'],['zht','繁體中文'],['ja','日本語'],['ko','한국어'],['vi','Tiếng Việt'],['lo','ລາວ'],['km','ខ្មែរ'],['my','မြန်မာ'],['ms','Bahasa Melayu'],['id','Bahasa Indonesia'],['fil','Filipino'],['hi','हिन्दी'],['bn','বাংলা'],['ta','தமிழ்'],['ne','नेपाली'],['ur','اردو'],['ar','العربية'],['fr','Français'],['de','Deutsch'],['es','Español'],['pt','Português'],['it','Italiano'],['nl','Nederlands'],['pl','Polski'],['ru','Русский'],['tr','Türkçe']];
+const flag=k=>`<svg class="flag" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="ptbf-${k}"><circle cx="12" cy="12" r="12"/></clipPath></defs><g clip-path="url(#ptbf-${k})">${FL[k]||(FL20[k]?'<g transform="scale(1.2)">'+FL20[k]+'</g>':'')}</g><circle cx="12" cy="12" r="11.5" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
 function lang(o){const b=document.createElement('button');b.type='button';b.className='ptb-bx ptb-lang';b.setAttribute('aria-haspopup','menu');
   const nm=k=>(o.list.find(x=>x[0]===k)||o.list[0]);
   b.draw=()=>{const k=o.cur(),n=nm(k);b.innerHTML=flag(n[0])+`<span class="ptb-lt">${esc(n[1])}</span>`+IC.chev;b.title='ภาษา / Language: '+n[1];b.setAttribute('aria-label',b.title)};
   b.addEventListener('click',()=>pop(b,o.list.map(x=>({t:x[1],ic:flag(x[0]),on:x[0]===o.cur(),run:()=>{if(x[0]!==o.cur())o.pick(x[0]);b.draw()}}))));b.draw();return b}
-window.penumBar={icon:k=>IC[k]||'',lang,mount,refresh,title,use,forget,ids,dirty,soon,flush,check,clean,ask,saveAs,pop,popClose,note,focusSearch,get el(){return W}};
+window.penumBar={icon:k=>IC[k]||'',lang,flag,langs:LANGS,mount,refresh,title,use,forget,ids,dirty,soon,flush,check,clean,ask,saveAs,pop,popClose,note,focusSearch,get el(){return W}};
 })();

@@ -692,7 +692,7 @@ html.ptb-on:has(#bimStart) #ptbw{position:relative;z-index:61}          /* V1.85
 <script>
 (()=>{'use strict';
 /* ===== 00 language: every UI string as [ไทย, English] ===== */
-let LANG='th';
+let LANG='th',LXD=null;          // LXD: the words of a language other than ไทย/English, keyed like STR (files/i18n/<code>.json); a missing one shows the English
 const STR={
 // ribbon tabs & panels
 tab_file:['ไฟล์','File'],tab_arch:['สถาปัตย์','Architecture'],tab_struct:['โครงสร้าง','Structure'],tab_sys:['งานระบบ','Systems'],tab_annot:['ใส่ระยะ/ข้อความ','Annotate'],tab_view:['มุมมอง','View'],tab_manage:['จัดการ','Manage'],tab_modify:['แก้ไข','Modify'],
@@ -1038,7 +1038,14 @@ cw_reset:['คืนทุกช่องเป็นแผงตั้งต้
 theme_dark:['ธีมมืด','Dark theme'],theme_light:['ธีมสว่าง','Light theme'],theme_auto:['ธีมตามระบบ','Theme follows the system']
 };
 /* {0} {1}: the arguments; {k:command}: the key that runs the command now, or its name when it has none */
-function t(k,...a){const e=STR[k];if(!e)return k;let s=e[LANG==='en'?1:0];if(a.length)s=s.replace(/\{(\d)\}/g,(m,i)=>a[+i]);if(s.indexOf('{k:')>=0)s=s.replace(/\{k:([^}]+)\}/g,(m,c)=>keyFor(c)||cmdName(c));return s}
+function t(k,...a){const e=STR[k];if(!e)return k;let s=LANG==='th'?e[0]:LANG!=='en'&&LXD&&LXD[k]||e[1];if(a.length)s=s.replace(/\{(\d)\}/g,(m,i)=>a[+i]);if(s.indexOf('{k:')>=0)s=s.replace(/\{k:([^}]+)\}/g,(m,c)=>keyFor(c)||cmdName(c));return s}
+/* V1.86 the same languages as PENUM PM (shared/titlebar.js penumBar.langs): ไทย and English live in STR, the others load
+   from files/i18n/<code>.json the first time they are picked (the app keeps a copy for offline use) */
+const langCodes=()=>(window.penumBar&&penumBar.langs||[['th'],['en']]).map(l=>l[0]),LXC={};
+function langSet(k){if(!langCodes().includes(k))k='th';
+  const go=()=>{ui.lang=LANG=k;LXD=LXC[k]||null;for(const pn of PANES)pn.key='';saveSoon();refresh()};
+  if(k==='th'||k==='en'||LXC[k]){go();return}
+  fetch('files/i18n/'+k+'.json').then(r=>r.ok?r.json():null).then(d=>{if(d)LXC[k]=d;go()},go)}
 
 /* ===== 05 shared runtime state ===== */
 let P=null,IDX=new Map(),VER=0,FPC=null,MSC=null,QC=null,LDC=null,FTC=null,CSC=null;
@@ -7121,7 +7128,7 @@ function applyFonts(){const dk=P&&FONTS[P.font]?P.font:DEF_DRAW,uk=FONTS[ui.font
 const syncFonts=()=>{if((P&&FONTS[P.font]?P.font:DEF_DRAW)!==curDraw||(FONTS[ui.font]?ui.font:DEF_UI)!==curUi)applyFonts()};
 /* before a drawing is turned into a file every face must be there, or the export would be set in a fallback font */
 function fontsReady(){return Promise.race([loadFaces(FONT).then(()=>document.fonts&&document.fonts.ready),new Promise(r=>setTimeout(r,5000))])}
-function dlgFonts(){Object.keys(FONTS).forEach(linkFont);const en=ui.lang==='en',sample=en?'Plant room AHU-1 · Ø150 · 500×250 · 12.50 m':'ห้องเครื่อง AHU-1 · Ø150 · 500×250 · 12.50 ม.';
+function dlgFonts(){Object.keys(FONTS).forEach(linkFont);const en=ui.lang!=='th',sample=en?'Plant room AHU-1 · Ø150 · 500×250 · 12.50 m':'ห้องเครื่อง AHU-1 · Ø150 · 500×250 · 12.50 ม.';
   const list=(grp,cur)=>Object.keys(FONTS).map(k=>`<button class="fcard" data-fd="${grp}:${k}" aria-pressed="${cur===k}"><b style="font-family:${fontCss(k).replace(/"/g,'&quot;')}">${esc(sample)}</b><small>${esc(FONTS[k][0])} · ${esc(FONTS[k][en?2:1])}</small></button>`).join('');
   openDlg(t('a_fonts'),`<h4>${t('font_draw')}</h4><p class="note">${t('font_draw_note')}</p><div class="fgrid">${list('draw',curDraw)}</div><h4>${t('font_ui')}</h4><p class="note">${t('font_ui_note')}</p><div class="fgrid">${list('ui',curUi)}</div><p class="note">${t('font_note')}</p>`,null,
     {click(e){const b=e.target.closest('[data-fd]');if(!b)return;const [grp,k]=b.dataset.fd.split(':');if(!FONTS[k])return;
@@ -7972,10 +7979,10 @@ function sanitize(){
   P.els=P.els.filter(e=>{if(!HOSTED.includes(e.cat))return true;const w=walls.get(e.host);if(!w)return false;const T=typ(P,e),L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(typ(P,w).kind==='curtain'||L<T.width+100)return false;e.pos=clamp(e.pos,T.width/2+50,L-T.width/2-50);return true});
   if(P.groups){const used=new Set();for(const A of [P.els,P.ann])for(const e of A){if(e.grp)used.add(e.grp);if(Array.isArray(e.gin))for(const g of e.gin)used.add(g)}P.groups=P.groups.filter(g=>used.has(g.id));const ok=new Set(P.groups.map(g=>g.id));for(const A of [P.els,P.ann])for(const e of A){if(e.grp&&!ok.has(e.grp))delete e.grp;if(e.gx&&!e.grp)delete e.gx;if(e.gin!==undefined){const q=Array.isArray(e.gin)&&e.grp?e.gin.filter(g=>ok.has(g)&&g!==e.grp):[];if(q.length)e.gin=q;else delete e.gin}}}          // a group is its members: none left, no group
   P.grids=P.grids.filter(g=>Math.hypot(g.x2-g.x1,g.y2-g.y1)>=20);P.sections=P.sections.filter(s=>Math.hypot(s.x2-s.x1,s.y2-s.y1)>=20);for(const s of P.sections)secClean(s);
-  ensureViews(P,ui.lang==='en');calloutSync();          // a callout view and its mark in the parent view go together
+  ensureViews(P,ui.lang!=='th');calloutSync();          // a callout view and its mark in the parent view go together
   for(const v of P.views){if(v.kind==='plan'){const l=lvl(P,v.level);if(v.underlay&&!lv.has(v.underlay))v.underlay=0;if(l&&!v.name)v.name=l.name}if(v.kind==='sheet')v.vps=(v.vps||[]).filter(p=>P.views.some(x=>x.id===p.view&&x.kind!=='sheet'))
     if(!v.hiddenCats)v.hiddenCats=[];if(!v.scale)v.scale=100}
-  for(const f of XC)f();areaClean(P);detailClean(P);sheetxClean(P);wpClean(P);wallProfClean(P);IDX=indexProject(P);tagSync();knClean(P,ui.lang==='en');IDX=indexProject(P);          // tags: none without its element; a door or window new to a plan gets one
+  for(const f of XC)f();areaClean(P);detailClean(P);sheetxClean(P);wpClean(P);wallProfClean(P);IDX=indexProject(P);tagSync();knClean(P,ui.lang!=='th');IDX=indexProject(P);          // tags: none without its element; a door or window new to a plan gets one
   for(const v of P.views)if(v.hidden&&v.hidden.length)v.hidden=v.hidden.filter(id=>IDX.has(id));
   foundSync(P);mtextSync(P);msClean(P);mechUse(P);esClean(P);elecUse(P);cktClean(P);osClean();lsClean(P);fltClean();for(const v of P.views)if(v.ov||v.eov||v.flt)ovClean(v);tplClean();tplSync();          // overrides by category, by element and by filter: only what is valid and still has its element or filter
   const okRef=r=>r&&(r.k==='pt'||IDX.has(r.id));
@@ -8165,11 +8172,11 @@ function rcpShows(tool){if(tool==='wall'||tool==='column'||tool==='room'||tool==
   if(COMP_CATS.includes(tool)&&tool!=='ductacc'&&tool!=='pipeacc'&&tool!=='riser'){const d=defs(tool),T=(P.types[tool]||[]).find(x=>x.id===d.type);return placeOff(d,T)>=1800}return false}
 function ensureToolView(tool){const v=activeView();if(!v||v.kind!=='plan'||!CREATE_TOOLS.has(tool)||!(DISC[tool]||GEOM[tool])||tool==='rplane'||tool==='callout'||v.draft)return;
   if(v.area!=null&&(tool==='room'||tool==='rsep')){const pv=planOf(v.level);if(pv){showView(pv.id);toast(t('area_left',pv.name))}return}          /* rooms belong to the floor plan: an area plan shows areas */
-  if(tool==='ceiling'){if(v.rcp)return;let rv=null;edit(()=>{rv=rcpPlan(P,v.level,ui.lang==='en')});showView(rv.id);toast(t('rcp_opened',rv.name));return}          // a ceiling is drawn, and seen, in the ceiling plan
+  if(tool==='ceiling'){if(v.rcp)return;let rv=null;edit(()=>{rv=rcpPlan(P,v.level,ui.lang!=='th')});showView(rv.id);toast(t('rcp_opened',rv.name));return}          // a ceiling is drawn, and seen, in the ceiling plan
   if(v.rcp){if(rcpShows(tool))return;const pv=planOf(v.level);if(!pv)return;showView(pv.id);toast(t('rcp_left',pv.name));ui.tool=tool;ensureToolView(tool);return}          // what stands on the floor is drawn in the floor plan
   if(tool==='pipeacc'&&['coord','mech','plumb','fire'].includes(v.disc||'coord'))return;        // a valve takes the system of the pipe it is put on
   const pe=probeEl(tool),d=discOf(P,pe),mep=d!=='arch'&&d!=='struct';if(discMode(P,v,pe)>=(mep?2:1))return;
-  if(v.rcp)return;let nv=P.views.find(x=>x.kind==='plan'&&!x.rcp&&!x.site&&x.level===v.level&&x.disc===d);if(!nv)edit(()=>{nv=discPlan(P,v.level,d,ui.lang==='en')});
+  if(v.rcp)return;let nv=P.views.find(x=>x.kind==='plan'&&!x.rcp&&!x.site&&x.level===v.level&&x.disc===d);if(!nv)edit(()=>{nv=discPlan(P,v.level,d,ui.lang!=='th')});
   showView(nv.id);toast(t('disc_opened',nv.name))}
 const drawMode=()=>ui.tool==='aline'?(ui.drawBy.aline||'pickl'):ui.tool==='wall'||ui.tool==='dline'||ui.tool==='mline'||bowTool(ui.tool)?(ui.drawBy[ui.tool]||'line'):(ui.drawBy[ui.tool]||(ui.tool==='bsys'?'pick':'rect'));          // a beam system starts with the one-click placement in a bay
 function setTool(tool,silent){ui.opt.spotK='';ui.strTool=null;if(tool!==ui.tool)ui.opt.plh=false;          /* Duct / Pipe Placeholder (75-plh.js) lasts as long as its tool */
@@ -9147,7 +9154,7 @@ function dlgKnSet(keep){const dc=keep?$('#dlg .knt'):null,top=dc?dc.scrollTop:0,
        else if(x.startsWith('del:')){const k=x.slice(4);knEdit(T=>{const i=T.findIndex(r=>r[0]===k);if(i>=0){const p=T[i][2];T.splice(i,1);for(const r of T)if(r[2]===k)r[2]=p}});dlgKnSet(true)}          // what was listed under it moves up
        else if(x==='import')$('#knIn').click();
        else if(x==='export')saveFile(fname('-keynotes','.txt'),knExport(P),'text/plain').then(ok=>{if(!ok)openDlg(t('kn_export'),`<p class="note">${t('save_fallback')}</p><textarea id="saveTxt" readonly spellcheck="false">${esc(knExport(P))}</textarea>`)});
-       else if(x==='stock'){edit(()=>{P.kn=knStock(ui.lang==='en')});dlgKnSet()}}},'kn');
+       else if(x==='stock'){edit(()=>{P.kn=knStock(ui.lang!=='th')});dlgKnSet()}}},'kn');
   if(dc){const d2=$('#dlg .knt');if(d2)d2.scrollTop=top}}
 /* the rows of a keynote tag in the Properties palette */
 function knRows(els,V){const e=els[0],te=IDX.get(e.el),user=els.every(x=>x.uk),K=els.length===1?knLabel(P,tagGet,e,knNumsOf(viewById(e.view))):null,cur=V(x=>knKeyOf(P,tagGet,x)),opts=[...(cur&&!knRow(P,cur)?[[cur,cur+' · ?']]:[]),...(cur?[]:[['','—']]),...knTree(P).map(r=>[r.k,' '.repeat(r.d*2)+r.k+' · '+r.t])];
@@ -11522,7 +11529,7 @@ function applyTheme(){const r=document.documentElement;let m=ui.theme;
   if(m==='light')r.setAttribute('data-ui','light');else r.removeAttribute('data-ui');C=themeColors()}
 function refreshChrome(){
   const sig=[...ui.sel].join(',');if(sig!==ui.selSig){if(ui.selArr&&ui.selArr.length)ui.prevSel=ui.selArr;ui.selSig=sig;ui.selArr=[...ui.sel]}          // what Select Previous (Ctrl+←) brings back
-  document.documentElement.lang=ui.lang;renderRibbon();renderOptbar();renderTabs();renderProps();renderTree();
+  document.documentElement.lang=ui.lang==='zht'?'zh-TW':ui.lang;renderRibbon();renderOptbar();renderTabs();renderProps();renderTree();
   PANES.forEach(pn=>{pn.cube.querySelectorAll('.f').forEach(f=>{f.textContent=t('cube_'+f.dataset.cube)});pn.el.hidden=pn.i>=NPN();pn.el.classList.toggle('active',pn.i===ui.ap);renderVCB(pn)});$('#panes').classList.toggle('two',ui.two);$('#panes').classList.toggle('tn',NPN()>2);$('#panes').style.setProperty('--pc',NPN()===4?2:Math.min(3,NPN()));tileLayout();
   const v=activeView();$('#ttl').innerHTML=`<b>${esc(P.info.name)}</b> — ${esc(v?v.name:'')}`;
   $('#qUndo').disabled=!undoS.length;$('#qRedo').disabled=!redoS.length;$('#qThin').setAttribute('aria-pressed',ui.thin);$('#qTile').setAttribute('aria-pressed',ui.two);$('#qProps').setAttribute('aria-pressed',ui.showProps);$('#qTree').setAttribute('aria-pressed',ui.showTree);$('#langBtn').textContent=ui.lang==='th'?'EN':'ไทย';
@@ -12432,11 +12439,11 @@ function act(a,arg,el){
     case'reveal':if(!mv)break;if(ui.reveal[v.id])delete ui.reveal[v.id];else ui.reveal[v.id]=1;ui.sel.clear();ui.hov=null;KP=null;refresh();break;
     case'undo':undo();break;case'redo':redo();break;
     case'save':saveProject();break;case'open':bfOpen();break;case'bfdir':bfDir();break;
-    case'new':setProject(newProject(ui.lang==='en'),true);setTool('wall');toast(t('new_done'));break;
-    case'sample':setProject(sampleProject(ui.lang==='en'),true);toast(t('sample_done'));break;
+    case'new':setProject(newProject(ui.lang!=='th'),true);setTool('wall');toast(t('new_done'));break;
+    case'sample':setProject(sampleProject(ui.lang!=='th'),true);toast(t('sample_done'));break;
     case'filemenu':showMenu(el||$('#fileTab'),[{act:'new',label:t('m_new'),icon:'new'},{act:'sample',label:t('m_sample'),icon:'sample'},{act:'open',label:t('m_open'),icon:'open'},{act:'dxfin',label:t('a_dxfin')+'…',icon:'dxfin'},{act:'save',label:t('m_save'),icon:'save',kbd:'Ctrl+S'},...(BF&&BF.ok?[{act:'bfdir',label:t('m_dir'),icon:'open'}]:[]),'-',
       {act:'update',label:t('a_update')+' · '+V1_NAME,icon:'reset'},{act:'print',label:t('a_print'),icon:'export',kbd:'Ctrl+P'},{act:'pdf',label:t('m_pdf'),icon:'export'},{act:'pdfall',label:t('a_pdfall'),icon:'pdfall'},{act:'png',label:t('m_png'),icon:'export'},{act:'dxfout',label:t('m_dxf'),icon:'dxfout'},{act:'dxfall',label:t('m_dxfall'),icon:'dxfout'},{act:'ifcout',label:t('m_ifc'),icon:'ifc'},{act:'csv',label:t('m_csv'),icon:'sched'},'-',{act:'info',label:t('a_info'),icon:'info'},{act:'keys',label:t('a_keys'),icon:'keys'},{act:'help',label:t('a_help'),icon:'help',kbd:'F1'}]);break;
-    case'lang':ui.lang=ui.lang==='th'?'en':'th';LANG=ui.lang;for(const pn of PANES)pn.key='';saveSoon();refresh();break;
+    case'lang':langSet(arg||(ui.lang==='th'?'en':'th'));break;
     case'keys':dlgKeys();break;case'help':dlgHelp(arg==='ctx'?helpTopic():arg);break;case'info':dlgInfo();break;case'units':dlgUnits();break;case'cscheme':dlgColorScheme();break;case'vg':ui.vgT=0;dlgVG();break;case'viewrange':if(v&&tplBlock(v,'vr'))break;dlgViewRange();break;case'group':groupMake();break;case'ungroup':groupUngroup();break;case'crop':cropToggle(v,'on');break;case'cropshow':cropToggle(v,'show');break;
     case'types':{const c=ui.sel.size?selCats()[0]:ui.tool;dlgTypes(P.types[c]?c:'wall');break}
     case'edittype':{const c=arg||'wall',s=$('#typeSel');dlgTypes(c,s&&s.value?+s.value:undefined);break}
@@ -12462,10 +12469,10 @@ function act(a,arg,el){
     case'railhost':railHost();break;case'pipesize':dlgPipeSize();break;case'pipereport':dlgPipeReport();break;case'waterflow':toast(t('waterflow_done',applyWaterflow(waterNow())));break;
     case'airflow':{const A=airflow(P),n=applyAirflow(A);toast(t('airflow_done',n)+(A.loose.length?' · '+t('airflow_loose',A.loose.length):''));break}
     case'ductsize':dlgDuctSize();break;case'sysreport':dlgSysReport();break;
-    case'v3dmep':{let d=P.views.find(x=>x.kind==='3d'&&x.disc==='mep');if(!d)edit(()=>{d=mep3d(P,ui.lang==='en')});showView(d.id);break}
+    case'v3dmep':{let d=P.views.find(x=>x.kind==='3d'&&x.disc==='mep');if(!d)edit(()=>{d=mep3d(P,ui.lang!=='th')});showView(d.id);break}
     case'discplan':showMenu(el||$('#ribbon'),['arch','struct','mech','plumb','fire','elec','coord'].map(k=>({act:'opendisc',arg:k,label:(lvl(P,ui.level)||{}).name+' - '+t('disc_'+k),icon:'plan'})));break;
-    case'rcp':{let nv=null;edit(()=>{nv=rcpPlan(P,ui.level,ui.lang==='en')});showView(nv.id);break}
-    case'opendisc':{let nv=P.views.find(x=>x.kind==='plan'&&!x.rcp&&!x.site&&x.level===ui.level&&(x.disc||'coord')===arg);if(!nv)edit(()=>{nv=discPlan(P,ui.level,arg,ui.lang==='en')});showView(nv.id);break}
+    case'rcp':{let nv=null;edit(()=>{nv=rcpPlan(P,ui.level,ui.lang!=='th')});showView(nv.id);break}
+    case'opendisc':{let nv=P.views.find(x=>x.kind==='plan'&&!x.rcp&&!x.site&&x.level===ui.level&&(x.disc||'coord')===arg);if(!nv)edit(()=>{nv=discPlan(P,ui.level,arg,ui.lang!=='th')});showView(nv.id);break}
     case'persp':{const pn=PANES[el&&el.dataset.pane!=null?+el.dataset.pane:ui.ap],vv=paneView(pn.i);if(vv&&vv.kind==='3d'){const n=navOf(vv);n.persp=!n.persp;vv.persp=n.persp;refresh()}break}
     case'delete':if(ui.sel.size){const all=[...ui.sel],keep=all.filter(isPinned),ids=all.filter(id=>!isPinned(id)),vps=ids.filter(id=>{const e=IDX.get(id);return e&&e.cat==='vp'});if(keep.length)toast(t('pin_del',keep.length));          // pinned elements cannot be deleted, as in Revit
         const cd=ids.map(id=>IDX.get(id)).filter(e=>e&&e.cat==='dim'&&!e.hc&&(e.lk>0||(e.eq&&eqLive(e))));if(cd.length&&arg!=='keep'&&arg!=='free'){dlgConsDel(cd.length);break}          /* as in Revit: a dimension that constrains is not deleted without asking what becomes of the constraint (75-cons) */
@@ -13529,12 +13536,12 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=95,V1_NAME='V1.85';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=95,V1_NAME='V1.86';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
   try{const sn=await db.doc('meta/release').get(),d=sn.exists?sn.data():null;
-    if(d&&+d.build>V1_BUILD)box(t('up_new',esc(String(d.name||'')),V1_NAME),esc(String((ui.lang==='en'?d.notes_en:d.notes_th)||''))+' · '+t('up_safe'),true);else box(t('up_latest',V1_NAME))}
+    if(d&&+d.build>V1_BUILD)box(t('up_new',esc(String(d.name||'')),V1_NAME),esc(String((ui.lang!=='th'?d.notes_en:d.notes_th)||''))+' · '+t('up_safe'),true);else box(t('up_latest',V1_NAME))}
   catch(e){box(t('up_fail',V1_NAME),t('up_na2'))}}
 XA.update=()=>window.penumUpd?window.penumUpd.open():checkUpdate();// on the installed site the shared update box (tools/update.js) knows the newest version
 /* ===== 75 camera: a perspective view from a point of a plan (Revit: View > 3D View > Camera); Spot Coordinate (Annotate > Dimension > Spot Coordinate) =====
@@ -13716,7 +13723,7 @@ const mepUp=()=>{try{return window.penumLic&&penumLic.upsell?penumLic.upsell('me
 function mepFileLink(L){const c=ML&&L?ML.norm(L.lid):'';if(c&&!mepLid()){P.mepLid=c;saveSoon();mlPush(1)}}
 function mepFileIn(o){const L=o.mepLink;if(!L||!L.loads||!Array.isArray(L.loads.rooms)){toast(t('mf_old'),7000);return}
   const c=ML?ML.norm(L.lid||o.lid||''):'',cur=mepLid(),nm=L.project||o.name||'';
-  if(mlSample()){const p=newProject(ui.lang==='en');if(nm)p.info.name=nm;p.mepLink=L;if(c)p.mepLid=c;setProject(p,true);setTool('wall');saveSoon();if(c)mlPush(1);mepUI();refresh();toast(t('mf_new',p.info.name),7000);return}          // the sample house: a new project for it
+  if(mlSample()){const p=newProject(ui.lang!=='th');if(nm)p.info.name=nm;p.mepLink=L;if(c)p.mepLid=c;setProject(p,true);setTool('wall');saveSoon();if(c)mlPush(1);mepUI();refresh();toast(t('mf_new',p.info.name),7000);return}          // the sample house: a new project for it
   const take=()=>{edit(()=>{P.mepLink=L;if(c)P.mepLid=c});if(c)mlPush(1);mepUI();refresh();toast(t('mf_took',nm),6000);dlgMepRes()};
   if(cur&&c&&cur!==c){const was=(MLC[cur]&&MLC[cur].L&&MLC[cur].L.project)||(P.mepLink&&P.mepLink.project)||ML.show(cur);
     openDlg(t('mf_title'),`<p>${esc(t('mf_other',was,nm))}</p>`,`<button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-mf="go">${esc(t('mf_switch',nm))}</button>`,{click(ev){if(ev.target.closest('[data-mf]')){closeDlg();take()}}});return}
@@ -13819,7 +13826,7 @@ function mlPush(now){if(!MEP_SITE||!mepLid()||ML.locked())return;clearTimeout(ml
   const h=mlHash(s);if(mhGet().sent[c]===h){if(!mlPC.st)mlPC={st:'same'};return}mlPC={st:'busy',at:mlPC.at};const r=await ML.put(c,'bim',s);
   if(r.err){mlPC={st:r.err,at:mlPC.at};return}mlPC={st:'ok',at:r.at};const o=mhGet();o.sent[c]=h;mhPut(o)},now?0:8000)}
 {const f=saveNow;saveNow=function(){f.apply(this,arguments);try{mlPush()}catch(e){}}}
-function mlStTxt(){const w=mlPC.at?new Date(mlPC.at).toLocaleString(ui.lang==='en'?'en-GB':'th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+function mlStTxt(){const w=mlPC.at?new Date(mlPC.at).toLocaleString(ui.lang!=='th'?'en-GB':'th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
   return mlPC.st==='ok'?t('mlk_sent',w):mlPC.st==='same'?t('mlk_same'):mlPC.st==='busy'?t('mlk_sending'):mlPC.st?mlkErr(mlPC.st):t('mlk_notyet')}
 function dlgMepLink(pre){if(!ML)return;const c=mepLid(),L=c?mepLink():null;
   openDlg(t('a_meplink'),(c?`<p>${esc(t('mlk_on',(L&&L.project)||'','\u0001')).replace('\u0001',`<b style="white-space:nowrap">${ML.show(c)}</b>`)}</p><p class="note">${esc(mlStTxt())}</p>`:'')+`<p class="note">${t(c?'mlk_steps2':'mlk_steps')}</p>
@@ -13838,7 +13845,7 @@ async function mlkLink(code,ask){const say=m=>{const e=$('#mlkMsg');if(e)e.textC
   const nm=(m.L&&m.L.project)||(J&&J.info&&J.info.name)||'',cur=P.info&&P.info.name||'';
   const link=()=>{P.mepLid=code;if(s.hand)mhSeen(J&&J.hid||'',code,s.hand);saveSoon();mlPush(1);closeDlg();mepUI();refresh();toast(t('mlk_linked',nm),6000)};
   // a new project for it, named after it (the open one stays in undo)
-  const fresh=()=>{const p=newProject(ui.lang==='en');if(nm)p.info.name=nm;p.mepLid=code;setProject(p,true);setTool('wall');saveSoon();mlPush(1);closeDlg();mepUI();refresh();toast(t('mlk_newok',p.info.name),6000)};
+  const fresh=()=>{const p=newProject(ui.lang!=='th');if(nm)p.info.name=nm;p.mepLid=code;setProject(p,true);setTool('wall');saveSoon();mlPush(1);closeDlg();mepUI();refresh();toast(t('mlk_newok',p.info.name),6000)};
   if(!J&&mepLid()===code){closeDlg();mepUI();refresh();toast(t('mlk_already',nm),5000);return}
   const smp=!J&&mlSample();if(!J&&!ask&&!smp){link();return}
   openDlg(t('a_meplink'),`<p>${esc(t('mlk_found',nm))}</p><p class="note">${esc(J?t('mlk_hand'):smp?t('mlk_asknew'):t('mlk_ask',cur))}</p>${J?`<p class="note">${t('mh_note')}</p>`:smp?'':`<p class="note">${t('mlk_newnote')}</p>`}`,
@@ -13848,7 +13855,7 @@ async function mlkLink(code,ask){const say=m=>{const e=$('#mlkMsg');if(e)e.textC
     {click(ev){const k=ev.target.closest('[data-mlk]');if(!k)return;const b=k.dataset.mlk;if(b==='save'){saveProject();return}if(b==='this'){link();return}if(b==='new'){fresh();return}
       mhSeen(J.hid||'',code,s.hand);closeDlg();mepLoad(JSON.stringify(J));P.mepLid=code;saveSoon();mlPush(1);mepUI();refresh()}})}
 // the sample house as it was made, untouched: a project MEP links to gets a new project instead
-function mlSample(){try{const s=sampleProject(ui.lang==='en');return P.info.name===s.info.name&&P.info.number===s.info.number&&P.els.length===s.els.length}catch(e){return false}}
+function mlSample(){try{const s=sampleProject(ui.lang!=='th');return P.info.name===s.info.name&&P.info.number===s.info.number&&P.els.length===s.els.length}catch(e){return false}}
 function mlInit(){if(!ML)return;const b=$('#mepLink');if(b)b.hidden=false;
   const c=mepLid();if(c){setTimeout(()=>mlFetch(c,true),1200);mlPush()}
   document.addEventListener('visibilitychange',()=>{const c2=mepLid();if(!document.hidden&&c2)mlFetch(c2)});
@@ -14220,13 +14227,13 @@ const trueNorth=()=>{const a=+((P.info||{}).tn);return isFinite(a)?a:0};
 function surveyNE(x,y){const I=P.info||{};if(I.cref==='bp'){const b=bpPos('bp');return[-(y-b[1]),x-b[0]]}return surveyNEof(I,x,y)}
 function surveyNEof(I,x,y){const a=(isFinite(+I.tn)?+I.tn:0)*Math.PI/180,E=x-(isFinite(+I.spx)?+I.spx:0),N=-(y-(isFinite(+I.spy)?+I.spy:0)),n0=isFinite(+I.sn)?+I.sn:0,e0=isFinite(+I.se)?+I.se:0;return[n0+E*Math.sin(a)+N*Math.cos(a),e0+E*Math.cos(a)-N*Math.sin(a)]}
 const LOC_CITY=[['กรุงเทพมหานคร','Bangkok',13.75,100.5],['เชียงใหม่','Chiang Mai',18.79,98.98],['เชียงราย','Chiang Rai',19.91,99.83],['ขอนแก่น','Khon Kaen',16.43,102.83],['นครราชสีมา','Nakhon Ratchasima',14.97,102.1],['อุดรธานี','Udon Thani',17.41,102.79],['อุบลราชธานี','Ubon Ratchathani',15.24,104.85],['พิษณุโลก','Phitsanulok',16.82,100.26],['ชลบุรี (พัทยา)','Chon Buri (Pattaya)',12.93,100.88],['ระยอง','Rayong',12.68,101.27],['ภูเก็ต','Phuket',7.88,98.39],['สงขลา (หาดใหญ่)','Songkhla (Hat Yai)',7.01,100.47],['สุราษฎร์ธานี','Surat Thani',9.14,99.33],['นครศรีธรรมราช','Nakhon Si Thammarat',8.43,99.96]];
-function dlgLocation(){const I=P.info,pl=sunPlace(),en=ui.lang==='en',num=(k,l,val,st,u)=>`<div class="fr"><label for="lc_${k}">${t(l)}</label><span class="spr"><input type="number" id="lc_${k}" data-lc="${k}" value="${val}" step="${st}"><small>${u||''}</small></span></div>`,pg=l=>`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t(l)}</div>`;
+function dlgLocation(){const I=P.info,pl=sunPlace(),en=ui.lang!=='th',num=(k,l,val,st,u)=>`<div class="fr"><label for="lc_${k}">${t(l)}</label><span class="spr"><input type="number" id="lc_${k}" data-lc="${k}" value="${val}" step="${st}"><small>${u||''}</small></span></div>`,pg=l=>`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t(l)}</div>`;
   const body=pg('loc_place')+`<div class="fr"><label for="lc_city">${t('loc_city')}</label><select id="lc_city" data-lc="city"><option value="">—</option>${LOC_CITY.map((c,i)=>`<option value="${i}"${Math.abs(c[2]-pl.lat)<0.02&&Math.abs(c[3]-pl.lon)<0.02?' selected':''}>${esc(c[en?1:0])}</option>`).join('')}</select></div><div class="fr"><label for="lc_place">${t('loc_name')}</label><input id="lc_place" data-lc="place" value="${esc(I.place||'')}" maxlength="80"></div>`
     +num('lat','sun_lat',pl.lat,0.01,'°')+num('lon','sun_lon',pl.lon,0.01,'°')+num('tz','sun_tz',pl.tz,0.5,'h')
     +pg('loc_north')+num('tn','loc_tn',trueNorth(),1,'°')+`<p class="note">${t('loc_tn_note')}</p>`
     +pg('loc_survey')+num('sn','loc_sn',+fmtLen(isFinite(+I.sn)?+I.sn:0),'any',unitName())+num('se','loc_se',+fmtLen(isFinite(+I.se)?+I.se:0),'any',unitName())+num('sz','loc_sz',+fmtLen(isFinite(+I.sz)?+I.sz:0),'any',unitName())+`<p class="note">${t('loc_survey_note')}</p>`+locPts();
   openDlg(t('a_location'),body,null,{change(e){const el=e.target,k=el.dataset.lc;if(!k)return;
-    edit(()=>{const J=P.info;if(k==='city'){const c=LOC_CITY[+el.value];if(el.value!==''&&c){J.lat=c[2];J.lon=c[3];J.tz=7;J.place=c[ui.lang==='en'?1:0]}}else if(k==='place')J.place=el.value.trim().slice(0,80);
+    edit(()=>{const J=P.info;if(k==='city'){const c=LOC_CITY[+el.value];if(el.value!==''&&c){J.lat=c[2];J.lon=c[3];J.tz=7;J.place=c[ui.lang!=='th'?1:0]}}else if(k==='place')J.place=el.value.trim().slice(0,80);
       else if(k==='lat'||k==='lon'||k==='tz'){const n=parseFloat(el.value);if(isFinite(n))J[k]=k==='lat'?clamp(n,-66,66):k==='lon'?clamp(n,-180,180):clamp(n,-12,14)}
       else if(k==='spu'){if(el.checked)J.spu=1;else delete J.spu}else if(k==='cref'){if(el.value==='bp')J.cref='bp';else delete J.cref}
       else if(k==='spn'||k==='spe'||k==='bpn'||k==='bpe'){const n=parseLen(el.value);if(isFinite(n)){const key=k.slice(0,2)+(k[2]==='n'?'y':'x'),val=Math.round(k[2]==='n'?-n:n);if(val)J[key]=val;else delete J[key]}}
@@ -14351,7 +14358,7 @@ function tbotPut(tm,b){const q=tbotPos(tm,b);let ch=false;for(const k in q)if(Ma
 XC.push(()=>{for(const e of P.els){if(e.bot!==undefined&&(e.cat!=='terminal'||e.side))delete e.bot;if(e.tup!==undefined&&(e.cat!=='terminal'||!e.bot||e.tup!==1))delete e.tup}});
 /* ===== 75 PID duct: every project gets the stock type once (P.pidS), a project that was made before it too ===== */
 XC.push(()=>{if(P.pidS||!P.types||!Array.isArray(P.types.duct))return;P.pidS=1;if(P.types.duct.some(T=>T.dm==='pid'))return;
-  P.types.duct.push({id:P.seq++,name:LANG==='en'?'PID duct (pre-insulated panel)':'ท่อลม PID (แผ่นฉนวนสำเร็จรูป)',mark:'PID',shape:'rect',dm:'pid',cost:0})});
+  P.types.duct.push({id:P.seq++,name:LANG!=='th'?'PID duct (pre-insulated panel)':'ท่อลม PID (แผ่นฉนวนสำเร็จรูป)',mark:'PID',shape:'rect',dm:'pid',cost:0})});
 /* ===== 75 Sun Path (Revit: View Control Bar > Sun Path On; Solar Study) =====
    v.sunPath = 1: a 3D view shows the compass on the ground, the path of the sun over the day of its Sun Settings (the date there, or today; the place of the project)
    and the sun on it.  The sun is dragged along the path: that sets the time.  Solar Study plays the day from sunrise to sunset and puts the sun back. */
@@ -16393,7 +16400,7 @@ function helpHtml(body){const out=[];let list='';const close=()=>{if(list)out.pu
     else if(ln.startsWith('! ')){close();out.push('<p class="tip warn">'+helpInline(ln.slice(2))+'</p>')}
     else{close();out.push('<p>'+helpInline(ln)+'</p>')}}
   close();return out.join('')}
-const helpOf=c=>c[ui.lang==='en'?'en':'th'],HELP_BLOCKS='h4,p,li,.hkeys>div';
+const helpOf=c=>c[ui.lang!=='th'?'en':'th'],HELP_BLOCKS='h4,p,li,.hkeys>div';
 /* F1 with a tool in hand opens the chapter of that tool; with one kind of thing selected, the chapter of that; in a sheet or a schedule, theirs */
 const HELP_AT={arch:['wall','door','window','column','beam','bsys','truss','footing','wfoot','floor','ceiling','roof','stair','ramp','railing','room','rsep','area','aline','furn','level','grid','mline','mtext','rplane','opening','shaft','topo','pad','subreg','propline','clabel'],
   mep:['duct','riser','ductacc','terminal','equip','cvflex','pipe','ppipe','pipeacc','fixture','sprinkler','wire','tray','conduit','eequip','device','light'],
@@ -16567,9 +16574,9 @@ function dlgPurge(){const L=purgeable(P),K=ui.pg||(ui.pg={off:new Set()});if(!L.
 /* Transfer Project Standards: from another project file, or from the sample house */
 function tpLabel(k){return k.startsWith('type:')?t('tp_types',t('cat_'+k.slice(5))):t('tp_k_'+k)}
 function dlgTransfer(){const K=ui.tp||(ui.tp={S:null,name:'',off:new Set(),ask:0}),S=K.S;
-  const take=(o,name)=>{let s=null;try{s=migrate(o,ui.lang==='en')}catch(x){}if(!s){toast(t('open_invalid'));return}K.S=s;K.name=name;K.off=new Set();K.ask=0;dlgTransfer()};
+  const take=(o,name)=>{let s=null;try{s=migrate(o,ui.lang!=='th')}catch(x){}if(!s){toast(t('open_invalid'));return}K.S=s;K.name=name;K.off=new Set();K.ask=0;dlgTransfer()};
   if(!S){openDlg(t('tp_title'),`<p class="note">${t('tp_note')}</p><div class="vfb"><button type="button" class="btn primary" data-tx="file">${t('tp_file')}</button><button type="button" class="btn" data-tx="sample">${t('tp_sample')}</button></div><input type="file" id="tpIn" accept=".json,application/json" hidden>`,null,
-      {click(e){const x=e.target.dataset.tx;if(x==='file')$('#tpIn').click();else if(x==='sample')take(JSON.parse(JSON.stringify(sampleProject(ui.lang==='en'))),t('tp_samplename'))},
+      {click(e){const x=e.target.dataset.tx;if(x==='file')$('#tpIn').click();else if(x==='sample')take(JSON.parse(JSON.stringify(sampleProject(ui.lang!=='th'))),t('tp_samplename'))},
        change(e){if(e.target.id!=='tpIn')return;const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>{let o=null;try{o=JSON.parse(String(r.result).replace(/^﻿/,''))}catch(x){}if(!o){toast(t('open_bad'));return}take(o,f.name)};r.readAsText(f)}},'tp');return}
   const L=standardsOf(S),picks=()=>L.map(x=>x.k).filter(k=>!K.off.has(k));
   if(K.ask){const n=K.ask;openDlg(t('tp_title'),`<p class="note warn">${t('tp_dupes',n)}</p><p class="note">${t('tp_dupnote')}</p>`,`<button class="btn" data-tx="back">${t('cancel')}</button><span style="flex:1"></span><button class="btn" data-tx="new">${t('tp_new')}</button><button class="btn primary" data-tx="over">${t('tp_over')}</button>`,
@@ -16676,7 +16683,7 @@ const BF=window.penumFiles||null;if(BF)BF.init('bim');
 const bfMine=g=>x=>{const o=JSON.parse(x);return !!o&&o.fmt==='saoek'&&o.guid===g};
 async function bfDir(){if(!BF||!BF.ok)return;const h=await BF.pick();if(h)toast(t('bf_dir',h.name),5000)}
 async function bfOpen(){if(!BF||!BF.ok){$('#fileIn').click();return}await BF.folder(false);const L=BF.name()?await BF.list('.penbim'):null;if(!L){$('#fileIn').click();return}
-  const when=x=>new Date(x).toLocaleString(ui.lang==='en'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
+  const when=x=>new Date(x).toLocaleString(ui.lang!=='th'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
   openDlg(t('m_open'),`<p class="note">${esc(t('bf_list',BF.name()))}</p>${L.length?`<div class="bf-l">${L.map(f=>`<button class="btn" data-bfo="${esc(f.file)}"><span>${esc(f.file.replace(/\.penbim$/i,''))}</span><small>${esc(when(f.at))}</small></button>`).join('')}</div>`:`<p>${t('bf_none')}</p>`}`,
     `<button class="btn" data-bfx="dir">${t('bf_chdir')}</button><button class="btn" data-bfx="any">${t('bf_other')}</button><button class="btn primary" data-close="1">${t('close')}</button>`,
     {async click(ev){const o=ev.target.closest('[data-bfo]'),x=ev.target.closest('[data-bfx]');
@@ -16701,10 +16708,10 @@ const BST={start:['เริ่มต้น','Start'],cont:['ทำต่อ','C
   perm:['แสดงไฟล์ในโฟลเดอร์','Show the files in the folder'],none:['ยังไม่มีไฟล์ในโฟลเดอร์นี้','No files in this folder yet'],
   els:['ชิ้นส่วน','elements'],lv:['ชั้น','levels'],foot:['ลากไฟล์ .penbim มาวางที่หน้านี้ หรือดับเบิลคลิกไฟล์เพื่อเปิด · กด Esc เพื่อทำงานต่อ','Drop a .penbim file here or double-click a file to open it · Esc carries on'],
   newq:['เริ่มโครงการใหม่แทน “{0}”? ถ้าเปลี่ยนใจ กดย้อนกลับ (Ctrl+Z) ได้','Start a new project in place of “{0}”? Undo (Ctrl+Z) takes you back.'],newt:['เริ่มโครงการใหม่','New project'],go:['เริ่มเลย','Start']};
-const bs=(k,...a)=>{let x=(BST[k]||[k,k])[ui.lang==='en'?1:0];a.forEach((v,i)=>{x=x.replace('{'+i+'}',v)});return x};
+const bs=(k,...a)=>{let x=(BST[k]||[k,k])[ui.lang!=='th'?1:0];a.forEach((v,i)=>{x=x.replace('{'+i+'}',v)});return x};
 async function bsFiles(ask){const e=$('#bsRec');if(!e||!BF||!BF.ok)return;let h=await BF.folder(!!ask);
   if(!h){let known=false;try{known=!!BF.name()}catch(x){}e.innerHTML=known?`<button class="pjsb" data-bs="perm"><b>${bs('perm')}</b><small>${esc(BF.name())}</small></button>`:`<p class="bs-h">${bs('nodir')}</p>`;return}
-  const L=await BF.list('.penbim');BS.L=L||[];const when=x=>new Date(x).toLocaleString(ui.lang==='en'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
+  const L=await BF.list('.penbim');BS.L=L||[];const when=x=>new Date(x).toLocaleString(ui.lang!=='th'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
   e.innerHTML=BS.L.length?BS.L.slice(0,10).map(f=>`<button class="bs-r" data-bs="file" data-f="${esc(f.file)}"><b>${esc(f.file.replace(/\.penbim$/i,''))}</b><small>${esc(BF.name())} · ${esc(when(f.at))}</small></button>`).join(''):`<p class="bs-h">${bs('none')}</p>`}
 function bsShow(){if($('#bimStart'))return;const live=!mlSample(),nl=P.levels.length,ne=P.els.length;
   const e=document.createElement('div');e.id='bimStart';e.className='bs';e.setAttribute('role','dialog');e.setAttribute('aria-modal','true');e.setAttribute('aria-label','PENUM BIM');
@@ -16736,10 +16743,10 @@ if('launchQueue' in window)launchQueue.setConsumer(async q=>{const h=q&&q.files&
    a newer version saved on another computer replaces it while it is unchanged here (Ctrl+Z goes back), otherwise penumTeam asks,
    and "use theirs" first saves this computer's version as a file of its own (บันทึกลงเครื่อง, or a download). */
 const TM_ON=!!(window.penumTeam&&/\.github\.io$|^(localhost|127\.0\.0\.1)$/.test(location.hostname));
-const tmL=(th,en)=>ui.lang==='en'?en:th;
+const tmL=(th,en)=>ui.lang!=='th'?en:th;
 function tmCur(){if(!P||!P.guid||!P.els.length||mlSample()||(window.penumLink&&penumLink.locked()))return null;const I=P.info||{};
   return {id:P.guid,name:String(I.name||'').trim(),client:I.client||'',code:I.number||'',sum:{lv:P.levels.length,els:P.els.length},text:projStr}}
-function tmParse(text){let o=null;try{o=JSON.parse(text)}catch(e){}const p=o&&migrate(o,ui.lang==='en');return p||null}
+function tmParse(text){let o=null;try{o=JSON.parse(text)}catch(e){}const p=o&&migrate(o,ui.lang!=='th');return p||null}
 async function tmApply(text){const p=tmParse(text);if(!p)return;p.guid=P.guid;cadTake(p);setProject(p,true);saveNow()}
 function tmAsk(go){return new Promise(res=>{let done=false;bsReplace('team',()=>{done=true;go();res(true)});if(!done&&$('#dlg').open)$('#dlg').addEventListener('close',()=>setTimeout(()=>res(done),0),{once:true});else if(!done)res(false)})}
 async function tmOpen(text){const p=tmParse(text);if(!p){toast(t('open_invalid'));return false}
@@ -16799,7 +16806,7 @@ async function saveProject(){const txt=projectJSON();
   if(await saveFile(fname('','.penbim'),txt,'application/json'))return true;
   openDlg(t('m_save'),`<p class="note">${t('save_fallback')}</p><textarea id="saveTxt" readonly spellcheck="false">${esc(txt)}</textarea>`,`<button class="btn" data-sv="copy">${t('copy_text')}</button><button class="btn primary" data-close="1">${t('close')}</button>`,
     {click(e){if(e.target.dataset.sv==='copy'){const ta=$('#saveTxt');navigator.clipboard.writeText(ta.value).then(()=>toast(t('copied')),()=>{ta.select();toast(t('copy_manual'))})}}})}
-function loadText(txt){let o;try{o=JSON.parse(txt)}catch(e){toast(t('open_bad'));return}const p=migrate(o,ui.lang==='en');if(!p){toast(t('open_invalid'));return}cadTake(p);setProject(p,true);toast(t('opened',p.info.name||''))}
+function loadText(txt){let o;try{o=JSON.parse(txt)}catch(e){toast(t('open_bad'));return}const p=migrate(o,ui.lang!=='th');if(!p){toast(t('open_invalid'));return}cadTake(p);setProject(p,true);toast(t('opened',p.info.name||''))}
 function exportCSV(pi){let v=viewById(ui.panes[pi]);if(!v||v.kind!=='schedule')v=activeView();if(!v||v.kind!=='schedule'){toast(t('csv_na'));return}saveFile(fname('-'+v.name,'.csv'),scheduleCSV(v),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))})}
 function exportPNG(){const pn=PANES[ui.ap],v=activeView();if(!v||v.kind==='schedule'){toast(t('png_na'));return}const s=ui.sel,h=ui.hov,tl=ui.tool;const rv=ui.reveal;ui.reveal={};ui.sel=NOSEL;ui.hov=null;ui.tool='modify';drawPane(pn);ui.sel=s;ui.hov=h;ui.tool=tl;ui.reveal=rv;
   pn.cv.toBlob(b=>{redraw();if(b)saveFile(fname('-'+v.name,'.png'),b,'image/png').then(ok=>{if(!ok)toast(t('export_na'))})},'image/png')}
@@ -17259,7 +17266,7 @@ function amPaint(){const A=AM,cv=$('#amCv');if(!A||!cv)return;const dpr=window.d
     ctx.strokeStyle=C.accent;ctx.lineWidth=1.2;ctx.setLineDash([6,4]);ctx.strokeRect(x0,y0,x1-x0,y1-y0);ctx.setLineDash([])}
   if(A.rub){const r=A.rub;ctx.fillStyle=C.accent;ctx.globalAlpha=0.12;ctx.fillRect(r[0],r[1],r[2]-r[0],r[3]-r[1]);ctx.globalAlpha=1;ctx.strokeStyle=C.accent;ctx.lineWidth=1.2;ctx.strokeRect(r[0],r[1],r[2]-r[0],r[3]-r[1])}}
 /* the model: everything in one step that Undo takes back in one.  What is there already is not made twice: a wall on the same line, a column or a grid in the same place */
-function amCreate(A){const R=A.R,lv=A.lv,en=ui.lang==='en',N=(th,e)=>en?e:th,made={wall:0,door:0,window:0,opening:0,column:0,grid:0,room:0,dup:0,types:0,open:0,same:0},up=levelAbove(P,lv),top=A.top==='up'&&up?up.id:0,height=Math.max(300,+A.height||3000);
+function amCreate(A){const R=A.R,lv=A.lv,en=ui.lang!=='th',N=(th,e)=>en?e:th,made={wall:0,door:0,window:0,opening:0,column:0,grid:0,room:0,dup:0,types:0,open:0,same:0},up=levelAbove(P,lv),top=A.top==='up'&&up?up.id:0,height=Math.max(300,+A.height||3000);
   const near=(a,b,c,d,r)=>Math.hypot(a-c,b-d)<=r,snap=(v,s,r)=>{const q=Math.round(v/s)*s;return Math.abs(q-v)<=r?q:Math.round(v)},nearest=(list,f,v)=>list.slice().sort((p,q)=>Math.abs(f(p)-v)-Math.abs(f(q)-v))[0];
   edit(()=>{const W=[],old=P.els.filter(x=>x.cat==='wall'&&x.level===lv);
     const wt=th=>{let T=nearest(P.types.wall.filter(x=>!x.kind),x=>x.thickness,th);if(T&&Math.abs(T.thickness-th)<=6)return T;T={id:P.seq++,name:N('ผนัง ','Wall ')+th+N(' มม.',' mm'),mark:'W'+th,thickness:th,color:'#d8d2c8',hatch:'diag',cost:650};P.types.wall.push(T);made.types++;return T};
@@ -17293,17 +17300,17 @@ XP.push((c,els)=>c==='link'&&els.length===1&&amOf(els[0])?`<div class="pa"><butt
 /* ===== 90 boot ===== */
 function boot(){
   let prefs={},old=false;
-  try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);prefs=o.ui||{};if(prefs.lang==='en'||prefs.lang==='th')ui.lang=prefs.lang;LANG=ui.lang;old=!!(o.P&&o.P.fmt==='saoek'&&!o.P.mep);const p=migrate(o.P,ui.lang==='en');if(p)P=cadTake(p)}
+  try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);prefs=o.ui||{};if(langCodes().includes(prefs.lang))ui.lang=prefs.lang;LANG=ui.lang;old=!!(o.P&&o.P.fmt==='saoek'&&!o.P.mep);const p=migrate(o.P,ui.lang!=='th');if(p)P=cadTake(p)}
     else{const old=localStorage.getItem('baanbim.v1');if(old){const p=migrate(JSON.parse(old),false);if(p)P=p}}}catch(e){}
   LANG=ui.lang;ui.drawBy={wall:'line',floor:'rect',roof:'rect',aline:'pickl'};
-  if(!P)P=sampleProject(ui.lang==='en');
+  if(!P)P=sampleProject(ui.lang!=='th');
   ui.thin=!!prefs.thin;ui.two=prefs.two!=null?!!prefs.two:window.innerWidth>=1300;
   if(['dark','light','auto'].includes(prefs.look))ui.theme=prefs.look;if(prefs.showProps===false)ui.showProps=false;if(prefs.showTree===false)ui.showTree=false;if(prefs.pal&&typeof prefs.pal==='object')ui.pal=prefs.pal;if(typeof prefs.font==='string')ui.font=prefs.font;keymapLoad(prefs.keymap);
   applyTheme();initPanes();bindChrome();bindPalettes();bindKeys();initDownloads();IDX=indexProject(P);tagReset();
   const ids=new Set(P.views.map(v=>v.id)),pl=homePlan(),d3=P.views.find(v=>v.kind==='3d');
   ui.open=(prefs.open||[]).filter(id=>ids.has(id));ui.panes=[prefs.panes&&ids.has(prefs.panes[0])?prefs.panes[0]:pl.id,prefs.panes&&ids.has(prefs.panes[1])?prefs.panes[1]:(d3?d3.id:0)];ui.np=Math.max(2,Math.min(TILE_MAX,+prefs.np||2));if(Array.isArray(prefs.tw))ui.tw=prefs.tw;if(Array.isArray(prefs.th))ui.th=prefs.th;
   for(let i=2;i<TILE_MAX;i++)ui.panes[i]=ui.two&&i<ui.np&&prefs.panes&&ids.has(prefs.panes[i])?prefs.panes[i]:0;if(!ui.two)ui.panes[1]=0;const v0=viewById(ui.panes[0]);ui.level=v0&&v0.kind==='plan'&&!v0.draft?v0.level:pl.level;
-  try{commit()}catch(e){P=sampleProject(ui.lang==='en');ui.open=[];ui.nav={};ui.panes=[P.views.find(v=>v.kind==='plan').id,0,0,0,0,0,0,0,0];ui.two=false;commit()}
+  try{commit()}catch(e){P=sampleProject(ui.lang!=='th');ui.open=[];ui.nav={};ui.panes=[P.views.find(v=>v.kind==='plan').id,0,0,0,0,0,0,0,0];ui.two=false;commit()}
   if(old)setTimeout(()=>toast(t('upgraded'),9000),700);        // work saved by the release before building services: say where the new sample is
   window.addEventListener('pagehide',()=>{if(saveT)saveNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&saveT)saveNow()});
   const recolor=()=>{applyTheme();redraw()};
@@ -17313,7 +17320,7 @@ function boot(){
   window.addEventListener('resize',redraw);window.addEventListener('resize',ribbonPin);
   applyFonts();if(document.fonts&&document.fonts.addEventListener){let ft=0;document.fonts.addEventListener('loadingdone',()=>{clearTimeout(ft);ft=setTimeout(()=>{SBOX.clear();redraw()},60)})}       // a face that arrives late (first bold, first Thai glyph) repaints the drawings
 }
-boot();mepInit();
+boot();mepInit();if(!['th','en'].includes(ui.lang))langSet(ui.lang);
 /* V1.77 แถบบน + แท็บชื่องาน (shared/titlebar.js, app.json "titlebar": true), laid out like AutoCAD's and the same as PENUM MEP's:
    the logo with the program menu, quick buttons (ใหม่ เปิด บันทึก บันทึกเป็น พิมพ์ ย้อนกลับ ทำซ้ำ แชร์, then 3D, section, thin lines,
    tile, palettes), the project and view in the middle, a search box over every ribbon command and view, ผู้ใช้งาน, a cart for
@@ -17325,7 +17332,7 @@ boot();mepInit();
    a project with elements never saved to a file has * too. Closing a tab with * asks first: without saving, that tab's work is gone.
    Each tab keeps its open views. Ctrl+Shift+S = บันทึกเป็น. Without the shared file the old quick access row stays. */
 if(window.penumBar&&typeof indexedDB!=='undefined'){
-  const L2=(th,en)=>ui.lang==='en'?en:th,TB={sw:0,busy:0,ready:0,gone:''},TBS=new Set(),TBV={};
+  const L2=(th,en)=>ui.lang!=='th'?en:th,TB={sw:0,busy:0,ready:0,gone:''},TBS=new Set(),TBV={};
   const tbDB=()=>new Promise((ok,no)=>{let r;try{r=indexedDB.open('penum-bim-tabs',1)}catch(e){no(e);return}r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
   const tbIO=(mode,f)=>tbDB().then(d=>new Promise((ok,no)=>{const x=d.transaction('p',mode),q=f(x.objectStore('p'));x.oncomplete=()=>{d.close();ok(q&&q.result)};x.onerror=x.onabort=()=>{d.close();no(x.error)}}));
   const tbGet=id=>tbIO('readonly',s=>s.get(id)),tbPut=(id,txt)=>tbIO('readwrite',s=>s.put(txt,id)),tbDel=id=>tbIO('readwrite',s=>s.delete(id)).catch(()=>{});
@@ -17335,7 +17342,7 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
     if(m.ap<NPN())ui.ap=m.ap;if(P.levels.some(l=>l.id===m.level))ui.level=m.level;sanitize();refresh()}catch(e){}}
   async function tbGo(id){if(id===P.guid){bsClose();penumBar.refresh();return}if(TB.busy)return;TB.busy=1;
     try{penumBar.flush();let txt=null;try{txt=await tbGet(id)}catch(e){}
-      let o=null;try{o=txt&&JSON.parse(txt)}catch(e){}const p=o&&migrate(o,ui.lang==='en');if(!p){toast(L2('เปิดแท็บนี้ไม่ได้ ข้อมูลหายหรือเสียหาย','This tab could not be opened'));TBS.delete(id);penumBar.forget(id);return}
+      let o=null;try{o=txt&&JSON.parse(txt)}catch(e){}const p=o&&migrate(o,ui.lang!=='th');if(!p){toast(L2('เปิดแท็บนี้ไม่ได้ ข้อมูลหายหรือเสียหาย','This tab could not be opened'));TBS.delete(id);penumBar.forget(id);return}
       const old=P.guid;TBV[old]=tbView();try{await tbPut(old,projStr())}catch(e){toast(L2('สลับแท็บไม่ได้ ที่เก็บในเบราว์เซอร์เต็ม บันทึกเป็นไฟล์ก่อน','Could not switch: browser storage is full. Save to a file first.'),8000);return}TBS.add(old);
       cadTake(p);p.guid=id;TB.sw=1;try{setProject(p,false)}finally{TB.sw=0}undoS.length=0;redoS.length=0;tbViewSet(TBV[id]);saveNow();
       TBS.delete(id);tbDel(id);penumBar.use(P.guid);tbCheck();refresh()}
@@ -17374,7 +17381,7 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
   // V1.83 the right side as in PM and MEP: colour mode and คู่มือ as icons, then language (a flag, as MEP's) and เมนู as boxes
   const tbThm=q('#qTheme');tbThm.classList.add('ptb-ib','ptb-thm');
   const tbHelp=document.createElement('button');tbHelp.type='button';tbHelp.className='ptb-ib ptb-hlp';tbHelp.innerHTML=I('help');tbHelp.addEventListener('click',()=>act('help'));
-  const tbLang=penumBar.lang({cur:()=>ui.lang==='en'?'en':'th',list:[['th','ภาษาไทย'],['en','English']],pick:k=>{if(k!==ui.lang)act('lang')}});
+  const tbLang=penumBar.lang({cur:()=>ui.lang,list:penumBar.langs||[['th','ภาษาไทย'],['en','English']],pick:k=>{if(k!==ui.lang)act('lang',k)}});          // V1.86 PM's languages
   {const m=q('#appMenuBtn');m.classList.remove('hbtn');m.classList.add('ptb-bx')}
   const bar=penumBar.mount({app:'bim',appName:'PENUM BIM',key:'penum.bim.tabs',tag:'BIM',ver:'PENUM BIM '+V1_NAME,accent:'#0B7F8C',logo:q('.qat .brand svg'),
     dark:()=>document.documentElement.getAttribute('data-ui')!=='light',note:m=>toast(m,5000),
