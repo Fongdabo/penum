@@ -42,7 +42,7 @@ ACT.fGo=async()=>{if(FS.state==='perm'||FS.state==='err'){if(await fPerm(true)){
 ACT.fPick=async()=>{if(!fsOK()){toast('ใช้ได้กับ Edge หรือ Chrome บนคอมพิวเตอร์');return}
   let h;try{h=await showDirectoryPicker({id:'penum-pm',mode:'readwrite',startIn:'documents'})}catch(e){return}
   // only a new empty folder, or one that already holds PENUM PM data: never write into a folder with other files
-  const other=[];for await(const [nm] of h.entries())if(!(nm===FNAME||nm==='backup'||nm==='photos'||nm==='mobile-done'||/^penum-pm.*\.json$/i.test(nm)||/^(desktop\.ini|thumbs\.db|\.ds_store|\.dropbox.*|icon\r?)$/i.test(nm)))other.push(nm);
+  const other=[];for await(const [nm] of h.entries())if(!(nm===FNAME||nm==='backup'||nm==='photos'||nm==='mobile-done'||nm==='cloud-backup'||/^penum-pm.*\.json$/i.test(nm)||/^(desktop\.ini|thumbs\.db|\.ds_store|\.dropbox.*|icon\r?)$/i.test(nm)))other.push(nm);
   if(other.length){alert(`โฟลเดอร์ “${h.name}” มีไฟล์อื่นอยู่แล้ว (${other.slice(0,3).join(', ')}${other.length>3?' …':''})\nเพื่อไม่ให้ไปยุ่งกับไฟล์เดิม กรุณากด “โฟลเดอร์ใหม่” สร้างโฟลเดอร์ PENUM-PM ที่ว่างเปล่า แล้วเลือกโฟลเดอร์นั้น`);return}
   {const c0=await fRead(h,FNAME);let x='';try{x=c0&&coClash(JSON.parse(c0.txt||EMPTY))}catch(e){}if(x){alert(clashMsg(x)+`\n\nเลือกโฟลเดอร์อื่น หรือกด “โฟลเดอร์ใหม่” สร้างโฟลเดอร์ใหม่ (เช่น PENUM-PM-${(DB.co.nameEn||'').split(/\s+/)[0]||'บริษัท'}) แล้วเลือกโฟลเดอร์นั้น`);return}}
   await IDB.put('__dirh',h);FS.h=h;CL.dirName=h.name;CL.dirMtime=0;CL.dirPh=[];CL.dirBk='';clSave();

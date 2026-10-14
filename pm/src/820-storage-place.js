@@ -120,7 +120,7 @@ Object.assign(SBKW,{'co.coset':(SBKW['co.coset']||'')+' โฟลเดอร์
      data is used; otherwise a new folder is created (PENUM-PM, or PENUM-PM-<name> when PENUM-PM is someone else's).
    Nothing outside that one folder is read beyond the names in the picked place, and nothing there is changed.
    "ย้ายที่เก็บข้อมูล" in ตั้งค่า moves the data to a new place the same way; the old folder is left as it was. */
-const fOther=async h=>{const o=[];for await(const [nm] of h.entries())if(!(nm===FNAME||nm==='backup'||nm==='photos'||nm==='mobile-done'||/^penum-pm.*\.json$/i.test(nm)||/^(desktop\.ini|thumbs\.db|\.ds_store|\.dropbox.*|icon\r?)$/i.test(nm)))o.push(nm);return o};
+const fOther=async h=>{const o=[];for await(const [nm] of h.entries())if(!(nm===FNAME||nm==='backup'||nm==='photos'||nm==='mobile-done'||nm==='cloud-backup'||/^penum-pm.*\.json$/i.test(nm)||/^(desktop\.ini|thumbs\.db|\.ds_store|\.dropbox.*|icon\r?)$/i.test(nm)))o.push(nm);return o};
 const fData=async h=>{const c=await fRead(h,FNAME);try{return c?JSON.parse(c.txt||EMPTY):null}catch(e){return null}};
 async function fRes(h,noMake){
   // 1) the picked folder is a PENUM-PM folder (data in it, or nothing else in it)

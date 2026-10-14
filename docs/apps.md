@@ -10,7 +10,7 @@ PENUM PM, PENUM MEP และ PENUM BIM พัฒนา ออกรุ่น �
 pm/        PENUM PM        src/ (ซอร์สแตกเป็นไฟล์ย่อย ดูหัวข้อถัดไป) + app.json + files/ help/ ที่ขึ้นเว็บคู่กัน
 mep/       PENUM MEP       index.html + app.json
 bim/       PENUM BIM       index.html + app.json
-sales/     ORIEN ฝ่ายขาย   index.html + app.json + icons/ ของตัวเอง
+sales/     ORIEN (เดิม ORIEN ฝ่ายขาย)   index.html + app.json + icons/ ของตัวเอง
 shared/    ของที่ทุกโปรแกรมใช้ร่วม: update.js (ปุ่มอัปเดตโปรแกรม), feedback.js (กล่องแจ้งปัญหา),
            licence.js (รหัสเปิดใช้งานของ MEP และ BIM), files.js (บันทึกโครงการลงโฟลเดอร์ในเครื่อง), sw.js (เปิดแบบออฟไลน์), icons/ (ไอคอน PENUM), landing.html (หน้าแรกของเว็บ)
 tools/     สคริปต์: apps.mjs (รายชื่อโปรแกรม), build-pages.mjs (สร้างเว็บ), check-apps.mjs (ตรวจ), src.mjs (รวม/ตัดไฟล์ย่อย),
