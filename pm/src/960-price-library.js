@@ -17,25 +17,36 @@ const PL_SYN=[[/ยูพีวีซี/g,'upvc'],[/พีวีซี/g,'pvc']
 const plSyn=s=>PL_SYN.reduce((t,[re,to])=>t.replace(re,to),String(s||''));
 const plKey=s=>pbNorm(plSyn(s)).replace(/[\s.,·\-–()\/:]+/g,'');
 const plOld=i=>!i.date||(Date.now()-pd(i.date).getTime())/864e5>PL_OLD;
+const plFz=()=>{const W={};return r=>{const b=plKey(r.br||''),w=W[b]||(W[b]={items:plCfg().filter(x=>plKey(x.br||'')===b).map(x=>({id:x.id,name:plSyn(x.name),unit:x.unit,x}))});
+  const c=pbCands(w,{desc:plSyn(r.name),unit:r.unit})[0];return c&&c.s>=.8?c.x.x:null}};
 function plHist(x){x.h=[{m:n(x.m),l:n(x.l),d:x.date||'',s:x.src||''},...(x.h||[])].slice(0,8)}
 
-// put rows into the library: the same item is the same MEP key, or the same name and unit; returns what happened
-// o: {src, sk, date, g, keep (never change a price already there), mOnly (material price only), noAdd, newer (skip a row older than ours), fuzzy(row) → item}
-function plMerge(rows,o){const L=plCfg(),ix=new Map(),kx=new Map();let add=0,upd=0,same=0,skip=0;
+// 3.84 every source's price is kept beside the price in use (x.o = {sk|src: {s, src, m, l, d}}), to compare them (970-price-compare.js);
+// x.pin = the offer the estimator chose: later imports only add offers to a pinned line
+const plOK=(sk,src)=>(sk||'hand')+'|'+(src||'');
+function plOffer(x,s,src,m,l,d){const o=x.o=x.o||{};o[plOK(s,src)]={s:s||'hand',src:src||'',m:n(m),l:n(l),d:d||today()};
+  const K=Object.keys(o);if(K.length>12)K.sort((a,b)=>String(o[a].d).localeCompare(String(o[b].d))).slice(0,K.length-12).forEach(k=>delete o[k])}
+const plOffSeed=x=>{if(!x.o||!Object.keys(x.o).length)plOffer(x,x.sk,x.src,x.m,x.l,x.date)};
+// put rows into the library: the same item is the same MEP key, or the same name, unit and brand; returns what happened
+// o: {src, sk, date, g, keep (never change a price already there), mOnly (material price only), noAdd, newer (skip a row older than ours),
+//     offer (only keep the price to compare: supplier quotes), fuzzy(row) → item}
+function plMerge(rows,o){const L=plCfg(),ix=new Map(),kx=new Map();let add=0,upd=0,same=0,skip=0,off=0;
   const put=i=>{const k=plKey(i.name);(ix.get(k)||ix.set(k,[]).get(k)).push(i);if(i.key)kx.set(i.key,i)};L.forEach(put);
   rows.forEach(r=>{const name=String(r.name||'').trim();if(!name||!(n(r.m)>0||n(r.l)>0)){skip++;return}
     let x=r.key&&kx.get(r.key);if(!x){const u=plKey(r.unit||'');const br=plKey(r.br||'');x=(ix.get(plKey(name))||[]).find(i=>(!u||!i.unit||plKey(i.unit)===u)&&plKey(i.br||'')===br)}
     if(!x&&o.fuzzy)x=o.fuzzy(r);
     if(!x){if(o.noAdd){skip++;return}
       const it={id:uid(),g:PL_GS().includes(r.g)?r.g:o.g||'oth',name,unit:String(r.unit||'').trim(),m:n(r.m),l:n(r.l),src:r.src||o.src,sk:o.sk,date:r.date||o.date||today()};
-      if(r.key)it.key=r.key;if(String(r.br||'').trim())it.br=String(r.br).trim();L.push(it);put(it);add++;return}
+      if(r.key)it.key=r.key;if(String(r.br||'').trim())it.br=String(r.br).trim();plOffer(it,o.sk,it.src,it.m,it.l,it.date);L.push(it);put(it);add++;return}
     if(o.keep){same++;return}
+    const src=r.src||o.src,d=r.date||o.date||today();plOffSeed(x);plOffer(x,o.sk,src,o.mOnly?r.m:r.m??0,o.mOnly?0:r.l??0,d);
+    if(o.offer||x.pin&&x.pin!==plOK(o.sk,src)){off++;return}
     if(o.newer&&x.sk!=='demo'&&x.date&&r.date&&r.date<x.date){same++;return}
     const m=r.m==null?n(x.m):n(r.m),l=o.mOnly||r.l==null?n(x.l):n(r.l);
     if(m===n(x.m)&&l===n(x.l)){same++;return}
-    plHist(x);x.m=m;x.l=l;x.src=r.src||o.src;x.sk=o.sk;x.date=r.date||o.date||today();if(!x.unit&&r.unit)x.unit=String(r.unit).trim();upd++});
-  return {add,upd,same,skip}}
-const plSay=(r,what)=>{save();render();toast(r.add||r.upd?`${what}: เพิ่ม ${fmt(r.add)} · อัปเดตราคา ${fmt(r.upd)}${r.same?` · ราคาเท่าเดิม ${fmt(r.same)}`:''} รายการ`:`${what}: ไม่มีรายการใหม่หรือราคาที่เปลี่ยน`)};
+    plHist(x);x.m=m;x.l=l;x.src=src;x.sk=o.sk;x.date=d;if(!x.unit&&r.unit)x.unit=String(r.unit).trim();upd++});
+  return {add,upd,same,skip,off}}
+const plSay=(r,what)=>{save();render();toast(r.add||r.upd||r.off?`${what}: เพิ่ม ${fmt(r.add)} · อัปเดตราคา ${fmt(r.upd)}${r.off?` · เก็บไว้เทียบ ${fmt(r.off)}`:''}${r.same?` · ราคาเท่าเดิม ${fmt(r.same)}`:''} รายการ`:`${what}: ไม่มีรายการใหม่หรือราคาที่เปลี่ยน`)};
 
 // --- the sources ---
 const plSeedRows=()=>PL_SEED.map(([k,g,name,unit,m,l])=>({key:'mep:'+k,g,name,unit,m,l}));
@@ -49,12 +60,18 @@ function plPoRows(){const B=new Map();
     (po.items||[]).forEach(l=>{if(!String(l.desc||'').trim()||!(n(l.p)>0))return;const k=plKey(l.desc)+'|'+plKey(l.unit||''),o=B.get(k);
       if(!o||String(po.date||'')>=String(o.date||''))B.set(k,{g:l.g,name:l.desc,unit:l.unit,m:n(l.p),date:po.date||today(),src:`${po.no||'PO'}${v?' · '+v:''} · ${p.name}`})})}));
   return [...B.values()]}
-ACT.plPo=()=>{const R=plPoRows();if(!R.length){toast('ยังไม่มีใบสั่งซื้อที่ใส่ราคา');return}
-  const r=plMerge(R,{sk:'po',mOnly:1,newer:1,g:'mat'});$('#dlg').open&&$('#dlg').close();plSay(r,'ราคาซื้อจริงจาก PO')};
+// supplier quotes on purchase requests (PR): every supplier's price is kept to compare, the price in use stays
+function plSupRows(){const R=[];
+  Object.values(DB.projects||{}).forEach(p=>(p.prs||[]).forEach(pr=>(pr.qs||[]).forEach(q=>{const v=((p.vendors||[]).find(x=>x.id===q.vid)||{}).name||'ผู้ขาย';
+    (pr.items||[]).forEach(l=>{const x=n((q.p||{})[l.id]);if(x>0&&String(l.desc||'').trim())R.push({g:l.g,name:l.desc,unit:l.unit,m:x,date:pr.date||today(),src:`ใบเสนอราคา ${v} · ${pr.no||'PR'}`})})})));
+  return R}
+ACT.plPo=()=>{const R=plPoRows(),Q=plSupRows();if(!R.length&&!Q.length){toast('ยังไม่มีใบสั่งซื้อหรือใบเสนอราคาผู้ขายที่ใส่ราคา');return}
+  const r=plMerge(R,{sk:'po',mOnly:1,newer:1,g:'mat'}),q=plMerge(Q,{sk:'sup',mOnly:1,offer:1,g:'mat'});
+  $('#dlg').open&&$('#dlg').close();plSay({add:r.add+q.add,upd:r.upd,same:r.same,off:r.off+q.off},'ราคาซื้อจริงและใบเสนอราคาผู้ขาย')};
 // a Ministry of Commerce price book: material prices; close names count only when every size matches (pbCands)
-ACT.plMoc=()=>{const pb=pbCfg().find(x=>x.id===$('#plPb')?.value);if(!pb)return;const add=$('#plPbAdd')?.checked,wrap={items:plCfg().map(x=>({id:x.id,name:plSyn(x.name),unit:x.unit,x}))};
+ACT.plMoc=()=>{const pb=pbCfg().find(x=>x.id===$('#plPb')?.value);if(!pb)return;const add=$('#plPbAdd')?.checked;
   const r=plMerge(pb.items.map(x=>({name:x.name,unit:x.unit,m:x.price})),{src:`พณ. ${pb.prov} ${thYM(pb.month)}`,sk:'moc',mOnly:1,g:'mat',date:pb.month?pb.month+'-01':today(),noAdd:!add,
-    fuzzy:x=>{const c=pbCands(wrap,{desc:plSyn(x.name),unit:x.unit})[0];return c&&c.s>=.8?c.x.x:null}});
+    fuzzy:plFz()});
   $('#dlg').close();plSay(r,`บัญชีราคาพาณิชย์ ${pb.prov}`)};
 // after a price book is pasted from this page, go straight on to taking its prices
 {const f=ACT.pbPasteGo;ACT.pbPasteGo=b=>{const k=pbCfg().length;f(b);if(S.mode==='co'&&S.ctab==='tender'&&S.sub.tender==='plib'&&pbCfg().length>k)plFillDlg(pbCfg()[pbCfg().length-1].id)}}
@@ -74,8 +91,20 @@ function plParse(txt){const R=tsvRows(txt);if(!R.length)return [];let C={},body=
   const gOf=s=>{s=String(s||'').trim();if(!s)return '';const k=PL_GS().find(g=>g===s||plGName(g)===s);return k||''};
   return body.map(r=>({name:r[C.name],unit:C.unit!=null?r[C.unit]||'':'',m:C.m!=null?numOf(r[C.m]):null,l:C.l!=null?numOf(r[C.l]):null,g:C.g!=null?gOf(r[C.g]):'',br:C.br!=null?r[C.br]||'':''}))
     .filter(x=>x.name&&numOf(x.name)==null&&(n(x.m)>0||n(x.l)>0))}
-ACT.plXls=()=>{const R=plParse($('#plTxt')?.value);if(!R.length){toast('ไม่พบรายการที่มีราคา ตรวจว่าคัดลอกมาทั้งตารางรวมหัวตาราง');return}
-  const r=plMerge(R,{src:'วางจาก Excel '+thD(today()),sk:'xls',g:$('#plXg')?.value||'oth'});$('#dlg').close();plSay(r,'วางจาก Excel')};
+// a price table from any source: the source decides how its prices are read (VAT included, labour only) and shows in the comparison
+const PL_SRC=[['xls','ตาราง Excel ทั่วไป',''],['dealer','Price list ผู้แทนจำหน่าย / ผู้ผลิต',''],['sup','ใบเสนอราคาผู้ขาย',''],
+  ['bb','บัญชีราคามาตรฐานครุภัณฑ์ (สำนักงบประมาณ)','https://www.bb.go.th',1],['cgd','บัญชีค่าแรงงาน (กรมบัญชีกลาง)','https://www.cgd.go.th',0,1],
+  ['egp','ราคากลาง / ราคาที่ชนะประมูล (e-GP)','https://www.gprocurement.go.th'],['shop','ร้านค้าออนไลน์ (HomePro ไทวัสดุ Global House)','',1]];
+ACT.plXls=()=>{let R=plParse($('#plTxt')?.value);if(!R.length){toast('ไม่พบรายการที่มีราคา ตรวจว่าคัดลอกมาทั้งตารางรวมหัวตาราง');return}
+  const sk=$('#plXs')?.value||'xls',S0=PL_SRC.find(x=>x[0]===sk)||PL_SRC[0],nm=($('#plXn')?.value||'').trim(),d=$('#plXd')?.value||today(),vat=$('#plXv')?.checked,lab=$('#plXl')?.checked;
+  const k=vat?1/1.07:1,r2=v=>v==null?null:Math.round(n(v)*k*100)/100;
+  R=R.map(r=>lab&&r.l==null?Object.assign(r,{l:r2(r.m),m:null}):Object.assign(r,{m:r2(r.m),l:r2(r.l)}));
+  const src=(nm||S0[1].replace(/ \(.*\)$/,''))+' '+thD(d)+(vat?' (หัก VAT)':'');
+  const r=plMerge(R,{src,sk,date:d,g:$('#plXg')?.value||'oth',noAdd:!$('#plXa')?.checked,newer:1,
+    fuzzy:sk==='xls'?null:plFz()});
+  $('#dlg').close();plSay(r,S0[1])};
+document.addEventListener('change',e=>{if(e.target.id!=='plXs')return;const S0=PL_SRC.find(x=>x[0]===e.target.value)||PL_SRC[0];
+  const v=$('#plXv'),l=$('#plXl'),h=$('#plXh');if(v)v.checked=!!S0[3];if(l)l.checked=!!S0[4];if(h)h.innerHTML=S0[2]?`ดาวน์โหลดตารางจาก <a href="${S0[2]}" target="_blank" rel="noopener">${S0[2].replace('https://','')}</a> แล้วคัดลอกมาวาง`:''});
 
 // a library file: to keep, to send to another company of ours, or for PENUM MEP / BIM on a computer without PM
 const plOut=()=>plCfg().map(({id,g,name,br,unit,m,l,src,date,key})=>({id,g,name,br:br||'',unit,m:n(m),l:n(l),src,date,key}));
@@ -88,16 +117,21 @@ ACT.plOpen=()=>{const f=$('#fileIn');f.accept='.json,application/json';f.onchang
 
 // --- the fill dialog ---
 ACT.plFill=()=>plFillDlg();
-function plFillDlg(pbId){const B=pbCfg(),ml=mepLink(),po=plPoRows().length,sel=pbId||(B.slice(-1)[0]||{}).id;
+function plFillDlg(pbId){const B=pbCfg(),ml=mepLink(),po=plPoRows().length,sq=plSupRows().length,sel=pbId||(B.slice(-1)[0]||{}).id;
   const opt=(t,d,btn)=>`<div class="card" style="margin:0 0 8px;padding:10px 12px"><div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:220px"><b>${t}</b><br><small class="muted">${d}</small></div>${btn}</div></div>`;
   dialog('เติมราคาเข้าคลังราคากลาง',
     opt('บัญชีราคากระทรวงพาณิชย์',B.length?`ใช้เป็นค่าวัสดุ จับคู่จากชื่อและขนาด <div class="row" style="margin-top:6px;gap:8px;flex-wrap:wrap"><select id="plPb" aria-label="บัญชีราคา">${B.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.prov)} · ${thYM(x.month)} · ${x.items.length} รายการ</option>`).join('')}</select><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="plPbAdd" checked> เพิ่มรายการที่ยังไม่มีในคลังด้วย</label></div>`:'ราคาวัสดุก่อสร้างรายจังหวัดจาก price.moc.go.th วางจากไฟล์ Excel ที่ดาวน์โหลดมา',
       (B.length?`<button type="button" class="btn sm pri" data-a="plMoc">ใช้บัญชีนี้</button>`:'')+`<button type="button" class="btn sm" data-a="pbPaste">วางบัญชีใหม่จาก Excel</button>`)+
-    opt('ราคาซื้อจริงจากใบสั่งซื้อ (PO)',po?`ราคาล่าสุดที่ซื้อ ${fmt(po)} รายการ จากใบสั่งซื้อทุกโครงการ ใช้เป็นค่าวัสดุ`:'ยังไม่มีใบสั่งซื้อที่ใส่ราคา',po?`<button type="button" class="btn sm" data-a="plPo">ดึงราคา PO</button>`:'')+
+    opt('ราคาซื้อจริงจาก PO และใบเสนอราคาผู้ขาย',po||sq?`ราคาล่าสุดที่ซื้อ ${fmt(po)} รายการ ใช้เป็นค่าวัสดุ · ราคาจากใบเสนอราคาผู้ขาย ${fmt(sq)} ราคา เก็บไว้เทียบ`:'ยังไม่มีใบสั่งซื้อหรือใบเสนอราคาผู้ขายที่ใส่ราคา',po||sq?`<button type="button" class="btn sm" data-a="plPo">ดึงราคา</button>`:'')+
     opt('BOQ ของ PENUM MEP',ml?`โครงการ ${esc(ml.project||'')} · ${fmt(ml.boq.items.length)} รายการ ทั้งค่าวัสดุและค่าแรง`:'ยังไม่มี BOQ จาก PENUM MEP ในเครื่องนี้',ml?`<button type="button" class="btn sm" data-a="plMep">ดึงจาก MEP</button>`:'')+
     opt('ราคาตัวอย่าง 120 รายการ','อัตราสมมติชุดเดียวกับ PENUM MEP เช่น Split บาท/TR ท่อลม บาท/ตร.ม. ไม่ทับราคาที่มีอยู่แล้ว',`<button type="button" class="btn sm" data-a="plSeed">เพิ่มราคาตัวอย่าง</button>`)+
-    opt('วางจาก Excel','คอลัมน์ รายการ · หน่วย · ค่าวัสดุ · ค่าแรง (มีหัวตารางหรือไม่มีก็ได้ ใส่คอลัมน์ ยี่ห้อ ได้ถ้ามีหัวตาราง) รายการชื่อ หน่วย และยี่ห้อเดียวกันจะอัปเดตราคา'+
-      `<textarea id="plTxt" rows="5" style="margin-top:6px;width:100%" placeholder="รายการ	ยี่ห้อ	หน่วย	ค่าวัสดุ	ค่าแรง"></textarea><label style="display:flex;gap:6px;align-items:center;margin-top:4px">หมวดของรายการใหม่ <select id="plXg" aria-label="หมวด">${PL_GS().map(g=>`<option value="${g}"${g==='oth'?' selected':''}>${esc(plGName(g))}</option>`).join('')}</select></label>`,
+    opt('วางตารางราคาจาก Excel หรือแหล่งอื่น','คอลัมน์ รายการ · หน่วย · ค่าวัสดุ · ค่าแรง (ใส่คอลัมน์ ยี่ห้อ ได้ถ้ามีหัวตาราง) ราคาจากแต่ละแหล่งเก็บไว้เทียบกันในหน้า เทียบราคา'+
+      `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><select id="plXs" aria-label="แหล่งราคา">${PL_SRC.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('')}</select>
+      <input id="plXn" placeholder="ชื่อแหล่ง เช่น Daikin ม.ค. 2570" aria-label="ชื่อแหล่ง" style="min-width:200px"><input id="plXd" type="date" value="${today()}" aria-label="วันที่ของราคา"></div>
+      <small id="plXh" class="muted"></small>
+      <textarea id="plTxt" rows="5" style="margin-top:6px;width:100%" placeholder="รายการ	ยี่ห้อ	หน่วย	ค่าวัสดุ	ค่าแรง"></textarea>
+      <div class="row" style="gap:12px;flex-wrap:wrap;margin-top:4px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="plXv"> ราคารวม VAT แล้ว (หัก 7% ออก)</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="plXl"> ตัวเลขในตารางเป็นค่าแรง</label><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="plXa" checked> เพิ่มรายการที่ยังไม่มีในคลัง</label>
+      <label style="display:flex;gap:6px;align-items:center">หมวดของรายการใหม่ <select id="plXg" aria-label="หมวด">${PL_GS().map(g=>`<option value="${g}"${g==='oth'?' selected':''}>${esc(plGName(g))}</option>`).join('')}</select></label></div>`,
       `<button type="button" class="btn sm" data-a="plXls">นำเข้า</button>`)+
     opt('ไฟล์คลังราคา','ไฟล์ .json ที่บันทึกจากหน้านี้ ราคาที่ใหม่กว่าจะแทนราคาเดิม',`<button type="button" class="btn sm" data-a="plOpen">เปิดไฟล์</button>`),
     plCfg().length?`<button type="button" class="btn sm ghost" data-a="plClear">ลบทั้งคลัง</button>`:'')}
@@ -106,7 +140,7 @@ ACT.plClear=()=>{const L=plCfg();if(!L.length||!confirm(`ลบทั้ง ${fm
 // --- editing: a price typed here keeps the old one in the history ---
 document.addEventListener('change',e=>{const p=e.target.dataset&&e.target.dataset.p,m=p&&/^co\.prices\.([^.]+)\.(m|l)$/.exec(p);if(!m)return;
   const x=plCfg().find(i=>i.id===m[1]);if(!x)return;const v=e.target.value.trim()===''?0:n(e.target.value);if(v===n(x[m[2]]))return;
-  plHist(x);x.src='แก้เอง';x.sk='hand';x.date=today()},true);
+  plHist(x);x.src='แก้เอง';x.sk='hand';x.date=today();plOffSeed(x);setTimeout(()=>{plOffer(x,'hand','แก้เอง',x.m,x.l,today());x.pin=plOK('hand','แก้เอง');save()},0)},true);
 ACT.plAdd=()=>{const x={id:uid(),g:S.sel.plG&&S.sel.plG!=='old'?S.sel.plG:'oth',name:'',unit:'',m:0,l:0,src:'แก้เอง',sk:'hand',date:today()};plCfg().unshift(x);S.sel.plQ='';S.sel.plS='';S.sel.plNew=x.id;save();render();
   const el=$(`[data-p="co.prices.${x.id}.name"]`);if(el)el.focus()};
 ACT.plHis=b=>{const x=plCfg().find(i=>i.id===b.dataset.id);if(!x)return;
@@ -114,7 +148,7 @@ ACT.plHis=b=>{const x=plCfg().find(i=>i.id===b.dataset.id);if(!x)return;
     <tr class="grp"><td>${thD(x.date)} (ปัจจุบัน)</td><td class="r">${fmt(x.m,2)}</td><td class="r">${fmt(x.l,2)}</td><td>${esc(x.src||'')}</td></tr>
     ${(x.h||[]).map(h=>`<tr><td>${thD(h.d)}</td><td class="r">${fmt(h.m,2)}</td><td class="r">${fmt(h.l,2)}</td><td>${esc(h.s||'')}</td></tr>`).join('')}</tbody></table></div>`,
     (x.h||[]).length?`<button type="button" class="btn sm" data-a="plBack" data-id="${x.id}">กลับไปใช้ราคาก่อนหน้า</button>`:'')};
-ACT.plBack=b=>{const x=plCfg().find(i=>i.id===b.dataset.id);if(!x||!(x.h||[]).length)return;const [p,...rest]=x.h;Object.assign(x,{m:p.m,l:p.l,date:p.d,src:p.s,sk:'hand',h:rest});$('#dlg').close();save();render()};
+ACT.plBack=b=>{const x=plCfg().find(i=>i.id===b.dataset.id);if(!x||!(x.h||[]).length)return;const [p,...rest]=x.h;Object.assign(x,{m:p.m,l:p.l,date:p.d,src:p.s,sk:'hand',h:rest});delete x.pin;$('#dlg').close();save();render()};
 
 // --- the page: บริษัท › ประมาณราคา › คลังราคากลาง ---
 NAVD.find(d=>d[0]==='est')[2].splice(1,0,['co','tender','plib','คลังราคากลาง']);
@@ -134,18 +168,19 @@ function plView(){const L=plCfg(),R=plList(),N=Math.max(100,+S.sel.plN||200),G=P
   const sel=(id,cur,opts,lab)=>`<select id="${id}" aria-label="${lab}">${opts.map(([k,l])=>`<option value="${k}"${k===cur?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
   const cols=[{k:'name',h:'รายการ',w:220},{k:'br',h:'ยี่ห้อ / รุ่น',w:120},{k:'unit',h:'หน่วย',w:90},{k:'m',h:'ค่าวัสดุ/หน่วย',t:'num',w:100},{k:'l',h:'ค่าแรง/หน่วย',t:'num',w:100}],gcol={k:'g',h:'หมวด',t:'sel',o:G.map(g=>[g,plGName(g)]),w:170};
   const rows=R.slice(0,N).map(i=>{const k=plSrcK(i),od=plOld(i);return `<tr${i.id===S.sel.plNew?' class="sel"':''}>${cols.map(c=>cell('co.prices',i,c)).join('')}<td class="r">${fmt(n(i.m)+n(i.l),2)}</td>${cell('co.prices',i,gcol)}
-    <td style="min-width:170px"><span class="pill ${PL_SK[k][1]}">${PL_SK[k][0]}</span>${i.src&&k!=='demo'&&i.src!==PL_SK[k][0]?`<br><small class="muted">${esc(i.src)}</small>`:''}</td>
+    <td style="min-width:170px"><span class="pill ${PL_SK[k][1]}">${PL_SK[k][0]}</span>${i.pin?' <span title="เลือกราคานี้เอง ราคาที่เติมใหม่จะเก็บไว้เทียบ ไม่แทนราคานี้">📌</span>':''}${i.src&&k!=='demo'&&i.src!==PL_SK[k][0]?`<br><small class="muted">${esc(i.src)}</small>`:''}</td>
     <td style="white-space:nowrap${od?';color:var(--danger)':''}" title="${od?'ราคาเก่ากว่า 6 เดือน':''}">${thD(i.date)}</td>
-    <td style="white-space:nowrap">${(i.h||[]).length?`<button type="button" class="btn ghost sm" data-a="plHis" data-id="${i.id}" title="ประวัติราคา">ประวัติ ${i.h.length}</button>`:''}<button type="button" class="x" data-a="delRow" data-c="co.prices" data-id="${i.id}" aria-label="ลบแถว">✕</button></td></tr>`}).join('');
+    <td style="white-space:nowrap">${plOffs(i).length>1?`<button type="button" class="btn ghost sm" data-a="plOff" data-id="${i.id}" title="ราคาจากทุกแหล่ง">เทียบ ${plOffs(i).length}</button>`:''}${(i.h||[]).length?`<button type="button" class="btn ghost sm" data-a="plHis" data-id="${i.id}" title="ประวัติราคา">ประวัติ ${i.h.length}</button>`:''}<button type="button" class="x" data-a="delRow" data-c="co.prices" data-id="${i.id}" aria-label="ลบแถว">✕</button></td></tr>`}).join('');
   return head+`<section class="card"><h2><span>คลังราคากลาง</span><small>ราคาเดียวที่ PENUM PM, MEP และ BIM ใช้ร่วมกัน · ไม่รวม VAT</small><span class="sp"></span>
     <button type="button" class="btn sm pri" data-a="plFill">เติมราคา</button><button type="button" class="btn sm" data-a="plAdd">+ เพิ่มรายการ</button>${copyBtn('plib')}<button type="button" class="btn sm" data-a="plSave">บันทึกไฟล์คลังราคา</button></h2>
   <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><input id="plQ" type="search" placeholder="ค้นหารายการ ขนาด หรือที่มา" value="${esc(S.sel.plQ||'')}" aria-label="ค้นหาในคลังราคา" style="flex:1;min-width:200px">
     ${sel('plG',S.sel.plG||'',[['','ทุกหมวด'],...G.filter(g=>L.some(i=>i.g===g)).map(g=>[g,plGName(g)]),['old','เฉพาะราคาเก่ากว่า 6 เดือน']],'หมวด')}
     ${sel('plS',S.sel.plS||'',[['','ทุกที่มา'],...Object.entries(PL_SK).filter(([k])=>by(k)).map(([k,v])=>[k,v[0]])],'ที่มา')}</div>
-  <div class="tw" style="max-height:600px;overflow:auto"><table><thead><tr><th>รายการ</th><th>ยี่ห้อ / รุ่น</th><th>หน่วย</th><th class="r">ค่าวัสดุ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">รวม/หน่วย</th><th>หมวด</th><th>ที่มา</th><th>วันที่ราคา</th><th></th></tr></thead>
+  <div class="sub" role="tablist" style="margin-bottom:8px">${[['','ตารางราคา'],['cmp','เทียบราคาทุกแหล่ง']].map(([k,l])=>`<button type="button" role="tab" data-a="plV" data-k="${k}" aria-selected="${(S.sel.plV||'')===k}">${l}</button>`).join('')}</div>
+  ${S.sel.plV==='cmp'?plCmpTable(R):`<div class="tw" style="max-height:600px;overflow:auto"><table><thead><tr><th>รายการ</th><th>ยี่ห้อ / รุ่น</th><th>หน่วย</th><th class="r">ค่าวัสดุ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">รวม/หน่วย</th><th>หมวด</th><th>ที่มา</th><th>วันที่ราคา</th><th></th></tr></thead>
   <tbody>${rows||'<tr><td colspan="10" class="empty">ไม่มีรายการที่ตรงกับการค้นหา</td></tr>'}</tbody></table></div>
-  ${R.length>N?`<div class="row" style="margin-top:8px"><span class="muted">แสดง ${fmt(N)} จาก ${fmt(R.length)} รายการ</span><button type="button" class="btn sm" data-a="plMore">แสดงเพิ่ม</button></div>`:`<p class="muted" style="margin:8px 0 0">${fmt(R.length)} รายการ</p>`}
-  <p class="hint">ราคาที่แก้ในตารางจะเก็บราคาเดิมไว้ในประวัติ · PENUM MEP และ BIM ในเครื่องนี้อ่านคลังนี้ได้ (เครื่องที่ไม่มี PM ใช้ไฟล์คลังราคา) · ทำราคา ปร.4 ปร.5 ปร.6 จากคลังนี้ได้ในรอบถัดไป</p></section>`}
+  ${R.length>N?`<div class="row" style="margin-top:8px"><span class="muted">แสดง ${fmt(N)} จาก ${fmt(R.length)} รายการ</span><button type="button" class="btn sm" data-a="plMore">แสดงเพิ่ม</button></div>`:`<p class="muted" style="margin:8px 0 0">${fmt(R.length)} รายการ</p>`}`}
+  <p class="hint">ราคาที่แก้ในตารางจะเก็บราคาเดิมไว้ในประวัติ · PENUM MEP และ BIM ในเครื่องนี้อ่านคลังนี้ได้ (เครื่องที่ไม่มี PM ใช้ไฟล์คลังราคา) · ใช้คลังนี้ทำ ปร.4 ปร.5 ปร.6 ได้ที่หน้า ทำราคาประมูล</p></section>`}
 ACT.plMore=()=>{S.sel.plN=(Math.max(100,+S.sel.plN||200))+500;render()};
 let plQT=0;
 document.addEventListener('input',e=>{if(e.target.id!=='plQ')return;clearTimeout(plQT);const v=e.target.value;plQT=setTimeout(()=>{S.sel.plQ=v;S.sel.plN=200;S.sel.plNew='';render();
