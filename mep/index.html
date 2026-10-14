@@ -1951,10 +1951,11 @@ function roomEqCard(rm){          // pick the system, unit size and number of un
 }
 const TY_GRP=[['งานสำนักงาน',['office','meet','class','control','server']],['งานผลิตและคลีนรูม',['prod','lab','iso8','iso7','iso6','iso5','wh']],['โรงพยาบาล',['hosp','ward','icu','burn','nicu','nursery','ldr','dial','pt','nurse','hwait']],['ห้องแยกโรค',['aiir','aiirante','pe','aiirpe']],['ฉุกเฉิน',['erwait','erexam','trauma']],['แผนกผ่าตัด',['or','orhepa','orneg','csec','hproc','preop','pacu','scrub','clcor','dicor','sterst','clst','linen','soiled','mgas','change']],['หัตถการพิเศษและรังสีวิทยา',['cath','endo','endocl','bronch','xray','mri','linac','nucmed','dark']],['ห้องปฏิบัติการและนิติเวช',['hlab','micro','path','autopsy','morgue']],['เภสัชกรรม',['pharm','ivrm','chemo']],['หน่วยจ่ายกลาง (CSSD)',['cssdd','cssdc']],['งานสนับสนุนโรงพยาบาล',['linsort','waste','janitor']],['ค้าปลีกและบริการ',['shop','rest','kitchen','hall','toilet']],['ที่พักอาศัย',['home','bed']]];
 let tyAdd=false;
-function tyOpts(sel){          // room type dropdown in the same groups as the library; user types sit after the type they start from
-  const seen=new Set(),o=(k)=>`<option value="${k}"${k===sel?' selected':''}>${esc(TYPES[k].label)}</option>`;let h='';
+const tyHit=(k,q)=>{const t=TYPES[k],h=(t.label+' '+(EN[t.label]||'')+' '+k).toLowerCase();return String(q||'').toLowerCase().split(/\s+/).filter(Boolean).every(w=>h.includes(w))};          // Thai name, English name or key
+function tyOpts(sel,q){          // room type dropdown in the same groups as the library; user types sit after the type they start from; q = search words (the chosen type always stays)
+  const seen=new Set(),o=(k)=>q&&k!==sel&&!tyHit(k,q)?'':`<option value="${k}"${k===sel?' selected':''}>${esc(TYPES[k].label)}</option>`;let h='';
   const grp=(g,ks)=>{const all=[];ks.filter(k=>TYPES[k]&&!seen.has(k)).forEach(k=>{all.push(k);((P.types||{}).custom||[]).filter(c=>c.base===k&&TYPES[c.k]).forEach(c=>all.push(c.k))});
-    all.forEach(k=>seen.add(k));if(all.length)h+=`<optgroup label="${esc(g)}">${all.map(o).join('')}</optgroup>`};
+    all.forEach(k=>seen.add(k));const x=all.map(o).join('');if(x)h+=`<optgroup label="${esc(g)}">${x}</optgroup>`};
   TY_GRP.forEach(([g,ks])=>grp(g,ks));grp('อื่น ๆ',Object.keys(TYPES));return h}
 function tyRow(k){
   const X=P.types,t=TYPES[k],cu=X.custom.find(c=>c.k===k),used=P.rooms.filter(r=>r.type===k).length,ch=!!(X.ov[k]&&Object.keys(X.ov[k]).length),
@@ -2054,7 +2055,7 @@ function renderEditor(){
     <div class="grid">
       ${fld('ชื่อห้อง',`<input type="text" data-p="name" value="${esc(rm.name)}" id="i-name">`)}
       ${fld('ชื่อห้อง (อังกฤษ)',`<input type="text" data-p="rname_en" value="${esc((rm.nameL||{}).en||'')}" placeholder="${esc(nmAuto(rm.name)||'')}">`)}${!['th','en'].includes(rlang())?fld('ชื่อห้อง ('+esc((LANGS.find(l=>l[0]===rlang())||['',rlang()])[1])+')',`<input type="text" data-p="rname_rl" value="${esc((rm.nameL||{})[rlang()]||'')}">`):''}
-      ${fld('ประเภทพื้นที่',`<select data-p="type" data-preset="1" id="i-type">${tyOpts(rm.type)}</select><button type="button" class="btn ghost sm" data-act="goTypes" style="margin-top:6px;align-self:flex-start">แก้ค่าตั้งต้นของแต่ละประเภทที่หน้าคลังประเภทพื้นที่</button>`)}
+      ${fld('ประเภทพื้นที่',`<input type="search" id="i-typeq" autocomplete="off" placeholder="${tl('พิมพ์ค้นหา เช่น ผ่าตัด, ICU, ห้องน้ำ','Search, e.g. operating, ICU, toilet')}" style="margin-bottom:6px"><select data-p="type" data-preset="1" id="i-type">${tyOpts(rm.type)}</select><small id="i-typen" class="hint" hidden></small><button type="button" class="btn ghost sm" data-act="goTypes" style="margin-top:6px;align-self:flex-start">แก้ค่าตั้งต้นของแต่ละประเภทที่หน้าคลังประเภทพื้นที่</button>`)}
       ${fld('ความกว้าง (m)',numIn('dimW',rm.dimW,'เช่น 10'))}
       ${fld('ความยาว (m)',numIn('dimL',rm.dimL,'เช่น 12'))}
       ${fld('พื้นที่ (m²)',`<input type="number" step="any" data-p="area" id="i-area" value="${rm.area??''}" ${n(rm.dimW)>0&&n(rm.dimL)>0?'readonly class="calc"':''}>`)}
@@ -6357,6 +6358,12 @@ $('editor').addEventListener('input',e=>{
   save();refreshQ();renderResults();renderRooms();
 });
 document.addEventListener('toggle',e=>{if(e.target.id==='designBox')P._openDesign=e.target.open},true);
+document.addEventListener('input',e=>{if(e.target.id!=='i-typeq')return;const s=$('i-type'),n=$('i-typen'),q=e.target.value.trim();if(!s)return;          // room type search: the list shrinks to the matches and opens as a list box
+  s.innerHTML=tyOpts(s.value,q);const hits=q?Object.keys(TYPES).filter(k=>tyHit(k,q)).length:0;s.size=q?Math.max(2,Math.min(8,s.options.length+s.querySelectorAll('optgroup').length)):0;
+  if(n){n.hidden=!q;n.textContent=hits?tl(`พบ ${hits} ประเภท · กด Enter เลือกอันแรก หรือคลิกในรายการ`,`${hits} found · Enter picks the first, or click one`):tl('ไม่พบประเภทที่ตรงกับคำค้น','No matching space type')}});
+document.addEventListener('keydown',e=>{if(e.target.id!=='i-typeq')return;const s=$('i-type');if(!s)return;
+  if(e.key==='Enter'){e.preventDefault();const q=e.target.value.trim(),o=[...s.options].find(x=>tyHit(x.value,q));if(q&&o&&o.value!==s.value){s.value=o.value;s.dispatchEvent(new Event('input',{bubbles:true}))}}
+  else if(e.key==='ArrowDown'&&s.size>1){e.preventDefault();s.focus()}else if(e.key==='Escape'){e.target.value='';e.target.dispatchEvent(new Event('input',{bubbles:true}))}});
 document.addEventListener('input',e=>{if(e.target.id!=='tySearch')return;const q=e.target.value.trim().toLowerCase();document.querySelectorAll('[data-tyrow]').forEach(r=>r.hidden=!!q&&r.dataset.tyname.indexOf(q)<0)});
 let armed=null;
 document.addEventListener('click',async e=>{
