@@ -34,6 +34,9 @@ MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
   Supabase (`tools/link-setup.sql`), encrypted with that code. PM keeps the linked MEP project in `P.mep` (`pm/src/920-mep-link.js`);
   BIM keeps it in `P.mepLid` and writes slot `bim`; MEP's "ส่งแบบไป BIM" also writes slot `hand`. Details: docs/apps.md.
 
+- โครงการของบริษัท: `shared/team.js` (apps with `"team": true`, MEP and BIM) keeps every project of one licence code's company in
+  ORIEN's Supabase (`tools/team-setup.sql`), encrypted with a company key found through the code, with an edit lock per project.
+
 ## Licence codes
 
 - One code per customer company; payload `ap` lists the apps it opens (no `ap` = PENUM PM only). ORIEN issues codes in
