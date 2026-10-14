@@ -10,12 +10,14 @@
    window.penumBar: mount(cfg) → the bar's element (the app puts it in its header) · refresh() · use(id) · forget(id) · ids() · dirty(id)
    · title() · soon(id, text(), opt()) a moment after a change · flush() · check(id, text, {unsaved}) · clean(id, text or null) · ask(title, html, [[value, label, primary]])
    · saveAs({name, ext, text, type}) → {file} | {file, dl: true} | null · pop(anchor, items) a small menu · note(msg)
+   · lang({cur() → 'th', list: [[code, name]], pick(code)}) → a language button (flag, name, ▾) for the right side; b.draw() redraws it
    cfg: app · key · logo (an element to copy) · tag ('MEP') · ver · accent · dark() → bool · menu() → [{t, run, kbd} | '-'] the logo's menu
    · quick: [{k: new|open|save|saveas|print|undo|redo|share, t, run} or {k, node} (the app's own button, kept with its handlers)]
    · extra: [elements] after the quick buttons (wide screens only) · title() → text · titleTip · titleClick() · titleNode (an element shown
    after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed,
    find(text, index) → the hits for what was typed, when the app ranks them itself}
-   · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
+   · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] in this order in
+   every app: the app's extras, colour mode (class ptb-ib ptb-thm), คู่มือ (ptb-ib ptb-hlp), language (ptb-bx), เมนู (ptb-bx) · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
    close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
 (()=>{if(window.penumBar)return;
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
@@ -45,6 +47,7 @@ const IC={
   burger:sv(0,'<path d="M4 6h16M4 12h16M4 18h16"/>'),
   plus:sv(0,'<path d="M12 5v14M5 12h14"/>'),
   x:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  help:sv(0,'<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><path d="M12 17h.01"/>'),
   co:sv(0,'<path d="M3 21h18M5 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M15 9h3a1 1 0 0 1 1 1v11"/><path d="M8 8h1M11 8h1M8 12h1M11 12h1M8 16h1M11 16h1"/>'),
   chev:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>'};
 
@@ -207,6 +210,14 @@ const CSS=`
 .ptb-si:focus{border-color:var(--tb-acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--tb-acc) 22%,transparent)}.ptb-si::placeholder{color:var(--tb-mut);font-style:italic}
 .ptb-sb{position:absolute;left:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:26px;height:26px;border:none;background:none;color:var(--tb-mut);pointer-events:none}.ptb-sb svg{width:15px;height:15px}
 .ptb-u .ptm-chip{height:30px;border-radius:8px!important}
+/* the app's own buttons on the right, the same order and look in every app: [app extras] colour mode · คู่มือ · language · เมนู
+   ptb-ib = an icon button, ptb-bx = a boxed button (language, เมนู) */
+.ptb-a .ptb-ib{width:32px!important;min-width:32px;height:30px!important;min-height:0!important;padding:0!important;margin:0!important;border:1px solid transparent!important;border-radius:8px!important;background:none!important;box-shadow:none!important;color:var(--tb-ink)!important;display:inline-grid!important;place-items:center;font-size:0!important;line-height:1;flex:none}
+.ptb-a .ptb-ib:hover{background:var(--tb-hov)!important}.ptb-a .ptb-ib svg{width:18px;height:18px}
+.ptb-a .ptb-bx{height:30px!important;min-height:0!important;padding:0 8px!important;margin:0!important;border:1px solid var(--tb-line)!important;border-radius:8px!important;background:none!important;box-shadow:none!important;color:var(--tb-ink)!important;display:inline-flex!important;align-items:center;gap:6px;font-size:12.5px!important;font-weight:600;line-height:1;white-space:nowrap;flex:none;cursor:pointer;list-style:none}
+.ptb-a .ptb-bx::-webkit-details-marker{display:none}.ptb-a .ptb-bx:hover{background:var(--tb-hov)!important}.ptb-a .ptb-bx>svg:last-child{width:13px;height:13px;opacity:.7}
+.ptb-a .ptb-bx .flag{width:18px!important;height:18px!important;flex:none}
+.ptb-pop>button i .flag{width:18px;height:18px}
 .ptb-co{display:flex;align-items:center;gap:5px;max-width:240px;min-width:0;padding:0 4px 0 2px;color:var(--tb-mut);font-size:12.5px;white-space:nowrap;cursor:default}.ptb-co[hidden]{display:none}
 .ptb-co svg{flex:none;width:16px;height:16px}.ptb-cn{overflow:hidden;text-overflow:ellipsis}
 .ptb-cart{position:relative;display:grid;place-items:center;width:32px;height:30px;border:none;border-radius:8px;background:none;color:var(--tb-ink)}.ptb-cart:hover{background:var(--tb-hov)}
@@ -241,6 +252,9 @@ const CSS=`
 @media (max-width:1440px){.ptb-x{display:none!important}.ptb-s{width:190px}}
 @media (max-width:1440px){.ptb-co{max-width:180px}}
 @media (max-width:1180px){.ptb-co{display:none!important}}
+@media (max-width:1280px){.ptb-a .ptb-lt{display:none}}
+@media (max-width:980px){.ptb-a .ptb-hlp{display:none!important}}
+@media (max-width:720px){.ptb-a .ptb-thm{display:none!important}.ptb-a .ptb-bx{padding:0 7px!important}.ptb-a .ptb-bx>span{display:none!important}}
 @media (max-width:1280px){.ptb-q.ptb-share span{display:none}.ptb-u .ptm-chip{max-width:120px}.ptb-q.ptb-share{padding:0 5px;margin-left:0}.ptb-s{width:150px}}
 @media (max-width:980px){.ptb-q.ptb-saveas,.ptb-q.ptb-print,.ptb-q.ptb-share{display:none}.ptb-s{width:130px}.ptb-u .ptm-chip span{display:none}}
 @media (max-width:860px){.ptb-q.ptb-new,.ptb-q.ptb-open{display:none}.ptb-q.ptb-undo{margin-left:0}}
@@ -252,5 +266,14 @@ const CSS=`
   .ptb-cart{width:28px}.pdt{height:32px}.pdt-t{max-width:170px;padding-left:9px}.pdt-st{padding:0 10px}}
 @media print{.ptbw{display:none!important}}
 `;
-window.penumBar={icon:k=>IC[k]||'',mount,refresh,title,use,forget,ids,dirty,soon,flush,check,clean,ask,saveAs,pop,popClose,note,focusSearch,get el(){return W}};
+// a language button for an app with its own switch (BIM): flag, the language's name and ▾, the same look as MEP's and PM's;
+// o = {cur:()=>'th', list:[['th','ภาษาไทย'],['en','English']], pick:k=>…}; call b.draw() after the language changes elsewhere
+const FL={th:'<rect width="24" height="24" fill="#A51931"/><rect y="4" width="24" height="16" fill="#F4F5F8"/><rect y="8" width="24" height="8" fill="#2D2A4A"/>',
+  en:'<rect width="24" height="24" fill="#012169"/><path d="M0 0L24 24M24 0L0 24" stroke="#fff" stroke-width="5"/><path d="M0 0L24 24M24 0L0 24" stroke="#C8102E" stroke-width="2"/><path d="M12 0V24M0 12H24" stroke="#fff" stroke-width="7"/><path d="M12 0V24M0 12H24" stroke="#C8102E" stroke-width="4"/>'};
+const flag=k=>`<svg class="flag" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="ptbf-${k}"><circle cx="12" cy="12" r="12"/></clipPath></defs><g clip-path="url(#ptbf-${k})">${FL[k]||''}</g><circle cx="12" cy="12" r="11.5" fill="none" stroke="rgba(0,0,0,.18)"/></svg>`;
+function lang(o){const b=document.createElement('button');b.type='button';b.className='ptb-bx ptb-lang';b.setAttribute('aria-haspopup','menu');
+  const nm=k=>(o.list.find(x=>x[0]===k)||o.list[0]);
+  b.draw=()=>{const k=o.cur(),n=nm(k);b.innerHTML=flag(n[0])+`<span class="ptb-lt">${esc(n[1])}</span>`+IC.chev;b.title='ภาษา / Language: '+n[1];b.setAttribute('aria-label',b.title)};
+  b.addEventListener('click',()=>pop(b,o.list.map(x=>({t:x[1],ic:flag(x[0]),on:x[0]===o.cur(),run:()=>{if(x[0]!==o.cur())o.pick(x[0]);b.draw()}}))));b.draw();return b}
+window.penumBar={icon:k=>IC[k]||'',lang,mount,refresh,title,use,forget,ids,dirty,soon,flush,check,clean,ask,saveAs,pop,popClose,note,focusSearch,get el(){return W}};
 })();

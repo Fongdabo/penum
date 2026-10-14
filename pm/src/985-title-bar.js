@@ -2,7 +2,7 @@
    The bar runs across the top of the window: the PM logo with the program menu, quick buttons (ใหม่ เปิด บันทึก บันทึกเป็น พิมพ์
    ย้อนกลับ ทำซ้ำ แชร์), the open project's name in the middle, the search (the sidebar's page search moves here; / or Ctrl+K),
    the user (a button with a menu, as in MEP and BIM: switch user, ลายเซ็นของฉัน, สแกนนิ้ว, ออกจากระบบ), the cart kept for ORIEN's form
-   shop (coming soon), then the header's own buttons as icons (cloud, bell, colour mode, คู่มือ), language and เมนู (3.92). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
+   shop (coming soon), then the header's own buttons as icons (cloud, bell, colour mode, คู่มือ), language and เมนู (3.92), placed and drawn as in MEP and BIM (3.96). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
    it deletes nothing. * = changed since this project was last saved as a file (.penpm, 925); only people who may save files see it.
    The header band keeps the house button and the page name. Only when the build put shared/titlebar.js in <head> (app.json "titlebar"). */
 const TB={on:false,last:''};
@@ -45,7 +45,12 @@ function tbUserMenu(){const us=$('#userSel'),out=$('#outBtn'),mm=a=>{const b=$(`
 function tbThemeMenu(){penumBar.pop($('#tbTheme'),[...document.querySelectorAll('#themeSw [data-k]')].map(b=>({t:b.title||b.textContent.trim(),ic:(b.querySelector('svg')||{}).outerHTML||'',on:b.getAttribute('aria-pressed')==='true',run:()=>b.click()})))}
 function tbChrome(){const u=$('#tbUser');if(u){const n=tbUserName(),us=$('#userSel');u.innerHTML=tbSV('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>')+`<span>${esc(n)}</span>`;u.title=n;u.hidden=!!(us&&us.hidden)}
   const t=$('#tbTheme'),on=$('#themeSw [aria-pressed="true"]');if(t&&on){const g=on.querySelector('svg');t.innerHTML=g?g.outerHTML:'◐';t.title=t.ariaLabel=on.title||'โหมดสี'}
-  const c=$('#cloudBtn');if(c){const x=c.textContent.trim();c.dataset.st=/ไม่ได้|ต้องล็อกอิน|ผิดพลาด/.test(x)?'bad':/ยังไม่/.test(x)?'off':/กำลัง|รอ/.test(x)?'busy':'ok';if(c.title!==x&&!/^☁?\s*$/.test(x))c.title=x;c.setAttribute('aria-label',x)}}
+  tbLook();const c=$('#cloudBtn');if(c){const x=c.textContent.trim();c.dataset.st=/ไม่ได้|ต้องล็อกอิน|ผิดพลาด/.test(x)?'bad':/ยังไม่/.test(x)?'off':/กำลัง|รอ/.test(x)?'busy':'ok';if(c.title!==x&&!/^☁?\s*$/.test(x))c.title=x;c.setAttribute('aria-label',x)}}
+// the right side looks and sits as in MEP and BIM (3.96): cloud, bell, colour mode, คู่มือ as icons, then language and เมนู as boxes
+function tbLook(){const k=(e,c)=>{if(e)for(const x of c.split(' '))e.classList.add(x)};
+  k($('#cloudBtn'),'ptb-ib');k($('#cmBell'),'ptb-ib');k($('#tbTheme'),'ptb-ib ptb-thm');
+  const h=$('#helpBtn');if(h){k(h,'ptb-ib ptb-hlp');if(!h.querySelector('svg'))h.insertAdjacentHTML('afterbegin',penumBar.icon('help'))}
+  k($('#langSw>summary'),'ptb-bx');k($('#moreMenu>summary'),'ptb-bx')}
 {const f=cloudBadge;cloudBadge=function(){const x=f.apply(this,arguments);try{tbChrome()}catch(e){}return x}}
 function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;const I=k=>penumBar.icon(k),go=a=>()=>{if(typeof ACT[a]==='function')ACT[a]({dataset:{}})};
   const logo=document.createElement('span');logo.innerHTML='<svg viewBox="0 0 26 26" aria-hidden="true"><defs><linearGradient id="ptbPm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22B8CF"/><stop offset="1" stop-color="#0E6E7E"/></linearGradient></defs><rect width="26" height="26" rx="7" fill="url(#ptbPm)"/><path d="M9 19V7h5.2a3.9 3.9 0 0 1 0 7.8H9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -101,8 +106,7 @@ html.ptb-on .sb-s,html.ptb-on #sbRes,html.ptb-on #undoBox{display:none!important
 html.ptb-on #userSel,html.ptb-on #outBtn,html.ptb-on #themeSw{display:none!important}
 #ptbw .tb-uc{max-width:200px}#ptbw .tb-uc span{overflow:hidden;text-overflow:ellipsis}#ptbw .tb-uc svg{flex:none}
 #ptbw .tb-ic,#ptbw .cm-bell,#ptbw #helpBtn,#ptbw #cloudBtn{width:32px;padding:0;justify-content:center;border-color:transparent}
-#ptbw .tb-ic svg{width:16px;height:16px}
-#ptbw #helpBtn{font-size:0;gap:0}#ptbw .help-btn b{width:18px;height:18px;font-size:11px;margin:0;border-color:currentColor}
+#ptbw #helpBtn b{display:none}
 #ptbw #cloudBtn{position:relative;font-size:0;overflow:hidden}
 #ptbw #cloudBtn::before{content:'';width:18px;height:18px;background:currentColor;-webkit-mask:var(--tb-cloud) center/contain no-repeat;mask:var(--tb-cloud) center/contain no-repeat}
 #ptbw #cloudBtn::after{content:'';position:absolute;right:5px;bottom:6px;width:7px;height:7px;border-radius:50%;background:#16A34A;box-shadow:0 0 0 2px var(--tb-bg)}
@@ -114,9 +118,9 @@ body.pin-lock #tbUser{display:none!important}
 body.pin-lock #ptbw .ptb-qs,body.pin-lock #ptbw .ptb-x,body.pin-lock #ptbw .ptb-c,body.pin-lock #ptbw .ptb-s,body.pin-lock #ptbw .ptb-cart,body.pin-lock #ptbw .pdt,body.pin-lock #ptbw .ptb-logo>svg{display:none!important}
 body.pin-lock #ptbw .ptb-logo{pointer-events:none}
 html.ptb-on body.sb .band{padding-top:10px;padding-bottom:10px}
-@media (max-width:1440px){#ptbw .lang-dd .lg-t{display:none}}
+@media (max-width:1280px){#ptbw .lang-dd .lg-t{display:none}}
 @media (max-width:1280px){#ptbw .tb-uc{max-width:140px}}
-@media (max-width:980px){#ptbw #helpBtn{display:none}#ptbw .tb-uc span{display:none}#ptbw .tb-uc{padding:0 7px}}
-@media (max-width:720px){#ptbw #tbTheme,#ptbw #cloudBtn{display:none}#ptbw #moreMenu summary{padding:0 7px;font-size:0;gap:0}#ptbw #moreMenu summary svg{width:16px;height:16px}}
+@media (max-width:980px){#ptbw .tb-uc span{display:none}#ptbw .tb-uc{padding:0 7px}}
+@media (max-width:720px){#ptbw #cloudBtn{display:none!important}#ptbw #moreMenu summary{font-size:0!important;gap:0}}
 @media print{html.ptb-on body{padding-top:0}}
 </style>`);
