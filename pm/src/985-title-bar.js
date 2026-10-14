@@ -4,8 +4,9 @@
    the user (a button with a menu, as in MEP and BIM: switch user, ลายเซ็นของฉัน, สแกนนิ้ว, ออกจากระบบ), the cart kept for ORIEN's form
    shop (coming soon), then the header's own buttons as icons (cloud, bell, colour mode, คู่มือ), language and เมนู (3.92), placed and drawn as in MEP and BIM (3.96). Under it one tab per open project; เริ่มต้น is the home page. A tab is any project opened on a project page; closing
    it deletes nothing. * = changed since this project was last saved as a file (.penpm, 925); only people who may save files see it.
+   A company on the cloud (3.96): * = not in the cloud yet, and บันทึก / Ctrl+S send it there now.
    The header band keeps the house button and the page name. Only when the build put shared/titlebar.js in <head> (app.json "titlebar"). */
-const TB={on:false,last:''};
+const TB={on:false,last:'',sv:0};
 const tbCur=()=>P&&S.mode==='pj'&&S.tab!=='pjall'&&!document.body.classList.contains('pin-lock')?P.id:'';
 const tbFile=()=>pfAdmin()&&!(typeof licRO==='function'&&licRO());
 // a page of the project department: ภาพรวม when a project is opened from elsewhere, ทุกโครงการ from the name in the bar
@@ -30,6 +31,18 @@ function tbPrint(){const B=[...document.querySelectorAll('#view button[data-a]')
     const h=b.closest('section,.card');const t=h&&h.querySelector('h2,h3');return t?t.textContent.trim().split('\n')[0]:''};
   const a=document.querySelector('#ptbw .ptb-print');
   penumBar.pop(a&&a.offsetParent?a:document.querySelector('#ptbw .ptb-logo'),B.slice(0,14).map(b=>{const x=at(b),l=b.textContent.replace(/\s+/g,' ').trim()||'พิมพ์';return {t:(x?l+' · '+x:l).slice(0,90),run:()=>b.click()}}))}
+// 3.96 the company's data in the cloud (คลาวด์ PENUM, 830, or OneDrive, 280): the main copy is there, so บันทึก (the quick button,
+// Ctrl+S and the question when a tab closes) sends it now and * means not in the cloud yet; บันทึกโครงการนี้ลงเครื่อง still saves a .penpm file
+const tbCl=()=>((typeof sbOn==='function'&&sbOn())||cloudOn())&&!(typeof licRO==='function'&&licRO());
+const tbSt=()=>folderOn()?FS:CS;
+async function tbCloud(){for(let i=0;i<80&&(FS.busy||CS.busy);i++)await new Promise(r=>setTimeout(r,250));
+  if(folderOn())await folderSync();else if(cloudOn())await cloudSync();const st=tbSt(),ok=st.state==='ok';
+  toast(ok?'บันทึกขึ้นคลาวด์แล้ว':`ยังบันทึกขึ้นคลาวด์ไม่ได้${st.msg?' ('+st.msg+')':''} ข้อมูลยังอยู่ในเครื่องนี้ครบ จะส่งขึ้นเองเมื่อต่ออินเทอร์เน็ตได้`);return ok}
+const tbMain=()=>tbCl()?tbCloud():ACT.pfSave();
+// a sync that went through: every open tab is in the cloud as it was (as it is now, when nothing was typed meanwhile)
+{const w=f=>async function(){const go=TB.on&&tbCl()&&!(FS.busy||CS.busy),n0=TB.sv,S0={};if(go)for(const id of penumBar.ids())if(DB.projects[id])S0[id]=JSON.stringify(DB.projects[id]);
+  const r=await f.apply(this,arguments);if(go&&tbSt().state==='ok')for(const id in S0)penumBar.clean(id,TB.sv===n0&&DB.projects[id]?JSON.stringify(DB.projects[id]):S0[id]);return r};
+  folderSync=w(folderSync);cloudSync=w(cloudSync)}
 // the user: one button with a menu, like MEP and BIM; #userSel and ออกจากระบบ (#outBtn, 290) stay in the page, hidden, and do the work
 const tbSV=d=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 function tbUserName(){const us=$('#userSel');if(S.me&&typeof staffName==='function')return staffName(S.me)||'';const o=us&&us.selectedOptions&&us.selectedOptions[0];return o?o.textContent.replace(/\s*\(.*\)\s*$/,'').trim():'ผู้ใช้งาน'}
@@ -45,7 +58,8 @@ function tbUserMenu(){const us=$('#userSel'),out=$('#outBtn'),mm=a=>{const b=$(`
 function tbThemeMenu(){penumBar.pop($('#tbTheme'),[...document.querySelectorAll('#themeSw [data-k]')].map(b=>({t:b.title||b.textContent.trim(),ic:(b.querySelector('svg')||{}).outerHTML||'',on:b.getAttribute('aria-pressed')==='true',run:()=>b.click()})))}
 function tbChrome(){const u=$('#tbUser');if(u){const n=tbUserName(),us=$('#userSel');u.innerHTML=tbSV('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>')+`<span>${esc(n)}</span>`;u.title=n;u.hidden=!!(us&&us.hidden)}
   const t=$('#tbTheme'),on=$('#themeSw [aria-pressed="true"]');if(t&&on){const g=on.querySelector('svg');t.innerHTML=g?g.outerHTML:'◐';t.title=t.ariaLabel=on.title||'โหมดสี'}
-  tbLook();const c=$('#cloudBtn');if(c){const x=c.textContent.trim();c.dataset.st=/ไม่ได้|ต้องล็อกอิน|ผิดพลาด/.test(x)?'bad':/ยังไม่/.test(x)?'off':/กำลัง|รอ/.test(x)?'busy':'ok';if(c.title!==x&&!/^☁?\s*$/.test(x))c.title=x;c.setAttribute('aria-label',x)}}
+  tbLook();const qs=document.querySelector('#ptbw .ptb-save');if(qs)qs.title=tbCl()?'บันทึกขึ้นคลาวด์ (Ctrl+S)':'บันทึกโครงการนี้ลงเครื่อง (Ctrl+S)';
+  const c=$('#cloudBtn');if(c){const x=c.textContent.trim();c.dataset.st=/ไม่ได้|ต้องล็อกอิน|ผิดพลาด/.test(x)?'bad':/ยังไม่/.test(x)?'off':/กำลัง|รอ/.test(x)?'busy':'ok';if(c.title!==x&&!/^☁?\s*$/.test(x))c.title=x;c.setAttribute('aria-label',x)}}
 // the right side looks and sits as in MEP and BIM (3.96): cloud, bell, colour mode, คู่มือ as icons, then language and เมนู as boxes
 function tbLook(){const k=(e,c)=>{if(e)for(const x of c.split(' '))e.classList.add(x)};
   k($('#cloudBtn'),'ptb-ib');k($('#cmBell'),'ptb-ib');k($('#tbTheme'),'ptb-ib ptb-thm');
@@ -60,12 +74,12 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
   const bar=penumBar.mount({app:'pm',appName:'PENUM PM',key:'penum.pm.tabs'+DSFX,tag:'PM',ver:'PENUM PM '+((window.PENUM_SITE||{}).name||''),accent:'#0891B2',logo:logo.firstChild,
     dark:()=>document.documentElement.dataset.theme==='dark',note:m=>toast(m),
     menu:()=>[{t:'โครงการใหม่',ic:I('new'),run:go('newProj')},{t:'เปิดไฟล์โครงการ…',ic:I('open'),run:go('pfOpen')},
-      {t:'บันทึกโครงการนี้ลงเครื่อง',ic:I('save'),kbd:'Ctrl+S',run:go('pfSave')},{t:'บันทึกเป็น…',ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},{t:'บันทึกทุกโครงการลงเครื่อง',ic:I('save'),run:go('pfSaveAll')},
+      ...(tbCl()?[{t:'บันทึกขึ้นคลาวด์',ic:I('save'),kbd:'Ctrl+S',run:tbCloud},{t:'บันทึกโครงการนี้ลงเครื่อง',ic:I('save'),run:go('pfSave')}]:[{t:'บันทึกโครงการนี้ลงเครื่อง',ic:I('save'),kbd:'Ctrl+S',run:go('pfSave')}]),{t:'บันทึกเป็น…',ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},{t:'บันทึกทุกโครงการลงเครื่อง',ic:I('save'),run:go('pfSaveAll')},
       {t:'พิมพ์เอกสารในหน้านี้',ic:I('print'),run:tbPrint},{t:'แชร์ไฟล์โครงการ',ic:I('share'),run:tbShare},'-',
       {t:'หน้าแรก',run:go('goHome')},{t:'ทุกโครงการ',run:tbAll},'-',
       {t:'PENUM MEP ↗',run:link('lnkMep')},{t:'PENUM BIM ↗',run:link('lnkBim')},'-',
       {t:'คู่มือการใช้งาน',run:go('helpAll')},{t:'แจ้งปัญหา / ความคิดเห็น',run:go('fb')}],
-    quick:[{k:'new',t:'โครงการใหม่',run:go('newProj')},{k:'open',t:'เปิดไฟล์โครงการ',run:go('pfOpen')},{k:'save',t:'บันทึกโครงการนี้ลงเครื่อง (Ctrl+S)',run:go('pfSave')},
+    quick:[{k:'new',t:'โครงการใหม่',run:go('newProj')},{k:'open',t:'เปิดไฟล์โครงการ',run:go('pfOpen')},{k:'save',t:'บันทึก (Ctrl+S)',run:tbMain},
       {k:'saveas',t:'บันทึกเป็น… (Ctrl+Shift+S)',run:tbSaveAs},{k:'print',t:'พิมพ์เอกสารในหน้านี้',run:tbPrint},
       ...($('#undoBtn')?[{k:'undo',node:$('#undoBtn')},{k:'redo',node:$('#redoBtn')}]:[{k:'undo',t:'ย้อนกลับ (Ctrl+Z)',run:go('undo')},{k:'redo',t:'ทำซ้ำ (Ctrl+Y)',run:go('redo')}]),
       {k:'share',t:'แชร์ไฟล์โครงการ',run:tbShare}],
@@ -79,18 +93,18 @@ function tbMount(){if(TB.on||!window.penumBar||!$('#userSel'))return;TB.on=true;
     tabs:{cur:tbCur,start:()=>S.dept==='home',has:id=>!!DB.projects[id],name:id=>(DB.projects[id]||{}).name||'',
       open:id=>tbOpen(id),
       close:id=>{if(id===tbCur()){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(nx)tbOpen(nx);else ACT.goHome()}penumBar.forget(id)},          // the last tab: หน้าแรก
-      save:async id=>{const p=DB.projects[id];if(!p||pfNo())return false;const r=await pfSaveOne(p),m=pfSaid(r);if(m)toast(m);return !!r&&!r.err},
-      add:go('newProj'),home:go('goHome'),
-      lost:()=>'ถ้าไม่บันทึก ข้อมูลโครงการยังอยู่ในโปรแกรมครบ เปิดต่อได้ทุกเมื่อ เพียงแต่ไฟล์ .penpm ในเครื่องยังเป็นรุ่นเก่า'}});
+      save:async id=>{const p=DB.projects[id];if(p&&tbCl())return tbCloud();if(!p||pfNo())return false;const r=await pfSaveOne(p),m=pfSaid(r);if(m)toast(m);return !!r&&!r.err},
+      cloud:()=>tbCl(),add:go('newProj'),home:go('goHome'),
+      lost:(id,c)=>c?'ถ้าไม่บันทึก ข้อมูลโครงการยังอยู่ในโปรแกรมครบ และจะส่งขึ้นคลาวด์เองในการซิงค์ครั้งถัดไป':'ถ้าไม่บันทึก ข้อมูลโครงการยังอยู่ในโปรแกรมครบ เปิดต่อได้ทุกเมื่อ เพียงแต่ไฟล์ .penpm ในเครื่องยังเป็นรุ่นเก่า'}});
   for(const o of penumBar.ids())if(!DB.projects[o])penumBar.forget(o);
   document.body.prepend(bar);TB.last='';tbSync()}
 function tbSync(){if(!TB.on)return;const c=tbCur();if(c&&c!==TB.last){penumBar.use(c);penumBar.check(c,JSON.stringify(P))}TB.last=c;tbChrome();penumBar.refresh()}
 {const r=render;render=function(){const x=r.apply(this,arguments);try{tbSync()}catch(e){console.error(e)}return x}}
-{const s=save;save=function(){const x=s.apply(this,arguments);if(TB.on&&tbCur()&&tbFile()){const id=P.id;penumBar.soon(id,()=>JSON.stringify(DB.projects[id]))}return x}}
+{const s=save;save=function(){const x=s.apply(this,arguments);TB.sv++;if(TB.on&&tbCur()&&(tbCl()||tbFile())){const id=P.id;penumBar.soon(id,()=>JSON.stringify(DB.projects[id]))}return x}}
 {const f=pfSaveOne;pfSaveOne=async function(p){const s0=JSON.stringify(p),r=await f.apply(this,arguments);if(TB.on&&r&&!r.err&&p&&p.id)penumBar.clean(p.id,s0);return r}}          // saved as a file: no *
 document.addEventListener('keydown',e=>{if(!TB.on||!(e.ctrlKey||e.metaKey)||e.altKey||document.querySelector('dialog[open]'))return;const k=String(e.key).toLowerCase();
   if(k==='k'){if(penumBar.focusSearch()){e.preventDefault();e.stopImmediatePropagation()}return}
-  if(k!=='s'||document.body.classList.contains('pin-lock'))return;e.preventDefault();if(e.shiftKey)tbSaveAs();else ACT.pfSave()},true);
+  if(k!=='s'||document.body.classList.contains('pin-lock'))return;e.preventDefault();if(e.shiftKey)tbSaveAs();else tbMain()},true);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',tbMount);else setTimeout(tbMount);
 document.head.insertAdjacentHTML('beforeend',`<style>
 html.ptb-on #ptbw{position:fixed;top:0;left:0;right:0;z-index:45}

@@ -17348,6 +17348,13 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
   {const f=loadText;loadText=function(){f.apply(this,arguments);if(P)penumBar.clean(P.guid,projStr())}}          // opened from a file: the same as the file, no *
   {const f=saveProject;saveProject=async function(){const r=await f.apply(this,arguments);if(r===true)penumBar.clean(P.guid,projStr());return r}}
   {const f=saveNow;saveNow=function(){f.apply(this,arguments);if(P&&!TB.sw)penumBar.soon(P.guid,()=>projStr(),()=>({unsaved:tbWork()}))}}
+  // V1.83 a company project (โครงการของบริษัท) that goes up from this device: its main copy is the company's in the cloud, so บันทึก
+  // (Ctrl+S, the quick button, the File menu and the question when its tab closes) sends it there now; บันทึกลงเครื่อง in the logo menu saves a file
+  const tbCl=id=>TM_ON&&!!P&&(id==null||id===P.guid)&&penumTeam.live();
+  async function tbCloud(){const ok=await penumTeam.flush();if(ok)penumBar.clean(P.guid,projStr());
+    toast(ok?L2('บันทึกขึ้นคลาวด์แล้ว (โครงการของบริษัท)','Saved to the cloud (company projects)'):L2('ยังบันทึกขึ้นคลาวด์ไม่ได้ งานยังอยู่ในเครื่องนี้ ลองอีกครั้งเมื่อต่ออินเทอร์เน็ตได้','Not saved to the cloud yet; the work is still on this device. Try again when online.'),5000);return ok}
+  {const f=act;act=function(a){if(a==='save'&&tbCl()){tbCloud();return}return f.apply(this,arguments)}}
+  addEventListener('penumteam-up',e=>{if(P&&e.detail&&e.detail.id===P.guid)penumBar.clean(P.guid,projStr())});          // the company has this version: no *
   async function tbSaveAs(){const s=projStr(),r=await penumBar.saveAs({name:P.info.name||'penum',ext:'.penbim',text:s,type:'application/x-penum-bim'});if(!r)return false;
     penumBar.clean(P.guid,s);toast((r.dl?L2('ดาวน์โหลดไฟล์แล้ว: ','Downloaded: '):L2('บันทึกแล้ว: ','Saved: '))+r.file,5000);return true}
   async function tbShare(){if(TM_ON){tmBox();return}          // แชร์ = โครงการของบริษัท: colleagues open it from their own computer
@@ -17369,7 +17376,7 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
   const bar=penumBar.mount({app:'bim',appName:'PENUM BIM',key:'penum.bim.tabs',tag:'BIM',ver:'PENUM BIM '+V1_NAME,accent:'#0B7F8C',logo:q('.qat .brand svg'),
     dark:()=>document.documentElement.getAttribute('data-ui')!=='light',note:m=>toast(m,5000),
     menu:()=>[{t:t('m_new'),ic:I('new'),run:()=>act('new')},{t:t('m_sample'),run:()=>act('sample')},{t:t('m_open'),ic:I('open'),run:()=>act('open')},
-      {t:t('m_save'),ic:I('save'),kbd:'Ctrl+S',run:()=>act('save')},{t:L2('บันทึกเป็น…','Save as…'),ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},
+      ...(tbCl()?[{t:L2('บันทึกขึ้นคลาวด์','Save to the cloud'),ic:I('save'),kbd:'Ctrl+S',run:tbCloud},{t:L2('บันทึกลงเครื่อง','Save on this computer'),ic:I('save'),run:()=>saveProject()}]:[{t:t('m_save'),ic:I('save'),kbd:'Ctrl+S',run:()=>act('save')}]),{t:L2('บันทึกเป็น…','Save as…'),ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},
       {t:t('a_print'),ic:I('print'),kbd:'Ctrl+P',run:()=>act('print')},{t:L2('แชร์','Share'),ic:I('share'),run:tbShare},'-',
       {t:L2('หน้าเริ่มต้น','Start page'),run:()=>{bsShow();penumBar.refresh()}},...(TM_ON?[{t:L2('โครงการของบริษัท','Company projects'),run:tmBox}]:[]),
       {t:L2('เมนูไฟล์ทั้งหมด…','The whole File menu…'),run:()=>act('filemenu',null,q('#ptbw .ptb-logo'))},'-',
@@ -17383,11 +17390,11 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
     search:{index:tbIndex,first:ix=>ix.filter(o=>o.ic==='▣')},
     user:q('.qat .ptm-chip'),right:[tbThm,tbHelp,tbLang,q('#appMenu')],
     tabs:{cur:()=>P&&P.guid!==TB.gone?P.guid:'',start:()=>!!q('#bimStart'),has:id=>!TB.ready||id===P.guid||TBS.has(id),name:id=>id===P.guid?P.info.name||'':'',
-      open:tbGo,add:()=>act('new'),home:()=>{bsShow();penumBar.refresh()},save:async id=>id===P.guid&&await saveProject()===true,
+      open:tbGo,add:()=>act('new'),home:()=>{bsShow();penumBar.refresh()},save:async id=>id===P.guid&&(tbCl(id)?await tbCloud():await saveProject()===true),cloud:tbCl,
       close:async id=>{if(id===P.guid){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(!nx){TB.gone=id;delete TBV[id];bsShow();penumBar.forget(id);return}          // the last tab: the start page; a project opened next takes its place
         await tbGo(nx);if(P.guid===id)return}
         TBS.delete(id);delete TBV[id];await tbDel(id);penumBar.forget(id)},
-      lost:()=>L2('ถ้าไม่บันทึก งานที่แก้ในแท็บนี้จะหายไป','Without saving, the work in this tab is lost.')}});
+      lost:(id,c)=>c?L2('ถ้าไม่บันทึก งานที่แก้ยังอยู่ในเครื่องนี้ แต่คลาวด์ของบริษัทยังเป็นฉบับก่อน จนกว่าจะเปิดโครงการนี้อีกครั้ง','Without saving, your changes stay on this device but the company cloud keeps the earlier version until you open this project again.'):L2('ถ้าไม่บันทึก งานที่แก้ในแท็บนี้จะหายไป','Without saving, the work in this tab is lost.')}});
   q('.qat').before(bar);
   {const f=refreshChrome;refreshChrome=function(){f.apply(this,arguments);const v=activeView();vs.textContent=v?'— '+v.name:'';tbHelp.title=t('a_help')+' (F1)';tbHelp.setAttribute('aria-label',t('a_help'));if(refreshChrome.n!==P.info.name+'|'+ui.lang){refreshChrome.n=P.info.name+'|'+ui.lang;tbLang.draw();penumBar.refresh()}else penumBar.title()}}
   {const f=bsShow;bsShow=function(){f.apply(this,arguments);penumBar.refresh()}}{const f=bsClose;bsClose=function(){f.apply(this,arguments);if(P&&TB.gone===P.guid){TB.gone='';penumBar.use(P.guid);tbCheck()}penumBar.refresh()}}          // back to the project closed last: its tab again

@@ -18,12 +18,16 @@
    find(text, index) → the hits for what was typed, when the app ranks them itself}
    · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] in this order in
    every app: the app's extras, colour mode (class ptb-ib ptb-thm), คู่มือ (ptb-ib ptb-hlp), language (ptb-bx), เมนู (ptb-bx) · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
-   close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
+   close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost(id, cloud): the question's note for closing unsaved,
+   cloud(id) → true when the project's main copy is in the cloud (PM's company cloud, MEP/BIM company projects): * then means
+   not in the cloud yet, and the question's บันทึก says บันทึกขึ้นคลาวด์} */
 (()=>{if(window.penumBar)return;
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={start:['เริ่มต้น','Start'],add:['โครงการใหม่','New project'],all:['แท็บที่เปิดอยู่','Open tabs'],others:['ปิดแท็บอื่นทั้งหมด','Close the other tabs'],
   close:['ปิด','Close'],dirty:['มีการแก้ไขที่ยังไม่ได้บันทึกลงไฟล์','Changes not saved to a file yet'],
   closeT:['ปิด “{0}”','Close “{0}”'],closeQ:['มีการแก้ไขที่ยังไม่ได้บันทึกลงไฟล์ บันทึกก่อนปิดไหม','It has changes not saved to a file. Save before closing?'],
+  dirtyC:['มีการแก้ไขที่ยังไม่ได้บันทึกขึ้นคลาวด์','Changes not saved to the cloud yet'],closeQC:['มีการแก้ไขที่ยังไม่ได้บันทึกขึ้นคลาวด์ บันทึกขึ้นคลาวด์ก่อนปิดไหม','It has changes not saved to the cloud yet. Save to the cloud before closing?'],
+  saveC:['บันทึกขึ้นคลาวด์','Save to the cloud'],
   save:['บันทึก','Save'],nosave:['ไม่บันทึก','Don’t save'],cancel:['ยกเลิก','Cancel'],
   new:['ใหม่','New'],open:['เปิด','Open'],saveas:['บันทึกเป็น','Save as'],print:['พิมพ์','Print'],undo:['ย้อนกลับ','Undo'],redo:['ทำซ้ำ','Redo'],share:['แชร์','Share'],
   ph:['พิมพ์คำค้นหา','Type a keyword'],none:['ไม่พบ ลองคำอื่น','Nothing found, try another word'],srch:['ค้นหา','Search'],
@@ -129,8 +133,9 @@ function build(){const w=document.createElement('div');w.className='ptbw';w.id='
   s.addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const b=e.target.closest('[data-id]');if(b){e.preventDefault();openTab(b.dataset.id)}});
   srch(w);return w}
 function openTab(id){popClose();if(id===cur()&&!C.tabs.start())return;C.tabs.open(id)}
+const cl=id=>{try{return !!(C.tabs.cloud&&C.tabs.cloud(id))}catch(e){return false}},dirtyT=id=>t(cl(id)?'dirtyC':'dirty');          // the main copy is in the cloud: บันทึก sends it there
 async function closeTab(id){popClose();flush();if(dirty(id)){if(id!==cur()||C.tabs.start()){await C.tabs.open(id);if(id!==cur())return}          // as AutoCAD does: the drawing comes forward before it asks
-  const k=await ask(t('closeT',nameOf(id)),`<p>${esc(t('closeQ'))}</p>${C.tabs.lost?`<p class="ptb-h">${esc(C.tabs.lost())}</p>`:''}`,[['save',t('save'),1],['drop',t('nosave')],['',t('cancel')]]);
+  const c=cl(id),k=await ask(t('closeT',nameOf(id)),`<p>${esc(t(c?'closeQC':'closeQ'))}</p>${C.tabs.lost?`<p class="ptb-h">${esc(C.tabs.lost(id,c))}</p>`:''}`,[['save',t(c?'saveC':'save'),1],['drop',t('nosave')],['',t('cancel')]]);
   if(!k)return;if(k==='save'&&!await C.tabs.save(id))return}
   await C.tabs.close(id);refresh()}
 async function closeOthers(){const c=cur();for(const id of ids())if(id!==c){await closeTab(id);if(cur()!==c&&C.tabs.has(c))await C.tabs.open(c)}}
@@ -161,12 +166,12 @@ function coName(){let n='';try{if(C.company)n=String(C.company()||'').trim()}cat
   if(!n)try{const o=JSON.parse(localStorage.getItem('penum.company')||'null');n=o&&o.name?String(o.name).trim():''}catch(e){}
   if(!n)try{n=String((window.penumLic&&window.penumLic.state().co)||'').trim()}catch(e){}return n}
 function title(){if(!W)return;const c=cur(),tn=W.querySelector('.ptb-tn'),st=W.querySelector('.ptb-st'),tt=W.querySelector('.ptb-tt');
-  let s='';try{s=C.title?C.title():nameOf(c)}catch(e){}tn.textContent=s;st.hidden=!dirty(c);tt.title=(C.titleTip?C.titleTip():s)+(dirty(c)?' · '+t('dirty'):'');
+  let s='';try{s=C.title?C.title():nameOf(c)}catch(e){}tn.textContent=s;st.hidden=!dirty(c);tt.title=(C.titleTip?C.titleTip():s)+(dirty(c)?' · '+dirtyT(c):'');
   const co=coName(),ce=W.querySelector('.ptb-co');ce.hidden=!co;ce.querySelector('.ptb-cn').textContent=co;ce.title=t('co')+': '+co;
   try{if(C.appName)document.title=(s?s+(dirty(c)?'*':'')+' – ':'')+(C.appName||'PENUM')}catch(e){}}
 function refresh(){if(!W)return;const L=ids(),c=cur(),st=C.tabs.start(),s=W.querySelector('.pdt-s'),sl=s.scrollLeft;
   s.innerHTML=`<button type="button" class="pdt-t pdt-st${st?' on':''}" role="tab" aria-selected="${st}">${esc(t('start'))}</button>`+L.map(id=>{const on=!st&&id===c,d=dirty(id),n=nameOf(id);
-    return `<div class="pdt-t${on?' on':''}${d?' dt':''}" role="tab" tabindex="0" aria-selected="${on}" data-id="${esc(id)}" title="${esc(n+(d?' · '+t('dirty'):''))}"><span class="pdt-n">${esc(n)}</span>${d?'<span class="pdt-d" aria-hidden="true">*</span>':''}<button type="button" class="pdt-x" title="${esc(t('close'))}" aria-label="${esc(t('close')+' '+n)}">${IC.x}</button></div>`}).join('');
+    return `<div class="pdt-t${on?' on':''}${d?' dt':''}" role="tab" tabindex="0" aria-selected="${on}" data-id="${esc(id)}" title="${esc(n+(d?' · '+dirtyT(id):''))}"><span class="pdt-n">${esc(n)}</span>${d?'<span class="pdt-d" aria-hidden="true">*</span>':''}<button type="button" class="pdt-x" title="${esc(t('close'))}" aria-label="${esc(t('close')+' '+n)}">${IC.x}</button></div>`}).join('');
   s.scrollLeft=sl;const on=s.querySelector('.on');if(on&&refresh.on!==(on.dataset.id||'start')){refresh.on=on.dataset.id||'start';on.scrollIntoView({block:'nearest',inline:'nearest'})}
   W.querySelector('.pdt-m').title=t('all');W.querySelector('.pdt-add').title=t('add');W.querySelector('.ptb-logo').title=t('menu');W.querySelector('.ptb-cart').title=t('cart')+' · '+t('soon');
   W.querySelector('.ptb-si').placeholder=t('ph');
