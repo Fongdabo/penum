@@ -24,6 +24,7 @@
      (pmPut, a row k:'pm' with no data), and PM's chat lists the edit requests with อนุมัติ / ไม่อนุมัติ (reqs, decide). It fires 'penumteam'.
    window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · me() · chip(cls) · signIn() · signOut()
    · ro() the open project is someone else's and not approved: the app does not save it · roNote() says so
+   · live(id) the open project goes up from this device (its main copy is the company's) · flush() → bool send it now; fires 'penumteam-up' {id} when up to date
    · dump(prog) every MEP and BIM project of the company with its data (PM's สำรองคลาวด์ลงเครื่อง)
    cfg (the app): app 'mep'|'bim' · cur() → null (nothing to share: a sample, read-only) or {id, name, client, code, sum, text()}
    · apply(text, meta) the company's newer version replaces the open one · has(id) · openLocal(id) · open(text, meta) → bool
@@ -279,7 +280,14 @@ function chips(){const nm=name(),n=nm&&CFG?reqsFor().length:0;for(const b of CHI
 // the open project, every 50 s and a few seconds after a change: hold it, send it, or take the company's newer version
 let CFG=null;const ST={st:'',p:'',id:'',held:'',other:null,conf:null,asked:{},busy:0,act:Date.now(),err:'',lw:'',lwN:'',shared:0,pend:0,hideBar:'',ro:0,roH:'',roSeen:{},row:null,inApply:0};
 let soonT=0;function soon(){ST.act=Date.now();clearTimeout(soonT);soonT=setTimeout(tick,SOON)}
-async function tick(){if(!CFG)return;if(ST.busy){ST.pend=1;return}ST.busy=1;try{await tick0()}catch(e){}finally{ST.busy=0;bar();if(ST.pend){ST.pend=0;soon()}}}
+async function tick(){if(!CFG)return;if(ST.busy){ST.pend=1;return}ST.busy=1;try{await tick0()}catch(e){}finally{ST.busy=0;bar();if(ST.pend){ST.pend=0;soon()}
+  if(!PMM())synced().then(ok=>{if(ok)dispatchEvent(new CustomEvent('penumteam-up',{detail:{id:ST.id}}))},()=>{})}}          // the app's top bar: no * once the company has this version
+// the open project goes up to the company list from this device (it holds it); its main copy is then the company's, in the cloud
+function live(id){const c=CFG&&!PMM()&&CFG.cur();return !!(c&&c.id&&ST.st==='ok'&&!ST.ro&&ST.held&&ST.held===ST.p&&ST.id===c.id&&(id==null||String(id)===String(c.id)))}
+async function synced(){if(!live())return false;const c=CFG.cur(),R=rec(ST.p);return !!R&&R.h===hs(c.text())}
+// บันทึก in the top bar: send the open project now, not a few seconds later; true when the company's copy is this device's version
+async function flush(){if(!CFG||PMM())return false;clearTimeout(soonT);ST.act=Date.now();for(let i=0;ST.busy&&i<80;i++)await new Promise(r=>setTimeout(r,250));
+  await tick();return synced()}
 async function release(keep){const p=ST.held;ST.held='';if(!p||!TM)return;await rpc('penum_team_unlock',{p_t:TM.t,p_p:p,p_dev:dev()},keep)}
 async function tick0(){
   {const T=await team();if(!T.err)await syncDir(T);gate()}          // the staff list, and sign-in when the company asks for it
@@ -685,5 +693,5 @@ async function dump(prog){if(!CFG)return {err:'nolic'};const T=await team();if(T
   for(const a of ['mep','bim']){const r=await lst(a,1);if(r.err)return r;r.rows.forEach(x=>L.push(Object.assign({},x,{app:a})))}
   const out=[];for(const x of L){const g=await get(T,x.p);out.push({app:x.app,p:x.p,m:x.m,at:x.at,off:x.off,d:g?g.d:null});if(prog)prog(out.length,L.length)}
   return {rows:out,co:T.co}}
-window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
+window.penumTeam={attach,soon,tick,live,flush,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
 })();
