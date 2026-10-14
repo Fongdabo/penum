@@ -6,7 +6,8 @@
 // with keys (work keys not saved without a licence), work (the key that shows the device already used the app), sample (BIM's
 // untouched sample project) and skip (a location.hash regex left unchecked); cloud: put shared/link.js (project link code, data across
 // computers) in the page; team: put shared/team.js (the company's shared project list, โครงการของบริษัท) in the page;
-// files: put shared/files.js (save each project as a file in a folder) in the page;
+// files: put shared/files.js (save each project as a file in a folder) in the page; titlebar: put shared/titlebar.js (the AutoCAD-style
+// title bar and project tabs) in the page;
 // prices: put shared/prices.js (คลังราคากลาง, the company's one price list shared by PM, MEP and BIM) in the page;
 // fileTypes: {mime: [extensions]} the installed app opens by double-click (manifest file_handlers). See docs/apps.md.
 //
