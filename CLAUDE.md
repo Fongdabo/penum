@@ -1,6 +1,6 @@
 # PENUM: notes for Claude sessions
 
-Apps: `pm/` PENUM PM, `mep/` PENUM MEP, `bim/` PENUM BIM, `sales/` ORIEN ฝ่ายขาย. Each has an `app.json`; parts every app
+Apps: `pm/` PENUM PM, `mep/` PENUM MEP, `bim/` PENUM BIM, `sales/` ORIEN (formerly ORIEN ฝ่ายขาย; the folder and URL keep the old name). Each has an `app.json`; parts every app
 shares live in `shared/`. GitHub Pages serves fongdabo.github.io/penum from `main`, built by `tools/build-pages.mjs`.
 The full guide (layout, link keys between apps, commands) is `docs/apps.md` (Thai).
 
