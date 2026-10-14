@@ -8,7 +8,7 @@
 //  - the apps its header buttons open in their own window (app.json "opens") still have those buttons
 //  - the feedback box copy matches shared/feedback.js (run node tools/sync-feedback.mjs after editing it)
 //  - for an app with "licence" (MEP, BIM): the storage keys it names are still in the source, so the check still guards the work
-// And once: shared/licence.js, shared/link.js, shared/files.js, shared/team.js and shared/titlebar.js parse, and licence.js, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
+// And once: shared/licence.js, shared/link.js, shared/files.js, shared/team.js, shared/titlebar.js and shared/prices.js parse, and licence.js, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
 // For an app split into files (<app>/src, PENUM PM) also:
 //  - every file is named NNN-what.html|css|js, is not empty and ends with a line break
 //  - every .js file parses on its own, so an error names the file and line
@@ -76,6 +76,7 @@ try { new Script(readFileSync(join(root, 'shared', 'link.js'), 'utf8'), { filena
 try { new Script(readFileSync(join(root, 'shared', 'files.js'), 'utf8'), { filename: 'shared/files.js' }); } catch (e) { errors.push(`shared/files.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'team.js'), 'utf8'), { filename: 'shared/team.js' }); } catch (e) { errors.push(`shared/team.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'titlebar.js'), 'utf8'), { filename: 'shared/titlebar.js' }); } catch (e) { errors.push(`shared/titlebar.js:${errLine(e)} does not parse: ${e.message}`); }
+try { new Script(readFileSync(join(root, 'shared', 'prices.js'), 'utf8'), { filename: 'shared/prices.js' }); } catch (e) { errors.push(`shared/prices.js:${errLine(e)} does not parse: ${e.message}`); }
 const KX = (LICJS.match(/x:'([A-Za-z0-9_-]{43})'/) || [])[1], KY = (LICJS.match(/y:'([A-Za-z0-9_-]{43})'/) || [])[1];
 if (!KX || !KY) errors.push('shared/licence.js: public key (x:\'…\', y:\'…\') not found');
 else for (const d of ['pm', 'sales']) { const b = APPS.find(x => x.dir === d), s = b && source(b); if (s && (!s.includes(KX) || (d === 'pm' && !s.includes(KY)))) errors.push(`${d}: its licence public key differs from shared/licence.js`); }

@@ -271,7 +271,7 @@ const VIEWS=new Set();
 async function list(){const T=await team();if(T.err)return T;const r=await rpc('penum_team_list',{p_t:T.t,p_a:CFG.app});if(r.err)return r;
   const rows=(await Promise.all((r.j||[]).map(async x=>{let m;try{m=await dec(T.key,x.m)}catch(e){return null}if(m&&m.k==='dir')return null;
     return {p:x.p,m,at:x.at,off:!!x.off,lk:x.ld?{me:x.ld===dev(),n:await who(T,x.lw),at:x.lat}:null}}))).filter(Boolean);
-  return {rows,co:T.co}}
+  return {rows:rows.filter(x=>!x.m.k),co:T.co}}          // rows marked k are not projects (k:'prices' the price library, shared/prices.js)
 function when(s){const d=new Date(s);if(isNaN(d))return '–';const ms=Date.now()-d,L=EN()?'en-GB':'th-TH',hm=d.toLocaleTimeString(L,{hour:'2-digit',minute:'2-digit'});
   if(ms<90e3)return t('now');if(ms<3600e3)return t('min',Math.round(ms/6e4));const a=new Date();a.setHours(0,0,0,0);if(d>=a)return t('today',hm);if(d>=a-864e5)return t('yday',hm);
   return d.toLocaleDateString(L,{day:'numeric',month:'short',year:'2-digit'})+' '+hm}

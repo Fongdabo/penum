@@ -27,6 +27,8 @@ const LIC = readFileSync(join(SHARED, 'licence.js'), 'utf8').replaceAll('</scrip
 const LINK = readFileSync(join(SHARED, 'link.js'), 'utf8').replaceAll('</script', '<\\/script');
 // โครงการของบริษัท: apps with "team": true in app.json (MEP, BIM) carry shared/team.js in <head>, the company's shared project list
 const TEAM = readFileSync(join(SHARED, 'team.js'), 'utf8').replaceAll('</script', '<\\/script');
+// คลังราคากลาง: apps with "prices": true in app.json (PM, MEP, BIM) carry shared/prices.js in <head>, the company's one price list
+const PRICES = readFileSync(join(SHARED, 'prices.js'), 'utf8').replaceAll('</script', '<\\/script');
 // บันทึกลงเครื่อง: apps with "files": true in app.json carry shared/files.js in <head>, to save each project as a file in a folder the customer picks
 const FILES = readFileSync(join(SHARED, 'files.js'), 'utf8').replaceAll('</script', '<\\/script');
 // แถบบน + แท็บชื่องาน: apps with "titlebar": true in app.json carry shared/titlebar.js in <head>, the AutoCAD-style title bar and project tabs
@@ -50,7 +52,7 @@ for (const a of APPS) {
   // an app with its own icons/ folder (the ORIEN sales app) uses those instead of the shared PENUM icons
   const ic = a.ownIcons ? 'icons/' : '../icons/';
   const src = source(a);
-  const lic = (a.licence ? `<script>window.PENUM_LIC=${JSON.stringify(licCfg(a))};\n${LIC}</script>` : '') + (a.cloud ? `<script>${LINK}</script>` : '') + (a.team ? `<script>${TEAM}</script>` : '') + (a.files ? `<script>${FILES}</script>` : '') + (a.titlebar ? `<script>${TBAR}</script>` : '');
+  const lic = (a.licence ? `<script>window.PENUM_LIC=${JSON.stringify(licCfg(a))};\n${LIC}</script>` : '') + (a.cloud ? `<script>${LINK}</script>` : '') + (a.team ? `<script>${TEAM}</script>` : '') + (a.files ? `<script>${FILES}</script>` : '') + (a.titlebar ? `<script>${TBAR}</script>` : '') + (a.prices ? `<script>${PRICES}</script>` : '');
   const ver = createHash('sha256').update(src).update(UPD).update(lic).digest('hex').slice(0, 12);
   const vname = (a.ver && (src.match(new RegExp(a.ver)) || [])[1]) || lastChange(a.dir) || ver.slice(0, 7);
   const site = `window.PENUM_SITE={app:${JSON.stringify(a.dir)},title:${JSON.stringify(a.name)},hash:${JSON.stringify(ver)},name:${JSON.stringify(vname)}${a.save ? `,save:()=>{${a.save}}` : ''}};`;

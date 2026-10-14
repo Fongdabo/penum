@@ -180,7 +180,7 @@ function plView(){const L=plCfg(),R=plList(),N=Math.max(100,+S.sel.plN||200),G=P
   ${S.sel.plV==='cmp'?plCmpTable(R):`<div class="tw" style="max-height:600px;overflow:auto"><table><thead><tr><th>รายการ</th><th>ยี่ห้อ / รุ่น</th><th>หน่วย</th><th class="r">ค่าวัสดุ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">รวม/หน่วย</th><th>หมวด</th><th>ที่มา</th><th>วันที่ราคา</th><th></th></tr></thead>
   <tbody>${rows||'<tr><td colspan="10" class="empty">ไม่มีรายการที่ตรงกับการค้นหา</td></tr>'}</tbody></table></div>
   ${R.length>N?`<div class="row" style="margin-top:8px"><span class="muted">แสดง ${fmt(N)} จาก ${fmt(R.length)} รายการ</span><button type="button" class="btn sm" data-a="plMore">แสดงเพิ่ม</button></div>`:`<p class="muted" style="margin:8px 0 0">${fmt(R.length)} รายการ</p>`}`}
-  <p class="hint">ราคาที่แก้ในตารางจะเก็บราคาเดิมไว้ในประวัติ · PENUM MEP และ BIM ในเครื่องนี้อ่านคลังนี้ได้ (เครื่องที่ไม่มี PM ใช้ไฟล์คลังราคา) · ใช้คลังนี้ทำ ปร.4 ปร.5 ปร.6 ได้ที่หน้า ทำราคาประมูล</p></section>`}
+  <p class="hint">ราคาที่แก้ในตารางจะเก็บราคาเดิมไว้ในประวัติ · แก้จาก PENUM MEP และ BIM ได้ด้วย ราคาที่แก้ล่าสุดเป็นราคาที่ใช้ และทุกเครื่องของบริษัทได้ราคาชุดเดียวกันเอง · ใช้คลังนี้ทำ ปร.4 ปร.5 ปร.6 ได้ที่หน้า ทำราคาประมูล</p></section>`}
 ACT.plMore=()=>{S.sel.plN=(Math.max(100,+S.sel.plN||200))+500;render()};
 let plQT=0;
 document.addEventListener('input',e=>{if(e.target.id!=='plQ')return;clearTimeout(plQT);const v=e.target.value;plQT=setTimeout(()=>{S.sel.plQ=v;S.sel.plN=200;S.sel.plNew='';render();

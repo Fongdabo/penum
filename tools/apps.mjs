@@ -8,6 +8,7 @@
 // computers) in the page; team: put shared/team.js (the company's shared project list, โครงการของบริษัท) in the page;
 // files: put shared/files.js (save each project as a file in a folder) in the page; titlebar: put shared/titlebar.js (the AutoCAD-style
 // title bar and project tabs) in the page;
+// prices: put shared/prices.js (คลังราคากลาง, the company's one price list shared by PM, MEP and BIM) in the page;
 // fileTypes: {mime: [extensions]} the installed app opens by double-click (manifest file_handlers). See docs/apps.md.
 //
 // An app's page source is its index.html, or, for an app split into small files (PENUM PM), the files in <app>/src joined in
