@@ -20,11 +20,14 @@
      project is view-only there: nothing is saved on that device and nothing goes up. A request is a row of its own (k:'req').
    - Updates: each project keeps its last 20 saves (who, when, its figures), so the list shows งานของฉัน, งานของเพื่อนร่วมงาน,
      คำขอแก้ไข and อัปเดตของบริษัท (every save of MEP and BIM, newest first, with what changed), like AutoCAD's Recent page.
+   - PENUM PM ("team": true too, cfg.app 'pm') shows อัปเดตของบริษัท and คำขอแก้ไข only: a PM project changed there goes into the updates
+     (pmPut, a row k:'pm' with no data), and PM's chat lists the edit requests with อนุมัติ / ไม่อนุมัติ (reqs, decide). It fires 'penumteam'.
    window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · me() · chip(cls) · signIn() · signOut()
    · ro() the open project is someone else's and not approved: the app does not save it · roNote() says so
    cfg (the app): app 'mep'|'bim' · cur() → null (nothing to share: a sample, read-only) or {id, name, client, code, sum, text()}
    · apply(text, meta) the company's newer version replaces the open one · has(id) · openLocal(id) · open(text, meta) → bool
-   · copy(text, meta) a project of its own with a new id · keep(text) keep this device's version as a copy · sumTxt(sum) · locals() */
+   · copy(text, meta) a project of its own with a new id · keep(text) keep this device's version as a copy · sumTxt(sum) · locals()
+   · PM: lic() → {code, st, cid, co} · openPm(id) */
 (()=>{if(window.penumTeam)return;
 const SB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
 const K='penum.team',TTL=150e3,BEAT=50e3,IDLE=15*60e3,MAX=3e6,SOON=6e3;
@@ -103,7 +106,9 @@ const T={
   ev0:['โครงการใหม่','New project'],evS:['บันทึก','Saved'],evRq:['ขอแก้ไข · {0}','Asked to edit · {0}'],evOk:['อนุมัติให้ {0} แก้','Let {0} edit'],evNo:['ไม่อนุมัติคำขอของ {0}','Declined {0}\'s request'],
   fAll:['ทั้งหมด','All'],fMine:['ของฉัน','Mine'],fNew:['ใหม่','New'],fEdit:['กำลังแก้','Editing'],fNone:['ยังไม่มีอัปเดตใน 30 วันที่ผ่านมา','No updates in the last 30 days.'],
   vGrid:['แบบการ์ด','Cards'],vList:['แบบรายการ','List'],q2:['ค้นหาโครงการ ลูกค้า หรือชื่อคน','Search project, client or person'],
-  inApp:['เปิดใน {0}','Open in {0}'],rooms:['ห้อง','rooms'],lv:['ชั้น','levels'],els:['ชิ้นส่วน','elements']};
+  inApp:['เปิดใน {0}','Open in {0}'],rooms:['ห้อง','rooms'],lv:['ชั้น','levels'],els:['ชิ้นส่วน','elements'],
+  pct:['ผลงาน','progress'],val:['มูลค่างาน','contract'],bill:['เบิกแล้ว','billed'],evPm:['แก้ไขโครงการ','Updated the project'],
+  nolicPm:['ใช้ได้เมื่อบริษัทใส่รหัสเปิดใช้งานแล้ว (ตั้งค่า › สิทธิ์การใช้งาน) ทุกเครื่องที่ใช้รหัสเดียวกันจะเห็นอัปเดตของกันและกัน','Works once the company has entered its licence code (Settings › Licence). Every device with the same code sees the others\' updates.']};
 const t=(k,...a)=>(T[k]?T[k][EN()?1:0]:k).replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const te=new TextEncoder(),td=new TextDecoder();
@@ -138,10 +143,11 @@ function recSet(p,r){const o=ld();o.s=o.s||{};if(r)o.s[recK(p)]=Object.assign({}
 
 // the company: from the licence code in use; its key is kept in Supabase encrypted with the code
 let TM=null,TMC='';
-function lic(){try{return window.penumLic&&penumLic.state()||null}catch(e){return null}}
+function lic(){try{return CFG&&CFG.lic?CFG.lic():window.penumLic&&penumLic.state()||null}catch(e){return null}}          // PENUM PM checks its own code (cfg.lic)
+const PMM=()=>!!CFG&&CFG.app==='pm';          // in PENUM PM: only the updates and the edit requests, no project list or lock
 async function team(){const s=lic();if(!s||!s.code||s.st==='none'||s.st==='ro'||s.st==='wait')return {err:'nolic'};
   if(TM&&TMC===s.code)return TM;
-  try{const c=s.code,cust=String(s.cid||s.co||''),k=hex((await sha('penum-team-c:'+c)).slice(0,16)),ck=await aes(await sha('penum-team-ck:'+c));
+  try{const c=s.code,cust=String(s.cid||licCid(s.code)||s.co||''),k=hex((await sha('penum-team-c:'+c)).slice(0,16)),ck=await aes(await sha('penum-team-ck:'+c));
     let r=await rpc('penum_team_key_get',{p_k:k});if(r.err)return r;let sec='';
     if(r.j){try{sec=await dec(ck,r.j,1)}catch(e){}}
     if(!sec){const known=(ld().co||{})[cust]||'';          // a renewed code: the company's key this device already knew
@@ -174,11 +180,11 @@ async function get(T,p){const r=await rpc('penum_team_get',{p_t:T.t,p_p:p});if(r
 // Like PM's PIN it puts a checked name on the work; it does not encrypt anything.
 const b64j=s=>{try{return JSON.parse(td.decode(ub64(s)))}catch(e){return null}};
 function licCid(code){const m=/^PNM1\.([A-Za-z0-9_-]+)\./.exec(String(code||'').replace(/\s+/g,''));const p=m&&b64j(m[1]);return p?String(p.id||'').replace(/-R\d+$/,'')||String(p.co||''):''}
-const cust=()=>{const s=lic();return s&&s.code&&!['none','ro','wait'].includes(s.st)?String(s.cid||s.co||''):''};
+const cust=()=>{const s=lic();return s&&s.code&&!['none','ro','wait'].includes(s.st)?String(s.cid||licCid(s.code)||s.co||''):''};
 const jl=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(e){return null}};
 const keys=L=>(Array.isArray(L)?L:[]).filter(k=>k&&k.id&&k.pk).map(k=>({id:k.id,pk:k.pk,alg:k.alg||-7}));
 let PMC=null,PMT=0;          // PM's data can be large: read again only after a minute or when another window changed it
-function pm(){if(PMT&&Date.now()-PMT<60000)return PMC;PMT=Date.now();try{return PMC=pm0()}catch(e){return PMC=null}}
+function pm(){if(PMT&&Date.now()-PMT<(PMM()?3000:60000))return PMC;PMT=Date.now();try{return PMC=pm0()}catch(e){return PMC=null}}
 function pm0(){const cid=cust();if(!cid)return null;let cur='';try{const l=localStorage.getItem('penum.pm.slot')||'';cur=l?'.c'+l:''}catch(e){}let best=null;
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i),m=/^penum\.pm\.v1((?:\.c\d+)?)$/.exec(k||'');if(!m)continue;const D=jl(k),c=D&&D.co;
     if(!c||!Array.isArray(c.staff)||licCid(c.lic)!==cid)continue;/* only this company's PM */if(!best||m[1]===cur)best={sfx:m[1],c}}
@@ -217,7 +223,7 @@ const roleOf=id=>id===''?t('admin'):id==null?'':(staffOf(id)||{}).role||'';
 const nameOf=(id,n)=>id===''?t('admin'):(staffOf(id)||{}).name||n||'?';          // today's name in PM, else the one saved
 // a company with PINs set asks everyone to sign in before using the program, like PENUM PM
 const gated=()=>{const D=dir();return creds(D)&&!me()};
-function gate(){if(CFG&&gated()&&!document.querySelector('dialog.ptm-in'))signIn(true)}
+function gate(){if(CFG&&!PMM()&&gated()&&!document.querySelector('dialog.ptm-in'))signIn(true)}
 async function pinHash(salt,pin){return hex(await sha('penum-pm|'+salt+'|'+pin))}          // the same as PENUM PM (pm/src/290-folder-pin.js)
 function signed(id,via){const o=ld();o.auth={c:cust(),id,via,at:Date.now()};delete o.out;sv(o);ST.lw='';chips();VIEWS.forEach(paint);if(CFG)soon();note(t('hi',name()))}
 function signOut(){const o=ld(),m=me();o.auth=null;if(m&&m.via==='pm'){const P=pm();if(P&&P.who)o.out=P.who.k}sv(o);ST.lw='';chips();VIEWS.forEach(paint);gate()}
@@ -276,6 +282,7 @@ async function tick(){if(!CFG)return;if(ST.busy){ST.pend=1;return}ST.busy=1;try{
 async function release(keep){const p=ST.held;ST.held='';if(!p||!TM)return;await rpc('penum_team_unlock',{p_t:TM.t,p_p:p,p_dev:dev()},keep)}
 async function tick0(){
   {const T=await team();if(!T.err)await syncDir(T);gate()}          // the staff list, and sign-in when the company asks for it
+  if(PMM()){await lists(1);VIEWS.forEach(paint);return}          // PM: the requests and the updates only
   const c=CFG.cur();if(!c||!c.id){await release();Object.assign(ST,{p:'',id:'',other:null,conf:null,err:'',ro:0,row:null});await lists();return}
   const T=await team();if(T.err){ST.st=T.err;return}ST.st='ok';
   const p=await pk(c.id);if(ST.p!==p){if(ST.held&&ST.held!==p)await release();ST.p=p;ST.id=c.id;ST.other=null;ST.conf=null;ST.err='';ST.ro=0;ST.row=null}
@@ -313,7 +320,7 @@ async function ask(){const C=ST.conf;if(!C)return;const by=C.m.by||'?';
   bar()}
 
 // the strip at the bottom while the open project is someone else's (view only), held by someone else, or waits for a choice
-function bar(){let e=document.getElementById('ptmBar');const o=ST.other,C=ST.conf,big=ST.err==='big'||ST.err==='full',x=ST.ro&&ST.row,w=x&&waitOf(x);
+function bar(){if(PMM())return;let e=document.getElementById('ptmBar');const o=ST.other,C=ST.conf,big=ST.err==='big'||ST.err==='full',x=ST.ro&&ST.row,w=x&&waitOf(x);
   const key=x?'r'+ST.p+(w?w.st:'')+(o?o.n:''):o?'o'+o.n:C?'c'+C.at:big?ST.err:'';if(!key||ST.hideBar===key){if(e)e.hidden=true;return}
   if(!e){e=document.createElement('div');e.id='ptmBar';e.className='ptm-bar';e.setAttribute('role','status');document.body.appendChild(e)}
   const ow=x&&owner(x),on=ow?nameOf(ow.u,ow.n):'?',rl=ow?roleOf(ow.u)||ow.r||'':'';e.classList.toggle('ro',!!x);
@@ -334,7 +341,8 @@ document.addEventListener('click',async ev=>{const b=ev.target.closest&&ev.targe
 // the company list: in MEP's projects page and start page, and BIM's start page and menu. Once the company signs in: งานของฉัน ·
 // งานของเพื่อนร่วมงาน · คำขอแก้ไข · อัปเดตของบริษัท; before that, every project in one list, and the updates.
 const MEM={};          // the tab, filter and view picked last: the app draws its page again (a new element) after many changes
-const VIEWS=new Set(),LS={},META=new Map(),APPS={mep:'PENUM MEP',bim:'PENUM BIM'};let REQS=[];
+const VIEWS=new Set(),LS={},META=new Map(),APPS={mep:'PENUM MEP',bim:'PENUM BIM',pm:'PENUM PM'};let REQS=[];
+const ping=()=>{try{dispatchEvent(new Event('penumteam'))}catch(e){}};          // the requests or the updates changed (PENUM PM's chat counts them)
 const other=()=>CFG.app==='mep'?'bim':'mep';
 function when(s){const d=new Date(s);if(isNaN(d))return '–';const ms=Date.now()-d,L=EN()?'en-GB':'th-TH',hm=d.toLocaleTimeString(L,{hour:'2-digit',minute:'2-digit'});
   if(ms<90e3)return t('now');if(ms<3600e3)return t('min',Math.round(ms/6e4));const a=new Date();a.setHours(0,0,0,0);if(d>=a)return t('today',hm);if(d>=a-864e5)return t('yday',hm);
@@ -347,9 +355,10 @@ async function lst(app,force){const c=LS[app];if(!force&&c&&Date.now()-c.t<25e3)
     return {p:x.p,app,m,at:x.at,off:!!x.off,lk:x.ld&&!m.k?{me:x.ld===dev(),n:await lwOf(T,x.lw),at:x.lat}:null}}))).filter(Boolean);
   const o={rows:all.filter(x=>!x.m.k),co:T.co};LS[app]={t:Date.now(),r:o};
   if(app===CFG.app){META.clear();o.rows.forEach(x=>META.set(x.p,x))}
-  if(app==='mep'){REQS=all.filter(x=>x.m.k==='req'&&x.m.by&&x.m.p).sort((a,b)=>(b.m.at||0)-(a.m.at||0));reqSeen()}
+  if(app==='mep'){REQS=all.filter(x=>x.m.k==='req'&&x.m.by&&x.m.p).sort((a,b)=>(b.m.at||0)-(a.m.at||0));reqSeen();
+    LS.pm={t:Date.now(),r:{rows:all.filter(x=>x.m.k==='pm'&&x.m.id).map(x=>Object.assign(x,{app:'pm'})),co:T.co}};ping()}
   return o}
-async function lists(force){const r=await lst(CFG.app,force);if(!r.err&&CFG.app!=='mep')await lst('mep',force);return r}
+async function lists(force){if(PMM()){const r=await lst('mep',force);if(!r.err)await lst('bim',force);return r}const r=await lst(CFG.app,force);if(!r.err&&CFG.app!=='mep')await lst('mep',force);return r}
 async function list(){return lists(1)}
 const rowByP=p=>{for(const a of ['mep','bim']){const c=LS[a];const x=c&&!c.r.err&&c.r.rows.find(r=>r.p===p);if(x)return x}return null};
 
@@ -390,13 +399,13 @@ async function reqSet(r,st,x){const T=await team();if(T.err){note(t('rqFail'));r
   const m=Object.assign({},r.m,{st});if(st==='cancel')m.end=Date.now();else m.dec=Object.assign({u:M?M.id:null,n:shown(),at:Date.now()},x||{});
   const w=await rpc('penum_team_put',{p_t:T.t,p_p:r.p,p_a:'mep',p_m:await enc(T.key,m),p_d:null,p_base:null,p_dev:dev()});if(w.err){note(t('rqFail'));return}
   r.m=m;const s=ld();s.rq=Object.assign(s.rq||{},{[m.id]:st});sv(s);after()}
-function after(){bar();rqCard();chips();VIEWS.forEach(paint);document.querySelectorAll('.ptm-rqbox').forEach(e=>{e.innerHTML=reqHTML(e.dataset.compact==='1')});if(CFG)soon()}
+function after(){ping();bar();rqCard();chips();VIEWS.forEach(paint);document.querySelectorAll('.ptm-rqbox').forEach(e=>{e.innerHTML=reqHTML(e.dataset.compact==='1')});if(CFG)soon()}
 // news for this person since the last look: requests waiting for them, and answers to theirs
 function reqSeen(){const M=me();if(!M)return;const o=ld(),S=o.rq||{},first=!o.rq,N={};
   for(const r of REQS){const q=r.m,was=S[q.id];N[q.id]=q.st;
     if(q.by.u===M.id&&was&&was!==q.st&&!first){const d=q.dec||{},k=q.st==='ok'?'nOk':q.st==='no'?'nNo':q.st==='revoked'?'nRev':'';if(k)note(t(k,d.n||'?',q.pn||''))}}
   o.rq=N;sv(o);rqCard();chips()}
-function rqCard(){let e=document.getElementById('ptmRq');const hid=ld().rqh||{},L=reqsFor().filter(r=>!hid[r.m.id]);
+function rqCard(){if(PMM())return;let e=document.getElementById('ptmRq');const hid=ld().rqh||{},L=reqsFor().filter(r=>!hid[r.m.id]);
   if(!L.length){if(e)e.hidden=true;return}
   if(!e){e=document.createElement('div');e.id='ptmRq';e.className='ptm-bar ptm-rq';e.setAttribute('role','status');document.body.appendChild(e)}
   const q=L[0].m;e.innerHTML=`<span><b>${esc(t('nNew'))}${L.length>1?' ('+L.length+')':''}</b><br>${esc(t('rqLine',q.by.n,t(q.what||'w4'),q.pn||''))}${q.note?`<br><i>“${esc(q.note)}”</i>`:''}</span>
@@ -427,6 +436,8 @@ document.addEventListener('click',async ev=>{const b=ev.target.closest&&ev.targe
 
 // pictures: no real thumbnails yet, so a drawing-like tile per program (the same one for the same project)
 function thumb(app,p){let s=parseInt(String(p||'1').slice(0,8),16)||7;const R=()=>(s=(Math.imul(s,1103515245)+12345)>>>0)/4294967296,n=v=>Math.round(v);
+  if(app==='pm'){let g='',x=14;for(let i=0;i<6;i++){const w=22+n(R()*40),d=n(R()*w);g+=`<rect x="${x}" y="${12+i*12}" width="${w}" height="7" rx="2" fill="#CDE7E3"/><rect x="${x}" y="${12+i*12}" width="${d}" height="7" rx="2" fill="#2F7F88"/>`;x=Math.min(118,x+n(R()*22)+6)}
+    return `<svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="160" height="90" fill="#F1F6F5"/><path d="M40 4v82M80 4v82M120 4v82" stroke="#DCE6E4"/><path d="M${n(30+R()*90)} 4v82" stroke="#E5484D" stroke-dasharray="3 3"/>${g}</svg>`}
   if(app==='bim'){const h=28+n(R()*26),w=34+n(R()*18),x=80-w/2;return `<svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="160" height="90" fill="#D9E3EF"/><rect y="56" width="160" height="34" fill="#EEF2F7"/>
     <polygon points="${x},${66-h} ${80},${60-h} ${x+w},${66-h} ${80},${72-h}" fill="#C5CFDC"/><polygon points="${x},${66-h} ${80},${72-h} 80,72 ${x},66" fill="#9AA8BA"/><polygon points="${80},${72-h} ${x+w},${66-h} ${x+w},66 80,72" fill="#7E8DA2"/></svg>`}
   const C=['#22D3EE','#F472B6','#FACC15','#4ADE80','#F87171','#A78BFA','#FB923C','#E5E7EB'],c=()=>C[n(R()*7.99)];let g='';
@@ -438,14 +449,14 @@ const AVC=['#0E7490','#C2410C','#7C3AED','#1D4ED8','#BE185D','#15803D','#B45309'
 function av(u,n){const s=String(n||'?').trim(),i=(s.match(/^.[ัิ-ฺ็-๎]*/)||['?'])[0];let h=0;for(const ch of String(u==null?s:u))h=(h*31+ch.charCodeAt(0))>>>0;
   return `<i class="ptm-av" style="background:${AVC[h%AVC.length]}" aria-hidden="true">${esc(i)}</i>`}
 // what changed between two saves, from the figures each one kept (MEP: rooms, TR, BOQ · BIM: levels, elements)
-const FIG=[['rooms','rooms',0],['tr','TR',1],['boq','BOQ ฿',0],['lv','lv',0],['els','els',0]];
+const FIG=[['rooms','rooms',0],['tr','TR',1],['boq','BOQ ฿',0],['lv','lv',0],['els','els',0],['pct','pct',1],['val','val',0],['bill','bill',0]];          // PM: progress %, contract and billed ฿
 const fnum=(v,d)=>Number(v).toLocaleString(EN()?'en-US':'th-TH',{maximumFractionDigits:d,minimumFractionDigits:d});
-function figs(s){s=s||{};return FIG.filter(([k])=>s[k]).map(([k,l,d])=>l==='TR'?fnum(s[k],1)+' TR':l==='BOQ ฿'?'BOQ ฿'+fnum(s[k],0):fnum(s[k],0)+' '+t(l)).join(' · ')}
+function figs(s){s=s||{};return FIG.filter(([k])=>s[k]).map(([k,l,d])=>l==='TR'?fnum(s[k],1)+' TR':l==='BOQ ฿'?'BOQ ฿'+fnum(s[k],0):l==='pct'?t(l)+' '+fnum(s[k],1)+'%':l==='val'||l==='bill'?t(l)+' ฿'+fnum(s[k],0):fnum(s[k],0)+' '+t(l)).join(' · ')}
 function diff(a,b){a=a||{};b=b||{};return FIG.filter(([k])=>(+b[k]||0)!==(+a[k]||0)).map(([k,l,d])=>{const v=(+b[k]||0)-(+a[k]||0),c=v>0?'up':'dn',x=(v>0?'+':'−')+fnum(Math.abs(v),d);
-  return l==='TR'?`TR <b class="${c}">${x}</b>`:l==='BOQ ฿'?`BOQ <b class="${c}">${x.replace(/^([+−])/,'$1฿')}</b>`:`${esc(t(l))} <b class="${c}">${x}</b>`}).join(' · ')}
+  return l==='TR'?`TR <b class="${c}">${x}</b>`:l==='pct'?`${esc(t(l))} <b class="${c}">${x}%</b>`:l==='val'||l==='bill'?`${esc(t(l))} <b class="${c}">${x.replace(/^([+−])/,'$1฿')}</b>`:l==='BOQ ฿'?`BOQ <b class="${c}">${x.replace(/^([+−])/,'$1฿')}</b>`:`${esc(t(l))} <b class="${c}">${x}</b>`}).join(' · ')}
 // the updates: every save the projects kept (30 days), and edit requests and answers, newest first
 function feedList(){const out=[],cut=Date.now()-30*864e5;
-  for(const app of ['mep','bim']){const c=LS[app];if(!c||c.r.err)continue;
+  for(const app of ['mep','bim','pm']){const c=LS[app];if(!c||c.r.err)continue;
     for(const x of c.r.rows){if(x.off)continue;const h=Array.isArray(x.m.h)&&x.m.h.length?x.m.h:[{u:x.m.uid,n:x.m.by,at:Date.parse(x.at)||x.m.at,s:x.m.sum}];
       h.forEach((e,i)=>{if(e&&e.at>=cut)out.push({k:'s',app,x,u:e.u,n:e.n,at:e.at,s:e.s,prev:i?h[i-1].s:null,first:!!e.f})})}}
   for(const r of REQS){const q=r.m,x=rowByP(q.p);if(!x)continue;
@@ -456,21 +467,22 @@ const fsK=()=>'fs:'+cust();
 const feedSeen=()=>+(ld()[fsK()]||0);
 function feedNew(){const M=me(),s=feedSeen();return feedList().filter(e=>e.at>s&&!(M&&e.u===M.id)).length}
 
+// PM draws its page often: there the list is read again only after 25 s
 async function render(el,opt){if(!el||!CFG)return;opt=opt||{};VIEWS.add(el);el.classList.add('ptm');el._ptm=opt;
-  if(!el._ptmOn){el._ptmOn=1;Object.assign(el,MEM[opt.compact?'c':'f']||{});el.addEventListener('click',ev=>click(el,ev));el.addEventListener('input',ev=>{if(ev.target.dataset.ptmq!=null){el._q=ev.target.value;el._qf=1;paint(el)}});
+  if(!el._ptmOn){el._ptmOn=1;Object.assign(el,MEM[opt.compact?'c':'f']||{});if(opt.tab){el._tab=opt.tab;keep(el)}el.addEventListener('click',ev=>click(el,ev));el.addEventListener('input',ev=>{if(ev.target.dataset.ptmq!=null){el._q=ev.target.value;el._qf=1;paint(el)}});
     el.addEventListener('change',ev=>{if(ev.target.dataset.ptmw!=null){el._w=ev.target.value;paint(el)}})}
   if(!el._d)el.innerHTML=`<p class="ptm-h">${esc(t('load'))}</p>`;
-  const r=await list();el._d=r;paint(el);if(!r.err){share(r.rows);lst(other()).then(()=>VIEWS.forEach(paint))}}
+  const r=await (PMM()?lists():list());el._d=r;paint(el);if(!r.err){share(r.rows);lst(other()).then(()=>VIEWS.forEach(paint))}}
 function paint(el){const r=el._d,opt=el._ptm||{};if(!r)return;
   const head=`<div class="ptm-me"><span>${esc(t('you'))}: <b>${esc(shown())}</b></span><button type="button" class="btn sm" data-ptm="name">${esc(t(name()?'chg':'uSet'))}</button>${name()?'':`<small class="ptm-warn">${esc(t(creds(dir())?'needName':'uNoDir'))}</small>`}</div>`;
-  if(r.err){el.innerHTML=(opt.compact?'':head)+`<p class="ptm-note">${esc(t(r.err==='nolic'||r.err==='offline'||r.err==='nosql'?r.err:'bad'))}</p>${r.err==='nolic'?'':`<button type="button" class="btn sm" data-ptm="retry">${esc(t('retry'))}</button>`}`;return}
+  if(r.err){el.innerHTML=(opt.compact||PMM()?'':head)+`<p class="ptm-note">${esc(t(r.err==='nolic'&&PMM()?'nolicPm':r.err==='nolic'||r.err==='offline'||r.err==='nosql'?r.err:'bad'))}</p>${r.err==='nolic'?'':`<button type="button" class="btn sm" data-ptm="retry">${esc(t('retry'))}</button>`}`;return}
   const sc=signedCo(),nReq=sc?reqsFor().length:0,nNew=feedNew();
-  const tabs=sc?(opt.compact?['mine',...(nReq?['req']:[]),'feed']:['mine','mates','req','feed']):['all','feed'];
+  const tabs=PMM()?(sc?['feed','req']:['feed']):sc?(opt.compact?['mine',...(nReq?['req']:[]),'feed']:['mine','mates','req','feed']):['all','feed'];
   const tab=tabs.includes(el._tab)?el._tab:el._tab=tabs[0];
   const tb=`<div class="ptm-tabs" role="tablist">${tabs.map(k=>`<button type="button" role="tab" aria-selected="${k===tab}" class="ptm-tab${k===tab?' on':''}" data-ptm="tab" data-k="${k}">${esc(t({mine:'tMine',mates:'tMates',req:'tReq',feed:'tFeed',all:'tAll'}[k]))}${k==='req'&&nReq?`<i class="ptm-n">${nReq}</i>`:''}${k==='feed'&&nNew&&tab!=='feed'?`<i class="ptm-n">${nNew}</i>`:''}</button>`).join('')}</div>`;
   const live=r.rows.filter(x=>!x.off);
   const body=tab==='all'?vAll(el,r,opt):tab==='mine'?vMine(el,live,opt):tab==='mates'?vMates(el,live,opt):tab==='req'?`<div class="ptm-rqbox" data-compact="${opt.compact?1:0}">${reqHTML(opt.compact)}</div>`:vFeed(el,opt);
-  el.innerHTML=(opt.compact?'':head)+tb+(ST.shared?`<p class="ptm-h">${esc(t('sharing',ST.shared))}</p>`:'')+body;
+  el.innerHTML=(opt.compact||PMM()?'':head)+tb+(ST.shared?`<p class="ptm-h">${esc(t('sharing',ST.shared))}</p>`:'')+body;
   const i=el.querySelector('[data-ptmq]');if(i&&el._qf){i.focus();i.setSelectionRange(i.value.length,i.value.length)}el._qf=0;
   if(opt.count){const n=document.getElementById(opt.count);if(n)n.textContent=t('cnt',live.length)}}
 const qOk=(el,s)=>{const q=String(el._q||'').trim().toLowerCase().split(/\s+/).filter(Boolean),L=s.join(' ').toLowerCase();return q.every(w=>L.includes(w))};
@@ -516,7 +528,7 @@ function vMates(el,live,opt){const M=me();let L=live.filter(x=>!mineRow(x));cons
 function vFeed(el,opt){const M=me(),f=el._ff||'all',grid=el._fv!=='list',mark=el._fm!=null?el._fm:feedSeen();
   let L=feedList().filter(e=>(f==='all'||(f==='mine'?M&&e.u===M.id:e.app===f))&&qOk(el,[e.x.m.name,e.x.m.client,e.n]));if(opt.compact)L=L.slice(0,opt.max||6);
   const line=e=>e.k==='rq'?esc(t('evRq',t(e.q.what||'w4'))):e.k==='ok'?esc(t('evOk',nameOf(e.q.by.u,e.q.by.n)))+(e.q.dec.till?' · '+esc(t('pTill',day(e.q.dec.till))):''):e.k==='no'?esc(t('evNo',nameOf(e.q.by.u,e.q.by.n)))
-    :e.first?esc(t('ev0'))+(figs(e.s)?' · '+esc(figs(e.s)):''):(diff(e.prev,e.s)||esc(t('evS'))+(figs(e.s)?' · '+esc(figs(e.s)):''));
+    :e.first?esc(t('ev0'))+(figs(e.s)?' · '+esc(figs(e.s)):''):(e.prev&&diff(e.prev,e.s)||esc(t(e.app==='pm'?'evPm':'evS'))+(figs(e.s)?' · '+esc(figs(e.s)):''));
   const isNew=e=>e.at>mark&&!(M&&e.u===M.id);
   const go=e=>e.app===CFG.app?'open':'app';
   const items=L.map(e=>{const nm=nameOf(e.u,e.n),who=`<span class="ptm-who">${av(e.u,nm)}<span>${esc(nm)}</span></span>`,lk=e.x.lk&&!e.x.lk.me&&e.k==='s'&&e===L.find(z=>z.x===e.x);
@@ -525,7 +537,7 @@ function vFeed(el,opt){const M=me(),f=el._ff||'all',grid=el._fv!=='list',mark=el
       :`<div class="ptm-tr feed${isNew(e)?' nw':''}"><button type="button" class="ptm-th sm" data-ptm="${go(e)}" data-p="${e.x.p}" data-app="${e.app}" aria-label="${esc(e.x.m.name||'')}">${thumb(e.app,e.x.p)}</button><span><b>${esc(e.x.m.name||'–')}</b> ${pill}</span><i class="ptm-app ${e.app}">${e.app.toUpperCase()}</i>${who}<small>${esc(full(e.at))}</small><small class="ptm-fg">${line(e)}</small></div>`});
   const chip=(k,l)=>`<button type="button" class="ptm-fc${f===k?' on':''}" data-ptm="ff" data-k="${k}">${esc(l)}</button>`;
   return `<div class="ptm-fl">${opt.compact?'':`<span class="ptm-vw"><button type="button" class="ptm-fc${grid?'':' on'}" data-ptm="fv" data-k="list" aria-label="${esc(t('vList'))}" title="${esc(t('vList'))}">☰</button><button type="button" class="ptm-fc${grid?' on':''}" data-ptm="fv" data-k="grid" aria-label="${esc(t('vGrid'))}" title="${esc(t('vGrid'))}">▦</button></span>`}
-    ${chip('all',t('fAll'))}${chip('mep','MEP')}${chip('bim','BIM')}${M?chip('mine',t('fMine')):''}${opt.compact?'':srch(el,'q2')}</div>`
+    ${chip('all',t('fAll'))}${chip('mep','MEP')}${chip('bim','BIM')}${chip('pm','PM')}${M?chip('mine',t('fMine')):''}${opt.compact?'':srch(el,'q2')}</div>`
     +(items.length?(grid?`<div class="ptm-g">${items.join('')}</div>`:`<div class="ptm-tb">${items.join('')}</div>`):`<p class="ptm-h">${esc(t('fNone'))}</p>`)}
 function refresh(){for(const el of [...VIEWS]){if(!el.isConnected){VIEWS.delete(el);continue}render(el,el._ptm)}}
 async function click(el,ev){const b=ev.target.closest('[data-ptm]');if(!b)return;const k=b.dataset.ptm;
@@ -534,7 +546,8 @@ async function click(el,ev){const b=ev.target.closest('[data-ptm]');if(!b)return
   if(k==='fv'){el._fv=b.dataset.k;keep(el);paint(el);return}
   if(k==='retry'){TM=null;el._d=null;render(el,el._ptm);return}
   if(k==='name'){userBox();return}
-  if(k==='app'){location.href='../'+(b.dataset.app==='bim'?'bim':'mep')+'/';return}
+  if(k==='app'){const a=['mep','bim','pm'].includes(b.dataset.app)?b.dataset.app:'mep';if(PMM())window.open('../'+a+'/','penum-'+a);else location.href='../'+a+'/';return}
+  if(k==='open'&&b.dataset.app==='pm'){const x=((LS.pm||{}).r||{rows:[]}).rows.find(r=>r.p===b.dataset.p);if(x&&CFG.openPm)CFG.openPm(x.m.id);return}
   const x=((el._d||{}).rows||[]).find(r=>r.p===b.dataset.p);
   if(!x)return;const T=await team();if(T.err)return;const rt=right(x);
   if(k==='hide'){if(rt!=='off'&&rt!=='own'&&rt!=='adm'&&rt!=='free')return;if(await dlg(t('hideT',x.m.name||''),`<p>${esc(t('hideP'))}</p>`,[['go',t('hide'),1],['',t('cancel')]])!=='go')return;
@@ -550,6 +563,20 @@ async function click(el,ev){const b=ev.target.closest('[data-ptm]');if(!b)return
     const g=await get(T,x.p);if(!g){note(t('fail'));return}
     ST.inApply=1;let ok=false;try{ok=await CFG.open(g.d,x.m)}finally{ST.inApply=0}
     if(ok){const c=CFG.cur();recSet(x.p,{b:g.at,h:hs(c?c.text():g.d)});ST.act=Date.now();done();tick()}}}
+// PENUM PM: a project changed here goes into the updates (a row under 'mep' marked k:'pm': who, when, its figures; PM's data
+// itself stays in PM). c = {id, name, client, code, sum}. The row's last saves are read first, so two computers add to the same list.
+async function pmPut(c){if(!PMM()||!c||!c.id)return {err:'bad'};const T=await team();if(T.err)return T;
+  const p=await pk(c.id),g=await get(T,p);META.set(p,{p,app:'pm',m:g&&g.m||{},at:g?g.at:''});const m=Object.assign(metaOf(c,p),{k:'pm'});
+  if(!c.fresh&&!(g&&g.m&&g.m.at)){const l=m.h[m.h.length-1];if(l)delete l.f}          // a project PM had before: its first update is not "new"
+  const em=await enc(T.key,m);
+  const go=async d=>rpc('penum_team_put',{p_t:T.t,p_p:p,p_a:'mep',p_m:em,p_d:d,p_base:null,p_dev:dev()});
+  let r=await go(null);if(!r.err&&(r.j||{}).none)r=await go(await enc(T.key,'-'));if(r.err)return r;
+  const L=LS.pm&&LS.pm.r.rows,at=new Date().toISOString();if(L){const x=L.find(z=>z.p===p);if(x){x.m=m;x.at=at}else L.unshift({p,app:'pm',m,at,off:false,lk:null})}
+  VIEWS.forEach(paint);ping();return r.j||{}}
+// PENUM PM's chat: the edit requests waiting for this person, and the answer given there
+const reqs=()=>reqsFor().map(r=>r.m);
+async function decide(id,ok,why){const r=REQS.find(z=>z.m.id===id);if(!r||r.m.st!=='wait'||!canDecide(r.m))return false;
+  await reqSet(r,ok?'ok':'no',ok?{till:r.m.till||0}:{why:String(why||'').slice(0,300)});return r.m.st===(ok?'ok':'no')}
 const opt0=el=>el._ptm||{};
 const keep=el=>{MEM[opt0(el).compact?'c':'f']={_tab:el._tab,_ff:el._ff,_fv:el._fv,_fm:el._fm}};
 // MEP: the other projects in this device's list go up once (each project goes up only when the company list does not have it yet)
@@ -607,7 +634,7 @@ const CSS=`.ptm-me{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin
 .ptm-th{position:relative;display:block;padding:0;border:none;background:#0E1621;aspect-ratio:16/9;width:100%;cursor:pointer;overflow:hidden;color:#fff}
 .ptm-th svg{display:block;width:100%;height:100%}.ptm-th.sm{width:64px;aspect-ratio:16/10;border-radius:6px;flex:none}
 .ptm-app{display:inline-block;font-style:normal;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:1px 6px;border-radius:4px;color:#fff;background:#0E7490;justify-self:start;align-self:center}
-.ptm-app.bim{background:#7C3AED}.ptm-th .ptm-app{position:absolute;left:6px;bottom:6px}.ptm-tp{position:absolute;right:6px;top:6px}.ptm-tp .ptm-pill{background:#FEF3C7;color:#92400E}.ptm-tp .ptm-pill.me{background:#D1FAE5;color:#065F46}.ptm-tp .ptm-pill.nw{background:#5EEAD4;color:#064E3B}
+.ptm-app.bim{background:#7C3AED}.ptm-app.pm{background:#2F7F88}.ptm-th .ptm-app{position:absolute;left:6px;bottom:6px}.ptm-tp{position:absolute;right:6px;top:6px}.ptm-tp .ptm-pill{background:#FEF3C7;color:#92400E}.ptm-tp .ptm-pill.me{background:#D1FAE5;color:#065F46}.ptm-tp .ptm-pill.nw{background:#5EEAD4;color:#064E3B}
 .ptm-cb{padding:8px 10px 6px;display:flex;flex-direction:column;gap:3px;min-width:0}
 .ptm-cb b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ptm-cb small{opacity:.8;font-size:12.5px}
 .ptm-c .ptm-ra{padding:2px 10px 10px}.ptm-fg b{font-weight:700}.ptm b.up{color:#059669}.ptm b.dn{color:#DC2626}
@@ -651,5 +678,5 @@ function attach(cfg){if(CFG)return;CFG=cfg;
   addEventListener('pagehide',()=>{release(true)})}
 new MutationObserver(chips).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});          // the app switched language
 addEventListener('storage',e=>{if(e.key===K||/^(penum\.pm\.(auth|v1|slot|bio)|pmSB)/.test(e.key||'')){PMT=0;ST.lw='';chips();VIEWS.forEach(paint);gate();if(CFG){rqCard();bar()}}});          // signed in or out in another window, or in PENUM PM
-window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote};
+window.penumTeam={attach,soon,tick,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,apps:APPS};
 })();
