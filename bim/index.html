@@ -17326,7 +17326,7 @@ boot();mepInit();
    a project with elements never saved to a file has * too. Closing a tab with * asks first: without saving, that tab's work is gone.
    Each tab keeps its open views. Ctrl+Shift+S = บันทึกเป็น. Without the shared file the old quick access row stays. */
 if(window.penumBar&&typeof indexedDB!=='undefined'){
-  const L2=(th,en)=>ui.lang==='en'?en:th,TB={sw:0,busy:0,ready:0},TBS=new Set(),TBV={};
+  const L2=(th,en)=>ui.lang==='en'?en:th,TB={sw:0,busy:0,ready:0,gone:''},TBS=new Set(),TBV={};
   const tbDB=()=>new Promise((ok,no)=>{let r;try{r=indexedDB.open('penum-bim-tabs',1)}catch(e){no(e);return}r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
   const tbIO=(mode,f)=>tbDB().then(d=>new Promise((ok,no)=>{const x=d.transaction('p',mode),q=f(x.objectStore('p'));x.oncomplete=()=>{d.close();ok(q&&q.result)};x.onerror=x.onabort=()=>{d.close();no(x.error)}}));
   const tbGet=id=>tbIO('readonly',s=>s.get(id)),tbPut=(id,txt)=>tbIO('readwrite',s=>s.put(txt,id)),tbDel=id=>tbIO('readwrite',s=>s.delete(id)).catch(()=>{});
@@ -17342,7 +17342,7 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
       TBS.delete(id);tbDel(id);penumBar.use(P.guid);tbCheck();refresh()}
     finally{TB.busy=0}}
   {const f=setProject;setProject=function(p,keep){if(TB.sw||!P||!p||p.guid===P.guid)return f.apply(this,arguments);          // another project opened: the one in front becomes a tab of its own
-    penumBar.flush();const old=P.guid,stay=P.els.length>0||penumBar.dirty(old);
+    penumBar.flush();const old=P.guid,stay=old!==TB.gone&&(P.els.length>0||penumBar.dirty(old));TB.gone='';
     if(stay){TBV[old]=tbView();const s=projStr();TBS.add(old);tbPut(old,s).catch(()=>toast(L2('เก็บแท็บเดิมไม่ได้ (ที่เก็บในเบราว์เซอร์เต็ม)','The other tab could not be kept (browser storage full)'),8000))}else penumBar.forget(old);
     if(TBS.has(p.guid)){TBS.delete(p.guid);tbDel(p.guid)}
     const r=f.call(this,p,stay?false:keep);if(stay){undoS.length=0;redoS.length=0;refresh()}penumBar.use(P.guid);tbCheck();return r}}
@@ -17379,14 +17379,15 @@ if(window.penumBar&&typeof indexedDB!=='undefined'){
     title:()=>P.info.name||'',titleNode:vs,titleTip:()=>(P.info.name||'')+' · '+t('a_info'),titleClick:()=>act('info'),
     search:{index:tbIndex,first:ix=>ix.filter(o=>o.ic==='▣')},
     user:q('.qat .ptm-chip'),right:[q('#qTheme'),q('#appMenu'),q('#langBtn'),q('#helpBtn')],
-    tabs:{cur:()=>P?P.guid:'',start:()=>!!q('#bimStart'),has:id=>!TB.ready||id===P.guid||TBS.has(id),name:id=>id===P.guid?P.info.name||'':'',
+    tabs:{cur:()=>P&&P.guid!==TB.gone?P.guid:'',start:()=>!!q('#bimStart'),has:id=>!TB.ready||id===P.guid||TBS.has(id),name:id=>id===P.guid?P.info.name||'':'',
       open:tbGo,add:()=>act('new'),home:()=>{bsShow();penumBar.refresh()},save:async id=>id===P.guid&&await saveProject()===true,
-      close:async id=>{if(id===P.guid){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(!nx)return;await tbGo(nx);if(P.guid===id)return}
+      close:async id=>{if(id===P.guid){const L=penumBar.ids(),i=L.indexOf(id),nx=L[i+1]||L[i-1];if(!nx){TB.gone=id;delete TBV[id];bsShow();penumBar.forget(id);return}          // the last tab: the start page; a project opened next takes its place
+        await tbGo(nx);if(P.guid===id)return}
         TBS.delete(id);delete TBV[id];await tbDel(id);penumBar.forget(id)},
       lost:()=>L2('ถ้าไม่บันทึก งานที่แก้ในแท็บนี้จะหายไป','Without saving, the work in this tab is lost.')}});
   q('.qat').before(bar);
   {const f=refreshChrome;refreshChrome=function(){f.apply(this,arguments);const v=activeView();vs.textContent=v?'— '+v.name:'';if(refreshChrome.n!==P.info.name+'|'+ui.lang){refreshChrome.n=P.info.name+'|'+ui.lang;penumBar.refresh()}else penumBar.title()}}
-  {const f=bsShow;bsShow=function(){f.apply(this,arguments);penumBar.refresh()}}{const f=bsClose;bsClose=function(){f.apply(this,arguments);penumBar.refresh()}}
+  {const f=bsShow;bsShow=function(){f.apply(this,arguments);penumBar.refresh()}}{const f=bsClose;bsClose=function(){f.apply(this,arguments);if(P&&TB.gone===P.guid){TB.gone='';penumBar.use(P.guid);tbCheck()}penumBar.refresh()}}          // back to the project closed last: its tab again
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&String(e.key).toLowerCase()==='s'){e.preventDefault();e.stopImmediatePropagation();tbSaveAs()}},true);
   penumBar.use(P.guid);tbCheck();refresh();
   tbIO('readonly',s=>s.getAllKeys()).then(K=>{for(const k of K||[])if(k!==P.guid)TBS.add(String(k))},()=>{}).then(()=>{TB.ready=1;penumBar.refresh()})}
