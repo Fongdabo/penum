@@ -18,6 +18,8 @@ The full guide (layout, link keys between apps, commands) is `docs/apps.md` (Tha
 - A branch that still edits `pm/index.html`: port it with `tools/src.mjs split` as described in docs/apps.md.
 
 MEP and BIM are still single files (`mep/index.html`, `bim/index.html`).
+Their header is `shared/titlebar.js` (AutoCAD-style bar + project tabs, app.json `"titlebar": true`); the old header row stays
+only as a fallback, so put new header buttons in the bar's menu or right side (details: docs/apps.md).
 
 ## Before a pull request
 
