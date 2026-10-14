@@ -1,4 +1,4 @@
-/* ---------- 3.87 บันทึกลงเครื่อง: each project as its own file (.penpm) in a folder the customer picks once ----------
+/* ---------- 3.88 บันทึกลงเครื่อง: each project as its own file (.penpm) in a folder the customer picks once ----------
    Like an ordinary desktop program: เมนู › บันทึกโครงการนี้ลงเครื่อง / บันทึกทุกโครงการลงเครื่อง write <project name>.penpm
    (the project and its photos) into a new folder PENUM-PM-FILES (shared/files.js, app.json "files": true). Saving the same
    project again writes over its own file only; any other file in the folder is never touched. Phones, Safari and Firefox download it.
