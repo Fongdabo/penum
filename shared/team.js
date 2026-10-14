@@ -24,7 +24,8 @@
      (pmPut, a row k:'pm' with no data), and PM's chat lists the edit requests with อนุมัติ / ไม่อนุมัติ (reqs, decide). It fires 'penumteam'.
    window.penumTeam: attach(cfg) · soon() after a change · tick() · render(el, {compact}) the list · state() · name() · me() · chip(cls) · signIn() · signOut()
    · ro() the open project is someone else's and not approved: the app does not save it · roNote() says so
-   · live(id) the open project goes up from this device (its main copy is the company's) · flush() → bool send it now; fires 'penumteam-up' {id} when up to date
+   · on() the company list answers here · live(id) the open project goes up from this device (its main copy is the company's)
+   · flush() → bool send it now; fires 'penumteam-up' {id} when up to date
    · dump(prog) every MEP and BIM project of the company with its data (PM's สำรองคลาวด์ลงเครื่อง)
    cfg (the app): app 'mep'|'bim' · cur() → null (nothing to share: a sample, read-only) or {id, name, client, code, sum, text()}
    · apply(text, meta) the company's newer version replaces the open one · has(id) · openLocal(id) · open(text, meta) → bool
@@ -282,19 +283,21 @@ let CFG=null;const ST={st:'',p:'',id:'',held:'',other:null,conf:null,asked:{},bu
 let soonT=0;function soon(){ST.act=Date.now();clearTimeout(soonT);soonT=setTimeout(tick,SOON)}
 async function tick(){if(!CFG)return;if(ST.busy){ST.pend=1;return}ST.busy=1;try{await tick0()}catch(e){}finally{ST.busy=0;bar();if(ST.pend){ST.pend=0;soon()}
   if(!PMM())synced().then(ok=>{if(ok)dispatchEvent(new CustomEvent('penumteam-up',{detail:{id:ST.id}}))},()=>{})}}          // the app's top bar: no * once the company has this version
-// the open project goes up to the company list from this device (it holds it); its main copy is then the company's, in the cloud
-function live(id){const c=CFG&&!PMM()&&CFG.cur();return !!(c&&c.id&&ST.st==='ok'&&!ST.ro&&ST.held&&ST.held===ST.p&&ST.id===c.id&&(id==null||String(id)===String(c.id)))}
-async function synced(){if(!live())return false;const c=CFG.cur(),R=rec(ST.p);return !!R&&R.h===hs(c.text())}
+// on(): this company's projects go up from this device (the licence's company list answers); live(id): the open project goes, or will go,
+// up from here (not someone else's to look at, not taken off the list, no other device holding it), so its main copy is the company's
+function on(){return !!(CFG&&!PMM()&&ST.tm)}
+function live(id){const c=on()&&CFG.cur();return !!(c&&c.id&&!(ST.id===c.id&&(ST.ro||ST.off||ST.other))&&(id==null||String(id)===String(c.id)))}
+async function synced(){if(!live()||!ST.held||ST.held!==ST.p||ST.id!==CFG.cur().id)return false;const c=CFG.cur(),R=rec(ST.p);return !!R&&R.h===hs(c.text())}
 // บันทึก in the top bar: send the open project now, not a few seconds later; true when the company's copy is this device's version
 async function flush(){if(!CFG||PMM())return false;clearTimeout(soonT);ST.act=Date.now();for(let i=0;ST.busy&&i<80;i++)await new Promise(r=>setTimeout(r,250));
   await tick();return synced()}
 async function release(keep){const p=ST.held;ST.held='';if(!p||!TM)return;await rpc('penum_team_unlock',{p_t:TM.t,p_p:p,p_dev:dev()},keep)}
 async function tick0(){
-  {const T=await team();if(!T.err)await syncDir(T);gate()}          // the staff list, and sign-in when the company asks for it
+  {const T=await team();ST.tm=T.err?0:1;if(!T.err)await syncDir(T);gate()}          // the staff list, and sign-in when the company asks for it
   if(PMM()){await lists(1);VIEWS.forEach(paint);return}          // PM: the requests and the updates only
   const c=CFG.cur();if(!c||!c.id){await release();Object.assign(ST,{p:'',id:'',other:null,conf:null,err:'',ro:0,row:null});await lists();return}
   const T=await team();if(T.err){ST.st=T.err;return}ST.st='ok';
-  const p=await pk(c.id);if(ST.p!==p){if(ST.held&&ST.held!==p)await release();ST.p=p;ST.id=c.id;ST.other=null;ST.conf=null;ST.err='';ST.ro=0;ST.row=null}
+  const p=await pk(c.id);if(ST.p!==p){if(ST.held&&ST.held!==p)await release();ST.p=p;ST.id=c.id;ST.other=null;ST.conf=null;ST.err='';ST.ro=0;ST.row=null;ST.off=0}
   // whose it is: someone else's that this person may not edit is only looked at here; it never holds the project or sends it
   const Lr=await lists();if(Lr.err){ST.st=Lr.err;return}const row=Lr.rows.find(x=>x.p===p)||null;ST.row=row;
   if(row&&right(row)==='view'){if(ST.held===p)await release();ST.ro=c.id;ST.conf=null;ST.other=row.lk&&!row.lk.me?{n:row.lk.n,at:row.lk.at}:null;
@@ -304,7 +307,7 @@ async function tick0(){
   if(Date.now()-ST.act>IDLE&&document.visibilityState!=='visible'){await release();return}          // not used for a while: others may take it
   const txt=c.text(),h=hs(txt),R=rec(p);
   const r=await rpc('penum_team_lock',{p_t:T.t,p_p:p,p_dev:dev(),p_lw:await lockWho(T),p_force:false});if(r.err){ST.st=r.err;return}const L=r.j||{};
-  if(L.off){ST.held='';ST.other=null;ST.conf=null;return}
+  if(L.off){ST.held='';ST.other=null;ST.conf=null;ST.off=1;return}
   if(L.none){const w=await put(T,p,c,txt,null);if(w.at){recSet(p,{b:w.at,h});ST.held=p;ST.err='';await rpc('penum_team_lock',{p_t:T.t,p_p:p,p_dev:dev(),p_lw:await lockWho(T),p_force:false})}else ST.err=w.err||'';return}
   if(!L.ok){ST.held='';ST.other={n:await who(T,L.lw),at:L.lat};
     if(R&&L.at!==R.b&&R.h===h&&!ST.conf)await pull(T,p,txt);          // nothing changed here: show the newest
@@ -693,5 +696,5 @@ async function dump(prog){if(!CFG)return {err:'nolic'};const T=await team();if(T
   for(const a of ['mep','bim']){const r=await lst(a,1);if(r.err)return r;r.rows.forEach(x=>L.push(Object.assign({},x,{app:a})))}
   const out=[];for(const x of L){const g=await get(T,x.p);out.push({app:x.app,p:x.p,m:x.m,at:x.at,off:x.off,d:g?g.d:null});if(prog)prog(out.length,L.length)}
   return {rows:out,co:T.co}}
-window.penumTeam={attach,soon,tick,live,flush,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
+window.penumTeam={attach,soon,tick,on,live,flush,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
 })();
