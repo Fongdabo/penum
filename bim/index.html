@@ -15724,11 +15724,12 @@ XS.push(()=>{ui.ed=null;ui.edh=null});
 
 /* ---- Spot Elevation of a plan on a run, a beam, a roof, a ramp or the ground ---- */
 const SP_RUN=new Set(['duct','pipe','tray','conduit']),spZk=(e,d)=>d.zk||(e&&e.cat==='beam'?'t':'c');
-/* what a spot at (x, y) of plan v stands on: the nearest run, else a beam, else a roof, a ramp, the ground */
+/* what a spot at (x, y) of plan v stands on: the nearest run, else a beam, else a roof, a ramp, the ground where no floor of the level covers it */
 function spHostAt(v,x,y){const tol=4/navOf(v).s,ok=e=>planShow(v,e)&&!hidEl(v,e)&&!catHid(v,e.cat);let best=null,bd=Infinity;
   for(const e of P.els){if(!(SP_RUN.has(e.cat)||e.cat==='beam')||!ok(e))continue;const T=typ(P,e),hw=SP_RUN.has(e.cat)?runW(e)/2:((T&&T.w)||200)/2,d=segDist(x,y,e.x1,e.y1,e.x2,e.y2);if(d<=hw+tol){const k=(SP_RUN.has(e.cat)?0:1e7)+d;if(k<bd){bd=k;best=e}}}
   if(best)return best;
   for(const e of P.els){if(!ok(e))continue;if(e.cat==='roof'&&spHostZ(v,{x,y,el:e.id}))return e;if(e.cat==='ramp'&&spHostZ(v,{x,y,el:e.id}))return e}
+  if(P.els.some(e=>e.cat==='floor'&&e.level===v.level&&inPoly(x,y,e.pts)))return null;          // on a floor: the floor's top, as before
   for(const e of P.els)if(e.cat==='topo'&&ok(e)&&spHostZ(v,{x,y,el:e.id}))return e;
   return null}
 function spPlaneZ(L,x,y){let a=0,b=0,c=0;for(let i=0;i<L.length;i++){const p=L[i],q=L[(i+1)%L.length];a+=(p[1]-q[1])*(p[2]+q[2]);b+=(p[2]-q[2])*(p[0]+q[0]);c+=(p[0]-q[0])*(p[1]+q[1])}
@@ -15741,7 +15742,9 @@ function spHostZ(v,d){const e=d.el!=null?IDX.get(d.el):null;if(!e||!P.els.includ
     const z=runZ(P,e),zc=z[0]+(z[1]-z[0])*u,hh=runH(P,e)/2;return{c:zc,t:zc+hh,b:zc-hh}}
   let z=null;
   if(e.cat==='roof'){for(const f of roofGeo(P,e).faces){if(!inPoly(x,y,f.loop))continue;const q=spPlaneZ(f.loop,x,y);if(q!=null&&(z==null||q>z))z=q}}
-  else if(e.cat==='ramp'){const G=rampGeo(P,e);if(G&&G.rect&&inPoly(x,y,G.rect)){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;z=G.z0+(G.z1-G.z0)*clamp(((x-e.x1)*(e.x2-e.x1)+(y-e.y1)*(e.y2-e.y1))/(L*L),0,1)}}
+  else if(e.cat==='ramp'){const G=rampGeo(P,e);if(G&&G.rect&&inPoly(x,y,G.rect)){let u;const A=G.arc;          // how far along the ramp: along its arc when it is curved
+      if(A){let bd=Infinity;const n=A.n*8;for(let i=0;i<=n;i++){const q=A.at(A.L*i/n).p,dd=Math.hypot(q[0]-x,q[1]-y);if(dd<bd){bd=dd;u=i/n}}}else{const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;u=clamp(((x-e.x1)*(e.x2-e.x1)+(y-e.y1)*(e.y2-e.y1))/(L*L),0,1)}
+      z=G.z0+(G.z1-G.z0)*u}}
   else if(e.cat==='topo'){if(inPoly(x,y,e.pts))z=siteZat(siteTin(e),x,y)}
   return z==null||!isFinite(z)?null:{c:z,t:z,b:z}}
 {const f0=spotZ;spotZ=(v,d)=>{const q=d&&!d.k&&d.el!=null?spHostZ(v,d):null;return q?q[spZk(IDX.get(d.el),d)==='b'?'b':spZk(IDX.get(d.el),d)==='t'?'t':'c']:f0(v,d)}}
@@ -18766,7 +18769,7 @@ window.PenumBIM.ev3={st:()=>({ev3:ui.ev3,ev3m:ui.ev3m,al3:ui.al3,cyc:ui.cyc3&&ui
   box:(vid,id)=>ev3Box(viewById(vid),IDX.get(id)),cut:(vid,h)=>ev3Cut(viewById(vid),h),hq:(vid,x,y)=>ev3Hq(viewById(vid),[x,y]),all:(i,x,y)=>{const pn=PANES[i],r=pn.cv.getBoundingClientRect();return pickAll(pn,paneView(i),{x:x-r.left,y:y-r.top}).map(k=>k.id)},g:cat=>{const G=runGraph(P,cat),par=G.nodes.map((_,i)=>i),f=i=>par[i]===i?i:(par[i]=f(par[i]));for(const e of G.edges){const a=f(e.a),b=f(e.b);if(a!==b)par[a]=b}const m=new Map();for(const e of G.edges){const k=f(e.a),id=e.riser?e.riser.id:e.r.e.id;if(!m.has(k))m.set(k,new Set());m.get(k).add(id)}return[...m.values()].map(s=>[...s].sort((a,b)=>a-b))}};
 window.PenumBIM.dm={T:()=>P.types.dim,t:id=>{const d=IDX.get(id);return d?dimT(d).id:null},refs:(vid,wid,s)=>dmWallRefs(viewById(vid),IDX.get(wid),s).map(q=>({x:Math.round(q.x*10)/10,y:Math.round(q.y*10)/10,k:q.ref.k,id:q.ref.id})),pts:()=>ui.pts.map(q=>({x:q.x,y:q.y,ref:q.ref})),ed:()=>ui.ed,
   refAt:(i,x,y,want)=>{const pn=PANES[i],r=pn.cv.getBoundingClientRect(),q=edRefAt(pn,paneView(i),{x:x-r.left,y:y-r.top},want||null);return q?{x:q.x,y:q.y,k:q.k,ref:q.ref}:null},at:(vid,r)=>edAt(viewById(vid),r,0,0),label:id=>{const d=IDX.get(id);if(!d)return null;if(d.cat==='edim'){const G=eaDimGeo(d);return edLabel(d,G,dimT(d))}const G=dimGeo(d);return G?dimLabel(d,G):null},
-  spot:id=>{const d=IDX.get(id),v=viewById(d.view);return v&&v.kind==='plan'?spHostZ(v,d):null},fmt:(T,mm)=>dmFmt(T,mm)};
+  spot:id=>{const d=IDX.get(id),v=viewById(d.view);return v&&v.kind==='plan'?spHostZ(v,d):null},fmt:(T,mm)=>dmFmt(T,mm),rampAt:(id,f)=>{const e=IDX.get(id),G=rampGeo(P,e);if(G.arc){const q=G.arc.at(G.arc.L*f).p;return{x:q[0],y:q[1]}}return{x:e.x1+(e.x2-e.x1)*f,y:e.y1+(e.y2-e.y1)*f}}};
 
 })();
 </script>
