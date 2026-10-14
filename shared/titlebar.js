@@ -2,7 +2,7 @@
    the app's logo with its menu, quick buttons (ใหม่ เปิด บันทึก บันทึกเป็น พิมพ์ ย้อนกลับ ทำซ้ำ แชร์), the open project's name in the
    middle, a search box, the user, a cart kept for ORIEN's form shop (coming soon), then the app's own buttons; under it one tab per
    open project (เริ่มต้น = the start page, * = changes not yet saved to a file, × closes, + new project).
-   tools/build-pages.mjs puts this file in the <head> of every app whose app.json has "titlebar": true (MEP, BIM; see docs/apps.md).
+   tools/build-pages.mjs puts this file in the <head> of every app whose app.json has "titlebar": true (MEP, BIM, PM; see docs/apps.md).
    - The tabs are remembered per device (localStorage cfg.key): which projects are open, their names, and for each one a fingerprint
      of the project as it was last saved to a file (or first opened here), so * shows only while it differs.
    - The app owns its projects: it tells the bar which one is open (use), when it changed (soon / check), when it was saved to a
@@ -13,7 +13,8 @@
    cfg: app · key · logo (an element to copy) · tag ('MEP') · ver · accent · dark() → bool · menu() → [{t, run, kbd} | '-'] the logo's menu
    · quick: [{k: new|open|save|saveas|print|undo|redo|share, t, run} or {k, node} (the app's own button, kept with its handlers)]
    · extra: [elements] after the quick buttons (wide screens only) · title() → text · titleTip · titleClick() · titleNode (an element shown
-   after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed}
+   after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed,
+   find(text, index) → the hits for what was typed, when the app ranks them itself}
    · user (element) · right: [elements] · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
    close(id) after the bar asked about unsaved changes, save(id) → bool, add(), home(), lost: the question's note for closing unsaved} */
 (()=>{if(window.penumBar)return;
@@ -135,7 +136,7 @@ function srch(w){const box=w.querySelector('.ptb-s'),inp=box.querySelector('inpu
   if(!C.search){box.hidden=true;return}
   const close=()=>{if(L){L.remove();L=null}ix=null;box.classList.remove('open')};
   const draw=()=>{if(!ix)ix=C.search.index()||[];const q=inp.value.trim().toLowerCase(),ws=q.split(/\s+/).filter(Boolean);
-    hits=(ws.length?ix.filter(o=>ws.every(x=>(o.k||'').toLowerCase().includes(x)||String(o.t).toLowerCase().includes(x))):(C.search.first?C.search.first(ix):ix)).slice(0,12);k=Math.min(k,Math.max(0,hits.length-1));
+    hits=(ws.length?(C.search.find?C.search.find(inp.value.trim(),ix):ix.filter(o=>ws.every(x=>(o.k||'').toLowerCase().includes(x)||String(o.t).toLowerCase().includes(x)))):(C.search.first?C.search.first(ix):ix)).slice(0,12);k=Math.min(k,Math.max(0,hits.length-1));
     if(!L){L=document.createElement('ul');L.className='ptb-pop ptb-sl';L.dataset.noxl='';L.setAttribute('role','listbox');document.body.appendChild(L);
       L.addEventListener('mousedown',e=>{const b=e.target.closest('[data-i]');e.preventDefault();if(b)go(+b.dataset.i)})}
     const r=box.getBoundingClientRect(),wd=Math.max(r.width,320);L.style.top=Math.round(r.bottom+4)+'px';L.style.left=Math.round(Math.max(8,Math.min(r.right-wd,innerWidth-wd-8)))+'px';L.style.width=wd+'px';
@@ -182,7 +183,7 @@ const CSS=`
 .ptb-x:not(:empty){margin-left:6px;padding-left:8px;border-left:1px solid var(--tb-line)}
 .ptb button{font:inherit;color:inherit;cursor:pointer}
 .ptb-logo{display:flex;align-items:center;gap:6px;height:32px;padding:0 6px 0 4px;margin-right:6px;border:none;border-radius:8px;background:none}
-.ptb-logo:hover,.ptb-logo:focus-visible{background:var(--tb-hov)}.ptb-lg{display:grid;place-items:center;width:26px;height:26px}.ptb-lg svg{width:26px;height:26px;display:block}
+.ptb-logo:hover,.ptb-logo:focus-visible{background:var(--tb-hov)}.ptb-lg{display:grid;place-items:center;width:26px;height:26px}.ptb-lg svg,.ptb-lg img{width:26px;height:26px;display:block}.ptb-lg img{border-radius:7px}
 .ptb-logo b{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--tb-acc)}.ptb-logo>svg{opacity:.7}
 .ptb-q{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;min-width:30px;padding:0 5px;border:1px solid transparent!important;border-radius:7px;background:none!important;color:var(--tb-ink)!important;box-shadow:none!important;flex:none}
 .ptb-q:hover:not(:disabled){background:var(--tb-hov)!important}.ptb-q:disabled{opacity:.35;cursor:default}.ptb-q svg{display:block}
