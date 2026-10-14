@@ -5370,7 +5370,10 @@ function runGraph(P,cat,fix,solid){          /* solid: only what is built — pl
         if(U.d>0){const b=near(f.x,f.y,s=>s==='S'||s==='W',reach,dr);if(b)wtaps.push({f,U,role:'d',r:b.r,t:b.t});else lost.d.push(f.id)}}
       else if(f.cat==='sprinkler'){const fz=elev(P,f.level)+(f.off||0),b=near(f.x,f.y,s=>s==='FP',350,(r,z)=>Math.abs(z-fz)<1500);if(b)wtaps.push({f,role:'s',r:b.r,t:b.t});else lost.s.push(f.id)}}}
   const nodes=[],edges=[];
-  const nodeAt=(p,sys)=>{for(let i=0;i<nodes.length;i++){const n=nodes[i];if(Math.abs(n.x-p[0])<TOL&&Math.abs(n.y-p[1])<TOL&&Math.abs(n.z-p[2])<ZJ&&(!bySys||n.sys===sys))return i}
+  /* two ends one above the other with a riser of the network standing between them are two points that the riser joins, not one with an offset between them (V1.89) */
+  const RZ=bySys?P.els.filter(s=>{if(s.cat!=='riser')return false;const T=typ(P,s);return!!T&&(T.kind==='pipe')===wet}).map(s=>({s,z:zRange(P,s),sys:NS(s.sys||'')})):[],
+    rsGap=(n,p,sys)=>{const lo=Math.min(n.z,p[2]),hi=Math.max(n.z,p[2]);return hi-lo>=200&&RZ.some(r=>r.sys===sys&&Math.abs(r.s.x-p[0])<TOL+10&&Math.abs(r.s.y-p[1])<TOL+10&&r.z[0]<lo+170&&r.z[1]>hi-170)};
+  const nodeAt=(p,sys)=>{for(let i=0;i<nodes.length;i++){const n=nodes[i];if(Math.abs(n.x-p[0])<TOL&&Math.abs(n.y-p[1])<TOL&&Math.abs(n.z-p[2])<ZJ&&(!bySys||n.sys===sys)&&!rsGap(n,p,sys))return i}
     nodes.push({x:p[0],y:p[1],z:p[2],sys,arms:[],terms:[],equips:[],risers:[],fix:[]});return nodes.length-1};
   for(const r of R){const c=[...new Set(r.cuts.map(t=>Math.round(t*1e7)/1e7))].sort((a,b)=>a-b),sys=NS(r.e.sys||'');
     const pa=t=>t<1e-9&&r.snap[0]?r.snap[0]:t>1-1e-9&&r.snap[1]?r.snap[1]:at(r,t);          // an end that starts on the side of another duct is at that duct's centre line for the network
@@ -7273,7 +7276,7 @@ function glRender1(o){
       if(sv.length){if(mode===2)gl.uniform4f(u.uU,o.bg[0]*0.72+selc[0]*0.28,o.bg[1]*0.72+selc[1]*0.28,o.bg[2]*0.72+selc[2]*0.28,1);else{gl.uniform4f(u.uU,selc[0],selc[1],selc[2],1);gl.uniform1f(u.uTint,0.5)}part(u,sv,'t0','tn',gl.TRIANGLES)}
       gl.disable(gl.POLYGON_OFFSET_FILL)}
     if(o.clip||box){const u=bindTri(),capA=all.filter(it=>!it.nc&&!it.op),capE=capA.filter(it=>it.cat==='topo'),capO=capE.length?capA.filter(it=>it.cat!=='topo'):capA,
-      capG=(()=>{const M=new Map(),bg=o.bg||[1,1,1];for(const it of capO){const k=it.rc?2:it.ly||0;if(!M.has(k))M.set(k,[]);M.get(k).push(it)}return[...M.keys()].sort((a,b)=>a-b).map(k=>[M.get(k),k===2?[0.78,0.16,0.14]:k?bg.map((v,i)=>v+(o.cap[i]-v)*k):o.cap])})();          // rebar last, in red          // the layers of a wall's structure are cut each in its own tone; everything else in the poche
+      capG=(()=>{const M=new Map(),bg=o.bg||[1,1,1];for(const it of capO){const k=o.sel&&o.sel.has(it.id)?4:it.id===o.hov?3:it.rc?2:it.ly||0;if(!M.has(k))M.set(k,[]);M.get(k).push(it)}return[...M.keys()].sort((a,b)=>a-b).map(k=>[M.get(k),k===4?selc:k===3?o.cap.map((v,i)=>v+(selc[i]-v)*0.55):k===2?[0.78,0.16,0.14]:k?bg.map((v,i)=>v+(o.cap[i]-v)*k):o.cap])})();          // rebar last, in red; what is selected (or under the pointer) is cut in the colour of the selection, as in Revit (V1.89)          // the layers of a wall's structure are cut each in its own tone; everything else in the poche
 
     if(o.clip){ // cap the cut: count back faces minus front faces in the stencil, fill where the cut plane is inside a solid
       gl.uniform1f(u.uFar,9000);          // the far plane must not take the back of a solid away from the count
@@ -8387,7 +8390,7 @@ function refresh(){syncFonts();refreshChrome();redraw()}
    XPL0 / XPL1: what they draw in a plan under the model and over it, (ctx, g, view, T, colours, o, of, hl).  XHIT: how near a point of a plan is to an element of
    their categories, {category: (view, element, point, tolerance) → mm, with .pr its rank among what lies there}; XHA: the same for annotations, (view, d, point, scale);
    XAD: how their annotations are drawn, {category: (g, d, colours, highlight, view)} */
-const XT={},XA={},XC=[],XS=[],XP=[],XF=[],XVR=[],XVF=[],XN=[],XD=[],XVB=[],XR=[],XPL0=[],XPL1=[],XHIT={},XHA={},XAD={};
+const XT={},XT3={},XA={},XC=[],XS=[],XP=[],XF=[],XVR=[],XVF=[],XN=[],XD=[],XVB=[],XR=[],XPL0=[],XPL1=[],XHIT={},XHA={},XAD={};
 const modelView=v=>!!v&&(v.kind==='3d'||v.kind==='elev'||v.kind==='section'||(v.kind==='plan'&&!v.draft));
 /* the model element under the pointer in any view that shows the model: {e, p (where the ray meets it, in a 3D view), n (the way that face looks)} */
 /* a point of the model (GL: x, height, y) on the screen of a 3D view, an elevation or a section (null behind the eye), and the ray under a point of that screen */
@@ -9156,7 +9159,7 @@ function hoverPane(pn,v,p){const nav=navOf(v),cv=pn.cv;showCoord(v,p);
   if(v.kind==='plan'){if(ui.tool==='modify'){if(!ui.cycAt||Math.hypot(ui.cycAt.x-p.x,ui.cycAt.y-p.y)>3){ui.cyc=0;ui.cycAt={x:p.x,y:p.y};ui.solo=false}const h=hitPlan(v,p),id=h?h.id:null;if(ui.chain&&(!id||!ui.chain.has(id)))ui.chain=null;if(ui.chain)hint(t('h_chain',ui.chain.size));else if(h&&h.n>1&&!ui.sel.size)hint(t('h_tab',h.n));else if(!ui.dragging)hint();const td=tdAt(p),ct=ctrlAt(pn,p)||(tpAt(p)?{tip:'tdim_keep'}:null);cv.style.cursor=bpAt(v,p)?'move':ct?'pointer':td?'text':h?(h.grip!=null?'move':'pointer'):'default';if(ct)hint(t(ct.tip));if(id!==ui.hov){ui.hov=id;redraw()}}
     else{cv.style.cursor='crosshair';ui.snap=toolSnap(v,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s});if(ui.cyc&&(!ui.cycAt||Math.hypot(ui.cycAt.x-p.x,ui.cycAt.y-p.y)>3))ui.cyc=0;if(XT[ui.tool]&&XT[ui.tool].hov)ui.hov=XT[ui.tool].hov(pn,v,p);else if(ui.tool==='match'){const h=hitPlan(v,p);ui.hov=h?h.id:null}else if(ui.tool==='wppick'){const h=hitPlan(v,p),e=h&&IDX.get(h.id);ui.hov=e&&(e.cat==='wall'||e.cat==='grid'||e.cat==='rplane')?e.id:null}else if(ui.tool==='tag'){const te=tagTarget(v,p);ui.hov=te?te.id:null}else if(ui.tool==='knote'){const te=knTarget(v,p);ui.hov=te?te.id:null}else if(ui.tool==='rtag'){const te=roomAt(v,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s});ui.hov=te?te.id:null}redraw()}}
   else if(v.kind==='sheet'){const gh=ggHit(v,p),vp=gh&&gh.part!=='move'?null:hitSheet(v,p),id=vp?vp.id:gh?gh.g.id:null;cv.style.cursor=vp?'move':gh?(gh.part==='l'||gh.part==='r'?'ew-resize':gh.part==='t'||gh.part==='b'?'ns-resize':'move'):'default';if(id!==ui.hov){ui.hov=id;redraw()}}
-  else{let id=null,txt=false;if(ui.tool==='modify'){txt=v.kind!=='3d'&&!!tdAt(p);const h=v.kind!=='3d'&&hitElev(v,p);if(h){id=h.id;if(h.part==='elev'&&ui.sel.has(h.id))txt=true}else{const pk=pickAt(pn,v,p);id=pk?pk.id:null}cv.style.cursor=v.kind==='3d'&&(sunGripAt(pn,p)||sboxGripAt(pn,p))?'move':txt?'text':id?(v.kind==='3d'&&ui.sel.has(id)?'move':'pointer'):v.kind==='3d'?'grab':'default'}else{cv.style.cursor='crosshair';if(XT[ui.tool]&&XT[ui.tool].hov&&v.kind!=='schedule')id=XT[ui.tool].hov(pn,v,p);redraw()}
+  else{let id=null,txt=false;if(ui.tool==='modify'){txt=v.kind!=='3d'&&!!tdAt(p);const h=v.kind!=='3d'&&hitElev(v,p);if(h){id=h.id;if(h.part==='elev'&&ui.sel.has(h.id))txt=true}else{const pk=pickAt3(pn,v,p);id=pk?pk.id:null}cv.style.cursor=v.kind==='3d'&&(sunGripAt(pn,p)||sboxGripAt(pn,p))?'move':txt?'text':id?(ui.sel.has(id)&&!isPinned(id)?'move':'pointer'):v.kind==='3d'?'grab':'default'}else{cv.style.cursor='crosshair';if(XT[ui.tool]&&XT[ui.tool].hov&&v.kind!=='schedule')id=XT[ui.tool].hov(pn,v,p);redraw()}
     if(id!==ui.hov){ui.hov=id;redraw()}}}
 function bindPane(pn){
   const cv=pn.cv,ptrs=new Map();let drag=null;
@@ -9199,7 +9202,7 @@ function bindPane(pn){
       const cg=e.button===0?cropGripAt(pn,v,p):null;if(cg){drag.mode='crop';drag.g=cg;drag.b0=v.crop.box.slice();return}
       const h=hitElev(v,p);
       if(h&&h.part==='elev'&&ui.sel.size===1&&ui.sel.has(h.id)){drag=null;ptrs.delete(e.pointerId);editLevelText(pn,v,h);return}          // as in Revit: with the level selected, click its elevation to type a new one
-      if(h&&h.part==='ann'){ui.sel=new Set([h.id]);drag.mode='ea';drag.a=IDX.get(h.id);drag.o=JSON.parse(JSON.stringify(drag.a));refresh()}else if(h){ui.sel=new Set([h.id]);drag.l=IDX.get(h.id);if(!drag.l.pin){drag.mode='level';drag.e0=drag.l.elev}refresh()}else{drag.mode='pan';drag.pick=true}}});
+      if(h&&h.part==='ann'){ui.sel=new Set([h.id]);drag.mode='ea';drag.a=IDX.get(h.id);drag.o=JSON.parse(JSON.stringify(drag.a));refresh()}else if(h){ui.sel=new Set([h.id]);drag.l=IDX.get(h.id);if(!drag.l.pin){drag.mode='level';drag.e0=drag.l.elev}refresh()}else{drag.mode='pan';drag.pick=true;if(e.button===0&&!isTouch&&ui.sel.size&&!drag.ctrl&&!drag.shift)ev3DragStart(pn,v,p,drag)}}});
   cv.addEventListener('pointermove',e=>{const v=view();if(!v)return;const p=xy(e),nav=navOf(v);ui.cur=p;ui.curPane=pn.i;ui.shift=e.shiftKey;if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,p);
     if(!drag){hoverPane(pn,v,p);return}const is3=v.kind==='3d';
     if(drag.mode==='pinch'){if(ptrs.size<2)return;const a=[...ptrs.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1,mx=(a[0].x+a[1].x)/2,my=(a[0].y+a[1].y)/2,k=d/drag.d;nav.auto=false;
@@ -9217,6 +9220,7 @@ function bindPane(pn){
     else if(drag.mode==='bpt')bpDrag(v,drag,p);
     else if(drag.mode==='tdw')tdwMove(v,drag,p);
     else if(drag.mode==='zoomr')ui.zbox={x0:drag.sx,y0:drag.sy,x1:p.x,y1:p.y,pane:pn.i};
+    else if(drag.mode==='move3'&&drag.ev2)ev3DragMove(pn,v,p,drag);
     else if(drag.mode==='move3'){const ray=camRay(orbitCam(nav,pn.w/pn.h),MSm().bb,p.x/pn.w*2-1,1-p.y/pn.h*2);
       if(Math.abs(ray.d[1])>0.05){const tt=(drag.h-ray.o[1])/ray.d[1],inc=nav.hh<4000?10:50;let mx=Math.round((ray.o[0]+ray.d[0]*tt-drag.p0[0])/inc)*inc,my=Math.round((ray.o[2]+ray.d[2]*tt-drag.p0[1])/inc)*inc;
         if(e.shiftKey){if(Math.abs(mx)>=Math.abs(my))my=0;else mx=0}
@@ -9246,12 +9250,12 @@ function bindPane(pn){
         if(actOf(pn.i))it.unshift({act:'deactview',label:t('a_deactview'),icon:'deactview'},'-');else if(v.kind==='sheet'){const e=ui.sel.size===1&&IDX.get([...ui.sel][0]);if(e&&e.cat==='vp'&&(viewById(e.view)||{}).kind==='plan')it.unshift({act:'actview',label:t('a_actview'),icon:'actview'},'-')}          // as in Revit: Activate View on a viewport, Deactivate View while one is activated
         showMenu({x:r.left+p.x,y:r.top+p.y},it);return}if(d.btn!==0)return;
       if(ui.tool!=='modify'){if(d.moved&&Math.hypot(p.x-d.sx,p.y-d.sy)>14)return;
-        if(v.kind==='plan'||((v.kind==='elev'||v.kind==='section')&&(EV_ANN.has(ui.tool)||ui.tool==='callout'||ui.tool==='mline'||(ui.tool==='beam'&&braceMode())))||(v.kind==='sheet'&&ui.tool==='cloud'))toolClick(pn,v,p,e);else if(EA_TOOLS.has(ui.tool)&&(v.kind==='elev'||v.kind==='section'))eaClick(pn,v,p);else if(XT[ui.tool]){if(XT[ui.tool].click3&&v.kind!=='sheet'&&v.kind!=='schedule')XT[ui.tool].click3(pn,v,p,e)}else if(ui.tool==='attach'&&v.kind==='3d'){const pk=pickAt(pn,v,p);attPickId(pk?pk.id:0)}
+        if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,e);else if(v.kind==='plan'||((v.kind==='elev'||v.kind==='section')&&(EV_ANN.has(ui.tool)||ui.tool==='callout'||ui.tool==='mline'||(ui.tool==='beam'&&braceMode())))||(v.kind==='sheet'&&ui.tool==='cloud'))toolClick(pn,v,p,e);else if(EA_TOOLS.has(ui.tool)&&(v.kind==='elev'||v.kind==='section'))eaClick(pn,v,p);else if(XT[ui.tool]){if(XT[ui.tool].click3&&v.kind!=='sheet'&&v.kind!=='schedule')XT[ui.tool].click3(pn,v,p,e)}else if(ui.tool==='attach'&&v.kind==='3d'){const pk=pickAt(pn,v,p);attPickId(pk?pk.id:0)}
         else if(ui.tool==='level'&&(v.kind==='elev'||v.kind==='section')){const nav=navOf(v),z=Math.round((nav.oy-p.y)/nav.s/50)*50;if(P.levels.some(l=>Math.abs(l.elev-z)<50)){toast(t('level_exists'));return}
           edit(()=>{const l={id:P.seq++,cat:'level',name:t('level')+' '+(P.levels.length+1),elev:z};P.levels.push(l);ui.sel=new Set([l.id])});toast(t('level_made'))}
         return}
       if((d.mode==='box'&&!d.pick)||d.clear){if(!d.ctrl&&!d.shift&&ui.sel.size){ui.sel.clear();refresh()}return}
-      if(d.pick){const pk=pickAt(pn,v,p);if(pk){const gi=grpIds(pk.id);if(d.ctrl){const on=ui.sel.has(pk.id);for(const i of gi)on?ui.sel.delete(i):ui.sel.add(i)}else ui.sel=new Set(gi)}else if(!d.ctrl)ui.sel.clear();refresh()}
+      if(d.pick){const pk=pickAt3(pn,v,p);if(pk){const gi=grpIds(pk.id);if(d.ctrl){const on=ui.sel.has(pk.id);for(const i of gi)on?ui.sel.delete(i):ui.sel.add(i)}else ui.sel=new Set(gi)}else if(!d.ctrl)ui.sel.clear();refresh()}
       return}
     if(d.mode==='box'&&v.kind==='3d'){box3Select(pn,v,d.sx,d.sy,p.x,p.y,d.ctrl);ui.box=null;refresh()}
     else if(d.mode==='box'){const nav=navOf(v);boxSelect(v,{x:(d.sx-nav.ox)/nav.s,y:(d.sy-nav.oy)/nav.s},{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},d.ctrl);ui.box=null;refresh()}
@@ -9334,6 +9338,7 @@ function bindKeys(){
     if(k==='Delete'||k==='Backspace'){if(ui.sel.size){e.preventDefault();act('delete')}return}
     if(k==='Tab'&&ui.tool==='ppipe'){e.preventDefault();ui.opt.ppRun=!ui.opt.ppRun;renderOptbar();hint(t(ui.opt.ppRun?'pp_run_on':'pp_run_off'));redraw();return}          // as in Revit: Tab takes the whole run
     if(k==='Tab'&&XT[ui.tool]&&XT[ui.tool].hov){const v=activeView();if(v&&v.kind==='plan'&&ui.cur&&ui.curPane>=0){e.preventDefault();ui.cyc=(ui.cyc||0)+1;ui.cycAt={x:ui.cur.x,y:ui.cur.y};ui.hov=XT[ui.tool].hov(PANES[ui.curPane],v,ui.cur);redraw()}return}          /* Tab reaches what lies under the element the pointer is on */
+    if(k==='Tab'&&ev3Tab(e))return;
     if(k==='Tab'){const v=activeView();if(v&&v.kind==='plan'&&ui.tool==='modify'&&ui.cur&&ui.curPane>=0){e.preventDefault();const h0=hitPlan(v,ui.cur),e0=h0&&IDX.get(h0.id),ch=e0&&h0.n===1&&h0.grip==null?chainOf(e0):null;
         if(e0&&e0.grp&&h0.grip==null){ui.solo=!ui.solo;ui.chain=null;ui.hov=h0.id;hint(ui.solo?t('h_solo'):'');redraw();return}          // as in Revit: Tab over a member of a group reaches the member itself
         if(ch){ui.chain=ui.chain?null:ch;hint(ui.chain?t('h_chain',ch.size):'');redraw();return}          // as in Revit: Tab over a wall takes the whole chain of walls joined to it
@@ -13802,7 +13807,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=98,V1_NAME='V1.88';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=99,V1_NAME='V1.89';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15195,6 +15200,311 @@ Object.assign(STR,{a_slayers:['แก้โครงสร้าง (Edit Struct
 /* the thermal resistance and U-value of a roof type, as of a wall type (Rsi + Rse 0.17 m²K/W) */
 function slabU(T,cat){const M=matOfT(T),L=wlOf(T);let R=0.17;if(L)for(const l of L)R+=l.t/1000/(MK_K[l.mat]||0.72);else R+=(T.thickness||100)/1000/(M&&+M.k>0?+M.k:MK_K[baseMat(cat,T)]||0.72);return{R,U:1/R}}
 XP.push((c,els)=>{if(c!=='roof'||!els.every(e=>e.type===els[0].type))return'';const T=typ(P,els[0]);if(!T)return'';const W=slabU(T,'roof');return PR.grp('mt_th')+PR.ro('p_uval',W.U.toFixed(2)+' W/m²K')+PR.ro('p_rval',W.R.toFixed(2)+' m²K/W')});
+/* ===== 89 runs drawn in elevations, sections and 3D views; the modify tools there (V1.89; Revit: Duct, Pipe, Cable Tray and Conduit drawn in a section, an elevation
+   or a 3D view, a piece up or down being a riser, and a change of Middle Elevation while drawing making one, in a plan too; Move, Copy, Mirror, Align and dragging in
+   elevations and sections; Move, Copy, Rotate and Mirror in 3D views; Tab through what lies under the pointer in every view) =====
+   XT3[tool] = {ok(v), click(pn,v,p), typed(pn,v,text), num(v), hov(pn,v,p), draw(pn,ctx,v,nav), hint(v)}: a tool of the plan that also works in the views drawn in GL.
+   ui.ev3: the chain being drawn {v: its view, q: [x, y, z] its open end (plan x, y and the height of the centre line), d: the depth of its plane in an elevation or a
+   section, lv3: its level in a 3D view, dir: the way its last level piece went}.  ui.ev3m: the first point of Move, Copy, Mirror, Rotate; ui.al3: the reference of Align
+   {v, o: 'h' a height | 'v' a place along, val}; ui.cyc3: Tab through the elements under the pointer, front to back; ui.ev3r: the risers this drawing has made (ev3Fix). */
+const EV3_RUN=['duct','pipe','tray','conduit'],ev3GL=v=>!!v&&(v.kind==='3d'||v.kind==='elev'||v.kind==='section'),ev3EV=v=>!!v&&(v.kind==='elev'||v.kind==='section');
+/* a point of the plan seen in an elevation or a section: h along it, d its depth; and back */
+const ev3Hq=(v,q)=>{const f=viewDir(v);return q[1]*f[0]-q[0]*f[1]},ev3Dq=(v,q)=>{const f=viewDir(v);return q[0]*f[0]+q[1]*f[1]},ev3At=(v,h,d)=>{const f=viewDir(v);return[f[0]*d-f[1]*h,f[1]*d+f[0]*h]};
+const ev3Lv=z=>{const L=sortedLevels(P);let lv=L[0];for(const l of L)if(l.elev<=z+1)lv=l;return lv};          // the level a height belongs to: the highest at or under it
+function ev3Lv3(v){const G=v&&v.wp?wpGeo(P,v):null;return(G&&!G.def&&G.k==='h'&&lvl(P,G.lv))||lvl(P,ui.level)||sortedLevels(P)[0]}          // the level a 3D view draws on: its work plane, else the current level
+const ev3Probe=tl=>Object.assign({cat:tl},defs(tl)),ev3HH=tl=>runH(P,ev3Probe(tl))/2;
+const ev3RK=tl=>tl==='pipe'?'pipe':tl==='duct'?(['round','flex'].includes(runShape(P,ev3Probe('duct')))?'rduct':'duct'):null;          // the kind of riser a run tool makes
+const ev3RT=(e,tl)=>{if(e.cat!=='riser')return false;const T=typ(P,e);return!!T&&(tl==='pipe'?T.kind==='pipe':tl==='duct'&&T.kind!=='pipe')};
+const ev3NS=(tl,s)=>tl==='pipe'&&s==='W'?'S':s||'';
+const ev3Cands=(tl,sys)=>P.els.filter(e=>(e.cat===tl||ev3RT(e,tl))&&(sys==null||tl==='tray'||tl==='conduit'||ev3NS(tl,e.sys)===ev3NS(tl,sys)));          // sys: while a chain is drawn, only what it can join: its own system
+function ev3Vis(v,e,hs){if(catHid(v,e.cat)||(hs&&hs.has(e.id))||(P.doa&&dopLocked(P,e)))return false;return!(v.kind==='3d'&&v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)}
+/* the depth of the cut of a section at h along it (a section with jogs cuts at another depth piece by piece) and how far it looks (0: no end) */
+function ev3Cut(v,h){const s=v.kind==='section'?sectionOf(v):null;if(!s)return null;const Q=secCut(s,viewDir(v)),c=Q.strips?(Q.strips.find(q=>h>=q.h0&&h<q.h1)||Q.strips[0]):Q;return{d:-c.clip[3],far:c.far||0}}
+function ev3Vd(v,h){if(v.kind==='section'){const c=ev3Cut(v,h);return c?[c.d,c.far]:[null,0]}const cl=elevClip(v);return[cl?-cl[3]:null,0]}
+const ev3Thru=(e,x,y,tol)=>{const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,tt=(x-e.x1)*ux+(y-e.y1)*uy;return tt>-tol&&tt<L+tol&&Math.abs((y-e.y1)*ux-(x-e.x1)*uy)<tol};
+/* the heights where a riser meets the runs at its ends: a rectangular one reaches past the centre of a rectangular duct to its far side (ev3Fix) */
+function ev3Core(s){const z=zRange(P,s),T=typ(P,s);let lo=z[0],hi=z[1];if(!T||T.kind!=='duct')return[lo,hi];
+  for(const e of P.els){if(e.cat!=='duct'||runShape(P,e)!=='rect'||!ev3Thru(e,s.x,s.y,35))continue;const zc=elev(P,e.level)+(e.off||0),hh=runH(P,e)/2;if(Math.abs(zc-hh-z[0])<2)lo=zc;else if(Math.abs(zc+hh-z[1])<2)hi=zc}return[lo,hi]}
+/* what an element spans in an elevation or a section: [h0, h1, z0, z1] */
+function ev3Box(v,e){if(!e||!P.els.includes(e))return null;let z=null,pts;
+  if(HOSTED.includes(e.cat)){const w=IDX.get(e.host),T=typ(P,e);if(!w||!T)return null;const z0=elev(P,w.level)+(e.sill||0);z=[z0,z0+(T.height||0)]}else z=zRange(P,e);if(!z||!isFinite(z[0])||!isFinite(z[1]))return null;
+  if(RUN_CATS.includes(e.cat)){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,k=runW(e)/2/L,nx=-(e.y2-e.y1)*k,ny=(e.x2-e.x1)*k;pts=[[e.x1+nx,e.y1+ny],[e.x1-nx,e.y1-ny],[e.x2+nx,e.y2+ny],[e.x2-nx,e.y2-ny]]}
+  else{const B=elBox(null,e);if(!B)return null;pts=[[B[0],B[1]],[B[2],B[1]],[B[0],B[3]],[B[2],B[3]]]}
+  let h0=Infinity,h1=-Infinity;for(const q of pts){const h=ev3Hq(v,q);if(h<h0)h0=h;if(h>h1)h1=h}return[h0,h1,z[0],z[1]]}
+/* the grids an elevation or a section looks along: their places along it */
+function ev3GridH(v){const out=[],f=viewDir(v);if(catHid(v,'grid'))return out;for(const g of P.grids){if(hidDatum(v,g)||g.bow)continue;const gp=gridPath(g);
+    for(let i=1;i<gp.length;i++){const dx=gp[i][0]-gp[i-1][0],dy=gp[i][1]-gp[i-1][1],L=Math.hypot(dx,dy)||1;if(Math.abs(dx*f[0]+dy*f[1])/L>=0.94)out.push(ev3Hq(v,gp[i-1]))}}return out}
+/* a free point of an elevation or a section under p, {h, z}: its height on a level or on the top or the foot of what is under the pointer, its place along on a grid or a
+   side of it, when one is within 7 px; else rounded to the snap increment */
+function ev3Pt(pn,v,p){const n=navOf(v),tol=7/n.s,inc=clamp(snapInc(n),1,50);let h=(p.x-n.ox)/n.s,z=-(p.y-n.oy)/n.s,sh=0,sz=0;
+  if(ui.snapOv!=='off'){const Z=catHid(v,'level')?[]:P.levels.filter(l=>!hidDatum(v,l)).map(l=>l.elev),H=ev3GridH(v),pk=pickAt(pn,v,p),B=pk&&ev3Box(v,IDX.get(pk.id));if(B){H.push(B[0],B[1]);Z.push(B[2],B[3])}
+    let b=tol,bz=null;for(const q of Z)if(Math.abs(z-q)<b){b=Math.abs(z-q);bz=q}if(bz!=null){z=bz;sz=1}
+    b=tol;let bh=null;for(const q of H)if(Math.abs(h-q)<b){b=Math.abs(h-q);bh=q}if(bh!=null){h=bh;sh=1}}
+  if(!sh)h=Math.round(h/inc)*inc;if(!sz)z=Math.round(z/inc)*inc;return{h,z}}
+/* what a run tool snaps to under p in an elevation or a section: the ends of runs and risers of its kind (11 px), else a point on one (8 px) — a run seen end on, where it
+   crosses the plane.  lock: the depth of the plane of a chain, only what lies in it counts; else what lies near the cut (or the marker) comes first.
+   {q: [x, y, z], k: 'end' | 'on' | 'rend' | 'ron', e, d: its depth} */
+function ev3Snap(pn,v,p,tl,lock,sys){if(ui.snapOv==='off')return null;const n=navOf(v),X=h=>h*n.s+n.ox,Y=z=>-z*n.s+n.oy,hs=hidSet(v),zp=-(p.y-n.oy)/n.s,out=[];
+  const ok=q=>{const d=ev3Dq(v,q);if(lock!=null)return Math.abs(d-lock)<40;const V=ev3Vd(v,ev3Hq(v,q));return V[0]==null||(d>=V[0]-2&&!(V[1]>0&&d>V[0]+V[1]+2))};
+  const add=(q,k,e,px,x)=>{const d=ev3Dq(v,q),V=lock!=null?[lock]:ev3Vd(v,ev3Hq(v,q));out.push(Object.assign({q,k,e,px,d,sc:px+(k==='on'||k==='ron'?6:0)+(V[0]!=null?Math.min(Math.abs(d-V[0]),3000)/300:0)},x||{}))};
+  for(const e of ev3Cands(tl,sys)){if(!ev3Vis(v,e,hs))continue;
+    if(e.cat==='riser'){if(!ok([e.x,e.y]))continue;const z=ev3Core(e),sx=X(ev3Hq(v,[e.x,e.y]));for(let en=0;en<2;en++){const px=Math.hypot(sx-p.x,Y(z[en])-p.y);if(px<11)add([e.x,e.y,z[en]],'rend',e,px,{en})}
+      const dx=Math.abs(sx-p.x);if(dx<8&&zp>z[0]&&zp<z[1])add([e.x,e.y,Math.round(zp)],'ron',e,dx);continue}
+    const z=runZ(P,e),A=[e.x1,e.y1,z[0]],B=[e.x2,e.y2,z[1]],ha=ev3Hq(v,A),hb=ev3Hq(v,B);
+    if(ok(A)){const px=Math.hypot(X(ha)-p.x,Y(A[2])-p.y);if(px<11)add(A,'end',e,px,{en:0})}if(ok(B)){const px=Math.hypot(X(hb)-p.x,Y(B[2])-p.y);if(px<11)add(B,'end',e,px,{en:1})}
+    const sx=X(hb)-X(ha),sy=Y(B[2])-Y(A[2]),l2=sx*sx+sy*sy;let s,px;
+    if(l2<9){const da=ev3Dq(v,A),db=ev3Dq(v,B),c=lock!=null?lock:ev3Vd(v,ha)[0];if(c==null||Math.abs(db-da)<1)continue;s=(c-da)/(db-da);px=Math.hypot(X(ha)-p.x,Y(A[2])-p.y);if(px>Math.max(8,runW(e)/2*n.s))continue}
+    else{s=((p.x-X(ha))*sx+(p.y-Y(A[2]))*sy)/l2;px=Math.hypot(X(ha)+sx*s-p.x,Y(A[2])+sy*s-p.y);if(px>=8)continue}
+    if(s<=0.001||s>=0.999)continue;const q=[A[0]+(B[0]-A[0])*s,A[1]+(B[1]-A[1])*s,A[2]+(B[2]-A[2])*s];if(ok(q))add(q,'on',e,px,{s})}
+  out.sort((a,b)=>a.sc-b.sc);return out[0]||null}
+/* the screen of a 3D view: a point of the model [x, y, z] → [sx, sy] (null behind the eye) */
+function ev3Proj(pn,v){const cam=camOf(pn,v),M=camMatrix(cam,MSm().bb),o=cam.ortho;return q=>{const a=q[0],b=q[2],c=q[1],cx=M[0]*a+M[4]*b+M[8]*c+M[12],cy=M[1]*a+M[5]*b+M[9]*c+M[13],cw=o?1:M[3]*a+M[7]*b+M[11]*c+M[15];if(cw<=1e-6)return null;return[(cx/cw+1)/2*pn.w,(1-cy/cw)/2*pn.h]}}
+/* where the ray under p meets the level plane at height z: [x, y, z], or null when the view looks along it */
+function ev3Ray(pn,v,p,z){const R=rayGL(pn,v,p);if(Math.abs(R.d[1])<1e-4)return null;const t=(z-R.o[1])/R.d[1];if(!(t>0)&&!camOf(pn,v).ortho)return null;return[R.o[0]+R.d[0]*t,R.o[2]+R.d[2]*t,z]}
+function ev3RaySeg(R,A,B){const o=R.o,d=R.d,u=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],w=[A[0]-o[0],A[1]-o[1],A[2]-o[2]],a=dot3(d,d),b=dot3(d,u),c=dot3(u,u),dw=dot3(d,w),uw=dot3(u,w),den=a*c-b*b;return den>1e-9?(b*dw-a*uw)/den:-1}
+/* the same in a 3D view: ends within 12 px, else the nearest point of a centre line to the ray within 8 px */
+function ev3Snap3(pn,v,p,tl,sys){if(ui.snapOv==='off')return null;const hs=hidSet(v),R=rayGL(pn,v,p),pj=ev3Proj(pn,v);let best=null;
+  const dist=q=>{const s=pj(q);return s?Math.hypot(s[0]-p.x,s[1]-p.y):Infinity},add=(q,k,e,px,x)=>{const sc=px+(k==='on'||k==='ron'?6:0);if(!best||sc<best.sc)best=Object.assign({q,k,e,px,sc},x||{})};
+  for(const e of ev3Cands(tl,sys)){if(!ev3Vis(v,e,hs))continue;const rs=e.cat==='riser',z=rs?ev3Core(e):runZ(P,e),A=rs?[e.x,e.y,z[0]]:[e.x1,e.y1,z[0]],B=rs?[e.x,e.y,z[1]]:[e.x2,e.y2,z[1]];
+    for(const [q,en] of [[A,0],[B,1]]){const px=dist(q);if(px<12)add(q,rs?'rend':'end',e,px,{en})}
+    const s=ev3RaySeg(R,[A[0],A[2],A[1]],[B[0],B[2],B[1]]);if(s>0.001&&s<0.999){const q=[A[0]+(B[0]-A[0])*s,A[1]+(B[1]-A[1])*s,A[2]+(B[2]-A[2])*s];if(rs)q[2]=Math.round(q[2]);const px=dist(q);if(px<8)add(q,rs?'ron':'on',e,px,{s})}}
+  return best}
+/* a chain that starts on a run or a riser takes its system, and at an end its type and size, as in a plan */
+function ev3Carry(tl,sn){const d=defs(tl),e=sn&&sn.e;if(!e)return;if(e.sys&&(tl==='duct'||tl==='pipe'))d.sys=e.sys;
+  if(e.cat===tl){if(sn.k==='end'){d.type=e.type;for(const k of ['w','h','dia'])if(e[k]!=null)d[k]=e[k]}return}
+  if(e.cat==='riser'){const T=typ(P,e)||{};if(tl==='pipe'){d.dia=e.w||d.dia;return}const sh=T.kind==='rduct'?'round':'rect',D=(P.types.duct||[]).find(x=>(x.shape||'rect')===sh);if(D&&runShape(P,ev3Probe('duct'))!==sh)d.type=D.id;d.w=e.w||d.w;if(sh==='rect')d.h=e.h||d.h}}
+/* the depth a chain started in empty space is drawn at: the cut of a section; in an elevation just in front of the face under the pointer, else behind its marker line */
+function ev3D0(pn,v,p,h,tl){if(v.kind==='section'){const c=ev3Cut(v,h);return c?c.d:null}const hw=runW(ev3Probe(tl))/2,pk=pickAt(pn,v,p);if(pk&&pk.p)return ev3Dq(v,[pk.p[0],pk.p[2]])-hw-25;const cl=elevClip(v);return cl?-cl[3]+hw+25:null}
+function ev3Start(pn,v,p){const tl=ui.tool,sn=ev3Snap(pn,v,p,tl,null);
+  if(sn){ev3Carry(tl,sn);ui.ev3={v:v.id,q:sn.q.slice(),d:sn.d,dir:null};return true}
+  const w=ev3Pt(pn,v,p),d=ev3D0(pn,v,p,w.h,tl);if(d==null){toast(t('ev3_noface'));return false}const xy=ev3At(v,w.h,d);ui.ev3={v:v.id,q:[xy[0],xy[1],w.z],d,dir:null};return true}
+/* the pieces a click at p makes from the open end of a chain in an elevation or a section: across is a run, up or down a riser; onto a run or a riser of its kind it joins
+   it (up or down first, then across into a run; across first, then along a riser).  A pipe that falls falls from where it starts.  L: a typed length along the pointer.
+   {pcs: [{a, b, vert}], sn, end} */
+function ev3Next(pn,v,p,L){const S=ui.ev3,tl=ui.tool,q=S.q,qh=ev3Hq(v,q),sl=tl==='pipe'?Math.max(0,+defs('pipe').slope||0)/100:0,sn=L==null?ev3Snap(pn,v,p,tl,S.d,defs(tl).sys||''):null;
+  if(sn){const fl=Math.hypot(sn.q[0]-q[0],sn.q[1]-q[1]),dz=sn.q[2]-q[2],pc=[];if(fl<20&&Math.abs(dz)<20)return null;
+    if(fl<25||Math.abs(ev3Hq(v,sn.q)-qh)<2)pc.push({a:q,b:[q[0],q[1],sn.q[2]],vert:true});
+    else if(Math.abs(dz)<2&&!sl)pc.push({a:q,b:sn.q});
+    else if(sn.k==='rend'||sn.k==='ron'){const zb=q[2]-fl*sl,z=ev3Core(sn.e);pc.push({a:q,b:[sn.q[0],sn.q[1],zb]});if(zb<z[0]-2||zb>z[1]+2)pc.push({a:[sn.q[0],sn.q[1],zb],b:[sn.q[0],sn.q[1],zb<z[0]?z[0]:z[1]],vert:true})}
+    else{const za=sn.q[2]+fl*sl;if(Math.abs(za-q[2])>=2)pc.push({a:q,b:[q[0],q[1],za],vert:true});pc.push({a:[q[0],q[1],za],b:sn.q})}
+    return{pcs:pc,sn,end:true}}
+  const w=ev3Pt(pn,v,p);let dh=w.h-qh,dz=w.z-q[2];if(Math.abs(dh)>=Math.abs(dz))dz=0;else dh=0;
+  if(L!=null){if(dh)dh=Math.sign(dh)*L;else if(dz)dz=Math.sign(dz)*L;else return null}
+  if(Math.abs(dh)<20&&Math.abs(dz)<20)return null;if(dz)return{pcs:[{a:q,b:[q[0],q[1],q[2]+dz],vert:true}],sn:null};
+  const xy=ev3At(v,qh+dh,S.d);return{pcs:[{a:q,b:[xy[0],xy[1],q[2]-Math.abs(dh)*sl]}],sn:null}}
+/* 3D: the chain starts on the end of a run or a riser, else on the level plane at the offset of Properties; it goes on on its own level plane, at 45° steps (Shift: 90°)
+   or at the angles the MEP settings allow after a piece; onto a run or a riser at another height it ends with a riser */
+function ev3Start3(pn,v,p){const tl=ui.tool,d=defs(tl),sn=ev3Snap3(pn,v,p,tl);
+  if(sn){ev3Carry(tl,sn);const L=(sn.e.cat===tl&&lvl(P,sn.e.level))||ev3Lv(sn.q[2]);d.off=Math.round(sn.q[2]-L.elev);ui.ev3={v:v.id,q:sn.q.slice(),lv3:L.id,dir:null};return true}
+  const L=ev3Lv3(v),z=L.elev+(+d.off||0),w=ev3Ray(pn,v,p,z);if(!w){toast(t('ev3_look'));return false}const inc=navOf(v).hh<4000?10:50;ui.ev3={v:v.id,q:[Math.round(w[0]/inc)*inc,Math.round(w[1]/inc)*inc,z],lv3:L.id,dir:null};return true}
+function ev3Next3(pn,v,p,Lt){const S=ui.ev3,tl=ui.tool,q=S.q,sl=tl==='pipe'?Math.max(0,+defs('pipe').slope||0)/100:0;let sn=Lt==null?ev3Snap3(pn,v,p,tl,defs(tl).sys||''):null;
+  if(sn&&Math.hypot(sn.q[0]-q[0],sn.q[1]-q[1])<20&&Math.abs(sn.q[2]-q[2])<20)sn=null;
+  if(sn){const fl=Math.hypot(sn.q[0]-q[0],sn.q[1]-q[1]),zb=q[2]-fl*sl,pc=[];
+    if(fl<25)pc.push({a:q,b:[q[0],q[1],sn.q[2]],vert:true});
+    else if(sn.k==='rend'||sn.k==='ron'){const z=ev3Core(sn.e);pc.push({a:q,b:[sn.q[0],sn.q[1],zb]});if(zb<z[0]-2||zb>z[1]+2)pc.push({a:[sn.q[0],sn.q[1],zb],b:[sn.q[0],sn.q[1],zb<z[0]?z[0]:z[1]],vert:true})}
+    else{const lv=Math.abs(zb-sn.q[2])<2;pc.push({a:q,b:[sn.q[0],sn.q[1],lv?sn.q[2]:zb]});if(!lv)pc.push({a:[sn.q[0],sn.q[1],zb],b:sn.q,vert:true})}
+    return{pcs:pc,sn,end:true}}
+  const w=ev3Ray(pn,v,p,q[2]);if(!w)return null;const dx=w[0]-q[0],dy=w[1]-q[1];let l=Math.hypot(dx,dy);if(l<1)return null;let a=Math.atan2(dy,dx);
+  if(S.dir&&!ui.shift&&msOf(P).ang.m!=='any'){const sp=angConstrain(P,tl,{x:q[0],y:q[1]},{x:w[0],y:w[1]},S.dir);a=Math.atan2(sp.y-q[1],sp.x-q[0])}
+  else{const st=ui.shift?Math.PI/2:Math.PI/4,as=Math.round(a/st)*st;if(ui.shift||Math.abs(a-as)<0.07)a=as}
+  if(Lt!=null)l=Lt;else{const inc=navOf(v).hh<4000?10:50;l=Math.round(l*Math.cos(Math.atan2(dy,dx)-a)/inc)*inc}if(!(l>=20))return null;
+  const R=x=>Math.round(x*1000)/1000;return{pcs:[{a:q,b:[R(q[0]+Math.cos(a)*l),R(q[1]+Math.sin(a)*l),q[2]-l*sl]}],sn:null}}
+/* a level piece: on the level of a 3D chain, else on the level its start height belongs to; a pipe's slope is the fall from a to b */
+function ev3Run(tl,a,b,lv){const L=(lv&&lvl(P,lv))||ev3Lv(a[2]),e=newLineEl(tl,L.id,{x:a[0],y:a[1]},{x:b[0],y:b[1]});e.off=Math.round((a[2]-L.elev)*10)/10;
+  if(tl==='pipe'){const l=Math.hypot(b[0]-a[0],b[1]-a[1]);e.slope=l>1&&a[2]-b[2]>0.5?Math.round((a[2]-b[2])/l*1e4)/100:0}P.els.push(e);ui.fsp=null;return e}
+function ev3RSet(s,lo,hi){const L=ev3Lv(lo);s.level=L.id;s.baseOff=Math.round(lo-L.elev);if(s.top&&lvl(P,s.top))s.topOff=Math.round(hi-elev(P,s.top));else{s.top=0;s.height=Math.max(10,Math.round(hi-lo))}}
+/* a piece up or down at a: a riser of the kind of the tool from a's height to zb.  A riser of that kind standing there already, that the piece goes on from, grows instead;
+   a run of the system that passes where the riser ends is split there, so that the two meet in a tee */
+function ev3Vert(tl,a,zb,rot){const kind=ev3RK(tl),lo=Math.min(a[2],zb),hi=Math.max(a[2],zb),x=a[0],y=a[1],d=defs(tl);if(!kind||hi-lo<1)return null;
+  let s=P.els.find(o=>o.cat==='riser'&&Math.abs(o.x-x)<3&&Math.abs(o.y-y)<3&&(typ(P,o)||{}).kind===kind&&(z=>z[0]<=hi+5&&z[1]>=lo-5)(zRange(P,o)));
+  if(s){const z=zRange(P,s);ev3RSet(s,Math.min(z[0],lo),Math.max(z[1],hi))}
+  else{const RT=(P.types.riser||[]).find(T=>T.kind===kind);if(!RT)return null;const sz=kind==='pipe'?+d.dia||25:+d.w||400;
+    s={id:P.seq++,cat:'riser',type:RT.id,level:0,x,y,rot:rot||0,baseOff:0,top:0,topOff:0,height:0,w:sz,h:kind==='duct'?+d.h||250:sz,sys:d.sys||'',flow:0};ev3RSet(s,lo,hi);P.els.push(s)}
+  (ui.ev3r||(ui.ev3r=new Set())).add(s.id);ev3Cuts(tl,x,y,[lo,hi]);return s}
+function ev3Cuts(tl,x,y,zs){const sys=defs(tl).sys||'';for(const e of P.els.slice()){if(e.cat!==tl||(e.sys||'')!==sys)continue;const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,tt=(x-e.x1)*ux+(y-e.y1)*uy;
+    if(tt<30||tt>L-30||Math.abs((y-e.y1)*ux-(x-e.x1)*uy)>25)continue;const z=runZ(P,e),zt=z[0]+(z[1]-z[0])*tt/L;if(zs.some(q=>Math.abs(q-zt)<5))ev3Split(e,tt)}}
+function ev3Split(e,tt){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,c=JSON.parse(JSON.stringify(e)),x=e.x1+(e.x2-e.x1)*tt/L,y=e.y1+(e.y2-e.y1)*tt/L;c.id=P.seq++;c.x1=x;c.y1=y;e.x2=x;e.y2=y;
+  if(e.cat==='pipe'&&e.slope)c.off=Math.round(((e.off||0)-tt*e.slope/100)*10)/10;P.els.push(c);return c}          // the second part of a pipe that falls starts where the first ends
+/* a rectangular riser this drawing made reaches past the centre of a rectangular duct joined at its end to the far side of it, and turns its width across that duct: the
+   two meet as an elbow does (Revit) */
+function ev3Fix(pts){const R=ui.ev3r;if(!R||!R.size)return;
+  for(const s of P.els){if(s.cat!=='riser'||!R.has(s.id)||(typ(P,s)||{}).kind!=='duct'||!pts.some(q=>Math.abs(q[0]-s.x)<40&&Math.abs(q[1]-s.y)<40))continue;const z=zRange(P,s);let lo=z[0],hi=z[1],rot=null;
+    for(const e of P.els){if(e.cat!=='duct'||runShape(P,e)!=='rect'||(e.sys||'')!==(s.sys||'')||!ev3Thru(e,s.x,s.y,35))continue;const zc=elev(P,e.level)+(e.off||0),hh=runH(P,e)/2,a=Math.atan2(e.x2-e.x1,-(e.y2-e.y1));
+      if(zc>=z[0]-1&&zc<=z[0]+hh+2){lo=Math.min(lo,zc-hh);if(rot==null)rot=a}else if(zc<=z[1]+1&&zc>=z[1]-hh-2){hi=Math.max(hi,zc+hh);if(rot==null)rot=a}}
+    if(lo<z[0]-0.5||hi>z[1]+0.5)ev3RSet(s,lo,hi);if(rot!=null)s.rot=Math.round(rot*1800/Math.PI)/10}}
+XN.push(s0=>{if(!ui.ev3r||!ui.ev3r.size)return;const pts=[];for(const e of P.els)if(e.id>=s0&&e.cat==='duct')pts.push([e.x1,e.y1],[e.x2,e.y2]);if(pts.length)ev3Fix(pts)});          // a duct drawn in a plan from a riser made at a change of offset
+function ev3Make(v,N){const tl=ui.tool,S=ui.ev3,vert=N.pcs.some(c=>c.vert);
+  if(vert&&(tl==='tray'||tl==='conduit')){toast(t('ev3_novert'));return}if(vert&&!(P.types.riser||[]).some(T=>T.kind===ev3RK(tl))){toast(t('ev3_nort'));return}
+  const is3=v.kind==='3d',f=viewDir(v),r0=is3?0:Math.round(Math.atan2(-f[1],-f[0])*1800/Math.PI)/10,ends=[];let q=S.q,dir=S.dir;
+  edit(()=>{for(const c of N.pcs){if(c.vert)ev3Vert(tl,c.a,c.b[2],dir?Math.round(Math.atan2(dir[0],-dir[1])*1800/Math.PI)/10:r0);
+      else{ev3Run(tl,c.a,c.b,is3?S.lv3:0);const l=Math.hypot(c.b[0]-c.a[0],c.b[1]-c.a[1]);if(l>1)dir=[(c.b[0]-c.a[0])/l,(c.b[1]-c.a[1])/l]}ends.push(c.a,c.b);q=c.b}
+    ev3Fix(ends)});
+  if(N.end||!ui.opt.chain)ui.ev3=null;else{S.q=q.slice();S.dir=dir}if(catHid(v,tl))toast(t('ev3_hid'));refresh()}
+function ev3RunClick(pn,v,p,L){const S=ui.ev3&&ui.ev3.v===v.id?ui.ev3:null;if(!S){ui.ev3=null;if(L==null&&ev3Start(pn,v,p))refresh();return}const N=ev3Next(pn,v,p,L);if(N)ev3Make(v,N)}
+function ev3Click3(pn,v,p,L){const S=ui.ev3&&ui.ev3.v===v.id?ui.ev3:null;if(!S){ui.ev3=null;if(L==null&&ev3Start3(pn,v,p))refresh();return}const N=ev3Next3(pn,v,p,L);if(N)ev3Make(v,N)}
+/* Middle Elevation changed while a chain is open, in a plan or a 3D view: a riser at its open end up or down to the new height, and the drawing goes on there (Revit) */
+{const f0=setProp;setProp=(key,raw,el)=>{const tl=ui.tool,v=activeView();if(key!=='off'||!EV3_RUN.includes(tl)||!v){f0(key,raw,el);return}
+  const S=v.kind==='3d'&&ui.ev3&&ui.ev3.v===v.id?ui.ev3:null,pt=v.kind==='plan'&&!v.draft&&ui.pts.length===1?ui.pts[0]:null;
+  const z0=S?S.q[2]:pt?elev(P,v.level)+(tl==='pipe'&&ui.chainOff!=null?ui.chainOff:(+defs(tl).off||0)):null;f0(key,raw,el);if(z0==null)return;
+  const z1=(S?elev(P,S.lv3):elev(P,v.level))+(+defs(tl).off||0);if(Math.abs(z1-z0)<1)return;
+  if(tl==='tray'||tl==='conduit'){if(S){S.q=[S.q[0],S.q[1],z1];redraw()}return}if(!(P.types.riser||[]).some(T=>T.kind===ev3RK(tl))){toast(t('ev3_nort'));return}
+  const q=S?S.q:[pt.x,pt.y,z0],pd=S?S.dir:runPrevDir(P,v,tl,ui.pts),rot=pd?Math.round(Math.atan2(pd[0],-pd[1])*1800/Math.PI)/10:0;
+  edit(()=>{ev3Vert(tl,q,z1,rot);ev3Fix([q])});if(S)S.q=[q[0],q[1],z1];else ui.chainOff=null;toast(t('ev3_rise',fmtLen(Math.abs(z1-z0)),unitName()));refresh()}}
+/* ---- the previews ---- */
+function ev3Mark(ctx,x,y,k){ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.setLineDash([]);ctx.beginPath();if(k==='end'||k==='rend')ctx.rect(x-5,y-5,10,10);else if(k==='on'||k==='ron'){ctx.moveTo(x-5,y-5);ctx.lineTo(x+5,y+5);ctx.moveTo(x+5,y-5);ctx.lineTo(x-5,y+5)}
+  else{ctx.moveTo(x-7,y);ctx.lineTo(x+7,y);ctx.moveTo(x,y-7);ctx.lineTo(x,y+7)}ctx.stroke();ctx.restore()}
+function ev3Lbl(ctx,x,y,s){ctx.save();ctx.font='600 12px '+FONT;ctx.textAlign='left';ctx.textBaseline='middle';const w=ctx.measureText(s).width;ctx.fillStyle=C.paper;ctx.globalAlpha=0.88;ctx.fillRect(x+9,y-19,w+10,18);ctx.globalAlpha=1;ctx.fillStyle=C.sel;ctx.fillText(s,x+14,y-10);ctx.restore()}
+function ev3Band(ctx,A,B,hw){const dx=B[0]-A[0],dy=B[1]-A[1],l=Math.hypot(dx,dy)||1,nx=-dy/l*hw,ny=dx/l*hw;ctx.beginPath();ctx.moveTo(A[0]+nx,A[1]+ny);ctx.lineTo(B[0]+nx,B[1]+ny);ctx.lineTo(B[0]-nx,B[1]-ny);ctx.lineTo(A[0]-nx,A[1]-ny);ctx.closePath();
+  ctx.globalAlpha=0.16;ctx.fill();ctx.globalAlpha=1;ctx.stroke();ctx.save();ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.restore()}
+const ev3Scr=(pn,v,nav)=>v.kind==='3d'?ev3Proj(pn,v):q=>[ev3Hq(v,q)*nav.s+nav.ox,-q[2]*nav.s+nav.oy];
+function ev3DrawRuns(pn,ctx,v,nav){const p=ui.curPane===pn.i?ui.cur:null,S=ui.ev3&&ui.ev3.v===v.id?ui.ev3:null,tl=ui.tool,is3=v.kind==='3d',sp=ev3Scr(pn,v,nav);ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.4;
+  if(S){const a=sp(S.q);if(a)ev3Mark(ctx,a[0],a[1],'pt')}if(!p)return;
+  if(!S){const sn=is3?ev3Snap3(pn,v,p,tl):ev3Snap(pn,v,p,tl,null);let s=null,k='pt';if(sn){s=sp(sn.q);k=sn.k}else if(is3){const L=ev3Lv3(v),w=ev3Ray(pn,v,p,L.elev+(+defs(tl).off||0));s=w&&sp(w)}else{const w=ev3Pt(pn,v,p);s=[w.h*nav.s+nav.ox,-w.z*nav.s+nav.oy]}if(s)ev3Mark(ctx,s[0],s[1],k);return}
+  const N=is3?ev3Next3(pn,v,p,null):ev3Next(pn,v,p,null);if(!N)return;const hw=is3?3:Math.max(1.5,ev3HH(tl)*nav.s);let len=0,last=null;
+  for(const c of N.pcs){const A=sp(c.a),B=sp(c.b);if(!A||!B)continue;ev3Band(ctx,A,B,hw);len+=Math.hypot(c.b[0]-c.a[0],c.b[1]-c.a[1],c.b[2]-c.a[2]);last=B}
+  if(N.sn){const s=sp(N.sn.q);if(s)ev3Mark(ctx,s[0],s[1],N.sn.k)}if(last)ev3Lbl(ctx,last[0],last[1],fmtLen(len)+' '+unitName()+(N.pcs.some(c=>c.vert)?'  ↕':''))}
+const ev3RunTool={ok:v=>ev3GL(v),click(pn,v,p){if(v.kind==='3d')ev3Click3(pn,v,p,null);else ev3RunClick(pn,v,p,null)},
+  typed(pn,v,s){const L=parseLen(s),p=ui.cur&&ui.curPane===pn.i?ui.cur:{x:pn.w/2,y:pn.h/2};if(!(L>0))return;if(v.kind==='3d')ev3Click3(pn,v,p,L);else ev3RunClick(pn,v,p,L)},
+  num:v=>!!(ui.ev3&&ui.ev3.v===v.id),draw:ev3DrawRuns,
+  hint(v){const S=ui.ev3&&ui.ev3.v===v.id;if(v.kind==='3d')return S?t('ev3_h32'):t('ev3_h31',ev3Lv3(v).name,fmtLen(+defs(ui.tool).off||0)+' '+unitName());return t(S?'ev3_h2':v.kind==='section'?'ev3_hs1':'ev3_he1')}};
+for(const k of EV3_RUN)XT3[k]=ev3RunTool;
+
+/* ---- Move, Copy, Mirror, Rotate, Align and dragging in elevations, sections and 3D views ---- */
+/* the lowest point of the selection: the plane a 3D Move, Rotate or Mirror works on when the pointer is over nothing */
+function ev3SelZ(){let z=Infinity;for(const id of ui.sel){const e=IDX.get(id);if(e&&P.els.includes(e)){const r=zRange(P,e);if(r&&isFinite(r[0]))z=Math.min(z,r[0])}}return isFinite(z)?z:elev(P,ui.level)}
+/* what goes up or down by dz, field by field (Revit: the offsets of each category); returns how many could not */
+const EV3_OFF=new Set(['duct','pipe','tray','conduit','floor','roof','footing','wfoot','truss','bsys','mtext',...COMP_CATS.filter(c=>c!=='riser')]);
+function ev3Lift(ids,dz){let n=0;const R=q=>Math.round(q*10)/10;
+  for(const id of ids){const e=IDX.get(id);if(!e)continue;const c=e.cat;if(c==='level'){e.elev=R(e.elev+dz);continue}if(c==='grid'||c==='section'||!P.els.includes(e))continue;
+    if(c==='wall'||c==='column'||c==='riser'||c==='shaft'||c==='ramp'){e.baseOff=R((e.baseOff||0)+dz);if(e.top&&lvl(P,e.top))e.topOff=R((e.topOff||0)+dz)}
+    else if(c==='mass')e.baseOff=R((e.baseOff||0)+dz);
+    else if(c==='beam'||c==='railing'){e.off=R((e.off||0)+dz);if(e.off2!=null)e.off2=R(e.off2+dz)}
+    else if(c==='ceiling')e.off=R((e.off==null?2600:e.off)+dz);
+    else if(c==='mline'){if(Array.isArray(e.vz))e.vz=e.vz.map(z=>R(z+dz));else e.off=R((e.off||0)+dz)}
+    else if(HOSTED.includes(c))e.sill=R((e.sill||0)+dz);
+    else if(EV3_OFF.has(c))e.off=R((e.off||0)+dz);else n++}return n}
+/* moves what is in ids by dh along an elevation or a section and dz up: the model across in the plan and up by its offsets, the annotations of the view in its own
+   coordinates (x along, y = −height); returns how many could not go up or down */
+function ev3Shift(v,ids,dh,dz){const f=viewDir(v),av=avid(v),mdl=[],ann=[];for(const id of ids){const e=IDX.get(id);if(!e)continue;if(ANN.includes(e.cat)||EA_CAT[e.cat]){if(e.view===av)ann.push(e)}else mdl.push(id)}
+  if(dh)translateIds(mdl,-f[1]*dh,f[0]*dh);const n=dz?ev3Lift([...expandSel(mdl)],dz):0;
+  for(const d of ann){if(d.cat==='edim'){d.x1+=dh;d.x2+=dh;d.y1-=dz;d.y2-=dz;d.off+=d.m==='v'?dh:-dz}else if(EA_CAT[d.cat]){d.x+=dh;d.y-=dz;if(isFinite(d.x2)){d.x2+=dh;d.y2-=dz}}else translateIds([d.id],dh,-dz)}
+  return n}
+/* copies: the annotations of an elevation or a section are copied here, the rest by cloneIds */
+function ev3Clone(ids){const ea=ids.filter(id=>{const d=IDX.get(id);return d&&EA_CAT[d.cat]}),out=cloneIds(ids.filter(id=>!ea.includes(id)));
+  for(const id of ea){const c=JSON.parse(JSON.stringify(IDX.get(id)));c.id=P.seq++;P.ann.push(c);out.push(c.id)}IDX=indexProject(P);return out}
+/* the point Move, Copy and Mirror take under p: in an elevation or a section {h, z}, snapped as the run tools are (Shift keeps to across or up and down from b);
+   in a 3D view {x, y, z}: the point of the model under the pointer for the first, then on the level plane through it (Shift: along x or y) */
+function ev3MPt(pn,v,p,b){if(v.kind!=='3d'){const w=ev3Pt(pn,v,p);if(b&&ui.shift){if(Math.abs(w.h-b.h)>=Math.abs(w.z-b.z))w.z=b.z;else w.h=b.h}return w}
+  const inc=navOf(v).hh<4000?10:50,rd=q=>Math.round(q/inc)*inc;
+  if(!b){const pk=pickAt3(pn,v,p);if(pk&&pk.p)return{x:rd(pk.p[0]),y:rd(pk.p[2]),z:pk.p[1]};const z=ev3SelZ(),w=ev3Ray(pn,v,p,z);return w?{x:rd(w[0]),y:rd(w[1]),z}:null}
+  const w=ev3Ray(pn,v,p,b.z);if(!w)return null;let x=b.x+Math.round((w[0]-b.x)/inc)*inc,y=b.y+Math.round((w[1]-b.y)/inc)*inc;if(ui.shift){if(Math.abs(x-b.x)>=Math.abs(y-b.y))y=b.y;else x=b.x}return{x,y,z:b.z}}
+function ev3MvGo(v,a,b,copy){const is3=v.kind==='3d',dx=is3?b.x-a.x:0,dy=is3?b.y-a.y:0,dh=is3?0:b.h-a.h,dz=is3?0:b.z-a.z;if(Math.hypot(dx,dy,dh,dz)<1)return;
+  if(!copy&&!movable(ui.sel,true).length){toast(t('pin_block',ui.sel.size));setTool('modify');return}let n=0;
+  edit(()=>{let ids=[...ui.sel];if(copy){ids=ev3Clone(ids);ui.sel=new Set(ids.filter(id=>{const e=IDX.get(id);return e&&!(GEOM[e.cat]==='host'&&ids.includes(e.host))}))}else ids=movable(ids);
+    if(is3)translateIds(copy?[...expandSel(ids)]:ids,dx,dy);else n=ev3Shift(v,ids,dh,dz)});
+  if(n)toast(t('ev3_nolift',n));if(copy&&ui.opt.multiple){ui.ev3m={v:v.id,b};refresh()}else{ui.ev3m=null;setTool('modify')}}
+function ev3MvClick(pn,v,p,copy,L){const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null;
+  if(!M){if(L!=null)return;const b=ev3MPt(pn,v,p,null);if(!b){toast(t('ev3_look'));return}ui.ev3m={v:v.id,b};refresh();return}
+  const w=ev3MPt(pn,v,p,M.b);if(!w)return;
+  if(L!=null){const is3=v.kind==='3d',du=is3?w.x-M.b.x:w.h-M.b.h,dv=is3?w.y-M.b.y:w.z-M.b.z,l=Math.hypot(du,dv);if(l<1)return;if(is3){w.x=M.b.x+du/l*L;w.y=M.b.y+dv/l*L}else{w.h=M.b.h+du/l*L;w.z=M.b.z+dv/l*L}}
+  ev3MvGo(v,M.b,w,copy)}
+function ev3MvDraw(pn,ctx,v,nav){const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null,p=ui.curPane===pn.i?ui.cur:null,is3=v.kind==='3d',pj=is3?ev3Proj(pn,v):null;
+  const sp=b=>is3?pj([b.x,b.y,b.z]):[b.h*nav.s+nav.ox,-b.z*nav.s+nav.oy];ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.4;
+  if(!M){const b=p&&ev3MPt(pn,v,p,null),s=b&&sp(b);if(s)ev3Mark(ctx,s[0],s[1],'pt');return}
+  const A=sp(M.b);if(A)ev3Mark(ctx,A[0],A[1],'pt');const b=p&&ev3MPt(pn,v,p,M.b),B=b&&sp(b);if(!A||!B)return;
+  ctx.save();ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.restore();ev3Mark(ctx,B[0],B[1],'pt');
+  ev3Lbl(ctx,B[0],B[1],fmtLen(is3?Math.hypot(b.x-M.b.x,b.y-M.b.y):Math.hypot(b.h-M.b.h,b.z-M.b.z))+' '+unitName())}
+const ev3MvTool=copy=>({ok:v=>ev3GL(v),click(pn,v,p){ev3MvClick(pn,v,p,copy,null)},typed(pn,v,s){const L=parseLen(s);if(L>0)ev3MvClick(pn,v,ui.cur&&ui.curPane===pn.i?ui.cur:{x:pn.w/2,y:pn.h/2},copy,L)},
+  num:v=>!!(ui.ev3m&&ui.ev3m.v===v.id),draw:ev3MvDraw,hint:v=>t(ui.ev3m&&ui.ev3m.v===v.id?(v.kind==='3d'?'ev3_mv32':'ev3_mv2'):(v.kind==='3d'?'ev3_mv31':'ev3_mv1'))});
+XT3.move=ev3MvTool(false);XT3.copy=ev3MvTool(true);
+/* Mirror: in an elevation or a section about the upright plane through an axis drawn up or down; in a 3D view about an axis drawn on the level plane */
+XT3.mirror={ok:v=>ev3GL(v),
+  click(pn,v,p){const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null,w=ev3MPt(pn,v,p,v.kind==='3d'?(M&&M.b):null);if(!w){toast(t('ev3_look'));return}if(!M){ui.ev3m={v:v.id,b:w};refresh();return}
+    let A,B;if(v.kind==='3d'){if(Math.hypot(w.x-M.b.x,w.y-M.b.y)<10)return;A=[M.b.x,M.b.y];B=[w.x,w.y]}
+    else{if(Math.abs(w.z-M.b.z)<10||Math.abs(w.z-M.b.z)<Math.abs(w.h-M.b.h)){toast(t('ev3_mirv'));return}const f=viewDir(v);A=ev3At(v,M.b.h,0);B=[A[0]+f[0]*1000,A[1]+f[1]*1000]}
+    ui.ev3m=null;edit(()=>{let ids=[...ui.sel].filter(id=>{const e=IDX.get(id);return e&&!EA_CAT[e.cat]&&!ANN.includes(e.cat)});if(ui.opt.copy){ids=cloneIds(ids);ui.sel=new Set(ids)}else ids=ids.filter(id=>!isPinned(id));mirrorIds(ids,A[0],A[1],B[0],B[1])});setTool('modify')},
+  draw(pn,ctx,v,nav){const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null,p=ui.curPane===pn.i?ui.cur:null;ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;
+    if(v.kind==='3d'){const pj=ev3Proj(pn,v),b=p&&ev3MPt(pn,v,p,M&&M.b),B=b&&pj([b.x,b.y,b.z]);if(!M){if(B)ev3Mark(ctx,B[0],B[1],'pt');return}const A=pj([M.b.x,M.b.y,M.b.z]);if(A)ev3Mark(ctx,A[0],A[1],'pt');
+      if(A&&B){ctx.save();ctx.setLineDash([10,3,2,3]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.restore()}return}
+    const h=M?M.b.h:p?ev3Pt(pn,v,p).h:null;if(h==null)return;const x=h*nav.s+nav.ox;ctx.save();ctx.setLineDash([10,3,2,3]);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,pn.h);ctx.stroke();ctx.restore();if(M)ev3Mark(ctx,x,-M.b.z*nav.s+nav.oy,'pt')},
+  hint:v=>t(ui.ev3m&&ui.ev3m.v===v.id?(v.kind==='3d'?'h_mir2':'ev3_mir2'):(v.kind==='3d'?'h_mir1':'ev3_mir1'))};
+/* Rotate in a 3D view: about the centre of the selection (Space: another), the rays on the level plane of the selection's foot; the angle in whole degrees, a multiple of
+   15° within 2° of one (Shift: always) */
+function ev3RotDeg(c,b,w){let d=-(Math.atan2(w[1]-c.y,w[0]-c.x)-Math.atan2(b.y-c.y,b.x-c.x))*180/Math.PI;d=((d+540)%360+360)%360-180;const s=Math.round(d/15)*15;return ui.shift||Math.abs(d-s)<2?s:Math.round(d)}
+XT3.rotate={ok:v=>!!v&&v.kind==='3d',
+  click(pn,v,p){const z=ev3SelZ(),w=ev3Ray(pn,v,p,z);if(!w){toast(t('ev3_look'));return}if(ui.rcPick){ui.rc={x:w[0],y:w[1]};ui.rcPick=false;ui.ev3m=null;refresh();return}
+    const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null;if(!M){ui.ev3m={v:v.id,b:{x:w[0],y:w[1],z}};refresh();return}
+    const c=ui.rc||selCenter(),d=ev3RotDeg(c,M.b,w);ui.ev3m=null;applyRotate(d)},
+  draw(pn,ctx,v){const c=ui.rc;if(!c)return;const z=ev3SelZ(),pj=ev3Proj(pn,v),C0=pj([c.x,c.y,z]);if(!C0)return;ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;ev3Mark(ctx,C0[0],C0[1],'on');
+    const M=ui.ev3m&&ui.ev3m.v===v.id?ui.ev3m:null,p=ui.curPane===pn.i?ui.cur:null,ray=(q,dash)=>{const s=pj([q[0],q[1],z]);if(!s)return;ctx.save();if(dash)ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(C0[0],C0[1]);ctx.lineTo(s[0],s[1]);ctx.stroke();ctx.restore()};
+    if(M)ray([M.b.x,M.b.y]);if(p&&!ui.rcPick){const w=ev3Ray(pn,v,p,z);if(w){ray(w,true);if(M)ev3Lbl(ctx,p.x,p.y,ev3RotDeg(c,M.b,w)+'°')}}},
+  hint:v=>t(ui.rcPick?'h_rc':ui.ev3m&&ui.ev3m.v===v.id?'h_rot2':'ev3_rot1')};
+/* Align in an elevation or a section: the reference is a level, a grid or a side of an element (its top, foot or an end); then a side of another element, of the same
+   way, moves onto it: up or down by its offsets, or along the view */
+function ev3Edge(pn,v,p,want,any){const n=navOf(v),hp=(p.x-n.ox)/n.s,zp=-(p.y-n.oy)/n.s;let best=null,bd=any?Infinity:8/n.s;
+  const tr=(o,val,id)=>{if(want&&o!==want)return;const d=Math.abs((o==='h'?zp:hp)-val);if(d<bd){bd=d;best={o,val,id}}};
+  const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id),B=e&&ev3Box(v,e);if(B){tr('v',B[0],e.id);tr('v',B[1],e.id);tr('h',B[2],e.id);tr('h',B[3],e.id)}
+  if(!any){if(!catHid(v,'level'))for(const l of P.levels)if(!hidDatum(v,l))tr('h',l.elev,0);for(const h of ev3GridH(v))tr('v',h,0)}return best}
+XT3.align={ok:v=>ev3EV(v),
+  click(pn,v,p){const A=ui.al3&&ui.al3.v===v.id?ui.al3:null;
+    if(!A){const r=ev3Edge(pn,v,p,null,false);if(!r){toast(t('ev3_alnone'));return}ui.al3={v:v.id,o:r.o,val:r.val};refresh();return}
+    const r=ev3Edge(pn,v,p,A.o,true);if(!r||!r.id){toast(t('ev3_alnone'));return}if(isPinned(r.id)){toast(t('pin_block',1));return}const dv=A.val-r.val;
+    if(Math.abs(dv)>0.5){let n=0;edit(()=>{n=A.o==='h'?ev3Shift(v,[r.id],0,dv):ev3Shift(v,[r.id],dv,0)});if(n)toast(t('ev3_nolift',n))}if(!ui.opt.alMulti)ui.al3=null;refresh()},
+  hov(pn,v,p){const pk=pickAt3(pn,v,p);return pk?pk.id:null},
+  draw(pn,ctx,v,nav){const A=ui.al3&&ui.al3.v===v.id?ui.al3:null,p=ui.curPane===pn.i?ui.cur:null,ln=(o,val,dash)=>{ctx.save();ctx.setLineDash(dash);ctx.beginPath();if(o==='h'){const y=-val*nav.s+nav.oy;ctx.moveTo(0,y);ctx.lineTo(pn.w,y)}else{const x=val*nav.s+nav.ox;ctx.moveTo(x,0);ctx.lineTo(x,pn.h)}ctx.stroke();ctx.restore()};
+    ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;if(A)ln(A.o,A.val,[8,4]);const r=p&&ev3Edge(pn,v,p,A?A.o:null,!!A);if(r){ctx.lineWidth=2.4;ln(r.o,r.val,[])}},
+  hint:v=>t(ui.al3&&ui.al3.v===v.id?'ev3_al2':'ev3_al1')};
+/* dragging what is selected in an elevation or a section moves it across and up or down (Shift: one of the two) */
+function ev3DragStart(pn,v,p,d){if(!ev3EV(v))return;const pk=pickAt3(pn,v,p);if(!pk||!ui.sel.has(pk.id)||isPinned(pk.id))return;const ids=movable(ui.sel,true);if(!ids.length)return;d.mode='move3';d.ev2={ids,last:[0,0]}}
+function ev3DragMove(pn,v,p,d){const n=navOf(v),inc=clamp(snapInc(n),1,100);let dh=Math.round((p.x-d.sx)/n.s/inc)*inc,dz=Math.round((d.sy-p.y)/n.s/inc)*inc;if(ui.shift){if(Math.abs(dh)>=Math.abs(dz))dz=0;else dh=0}
+  const L=d.ev2.last;if(dh!==L[0]||dz!==L[1]){ev3Shift(v,d.ev2.ids,dh-L[0],dz-L[1]);d.ev2.last=[dh,dz];touch()}hint(t('ev3_drag',fmtLen(dh),fmtLen(dz),unitName()))}
+/* Tab: what lies under the pointer in a 3D view, an elevation or a section, front to back (up to 8), one after the other; a click picks the one reached */
+function pickAll(pn,v,p,max){if(!glScene(MSm(),VER))return[];const o=modelOpts(v,navOf(v),pn.w,pn.h,1,C,true),h0=o.hide,got=new Set(),out=[];o.hide=it=>got.has(it.id)||(h0?h0(it):false);
+  for(let i=0;i<(max||8);i++){const pk=glPick(o,p.x/pn.w*2-1,1-p.y/pn.h*2);if(!pk||got.has(pk.id))break;got.add(pk.id);if(!(P.doa&&dopLocked(P,IDX.get(pk.id))))out.push(pk)}return out}
+function pickAt3(pn,v,p){const K=ui.cyc3;if(K&&K.pane===pn.i&&K.v===v.id&&K.pk.length&&Math.hypot(K.x-p.x,K.y-p.y)<=3)return K.pk[K.i%K.pk.length];if(K&&K.pane===pn.i)ui.cyc3=null;return pickAt(pn,v,p)}
+function ev3Tab(ev){const i=ui.curPane,v=i>=0?paneView(i):null;if(!ev3GL(v)||ui.tool!=='modify'||!ui.cur||!PANES[i])return false;ev.preventDefault();const pn=PANES[i],p=ui.cur;let K=ui.cyc3;
+  if(!(K&&K.pane===i&&K.v===v.id&&Math.hypot(K.x-p.x,K.y-p.y)<=3))K=ui.cyc3={pane:i,v:v.id,x:p.x,y:p.y,pk:pickAll(pn,v,p),i:0};
+  if(!K.pk.length){hint();return true}K.i=(K.i+1)%K.pk.length;const pk=K.pk[K.i],e=IDX.get(pk.id);ui.hov=pk.id;hint(t('ev3_tab',K.i+1,K.pk.length,e?elName(e):''));redraw();return true}
+/* ---- where the tools of XT3 plug into the plan's ---- */
+{const f0=toolAllowed;toolAllowed=(tool,v)=>!!(v&&ev3GL(v)&&XT3[tool]&&XT3[tool].ok(v))||f0(tool,v)}
+{const f0=setTool;setTool=(tool,silent)=>{ui.ev3=null;ui.ev3m=null;ui.al3=null;if(tool!==ui.tool)ui.ev3r=null;f0(tool,silent)}}
+{const f0=cancelTool;cancelTool=hard=>{if(!hard&&!ui.zoomr&&!ui.inl&&(ui.ev3||ui.ev3m||ui.al3)){ui.ev3=null;ui.ev3m=null;ui.al3=null;ui.typed='';refresh();return}ui.ev3=null;ui.ev3m=null;ui.al3=null;f0(hard)}}
+{const f0=selCenter;selCenter=()=>{const v=activeView();if(!v||v.kind==='plan'||v.kind==='sheet')return f0();let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const id of expandSel(ui.sel)){const e=IDX.get(id);if(!e||!P.els.includes(e))continue;const B=elBox(null,e);if(B){x0=Math.min(x0,B[0]);y0=Math.min(y0,B[1]);x1=Math.max(x1,B[2]);y1=Math.max(y1,B[3])}}
+  return isFinite(x0)?{x:(x0+x1)/2,y:(y0+y1)/2}:{x:0,y:0}}}
+{const f0=numericTool;numericTool=()=>{const v=activeView(),X=XT3[ui.tool];if(ev3GL(v)&&X&&X.typed&&X.ok(v))return!!(X.num&&X.num(v));return f0()}}
+{const f0=applyTyped;applyTyped=()=>{const v=activeView(),X=XT3[ui.tool];if(ev3GL(v)&&X&&X.typed&&X.ok(v)){const s=ui.typed;ui.typed='';X.typed(PANES[ui.ap],v,s);hint();return}f0()}}
+{const f0=hint;hint=msg=>{const v=activeView(),X=XT3[ui.tool];if(!msg&&!ui.zoomr&&ev3GL(v)&&X&&X.hint&&X.ok(v)){let m=X.hint(v);if(ui.typed)m+='   ['+ui.typed+']';$('#prompt').textContent=m;return}f0(msg)}}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);const X=XT3[ui.tool];if(X&&X.draw&&ev3GL(v)&&pn.i===ui.ap&&X.ok(v)){ctx.save();try{X.draw(pn,ctx,v,nav)}finally{ctx.restore()}}}}
+{const f0=hoverPane;hoverPane=(pn,v,p)=>{f0(pn,v,p);const X=XT3[ui.tool];if(X&&X.hov&&ev3GL(v)&&X.ok(v)){const id=X.hov(pn,v,p);if(id!==ui.hov){ui.hov=id;redraw()}}}}
+XS.push(()=>{ui.ev3=null;ui.ev3m=null;ui.al3=null;ui.cyc3=null;ui.ev3r=null});
+Object.assign(STR,{
+  ev3_hs1:['คลิกจุดเริ่มบนแนวตัด หรือคลิกบนท่อเดิมเพื่อเดินต่อ · ไปทางข้าง = ท่อแนวราบ ขึ้นหรือลง = ท่อแนวดิ่ง','Click the start point on the section plane, or on a run to go on from it · across = a run, up or down = a riser'],
+  ev3_he1:['ชี้ที่ผิวที่จะเดินท่อไว้หน้าผิวนั้นแล้วคลิกจุดเริ่ม หรือคลิกบนท่อเดิมเพื่อเดินต่อ','Point at the face to run in front of and click the start point, or click on a run to go on from it'],
+  ev3_h2:['คลิกจุดถัดไป: ไปทางข้าง = ท่อแนวราบ ขึ้นหรือลง = ท่อแนวดิ่ง · คลิกบนท่ออื่นเพื่อต่อเข้า · พิมพ์ความยาวแล้วกด Enter · Esc จบ','Click the next point: across = a run, up or down = a riser · click another run to join it · type a length and press Enter · Esc to finish'],
+  ev3_h31:['คลิกจุดเริ่มบนระนาบของ {0} ที่ระดับ {1} (แก้ระดับในแผงคุณสมบัติ) หรือคลิกที่ปลายท่อเดิม','Click the start point on the plane of {0} at {1} (the offset is in Properties), or click the end of a run'],
+  ev3_h32:['คลิกจุดถัดไป หรือพิมพ์ความยาวแล้วกด Enter · แก้ระดับในแผงคุณสมบัติ = ท่อแนวดิ่งตรงจุดนี้ · Shift บังคับตั้งฉาก · Esc จบ','Click the next point, or type a length and press Enter · change the offset in Properties for a riser here · Shift locks to 90° · Esc to finish'],
+  ev3_novert:['รางเคเบิลและท่อร้อยสายวาดได้เฉพาะแนวราบ','Cable trays and conduits are drawn level only'],
+  ev3_noface:['ไม่มีผิวใต้ตัวชี้: ชี้ที่ผนังหรือชิ้นงานที่จะเดินท่อไว้หน้าผิวนั้น หรือเริ่มที่ท่อเดิม','No face under the pointer: point at a wall or an element to run in front of, or start on a run'],
+  ev3_nort:['ไม่มีชนิดท่อแนวดิ่งแบบนี้ในโครงการ: เพิ่มที่ชนิดของท่อแนวดิ่ง','The project has no riser type of this kind: add one to the riser types'],
+  ev3_nolift:['{0} ชิ้นยกขึ้นลงไม่ได้ จึงเลื่อนเฉพาะทางข้าง','{0} element(s) cannot go up or down, so they moved across only'],
+  ev3_mir1:['คลิกจุดแรกของแกนสะท้อน (แกนตั้ง)','Click the first point of the mirror axis (it stands upright)'],
+  ev3_mir2:['คลิกจุดที่สองเหนือหรือใต้จุดแรก','Click the second point, above or below the first'],
+  ev3_mirv:['ในรูปด้านและรูปตัด แกนสะท้อนต้องเป็นแนวตั้ง: คลิกจุดที่สองเหนือหรือใต้จุดแรก','In an elevation or a section the mirror axis stands upright: click the second point above or below the first'],
+  ev3_mv1:['คลิกจุดเริ่มย้าย (ย้ายได้ทั้งทางข้างและขึ้นลง)','Click the start point (across, up or down)'],
+  ev3_mv2:['คลิกจุดปลายทาง หรือพิมพ์ระยะแล้วกด Enter · Shift ล็อกทางข้างหรือขึ้นลง','Click the end point, or type a distance and press Enter · Shift keeps to across or up/down'],
+  ev3_mv31:['คลิกจุดเริ่มย้ายบนชิ้นงาน (ย้ายบนระนาบราบ)','Click the start point on the model (it moves on a level plane)'],
+  ev3_mv32:['คลิกจุดปลายทาง หรือพิมพ์ระยะแล้วกด Enter · Shift ล็อกแกน','Click the end point, or type a distance and press Enter · Shift locks an axis'],
+  ev3_rot1:['คลิกแนวเริ่มหมุน หรือพิมพ์มุมแล้วกด Enter · Space ย้ายจุดหมุน','Click the start ray, or type an angle and press Enter · Space moves the centre'],
+  ev3_al1:['คลิกเส้นอ้างอิง: ระดับชั้น กริด หรือขอบของชิ้นงาน','Click the reference: a level, a grid or an edge of an element'],
+  ev3_al2:['คลิกขอบของชิ้นงานที่จะให้ขยับมาตรงแนว','Click the edge of the element that should move onto it'],
+  ev3_alnone:['ไม่มีเส้นอ้างอิงหรือขอบชิ้นงานตรงนี้','No reference or edge here'],
+  ev3_tab:['ชิ้นที่ {0} จาก {1} ที่ซ้อนกันตรงนี้: {2} · กด Tab อีกเพื่อสลับ คลิกเพื่อเลือก','{0} of {1} overlapping here: {2} · Tab for the next, click to pick'],
+  ev3_drag:['ลากย้าย  ทางข้าง {0}  ขึ้นลง {1} {2} · Shift ล็อกทาง','Dragging  across {0}  up/down {1} {2} · Shift keeps to one way'],
+  ev3_look:['มองลงบนระนาบของชั้นเพื่อคลิกบนระนาบนั้น','Look down onto the level plane to click on it'],
+  ev3_hid:['สร้างแล้ว แต่หมวดนี้ถูกซ่อนในมุมมองนี้','Made, but its category is hidden in this view'],
+  ev3_rise:['ท่อแนวดิ่ง {0} {1} ตรงจุดนี้ แล้ววาดต่อที่ระดับใหม่','A riser of {0} {1} here; drawing goes on at the new offset']});
+
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -15620,6 +15930,7 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - [[t_mirrorp]] ใช้ผนัง กริด หรือเส้นที่มีอยู่เป็นแกน · [[t_mirror]] ให้ลากเส้นแกนเองสองจุด
 - [[t_array]]: ทำสำเนาเรียงเป็นแนวตรง หรือเรียงรอบจุด กำหนดจำนวนที่แถบตัวเลือก · ติ๊ก [[o_arrgroup]] (ติ๊กไว้ให้แล้ว) แต่ละชุดจะเป็นกลุ่ม และแถวจำจำนวนไว้: เลือกชุดใดก็ได้ จะมีตัวเลข × ข้างกรอบ คลิกแล้วพิมพ์จำนวนใหม่ ชุดจะเพิ่มหรือลดให้ · ถ้าตอนทำเลือก [[o_arrto]] เป็นชุดสุดท้าย หัวท้ายจะอยู่ที่เดิมและระยะห่างเปลี่ยนแทน · ลบชุดท้ายได้ (แถวสั้นลง) ลบชุดกลางหรือ [[a_ungroup]] แล้วแถวจะเลิกผูกกัน
 - [[t_align]]: คลิกเส้นอ้างอิงก่อน แล้วคลิกชิ้นที่จะให้ขยับมาตรงแนว · หลังจัดแนวจะมีแม่กุญแจ คลิกเพื่อล็อกแนวไว้: ย้ายชิ้นใดชิ้นหนึ่ง อีกชิ้นตามมาอยู่แนวเดียวกันเสมอ · ปลดล็อก: เลือกชิ้นนั้นแล้วคลิกแม่กุญแจ
+- ในรูปด้านและรูปตัด: [[t_move]] และ [[t_copy]] ย้ายได้ทั้งทางข้างและขึ้นลง (ระดับขององค์ประกอบเปลี่ยนตาม) · [[t_mirror]] ใช้แกนตั้ง · [[t_align]] กับระดับชั้น กริด หรือขอบของชิ้นงาน · ลากชิ้นที่เลือกไว้เพื่อย้าย · ใน 3 มิติ [[t_move]] [[t_copy]] [[t_rotate]] และ [[t_mirror]] ทำบนระนาบราบ · ((Tab)) สลับชิ้นที่ซ้อนกันได้ทั้งในแปลน 3 มิติ รูปด้าน และรูปตัด
 - [[a_revealcons]]: ปุ่มรูปแม่กุญแจใต้แปลน แสดงข้อบังคับทั้งหมดของมุมมองเป็นสีแดง — ระยะที่ล็อก ระยะเท่ากัน (EQ) แนวที่ล็อก และข้อบังคับที่เส้นบอกระยะถูกลบไปแล้ว · เมื่อลบเส้นบอกระยะที่ล็อกหรือเป็น EQ โปรแกรมจะถามว่าจะคงข้อบังคับไว้หรือปลดออก ถ้าคงไว้ เปิดปุ่มนี้แล้วเลือกเส้นสีแดงเพื่อลบจริงได้ภายหลัง
 - [[t_trim]]: คลิกสองเส้นตรงส่วนที่จะเก็บไว้ จะต่อเป็นมุม · [[t_trim1]] และ [[t_trimn]]: คลิกเส้นขอบเขตก่อน แล้วคลิกเส้นที่จะตัดหรือต่อ
 - [[t_split]]: คลิกบนผนัง คาน ท่อ หรือราง ตรงจุดที่จะแบ่ง
@@ -15691,6 +16002,7 @@ While drawing walls or runs, or moving or copying: point the way, type the numbe
 - [[t_mirrorp]] mirrors about an existing wall, grid or line · [[t_mirror]] about an axis you draw
 - [[t_array]]: copies in a row or around a point; the number is in the options bar · with [[o_arrgroup]] ticked (it is, to begin with) every copy is a group and the array remembers its number: select any member, click the × count beside it and type another number; members are added or taken away · when the array was made with [[o_arrto]] set to the last one, the two ends stay and the spacing changes · the last member may be deleted (the array is shorter); deleting one in the middle, or [[a_ungroup]], ends the array
 - [[t_align]]: click the reference first, then what should move onto it · a padlock appears; click it to lock the alignment: move one of the two and the other follows · to unlock, select the element and click its padlock
+- In elevations and sections: [[t_move]] and [[t_copy]] go across, up or down (the heights of the elements change with them) · [[t_mirror]] about an upright axis · [[t_align]] to a level, a grid or an edge of an element · drag what is selected to move it · in 3D views [[t_move]], [[t_copy]], [[t_rotate]] and [[t_mirror]] work on a level plane · ((Tab)) cycles through overlapping elements in plans, 3D views, elevations and sections
 - [[a_revealcons]]: the padlock button under a plan shows every constraint of the view in red — locked dimensions, equal chains (EQ), locked alignments, and constraints whose dimension line was deleted · deleting a dimension that is locked or equal asks whether its constraint is kept; a kept one can be picked and deleted for good while this is on
 - [[t_trim]]: click two lines on the parts to keep, and they meet in a corner · [[t_trim1]] and [[t_trimn]]: click the boundary first, then the lines to trim or extend
 - [[t_split]]: click a wall, beam, run or tray where it should be cut in two
@@ -15975,6 +16287,7 @@ The [[tab_insert]] tab: [[a_dxfin]] lays a DXF under the plan, and its lines can
 # ปรับอากาศและระบายอากาศ
 @keys DT FD CV RS DA AT ME
 - [[t_duct]]: ท่อเหลี่ยมหรือท่อกลม ตั้งกว้าง × สูง (หรือเส้นผ่านศูนย์กลาง) [[p_sys]] (SA จ่าย · RA กลับ · EA ระบาย · OA บริสุทธิ์) และ [[p_midelev]]
+- วาด [[t_duct]] [[t_pipe]] [[t_tray]] และ [[t_conduit]] ในรูปตัด รูปด้าน และมุมมอง 3 มิติได้: ในรูปตัดคลิกบนแนวตัดหรือบนท่อเดิม ลากไปทางข้างได้ท่อแนวราบ ขึ้นหรือลงได้ท่อแนวดิ่ง (riser) คลิกบนท่ออื่นเพื่อต่อเข้า (ตัดท่อเป็นสามทางให้เอง) · ในรูปด้านชี้ที่ผิวที่จะเดินท่อไว้หน้าผิวนั้น · ใน 3 มิติวาดบนระนาบของชั้นที่ระดับในแผงคุณสมบัติ · ระหว่างวาด แก้ระดับในแผงคุณสมบัติ (ในแปลนก็ได้) = ท่อแนวดิ่งตรงจุดนั้น แล้ววาดต่อที่ระดับใหม่
 - [[a_flexduct]]: ท่ออ่อนสำหรับต่อเข้าหัวจ่าย
 - [[t_cvflex]] ((CV)): เปลี่ยนท่อแข็งช่วงที่ต่อเข้าหัวจ่ายลมให้เป็นท่ออ่อน ตั้ง [[o_cvmax]] บนแถบตัวเลือก แล้วชี้ที่หัวจ่ายลม: เส้นประแสดงช่วงที่จะเปลี่ยน นับจากหัวจ่ายย้อนไปไม่เกินความยาวที่ตั้งและไม่เลยทางแยกแรก แล้วคลิก · ท่อเหลี่ยมจะได้ท่ออ่อนกลมที่มีพื้นที่หน้าตัดใกล้เคียงกัน
 - [[a_ductriser]]: ท่อแนวดิ่งทะลุชั้น
@@ -16036,6 +16349,7 @@ With a tool active, [[properties]] shows what is about to be drawn: type, size, 
 # Heating, ventilation, air conditioning
 @keys DT FD CV RS DA AT ME
 - [[t_duct]]: rectangular or round; set width × height (or the diameter), the [[p_sys]] (SA supply · RA return · EA exhaust · OA outside air) and the [[p_midelev]]
+- [[t_duct]], [[t_pipe]], [[t_tray]] and [[t_conduit]] are drawn in sections, elevations and 3D views too: in a section click on the section plane or on a run; across makes a run, up or down a riser; click another run to join it (it is split for the tee) · in an elevation point at the face to run in front of · in 3D views they are drawn on the level plane at the offset in Properties · while drawing, change the offset in Properties (in a plan too) for a riser at that point; drawing goes on at the new height
 - [[a_flexduct]]: the flexible duct that connects to an air terminal
 - [[t_cvflex]] ((CV)): turns the rigid duct that ends at an air terminal into flexible duct; set the [[o_cvmax]] in the options bar, then point at the air terminal: dashes show the stretch that will change, back from the terminal for no more than the length set and no further than the first branch; then click · a rectangular duct gives a round flexible one of about the same section
 - [[a_ductriser]]: a vertical duct through the floors
@@ -16291,6 +16605,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.86 · ตารางโหลดรายตู้ ([[a_pnlsched]]) แบบสองฝั่งหรือรายการ บอกโหลดแต่ละเฟส ค่าไม่สมดุล และสรุป Demand · ตู้รับไฟจากตู้อื่นได้ ([[p_supply]]) ตู้ต้นทางนับโหลดของตู้ย่อย · [[a_pnlspare]] · [[a_pnlbal]] · [[a_ckcheck]] ตรวจตู้ที่รับไฟวน ช่องซ้ำ ช่องเกิน และตู้ไม่สมดุล · [[es_cn]] แบบเฟส-หมายเลขตามการเรียงช่องของตู้
 - V1.87 · [[a_newsched]] ตารางของหมวดใดก็ได้หรือหลายหมวด เลือกช่องที่แสดง ([[a_schedflds]]) และแก้ค่าในตารางได้ · ตารางคีย์ เช่น รูปแบบห้อง · ห้องมีแผนกและวัสดุผิว · แบ่งตารางบนแผ่นงานเป็นหลายช่วง ([[g_split]]) · มาตราส่วน 1 : 1 ถึง 1 : 5000 และกำหนดเองได้ · เมนูทำสำเนามุมมองมี [[a_dupd]] และ [[a_dupdep]] สำหรับรูปด้านและรูปตัดด้วย
 - V1.88 · หลังคาบนรูปร่างใดก็ได้: ปั้นหยา จั่ว และเพิงบนรูป L T U กากบาท หรือมีด้านเอียง หาสันและตะเข้รางให้เอง (เดิมเป็นหลังคาเรียบ) · [[a_roofedges]] เลือกขอบที่ลาด (Defines Slope) และความชันของแต่ละขอบ · [[a_slayers]] ของพื้น หลังคา และฝ้า: ชั้นวัสดุ ความหนารวม รูปตัดแยกชั้น ถอดปริมาณทีละชั้น ค่า U ของหลังคา · รูปด้านและรูปตัดแบบเส้นซ่อนแสดงหลังคาแล้ว (เดิมเห็นแค่เชิงชาย)
+- V1.89 · วาดท่อลม ท่อน้ำ รางเคเบิล และท่อร้อยสายในรูปตัด รูปด้าน และ 3 มิติ: ขึ้นลงเป็นท่อแนวดิ่ง ต่อเข้าท่อเดิมเป็นข้องอหรือสามทาง · แก้ระดับระหว่างวาด (แปลนและ 3 มิติ) ได้ท่อแนวดิ่งตรงจุดนั้น · ย้าย คัดลอก สะท้อน จัดแนว และลากย้ายในรูปด้านและรูปตัดได้ทั้งทางข้างและขึ้นลง · ย้าย คัดลอก หมุน สะท้อนใน 3 มิติ · Tab สลับชิ้นที่ซ้อนกันในทุกมุมมอง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -16459,6 +16774,7 @@ Elevations and sections — [[t_spot]], [[t_text]] and [[t_dim]] work in elevati
 - V1.86 · a schedule for each panel ([[a_pnlsched]]), two columns or a list, with the load of each phase, the imbalance and the demand · a panel can be fed from another ([[p_supply]]) and the supply panel carries its load · [[a_pnlspare]] · [[a_pnlbal]] · [[a_ckcheck]] also finds panels fed round a loop, two circuits on one way, ways beyond the panel and panels out of balance · the phase-number [[es_cn]] follows the way layout of the panel
 - V1.87 · [[a_newsched]]: a schedule of any category or of several, its fields ([[a_schedflds]]) and values typed in its cells · key schedules such as a Room Style · rooms have a department and finishes · a schedule split into segments on its sheet ([[g_split]]) · view scales from 1 : 1 to 1 : 5000 and a custom one · the Duplicate menu offers [[a_dupd]] and [[a_dupdep]] for elevations and sections too
 - V1.88 · roofs over any outline: hip, gable and shed roofs over an L, T, U, a cross or slanted sides find their own ridges, hips and valleys (they were flat) · [[a_roofedges]]: which edges slope (Defines Slope) and the slope of each · [[a_slayers]] of floors, roofs and ceilings: layers of materials, the total thickness, layers in sections, Material Takeoff by layer, a roof's U-value · Hidden Line elevations and sections show the roof (only its fascia showed)
+- V1.89 · ducts, pipes, cable trays and conduits drawn in sections, elevations and 3D views: up or down makes a riser, joining a run makes an elbow or a tee · changing the offset while drawing (plans and 3D) makes a riser there · Move, Copy, Mirror, Align and dragging in elevations and sections, across, up and down · Move, Copy, Rotate and Mirror in 3D views · Tab through overlapping elements in every view
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -18157,6 +18473,8 @@ window.PenumBIM=window.SaoEk={get project(){return P},ui,act,setTool,showView,vi
   dc:{loop:id=>{const d=IDX.get(id);return d&&d.cat==='dcomp'?dcLoop(P,d):null},rd:id=>{const d=IDX.get(id),G=d&&d.cat==='rdet'?rdetGeo(P,d):null;return G?{n:G.n,cw:G.cw,ch:G.ch,band:G.band,at:G.at,mark:G.T.mark}:null},ins:id=>{const d=IDX.get(id),G=d&&d.cat==='dins'?dinsGeo(d):null;return G?{band:G.band,np:G.pts.length,w:G.w}:null}},
   pv:i=>{const v=paneView(i);return v?{id:v.id,kind:v.kind,name:v.name,area:v.area,level:v.level}:null},
   sx:{nos:id=>[...vpNos(P,viewById(id))],vref:id=>{const d=IDX.get(id);return d?vrefInfo(P,d).s:null},vpPt:(id,mx,my)=>{const vp=IDX.get(id),B=vp&&vpBox(vp);return B&&B.E?[vp.x-B.w/2+(mx-B.E.x0)/B.V.scale,vp.y-B.h/2+(my-B.E.y0)/B.V.scale]:null},gg:id=>{const g=ggOf(P,viewById(id));return g?JSON.parse(JSON.stringify(g)):null},tb:id=>{const sh=viewById(id),B=tbOf(P,sh);return{key:B.key,lay:B.lay,own:B.own,name:B.name,firm:B.firm,addr:B.addr,logo:!!B.logo,chk:!!B.chk,app:!!B.app,pno:!!B.pno,F:tbTxt(sh),G:tbGeo(B.lay,sheetSize(sh))}}},version:26};window.PenumBIM.v1=V1_BUILD;window.PenumBIM.build=V1_NAME;window.PenumBIM.box3=(i,x0,y0,x1,y1)=>{const n=box3Select(PANES[i],paneView(i),x0,y0,x1,y1,false);refresh();return n};window.PenumBIM.printTone=printTone;window.PenumBIM.printSheets=(id,size)=>printSheets(viewById(id),size).map(s=>({size:s.size,vp:s.vps[0]&&[s.vps[0].x,s.vps[0].y,s.vps[0]._v&&s.vps[0]._v.scale]}));window.PenumBIM.schedOf=id=>{const S=schedView(P,viewById(id),t);return{cols:S.cols.map(c=>[c.k,colLabel(c),c.al||'']),rows:S.rows,foot:S.foot,app:S.app}};window.PenumBIM.pl={groups:o=>pipeLayGroups(P,o).map(g=>({key:g.key,sys:g.sys,level:g.level,src:g.src&&g.src.id,terms:g.terms.length,off:g.off,sols:g.sols.map(s=>({ax:s.ax,pos:s.pos,len:s.len,n:s.seg.length}))})),apply:(o,pick)=>{let ids=[];edit(()=>{ids=pipeLayApply(P,pipeLayGroups(P,o),pick)});refresh();return ids}};window.PenumBIM.ci=(runId,ids)=>{let R;edit(()=>{R=ciConnect(P,IDX.get(runId),ids.map(i=>IDX.get(i)))});refresh();return R};window.PenumBIM.ductLoss=()=>ductLossReport(P);window.PenumBIM.disc=()=>discList(P);window.PenumBIM.dl={groups:o=>ductLayGroups(P,o).map(g=>({key:g.key,sys:g.sys,level:g.level,src:g.src&&g.src.id,terms:g.terms.length,flow:g.flow,off:g.off,sols:g.sols.map(s=>({ax:s.ax,pos:s.pos,len:s.len,seg:s.seg}))})),apply:(o,pick)=>{let ids=[];edit(()=>{ids=ductLayApply(P,ductLayGroups(P,o),pick)});refresh();return ids}};window.PenumBIM.pnl={calc:()=>panelCalc(P).map(p=>({mark:p.mark,n:p.n,load:p.load,va:p.va,amp:p.amp,main:p.main,phv:p.phv,imb:p.imb,up:p.up})),cks:()=>circuitCalc(P).map(c=>({panel:c.panel,circuit:c.circuit,feed:c.feed||'',load:c.load,poles:c.poles,brk:c.brk,phv:c.phv,lab:ckLab(P,c.panel,c.circuit)})),check:()=>circuitCheck(P).map(i=>({k:i.k,panel:i.panel,circuit:i.circuit,a:i.a,ids:i.ids})),bal:mk=>pnlBalance(P,mk),free:(mk,p)=>ckFree(P,mk,p)};window.PenumBIM.rf={geo:id=>{const e=IDX.get(id),R=e&&e.cat==='roof'?roofGeo(P,e):null;return R?{shape:R.shape,warn:!!R.warn,sk:!!R.sk,faces:R.faces.map(f=>({i:f.i,n:f.loop.length,z:Math.round(Math.max(...f.loop.map(q=>q[2])))})),gables:R.gables.length,S:(R.S||[]).slice(),ix:(R.ix||[]).slice(),zmax:Math.round(R.zmax),eave:R.eave.map(q=>q.map(Math.round))}:null},on:id=>{const e=IDX.get(id);return e&&e.pts?rfSlopes(e):null},items:id=>MSm().items.filter(i=>i.id===id).map(i=>({cat:i.cat,tri:i.t.length/9,lines:i.l.length/6,ly:i.ly||0,c:i.c.map(x=>Math.round(x*255)),mt:i.mt||0}))};window.PenumBIM.sf={all:c=>sfAll(P,c,t).map(f=>f.k),keys:c=>keyFields(P,c).map(f=>f.k),make:D=>nsMake(D),str:k=>k in STR,t:k=>t(k),tab:id=>{const S=schedView(P,viewById(id),t);return{cols:S.cols.map(c=>c.k),labels:S.cols.map(colLabel),rows:S.rows,foot:S.foot}},box:(sh,vid)=>{const s=viewById(sh),vp=s&&(s.vps||[]).find(q=>q.view===vid),B=vp&&vpBox(vp);return B?{w:B.w,h:B.h,segs:B.segs||1,per:B.per||0,rows:B.cells.length}:null}};
+window.PenumBIM.ev3={st:()=>({ev3:ui.ev3,ev3m:ui.ev3m,al3:ui.al3,cyc:ui.cyc3&&ui.cyc3.pk.map(k=>k.id),r:ui.ev3r?[...ui.ev3r]:[]}),proj:(i,x,y,z)=>{const pn=PANES[i],v=paneView(i),r=pn.cv.getBoundingClientRect();let q;if(v.kind==='3d')q=ev3Proj(pn,v)([x,y,z]);else{const n=navOf(v);q=[ev3Hq(v,[x,y])*n.s+n.ox,-z*n.s+n.oy]}return q?{x:r.left+q[0],y:r.top+q[1]}:null},
+  box:(vid,id)=>ev3Box(viewById(vid),IDX.get(id)),cut:(vid,h)=>ev3Cut(viewById(vid),h),hq:(vid,x,y)=>ev3Hq(viewById(vid),[x,y]),all:(i,x,y)=>{const pn=PANES[i],r=pn.cv.getBoundingClientRect();return pickAll(pn,paneView(i),{x:x-r.left,y:y-r.top}).map(k=>k.id)},g:cat=>{const G=runGraph(P,cat),par=G.nodes.map((_,i)=>i),f=i=>par[i]===i?i:(par[i]=f(par[i]));for(const e of G.edges){const a=f(e.a),b=f(e.b);if(a!==b)par[a]=b}const m=new Map();for(const e of G.edges){const k=f(e.a),id=e.riser?e.riser.id:e.r.e.id;if(!m.has(k))m.set(k,new Set());m.get(k).add(id)}return[...m.values()].map(s=>[...s].sort((a,b)=>a-b))}};
 
 })();
 </script>
