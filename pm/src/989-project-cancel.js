@@ -1,4 +1,4 @@
-/* ---------- 3.93 ยกเลิก / ลบ a project straight from ทุกโครงการ ----------
+/* ---------- 3.97 ยกเลิก / ลบ a project straight from ทุกโครงการ ----------
    Close and delete lived only at the bottom of ข้อมูลโครงการและ BOQ, so a project made by mistake was hard to get rid of.
    Each row of ทุกโครงการ (and that page) now has "ยกเลิก / ลบ", which says what is in the project and offers:
    ลบทิ้ง (made by mistake): a project with no work in it goes at once and ↶ ย้อนกลับ brings it back; one with work in it

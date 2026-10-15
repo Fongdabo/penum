@@ -1,6 +1,6 @@
 # PENUM: notes for Claude sessions
 
-Apps: `pm/` PENUM PM, `mep/` PENUM MEP, `bim/` PENUM BIM, `sales/` ORIEN ฝ่ายขาย. Each has an `app.json`; parts every app
+Apps: `pm/` PENUM PM, `mep/` PENUM MEP, `bim/` PENUM BIM, `sales/` ORIEN (formerly ORIEN ฝ่ายขาย; the folder and URL keep the old name). Each has an `app.json`; parts every app
 shares live in `shared/`. GitHub Pages serves fongdabo.github.io/penum from `main`, built by `tools/build-pages.mjs`.
 The full guide (layout, link keys between apps, commands) is `docs/apps.md` (Thai).
 
@@ -36,8 +36,12 @@ Their header, and PM's top bar (`pm/src/985-title-bar.js`), is `shared/titlebar.
   Supabase (`tools/link-setup.sql`), encrypted with that code. PM keeps the linked MEP project in `P.mep` (`pm/src/920-mep-link.js`);
   BIM keeps it in `P.mepLid` and writes slot `bim`; MEP's "ส่งแบบไป BIM" also writes slot `hand`. Details: docs/apps.md.
 
-- โครงการของบริษัท: `shared/team.js` (apps with `"team": true`, MEP and BIM) keeps every project of one licence code's company in
+- โครงการของบริษัท: `shared/team.js` (apps with `"team": true`: MEP and BIM; PM only for the updates and edit requests) keeps every project of one licence code's company in
   ORIEN's Supabase (`tools/team-setup.sql`), encrypted with a company key found through the code, with an edit lock per project.
+  Once the company signs in (PM staff PINs), each project has an owner (`m.own`): others only look (`penumTeam.ro()` blocks MEP/BIM saves)
+  until the owner or the administrator approves an edit request (a `k:'req'` row). Each project keeps its last 20 saves (`m.h`) for the updates tab.
+  PM projects changed in PM go into the updates as `k:'pm'` rows (`pm/src/988-company-updates.js`); every approval, MEP/BIM edit requests included,
+  is also in PM's chat (`pm/src/987-chat-approvals-all.js` wraps `chQueue` / `ACT.chAp`): a new approval kind goes there too.
 
 ## Licence codes
 
