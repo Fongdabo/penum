@@ -62,6 +62,8 @@ for (const a of APPS) {
     if (!src.includes(`goApp('${o}')`) && !src.includes(`target="penum-${o}"`)) fail(a.dir, `no button opens ${o} in its own window (app.json opens)`);
   const block = src.match(/<!-- PENUM-FB:start[^>]*-->\n<script>\n([\s\S]*?)\n<\/script>\n<!-- PENUM-FB:end -->/);
   if (block && block[1] !== fb) fail(a.dir, 'feedback box differs from shared/feedback.js: run node tools/sync-feedback.mjs');
+  // the start page fills the window width (the user's rule); a merge already brought the old 1080 px column back once
+  if (/\.(bs|pjs)-in\{max-width:\d+px/.test(src)) fail(a.dir, 'the start page (.bs-in / .pjs-in) has a max-width again: it must fill the window width');
   if (a.licence) {
     for (const k of new Set([...(a.licence.keys || []), ...(a.licence.work ? [a.licence.work] : [])]))
       if (!src.includes(`'${k}'`) && !src.includes(`"${k}"`)) fail(a.dir, `licence key '${k}' (app.json licence) is no longer in the source`);
