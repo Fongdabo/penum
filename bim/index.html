@@ -13940,7 +13940,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=130,V1_NAME='V1.119';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=131,V1_NAME='V1.120';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -22322,6 +22322,246 @@ Object.assign(STR,{a_gbxml:['ส่งออก gbXML','Export gbXML'],m_gbx:['�
   +'dialog .gbxl{display:flex;flex-wrap:wrap;gap:3px 12px;margin:6px 0 2px;font-size:12px;color:var(--muted)}dialog .gbxl b{color:var(--ink);font-weight:600}dialog .gbxc{display:flex;gap:7px;align-items:flex-start;margin:5px 0}dialog .gbxc input{margin-top:3px}'
   +'dialog .gbxw{margin:2px 0 0 18px;padding:0;font-size:12.5px}dialog #gbxRows tr[data-gsp]{cursor:pointer}dialog #gbxRows tr[data-gsp]:hover td{background:var(--accent-soft)}dialog #gbxRows tr.on td{background:var(--accent-soft);box-shadow:inset 0 1px 0 #ff7a1a,inset 0 -1px 0 #ff7a1a}';
   document.head.appendChild(st)}
+/* ===== 120 Toposurface from a survey DXF (Revit: Massing & Site › Toposurface › Create from Import › Select Import Instance, with Add Points from Selected Layers) =====
+   A surveyor's drawing gives the ground in its contours (polylines at their elevation, or 3D polylines), its 3D points, lines and faces, its spot-height blocks (at their
+   height, or with the height in an attribute) and the heights written as text beside its spots.  tdxRead reads all of that layer by layer, in the units and coordinates of
+   the file.  tdxPts makes the points of a toposurface from the layers picked: one point to a cell of the spacing — points and spot heights first, then the corners of lines
+   and faces, then points along the lines — placed by the survey point of the project, the middle of the model or the origin, with their heights from ±0.00 of the project.
+   siteDelaunay takes many points from left to right (the same triangles in a fraction of the time), and siteTin keeps the surfaces it has made. */
+const TDX_MAX=4000,TDX_CAP=20000,TDX_S=[250,500,1000,2000,3000,5000,10000,20000,50000],TDX_RAMP=['#2b6cb0','#2f9e6e','#d8c34a','#c96a2b','#8b3a2b'];
+let tdxDl0=null;
+/* the same triangles as siteDelaunay: the points go in from left to right, and a triangle whose circle the sweep has passed is set aside, as no later point can fall in it */
+function siteDelaunayS(pts){const n=pts.length;if(n<3)return[];let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of pts){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
+  const d=Math.max(x1-x0,y1-y0,1),mx=(x0+x1)/2,my=(y0+y1)/2,V=pts.map((p,i)=>[p[0]+((i*7919)%13-6)*1e-4,p[1]+((i*104729)%11-5)*1e-4]),N=n+3;V.push([mx-30*d,my-10*d],[mx,my+30*d],[mx+30*d,my-10*d]);
+  const cc=(a,b,c)=>{const A=V[a],bx=V[b][0]-A[0],by=V[b][1]-A[1],cx=V[c][0]-A[0],cy=V[c][1]-A[1],D=2*(bx*cy-by*cx);if(Math.abs(D)<1e-12)return null;const b2=bx*bx+by*by,c2=cx*cx+cy*cy,ux=(cy*b2-by*c2)/D,uy=(bx*c2-cx*b2)/D;return{a,b,c,x:A[0]+ux,y:A[1]+uy,r:ux*ux+uy*uy}};
+  const ord=new Array(n);for(let i=0;i<n;i++)ord[i]=i;ord.sort((a,b)=>V[a][0]-V[b][0]);
+  let tris=[cc(n,n+1,n+2)];const done=[];
+  for(const i of ord){const p=V[i],edges=new Map(),keep=[];
+    for(const t of tris){const dx=p[0]-t.x,dy=p[1]-t.y;if(dx>0&&dx*dx>t.r){done.push(t);continue}
+      if(dx*dx+dy*dy<t.r){for(let k=0;k<3;k++){const u=k===0?t.a:k===1?t.b:t.c,w=k===0?t.b:k===1?t.c:t.a,key=u<w?u*N+w:w*N+u;edges.set(key,edges.has(key)?null:[u,w])}}else keep.push(t)}
+    for(const e of edges.values())if(e){const t=cc(e[0],e[1],i);if(t)keep.push(t)}tris=keep}
+  for(const t of tris)done.push(t);
+  const out=[];for(const t of done){if(t.a>=n||t.b>=n||t.c>=n)continue;const A=pts[t.a],B=pts[t.b],C=pts[t.c],s=(B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0]);if(Math.abs(s)<1)continue;if(s>0)out.push(t.a,t.b,t.c);else out.push(t.a,t.c,t.b)}return out}
+/* what a row of points (and their heights) is, in a few characters: two hashes of every coordinate to 1/8 mm */
+function tdxKey(pts,zs){const Z=Array.isArray(zs)?zs:[],n=pts.length;let h1=n>>>0,h2=Math.imul(n,0x9E3779B1)>>>0;
+  for(let i=0;i<n;i++){const q=pts[i]||[],a=Math.round((+q[0]||0)*8)|0,b=Math.round((+q[1]||0)*8)|0,c=Math.round((+Z[i]||0)*8)|0;
+    h1=Math.imul(h1^a,0x9E3779B1)>>>0;h1=Math.imul(h1^b,0x85EBCA77)>>>0;h1=Math.imul(h1^c,0xC2B2AE3D)>>>0;h2=Math.imul((h2+a)|0,0x27D4EB2F)>>>0;h2=Math.imul(h2^b,0x165667B1)>>>0;h2=Math.imul((h2+c)|0,0x2545F491)>>>0}
+  return n+':'+h1+':'+h2}
+const tdxMemo=(C,k,make)=>{let v=C.get(k);if(v!==undefined){C.delete(k);C.set(k,v);return v}v=make();C.set(k,v);if(C.size>12)C.delete(C.keys().next().value);return v};
+/* many points: made once (the cleaner checks every surface after every change), from left to right; up to 2000 as before, triangle for triangle in the same order */
+{const f=siteDelaunay,C=new Map();tdxDl0=f;siteDelaunay=pts=>pts.length<200?f(pts):tdxMemo(C,tdxKey(pts),()=>pts.length<=2000?f(pts):siteDelaunayS(pts))}
+/* a surface of many points is made once: kept by what it is made of (its points and heights), so an edit elsewhere, an undo or a second view finds it made */
+{const f=siteTin,C=new Map();siteTin=e=>!e||!Array.isArray(e.pts)||e.pts.length<200?f(e):tdxMemo(C,tdxKey(e.pts,e.zs),()=>f(e))}
+/* the meshes of the site again only when the ground, a pad, a subregion, a property line or the site settings change; each build gets copies of its own */
+{const f=siteMeshes,cl=it=>{const o={};for(const k in it)o[k]=Array.isArray(it[k])?it[k].slice():it[k];return o};let K0='',M0=null;
+  siteMeshes=(P,items)=>{let key='';try{const o=[JSON.stringify(P.site||null)];for(const e of P.els)if(SITE_CATS.includes(e.cat))o.push(e.cat==='topo'?'t'+e.id+':'+(e.mat||'')+':'+(Array.isArray(e.pts)?tdxKey(e.pts,e.zs):''):e.cat+e.id+':'+JSON.stringify([e.pts,e.host,e.mat,e.off,e.thick,elev(P,e.level)]));key=o.join('|')}catch(err){key=''}
+    if(key&&key===K0&&M0){for(const it of M0)items.push(cl(it));return}const n0=items.length;f(P,items);if(key){K0=key;M0=items.slice(n0).map(cl)}else{K0='';M0=null}}}
+/* a height written as text, in the units of the heights (metres): +2.350, 2.35, -0.45, ±0.00, EL.+2.35, RL 2.350, ระดับ +2.35 ม., 2.35 MSL — a number with decimals, nothing else */
+function tdxNum(s){s=String(s==null?'':s).replace(/\s+/g,' ').trim().replace(/^(?:ELEVATION|ELEV|EL|LEVEL|LV|RL|FL|SPOT|ระดับดินเดิม|ระดับดิน|ระดับ)\s*\.?\s*[:=]?\s*/i,'').replace(/\s*(?:m\.s\.l|msl|m|ม|รทก)\.?\s*$/i,'').replace(/\s+/g,'');
+  const m=/^([+\-±−]?)(\d{1,4}\.\d{1,4})$/.exec(s);if(!m)return null;const v=parseFloat(m[2]);return m[1]==='-'||m[1]==='−'?-v:v}
+/* what a DXF holds of the ground, layer by layer: {ver, units (a unit name the file gives), guess (the unit it most likely is), bb (x0, y0, x1, y1 of all of it), trunc,
+   layers: [{k, n, c, ln: lines [x, y, z, …] (closed: back to the first), pt: points [x, y, z …], tx: spot heights [x, y, value …], nl, nf (3D faces), npt, nt (texts), ntx (heights among them), nz (corners off 0), z0, z1, t0, t1}]}
+   Coordinates in the units of the file, in its world (OCS turned to WCS), blocks put in where they are inserted: a block with depth of its own goes in whole, a flat one (a spot
+   symbol) is a point at its insertion — at its height, or, at 0, at the height its attribute gives. */
+function tdxRead(txt){const MAX=600000,ln=txt.split(/\r\n|\r|\n/),pairs=[];for(let i=0;i+1<ln.length;i+=2){const c=parseInt(ln[i],10);if(isNaN(c)||!/^\s*-?\d+\s*$/.test(ln[i])){i--;continue}pairs.push([c,ln[i+1]])}
+  const recs=[];{let cur=null;for(const p of pairs){if(p[0]===0){cur={t:p[1].trim().toUpperCase(),p:[]};recs.push(cur)}else if(cur)cur.p.push(p)}}
+  const num=(r,c,d)=>{for(const p of r.p)if(p[0]===c){const v=parseFloat(p[1]);return isNaN(v)?d:v}return d},str=(r,c,d)=>{for(const p of r.p)if(p[0]===c)return p[1];return d};
+  const R={ver:'',units:'',guess:'m',bb:[Infinity,Infinity,-Infinity,-Infinity],trunc:false,layers:[]},LY=new Map(),blocks=new Map(),ents=[],L=new Map();let sect='',blk=null;
+  for(const r of recs){
+    if(r.t==='SECTION'){sect=String(str(r,2,'')).trim().toUpperCase();if(sect==='HEADER'){let k='';for(const p of r.p){if(p[0]===9)k=p[1].trim().toUpperCase();else if(k==='$ACADVER'&&p[0]===1)R.ver=p[1].trim();else if(k==='$INSUNITS'&&p[0]===70){const u=DXF_UNITS[parseInt(p[1],10)];if(u&&u[0]&&DXF_K[u[1]])R.units=u[1]}}}continue}
+    if(r.t==='ENDSEC'){sect='';continue}
+    if(sect==='TABLES'){if(r.t==='LAYER'){const n=String(str(r,2,'0')).trim(),c=num(r,62,7);if(!LY.has(n.toUpperCase()))LY.set(n.toUpperCase(),{n,c:Math.abs(c)||7})}continue}
+    if(sect==='BLOCKS'){if(r.t==='BLOCK')blk={name:String(str(r,2,'')).trim().toUpperCase(),b:[num(r,10,0),num(r,20,0),num(r,30,0)],e:[]};else if(r.t==='ENDBLK'){if(blk)blocks.set(blk.name,blk);blk=null}else if(blk)blk.e.push(r);continue}
+    if(sect==='ENTITIES')ents.push(r)}
+  const group=list=>{const o=[];for(let k=0;k<list.length;k++){const r=list[k];if(r.t==='POLYLINE'||(r.t==='INSERT'&&num(r,66,0)===1)){r.sub=[];k++;while(k<list.length&&list[k].t!=='SEQEND'){r.sub.push(list[k]);k++}}o.push(r)}return o};
+  for(const b of blocks.values())b.e=group(b.e);
+  /* transforms: [a b c d / e f g h / i j k l], x' = a x + b y + c z + d … */
+  const ID=[1,0,0,0,0,1,0,0,0,0,1,0],mul=(A,B)=>{const o=new Array(12);for(let r=0;r<3;r++)for(let c=0;c<4;c++){let v=c===3?A[r*4+3]:0;for(let k=0;k<3;k++)v+=A[r*4+k]*B[k*4+c];o[r*4+c]=v}return o},
+    ap=(M,x,y,z)=>[M[0]*x+M[1]*y+M[2]*z+M[3],M[4]*x+M[5]*y+M[6]*z+M[7],M[8]*x+M[9]*y+M[10]*z+M[11]];
+  /* the object coordinate system of an entity drawn in a plane of its own (the arbitrary axis algorithm of DXF): null for the plane of the world */
+  const ocs=r=>{const nx=num(r,210,0),ny=num(r,220,0),nz=num(r,230,1),l=Math.hypot(nx,ny,nz);if(!(l>0)||(Math.abs(nx)<1e-12&&Math.abs(ny)<1e-12&&nz>0))return null;
+    const N=[nx/l,ny/l,nz/l],A=Math.abs(N[0])<1/64&&Math.abs(N[1])<1/64?[N[2],0,-N[0]]:[-N[1],N[0],0],al=Math.hypot(A[0],A[1],A[2]),X=[A[0]/al,A[1]/al,A[2]/al],Y=[N[1]*X[2]-N[2]*X[1],N[2]*X[0]-N[0]*X[2],N[0]*X[1]-N[1]*X[0]];
+    return[X[0],Y[0],N[0],0,X[1],Y[1],N[1],0,X[2],Y[2],N[2],0]};
+  const layer=nm=>{nm=String(nm||'0').trim()||'0';const k=nm.toUpperCase();let l=L.get(k);if(!l){const d=LY.get(k);l={k,n:d?d.n:nm,c:d?d.c:7,ln:[],pt:[],tx:[],nl:0,nf:0,npt:0,nt:0,ntx:0,nz:0,z0:Infinity,z1:-Infinity,t0:Infinity,t1:-Infinity};L.set(k,l)}return l};
+  const bb=R.bb,ext=(x,y)=>{if(x<bb[0])bb[0]=x;if(x>bb[2])bb[2]=x;if(y<bb[1])bb[1]=y;if(y>bb[3])bb[3]=y};
+  let total=0;const full=()=>{if(total>=MAX){R.trunc=true;return true}return false},zz=(l,z)=>{if(Math.abs(z)>1e-9){l.nz++;if(z<l.z0)l.z0=z;if(z>l.z1)l.z1=z}};
+  const line=(l,M,pts,closed,face)=>{if(full())return;const a=[];for(const q of pts){const w=ap(M,q[0],q[1],q[2]);if(!isFinite(w[0]+w[1]+w[2]))continue;a.push(w[0],w[1],w[2]);ext(w[0],w[1]);zz(l,w[2])}
+    if(a.length<6)return;if(closed&&a.length>=9)a.push(a[0],a[1],a[2]);l.ln.push(a);total+=a.length/3;if(face)l.nf++;else l.nl++};
+  const point=(l,M,x,y,z)=>{if(full())return;const w=ap(M,x,y,z);if(!isFinite(w[0]+w[1]+w[2]))return;l.pt.push(w[0],w[1],w[2]);ext(w[0],w[1]);zz(l,w[2]);l.npt++;total++};
+  const height=(l,M,x,y,z,v)=>{if(v==null||full())return;const w=ap(M,x,y,z);if(!isFinite(w[0]+w[1]))return;l.tx.push(w[0],w[1],v);ext(w[0],w[1]);l.ntx++;if(v<l.t0)l.t0=v;if(v>l.t1)l.t1=v;total++};
+  /* the corners of a polyline with its bulges, the arcs as short pieces */
+  const bulge=(v,closed)=>{const o=[],n=v.length,m=closed?n:n-1;for(let k=0;k<n;k++){const p=v[k];o.push([p[0],p[1]]);if(k>=m)continue;const q=v[(k+1)%n],b=p[2]||0;if(Math.abs(b)<1e-9)continue;
+      const dx=q[0]-p[0],dy=q[1]-p[1],d=Math.hypot(dx,dy);if(d<1e-12)continue;const h=(1-b*b)/(4*b),cx=(p[0]+q[0])/2-dy*h,cy=(p[1]+q[1])/2+dx*h,r=d*(1+b*b)/(4*Math.abs(b)),a0=Math.atan2(p[1]-cy,p[0]-cx),sw=4*Math.atan(b),s=Math.max(2,Math.ceil(Math.abs(sw)/(Math.PI/16)));
+      for(let j=1;j<s;j++){const a=a0+sw*j/s;o.push([cx+r*Math.cos(a),cy+r*Math.sin(a)])}}return o};
+  /* a B-spline through its control points, in 3D (de Boor) */
+  const spl=(deg,kn,cp,wt)=>{const n=cp.length;if(n<2||deg<1||kn.length<n+deg+1)return cp;const t0=kn[deg],t1=kn[n],S=Math.min(200,Math.max(8,n*4)),out=[];
+    for(let s=0;s<=S;s++){let u=t0+(t1-t0)*s/S;if(s===S)u=t1-1e-9*(t1-t0);let k=deg;while(k<n-1&&kn[k+1]<=u)k++;const d=[];for(let j=0;j<=deg;j++){const w=wt[k-deg+j]==null?1:wt[k-deg+j],q=cp[k-deg+j];d.push([q[0]*w,q[1]*w,q[2]*w,w])}
+      for(let r=1;r<=deg;r++)for(let j=deg;j>=r;j--){const i0=k-deg+j,den=kn[i0+deg-r+1]-kn[i0],al=den?(u-kn[i0])/den:0;d[j]=d[j].map((v,m)=>(1-al)*d[j-1][m]+al*v)}
+      const w=d[deg][3]||1;out.push([d[deg][0]/w,d[deg][1]/w,d[deg][2]/w])}return out};
+  /* a block with depth of its own (contours, a TIN put in as a block) goes in whole; a flat one is a symbol */
+  const deep=(b,dp)=>{if(b.z3!==undefined)return b.z3;b.z3=false;const off=v=>Math.abs(v-b.b[2])>1e-9;let y=false;
+    for(const e of b.e){switch(e.t){case'LINE':y=off(num(e,30,0))||off(num(e,31,0));break;case'POINT':y=off(num(e,30,0));break;case'3DFACE':y=[30,31,32,33].some(c=>off(num(e,c,0)));break;
+        case'LWPOLYLINE':y=off(num(e,38,0));break;case'POLYLINE':y=num(e,70,0)&(8|16|64)?(e.sub||[]).some(s=>off(num(s,30,0))):off(num(e,30,0));break;
+        case'SPLINE':y=e.p.some(p=>(p[0]===30||p[0]===31)&&off(parseFloat(p[1])));break;
+        case'INSERT':{const c=blocks.get(String(str(e,2,'')).trim().toUpperCase());y=off(num(e,30,0))||!!(c&&dp<8&&deep(c,dp+1));break}}
+      if(y)break}
+    return b.z3=y};
+  const draw=(r,M,inh,dp)=>{if(full()||num(r,67,0)===1)return;const l0=String(str(r,8,'0')).trim()||'0',lname=l0==='0'&&inh?inh:l0,l=layer(lname);          // paper space is left out; a block's layer 0 is its insert's
+    switch(r.t){
+      case'LINE':line(l,M,[[num(r,10,0),num(r,20,0),num(r,30,0)],[num(r,11,0),num(r,21,0),num(r,31,0)]],false);break;
+      case'POINT':point(l,M,num(r,10,0),num(r,20,0),num(r,30,0));break;
+      case'3DFACE':{const q=[0,1,2,3].map(k=>[num(r,10+k,NaN),num(r,20+k,NaN),num(r,30+k,0)]).filter(p=>isFinite(p[0]+p[1]));if(q.length===4&&q[3][0]===q[2][0]&&q[3][1]===q[2][1]&&q[3][2]===q[2][2])q.pop();if(q.length>=3)line(l,M,q,true,true);break}
+      case'LWPOLYLINE':{const O=ocs(r),e=num(r,38,0),v=[];let c=null;for(const p of r.p){if(p[0]===10){c=[parseFloat(p[1]),0,0];v.push(c)}else if(p[0]===20&&c)c[1]=parseFloat(p[1]);else if(p[0]===42&&c)c[2]=parseFloat(p[1])}
+        const cl=!!(num(r,70,0)&1);line(l,O?mul(M,O):M,bulge(v.filter(q=>isFinite(q[0]+q[1])),cl).map(q=>[q[0],q[1],e]),cl);break}
+      case'POLYLINE':{const f=num(r,70,0),V=(r.sub||[]).filter(s=>s.t==='VERTEX');
+        if(f&64){for(const s of V)if(num(s,70,0)&64)point(l,M,num(s,10,0),num(s,20,0),num(s,30,0));break}          // a polyface mesh: its corners (the face records carry no place)
+        if(f&16){for(const s of V)point(l,M,num(s,10,0),num(s,20,0),num(s,30,0));break}          // a polygon mesh, a grid of heights
+        const W=V.filter(s=>!(num(s,70,0)&16));if(f&8){line(l,M,W.map(s=>[num(s,10,0),num(s,20,0),num(s,30,0)]),!!(f&1));break}          // a 3D polyline
+        const O=ocs(r),e=num(r,30,0);line(l,O?mul(M,O):M,bulge(W.map(s=>[num(s,10,0),num(s,20,0),num(s,42,0)]),!!(f&1)).map(q=>[q[0],q[1],e]),!!(f&1));break}          // a 2D polyline at its elevation
+      case'SPLINE':{const cp=[],fit=[],kn=[],wt=[];let c=null,g=null;for(const p of r.p){const v=parseFloat(p[1]);if(p[0]===10){c=[v,0,0];cp.push(c)}else if(p[0]===20&&c)c[1]=v;else if(p[0]===30&&c)c[2]=v;else if(p[0]===11){g=[v,0,0];fit.push(g)}else if(p[0]===21&&g)g[1]=v;else if(p[0]===31&&g)g[2]=v;else if(p[0]===40)kn.push(v);else if(p[0]===41)wt.push(v)}
+        line(l,M,fit.length>=2?fit:spl(num(r,71,3),kn,cp,wt),false);break}
+      case'ARC':case'CIRCLE':{const O=ocs(r),cx=num(r,10,0),cy=num(r,20,0),z=num(r,30,0),rr=num(r,40,0);if(!(rr>0))break;const a0=r.t==='ARC'?num(r,50,0):0;let sw=r.t==='ARC'?(num(r,51,360)-a0)%360:360;if(sw<=0)sw+=360;
+        const n=Math.max(4,Math.ceil(sw/15)),pts=[];for(let k=0;k<=n;k++){const a=(a0+sw*k/n)*Math.PI/180;pts.push([cx+rr*Math.cos(a),cy+rr*Math.sin(a),z])}if(r.t==='CIRCLE')pts.pop();line(l,O?mul(M,O):M,pts,r.t==='CIRCLE');break}
+      case'TEXT':{const O=ocs(r),ha=num(r,72,0),va=num(r,73,0),al=(ha||va)&&ha!==3&&ha!==5&&isFinite(num(r,11,NaN));l.nt++;height(l,O?mul(M,O):M,num(r,al?11:10,0),num(r,al?21:20,0),num(r,al?31:30,0),tdxNum(dxfText(str(r,1,''))));break}
+      case'MTEXT':{let s='';for(const p of r.p)if(p[0]===3)s+=p[1];s+=str(r,1,'');l.nt++;height(l,M,num(r,10,0),num(r,20,0),num(r,30,0),tdxNum(dxfText(s,true).replace(/\n/g,' ')));break}
+      case'INSERT':{const b=blocks.get(String(str(r,2,'')).trim().toUpperCase()),O=ocs(r),MO=O?mul(M,O):M,ix=num(r,10,0),iy=num(r,20,0),iz=num(r,30,0);
+        if(b&&dp<8&&deep(b,dp)){const sx=num(r,41,1),sy=num(r,42,1),sz=num(r,43,1),a=num(r,50,0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a),nc=Math.max(1,Math.min(100,num(r,70,1)|0)),nr=Math.max(1,Math.min(100,num(r,71,1)|0)),dc=num(r,44,0),dr=num(r,45,0);
+          for(let u=0;u<nc;u++)for(let w=0;w<nr;w++){const ox=u*dc,oy=w*dr,T=mul(MO,mul([c*sx,-s*sy,0,ix+c*ox-s*oy,s*sx,c*sy,0,iy+s*ox+c*oy,0,0,sz,iz],[1,0,0,-b.b[0],0,1,0,-b.b[1],0,0,1,-b.b[2]]));for(const e of b.e)draw(e,T,lname,dp+1)}break}
+        let v=null;if(Math.abs(iz)<1e-9)for(const a of r.sub||[])if(a.t==='ATTRIB'&&!(num(a,70,0)&1)){const q=tdxNum(dxfText(str(a,1,'')));if(q!=null){v=q;break}}
+        if(v!=null){l.nt++;height(l,MO,ix,iy,iz,v)}else point(l,MO,ix,iy,iz);break}
+      default:break}};
+  for(const r of group(ents))draw(r,ID,null,0);
+  R.layers=[...L.values()].filter(l=>l.ln.length||l.pt.length||l.tx.length).sort((a,b)=>a.n<b.n?-1:a.n>b.n?1:0);
+  /* the unit when the file does not give it: a site some kilometres across at most, its heights some hundreds of metres */
+  if(R.units)R.guess=R.units;else{const w=Math.max(bb[2]-bb[0],bb[3]-bb[1]);let zm=0;for(const l of R.layers)if(l.nz)zm=Math.max(zm,Math.abs(l.z0),Math.abs(l.z1));R.guess=w>20000||(w>=2000&&zm>2000)?'mm':'m'}
+  return R}
+/* the first choices: the layers with heights, texts only where nothing has a height and the layer is mostly heights, placed by the survey point when the drawing lies about it */
+function tdxDef(R){const I=P.info||{},any=R.layers.some(l=>l.nz>0),O={u:R.guess,use:new Set(),tx:new Set(),z0:isFinite(+I.sz)?+I.sz:0,s:0,zero:1,pos:'origin'};
+  for(const l of R.layers){if(l.nz>0)O.use.add(l.k);if(!any&&l.ntx>=3&&l.ntx>=0.6*l.nt)O.tx.add(l.k)}
+  if(!any&&!O.tx.size)for(const l of R.layers)if(l.ntx)O.tx.add(l.k);
+  const k=DXF_K[O.u]||1,cx=isFinite(R.bb[0])?(R.bb[0]+R.bb[2])/2*k:0,cy=isFinite(R.bb[1])?(R.bb[1]+R.bb[3])/2*k:0;
+  O.pos=(+I.sn||+I.se)&&Math.hypot(cx-(+I.se||0),cy-(+I.sn||0))<5e6?'survey':Math.hypot(cx,cy)>2e6?'center':'origin';return O}
+/* the building as a frame for the preview: walls, floors and pads in plan, and their extents; null when there is nothing */
+function tdxModel(){const S=[],Q=[];let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const ex=(x,y)=>{if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y};
+  for(const e of P.els){if(e.cat==='wall'&&isFinite(e.x1+e.y1+e.x2+e.y2)){S.push(e.x1,e.y1,e.x2,e.y2);ex(e.x1,e.y1);ex(e.x2,e.y2)}else if((e.cat==='floor'||e.cat==='pad'||e.cat==='roof')&&Array.isArray(e.pts)&&e.pts.length>=3){Q.push(e.pts);for(const p of e.pts)ex(p[0],p[1])}}
+  return isFinite(x0)?{S,Q,bb:[x0,y0,x1,y1]}:null}
+/* the points of the toposurface: {pts [[x, y]], zs, n, m (points the drawing gives), s (spacing, mm), z0, z1, bb, far (km off the model, or 0), too} */
+function tdxPts(R,O){const k=DXF_K[O.u]||1,kt=O.u==='ft'||O.u==='in'?304.8:1000,zero=!!O.zero,at0=v=>Math.abs(v)<1e-9,A=[],B=[],Ln=[];
+  for(const l of R.layers)if(O.use.has(l.k)){const p=l.pt;for(let i=0;i<p.length;i+=3)if(!zero||!at0(p[i+2]))A.push(p[i],p[i+1],p[i+2]*k)}
+  for(const l of R.layers)if(O.tx.has(l.k)){const p=l.tx;for(let i=0;i<p.length;i+=3)A.push(p[i],p[i+1],p[i+2]*kt)}
+  let TL=0;for(const l of R.layers)if(O.use.has(l.k))for(const a of l.ln){if(zero){let flat=true;for(let i=2;i<a.length;i+=3)if(!at0(a[i])){flat=false;break}if(flat)continue}
+    Ln.push(a);for(let i=0;i<a.length;i+=3){B.push(a[i],a[i+1],a[i+2]*k);if(i)TL+=Math.hypot(a[i]-a[i-3],a[i+1]-a[i-2])}}
+  const m=(A.length+B.length)/3,res={pts:[],zs:[],n:0,m,s:O.s||0,z0:0,z1:0,bb:[0,0,0,0],far:0,too:0};if(!m)return res;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const Q of [A,B])for(let i=0;i<Q.length;i+=3){const x=Q[i],y=Q[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  /* one point to a cell s across (s in mm): what comes first stays */
+  const thin=(s,keep)=>{const c=s/k;if(TL/c>3e6)return{n:Infinity,out:null};const ny=Math.floor((y1-y0)/c)+2,seen=new Set(),out=keep?[]:null;let n=0;
+    const put=(x,y,z)=>{const key=Math.floor((x-x0)/c)*ny+Math.floor((y-y0)/c);if(seen.has(key))return;seen.add(key);n++;if(out)out.push(x,y,z)};
+    for(const Q of [A,B])for(let i=0;i<Q.length;i+=3)put(Q[i],Q[i+1],Q[i+2]);
+    for(const a of Ln)for(let i=3;i<a.length;i+=3){const ax=a[i-3],ay=a[i-2],az=a[i-1],bx=a[i],by=a[i+1],bz=a[i+2],q=Math.ceil(Math.hypot(bx-ax,by-ay)/c);for(let j=1;j<q;j++){const u=j/q;put(ax+(bx-ax)*u,ay+(by-ay)*u,(az+(bz-az)*u)*k)}}
+    return{n,out}};
+  let s=O.s;if(!s){s=TDX_S[TDX_S.length-1];for(let i=TDX_S.length-1;i>=0;i--){if(thin(TDX_S[i],false).n>TDX_MAX)break;s=TDX_S[i]}}
+  res.s=s;const T=thin(s,true);if(!T.out||T.n>TDX_CAP){res.n=T.n;res.too=1;return res}const out=T.out,n=T.n,I=P.info||{},pts=new Array(n),zs=new Array(n);
+  if(O.pos==='survey'){const a=(isFinite(+I.tn)?+I.tn:0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a),sn=+I.sn||0,se=+I.se||0,spx=+I.spx||0,spy=+I.spy||0;
+    for(let i=0;i<n;i++){const dE=out[3*i]*k-se,dN=out[3*i+1]*k-sn;pts[i]=[Math.round(spx+dE*ca+dN*sa),Math.round(spy-(-dE*sa+dN*ca))]}}          /* the survey point's coordinates turned back by true north (75 Location) */
+  else{let ox=0,oy=0;if(O.pos==='center'){const bb=MSm().bb,mx=isFinite(bb[0])&&isFinite(bb[3])?(bb[0]+bb[3])/2:0,my=isFinite(bb[2])&&isFinite(bb[5])?(bb[2]+bb[5])/2:0;let a0=Infinity,b0=Infinity,a1=-Infinity,b1=-Infinity;
+      for(let i=0;i<n;i++){const x=out[3*i],y=out[3*i+1];if(x<a0)a0=x;if(x>a1)a1=x;if(y<b0)b0=y;if(y>b1)b1=y}ox=mx-(a0+a1)/2*k;oy=my+(b0+b1)/2*k}
+    for(let i=0;i<n;i++)pts[i]=[Math.round(out[3*i]*k+ox),Math.round(-out[3*i+1]*k+oy)]}          // north is up: y runs down the plan
+  let z0=Infinity,z1=-Infinity,a0=Infinity,b0=Infinity,a1=-Infinity,b1=-Infinity;
+  for(let i=0;i<n;i++){const z=Math.round(out[3*i+2]-O.z0);zs[i]=z;if(z<z0)z0=z;if(z>z1)z1=z;const p=pts[i];if(p[0]<a0)a0=p[0];if(p[0]>a1)a1=p[0];if(p[1]<b0)b0=p[1];if(p[1]>b1)b1=p[1]}
+  const Md=tdxModel(),c=Md?[(Md.bb[0]+Md.bb[2])/2,(Md.bb[1]+Md.bb[3])/2]:[0,0],far=Math.hypot((a0+a1)/2-c[0],(b0+b1)/2-c[1]);
+  return Object.assign(res,{pts,zs,n,z0,z1,bb:[a0,b0,a1,b1],far:far>5e6?far/1e6:0})}
+const tdxCol=(z,z0,z1)=>{const Rr=TDX_RAMP,u=z1>z0?Math.max(0,Math.min(1,(z-z0)/(z1-z0))):0.5,f=u*(Rr.length-1),i=Math.min(Rr.length-2,Math.floor(f)),w=f-i,a=hex2rgb(Rr[i]),b=hex2rgb(Rr[i+1]);return'rgb('+[0,1,2].map(j=>Math.round((a[j]+(b[j]-a[j])*w)*255)).join(',')+')'};
+/* the preview: the surface coloured by height with the contours of the project's site settings, its points, the building, the survey point */
+function tdxDraw(cv,S){const ctx=cv.getContext('2d'),W=cv.width,H=cv.height,dpr=window.devicePixelRatio||1,Q=S.Q;ctx.clearRect(0,0,W,H);if(!Q||Q.n<3||Q.too)return;
+  const Md=tdxModel();let x0=Q.bb[0],y0=Q.bb[1],x1=Q.bb[2],y1=Q.bb[3];if(Md&&!Q.far){x0=Math.min(x0,Md.bb[0]);y0=Math.min(y0,Md.bb[1]);x1=Math.max(x1,Md.bb[2]);y1=Math.max(y1,Md.bb[3])}
+  const pad=12*dpr,sc=Math.min((W-2*pad)/Math.max(1,x1-x0),(H-2*pad)/Math.max(1,y1-y0)),ox=(W-(x1-x0)*sc)/2-x0*sc,oy=(H-(y1-y0)*sc)/2-y0*sc,X=x=>x*sc+ox,Y=y=>y*sc+oy;
+  const T=S.T;if(T&&T.t.length){for(let i=0;i<T.t.length;i+=3){const a=T.p[T.t[i]],b=T.p[T.t[i+1]],c=T.p[T.t[i+2]];ctx.beginPath();ctx.moveTo(X(a[0]),Y(a[1]));ctx.lineTo(X(b[0]),Y(b[1]));ctx.lineTo(X(c[0]),Y(c[1]));ctx.closePath();
+      ctx.fillStyle=ctx.strokeStyle=tdxCol((a[2]+b[2]+c[2])/3,Q.z0,Q.z1);ctx.lineWidth=0.8;ctx.fill();ctx.stroke()}
+    for(const c of S.C||[]){ctx.strokeStyle=c.prim?'rgba(30,25,20,.75)':'rgba(30,25,20,.38)';ctx.lineWidth=(c.prim?1.3:0.7)*dpr;ctx.beginPath();for(let i=0;i+3<c.seg.length;i+=4){ctx.moveTo(X(c.seg[i]),Y(c.seg[i+1]));ctx.lineTo(X(c.seg[i+2]),Y(c.seg[i+3]))}ctx.stroke()}}
+  if(Q.n<=6000){ctx.fillStyle='rgba(20,20,30,.55)';const r=Math.max(0.8,Math.min(2,sc*Q.s*0.12))*dpr;for(const p of Q.pts){ctx.fillRect(X(p[0])-r/2,Y(p[1])-r/2,r,r)}}
+  if(Md&&!Q.far){ctx.strokeStyle='#27324a';ctx.lineWidth=1.6*dpr;ctx.beginPath();for(let i=0;i<Md.S.length;i+=4){ctx.moveTo(X(Md.S[i]),Y(Md.S[i+1]));ctx.lineTo(X(Md.S[i+2]),Y(Md.S[i+3]))}ctx.stroke();
+    ctx.lineWidth=0.9*dpr;for(const q of Md.Q){ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.closePath();ctx.stroke()}}
+  if(S.O.pos==='survey'){const q=bpPos('sp'),x=X(q[0]),y=Y(q[1]),r=6*dpr;if(x>-r&&x<W+r&&y>-r&&y<H+r){ctx.strokeStyle='#2e7bd6';ctx.fillStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.5*dpr;ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r*0.87,y+r*0.5);ctx.lineTo(x-r*0.87,y+r*0.5);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(x-r,y);ctx.lineTo(x+r,y);ctx.moveTo(x,y-r);ctx.lineTo(x,y+r);ctx.stroke()}}}
+/* work out the points for the choices in the dialog and show them */
+function tdxUpd(){const S=ui.tdx;if(!S||!$('#tdxCv'))return;const R=S.R,O=S.O;let Q;try{Q=tdxPts(R,O)}catch(e){Q={pts:[],zs:[],n:0,m:0,s:0,z0:0,z1:0,bb:[0,0,0,0],far:0,too:0}}S.Q=Q;S.T=null;S.C=null;
+  if(Q.n>=3&&!Q.too){S.T=siteTin({pts:Q.pts,zs:Q.zs});try{S.C=siteContours(sitePieces(S.T,[]),siteSet(P))}catch(e){S.C=null}}
+  const I=P.info||{},w=[],ok=Q.n>=3&&!Q.too&&!!(S.T&&S.T.t.length);if(Q.too)w.push(t('tdx_too',isFinite(Q.n)?Q.n.toLocaleString():'∞'));else if(Q.n<3)w.push(t('tdx_few'));
+  if(O.pos==='survey'&&!(+I.sn||+I.se))w.push(t('tdx_nosv'));if(Q.far&&ok)w.push(t('tdx_far',Q.far.toFixed(1)));if(ok&&Q.z1-Q.z0>500000)w.push(t('tdx_big',((Q.z1-Q.z0)/1000).toFixed(0)));if(R.trunc)w.push(t('dxf_trunc'));
+  const sm=$('#tdxSum');if(sm)sm.textContent=ok?t('tdx_sum',Q.n.toLocaleString(),Q.m.toLocaleString(),+(Q.s/1000).toFixed(2),fmtElev(Q.z0),fmtElev(Q.z1),((Q.bb[2]-Q.bb[0])/1000).toFixed(1),((Q.bb[3]-Q.bb[1])/1000).toFixed(1)):'';
+  const wn=$('#tdxWarn');if(wn){wn.innerHTML=w.map(x=>`<p class="note warn">${esc(x)}</p>`).join('')}
+  const lg=$('#tdxLeg');if(lg)lg.innerHTML=ok?`<span>${fmtElev(Q.z0)}</span><i style="background:linear-gradient(90deg,${TDX_RAMP.join(',')})"></i><span>${fmtElev(Q.z1)}</span>`:'';
+  const go=$('#dlg [data-tdxgo]');if(go)go.disabled=!ok;const sv=$('#tdx_s');if(sv&&!O.s){const o=sv.querySelector('option[value="0"]');if(o)o.textContent=t('tdx_auto',TDX_MAX.toLocaleString())+(ok?' · '+(+(Q.s/1000).toFixed(2))+' '+t('tdx_m'):'')}
+  const cv=$('#tdxCv');if(cv){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.max(200,Math.round(r.width*dpr));cv.height=Math.max(150,Math.round(r.height*dpr));tdxDraw(cv,S)}}
+/* the rows of the layer table: they change with the units */
+function tdxRows(){const S=ui.tdx,R=S.R,O=S.O,k=DXF_K[O.u]||1,kt=O.u==='ft'||O.u==='in'?0.3048:1,f=v=>(v/1000).toFixed(2);
+  return R.layers.map(l=>{const geo=l.ln.length||l.pt.length,sw=`<i class="tdxsw" style="background:${aciCss(l.c,C)}"></i>`;
+    return`<tr><td><input type="checkbox" data-tdxu="${esc(l.k)}"${O.use.has(l.k)?' checked':''}${geo?'':' disabled'} aria-label="${esc(t('tdx_c_use')+' '+l.n)}"></td><td>${sw}${esc(l.n)}</td><td class="n">${l.nl||''}${l.nf?(l.nl?' · ':'')+t('tdx_faces',l.nf):''}</td><td class="n">${l.npt||''}</td>
+      <td class="n">${l.nz?f(l.z0*k)+' – '+f(l.z1*k):geo?'0':''}</td><td>${l.ntx?`<label class="tdxt"><input type="checkbox" data-tdxt="${esc(l.k)}"${O.tx.has(l.k)?' checked':''}> ${l.ntx} · ${(l.t0*kt).toFixed(2)} – ${(l.t1*kt).toFixed(2)}</label>`:''}</td></tr>`}).join('')}
+function tdxDlg(){const S=ui.tdx;if(!S)return;const R=S.R,O=S.O,U=['m','mm','cm','ft','in'],I=P.info||{},fr=(id,l,h)=>`<div class="fr"><label for="${id}">${l}</label>${h}</div>`;
+  const body=`<p class="note">${t('tdx_note')}</p><div class="gbx"><div class="gbxv"><canvas id="tdxCv" aria-label="${esc(t('tdx_preview'))}"></canvas><div class="tdxlg" id="tdxLeg"></div><p class="note">${t('tdx_preview')}</p></div>
+    <div class="gbxs">${fr('tdx_f',t('dxf_file'),`<b>${esc(S.name)}${R.ver?' · DXF '+esc(DXF_VER[R.ver]||R.ver):''}</b>`)}
+      ${fr('tdx_u',t('dxf_unit'),`<select id="tdx_u" data-tdx="u">${U.map(u=>`<option value="${u}"${u===O.u?' selected':''}>${t('dxu_'+u)}${R.units===u?' · '+t('dxf_fromfile'):''}</option>`).join('')}</select>`)}
+      ${fr('tdx_pos',t('dxf_pos'),`<select id="tdx_pos" data-tdx="pos"><option value="survey"${O.pos==='survey'?' selected':''}>${t('tdx_pos_sv')}</option><option value="center"${O.pos==='center'?' selected':''}>${t('dxf_pos_center')}</option><option value="origin"${O.pos==='origin'?' selected':''}>${t('dxf_pos_origin')}</option></select>`)}
+      ${fr('tdx_z0',t('tdx_z0'),`<span class="spr tdxspr"><input type="number" id="tdx_z0" data-tdx="z0" step="0.01" value="${+(O.z0/1000).toFixed(3)}"><small>${t('tdx_m')}</small></span>`)}
+      ${fr('tdx_s',t('tdx_s'),`<select id="tdx_s" data-tdx="s"><option value="0"${O.s?'':' selected'}>${t('tdx_auto',TDX_MAX.toLocaleString())}</option>${TDX_S.map(s=>`<option value="${s}"${O.s===s?' selected':''}>${+(s/1000).toFixed(2)} ${t('tdx_m')}</option>`).join('')}</select>`)}
+      <label class="gbxc"><input type="checkbox" data-tdx="zero"${O.zero?' checked':''}> ${t('tdx_zero')}</label>
+      <div class="pg" style="margin:10px -16px 4px;padding-left:16px">${t('gbx_sum')}</div><p id="tdxSum"></p><div id="tdxWarn"></div>
+      <p class="note">${t('tdx_svnote',fmtLen(+I.sn||0),fmtLen(+I.se||0),unitName())}</p></div></div>
+    <h4>${t('tdx_layers')} <span class="tdxab"><button class="btn" data-tdxall="1">${t('all_on')}</button><button class="btn" data-tdxall="0">${t('all_off')}</button></span></h4>
+    <div class="tblw" style="max-height:26vh"><table class="tbl" id="tdxRows"><thead><tr><th>${t('tdx_c_use')}</th><th>${t('c_lname')}</th><th class="n">${t('tdx_c_ln')}</th><th class="n">${t('tdx_c_pt')}</th><th class="n">${t('tdx_c_z')}</th><th>${t('tdx_c_tx')}</th></tr></thead><tbody>${tdxRows()}</tbody></table></div><p class="note">${t('tdx_txnote')}</p>`;
+  openDlg(t('tdx_t'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-tdxgo="1">${t('tdx_go')}</button>`,
+    {change(e){tdxSet(e.target)},enter(e){tdxSet(e.target)},
+     click(e){const b=e.target.closest('[data-tdxall]');if(b){const on=b.dataset.tdxall==='1';for(const l of R.layers)if(l.ln.length||l.pt.length){if(on)O.use.add(l.k);else O.use.delete(l.k)}
+         for(const x of $$('#dlg [data-tdxu]'))x.checked=O.use.has(x.dataset.tdxu);tdxUpd();return}
+       if(e.target.closest('[data-tdxgo]')&&!e.target.closest('[data-tdxgo]').disabled)tdxMake()}},'wide');
+  requestAnimationFrame(tdxUpd)}
+function tdxSet(el){const S=ui.tdx;if(!S||!el)return;const O=S.O;
+  if(el.dataset.tdxu!=null){if(el.checked)O.use.add(el.dataset.tdxu);else O.use.delete(el.dataset.tdxu)}
+  else if(el.dataset.tdxt!=null){if(el.checked)O.tx.add(el.dataset.tdxt);else O.tx.delete(el.dataset.tdxt)}
+  else{const k=el.dataset.tdx;if(!k)return;if(k==='u'){if(DXF_K[el.value])O.u=el.value;const tb=$('#tdxRows tbody');if(tb)tb.innerHTML=tdxRows()}else if(k==='pos'){if(['survey','center','origin'].includes(el.value))O.pos=el.value}
+    else if(k==='z0'){const v=parseFloat(el.value);O.z0=isFinite(v)?Math.round(clamp(v,-1e4,1e4)*1000):0}else if(k==='s'){const v=+el.value;O.s=TDX_S.includes(v)?v:0}else if(k==='zero')O.zero=el.checked?1:0}
+  tdxUpd()}
+/* the toposurface, one undo step; it is selected and the view comes round to it */
+function tdxMake(){const S=ui.tdx;if(!S)return;const Q=S.Q;if(!Q||Q.n<3||Q.too||!S.T||!S.T.t.length)return;let id=0;
+  edit(()=>{id=P.seq++;P.els.push({id,cat:'topo',level:sortedLevels(P)[0].id,pts:Q.pts.map(q=>[q[0],q[1]]),zs:Q.zs.slice()})});
+  closeDlg();ui.tdx=null;setTool('modify');ui.sel=new Set([id]);const v=activeView();if(v&&(v.kind==='plan'||v.kind==='3d'))navOf(v).fit=true;toast(t('tdx_done',Q.n.toLocaleString(),S.name),7000);refresh()}
+function tdxOpen(F){if(!F)return;if(/\.dwg$/i.test(F.name)){toast(t('dxf_err_dwg'),8000);return}
+  F.arrayBuffer().then(buf=>{const d=dxfDecode(new Uint8Array(buf));if(d.err){toast(t('dxf_err_'+d.err),8000);return}let R;try{R=tdxRead(d.txt)}catch(e){toast(t('dxf_bad'));return}
+    if(!R.layers.some(l=>l.nz>0||l.ntx>0)){toast(t('tdx_none'),9000);return}ui.tdx={R,name:F.name,O:tdxDef(R)};tdxDlg()}).catch(()=>toast(t('dxf_bad')))}
+XA.tpdxf=()=>{siteGo();const inp=document.createElement('input');inp.type='file';inp.accept='.dxf,.DXF,.dwg,application/dxf,image/vnd.dxf';inp.onchange=()=>tdxOpen(inp.files&&inp.files[0]);inp.click()};
+XA.tpimport=()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.csv,.txt,.xyz,.pts,.dxf,text/plain,text/csv';inp.onchange=()=>{const F=inp.files&&inp.files[0];if(!F)return;if(/\.(dxf|dwg)$/i.test(F.name))tdxOpen(F);else F.text().then(tpImportText)};inp.click()};          // a points file, or a survey drawing
+/* the ribbon (Massing & Site › Model Site, after Import Points), the icon, the words */
+{const st=RIBBON.find(r=>r.id==='site'),pl=st&&st.panels.find(p=>p.t==='p_modelsite');if(pl&&!pl.b.includes('@tpdxf')){const i=pl.b.indexOf('@tpimport');pl.b.splice(i<0?pl.b.length:i+1,0,'@tpdxf')}}
+Object.assign(BTN,{'@tpdxf':['tpdxf','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-tpdxf" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.4"/>`
+    +`<path ${e('i-Pc')} fill="#9fadc0" d="M6.8 2.4h7.6l3.2 3.2v7.4H6.8z"/><path ${e('i-Pa')} fill="#f6f8fb" d="M6 1.6h7.6l3.2 3.2v7.4H6z"/><path ${e('i-Pb')} fill="#d7dfea" d="M13.6 1.6v3.2h3.2z"/>`
+    +`<path class="i-kT" fill="none" stroke="#38bc9c" stroke-linecap="round" style="stroke-width:0.85" d="M7.4 6.2c1.4-.9 2.8.2 4-.5s1.9-.7 3.2-.2M7.4 8.6c1.3-.8 2.6.1 3.7-.4s1.9-.6 3.3-.1"/>`
+    +`<path ${e('i-Wb')} fill="#c79253" d="M12 21.6 3 17.1 3 14.1 12 18.6z"/><path ${e('i-Wc')} fill="#895e28" d="M12 21.6 21 17.1 21 14.1 12 18.6z"/><path ${e('i-Ta')} fill="#aeefdc" d="M12 18.6 21 14.1 12 9.6 3 14.1z"/>`
+    +`<path class="i-kT" fill="none" stroke-linecap="round" stroke="#38bc9c" style="stroke-width:0.9" d="M6.4 14.6c2.2-1.6 4.6-.2 6.4-1.2s3.2-1.6 5-.6"/></symbol>`)})();
+Object.assign(STR,{a_tpdxf:['ผิวดินจากแบบสำรวจ DXF','Toposurface from DXF'],tdx_t:['ผิวดินจากแบบสำรวจ DXF (Create from Import)','Toposurface from a survey DXF (Create from Import)'],
+  tdx_note:['อ่านค่าระดับจากเส้นชั้นความสูง จุดและเส้น 3 มิติ บล็อกค่าระดับ และข้อความค่าระดับในแบบสำรวจ เลือกชั้น (Layer) ที่จะใช้ แล้วสร้างผิวดินผ่านจุดเหล่านั้น',
+    'Reads the heights of a survey drawing from its contours, 3D points and lines, spot-height blocks and spot heights written as text: pick the layers to use, and a toposurface is made through those points'],
+  tdx_pos_sv:['ตามหมุดสำรวจของโครงการ (Shared Coordinates)','By the survey point (shared coordinates)'],tdx_z0:['ระดับ ±0.00 ของโครงการในแบบสำรวจ','Elevation of the project ±0.00 in the survey'],
+  tdx_m:['ม.','m'],tdx_s:['ระยะห่างของจุด','Point spacing'],tdx_auto:['อัตโนมัติ (ไม่เกิน {0} จุด)','Automatic (up to {0} points)'],
+  tdx_zero:['ไม่ใช้เส้นและจุดที่อยู่ที่ระดับ 0 (ถนน ต้นไม้ อาคาร ที่วาดเป็น 2 มิติ)','Leave out lines and points at height 0 (roads, trees, buildings drawn flat)'],
+  tdx_layers:['ชั้นในแบบ (Layers)','Layers'],tdx_c_use:['ใช้','Use'],tdx_c_ln:['เส้น','Lines'],tdx_c_pt:['จุด / บล็อก','Points / blocks'],tdx_c_z:['ระดับ (ม.)','Heights (m)'],tdx_c_tx:['ข้อความค่าระดับ (ม.)','Spot-height texts (m)'],
+  c_lname:['ชั้น (Layer)','Layer'],tdx_faces:['{0} ผิว 3 มิติ','{0} 3D faces'],
+  tdx_sum:['{0} จุด ห่างกันราว {2} ม. (ในแบบมี {1} จุด) · ระดับ {3} ถึง {4} · ขนาด {5} × {6} ม.','{0} points about {2} m apart (the drawing has {1}) · heights {3} to {4} · {5} × {6} m'],
+  tdx_preview:['ผิวดินที่จะสร้าง ระบายสีตามระดับ พร้อมเส้นชั้นความสูงตามที่ตั้งไว้ในโครงการ จุด และอาคารในโมเดล','The surface to be made, coloured by height, with contours as the project sets them, its points and the building in the model'],
+  tdx_svnote:['หมุดสำรวจของโครงการ: N {0} · E {1} {2} (ตั้งได้ใน ตำแหน่งที่ตั้ง (Location))','The survey point of the project: N {0} · E {1} {2} (set in Location)'],
+  tdx_go:['สร้างผิวดิน','Create Toposurface'],tdx_done:['สร้างผิวดินจาก {0} จุดของ {1} แล้ว','Toposurface made from {0} points of {1}'],
+  tdx_none:['ไม่พบค่าระดับในแบบนี้: ต้องมีเส้นชั้นความสูงหรือจุดที่มีค่าระดับ (Z) หรือข้อความค่าระดับ เช่น +2.350','No heights in this drawing: it needs contours or points with an elevation (Z), or spot heights written as text such as +2.350'],
+  tdx_few:['ยังมีจุดไม่ถึง 3 จุด: เลือกชั้นที่มีค่าระดับ','Fewer than 3 points: pick layers that carry heights'],tdx_far:['ผิวดินอยู่ห่างจากอาคาร {0} กม. — ตรวจตำแหน่งที่วางหรือพิกัดของหมุดสำรวจ','The surface lies {0} km from the building — check the positioning or the coordinates of the survey point'],
+  tdx_nosv:['หมุดสำรวจของโครงการยังไม่มีพิกัด ตั้งได้ใน ตำแหน่งที่ตั้ง (Location)','The survey point of the project has no coordinates yet: set them in Location'],
+  tdx_too:['จุดมากเกินไป ({0} จุด) — เลือกระยะห่างมากขึ้น','Too many points ({0}) — pick a larger spacing'],tdx_big:['ระดับต่างกันถึง {0} ม. — ตรวจหน่วยของไฟล์','The heights differ by {0} m — check the units of the file'],
+  tdx_txnote:['ข้อความค่าระดับ: ตัวเลขมีทศนิยม เช่น +2.350, 2.35, EL.+2.35, ระดับ +2.35 ม. — จุดอยู่ที่จุดวางของข้อความ ค่าเป็นเมตร · บล็อกค่าระดับ: ที่ความสูงของบล็อก หรือค่าใน Attribute เมื่อบล็อกอยู่ที่ระดับ 0',
+    'Spot heights as text: numbers with decimals such as +2.350, 2.35, EL.+2.35, +2.35 m — each point is where its text is placed, the value in metres · spot-height blocks: at the height of the block, or the value of an attribute when the block lies at 0']});
+{const st=document.createElement('style');st.textContent='dialog #tdxCv{display:block;width:100%;height:330px;border:1px solid var(--line);border-radius:6px;background:var(--raise)}'
+  +'dialog .tdxlg{display:flex;align-items:center;gap:8px;margin:6px 0 0;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}dialog .tdxlg i{flex:1;height:9px;border-radius:3px;border:1px solid rgba(0,0,0,.25)}'
+  +'dialog .tdxsw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;border:1px solid rgba(0,0,0,.3)}dialog .tdxt{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}'
+  +'dialog .tdxab{float:right;display:inline-flex;gap:6px}dialog .tdxab .btn{font-size:12px;padding:2px 8px}dialog #tdxRows td{vertical-align:middle}dialog .tdxspr{align-items:center}';
+  document.head.appendChild(st)}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -23005,6 +23245,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 เครื่องมืออยู่ในแท็บ [[tab_site]] ทุกคำสั่งพาไปที่มุมมอง [[site_plan]] ซึ่งโปรแกรมสร้างให้ในครั้งแรกที่ใช้ — เป็นแปลนที่มองจากด้านบนลงมา เห็นผิวดิน หลังคา ต้นไม้ และสิ่งที่อยู่นอกอาคาร
 - [[a_topo]]: พิมพ์ [[o_tp_z]] ของจุดที่แถบตัวเลือก เป็น มม. จาก ±0.00 แล้วคลิกวางจุด ค่าระดับเปลี่ยนได้ทุกจุด · ครบ 3 จุดผิวดินจะเกิดขึ้น คลิกต่อเพื่อเพิ่มจุด · จบด้วย [[a_tpfinish]] หรือ Enter
 - [[a_tpimport]]: ไฟล์ .csv/.txt บรรทัดละ X Y Z (เมตรหรือมม.) · [[a_tpmerge]] รวมผิวดินที่เลือก · [[a_tpsplit]] คลิกสองจุดลากเส้นตัด · [[a_tpgrade]] ผิวดินเดิมเป็นของเดิม (Existing) ได้ผิวดินใหม่ให้แก้จุด แผงคุณสมบัติบอกดินตัด/ดินถม (ม³)
+- [[a_tpdxf]] (Revit: Toposurface › Create from Import › Select Import Instance): เลือกไฟล์แบบสำรวจ .dxf แล้วเลือกชั้น (Layer) ที่จะใช้ โปรแกรมอ่านค่าระดับจากเส้นชั้นความสูง (Polyline ที่มีค่า Elevation หรือ 3D Polyline) จุด เส้น และผิว 3 มิติ (Point, Line, 3DFace, Polyface/Mesh) บล็อกค่าระดับ (ที่ความสูงของบล็อก หรือค่าใน Attribute) และข้อความค่าระดับ เช่น +2.350 · ตั้ง [[dxf_unit]] [[dxf_pos]] (ตามหมุดสำรวจของโครงการ กึ่งกลางกับโมเดล หรือจุด 0,0) [[tdx_z0]] และ [[tdx_s]] (อัตโนมัติ: ไม่เกิน 4,000 จุด) · ภาพตัวอย่างระบายสีตามระดับพร้อมเส้นชั้นความสูงให้ดูก่อนสร้าง · ผิวดินที่ได้แก้ไขต่อได้เหมือนผิวดินทั่วไป · ปุ่ม [[a_tpimport]] รับไฟล์ .dxf ได้ด้วย
+> ต่างจาก Revit: เลือกไฟล์ได้ทันที ไม่ต้องลิงก์แบบเข้ามาก่อน · อ่านข้อความค่าระดับและ Attribute ของบล็อกได้ (Revit อ่านไม่ได้) · คัดจุดตามระยะห่างให้เอง · ไฟล์ DWG ต้อง Save As เป็น DXF ก่อน · อ่านเฉพาะ Model Space · วัตถุของ Civil 3D (Surface, Feature Line) ต้อง Explode หรือ Export to AutoCAD ก่อน
 - [[a_topoedit]]: เลือกผิวดินแล้วกดปุ่มนี้บนริบบอนหรือในแผง [[properties]] · คลิกจุดที่มีอยู่เพื่อพิมพ์ค่าระดับใหม่หรือกด [[a_tpdel]] · คลิกที่ว่างเพื่อเพิ่มจุด · ในโหมดเลือกปกติ ลากจุดจับของผิวดินเพื่อย้ายจุดในแปลนได้
 - ในแปลนผิวดินแสดงเป็นเส้นชั้นความสูง · ในมุมมอง 3 มิติ รูปด้าน และรูปตัดเป็นก้อนดินทึบ รูปตัดระบายเนื้อดินด้วยสีของมันเอง · วัสดุของผิว เช่น หญ้า ดิน กรวด ทราย เปลี่ยนในแผง [[properties]] ซึ่งบอกจำนวนจุด จุดต่ำสุด จุดสูงสุด และพื้นที่ด้วย
 - [[a_pad]]: วาดรูปร่างแบบ [[sf_poly]] หรือ [[a_rect]] กำหนด [[p_level]] [[p_padoff]] และ [[p_padthick]] ที่แถบตัวเลือก · ฐานอาคารตัดผิวดินตามรูปร่างของมัน: ดินที่สูงกว่าถูกขุดออก ดินที่ต่ำกว่าถูกถมขึ้นมาถึงใต้ฐาน
@@ -23160,6 +23402,8 @@ Beds, sofas, tables, kitchen units, appliances, cars, people, trees. Pick the ty
 The tools are on the [[tab_site]] tab. Each of them goes to the [[site_plan]] view, which the program makes the first time — a plan seen from above that shows the ground, the roofs, the trees and what stands outside
 - [[a_topo]]: type the [[o_tp_z]] of the point in the options bar, in mm from ±0.00, then click to place it; the elevation can change for every point · the third point makes the surface, further clicks add points · end with [[a_tpfinish]] or Enter
 - [[a_tpimport]]: a .csv/.txt file of X Y Z per line (metres or mm) · [[a_tpmerge]] joins the selected surfaces · [[a_tpsplit]]: click two points for the cutting line · [[a_tpgrade]]: the original becomes Existing and a new surface is made to edit; Properties shows cut and fill (m³)
+- [[a_tpdxf]] (Revit: Toposurface › Create from Import › Select Import Instance): pick a survey .dxf, then the layers to use; the heights come from its contours (polylines at their elevation, or 3D polylines), its 3D points, lines and faces (Point, Line, 3DFace, polyface and polygon meshes), its spot-height blocks (at the height of the block, or the value of an attribute) and spot heights written as text such as +2.350 · set the [[dxf_unit]], the [[dxf_pos]] (by the survey point of the project, centre to centre, or origin to origin), the [[tdx_z0]] and the [[tdx_s]] (automatic: up to 4,000 points) · a preview shows the surface coloured by height, with its contours, before it is made · the surface is an ordinary toposurface to edit · [[a_tpimport]] takes a .dxf as well
+> Unlike Revit: the file is picked directly, with no link first · spot heights written as text and block attributes are read (Revit reads neither) · the points are thinned to a spacing by themselves · a DWG must be saved as DXF first · model space only · Civil 3D objects (surfaces, feature lines) must be exploded or exported to AutoCAD first
 - [[a_topoedit]]: select the surface and press this button on the ribbon or in [[properties]] · click a point to type another elevation or to press [[a_tpdel]] · click elsewhere to add a point · in the ordinary selection, drag a grip of the surface to move a point in plan
 - A plan shows the ground by its contours · 3D views, elevations and sections show it as a solid of earth, and a section fills the earth in a tone of its own · the material of its top — grass, earth, gravel, sand and others — is in [[properties]], with the number of points, the lowest and highest elevation and the areas
 - [[a_pad]]: sketch its outline as a [[sf_poly]] or a [[a_rect]], with [[p_level]], [[p_padoff]] and [[p_padthick]] in the options bar · a pad cuts the toposurface to its outline: higher ground is dug away, lower ground is filled up to its underside
@@ -23587,6 +23831,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.117 · โครงสร้างและผิวบันได (Revit: Structural Depth, Monolithic Thickness, Tread/Riser Thickness, Nosing Length): [[edit_type]] ของบันไดมีกลุ่ม [[g_stfin]]: [[f_wst]] วัดตั้งฉากกับความชัน [[f_lth]] ผิวลูกนอนและชานพัก ผิวลูกตั้ง (ความหนาและวัสดุ หิน กระเบื้อง ไม้ ปูน โลหะ หรือวัสดุของโครงการ) และ [[f_nos]] · 3 มิติ รูปด้าน และรูปตัดแสดงผิวเป็นชิ้นของวัสดุ ผิวอยู่ในความสูงลูกตั้งเดิม · บันไดทุกตัวมีปริมาตรโครงสร้าง (เดิมไม่มี) ในแผงคุณสมบัติ ตารางโครงสร้าง ตารางวัสดุ และ IFC · ตารางบันไดมีจำนวนลูกนอน ลูกตั้งสูงจริง ลูกนอนลึกจริง ปริมาตร และพื้นที่ผิว · ตารางวัสดุแยกแถวคอนกรีตกับผิว · IFC ส่ง Pset_StairCommon และ Qto_StairBaseQuantities · ชนิดบันไดตั้งต้นของโครงการใหม่มีท้องบันได 150 ชานพัก 150 ผิวหิน
 - V1.118 · ตำแหน่งเสาตามกริดและตารางเสาแบบกราฟิก (Revit: Column Location Mark, Graphical Column Schedule): เสาทุกต้นมี [[p_cloc]] เช่น A-1 หรือ B(-300)-2(450) เมื่อไม่อยู่บนจุดตัด ในแผงคุณสมบัติ ตารางเสา และ IFC · [[a_gcs]] (แท็บ [[tab_view]]) วาดเสาทุกต้นตามตำแหน่งระหว่างเส้นระดับชั้น พร้อมชื่อชนิด รวมตำแหน่งที่เหมือนกัน เลือกช่วงระดับ ช่วงตำแหน่ง และวัสดุ แบ่งเป็นหลายแถวได้ ดับเบิลคลิกเสาเพื่อไปที่แปลน วางบนชีต พิมพ์ และส่งออก DXF ได้
 - V1.119 · ส่งออก gbXML (Revit: Export › gbXML): [[m_gbx]] ในเมนู [[tab_file]] และแท็บ [[tab_analyze]] สร้างแบบจำลองพลังงานจากห้อง ผนัง พื้น หลังคา หน้าต่าง และประตู เป็นไฟล์ gbXML 7.03 สำหรับโปรแกรมวิเคราะห์พลังงาน พร้อมภาพ 3 มิติ ตั้งประเภทอาคาร ระดับพื้นดิน และเฟสได้ ใส่ค่า U และภาระคน ไฟ อุปกรณ์ของห้อง
+- V1.120 · ผิวดินจากแบบสำรวจ DXF (Revit: Toposurface › Create from Import): [[a_tpdxf]] ในแท็บ [[tab_site]] อ่านเส้นชั้นความสูง จุด 3 มิติ บล็อก และข้อความค่าระดับจากไฟล์ .dxf เลือกชั้น หน่วย ตำแหน่ง (ตามหมุดสำรวจได้) และระยะห่างของจุด ดูภาพผิวดินก่อนสร้าง · ผิวดินที่มีจุดมากสร้างได้เร็วขึ้นหลายเท่า
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -23796,6 +24041,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.117 · Stair structure and finishes (Revit: Structural Depth, Monolithic Thickness, Tread/Riser Thickness, Nosing Length): [[edit_type]] of a stair has [[g_stfin]]: the [[f_wst]] square to the slope, the [[f_lth]], the finish of the treads and landings and that of the risers (a thickness and a material: stone, tile, wood, screed, metal or any material of the project) and the [[f_nos]] · 3D views, elevations and sections show the finishes in their materials, inside the riser height as it was · every stair has the volume of its structure (it had none) in Properties, structural schedules, material takeoffs and IFC · stair schedules have the treads, the actual riser height and tread depth, the volume and the areas of the finishes · material takeoffs have a row for the concrete and one for each finish · IFC export gives Pset_StairCommon and Qto_StairBaseQuantities · the stock stair types of a new project have a structure of 150, landings of 150 and stone finishes
 - V1.118 · Column Location Mark and Graphical Column Schedule (Revit: Column Location Mark, Graphical Column Schedule): every column has its [[p_cloc]], as A-1, or B(-300)-2(450) off the intersection, in Properties, column schedules and IFC · [[a_gcs]] (the [[tab_view]] tab) draws every column by location between the lines of the levels with the names of their types; similar locations can be grouped, a range of levels and of locations and a material chosen, and it can run in several rows; double-click a column to go to it in a plan; it goes on sheets, prints and exports to DXF
 - V1.119 · Export gbXML (Revit: Export › gbXML): [[m_gbx]] on the [[tab_file]] menu and the [[tab_analyze]] tab makes an energy model of the rooms, walls, floors, roofs, windows and doors as a gbXML 7.03 file for energy programs, with a 3D view; the building type, the ground plane and the phase can be set, with U-values and the people, lighting and equipment of the rooms
+- V1.120 · Toposurface from a survey DXF (Revit: Toposurface › Create from Import): [[a_tpdxf]] on the [[tab_site]] tab reads contours, 3D points, blocks and spot heights written as text from a .dxf; pick the layers, the units, the positioning (by the survey point too) and the spacing of the points, and see the surface before it is made · surfaces of many points are made several times faster
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -25617,6 +25863,12 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r35={I:()=>({P,ui,IDX}),num:s=>tdxNum(s),
+  read:txt=>{const R=tdxRead(txt);return{ver:R.ver,units:R.units,guess:R.guess,bb:R.bb,trunc:R.trunc,layers:R.layers.map(l=>({k:l.k,n:l.n,c:l.c,nl:l.nl,nf:l.nf,npt:l.npt,nt:l.nt,ntx:l.ntx,nz:l.nz,z0:l.z0,z1:l.z1,t0:l.t0,t1:l.t1,nv:l.ln.reduce((a,q)=>a+q.length/3,0),ln:l.ln.slice(0,400),pt:l.pt,tx:l.tx}))}},
+  def:txt=>{const O=tdxDef(tdxRead(txt));return Object.assign({},O,{use:[...O.use],tx:[...O.tx]})},
+  pts:(txt,o)=>{const R=tdxRead(txt),O=Object.assign(tdxDef(R),o||{});if(o&&o.use)O.use=new Set(o.use);if(o&&o.tx)O.tx=new Set(o.tx);const t0=performance.now(),Q=tdxPts(R,O);return Object.assign({ms:performance.now()-t0},Q)},
+  open:(txt,name)=>{const R=tdxRead(txt);ui.tdx={R,name:name||'test.dxf',O:tdxDef(R)};tdxDlg()},S:()=>ui.tdx?{O:Object.assign({},ui.tdx.O,{use:[...ui.tdx.O.use],tx:[...ui.tdx.O.tx]}),n:ui.tdx.Q?ui.tdx.Q.n:-1,s:ui.tdx.Q?ui.tdx.Q.s:-1,far:ui.tdx.Q?ui.tdx.Q.far:0,tris:ui.tdx.T?ui.tdx.T.t.length/3:0}:null,
+  mbb:()=>MSm().bb.slice(),dl:pts=>siteDelaunay(pts),dl0:pts=>tdxDl0(pts),dls:pts=>siteDelaunayS(pts),tin:e=>siteTin(e),zat:(id,x,y)=>{const e=IDX.get(id);return e?siteZat(siteTin(e),x,y):null},make:()=>tdxMake()};
 window.PenumBIM.r34={I:()=>({P,ui,IDX}),opts:O=>gbxOpts(P,O),text:(O,d)=>{const R=gbxText(P,O,d);return R.text},
   model:O=>{const M=gbxModel(P,O);return{O:M.O,gz:M.gz,warn:M.warn,area:M.area,bands:M.bands.map(b=>({lv:b.lv.id,zb:b.zb,zt:b.zt,regs:b.regs.length,par:b.regs.map(r=>r.par),E:b.E.length})),
     spaces:M.spaces.map(s=>({n:s.n,id:s.id,room:s.room?s.room.id:0,lv:s.band.lv.id,area:s.area,vol:s.vol,ns:s.surfs.length})),
