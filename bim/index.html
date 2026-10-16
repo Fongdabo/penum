@@ -1332,7 +1332,7 @@ function trussLayout(kind,L,H,panel,mem){
   if(kind==='custom'){if(Array.isArray(mem)&&mem.length)return{n:Math.max(1,new Set(mem.flatMap(q=>[q[0],q[2]])).size-1),M:mem.map(q=>({a:[q[0]*L,q[1]*H],b:[q[2]*L,q[3]*H],k:q[4]==='t'?'top':q[4]==='b'?'bot':'web'}))};kind='gable'}          // V1.58 drawn by hand (Revit: edit the truss family): T.mem [[s0, z0, s1, z1, t|b|w]], s and z as parts of the span and the height
   if(kind==='fink'){const tp=s=>H*(1-Math.abs(2*s/L-1));return{n:4,M:[{a:[0,0],b:[L,0],k:'bot'},{a:[0,0],b:[L/2,H],k:'top'},{a:[L/2,H],b:[L,0],k:'top'},{a:[L/3,0],b:[L/4,tp(L/4)],k:'web'},{a:[L/3,0],b:[L/2,H],k:'web'},{a:[2*L/3,0],b:[L/2,H],k:'web'},{a:[2*L/3,0],b:[3*L/4,tp(3*L/4)],k:'web'}]}}          // a Fink (W) truss
   if(kind==='scissor'||kind==='bow'){const n=Math.max(2,Math.round(L/Math.max(300,panel||1500)))*2,dx=L/n,M=[],tp=kind==='bow'?s=>4*H*s*(L-s)/(L*L):s=>H*(1-Math.abs(2*s/L-1)),bt=kind==='scissor'?s=>H/2*(1-Math.abs(2*s/L-1)):()=>0;          // scissor: the bottom chord rises too; bowstring: the top chord is an arch
-    for(let i=0;i<n;i++){const s0=i*dx,s1=s0+dx;M.push({a:[s0,tp(s0)],b:[s1,tp(s1)],k:'top'},{a:[s0,bt(s0)],b:[s1,bt(s1)],k:'bot'});const left=i<n/2;M.push(left?{a:[s0,bt(s0)],b:[s1,tp(s1)],k:'web'}:{a:[s1,bt(s1)],b:[s0,tp(s0)],k:'web'})}
+    for(let i=0;i<n;i++){const s0=i*dx,s1=s0+dx;M.push({a:[s0,tp(s0)],b:[s1,tp(s1)],k:'top'},{a:[s0,bt(s0)],b:[s1,bt(s1)],k:'bot'});const left=i<n/2,h0=left?s0:s1;if(tp(h0)-bt(h0)>1)M.push(left?{a:[s0,bt(s0)],b:[s1,tp(s1)],k:'web'}:{a:[s1,bt(s1)],b:[s0,tp(s0)],k:'web'})}          // none from a heel: it would lie on the top chord (V1.116)
     for(let i=1;i<n;i++){const s=i*dx;if(tp(s)-bt(s)>1)M.push({a:[s,bt(s)],b:[s,tp(s)],k:'web'})}return{n,M}}
   const n0=Math.max(2,Math.round(L/Math.max(300,panel||1500))),n=kind==='warren'?n0:n0+(n0%2),M=[],dx=L/n,top=s=>kind==='gable'?H*(1-Math.abs(2*s/L-1)):H;
   M.push({a:[0,0],b:[L,0],k:'bot'});if(kind==='gable')M.push({a:[0,0],b:[L/2,H],k:'top'},{a:[L/2,H],b:[L,0],k:'top'});else M.push({a:[0,H],b:[L,H],k:'top'});
@@ -1347,7 +1347,7 @@ const trussH=(P,e)=>{const T=typ(P,e)||{};return Math.max(200,+e.h||+T.h||1200)}
 /* the members of a truss in the model: [{k, a:[x,y,z], b:[x,y,z], w (across the truss), h (in its plane)}] */
 function trussMembers(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<100)return[];const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,z0=elev(P,e.level)+(e.off||0),Y=trussLayout(TRUSS_KINDS.includes(T.kind)?T.kind:'howe',L,trussH(P,e),T.panel,T.mem);
   return Y.M.map(m=>{const c=m.k!=='web';return{k:m.k,a:[e.x1+ux*m.a[0],e.y1+uy*m.a[0],z0+m.a[1]],b:[e.x1+ux*m.b[0],e.y1+uy*m.b[0],z0+m.b[1]],w:c?(T.cw||100):(T.ww||75),h:c?(T.ch||100):(T.wh||75)}})}
-function trussLoop(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nx=-(e.y2-e.y1)/L*(T.cw||100)/2,ny=(e.x2-e.x1)/L*(T.cw||100)/2;return[[e.x1+nx,e.y1+ny],[e.x2+nx,e.y2+ny],[e.x2-nx,e.y2-ny],[e.x1-nx,e.y1-ny]]}
+function trussLoop(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,cw=trCW(P,T),nx=-(e.y2-e.y1)/L*cw/2,ny=(e.x2-e.x1)/L*cw/2;return[[e.x1+nx,e.y1+ny],[e.x2+nx,e.y2+ny],[e.x2-nx,e.y2-ny],[e.x1-nx,e.y1-ny]]}
 /* the closed regions a set of lines bounds: [{poly, src, area}] — src[k]: the line the edge from poly[k] to poly[k+1] lies on.  The walk round the faces of the graph that regions() makes for rooms */
 function planFaces(segs){const S=segs.map(w=>Object.assign({L:Math.hypot(w.x2-w.x1,w.y2-w.y1)},w)).filter(w=>w.L>1),nodes=[],node=(x,y)=>{for(let i=0;i<nodes.length;i++)if(Math.abs(nodes[i][0]-x)<3&&Math.abs(nodes[i][1]-y)<3)return i;nodes.push([x,y]);return nodes.length-1};
   const pts=S.map(w=>[[0,w.x1,w.y1],[1,w.x2,w.y2]]),cl=t=>Math.max(0,Math.min(1,t));
@@ -1551,7 +1551,7 @@ function zRange(P,e){
   if(c==='wall'||c==='column'||c==='riser'){const z0=base+(e.baseOff||0);let z1=e.top&&lvl(P,e.top)?elev(P,e.top)+(e.topOff||0):z0+(e.height||3000);if(z1<z0+100)z1=z0+100;return[z0,z1]}
   if(c==='beam'){const T=typ(P,e),z=beamZ(P,e),h=T?T.h:400,br=e.use==='brace';return[Math.min(z[0],z[1])-(br?h/2:h),Math.max(z[0],z[1])+(br?h/2:0)]}
   if(c==='bsys'){const z1=base+(e.off||0);return[z1-(bsysType(P,e).h||400),z1]}
-  if(c==='truss'){const T=typ(P,e)||{},z0=base+(e.off||0),c2=(T.ch||100)/2;return[z0-c2,z0+trussH(P,e)+c2]}
+  if(c==='truss'){const T=typ(P,e)||{},z0=base+(e.off||0);return[z0-trCD(P,T,'bc')/2,z0+trussH(P,e)+trCD(P,T,'tc')/2]}
   if(c==='footing'||c==='wfoot'){const T=typ(P,e),z1=base+(e.off||0);return[z1-(T&&T.h?T.h:300),z1]}          // a foundation hangs down from its top
   if(c==='floor'){const T=typ(P,e),z1=base+(e.off||0);return[z1-(T?T.thickness:150),z1]}
   if(c==='ceiling'){const T=typ(P,e),z0=base+(e.off==null?2600:e.off);return[z0,z0+(T?T.thickness:12)]}          // off: height of the underside above the level
@@ -2487,8 +2487,7 @@ function buildMeshes(P,FP,FIT){
     }else if(e.cat==='bsys'&&stlT(bsysType(P,e))){stlBsys3(P,e,K,items)
     }else if(e.cat==='bsys'){const T=bsysType(P,e),zr=zRange(P,e),m=mk(e.id,'bsys',hex2rgb(T.color||'#b4b9c0'));m.mt=matOf('beam',T);const hw=Math.max(5,(T.w||200)/2-4);          /* a beam system: its beams, each as a beam is */
       const FS=e.fs?bsysSlab(P,e):null;for(const q of bsysBeams(P,e)){const L=Math.hypot(q.x2-q.x1,q.y2-q.y1)||1,ux=(q.x2-q.x1)/L,uy=(q.y2-q.y1)/L;if(FS){const th=T.h||400,za=zr[1]+FS(q.x1,q.y1)-th/2,zb=zr[1]+FS(q.x2,q.y2)-th/2;bar3(m,[q.x1,za,q.y1],[q.x2,zb,q.y2],[-uy,0,ux],T.w||200,th);continue}solid(m,[[q.x1-uy*hw,q.y1+ux*hw],[q.x2-uy*hw,q.y2+ux*hw],[q.x2+uy*hw,q.y2-ux*hw],[q.x1+uy*hw,q.y1-ux*hw]],zr[0],zr[1]-4)}items.push(m)          // fs: each beam rises with the sloped floor it carries
-    }else if(e.cat==='truss'){const T=typ(P,e)||{},m=mk(e.id,'truss',hex2rgb(T.color||'#8f99a6'));m.mt=matOf('truss',T);const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L];
-      for(const q of trussMembers(P,e))bar3(m,[q.a[0],q.a[2],q.a[1]],[q.b[0],q.b[2],q.b[1]],n,q.w-(q.k==='web'?0:2),q.h);items.push(m)
+    }else if(e.cat==='truss'){trussMesh(P,e,K,items)          // its members, each as its framing type is (116)
     }else if(e.cat==='floor'){const T=typ(P,e),zr=zRange(P,e),m=mk(e.id,'floor',hex2rgb(T.color)),holes=slabHoles(P,e);m.mt=matOf('floor',T);const B=slBands(T,'floor',m,zr[0],zr[1],c=>mk(e.id,'floor',c));          // a layer of its structure: a band of its own
       for(const pc of polyMinus(e.pts,holeParts(holes)))for(const b of B)prism(b.m,pc,b.z0,b.z1);boxL(m,e.pts,zr[0],zr[1]);for(const hq of holes)boxL(m,hq,zr[0],zr[1]);for(const b of B){slabTilt(e,b.m);slabWarp(e,b.m);items.push(b.m)}
     }else if(e.cat==='ceiling'){const T=typ(P,e),zr=zRange(P,e),m=mk(e.id,'ceiling',hex2rgb(T.color||'#e8e8e4')),holes=slabHoles(P,e);m.mt=matOf('ceiling',T);const B=slBands(T,'ceiling',m,zr[0],zr[1],c=>mk(e.id,'ceiling',c));for(const pc of polyMinus(e.pts,holeParts(holes)))for(const b of B)prism(b.m,pc,b.z0,b.z1);boxL(m,e.pts,zr[0],zr[1]);for(const hq of holes)boxL(m,hq,zr[0],zr[1]);for(const b of B){slabTilt(e,b.m);items.push(b.m)}
@@ -2532,15 +2531,9 @@ function buildMeshes(P,FP,FIT){
         const gm=mk(e.id,'roof',col),L=gb.loop.map(q=>[q[0]-gb.nx*gt/2,q[2],q[1]-gb.ny*gt/2]),ev=[gb.nx*gt,0,gb.ny*gt];extrude(L,ev,gm.t);
         for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];gm.l.push(a[0],a[1],a[2],b[0],b[1],b[2],a[0]+ev[0],a[1],a[2]+ev[2],b[0]+ev[0],b[1],b[2]+ev[2])}
         items.push(gm)}
-    }else if(e.cat==='stair'){const g=stairGeo(P,e),m=mk(e.id,'stair',hex2rgb(g.T.color)),wv=190,hw=g.W/2,ns=g.r>90&&g.g>150?22:0,nt=38;m.mt=matOf('stair',g.T);
+    }else if(e.cat==='stair'){const g=stairGeo(P,e),m=mk(e.id,'stair',hex2rgb(g.T.color));m.mt=matOf('stair',g.T);
       if(g.spiral){const S=g.spiral;for(const q of S.treads)solid(m,area2(q.poly)<0?q.poly.slice().reverse():q.poly,q.z-60,q.z);cyl(m,S.c[0],S.c[1],Math.min(S.ri,90),g.z0,g.z1,16);items.push(m);continue}          // treads hung on a round post
-      for(const R of g.runs){const pr=[[0,0]],H=R.n*g.r;for(let i=0;i<R.n-1;i++){if(ns&&i>0)pr.push([i*g.g,(i+1)*g.r-nt],[i*g.g-ns,(i+1)*g.r-nt],[i*g.g-ns,(i+1)*g.r]);else pr.push([i*g.g,(i+1)*g.r]);pr.push([(i+1)*g.g,(i+1)*g.r])}          // every tread but the first stands out over the riser below it (nosing)
-        pr.push([R.len,H]);          // each run: its steps in profile, pushed across its width
-        const zb=(R.n-1)*g.r-wv,s0=wv*g.g/g.r;if(zb>1&&s0<R.len-1)pr.push([R.len,zb],[s0,0]);else pr.push([R.len,0]);
-        const to3=(q,s)=>[R.A[0]+R.dx*q[0]+R.nx*s,R.z0+q[1],R.A[1]+R.dy*q[0]+R.ny*s];extrude(pr.map(q=>to3(q,-hw)),[R.nx*g.W,0,R.ny*g.W],m.t);
-        for(let i=0;i<pr.length;i++){const a=pr[i],b=pr[(i+1)%pr.length];for(const s of [-hw,hw]){const p=to3(a,s),q=to3(b,s);m.l.push(p[0],p[1],p[2],q[0],q[1],q[2])}const p=to3(a,-hw),q=to3(a,hw);m.l.push(p[0],p[1],p[2],q[0],q[1],q[2])}}
-      for(const l of g.lands)solid(m,area2(l.poly)<0?l.poly.slice().reverse():l.poly,l.z-wv,l.z);
-      items.push(m)
+      items.push(m,...stairMesh(P,e,g,m,K))          // its runs and landings, and the finishes of its treads and risers (117)
     }else if(e.cat==='railing')railMesh(P,e,items);else if(e.cat==='ramp')rampMesh(P,e,items);
     else if(e.cat==='mline'){const z=elev(P,e.level)+(e.off||0),za=e.vz?e.vz[0]:z,zb=e.vz?e.vz[1]:z,S=lsGet(P,e.style),m=mk(e.id,'mline',S[2]?hex2rgb(S[2]):[0.12,0.13,0.16]),L=Math.hypot(e.x2-e.x1,e.y2-e.y1);m.ml=1;if(S[2])m.cl=1;          // a model line: a line and no faces; dashed styles are dashed as at 1:100
       if(lcCurve(e)&&!e.vz)lc3d(e,m,z,S);else if(S[1]&&L>1&&L<300000){const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L;for(let d=0,i=0;d<L;i++){const d1=Math.min(L,d+S[1][i%S[1].length]*100);if(i%2===0)m.l.push(e.x1+ux*d,za+(zb-za)*d/L,e.y1+uy*d,e.x1+ux*d1,za+(zb-za)*d1/L,e.y1+uy*d1);d=d1}}
@@ -3741,7 +3734,7 @@ function quantities(P0){const P=P0.els.some(e=>e.gx)?Object.assign({},P0,{els:P0
     else if(e.cat==='column')q.set(e.id,{len:zr[1]-zr[0],vol:(T.shape==='round'?Math.PI*T.w*T.w/4:T.w*T.d)*(zr[1]-zr[0])});
     else if(e.cat==='beam'){const L=beamLen3(P,e);q.set(e.id,{len:L,vol:L*T.w*T.h})}          // along its slope
     else if(e.cat==='bsys'){const B=bsysBeams(P,e),bt=bsysType(P,e),L=B.reduce((s,b)=>s+Math.hypot(b.x2-b.x1,b.y2-b.y1),0);q.set(e.id,{n:B.length,len:L,vol:L*(bt.w||200)*(bt.h||400),area:Math.abs(area2(e.pts))})}          // the beams of a beam system together
-    else if(e.cat==='truss'){const M=trussMembers(P,e);let ml=0,vol=0;for(const m of M){const l=Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]);ml+=l;vol+=l*m.w*m.h}q.set(e.id,{len:Math.hypot(e.x2-e.x1,e.y2-e.y1),n:M.length,mlen:ml,vol})}
+    else if(e.cat==='truss'){const M=trussMembers(P,e);let ml=0,vol=0;let kg=0;for(const m of M){const l=Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]);ml+=l;vol+=(m.cl!=null?m.cl:l)*(m.ar!=null?m.ar:m.w*m.h);kg+=m.kg||0}q.set(e.id,Object.assign({len:Math.hypot(e.x2-e.x1,e.y2-e.y1),n:M.length,mlen:ml,vol},kg>0?{kg}:{}))}
     else if(e.cat==='footing')q.set(e.id,{area:T.w*T.d,vol:T.w*T.d*T.h});
     else if(e.cat==='mtext'){const F=mtFrame(P,e),Y=mtLayout(P,e);let a=0;for(const ln of Y.lines)a+=mtShape(ln.g.loops).area;q.set(e.id,{len:Y.w*F.s,h:Y.h*F.s,area:a*F.s*F.s,vol:a*F.s*F.s*F.d})}          // as long and as high as its block; the face of its letters, and what they hold
     else if(e.cat==='wfoot'){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)+(e.host?T.w:0);q.set(e.id,{len:L,area:L*T.w,vol:L*T.w*T.h})}          // as long as it is drawn: the wall and half its own width at either end
@@ -3749,7 +3742,7 @@ function quantities(P0){const P=P0.els.some(e=>e.gx)?Object.assign({},P0,{els:P0
     else if(e.cat==='shaft')q.set(e.id,{area:Math.abs(area2(e.pts)),len:zr[1]-zr[0]})
     else if(e.cat==='mass'){const a=Math.abs(area2(e.pts)),F=e.void?[]:massFloors(P,e);q.set(e.id,{area:a,len:zr[1]-zr[0],vol:a*(zr[1]-zr[0]),gfa:a*F.length})}
     else if(e.cat==='roof'){const R=roofGeo(P,e),RH=roofHoles(P,e);let k=1;if(RH.length){const O=R.out||R.eave,a0=Math.abs(area2(O));if(a0>1)k=polyMinus(O,holeParts(RH)).reduce((s,pc)=>s+Math.abs(area2(pc)),0)/a0}q.set(e.id,{area:R.area*k,vol:R.area*k*T.thickness})}          // less its openings
-    else if(e.cat==='stair'){const g=stairGeo(P,e);q.set(e.id,{risers:g.N,len:g.len})}
+    else if(e.cat==='stair'){const g=stairGeo(P,e);q.set(e.id,Object.assign({risers:g.N,len:g.len},stQty(P,e,g)))}          // its treads, structure and finishes (117)
     else if(e.cat==='railing')q.set(e.id,{len:railGeo(P,e).len});
     else if(PLAIN_LINES.includes(e.cat))q.set(e.id,{len:lnLen(e)});
     else if(e.cat==='ramp'){const g=rampGeo(P,e);q.set(e.id,{len:g.L,area:g.L*g.W,slope:g.slope,vol:g.L*g.W*g.t})}
@@ -3818,7 +3811,7 @@ function schedShape(sp,cols,rows,foot,tr){const add=k=>!!foot&&typeof foot[k]===
   const cf=(Array.isArray(sp.cf)?sp.cf:[]).filter(q=>q&&cols.some(c=>c.k===q.k)&&/^#[0-9a-f]{6}$/i.test(q.c||''));
   const hg=hgSpans107(sp,cols);return Object.assign({cols,rows,foot,app:sp.app||null,cf:cf.length?cf:null},hg?{hg}:null)}
 /* the background a cell gets from the conditional format of its column (Revit: Formatting > Conditional Format), or '' */
-function schedCF(S,c,r){if(!S.cf||r._g)return'';for(const q of S.cf){if(q.k!==c.k)continue;const x=r[c.k];let ok=false;if(c.num){const a=typeof x==='number'?x:NaN,b=parseFloat(q.v);ok=isFinite(a)&&isFinite(b)&&(q.op==='gt'?a>b:q.op==='ge'?a>=b:q.op==='lt'?a<b:q.op==='le'?a<=b:q.op==='ne'?Math.abs(a-b)>=0.005:Math.abs(a-b)<0.005)}
+function schedCF(S,c,r){if(!S.cf||r._g)return'';for(const q of S.cf){if(q.k!==c.k)continue;const x=r[c.k];let ok=false;if(c.num){const a=typeof x==='number'?cellVal(c,r,P):NaN,b=parseFloat(q.v);ok=isFinite(a)&&isFinite(b)&&(q.op==='gt'?a>b:q.op==='ge'?a>=b:q.op==='lt'?a<b:q.op==='le'?a<=b:q.op==='ne'?Math.abs(a-b)>=0.005:Math.abs(a-b)<0.005)}
     else{const a=String(x==null?'':x).toLowerCase(),b=String(q.v==null?'':q.v).toLowerCase();ok=q.op==='eq'?a===b:q.op==='ne'?a!==b:q.op==='nhas'?!a.includes(b):a.includes(b)}if(ok)return q.c}return''}
 /* ---- calculated values of a schedule (Revit: Schedule Properties > Fields > Calculated Value: a formula, or a percentage of a total) ----
    v.sp.calc=[{id,name,f:'{area} * 350',dec}] or [{id,name,pct:'area',dec}].  A formula is kept with the keys of the columns in braces, so that it survives a change
@@ -6320,7 +6313,7 @@ function ifcWrite(P,items,o){o=o||{};const X3=o.schema==='IFC2X3',PIDS=new Map()
       if(v[0]!==v[1]&&v[1]!==v[2]&&v[0]!==v[2])tri.push('('+v.join(',')+')')}
     if(!tri.length)return null;const pl=E('IFCCARTESIANPOINTLIST3D(('+pts.join(',')+'))'),fs=E('IFCTRIANGULATEDFACESET('+pl+',$,$,('+tri.join(',')+'),$)');E('IFCSTYLEDITEM('+fs+',('+styleOf(c,a)+'),$)');n.faces+=tri.length;return fs},
     shape=fss=>E('IFCPRODUCTDEFINITIONSHAPE($,$,('+E("IFCSHAPEREPRESENTATION("+body+",'Body','"+(X3?'SurfaceModel':'Tessellation')+"',("+fss.join(',')+'))')+'))'),
-    prop=(k,v,ty)=>E('IFCPROPERTYSINGLEVALUE('+S(k)+',$,'+(ty||'IFCLABEL')+'('+(ty==='IFCINTEGER'?Math.round(v):ty==='IFCBOOLEAN'?(v?'.T.':'.F.'):S(v))+'),$)'),
+    prop=(k,v,ty)=>E('IFCPROPERTYSINGLEVALUE('+S(k)+',$,'+(ty||'IFCLABEL')+'('+(ty==='IFCINTEGER'?Math.round(v):ty==='IFCBOOLEAN'?(v?'.T.':'.F.'):/MEASURE$/.test(ty||'')?R(+v,2):S(v))+'),$)'),
     pset=(key,name,props,obj)=>{if(!props.length)return;const ps=E('IFCPROPERTYSET('+G('pset:'+name+':'+key)+','+oh+','+S(name)+',$,('+props.join(',')+'))');E('IFCRELDEFINESBYPROPERTIES('+G('relp:'+name+':'+key)+','+oh+',$,$,('+obj+'),'+ps+')')},
     qto=(key,name,list,obj)=>{list=list.filter(q=>q[2]>0);if(!name||!list.length)return;const qs=list.map(q=>E((q[1]==='L'?'IFCQUANTITYLENGTH(':q[1]==='A'?'IFCQUANTITYAREA(':'IFCQUANTITYVOLUME(')+S(q[0])+',$,$,'+(q[1]==='L'?R(q[2]):q[1]==='A'?R(q[2]/1e6,3):R(q[2]/1e9,4))+(X3?')':',$)')));
       const eq=E('IFCELEMENTQUANTITY('+G('qto:'+key)+','+oh+','+S(name)+',$,$,('+qs.join(',')+'))');E('IFCRELDEFINESBYPROPERTIES('+G('relq:'+key)+','+oh+',$,$,('+obj+'),'+eq+')')};
@@ -6332,7 +6325,7 @@ function ifcWrite(P,items,o){o=o||{};const X3=o.schema==='IFC2X3',PIDS=new Map()
     const tn=(id!==e.id?pileDesc(T,tr):T.name)||tr('cat_'+e.cat),mark=String(e.mark||T.mark||''),pl=E('IFCLOCALPLACEMENT('+st.pl+','+AX+')'),head=G('el:'+id)+','+oh+','+S(tn+':'+id)+','+(e.comment?S(e.comment):'$')+','+S(tn)+','+pl+','+shape(fss)+','+S(String(id));
     const pid=E(X3?ifc23(C,head,T):C[0]+'('+head+(C[0]==='IFCDOOR'||C[0]==='IFCWINDOW'?','+R(+T.height||0)+','+R(+T.width||0)+','+C[1]+',$,$':C[0]==='IFCELEMENTASSEMBLY'?',.NOTDEFINED.,'+C[1]:C[1]?','+C[1]:'')+')');st.in.push(pid);PIDS.set(id,{pid,st});n.products++;
     const lv=lvl(P,host?host.level:e.level),pr=[prop('Category',tr(id!==e.id?'cat_pile':'cat_'+e.cat)),prop('Type',tn)];if(mark)pr.push(prop('Mark',mark));if(lv)pr.push(prop('Level',lv.name));if(e.sys)pr.push(prop('System',e.sys));if(e.comment)pr.push(prop('Comments',e.comment,'IFCTEXT'));pr.push(prop('ElementId',e.id,'IFCINTEGER'));
-    pset(id,'PENUM_BIM',ifcXPr(P,e,id,T,pr,prop,tr),pid);if(C[2])pset(id,C[2],[prop('Reference',mark||tn,'IFCIDENTIFIER')],pid);
+    pset(id,'PENUM_BIM',ifcXPr(P,e,id,T,pr,prop,tr),pid);if(C[2])pset(id,C[2],ifcCPr(P,e,id,T,[prop('Reference',mark||tn,'IFCIDENTIFIER')],prop,tr,X3),pid);
     const q=Q.get(id)||{},ql=[];if(e.cat==='door'||e.cat==='window'){ql.push(['Width','L',+T.width||0],['Height','L',+T.height||0])}else{if(q.len>0)ql.push(['Length','L',q.len]);if(e.cat==='wall'){ql.push(['Height','L',q.h||0],['Width','L',+T.thickness||0],['NetSideArea','A',q.area||0])}else if((e.cat==='floor'||e.cat==='roof'||e.cat==='ceiling')&&T.thickness>0)ql.push(['Width','L',+T.thickness]);
       if(e.cat!=='wall'&&q.area>0&&!RUN_CATS.includes(e.cat)&&e.cat!=='riser')ql.push(['NetArea','A',q.area]);if(q.vol>0)ql.push(['NetVolume','V',q.vol])}
     qto(id,C[3],ql,pid);if(e.sys&&IFC_MEP.has(e.cat))(sys.get(e.sys)||sys.set(e.sys,[]).get(e.sys)).push(pid)}
@@ -8502,7 +8495,7 @@ function ckCell(c,r){const kk=c.ckk||'ck',ck=r[kk];if(!ck)return`<td class="n">$
   return`<td class="n"><input type="number" min="0" max="6300" step="1" value="${+r[c.k]||0}" data-ck="${esc(ck)}"${st?' class="set"':''} aria-label="${esc(c.label)}"></td>`}
 function renderSchedule(pn,v){const S=schedView(P,v,t);
   const AP=S.app||{},AL={l:'left',c:'center',r:'right'},al=c=>c.al?` style="text-align:${AL[c.al]}"`:'',cfal=(c,r)=>{const bg=schedCF(S,c,r),st=(c.al?'text-align:'+AL[c.al]+';':'')+(bg?'background:'+bg+';color:#111;':'');return st?` style="${st}"`:''};
-  let h=(AP.title===0?'':`<h3${schH3107(AP)}>${esc(v.name)}</h3>`)+`<p>${esc(P.info.name)}${v.sched==='boq'?' · '+t('boq_note'):v.sched==='room'?' · '+t('room_note'):v.sched==='loads'?' · '+loadsNote():v.sched==='panel'?' · '+t('panel_note'):v.sched==='cat'?' · '+t('sf_tnote'):v.sched==='key'?' · '+t('ks_tnote'):v.sched==='pnl'?' · '+t('pnl_note'):v.sched==='hvac'||v.sched==='plumb'||v.sched==='elec'?' · '+t('fit_note'):''}</p><table${schTb107(AP)}>`+(AP.head===0?'':schHead107(pn,S,v,al));
+  let h=(AP.title===0?'':`<h3${schH3107(AP)}>${esc(v.name)}</h3>`)+`<p>${esc(P.info.name)}${v.sched==='boq'?' · '+t('boq_note'):v.sched==='room'?' · '+t('room_note'):v.sched==='loads'?' · '+loadsNote():v.sched==='panel'?' · '+t('panel_note'):v.sched==='cat'?' · '+t(v.mto?'mto_tnote':'sf_tnote'):v.sched==='key'?' · '+t('ks_tnote'):v.sched==='pnl'?' · '+t('pnl_note'):v.sched==='hvac'||v.sched==='plumb'||v.sched==='elec'?' · '+t('fit_note'):''}</p><table${schTb107(AP)}>`+(AP.head===0?'':schHead107(pn,S,v,al));
   if(!S.rows.length)h+=`<tr><td colspan="${S.cols.length}">${t('empty_sched')}</td></tr>`;
   for(const r of S.rows){if(r._g){h+=r._g==='b'?`<tr class="gb"><td colspan="${S.cols.length}">&nbsp;</td></tr>`:r._g==='h'?`<tr class="gh"><td colspan="${S.cols.length}"${r._l?' style="padding-left:22px;font-weight:500"':''}>${esc(r[S.cols[0].k])}</td></tr>`:'<tr class="ft">'+S.cols.map(c=>`<td${c.num?' class="n"':''}${al(c)}>${fmtCell(c,r[c.k])}</td>`).join('')+'</tr>';continue}h+=`<tr${schTr107(r)}>`+S.cols.map(c=>c.fe?sfCell(c,r,cfal(c,r)):c.ed==='ckt'?ckCell(c,r):c.ed?`<td class="n"><input type="number" min="0" step="50" value="${+r[c.k]||0}" data-tc="${r.tcat||''}" data-tid="${r.tid||''}" data-pk="${esc(r.pk||'')}" aria-label="${esc(c.label)}"></td>`:`<td${c.num?' class="n"':c.wrap?' class="w"':''}${cfal(c,r)}>${fmtCell(c,r[c.k])}${r._open&&c.k==='area'?' <small style="color:var(--warn)">'+t('not_enclosed')+'</small>':''}</td>`).join('')+'</tr>'}
   if(S.foot&&S.rows.length)h+='<tr class="ft">'+S.cols.map(c=>`<td${c.num?' class="n"':''}>${fmtCell(c,S.foot[c.k])}</td>`).join('')+'</tr>';
@@ -8544,7 +8537,7 @@ const CREATE_TOOLS=new Set(['mass','area','aline','vref','matchline','dcomp','rd
 /* tools that sketch a closed outline */
 const SKETCH=new Set(['floor','roof','region','cloud','ceiling','shaft','bsys','mass']);
 const LINE_CATS=['wall','beam','truss','duct','pipe','tray','conduit','railing','ramp','rsep','mline','rplane','aline'],POINT_TOOLS=['column','footing','terminal','equip','ductacc','pipeacc','riser','fixture','sprinkler','light','device','eequip','furn'];
-const lineHW=e=>PLAIN_LINES.includes(e.cat)||e.plh?0:e.cat==='wall'?typ(P,e).thickness/2:e.cat==='beam'?typ(P,e).w/2:e.cat==='truss'?((typ(P,e)||{}).cw||100)/2:e.cat==='wfoot'?((typ(P,e)||{}).w||600)/2:e.cat==='ramp'?((typ(P,e)||{}).width||1200)/2:e.cat==='railing'?40:runW(e)/2;
+const lineHW=e=>PLAIN_LINES.includes(e.cat)||e.plh?0:e.cat==='wall'?typ(P,e).thickness/2:e.cat==='beam'?typ(P,e).w/2:e.cat==='truss'?trCW(P,typ(P,e))/2:e.cat==='wfoot'?((typ(P,e)||{}).w||600)/2:e.cat==='ramp'?((typ(P,e)||{}).width||1200)/2:e.cat==='railing'?40:runW(e)/2;
 const DRAFT_TOOLS=new Set(['vref','dcomp','rdet','dins','sym','dline','region','cloud','text','dim','adim','measure','move','copy','rotate','mirror','mirrorp','array','paste','lcomp','trim','trim1','trimn','split','offset','scale','rdim','ddim','ldim']);          // what works in a view that has no model
 const EV_ANN=new Set(['dline','region','cloud','dcomp','rdet','dins']);          // detail lines, regions, clouds and detail components drawn in an elevation or a section, in its own coordinates (x along, y = −height)
 function toolAllowed(tool,v){if(tool==='modify')return true;if(!v)return false;if(v.kind==='sheet'&&tool==='cloud')return true;if((v.kind==='elev'||v.kind==='section')&&(EV_ANN.has(tool)||tool==='callout'||tool==='mline'||(tool==='beam'&&braceMode())))return true;if(XT[tool])return!!XT[tool].ok(v);if(tool==='attach')return(v.kind==='plan'&&!v.draft)||v.kind==='3d';          /* the roof to attach to is picked in a plan or in a 3D view */
@@ -9096,7 +9089,7 @@ function drawOverlay(pn,ctx,v,nav){
   else if(areaPreview(g,ctx,v,w,pt,a,ac,lenLabel)){}
   else if(PLAIN_LINES.includes(tl)){if(a){const S=tl==='mline'?lsGet(P,ui.opt.lineStyle):[0.18,tl==='rsep'?[3,1.2]:[3.2,1.6]],c=tl==='rplane'?RPCOL:C.sketch;ctx.strokeStyle=c;ctx.lineWidth=Math.max(1.2,g.lw(S[0]));g.dash(S[1]);
       if(tl==='mline'&&drawMode()==='rect'){ctx.strokeRect(X(a.x),Y(a.y),X(pt[0])-X(a.x),Y(pt[1])-Y(a.y));g.dash(null);lenLabel([a.x,a.y],[pt[0],a.y],c);lenLabel([pt[0],a.y],pt,c)}else{g.seg([a.x,a.y],pt);g.dash(null);lenLabel([a.x,a.y],pt,c)}}}
-  else if(LINE_CATS.includes(tl)){const d=defs(tl),T=P.types[tl].find(x=>x.id===d.type),wd=tl==='wall'?T.thickness:tl==='beam'?T.w:tl==='truss'?(T.cw||100):tl==='ramp'?T.width:tl==='railing'?60:tl==='pipe'||tl==='conduit'?d.dia:d.w;
+  else if(LINE_CATS.includes(tl)){const d=defs(tl),T=P.types[tl].find(x=>x.id===d.type),wd=tl==='wall'?T.thickness:tl==='beam'?T.w:tl==='truss'?trCW(P,T):tl==='ramp'?T.width:tl==='railing'?60:tl==='pipe'||tl==='conduit'?d.dia:d.w;
     if(a){ctx.strokeStyle=ac;ctx.globalAlpha=0.4;ctx.lineWidth=Math.max(2,wd*nav.s);
       if(tl==='wall'&&drawMode()==='rect'){ctx.strokeRect(X(a.x),Y(a.y),X(pt[0])-X(a.x),Y(pt[1])-Y(a.y));ctx.globalAlpha=1;lenLabel([a.x,a.y],[pt[0],a.y],ac);lenLabel([pt[0],a.y],pt,ac)}
       else{g.seg([a.x,a.y],pt);ctx.globalAlpha=1;ctx.lineWidth=1;g.seg([a.x,a.y],pt);lenLabel([a.x,a.y],pt,ac)}ctx.globalAlpha=1}}
@@ -11895,7 +11888,7 @@ function renderVCB(pn){const v=paneView(pn.i);if(!v){pn.vcb.innerHTML='';return}
     if(k!=='3d')h+=`<button class="vb" data-act="crop" aria-pressed="${cropOn(v)}" title="${t('a_crop')}" aria-label="${t('a_crop')}">${icon('crop')}</button><button class="vb" data-act="cropshow" aria-pressed="${!!(v.crop&&v.crop.show)}" title="${t('a_cropshow')}" aria-label="${t('a_cropshow')}">${icon('cropshow')}</button>`;
     h+=`<button class="vb" data-act="reveal" aria-pressed="${revealOn(v)}" title="${tipK('a_reveal','@reveal')}" aria-label="${tipK('a_reveal','@reveal')}">${icon('reveal')}</button>`+(revealOn(v)?`<span class="tmp rev">${t('reveal_label')}</span>`:'')+tvpVCB(v)}
   h+='<span class="sp"></span>';
-  if(k==='schedule')h+=(v.sched==='cat'||v.sched==='key'?`<button class="btn" data-act="schedflds" data-arg="${v.id}">${t('a_schedflds')}…</button>`:'')+(v.sched==='pnl'?'':`<button class="btn" data-act="schedprops">${t('a_schedprops')}…</button>`)+`<button class="btn" data-act="csv" data-pane="${i}">${t('a_csv')}</button>`;else{if(k==='sheet')h+=`<button class="btn" data-act="pdf">${t('a_pdf')}</button>`;h+=`<button class="vb" data-act="fit" data-pane="${i}" title="${tipK('a_fit','@fit')}" aria-label="${tipK('a_fit','@fit')}">${icon('fit')}</button>`}
+  if(k==='schedule')h+=(v.sched==='cat'||v.sched==='key'?`<button class="btn" data-act="schedflds" data-arg="${v.id}">${t('a_schedflds')}…</button>`:'')+(v.sched==='pnl'?'':`<button class="btn" data-act="schedprops">${t('a_schedprops')}…</button>`)+`<button class="btn" data-act="csv" data-pane="${i}">${t('a_csv')}</button><button class="btn" data-act="xlsx" data-pane="${i}">${t('a_xlsx')}</button>`;else{if(k==='sheet')h+=`<button class="btn" data-act="pdf">${t('a_pdf')}</button>`;h+=`<button class="vb" data-act="fit" data-pane="${i}" title="${tipK('a_fit','@fit')}" aria-label="${tipK('a_fit','@fit')}">${icon('fit')}</button>`}
   pn.vcb.innerHTML=h}
 function renderTree(){sbWin();if(ui.sysb){const el=$('#tree'),st=el.scrollTop;el.innerHTML=sbSwitch()+'<div class="tree">'+sysbHTML()+'</div>';el.scrollTop=st;return}const el=$('#tree'),st=el.scrollTop,cur=new Set(ui.panes.slice(0,NPN()).filter(Boolean)),open=ui.treeOpen||(ui.treeOpen={views:1,plan:1,mplan:1,rcp:1,v3d:1,elev:1,sect:1,sched:1,sheets:1});if(open.rcp==null)open.rcp=1;if(open.draft==null)open.draft=1;if(open.legend==null)open.legend=1;
   const item=(v,del,label)=>`<button class="ti" data-view="${v.id}"${cur.has(v.id)?' aria-current="true"':''}>${icon(viewIcon(v))}<span>${v.dep!=null?'↳ ':''}${esc(label||v.name)}</span>${del?`<i class="x" data-delview="${v.id}" title="${t('delete')}">✕</i>`:''}</button>`;
@@ -11905,7 +11898,7 @@ function renderTree(){sbWin();if(ui.sysb){const el=$('#tree'),st=el.scrollTop;el
   let h=grp('views',t('br_views'),grp('plan',t('br_plans'),gen.map(v=>item(v,many(v))).join(''))+(mep.length?grp('mplan',t('br_mplans'),mep.map(v=>item(v,many(v))).join('')):'')+(rcp.length?grp('rcp',t('br_rcp'),rcp.map(v=>item(v,true)).join('')):'')+aschemes(P).filter(s=>aplans.some(v=>v.area===s.id)).map(s=>{const k='ap_'+s.id;if(open[k]==null)open[k]=1;return grp(k,t('br_aplans',asName(s.id)),aplans.filter(v=>v.area===s.id).map(v=>item(v,true)).join(''))}).join('')+grp('v3d',t('br_3d'),d3.map(v=>item(v,d3.length>1)).join(''))+(wks.length?grp('walks',t('br_walks'),wks.map(v=>item(v,true)).join('')):'')+grp('elev',t('br_elev'),V('elev').map(v=>item(v,P.views.filter(x=>x.kind==='elev'&&x.dir===v.dir).length>1)).join(''))
     +grp('sect',t('br_sect'),V('section').map(v=>item(v,true)).join('')||`<div class="pnote" style="padding-left:60px">${t('br_nosect')}</div>`)
     +grp('draft',t('br_draft'),drafts.map(v=>item(v,true)).join('')+`<button class="ti" data-act="draftview"><span>＋ ${t('a_draftview')}</span></button>`)+grp('legend',t('br_legend'),legs.map(v=>item(v,true)).join('')+`<button class="ti" data-act="legend"><span>＋ ${t('a_legend')}</span></button>`));
-  h+=grp('sched',t('br_sched'),V('schedule').filter(v=>v.sched!=='pnl').map(v=>item(v,v.sched==='area'||v.sched==='paint'||v.sched==='cat'||v.sched==='key'||P.views.filter(x=>x.kind==='schedule'&&x.sched===v.sched).length>1)).join('')+`<button class="ti" data-act="newsched"><span>＋ ${t('a_newsched')}</span></button>`);
+  h+=grp('sched',t('br_sched'),V('schedule').filter(v=>v.sched!=='pnl').map(v=>item(v,v.sched==='area'||v.sched==='paint'||v.sched==='cat'||v.sched==='key'||P.views.filter(x=>x.kind==='schedule'&&x.sched===v.sched).length>1)).join('')+`<button class="ti" data-act="newsched"><span>＋ ${t('a_newsched')}</span></button><button class="ti" data-act="newmto"><span>＋ ${t('a_newmto')}</span></button>`);
   {const pv=V('schedule').filter(v=>v.sched==='pnl');if(pv.length){if(open.pnls==null)open.pnls=1;h+=grp('pnls',t('br_pnls'),pv.map(v=>item(v,true)).join(''))}}          // as in Revit: Panel Schedules
   h+=grp('sheets',t('br_sheets'),V('sheet').map(v=>item(v,true,v.number+' - '+v.name)).join('')+`<button class="ti" data-act="sheet"><span>＋ ${t('a_sheet')}</span></button>`);
   h+=grp('fam',t('br_fam'),Object.keys(P.types).map(c=>grp('f_'+c,t('cat_'+c),P.types[c].map(x=>`<button class="ti" data-type="${c}:${x.id}"><span>${esc(x.name)}</span></button>`).join(''))).join('')+msysBr(grp));
@@ -12671,7 +12664,7 @@ const TYPE_FIELDS={wall:[['thickness','num'],['hatch','sel',['diag','solid','non
   railing:[['kind','sel',['rvert','rhorz','rglass','rhand']],['h','num'],['post','num'],['ps','num'],['color','color']],ramp:[['width','num'],['thickness','num'],['maxSlope','num','1 : n',0.5],['mat','sel',TYPE_MATS.ramp],['color','color']],
   furn:[['kind','sel',['bed','nstand','wardrobe','sofa','sofal','ctable','rtable','table','chair','dset','ochair','desk','shelf','cabinet','tvstand','tvset','lamp','curtain','rug','kbase','kwall','fridge','washer','stove','hood','car','person','tree','shrub','pot','slab','pave','fam']],['grp','sel',['furn','case','appl','site']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],
   eequip:[['kind','sel',['lc','db','mdb','tx','gen','ssw']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],tray:[['elb','sel',TFIT_ELB,'telb_'],['kind','sel',['ladder','perf','wway']]],conduit:[]};
-function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&d.cat==='etext')||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
+function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)||(cat==='beam'&&e.cat==='truss'&&trUses(P,e,T.id))).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&d.cat==='etext')||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
   const CWD={vLay:'near',vSp:1500,vNum:3,vJ:'ctr',hLay:'near',hSp:1500,hNum:2,hJ:'ctr',mw:50,md:T.thickness,mpro:'rect',bm:'yes',mcol:'#575e69',cwpan:'glass',pcol:'#b9bec6'};const TV=T.kind==='curtain'?Object.assign({},CWD,...Object.entries(T).filter(x=>x[1]!=null).map(([k,v])=>({[k]:v}))):T;          // a curtain type shows the defaults of what it leaves unset
   const F=[['name','text'],...(cat==='vp'?[]:[['mark','text']]),...(flat?[]:[['kn','kn']]),...((cat==='wall'&&T.kind==='curtain'?CW_FIELDS:tdFields(cat,T))||[]),...(flat?[]:[['cost','num']])],fr=f=>{const k=f[0];
       if(RG_TF[f[1]])return RG_TF[f[1]](T,f);
@@ -12853,7 +12846,7 @@ function act(a,arg,el){
     case'new':setProject(newProject(ui.lang==='en'),true);setTool('wall');toast(t('new_done'));break;
     case'sample':setProject(sampleProject(ui.lang==='en'),true);toast(t('sample_done'));break;
     case'filemenu':showMenu(el||$('#fileTab'),[{act:'new',label:t('m_new'),icon:'new'},{act:'sample',label:t('m_sample'),icon:'sample'},{act:'open',label:t('m_open'),icon:'open'},{act:'dxfin',label:t('a_dxfin')+'…',icon:'dxfin'},{act:'save',label:t('m_save'),icon:'save',kbd:'Ctrl+S'},{act:'backups',label:t('a_backups'),icon:'save'},...(BF&&BF.ok?[{act:'bfdir',label:t('m_dir'),icon:'open'}]:[]),'-',
-      {act:'update',label:t('a_update')+' · '+V1_NAME,icon:'reset'},{act:'print',label:t('a_print'),icon:'export',kbd:'Ctrl+P'},{act:'pdf',label:t('m_pdf'),icon:'export'},{act:'pdfall',label:t('a_pdfall'),icon:'pdfall'},{act:'png',label:t('m_png'),icon:'export'},{act:'dxfout',label:t('m_dxf'),icon:'dxfout'},{act:'dxfall',label:t('m_dxfall'),icon:'dxfout'},{act:'ifcout',label:t('m_ifc'),icon:'ifc'},{act:'csv',label:t('m_csv'),icon:'sched'},'-',{act:'info',label:t('a_info'),icon:'info'},{act:'keys',label:t('a_keys'),icon:'keys'},{act:'help',label:t('a_help'),icon:'help',kbd:'F1'}]);break;
+      {act:'update',label:t('a_update')+' · '+V1_NAME,icon:'reset'},{act:'print',label:t('a_print'),icon:'export',kbd:'Ctrl+P'},{act:'pdf',label:t('m_pdf'),icon:'export'},{act:'pdfall',label:t('a_pdfall'),icon:'pdfall'},{act:'png',label:t('m_png'),icon:'export'},{act:'dxfout',label:t('m_dxf'),icon:'dxfout'},{act:'dxfall',label:t('m_dxfall'),icon:'dxfout'},{act:'ifcout',label:t('m_ifc'),icon:'ifc'},{act:'csv',label:t('m_csv'),icon:'sched'},{act:'xlsx',label:t('m_xlsx'),icon:'xlsx'},{act:'xlsxall',label:t('m_xlsxall'),icon:'xlsx'},'-',{act:'info',label:t('a_info'),icon:'info'},{act:'keys',label:t('a_keys'),icon:'keys'},{act:'help',label:t('a_help'),icon:'help',kbd:'F1'}]);break;
     case'lang':ui.lang=ui.lang==='th'?'en':'th';LANG=ui.lang;for(const pn of PANES)pn.key='';saveSoon();refresh();break;
     case'keys':dlgKeys();break;case'help':dlgHelp(arg==='ctx'?helpTopic():arg);break;case'info':dlgInfo();break;case'units':dlgUnits();break;case'cscheme':dlgColorScheme();break;case'vg':ui.vgT=0;dlgVG();break;case'viewrange':if(v&&tplBlock(v,'vr'))break;dlgViewRange();break;case'group':groupMake();break;case'ungroup':groupUngroup();break;case'crop':cropToggle(v,'on');break;case'cropshow':cropToggle(v,'show');break;
     case'types':{const c=ui.sel.size?selCats()[0]:ui.tool;dlgTypes(P.types[c]?c:'wall');break}
@@ -13947,7 +13940,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=125,V1_NAME='V1.114';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=128,V1_NAME='V1.117';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -14559,7 +14552,7 @@ function mtakeRows(P){const Q=quantities(P),by=new Map(),add=(mat,lab,cat,a,v)=>
 function dlgMtake(){const R=mtakeRows(P),f2=x=>(Math.round(x*100)/100).toLocaleString(),tot=R.reduce((s,r)=>s+r.t,0);
   const body=R.length?`<p class="note">${t('mk_note')}</p><div class="tblw"><table class="tbl"><thead><tr><th>${t('mk_mat')}</th><th>${t('mk_cat')}</th><th>${t('mk_area')}</th><th>${t('mk_vol')}</th><th>${t('mk_kg')}</th></tr></thead><tbody>`+R.map(r=>`<tr><td>${esc(r.lab)}</td><td>${esc(t('cat_'+r.cat))}</td><td class="n">${f2(r.area/1e6)}</td><td class="n">${f2(r.vol/1e9)}</td><td class="n">${f2(r.t)}</td></tr>`).join('')+`<tr class="chg"><td colspan="4"><b>${t('mk_total')}</b></td><td class="n"><b>${f2(tot)}</b></td></tr></tbody></table></div>`:`<p class="note warn">${t('mk_none')}</p>`;
   const csv=()=>{const q=x=>'"'+String(x).replace(/"/g,'""')+'"';return'﻿'+[[t('mk_mat'),t('mk_cat'),t('mk_area'),t('mk_vol'),t('mk_kg')].map(q).join(',')].concat(R.map(r=>[r.lab,t('cat_'+r.cat),(r.area/1e6).toFixed(2),(r.vol/1e9).toFixed(3),r.t.toFixed(3)].map(q).join(','))).join('\r\n')};
-  openDlg(t('a_mtake'),body,`<button class="btn" data-mk="csv"${R.length?'':' disabled'}>${t('a_csv')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,{click(ev){if(ev.target.dataset.mk==='csv')saveFile(fname('-'+t('a_mtake'),'.csv'),csv(),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))})}},'wide')}
+  openDlg(t('a_mtake'),body,`<button class="btn" data-mk="csv"${R.length?'':' disabled'}>${t('a_csv')}</button><button class="btn" data-mk="sched"${R.length?'':' disabled'}>${t('mk_sched')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,{click(ev){if(ev.target.dataset.mk==='sched'){closeDlg();mtoMake({cat:'*',sum:1});return}if(ev.target.dataset.mk==='csv')saveFile(fname('-'+t('a_mtake'),'.csv'),csv(),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))})}},'wide')}
 XA.mtake=dlgMtake;
 
 /* ===== 79 structure: beam systems on a sloped floor, braces drawn in elevations, steel base and end plates, the analytical model and a load takedown
@@ -14804,7 +14797,7 @@ XVB.push((pn,v)=>v.kind==='3d'&&!walkOf(v)?`<button class="vb" data-act="sunpath
    P.mats = [{id, name, base, color}]: base is one of the looks the program draws (PAINT_MATS), color its colour.  A type that takes one (T.mid) has its look and colour and
    follows it when the material is changed; Paint can paint with one (the face then keeps the look and the colour it was painted with). */
 const matList=()=>typeof P==='object'&&P&&Array.isArray(P.mats)?P.mats:[];
-const matUsed=id=>{let n=0;for(const c in P.types)for(const T of P.types[c]||[])if(T.mid===id)n++;return n};
+const matUsed=id=>{let n=0;for(const c in P.types)for(const T of P.types[c]||[])if(T.mid===id||(c==='stair'&&[T.tm,T.rm].some(o=>o&&o.mid===id)))n++;return n};
 XC.push(()=>{const seen=new Set(),hex=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c);
   if(P.mats!==undefined){P.mats=(Array.isArray(P.mats)?P.mats:[]).filter(M=>{if(!M||typeof M.id!=='number'||!isFinite(M.id)||seen.has(M.id))return false;seen.add(M.id);M.name=String(M.name==null?'':M.name).slice(0,60).trim()||'Material';if(!PAINT_MATS.includes(M.base))M.base='paint';M.color=hex(M.color)?M.color.toLowerCase():PAINT_COL[M.base];if(M.sp!==undefined&&!SURF_PATS.includes(M.sp)&&!fpGet(M.sp))delete M.sp;if(M.cp!==undefined&&!CUT_PATS.includes(M.cp)&&!fpGet(M.cp))delete M.cp;if(M.img!==undefined&&!(typeof M.img==='string'&&/^data:image\//.test(M.img)&&M.img.length<3e6)){delete M.img}if(!M.img){delete M.tw;delete M.th}else for(const k of ['tw','th'])if(M[k]!==undefined&&!(+M[k]>=10))delete M[k];for(const k of ['k','rho'])if(M[k]!==undefined&&!(+M[k]>0))delete M[k];return true});if(!P.mats.length)delete P.mats}
   for(const c in P.types)for(const T of P.types[c]||[]){if(T.mid==null)continue;const M=matList().find(x=>x.id===T.mid);if(!M||!TYPE_MATS[c]){delete T.mid;continue}T.mat=M.base;T.color=M.color}});
@@ -15202,12 +15195,12 @@ function nsMake(D){let id;const key=D.k==='k',cat=key&&D.cat==='*'?'room':D.cat,
   showView(id);toast(t('ns_made',name));dlgSchedFields(id)}
 /* ---- Fields: what a schedule of a category shows, what the keys of a key schedule set ---- */
 function dlgSchedFields(id){const v=viewById(id);if(!v||v.kind!=='schedule'||(v.sched!=='cat'&&v.sched!=='key')){toast(t('sf_na'));return}
-  const key=v.sched==='key',F=key?keyFields(P,v.kcat):sfAll(P,v.scat,t),cur=key?(v.kflds||[]):sfFlds(v,F);
-  const G=[['i','sf_g_i'],['q','sf_g_q'],['r','sf_g_r'],['t','sf_g_t'],['p','sf_g_p'],['k','sf_g_k']];
-  const body=`<p class="note">${t(key?'sf_knote':'sf_note')}</p>`+(key&&!F.length?`<p class="note warn">${t('sf_knone')}</p>`:'')+G.map(([g,l])=>{const L=F.filter(f=>f.grp===g);if(!L.length)return'';
+  const key=v.sched==='key',F=key?keyFields(P,v.kcat):v.mto?mtoAll(P,v.scat,t):sfAll(P,v.scat,t),cur=key?(v.kflds||[]):v.mto?mtoFlds(v,F):sfFlds(v,F);
+  const G=[['m','mto_g_m'],['i','sf_g_i'],['q','sf_g_q'],['r','sf_g_r'],['t','sf_g_t'],['p','sf_g_p'],['k','sf_g_k']];
+  const body=`<p class="note">${t(key?'sf_knote':v.mto?'mto_fnote':'sf_note')}</p>`+(key&&!F.length?`<p class="note warn">${t('sf_knone')}</p>`:'')+G.map(([g,l])=>{const L=F.filter(f=>f.grp===g);if(!L.length)return'';
       return`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t(l)}</div><div class="sfp">${L.map(f=>`<label><input type="checkbox" data-sff="${esc(f.k)}"${cur.includes(f.k)?' checked':''}> ${esc(f.l)}${f.ed&&!key?' <small title="'+esc(t('sf_edit'))+'">✎</small>':''}</label>`).join('')}</div>`}).join('');
   openDlg(t('a_schedflds')+' — '+v.name,body,`${key?'':`<button class="btn" data-act="schedprops">${t('a_schedprops')}…</button>`}<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,{
-    change(e){const k=e.target.dataset.sff;if(k==null)return;const on=e.target.checked,L=(key?(v.kflds||[]):sfFlds(v,F)).filter(x=>x!==k);if(on)L.push(k);else if(!key&&!L.length){toast(t('sf_one'));dlgSchedFields(id);return}
+    change(e){const k=e.target.dataset.sff;if(k==null)return;const on=e.target.checked,L=(key?(v.kflds||[]):v.mto?mtoFlds(v,F):sfFlds(v,F)).filter(x=>x!==k);if(on)L.push(k);else if(!key&&!L.length){toast(t('sf_one'));dlgSchedFields(id);return}
       edit(()=>{if(key)v.kflds=L;else v.flds=L});dlgSchedFields(id)}},'sfd')}
 /* ---- key schedules: rows ---- */
 XA.keyrow=arg=>{const v=arg?viewById(+arg):activeView();if(!v||v.sched!=='key'){toast(t('sf_na'));return}let nm='';
@@ -15240,7 +15233,7 @@ XP.push((c,els)=>{let h='';
   return h});
 /* the Properties of a schedule of a category or of keys */
 XVR.push(v=>{if(v.kind!=='schedule'||(v.sched!=='cat'&&v.sched!=='key'))return'';const key=v.sched==='key';
-  return PR.grp(key?'g_keysched':'g_catsched')+PR.ro('c_cat',v.scat==='*'?t('ns_multi'):t('cat_'+(key?v.kcat:v.scat)))+(key?PR.text('kname','ns_kname',v.kname||''):'')
+  return PR.grp(key?'g_keysched':v.mto?'g_mtosched':'g_catsched')+PR.ro('c_cat',v.scat==='*'?t('ns_multi'):t('cat_'+(key?v.kcat:v.scat)))+(key?PR.text('kname','ns_kname',v.kname||''):'')
     +`<div class="pa"><button class="btn" data-act="schedflds" data-arg="${v.id}">${t('a_schedflds')}…</button>${key?`<button class="btn" data-act="keyrow" data-arg="${v.id}">${t('a_keyrow')}</button>`:''}</div>`});
 XVB.push((pn,v)=>v.kind==='schedule'&&v.sched==='key'?`<button class="btn" data-act="keyrow" data-arg="${v.id}">＋ ${t('a_keyrow')}</button>`:'');          // Fields… sits beside Schedule Properties at the right of the bar
 XR.push((tl,v)=>v&&v.kind==='schedule'&&(v.sched==='cat'||v.sched==='key')&&!ui.sel.size?[{t:'p_schedq',b:['@schedflds',...(v.sched==='key'?['@keyrow']:[]),'@schedprops']}]:[]);
@@ -21292,7 +21285,7 @@ XT.gload={ok:v=>v.kind==='plan'&&!v.draft,on(){if(!ui.gl){toast(t('gl_bad'));ret
 function glBuild(S,C,lv0,R){const SL=sortedLevels(S),TL=sortedLevels(P),bi=SL.findIndex(l=>l.id===C.base),ti=TL.findIndex(l=>l.id===lv0),
     lvMap=id=>{const i=SL.findIndex(l=>l.id===id);if(i<0||bi<0||ti<0)return 0;const q=TL[ti+i-bi];return q?q.id:0};
   const used={},use=(c,id)=>{if(id==null||!Array.isArray(S.types[c]))return;(used[c]||(used[c]=new Set())).add(id)};
-  for(const e of C.els){if(e.type!=null)use(e.cat,e.type);if(e.cat==='bsys')use('beam',e.bt)}
+  for(const e of C.els){if(e.type!=null)use(e.cat,e.type);if(e.cat==='bsys')use('beam',e.bt);if(e.cat==='truss'){const T=(S.types.truss||[]).find(x=>x.id===e.type);if(T)for(const k of TR_MK)if(T[k]!=null)use('beam',T[k])}}
   const S2={types:{},mats:[],msys:[],pseg:S.pseg,fpat:S.fpat},picks=['mats'],had={};
   for(const c in used){if(!P.types[c])continue;const L=S.types[c].filter(T=>used[c].has(T.id));if(!L.length)continue;S2.types[c]=L;picks.push('type:'+c);had[c]=new Set(P.types[c].map(T=>T.name))}
   const mu=new Set(),walk=o=>{if(!o||typeof o!=='object')return;if(Array.isArray(o)){for(const x of o)walk(x);return}for(const k in o){if(k==='mid'&&o[k]!=null)mu.add(+o[k]);else if(o[k]&&typeof o[k]==='object')walk(o[k])}};
@@ -21398,6 +21391,473 @@ Object.assign(STR,{br_grps:['กลุ่ม (Groups)','Groups'],br_grpm:['ก�
   gp_drop:['ไม่ได้วาง {0} ชิ้น เพราะไม่มีชั้นให้','{0} left out: no level here for them'],
   p_cutpl:['ระดับตัดแปลน','Cut Plane'],sp_empty:['ยังไม่มีพารามิเตอร์ร่วม','No shared parameters yet'],p_spanlen:['ช่วงพาด (Span)','Span'],mtx_default:['ข้อความ 3 มิติ','Model Text'],
   pl_perim:['ความยาวรอบรูป','Perimeter'],f_rps:['ขนาดเสา','Post size'],pr_wnote:['ค่าประมาณเบื้องต้นสำหรับเลือกขนาดปั๊มและตรวจแรงดัน: ข้องอ K={0}, สามทางแยก K={1}, สามทางตรง K={2}, วาล์วตามชนิด · ท่อน้ำเย็นคิดด้านจ่ายหรือด้านกลับทีละด้าน ไม่รวมแรงดันสูญเสียในเครื่อง','A first estimate for choosing a pump and checking pressure: elbow K={0}, tee branch K={1}, tee run K={2}, valves by kind. Chilled water is worked out one side at a time, without the loss inside the machines.'],ck_unasg:['อุปกรณ์ที่มีโหลด {0} ชิ้นยังไม่ได้กำหนดตู้ไฟ','{0} elements with a load are not assigned to a panel'],ck_wiresz:['วงจร {0}/{1}: ไม่มีขนาดสายในตารางที่รับเบรกเกอร์ {2} A โดยแรงดันตกไม่เกิน {3} %','Circuit {0}/{1}: no wire of the table carries its {2} A breaker within a voltage drop of {3} %']});
+/* ===== 115 Material Takeoff schedules, and schedules to Excel (V1.115; Revit: View › Schedules › Material Takeoff — a schedule of the materials of the
+   elements of a category, with the Material: fields; File › Export › Reports › Schedule) =====
+   A material takeoff is a schedule of a category {kind:'schedule', sched:'cat', scat, mto:1, flds, sp}: one row for every material of every element (mtoParts),
+   the Material: fields (grp 'm') before the element's own.  Walls, floors, ceilings and roofs whose type has layers (Edit Structure) count by layer, a material
+   in two layers of one element once with both; the rest by the material of its type (steel sections are metal); the plates of steel columns and beams and the
+   faces painted with a material (Paint, As Paint) are materials of their element too.  Manage › Material Takeoff adds up the same parts (paint aside).
+   Excel: a schedule as it is laid out (the columns it shows, sorted and grouped, its headings, totals and colours) is a sheet of a workbook (.xlsx, written
+   here: zipStore), one schedule or all of them; the numbers stay numbers in the units the table shows, the headers stay in sight and print on every page. */
+const MTO_CATS=['wall','floor','ceiling','roof','stair','ramp','column','beam','bsys','truss','footing','wfoot'],MTO_ARCH=['wall','floor','ceiling','roof','stair','ramp'],
+  MTO_DEF=['m_name','type','level','m_area','m_vol'],MTO_DEFM=['m_name','cat','type','m_area','m_vol'],
+  MTO_CLS={conc:'conc',screed:'conc',brick:'mason',block:'mason',metal:'metal',sheet:'metal',wood:'wood',plank:'wood',plaster:'plaster',paint:'paint',gloss:'paint',gyp:'gyp',ins:'ins',ftile:'ceram',tile:'ceram',stone:'stone',memb:'memb'};
+/* the name of a material: as Edit Structure names it (brick, not the brick pattern that is painted on); p: of paint, as the Paint tool names it */
+const mtoLab=(m,tr,p)=>{const a=(p?'o_':'wlm_')+m,b=(p?'wlm_':'o_')+m;return tr(STR[a]?a:b)};
+/* what a type is made of when it is one material: its own, steel for a steel section and a truss, a roof by its thickness (as it is drawn), else baseMat */
+function mtoBase(cat,T){if(T&&T.mat&&T.mat!=='auto')return T.mat;if(cat==='truss'||((cat==='column'||cat==='beam'||cat==='bsys')&&stlT(T)))return'metal';
+  if(cat==='roof'){const h=+(T&&T.thickness)||0;return h&&h<=80?'sheet':h>=140?'conc':'tile'}return baseMat(cat==='bsys'?'beam':cat,T)}
+/* the materials of an element, each once: [{k: its key, n: its name, b: the base material, a: area mm², v: volume mm³, rho: kg/m³, p: 1 painted on}] */
+function mtoParts(P0,e,Q,tr){if(!MTO_CATS.includes(e.cat))return[];const T=e.cat==='bsys'?bsysType(P0,e):typ(P0,e),q=Q.get(e.id);if(!T||!q||(e.cat==='wall'&&T.kind==='curtain'))return[];
+  const mats=Array.isArray(P0.mats)?P0.mats:[],out=new Map(),
+    add=(k,n,b,a,v,M,p)=>{let r=out.get(k);if(!r){r={k,n,b,a:0,v:0,rho:M&&+M.rho>0?+M.rho:MK_RHO[b]||MK_RHO.auto,p:p?1:0};out.set(k,r)}r.a+=a||0;r.v+=v||0};
+  const M=T.mid!=null?mats.find(x=>x.id===T.mid)||null:null,A=e.cat==='bsys'?0:q.area||0,L=(e.cat==='wall'||SL_CATS.includes(e.cat))&&wlOf(T);
+  if(L)for(const l of L)add(l.mat,tr('wlm_'+l.mat),l.mat,A,A*l.t);
+  else{const m=M?M.base:mtoBase(e.cat,T);add(M?'#'+M.id:m,M?M.name:mtoLab(m,tr),m,A,e.cat==='wall'?q.vol||A*(T.thickness||0):q.vol||0,M)}
+  if(e.cat==='footing'&&q.pvol>0)for(const r of out.values()){r.v+=q.pvol;break}          // the piles of a pile cap: of its material
+  if(e.cat==='column'&&e.bp){const w=(T.w||200)+150,d=(T.d||T.w||200)+150;add('metal',mtoLab('metal',tr),'metal',w*d,w*d*20)}          // steel plates (79)
+  if(e.cat==='beam'&&e.ep){const a=((T.w||200)+40)*((T.h||400)+40);add('metal',mtoLab('metal',tr),'metal',2*a,2*a*15)}
+  if(e.paint&&typeof e.paint==='object'&&paintable(e))for(const f in e.paint){const pa=e.paint[f];if(!Array.isArray(pa)||!PAINT_MATS.includes(pa[0]))continue;          // a face painted with a material: As Paint
+    const col=String(pa[1]||PAINT_COL[pa[0]]||'').toLowerCase(),PM=mats.find(x=>x.base===pa[0]&&String(x.color||'').toLowerCase()===col)||null,own=col===String(PAINT_COL[pa[0]]||'').toLowerCase();
+    add('P:'+(PM?'#'+PM.id:pa[0]+col),PM?PM.name:mtoLab(pa[0],tr,1)+(own||!col?'':' '+col),pa[0],paintFaceArea(P0,e,f,Q),0,PM,1)}
+  return[...out.values()]}
+/* Manage › Material Takeoff: the same parts, added up by material and category (paint is not a quantity of the element there) */
+mtakeRows=P0=>{const Q=P0===P?QTY():quantities(P0),by=new Map();
+  for(const e of P0.els)for(const m of mtoParts(P0,e,Q,t)){if(m.p)continue;const k=m.k+'|'+m.n+'|'+e.cat;let r=by.get(k);if(!r){r={mat:m.k,lab:m.n,cat:e.cat,area:0,vol:0,rho:m.rho};by.set(k,r)}r.area+=m.a;r.vol+=m.v}
+  const rows=[...by.values()];for(const r of rows)r.t=r.vol/1e9*r.rho/1000;rows.sort((a,b)=>a.lab.localeCompare(b.lab)||a.cat.localeCompare(b.cat));return rows};
+/* the fields of a material takeoff: the Material: ones, then those of the element (its dimensions repeat on each of its rows, so they are not totalled) */
+function mtoAll(P0,cat,tr){const m=(k,l,g,o)=>Object.assign({k,l:tr(l),g,grp:'m'},o||{});
+  return[m('m_name','mto_f_name',x=>x.n),m('m_class','mto_f_class',x=>tr('mcl_'+(MTO_CLS[x.b]||'misc'))),m('m_area','mto_f_area',x=>x.a,{num:1,u:'m2',sum:1}),m('m_vol','mto_f_vol',x=>x.p?'':x.v,{num:1,u:'m3',sum:1}),
+    m('m_rho','mto_f_rho',x=>x.p?'':x.rho,{num:1,dec:0}),m('m_kg','mto_f_kg',x=>x.p?'':x.v/1e9*x.rho,{num:1,dec:0,sep:1,sum:1}),m('m_paint','mto_f_paint',x=>tr(x.p?'o_yes':'o_no'))]
+    .concat(sfAll(P0,cat,tr).map(f=>f.grp==='q'&&f.sum?Object.assign({},f,{sum:0}):f))}
+function mtoFlds(v,F){const by=new Set(F.map(f=>f.k));let L=(Array.isArray(v.flds)?v.flds:[]).filter(k=>by.has(k));if(!L.length)L=(v.scat==='*'?MTO_DEFM:MTO_DEF).filter(k=>by.has(k));if(!L.length)L=[F[0].k];return L}
+/* the table: a row for each material of each element, in the order of the model */
+function mtoTable(P0,o,tr,Q){const v=o.v||{},cat=MTO_CATS.includes(v.scat)?v.scat:'*',F=mtoAll(P0,cat,tr),by=new Map(F.map(f=>[f.k,f])),ks=mtoFlds(Object.assign({},v,{scat:cat}),F),X=sfCtx(P0,tr,Q),CO=new Map(MTO_CATS.map((c,i)=>[c,i]));
+  const cols=ks.map(k=>{const f=by.get(k);return Object.assign({k,label:f.l},f.num?{num:1}:{},f.dec!=null?{dec:f.dec}:{},f.u?{u:f.u}:{},f.sep?{sep:1}:{},f.ed?{fe:f.ed,sf:f}:{})}),rows=[];
+  for(const e of P0.els){if(cat==='*'?!CO.has(e.cat):e.cat!==cat)continue;const parts=mtoParts(P0,e,Q,tr);if(!parts.length)continue;const base={id:e.id,_c:CO.get(e.cat)};
+    for(const k of ks){const f=by.get(k);if(f.grp!=='m'){const x=f.g(e,X);base[k]=x==null?'':x}}
+    parts.forEach((m,i)=>{const r=Object.assign({},base,i?{_mk:i}:null);for(const k of ks){const f=by.get(k);if(f.grp==='m'){const x=f.g(m);r[k]=x==null?'':x}}rows.push(r)})}
+  if(cat==='*')rows.sort((a,b)=>a._c-b._c);
+  const S=ks.filter(k=>by.get(k).sum);let foot=null;if(S.length){foot={};for(const k of S)foot[k]=rows.reduce((s,r)=>s+(typeof r[k]==='number'?r[k]:0),0);if(!by.get(ks[0]).sum)foot[ks[0]]=tr('c_total')}
+  return{cols,rows,foot}}
+{const f0=sfTable;sfTable=(P0,o,tr,Q)=>o&&o.v&&o.v.mto?mtoTable(P0,o,tr,Q):f0(P0,o,tr,Q)}
+/* an element has a row for each of its materials: each box of it its own key, so the one typed in keeps the focus when the table is drawn again */
+{const f0=sfCell;sfCell=(c,r,st)=>{const h=f0(c,r,st);return r&&r._mk?h.replace(/ data-fk="([^"]*)"/,(m,x)=>' data-fk="'+x+'|'+r._mk+'"'):h}}
+const mtoName=cat=>cat==='*'?t('mto_mname'):t('mto_name',sfSing(t('cat_'+cat)));
+/* ---- New Material Takeoff: the category, the name ---- */
+function dlgNewMto(D){D=D||{cat:'wall'};if(D.cat!=='*'&&!MTO_CATS.includes(D.cat))D.cat='wall';
+  const o=c=>`<option value="${c}"${c===D.cat?' selected':''}>${esc(t('cat_'+c))}</option>`,ST=MTO_CATS.filter(c=>!MTO_ARCH.includes(c));
+  const body=`<div class="fr"><label for="nmCat">${t('c_cat')}</label><select id="nmCat" size="15"><option value="*"${D.cat==='*'?' selected':''}>${esc(t('ns_multi'))}</option>`
+      +`<optgroup label="${esc(t('disc_arch'))}">${MTO_ARCH.map(o).join('')}</optgroup><optgroup label="${esc(t('disc_struct'))}">${ST.map(o).join('')}</optgroup></select></div>`
+    +`<div class="fr"><label for="nmName">${t('p_name')}</label><input id="nmName" value="${esc(D.set?D.name:mtoName(D.cat))}" maxlength="60" autocomplete="off"></div><p class="note">${t('mto_nnote')}</p>`;
+  const go=()=>{const s=$('#nmCat'),n=$('#nmName');D.cat=s&&s.value||D.cat;D.name=n?n.value.trim():'';closeDlg();mtoMake(D)};
+  openDlg(t('a_newmto'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-nm="ok">${t('ok')}</button>`,{
+    change(e){const el=e.target;if(el.id==='nmName'){D.set=1;D.name=el.value;return}if(el.id==='nmCat'){D.cat=el.value;if(!D.set)$('#nmName').value=mtoName(D.cat)}},
+    click(e){if(e.target.dataset.nm==='ok')go()},enter:go});
+  const s=$('#nmCat');if(s){const op=s.querySelector('option[selected]');if(op)op.scrollIntoView({block:'nearest'});s.focus()}}
+/* a new material takeoff, grouped by material with its totals; sum: the summary of Manage › Material Takeoff (a row for each material and category) */
+function mtoMake(D){let id;const cat=D.cat==='*'||MTO_CATS.includes(D.cat)?D.cat:'*',name=uniqView((D.name||'').slice(0,60)||(D.sum?t('mto_sname'):mtoName(cat)));
+  edit(()=>{const v={id:P.seq++,kind:'schedule',name,scale:100,detail:'coarse',hidden:[],hiddenCats:[],sched:'cat',scat:cat,mto:1,
+      flds:D.sum?['m_name','cat','m_area','m_vol','m_kg']:(cat==='*'?MTO_DEFM:MTO_DEF).slice(),sp:D.sum?{sort:{k:'m_name'},sort2:{k:'cat'},item:0}:{sort:{k:'m_name',ftr:1},sort2:{k:'type'}}};
+    const ok=new Set(mtoAll(P,cat,t).map(f=>f.k));v.flds=v.flds.filter(k=>ok.has(k));P.views.push(v);id=v.id});
+  showView(id);toast(t('ns_made',name));if(!D.sum)dlgSchedFields(id)}
+XA.newmto=()=>dlgNewMto();
+XC.push(()=>{for(const v of P.views){if(v.mto===undefined)continue;if(v.kind!=='schedule'||v.sched!=='cat'){delete v.mto;continue}v.mto=1;if(v.scat!=='*'&&!MTO_CATS.includes(v.scat))v.scat='*'}});
+
+/* ---- a workbook of schedules (Office Open XML, SpreadsheetML) ---- */
+const XL_MIME='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const xlX=s=>String(s==null?'':s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),
+  xlCol=i=>{let s='';for(i++;i>0;i=Math.floor((i-1)/26))s=String.fromCharCode(65+(i-1)%26)+s;return s},xlRef=(r,c)=>xlCol(c)+(r+1),
+  xlNum=x=>{const n=+(+x).toPrecision(15);return isFinite(n)?String(n):'0'},xlAbs=ref=>ref.replace(/([A-Z]+)(\d+)/g,'$$$1$$$2');
+/* a number of a schedule as the sheet keeps it: in the units the table shows (metres, square metres, …) with a format of as many decimals; null: a text */
+function xlVal(c,val){if(typeof val!=='number'||!isFinite(val))return null;if(!c.num)return{n:val,f:'General'};const u=ufOf(),fx=(d,g)=>(g?'#,##0':'0')+(d>0?'.'+'0'.repeat(d):'');
+  if(c.calc)return{n:val,f:fx(c.dec,1)+(c.pct?'"%"':'')};
+  switch(c.u){case'm':return{n:val/1e3,f:fx(2,1)};case'm2':return c.fix?{n:val/1e6,f:fx(2,1)}:{n:val/UF_MUL[u.au],f:fx(u.ad,1)};case'm3':return{n:val/UF_MUL[u.vu],f:fx(u.vd,1)};
+    case'air':return{n:val*flowK(P),f:fx(c.sep?0:u.fad,1)};case'mm':return{n:val,f:'0'}}
+  if(c.k==='cost'||c.k==='amount'||c.sep)return{n:val,f:fx(0,1)};return{n:val,f:c.trim?'General':fx(c.dec==null?2:c.dec,1)}}
+/* the styles of a workbook, made as the cells ask for them: {font n|b|t|i, bg '#rrggbb', bd 1, f number format, h, v, w wrap, ind} → the index of a cell format */
+function xlStyleBook(){const nf=new Map(),fills=new Map(),idx=new Map(),FONT={n:0,b:1,t:2,i:3},BUILT={General:0,'0':1,'0.00':2,'#,##0':3,'#,##0.00':4},XF=['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
+  return{id(o){const key=JSON.stringify(o);let i=idx.get(key);if(i!=null)return i;let n=0;if(o.f&&BUILT[o.f]==null){if(!nf.has(o.f))nf.set(o.f,164+nf.size);n=nf.get(o.f)}else if(o.f)n=BUILT[o.f];
+      let fi=0;if(o.bg){const c=o.bg.slice(1).toUpperCase();if(!fills.has(c))fills.set(c,2+fills.size);fi=fills.get(c)}const fo=FONT[o.font]||0,bo=o.bd?1:0,al=o.h||o.w||o.ind||o.v;
+      XF.push(`<xf numFmtId="${n}" fontId="${fo}" fillId="${fi}" borderId="${bo}" xfId="0"${n?' applyNumberFormat="1"':''}${fo?' applyFont="1"':''}${fi?' applyFill="1"':''}${bo?' applyBorder="1"':''}`
+        +(al?` applyAlignment="1"><alignment${o.h?` horizontal="${o.h}"`:''} vertical="${o.v||'center'}"${o.w?' wrapText="1"':''}${o.ind?` indent="${o.ind}"`:''}/></xf>`:'/>'));
+      idx.set(key,i=XF.length-1);return i},
+    xml(){const F=(x,sz,col)=>`<font>${x}<sz val="${sz}"/>${col?`<color rgb="${col}"/>`:''}<name val="Tahoma"/><family val="2"/></font>`;
+      return'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        +(nf.size?`<numFmts count="${nf.size}">${[...nf].map(([f,i])=>`<numFmt numFmtId="${i}" formatCode="${xlX(f)}"/>`).join('')}</numFmts>`:'')
+        +`<fonts count="4">${F('',10)}${F('<b/>',10)}${F('<b/>',14)}${F('<i/>',9,'FF5B6575')}</fonts>`
+        +`<fills count="${2+fills.size}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${[...fills.keys()].map(c=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${c}"/><bgColor indexed="64"/></patternFill></fill>`).join('')}</fills>`
+        +`<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${['left','right','top','bottom'].map(s=>`<${s} style="thin"><color rgb="FFB7C0CC"/></${s}>`).join('')}<diagonal/></border></borders>`
+        +`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${XF.length}">${XF.join('')}</cellXfs>`
+        +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'}}}
+/* one schedule as a sheet: its name and the project, the headers (and the headings over them), the rows with the headers and footers of its groups, the totals.
+   pt: the rows of the headers (printed on every page), af: the range of the filter (a table without groups) */
+function xlSheet(v,S,Z,first){const cols=S.cols.length?S.cols:[{k:'',label:''}],n=cols.length,AP=S.app||{},R=[],M=[],W=cols.map(()=>8),k0=cols[0].k,AL={l:'left',c:'center',r:'right'};let r=0,pt=null,fz=0,grp=false;
+  const cw=s=>{let w=0;for(const ch of String(s)){const c=ch.codePointAt(0);if(c===0x0e31||(c>=0x0e34&&c<=0x0e3a)||(c>=0x0e47&&c<=0x0e4e))continue;w+=c>=0x2e80&&c<=0xffdc?2:1}return w},          // Thai marks above and below take no width
+    grow=(i,s,cap)=>{for(const x of String(s).split('\n'))W[i]=Math.max(W[i],Math.min(cap||60,cw(x)+2))},
+    tc=(i,s,st)=>s===''||s==null?`<c r="${xlRef(r,i)}" s="${st}"/>`:`<c r="${xlRef(r,i)}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${xlX(s)}</t></is></c>`,
+    put=(cells,ht)=>{R.push(`<row r="${r+1}"${ht?` ht="${ht}" customHeight="1"`:''}>${cells}</row>`);r++},
+    cell=(c,x,i,base)=>{const val=x[c.k],q=xlVal(c,val),bg=base&&base.bg||schedCF(S,c,x)||'',o=Object.assign({bd:1},base||{},bg?{bg}:{},c.al?{h:AL[c.al]}:{},c.wrap?{w:1,v:'top'}:{});
+      if(q){o.f=q.f;grow(i,String(fmtCell(c,val)).replace(/&\w+;/g,'x')+(q.f[0]==='#'&&Math.abs(q.n)>=1e3?'  ':''));return`<c r="${xlRef(r,i)}" s="${Z.id(o)}"><v>${xlNum(q.n)}</v></c>`}
+      const s=val==null?'':String(val);grow(i,s,c.wrap?50:60);return tc(i,s,Z.id(o))};
+  if(AP.title!==0)put(tc(0,v.name,Z.id({font:'t',v:'center'})),24);
+  put(tc(0,P.info.name||'',Z.id({font:'i'})));put('');
+  if(AP.head!==0){const h0=r,hs=Z.id({font:'b',bg:'#e9eef4',bd:1,h:'center',w:1}),G=S.hg;
+    if(G){put(cols.map((c,i)=>{const g=G.find(q=>i>=q.i0&&i<=q.i1);if(!g){M.push(xlRef(h0,i)+':'+xlRef(h0+1,i));return tc(i,colLabel(c),hs)}if(i===g.i0&&g.i1>g.i0)M.push(xlRef(h0,g.i0)+':'+xlRef(h0,g.i1));return tc(i,i===g.i0?g.t:'',hs)}).join(''));
+      put(cols.map((c,i)=>tc(i,G.some(q=>i>=q.i0&&i<=q.i1)?colLabel(c):'',hs)).join(''))}
+    else put(cols.map((c,i)=>tc(i,colLabel(c),hs)).join(''));
+    cols.forEach((c,i)=>grow(i,colLabel(c),24));pt=[h0+1,r];fz=r}
+  if(!S.rows.length)put(tc(0,t('empty_sched'),Z.id({font:'i'})));
+  for(const x of S.rows){if(x._g)grp=true;
+    if(x._g==='b'){put('');continue}
+    if(x._g==='h'){const st=Z.id({font:'b',bg:'#f2f5f9',bd:1,ind:x._l?1:0});put(cols.map((c,i)=>tc(i,i?'':String(x[k0]==null?'':x[k0]),st)).join(''));if(n>1)M.push(xlRef(r-1,0)+':'+xlRef(r-1,n-1));continue}
+    put(cols.map((c,i)=>cell(c,x,i,x._g==='f'?{font:'b',bg:'#f6f8fa'}:null)).join(''))}
+  if(S.foot&&S.rows.length)put(cols.map((c,i)=>cell(c,S.foot,i,{font:'b',bg:'#e9eef4'})).join(''));
+  const af=fz&&S.rows.length&&!grp?xlRef(fz-1,0)+':'+xlRef(fz-1+S.rows.length,n-1):null;          // a plain table: a filter on its headers (the totals stay out of it)
+  const xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    +`<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${xlRef(Math.max(0,r-1),n-1)}"/>`
+    +`<sheetViews><sheetView${first?' tabSelected="1"':''} workbookViewId="0">${fz?`<pane ySplit="${fz}" topLeftCell="A${fz+1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A${fz+1}" sqref="A${fz+1}"/>`:''}</sheetView></sheetViews>`
+    +`<sheetFormatPr defaultRowHeight="15"/><cols>${W.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${Math.max(6,Math.min(62,w+(af?2:0)))}" customWidth="1"/>`).join('')}</cols>`
+    +`<sheetData>${R.join('')}</sheetData>`+(af?`<autoFilter ref="${af}"/>`:'')+(M.length?`<mergeCells count="${M.length}">${M.map(m=>`<mergeCell ref="${m}"/>`).join('')}</mergeCells>`:'')
+    +'<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'
+    +`<pageSetup paperSize="9" orientation="${n>6?'landscape':'portrait'}" fitToWidth="1" fitToHeight="0"/><headerFooter><oddFooter>&amp;L&amp;A&amp;R&amp;P / &amp;N</oddFooter></headerFooter></worksheet>`;
+  return{xml,pt,af}}
+/* a sheet's name: at most 31 characters, none of \ / ? * [ ] :, not one taken (case aside), not History */
+function xlName(s,used){const cut=(x,k)=>[...x].slice(0,k).join('').replace(/^'+|'+$/g,'').trim();const b=cut(String(s||'').replace(/[\\\/?*\[\]:\u0000-\u001f]/g,' ').replace(/\s+/g,' ').trim(),31)||'Sheet';
+  let nm=b,i=2;while(used.has(nm.toLowerCase())||nm.toLowerCase()==='history'){const suf=' ('+(i++)+')';nm=cut(b,31-suf.length)+suf}used.add(nm.toLowerCase());return nm}
+/* the workbook: [{v, S}] → the bytes of the .xlsx */
+function xlsxBook(L){const Z=xlStyleBook(),used=new Set(),names=L.map(x=>xlName(x.v.name,used)),sh=L.map((x,i)=>xlSheet(x.v,x.S,Z,!i)),now=new Date(),iso=now.toISOString().replace(/\.\d+Z$/,'Z'),
+    q=s=>xlX("'"+s.replace(/'/g,"''")+"'"),dn=[],X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n',NS='http://schemas.openxmlformats.org/';
+  sh.forEach((s,i)=>{if(s.af)dn.push(`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${q(names[i])}!${xlAbs(s.af)}</definedName>`);if(s.pt)dn.push(`<definedName name="_xlnm.Print_Titles" localSheetId="${i}">${q(names[i])}!$${s.pt[0]}:$${s.pt[1]}</definedName>`)});
+  const files=[{name:'[Content_Types].xml',data:X+`<Types xmlns="${NS}package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>`
+        +`<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sh.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}`
+        +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+        +'<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'},
+    {name:'_rels/.rels',data:X+`<Relationships xmlns="${NS}package/2006/relationships"><Relationship Id="rId1" Type="${NS}officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>`
+        +`<Relationship Id="rId2" Type="${NS}package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="${NS}officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`},
+    {name:'docProps/core.xml',data:X+`<cp:coreProperties xmlns:cp="${NS}package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">`
+        +`<dc:title>${xlX(P.info.name||'')}</dc:title><dc:creator>PENUM BIM ${V1_NAME}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${iso}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso}</dcterms:modified></cp:coreProperties>`},
+    {name:'docProps/app.xml',data:X+`<Properties xmlns="${NS}officeDocument/2006/extended-properties"><Application>PENUM BIM</Application></Properties>`},
+    {name:'xl/workbook.xml',data:X+`<workbook xmlns="${NS}spreadsheetml/2006/main" xmlns:r="${NS}officeDocument/2006/relationships"><bookViews><workbookView xWindow="0" yWindow="0" windowWidth="28800" windowHeight="15000" activeTab="0"/></bookViews>`
+        +`<sheets>${names.map((nm,i)=>`<sheet name="${xlX(nm)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets>${dn.length?`<definedNames>${dn.join('')}</definedNames>`:''}</workbook>`},
+    {name:'xl/_rels/workbook.xml.rels',data:X+`<Relationships xmlns="${NS}package/2006/relationships">${sh.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${NS}officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}`
+        +`<Relationship Id="rId${sh.length+1}" Type="${NS}officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    ...sh.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`,data:s.xml}))];
+  files.splice(6,0,{name:'xl/styles.xml',data:Z.xml()});          // after the sheets have asked for their styles
+  return zipStore(files,now)}
+/* the schedule of a pane (or the active view); every schedule of the project, as the Project Browser lists them, then the panel schedules */
+const xlSchedOf=pi=>{let v=pi!=null?viewById(ui.panes[pi]):null;if(!v||v.kind!=='schedule')v=activeView();return v&&v.kind==='schedule'?v:null},
+  xlAll=()=>{const S=P.views.filter(v=>v.kind==='schedule');return S.filter(v=>v.sched!=='pnl').concat(S.filter(v=>v.sched==='pnl'))};
+function xlSave(name,L){let data;try{data=xlsxBook(L.map(v=>({v,S:schedView(P,v,t)})))}catch(e){console.error(e);toast(t('xl_err'));return Promise.resolve(false)}
+  return saveFile(name,data,XL_MIME).then(ok=>{if(!ok)toast(t('export_na'));return ok})}
+XA.xlsx=(arg,el)=>{const v=xlSchedOf(el&&el.dataset&&el.dataset.pane!=null?+el.dataset.pane:ui.ap);if(!v){toast(t('xl_na'));return}xlSave(fname('-'+v.name,'.xlsx'),[v])};
+XA.xlsxall=()=>{const L=xlAll();if(!L.length){toast(t('xl_none'));return}xlSave(fname('-'+t('xl_all'),'.xlsx'),L)};
+
+/* ---- the ribbon, the buttons, the words ---- */
+{const vw=RIBBON.find(r=>r.id==='view'),pc=vw&&vw.panels.find(p=>p.t==='p_create');if(pc&&!pc.b.includes('@newmto')){const i=pc.b.indexOf('@newsched');pc.b.splice(i<0?pc.b.length:i+1,0,'@newmto')}}
+XR.push((tl,v)=>v&&v.kind==='schedule'&&!ui.sel.size?[{t:'p_schexp',b:['@xlsx','@xlsxall','@csv']}]:[]);
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-mto" viewBox="0 0 24 24"><path ${e('i-Pc')} fill="#9fadc0" d="M3.6 4.4h12.6a1.6 1.6 0 0 1 1.6 1.6v10.2a1.6 1.6 0 0 1-1.6 1.6H3.6A1.6 1.6 0 0 1 2 16.2V6a1.6 1.6 0 0 1 1.6-1.6z"/>`
+      +`<path ${e('i-Pa')} fill="#f6f8fb" d="M3.6 3h12.6a1.6 1.6 0 0 1 1.6 1.6v10.2a1.6 1.6 0 0 1-1.6 1.6H3.6A1.6 1.6 0 0 1 2 14.8V4.6A1.6 1.6 0 0 1 3.6 3z"/><path ${e('i-Bb')} fill="#5c9af0" d="M2 4.6A1.6 1.6 0 0 1 3.6 3h12.6a1.6 1.6 0 0 1 1.6 1.6v2.2H2z"/>`
+      +`<path class="i-ln" fill="none" stroke="#2a3550" stroke-width=".6" stroke-linecap="round" d="M2 10h15.8M2 13.1h15.8M7.4 6.8v9.6M12.6 6.8v9.6"/>`
+      +`<path ${e('i-Mb')} fill="#e07853" d="M12.4 13.4h9.6v3H12.4z"/><path ${e('i-Sb')} fill="#acbbd2" d="M12.4 16.4h9.6v3.4H12.4z"/><path ${e('i-Wb')} fill="#c79253" d="M12.4 19.8h9.6v2.4H12.4z"/></symbol>`
+    +`<symbol id="i-xlsx" viewBox="0 0 24 24"><path ${e('i-Pc')} fill="#9fadc0" d="M3.6 4.4h12.6a1.6 1.6 0 0 1 1.6 1.6v10.2a1.6 1.6 0 0 1-1.6 1.6H3.6A1.6 1.6 0 0 1 2 16.2V6a1.6 1.6 0 0 1 1.6-1.6z"/>`
+      +`<path ${e('i-Pa')} fill="#f6f8fb" d="M3.6 3h12.6a1.6 1.6 0 0 1 1.6 1.6v10.2a1.6 1.6 0 0 1-1.6 1.6H3.6A1.6 1.6 0 0 1 2 14.8V4.6A1.6 1.6 0 0 1 3.6 3z"/><path ${e('i-Tb')} fill="#38bc9c" d="M2 4.6A1.6 1.6 0 0 1 3.6 3h12.6a1.6 1.6 0 0 1 1.6 1.6v2.2H2z"/>`
+      +`<path class="i-ln" fill="none" stroke="#2a3550" stroke-width=".6" stroke-linecap="round" d="M2 10h15.8M2 13.1h15.8M7.4 6.8v9.6M12.6 6.8v9.6"/>`
+      +`<path ${e('i-Tc')} fill="#137961" d="M14.4 13h6.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2h-6.6a1.2 1.2 0 0 1-1.2-1.2v-6.6a1.2 1.2 0 0 1 1.2-1.2z"/>`
+      +`<path class="i-lw" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.3" d="M17.7 14.6v4.8M15.6 17.4l2.1 2.1 2.1-2.1"/></symbol>`)})();
+Object.assign(BTN,{'@newmto':['mto',''],'@xlsx':['xlsx',''],'@xlsxall':['xlsx',''],'@csv':['sched','']});
+Object.assign(STR,{a_newmto:['ตารางวัสดุใหม่ (Material Takeoff)','New Material Takeoff'],
+  mto_nnote:['ตารางวัสดุแสดงวัสดุของทุกชิ้นในหมวดที่เลือก หนึ่งแถวต่อวัสดุของแต่ละชิ้น ผนัง พื้น ฝ้า และหลังคาแยกตามชั้น (Edit Structure) ขั้นต่อไปเลือกช่องที่จะแสดง','A material takeoff lists the materials of every element of the category, one row for each material of each element: walls, floors, ceilings and roofs by layer (Edit Structure). Pick its fields next.'],
+  mto_name:['ตารางวัสดุ{0}','{0} Material Takeoff'],mto_mname:['ตารางวัสดุหลายหมวด','Multi-Category Material Takeoff'],mto_sname:['สรุปปริมาณวัสดุ','Material Takeoff Summary'],
+  mto_g_m:['วัสดุ (Material)','Material'],g_mtosched:['ตารางวัสดุ (Material Takeoff)','Material Takeoff'],
+  mto_fnote:['ติ๊กช่องที่จะแสดง ช่องของวัสดุมาก่อน ตามด้วยช่องของชิ้นงาน ช่องที่มี ✎ แก้ค่าในตารางได้ · ขนาดของชิ้นงานซ้ำทุกแถวของชิ้นนั้น จึงไม่รวมยอด · จัดลำดับ ซ่อน กรอง เรียง และจัดกลุ่มได้ที่ตั้งค่าตาราง',
+    'Tick the fields it shows: the Material fields, then those of the element; those marked ✎ can be typed in its cells · the dimensions of an element repeat on each of its rows, so they are not totalled · order, hide, filter, sort and group them in Schedule Properties'],
+  mto_f_name:['วัสดุ: ชื่อ','Material: Name'],mto_f_class:['วัสดุ: ประเภท','Material: Class'],mto_f_area:['วัสดุ: พื้นที่','Material: Area'],mto_f_vol:['วัสดุ: ปริมาตร','Material: Volume'],
+  mto_f_rho:['วัสดุ: ความหนาแน่น (กก./ม³)','Material: Density (kg/m³)'],mto_f_kg:['วัสดุ: น้ำหนัก (กก.)','Material: Weight (kg)'],mto_f_paint:['วัสดุ: ทาสี (As Paint)','Material: As Paint'],
+  mcl_conc:['คอนกรีต','Concrete'],mcl_mason:['งานก่อ','Masonry'],mcl_metal:['โลหะ','Metal'],mcl_wood:['ไม้','Wood'],mcl_plaster:['ปูนฉาบ','Plaster'],mcl_paint:['สีและสารเคลือบ','Paint/Coating'],
+  mcl_gyp:['ยิปซัม','Gypsum'],mcl_ins:['ฉนวน','Insulation'],mcl_ceram:['กระเบื้อง','Ceramic'],mcl_stone:['หิน','Stone'],mcl_memb:['วัสดุกันซึม','Membrane'],mcl_misc:['อื่น ๆ','Miscellaneous'],
+  mto_tnote:['หนึ่งแถวต่อวัสดุของแต่ละชิ้น ผนัง พื้น ฝ้า และหลังคาแยกตามชั้น · คลิกแถวเพื่อเลือกชิ้นงาน','one row for each material of an element, walls, floors, ceilings and roofs by layer · click a row to select its element'],
+  mk_sched:['เปิดเป็นตาราง','Open as a Schedule'],
+  a_xlsx:['ส่งออก Excel','Export Excel'],a_xlsxall:['ทุกตารางเป็น Excel','All Schedules to Excel'],m_xlsx:['ส่งออกตารางเป็น Excel (.xlsx)','Export schedule to Excel (.xlsx)'],
+  m_xlsxall:['ส่งออกทุกตารางเป็น Excel (.xlsx)','Export all schedules to Excel (.xlsx)'],p_schexp:['ส่งออก','Export'],
+  xl_na:['เปิดตารางก่อน แล้วจึงส่งออก Excel','Open a schedule first, then export to Excel'],xl_none:['โครงการนี้ยังไม่มีตาราง','This project has no schedules yet'],
+  xl_all:['ตารางทั้งหมด','Schedules'],xl_err:['สร้างไฟล์ Excel ไม่สำเร็จ','The Excel file could not be made']});
+/* ===== 116 the members of a truss as framing types (V1.116; Revit: the type of a truss › Top Chords, Bottom Chords, Vertical Webs, Diagonal Webs ›
+   Structural Framing Type) =====
+   A truss type names a beam type for each kind of its members: T.tc the top chords, T.bc the bottom chords, T.vw the vertical webs (those that stand straight up),
+   T.dw the other webs.  One left unset is a solid bar of the type's own sizes (cw × ch, ww × wh), as before.  A member of a steel beam type is its section swept
+   along it in 3D, across the plane of the truss as a beam lies across its line; of any other beam type a bar of its width and depth, in its colour and material.
+   The quantities count the area of each section (q.vol) and the steel in it (q.kg), the material takeoff the material of each member, the plan the width of the
+   chords.  The stock trusses of a new project have steel members (P.trT: 0 when the project is new, 1 once they have them). */
+const TR_MK=['tc','bc','vw','dw'],TR_IFC={tc:'TopChords',bc:'BottomChords',vw:'VerticalWebs',dw:'DiagonalWebs'};
+/* the framing type of a kind of member: a beam type of the project (P0: a linked model has its own), or null */
+function trFT(P0,T,k){const id=T&&T[k];return id!=null?((P0&&P0.types&&P0.types.beam)||[]).find(x=>x.id===id)||null:null}
+/* the width of the chords across the truss; the depth of one of them */
+function trCW(P0,T){T=T||{};let w=0;for(const k of ['tc','bc']){const B=trFT(P0,T,k);w=Math.max(w,B?+B.w||200:+T.cw||100)}return w}
+function trCD(P0,T,k){T=T||{};const B=trFT(P0,T,k);return B?+B.h||400:+T.ch||100}
+/* what a kind of member is, as Properties and schedules say it: the name of its type, or its size */
+function trFName(P0,T,k,tr){const B=trFT(P0,T,k);if(B)return String(B.name||'');const w=k==='vw'||k==='dw';return(tr||t)('trm_size',fx2(w?+T.ww||75:+T.cw||100)+' × '+fx2(w?+T.wh||75:+T.ch||100))}
+/* does the type of truss e give one of its kinds of member the beam type id? */
+function trUses(P0,e,id){const T=typ(P0,e)||{};return TR_MK.some(k=>T[k]===id)}
+/* what a member is made of: {M: the project material, or null; b: its base material} */
+function trMatOf(P0,B,cat){const M=B&&B.mid!=null&&Array.isArray(P0.mats)?P0.mats.find(x=>x.id===B.mid)||null:null;return{M,b:M?M.base:mtoBase(cat,B)}}
+/* each member with its kind (vk), its framing type (ft), its section: w × h, the area ar; its material (mat), its length between its cuts (cl) and the kilograms of steel in it (kg) */
+{const f0=trussMembers;trussMembers=(P0,e)=>{const T=typ(P0,e)||{},M=f0(P0,e);let own=null,any=false;
+  for(const m of M){const vk=m.k==='top'?'tc':m.k==='bot'?'bc':Math.abs(m.a[0]-m.b[0])<1&&Math.abs(m.a[1]-m.b[1])<1?'vw':'dw',B=trFT(P0,T,vk);m.vk=vk;m.cl=Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]);
+    if(B){m.ft=B;m.w=+B.w||200;m.h=+B.h||400;m.ar=stlT(B)?stlA(B):m.w*m.h;m.mat=trMatOf(P0,B,'beam');any=true}else{m.ar=m.w*m.h;m.mat=own||(own=trMatOf(P0,T,'truss'))}}
+  if(any)trCuts(M,e);for(const m of M)m.kg=m.mat.b==='metal'?m.ar*STL_RHO*m.cl/1000:0;
+  return M}}
+/* where the members of framing types stop (Revit: framing is cut back where it joins): a web at the faces of the chords it meets, a chord mitred where it turns
+   to another of its kind, a top chord on the face of the bottom chord and square with its end at a heel.  m.ct=[the cuts at a, at b]: planes {F, N (into the
+   member), on: for the face of a chord, that chord {o, u, L}}; m.cl becomes its length between them along its line (Revit: Cut Length).  Members of the truss
+   type's own sizes are drawn and counted node to node, as before */
+function trCuts(M,e){const L0=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nv=[-(e.y2-e.y1)/L0,(e.x2-e.x1)/L0,0],
+    sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],len=a=>Math.hypot(a[0],a[1],a[2]),unit=a=>{const l=len(a)||1;return[a[0]/l,a[1]/l,a[2]/l]},
+    crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],add=(a,b,s)=>[a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s],neg=a=>[-a[0],-a[1],-a[2]],near=(p,q)=>len(sub(p,q))<1,
+    C=M.filter(m=>m.k!=='web').map(m=>{const u=unit(sub(m.b,m.a));return{m,u,L:len(sub(m.b,m.a)),up:unit(crs(u,nv))}}),
+    at=p=>{const r=[];for(const c of C){const s=dot(sub(p,c.m.a),c.u);if(s<-1||s>c.L+1||len(sub(p,add(c.m.a,c.u,s)))>1)continue;r.push({c,end:near(p,c.m.a)?0:near(p,c.m.b)?1:-1})}return r},          // the chords whose line passes through p, and at which of their ends
+    face=(c,p,d)=>{const s=dot(c.up,d);if(Math.abs(s)<0.05)return null;const N=s<0?neg(c.up):c.up;return{F:add(p,N,c.m.h/2),N,on:{o:c.m.a,u:c.u,L:c.L}}};          // the face of chord c towards a member leaving p along d
+  for(const m of M){if(!m.ft)continue;const ct=[[],[]],d=[unit(sub(m.b,m.a)),unit(sub(m.a,m.b))];
+    for(const k of [0,1]){const p=k?m.b:m.a,dk=d[k];
+      for(const {c,end} of at(p)){if(c.m===m)continue;
+        if(m.k==='web'){const f=face(c,p,dk);if(f)ct[k].push(f);continue}
+        if(c.m.k===m.k){if(end>=0)ct[k].push({F:p,N:unit(sub(dk,end?neg(c.u):c.u)),on:null});continue}          // a mitre where the chord turns: the plane half way between the two
+        if(m.k==='top'){const f=face(c,p,dk);if(f)ct[k].push(f);if(end>=0){const N=end?neg(c.u):c.u;if(dot(N,dk)>0.05)ct[k].push({F:p,N,on:null})}}}}          // a heel: on the bottom chord, and no further out than its end
+    if(!ct[0].length&&!ct[1].length)continue;
+    const U=unit(crs(d[0],nv)),l=m.cl,lim=-2*Math.max(m.w,m.h),ta=trTrim(ct[0],m.a,d[0]),tb=trTrim(ct[1],m.b,d[1]);let ok=l-ta-tb>1;
+    for(const i of [-1,1])for(const j of [-1,1]){if(!ok)break;const o=add(add([0,0,0],nv,i*m.w/2),U,j*m.h/2),sa=trTrim(ct[0],add(m.a,o,1),d[0]),sb=trTrim(ct[1],add(m.b,o,1),d[1]);ok=sa>lim&&sb>lim&&l-sa-sb>1}          // its corners too: a member too short for its cuts, or cut to a point, stays as it was
+    if(ok){m.ct=ct;m.cl=l-ta-tb}}}
+/* how far into a member a point X of its end (untrimmed) moves along d before it is clear of the cuts there: past the face of each chord whose ends it meets
+   that face between (or, meeting none of them, past them all), and past every mitre and end */
+function trTrim(C,X,d){let t=null,f=null;for(const c of C){const k=d[0]*c.N[0]+d[1]*c.N[1]+d[2]*c.N[2];if(k<0.05)continue;
+    const s=((c.F[0]-X[0])*c.N[0]+(c.F[1]-X[1])*c.N[1]+(c.F[2]-X[2])*c.N[2])/k;f=f==null?s:Math.max(f,s);
+    if(c.on){const o=c.on,h=(X[0]+d[0]*s-o.o[0])*o.u[0]+(X[1]+d[1]*s-o.o[1])*o.u[1]+(X[2]+d[2]*s-o.o[2])*o.u[2];if(h<-0.5||h>o.L+0.5)continue}
+    t=t==null?s:Math.max(t,s)}
+  return t!=null?t:f!=null?f:0}
+/* a member of a framing type from q.a to q.b in 3D (GL: x, height, y): its section (loops of u, v) with u along n (square to the plane of the truss; its width
+   times sw) and v in that plane, square to the member: up, or along the truss for a member that stands straight up; its ends at its cuts */
+function trMember(m,q,prof,n,sw,smooth){const A=[q.a[0],q.a[2],q.a[1]],B=[q.b[0],q.b[2],q.b[1]],d=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],L=Math.hypot(d[0],d[1],d[2]);if(L<1)return;const a=[d[0]/L,d[1]/L,d[2]/L];
+  let U=[a[1]*n[2]-a[2]*n[1],a[2]*n[0]-a[0]*n[2],a[0]*n[1]-a[1]*n[0]];if((Math.abs(U[1])>1e-6?U[1]:U[0]*n[2]-U[2]*n[0])<0)U=U.map(x=>-x);
+  const pt=(O,u,v)=>[O[0]+n[0]*u*sw+U[0]*v,O[1]+n[1]*u*sw+U[1]*v,O[2]+n[2]*u*sw+U[2]*v],G=p=>[p[0],p[2],p[1]],ct=q.ct;          // G: GL to the model's x, y, z and back
+  if(!ct){stlExt(m,prof.map(lp=>lp.map(([u,v])=>pt(A,u,v))),d,smooth);return}
+  const da=G(a),db=G(a.map(x=>-x)),end=(O,C,dd,sg)=>prof.map(lp=>lp.map(([u,v])=>{const X=pt(O,u,v),t=trTrim(C,G(X),dd)*sg;return[X[0]+a[0]*t,X[1]+a[1]*t,X[2]+a[2]*t]}));
+  trExt(m,end(A,ct[0],da,1),end(B,ct[1],db,-1),smooth)}
+/* the solid between loops S at one end and E at the other, of as many points (one loop, or an outer and an inner one), with the edges stlExt gives */
+function trExt(m,S,E,smooth){const cen=lp=>{const n=lp.length,c=[0,0,0];for(const p of lp){c[0]+=p[0]/n;c[1]+=p[1]/n;c[2]+=p[2]/n}return c},ca=cen(S[0]),cb=cen(E[0]),ev=[cb[0]-ca[0],cb[1]-ca[1],cb[2]-ca[2]];
+  let N=newell(S[0]);if(N[0]*ev[0]+N[1]*ev[1]+N[2]*ev[2]<0){S=S.map(l=>l.slice().reverse());E=E.map(l=>l.slice().reverse());N=N.map(x=>-x)}
+  const tri=(a,b,c)=>m.t.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);
+  if(S.length>1){const O=S[0],I=S[1],EO=E[0],EI=E[1],n=Math.min(O.length,I.length);          // a hollow section, as ringExt
+    for(let i=0;i<n;i++){const j=(i+1)%n;tri(EO[i],EO[j],EI[j]);tri(EO[i],EI[j],EI[i]);tri(O[i],I[j],O[j]);tri(O[i],I[i],I[j]);tri(O[i],O[j],EO[j]);tri(O[i],EO[j],EO[i]);tri(I[i],EI[j],I[j]);tri(I[i],EI[i],EI[j])}}
+  else{const L=S[0],EL=E[0],nl=Math.hypot(N[0],N[1],N[2])||1,nn=[N[0]/nl,N[1]/nl,N[2]/nl];let u=null;          // one loop, as extrude: its ends in triangles, its sides
+    for(let i=0;i<L.length&&!u;i++){const a=L[i],b=L[(i+1)%L.length],dd=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],dl=Math.hypot(dd[0],dd[1],dd[2]);if(dl>1e-6)u=[dd[0]/dl,dd[1]/dl,dd[2]/dl]}if(!u)return;
+    const v=[nn[1]*u[2]-nn[2]*u[1],nn[2]*u[0]-nn[0]*u[2],nn[0]*u[1]-nn[1]*u[0]],tr=earclip(L.map(p=>[p[0]*u[0]+p[1]*u[1]+p[2]*u[2],p[0]*v[0]+p[1]*v[1]+p[2]*v[2]]));
+    for(let i=0;i<tr.length;i+=3){tri(EL[tr[i]],EL[tr[i+1]],EL[tr[i+2]]);tri(L[tr[i]],L[tr[i+2]],L[tr[i+1]])}
+    for(let i=0,k=L.length;i<k;i++){const j=(i+1)%k;tri(L[i],L[j],EL[j]);tri(L[i],EL[j],EL[i])}}
+  for(let g=0;g<S.length;g++){const A=S[g],B=E[g];for(let i=0;i<A.length;i++){const j=(i+1)%A.length;m.l.push(A[i][0],A[i][1],A[i][2],A[j][0],A[j][1],A[j][2],B[i][0],B[i][1],B[i][2],B[j][0],B[j][1],B[j][2])}}
+  const O=S[0],k=O.length,c=cen(O);
+  for(let i=0;i<k;i++){const p=O[i],q=E[0][i];if(!smooth){m.l.push(p[0],p[1],p[2],q[0],q[1],q[2]);continue}
+    const u=O[(i+k-1)%k],w=O[(i+1)%k];m.s.push({a:p,b:q,n1:[(p[0]+u[0])/2-c[0],(p[1]+u[1])/2-c[1],(p[2]+u[2])/2-c[2]],n2:[(p[0]+w[0])/2-c[0],(p[1]+w[1])/2-c[1],(p[2]+w[2])/2-c[2]]})}}
+/* a truss in 3D: a mesh for the members of each framing type, in its colour and material, and one for those of the truss type's sizes.  A chord is a little narrower
+   than its section (2 mm, a top chord 3), so that its faces and those of a web or of the other chord never lie on each other */
+function trussMesh(P0,e,K,items){const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L],by=new Map(),
+    mesh=B=>{const k=B?B.id:0;let m=by.get(k);if(!m){m=K.mk(e.id,'truss',hex2rgb(B?B.color||(stlT(B)?STL_COL:'#b4b9c0'):T.color||'#8f99a6'));m.mt=B?matOf('beam',B):matOf('truss',T);if(B)m.tmid=B.mid!=null?B.mid:0;by.set(k,m)}return m};
+  for(const q of trussMembers(P0,e)){const m=mesh(q.ft||null),c=q.k==='web'?0:q.ft&&q.k==='top'?3:2;
+    if(!q.ft){K.bar3(m,[q.a[0],q.a[2],q.a[1]],[q.b[0],q.b[2],q.b[1]],n,q.w-c,q.h);continue}
+    const st=stlT(q.ft),w=q.w/2,h=q.h/2;trMember(m,q,st?stlShape(q.ft):[[[-w,-h],[w,-h],[w,h],[-w,h]]],n,c?Math.max(0.5,(q.w-c)/q.w):1,st&&q.ft.sec==='CHS')}
+  for(const m of by.values())items.push(m)}
+/* a member of a beam type whose material has a picture shows it in a Realistic view (tmid: that material, 0: none), not the picture of the truss type's */
+{const f0=matTexOf;matTexOf=()=>{const g=f0(),C=new Map();return it=>{if(it.tmid==null)return g(it);let q=C.get(it.tmid);if(q!==undefined)return q;const M=it.tmid?matList().find(x=>x.id===it.tmid):null;
+  q=M&&M.img?{src:M.img,w:M.tw||1000,h:M.th||M.tw||1000}:null;C.set(it.tmid,q);return q}}}
+/* the material takeoff: a row for the material of each kind of member (the paint of a truss, were there any, as before) */
+{const f0=mtoParts;mtoParts=(P0,e,Q,tr)=>{const L=f0(P0,e,Q,tr);if(e.cat!=='truss'||!L.length)return L;const out=new Map();
+  for(const m of trussMembers(P0,e)){const M=m.mat.M,b=m.mat.b,k=M?'#'+M.id:b,l=m.cl;let r=out.get(k);
+    if(!r)out.set(k,r={k,n:M?M.name:mtoLab(b,tr),b,a:0,v:0,rho:M&&+M.rho>0?+M.rho:MK_RHO[b]||MK_RHO.auto,p:0});r.v+=l*m.ar}
+  return[...out.values(),...L.filter(x=>x.p)]}}
+/* schedules of trusses: the framing type of each kind of member, and the steel */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='truss')return F;const T=e=>typ(Q,e)||{};
+  for(const k of TR_MK)F.push({k:'T.'+k,l:tr('trf_'+k),g:(e,X)=>trFName(Q,T(e),k,X.tr),grp:'t'});
+  F.push({k:'kg',l:tr('c_kg'),g:(e,X)=>{const o=X.Q.get(e.id);return o&&typeof o.kg==='number'?o.kg:''},num:1,dec:1,sum:1,grp:'q'});return F}}
+SF_DEF.truss=['type','level','len','T.tc','T.bc','T.vw','T.dw','kg','count'];          // a new schedule of trusses
+/* Properties of trusses of one type: what each kind of member is; the steel of the selection */
+XP.push((c,els)=>{if(c!=='truss')return'';const e=els[0],T=typ(P,e)||{},same=els.every(x=>x.type===e.type),Q=QTY(),kg=els.reduce((s,x)=>s+((Q.get(x.id)||{}).kg||0),0);
+  return PR.grp('g_trmem')+(same?TR_MK.map(k=>PR.ro('tr_'+k,trFName(P,T,k))).join(''):'')+(kg>0?PR.ro('c_kg',(Math.round(kg*10)/10).toLocaleString()+' '+t('u_kg')):'')});
+/* IFC: the members and the steel of a truss in its PENUM_BIM property set */
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(e.cat!=='truss'||id!==e.id)return r;for(const k of TR_MK)r.push(prop(TR_IFC[k],trFName(P0,T,k,tr)));
+  const kg=trussMembers(P0,e).reduce((s,m)=>s+(m.kg||0),0);if(kg>0)r.push(prop('SteelMass',fx2(kg)+' kg'));return r}}
+
+/* ---- Edit Type of a truss: the framing type of each kind of member ---- */
+/* a select of the beam types of the project; By size (the type's own sizes); the last option opens the steel tables, and what is loaded there becomes that member's type */
+RG_TF.trm=(T,f)=>{const k=f[0],cur=trFT(P,T,k),w=k==='vw'||k==='dw',sz=fx2(w?+T.ww||75:+T.cw||100)+' × '+fx2(w?+T.wh||75:+T.ch||100);
+  return(k==='tc'?`<div class="pg" style="margin:4px -16px;padding-left:16px">${t('g_trmem')}</div>`:'')+`<div class="fr"><label for="tf_${k}">${esc(t('trf_'+k))}</label><select id="tf_${k}" data-tf="${k}" data-trm="1">`
+    +`<option value=""${cur?'':' selected'}>${esc(t('trm_size',sz))}</option>${(P.types.beam||[]).map(B=>`<option value="${B.id}"${B===cur?' selected':''}>${esc(B.name)}</option>`).join('')}<option value="+">${esc(t('trm_load'))}…</option></select></div>`};
+/* the members first, then the sizes of those left to them and the colour they are drawn in */
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='truss'||!F)return F;const by=k=>F.find(f=>f[0]===k),T0=T||{},
+    cs=['tc','bc'].some(k=>!trFT(P,T0,k)),ws=['vw','dw'].some(k=>!trFT(P,T0,k)),rest=F.filter(f=>!['cw','ch','ww','wh','color'].includes(f[0]));
+  return[...rest,...TR_MK.map(k=>[k,'trm']),...(cs?[by('cw'),by('ch')]:[]),...(ws?[by('ww'),by('wh')]:[]),...(cs||ws?[by('color')]:[])].filter(Boolean)}}
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{if(ui.trGo!=null){const g=ui.trGo;ui.trGo=null;if(cat==='beam'&&(P.types.truss||[]).some(x=>x.id===g)){cat='truss';id=g}}ui.trLoad=null;f0(cat,id);
+  const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='truss')return;const T=(P.types.truss||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;
+  H.change=e=>{const el=e.target;if(!el||!el.dataset||!el.dataset.trm)return c0(e);const k=el.dataset.tf,v=el.value,back=()=>dlgTypes('truss',T.id);if(!TR_MK.includes(k))return back();
+    if(v==='+'){const B=trFT(P,T,k);ui.trLoad={id:T.id,k};ui.stlCat='beam';ui.stlBack={cat:'truss',id:T.id};ui.stlSel=new Set();ui.stlSec=B&&stlT(B)?B.sec:k==='tc'||k==='bc'?'LC':'L';return stlDlg()}
+    const n=v===''?null:+v;if(n!=null&&!(P.types.beam||[]).some(B=>B.id===n))return back();if((T[k]==null?null:T[k])===n)return back();
+    edit(()=>{if(n==null)delete T[k];else T[k]=n});return back()}}}
+/* the sections loaded for a member: the last of them becomes its type, Edit Type of the truss comes back, and the Beam tool keeps the type it had */
+{const f0=stlLoad;stlLoad=(cat,keys)=>{const L=ui.trLoad,d=defs('beam').type;ui.trLoad=null;const ids=f0(cat,keys);
+  if(L&&cat==='beam'&&ids.length){const T=(P.types.truss||[]).find(x=>x.id===L.id);if(T){edit(()=>{T[L.k]=ids[ids.length-1]});defs('beam').type=d;ui.trGo=T.id}}return ids}}
+{const f0=XA.steel;XA.steel=arg=>{ui.trLoad=null;return f0(arg)}}
+/* a beam type that a truss type gives its members is in use: the trusses of that type count for it, and it is not purged while the truss type names it */
+{const f0=purgeable;purgeable=Q=>{const u=new Set();for(const T of (Q.types&&Q.types.truss)||[])for(const k of TR_MK)if(T[k]!=null)u.add(T[k]);const L=f0(Q);return u.size?L.filter(it=>!(it.g==='type'&&it.cat==='beam'&&u.has(it.id))):L}}
+/* Transfer Project Standards, Load as Group: a truss type that comes over names the beam types of this project of the same names, and brings those it does not find */
+{const f0=transferStandards;transferStandards=(P0,S,picks,ov)=>{const ST=(S&&S.types)||{};if(!picks.includes('type:truss')||!Array.isArray(ST.truss)||!Array.isArray(P0.types.truss))return f0(P0,S,picks,ov);
+  const was=new Map(P0.types.truss.map(T=>[T,JSON.stringify(T)])),R=f0(P0,S,picks,ov),SB=ST.beam||[];          // what came over: a type new here, or one whose values S has given it
+  for(const T of P0.types.truss){const src=ST.truss.find(x=>x.name===T.name);if(!src||was.get(T)===JSON.stringify(T))continue;
+    for(const k of TR_MK){const sb=src[k]!=null?SB.find(x=>x.id===src[k]):null;if(!sb){delete T[k];continue}if(!Array.isArray(P0.types.beam))P0.types.beam=[];let B=P0.types.beam.find(x=>x.name===sb.name);
+      if(!B){B=Object.assign(JSON.parse(JSON.stringify(sb)),{id:P0.seq++});if(B.mid!=null){const sm=(S.mats||[]).find(m=>m.id===B.mid),pm=sm&&(P0.mats||[]).find(m=>m.name===sm.name);if(pm)B.mid=pm.id;else delete B.mid}P0.types.beam.push(B);R.added++}
+      T[k]=B.id}}
+  return R}}
+/* only beam types of the project; new projects: the stock trusses get chords of a lipped channel 150 × 65 × 20 × 3.2 and webs of an angle 50 × 50 × 6, once */
+{const f0=newProject;newProject=en=>{const Q=f0(en);Q.trT=0;return Q}}
+XC.push(()=>{const TY=P.types;if(!TY||!Array.isArray(TY.truss))return;const B=new Set((TY.beam||[]).map(x=>x.id));
+  for(const T of TY.truss)for(const k of TR_MK)if(T[k]!==undefined&&!(Number.isInteger(T[k])&&B.has(T[k])))delete T[k];
+  if(P.trT!==0)return;P.trT=1;if(!Array.isArray(TY.beam))return;const used=new Set(P.els.filter(e=>e.cat==='truss').map(e=>e.type)),
+    get=(s,row)=>{let x=stlHave('beam',s,row);if(!x){x=Object.assign({id:P.seq++},stlFrom(s,row,'beam'));x.mark=stlMark('beam');TY.beam.push(x)}return x.id};
+  for(const T of TY.truss){if(used.has(T.id)||T.kind==='custom'||TR_MK.some(k=>T[k]!=null))continue;T.tc=T.bc=get('LC',[150,65,20,3.2]);T.vw=T.dw=get('L',[50,50,6,6.5])}});
+
+Object.assign(STR,{g_trmem:['ชิ้นส่วนของโครงถัก','Members'],
+  trf_tc:['คอร์ดบน: ชนิดหน้าตัด','Top Chords: Framing Type'],trf_bc:['คอร์ดล่าง: ชนิดหน้าตัด','Bottom Chords: Framing Type'],trf_vw:['เว็บตั้ง: ชนิดหน้าตัด','Vertical Webs: Framing Type'],trf_dw:['เว็บทแยง: ชนิดหน้าตัด','Diagonal Webs: Framing Type'],
+  tr_tc:['คอร์ดบน','Top Chords'],tr_bc:['คอร์ดล่าง','Bottom Chords'],tr_vw:['เว็บตั้ง','Vertical Webs'],tr_dw:['เว็บทแยง','Diagonal Webs'],
+  trm_size:['ตามขนาด {0} มม.','By size, {0} mm'],trm_load:['เพิ่มจากตารางเหล็ก','Load from the steel tables'],
+  t_gload:['โหลดกลุ่ม (Load as Group)','Load as Group'],t_wppick:['กำหนดระนาบทำงาน (Set)','Set Work Plane'],costu_truss:['บาท/ชุด','THB each']});          // the names of two tools under the ribbon and in Repeat, and the unit of a truss type's price, which showed their keys
+/* ===== 117 the structure and the finishes of a stair (V1.117; Revit: the run type of a cast-in-place stair › Structural Depth, Treads › Tread Thickness,
+   Nosing Length, Tread Material, Risers › Riser Thickness, Riser Material; the landing type › Monolithic Thickness) =====
+   A stair type may give: wst the depth of its structure under the inner corners of the steps, square to the slope (unset: 190 measured plumb, as before);
+   lth the thickness of its landings (unset: 190); tth the finish of its treads and landings, tmat what it is (tm: {mid} a project material instead);
+   rth / rmat / rm the finish of its risers; nos how far a tread stands out over the riser below it (unset: 22 where the steps are big enough, as before).
+   The finishes are inside the riser height and the going: a finished tread is where the step was, the structure stands back and down by the finishes,
+   and a landing leaves room under its edge for the finish of the last riser.  Quantities: the treads, the volume of the structure (less what joined
+   elements take, worked out on its own solids), the areas and volumes of the finishes; the material takeoff has a row for each of their materials, IFC
+   gives Pset_StairCommon its values and the stair Qto_StairBaseQuantities.  A spiral stair keeps its treads of 60 on a post, without finishes.
+   The stock stair types of a new project get a structure of 150, landings of 150, stone treads of 40 and risers of 30 and a nosing of 20, once (P.stF). */
+const ST_FM=['stone','ftile','wood','screed','metal'],ST_NUM={wst:[50,1000],lth:[50,1000],tth:[0,100],rth:[0,100],nos:[0,100]},ST_NT=38;
+/* what a stair of type T and geometry g is built of: v the waist measured plumb, ws as typed (square), lth, tt / rt the tread and riser finishes, ns the nosing */
+function stFin(T,g){T=T||{};const val=k=>{const x=T[k];return x!=null&&x!==''&&isFinite(+x)?clamp(+x,ST_NUM[k][0],ST_NUM[k][1]):null};
+  const ws=val('wst'),lt=val('lth'),nos=val('nos'),tt=Math.min(val('tth')||0,g.r/2),rt=Math.min(val('rth')||0,g.g/3);
+  let ns=nos!=null?Math.min(nos,g.g/3):g.r>90&&g.g>150?22:0;if(!tt&&g.r<ST_NT+20)ns=0;          // a nosing of the structure needs a riser it can stand out over
+  return{ws,v:ws!=null?ws*Math.hypot(g.g,g.r)/g.g:190,lth:lt!=null?lt:190,tt,rt,ns,nt:ST_NT}}
+/* the material of the finish of the treads (s 't') or of the risers ('r'): {M: the project material, or null; b: its base; k: its key in a takeoff; col; mt} */
+function stMat(P0,T,s){const o=T&&T[s+'m'],id=o&&typeof o==='object'&&o.mid!=null?+o.mid:null,M=id!=null&&Array.isArray(P0&&P0.mats)?P0.mats.find(x=>x.id===id)||null:null,
+    b=M?M.base:ST_FM.includes(T&&T[s+'mat'])?T[s+'mat']:'stone';return{M,b,k:M?'#'+M.id:b,col:M&&M.color?M.color:MAT_COL[b]||'#c9c6bf',mt:MAT[b]!=null?MAT[b]:MAT.conc}}
+function stMatName(P0,T,s,tr){if(!(+(T||{})[s+'th']>0))return'';const q=stMat(P0,T,s);return q.M?String(q.M.name||''):mtoLab(q.b,tr||t)}
+/* a run in its own frame (x along it from its first riser line, z up from its foot): pr the profile of its structure, pushed across its width (as before when
+   nothing is given: the last riser is the face of what it comes up to); tf / rf the finishes of its treads and risers as [x0, x1, z0, z1]; land: it ends at a landing */
+function stRun(g,R,F,land){const n=R.n,r=g.r,gg=g.g,len=R.len,tt=F.tt,rt=F.rt,ns=F.ns,nt=F.nt,top=n*r-(land?tt:0),pr=[[rt,0]],tf=[],rf=[];
+  for(let i=0;i<n-1;i++){if(ns&&i>0&&!tt)pr.push([i*gg+rt,(i+1)*r-nt],[i*gg-ns,(i+1)*r-nt],[i*gg-ns,(i+1)*r]);else pr.push([i*gg+rt,(i+1)*r-tt]);pr.push([(i+1)*gg+rt,(i+1)*r-tt])}          // every tread but the first stands out over the riser below it
+  pr.push([len+rt,top]);const ze=(n-1)*r-tt-F.v,xb=rt+(tt+F.v)*gg/r;if(ze>1&&xb<len+rt-1)pr.push([len+rt,ze],[xb,0]);else pr.push([len+rt,0]);          // the soffit, v plumb under the inner corners
+  if(tt>0)for(let j=1;j<n;j++)tf.push([(j-1)*gg-(j>1?ns:0),j*gg+rt,j*r-tt,j*r]);          // a tread runs under the finish of the riser behind it
+  if(rt>0)for(let j=0;j<n;j++){const z0=j?j*r:0,z1=j<n-1?(j+1)*r-(ns&&j>0&&!tt?nt:tt):top;if(z1-z0>0.5)rf.push([j*gg,j*gg+rt,z0,z1])}          // a riser stands on the tread below it
+  return{pr,tf,rf,top}}
+/* a landing's structure in plan: its outline less the strip under the finish of the last riser of the run that comes up to it (R), where the landing is a
+   rectangle along that run (as every landing is); else its outline */
+function stLandPoly(l,R,rt,hw){const P0=area2(l.poly)<0?l.poly.slice().reverse():l.poly;if(!R||!(rt>0)||l.poly.length!==4)return P0;
+  const L=l.poly.map(p=>[(p[0]-R.A[0])*R.dx+(p[1]-R.A[1])*R.dy,(p[0]-R.A[0])*R.nx+(p[1]-R.A[1])*R.ny]),xs=L.map(q=>q[0]),ys=L.map(q=>q[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  if(Math.abs(x0-R.len)>1||x1-x0<rt+1||y0>-hw+1||y1<hw-1||!L.every(q=>(Math.abs(q[0]-x0)<1||Math.abs(q[0]-x1)<1)&&(Math.abs(q[1]-y0)<1||Math.abs(q[1]-y1)<1)))return P0;
+  const xa=R.len,xn=R.len+rt,O=[[x1,y0],[x1,y1]];if(y1>hw+1)O.push([xa,y1],[xa,hw],[xn,hw]);else O.push([xn,y1]);if(y0<-hw-1)O.push([xn,-hw],[xa,-hw],[xa,y0]);else O.push([xn,y0]);
+  const W=O.map(q=>[R.A[0]+R.dx*q[0]+R.nx*q[1],R.A[1]+R.dy*q[0]+R.ny*q[1]]);return area2(W)<0?W.reverse():W}
+/* the parts of a stair that is not a spiral: {g, F, hw, runs: [{R, pr, tf, rf, top}], lands: [{l, sp: the outline of its structure, z0, z1}]} */
+function stParts(P0,e,g){g=g||stairGeo(P0,e);if(!g||g.spiral)return null;const F=stFin(g.T,g),hw=g.W/2,ends=g.runs.map(R=>g.lands.find(l=>Math.abs(l.z-R.z1)<1)||null);
+  return{g,F,hw,runs:g.runs.map((R,i)=>Object.assign({R},stRun(g,R,F,!!ends[i]))),
+    lands:g.lands.map(l=>{const i=ends.indexOf(l);return{l,sp:stLandPoly(l,i>=0?g.runs[i]:null,F.rt,hw),z0:l.z-F.tt-F.lth,z1:l.z-F.tt}})}}
+/* 3D: the runs and landings into m, the stair's own mesh; the finishes as meshes of their own material (one for each), which it returns */
+function stairMesh(P0,e,g,m,K){const S=stParts(P0,e,g),F=S.F,hw=S.hw,out=new Map(),
+    fin=s=>{const q=stMat(P0,g.T,s);let f=out.get(q.k);if(!f){f=K.mk(e.id,'stair',hex2rgb(q.col));f.mt=q.mt;f.tmid=q.M?q.M.id:0;f.ly=WL_TONE[q.b]||0.6;out.set(q.k,f)}return f};          // cut in its own tone, as the layers of a wall
+  for(const X of S.runs){const R=X.R,pr=X.pr,to3=(q,s)=>[R.A[0]+R.dx*q[0]+R.nx*s,R.z0+q[1],R.A[1]+R.dy*q[0]+R.ny*s];extrude(pr.map(q=>to3(q,-hw)),[R.nx*g.W,0,R.ny*g.W],m.t);
+    for(let i=0;i<pr.length;i++){const a=pr[i],b=pr[(i+1)%pr.length];for(const s of [-hw,hw]){const p=to3(a,s),q=to3(b,s);m.l.push(p[0],p[1],p[2],q[0],q[1],q[2])}const p=to3(a,-hw),q=to3(a,hw);m.l.push(p[0],p[1],p[2],q[0],q[1],q[2])}
+    const box=(f,b)=>{const c=(x,y)=>[R.A[0]+R.dx*x+R.nx*y,R.A[1]+R.dy*x+R.ny*y];K.solid(f,[c(b[0],-hw),c(b[1],-hw),c(b[1],hw),c(b[0],hw)],R.z0+b[2],R.z0+b[3])};
+    for(const b of X.tf)box(fin('t'),b);for(const b of X.rf)box(fin('r'),b)}
+  for(const L of S.lands){K.solid(m,L.sp,L.z0,L.z1);if(F.tt>0)K.solid(fin('t'),area2(L.l.poly)<0?L.l.poly.slice().reverse():L.l.poly,L.z1,L.l.z)}
+  return[...out.values()]}
+/* the solids of the structure, each closed (the last riser of a run is a face, not a solid): what joined elements are taken from */
+function stSolids(S){const out=[],W=S.g.W,hw=S.hw;
+  for(const X of S.runs){const R=X.R,t=[],pr=X.pr.filter((p,i,a)=>!(i>0&&i<a.length-1&&Math.abs(p[0]-a[i-1][0])<1e-6&&Math.abs(p[0]-a[i+1][0])<1e-6));
+    extrude(pr.map(q=>[R.A[0]+R.dx*q[0]-R.nx*hw,R.z0+q[1],R.A[1]+R.dy*q[0]-R.ny*hw]),[R.nx*W,0,R.ny*W],t);out.push(t)}
+  for(const L of S.lands){const t=[];if(L.z1-L.z0>0.5)extrude(L.sp.map(p=>[p[0],L.z0,p[1]]),[0,L.z1-L.z0,0],t);out.push(t)}return out}
+/* the quantities of a stair: treads, svol the volume of its structure as drawn, parea its plan, tfa / tfv the finish of its treads and landings seen from above
+   and what it holds, rfa / rfv that of its risers seen from the front */
+function stQty(P0,e,g){const o={treads:0,svol:0,parea:0,tfa:0,tfv:0,rfa:0,rfv:0};
+  if(g.spiral){const s=g.spiral,rp=Math.min(s.ri,90);let a=0;for(const q of s.treads)a+=Math.abs(area2(q.poly));o.treads=s.treads.length;o.svol=a*60+8*rp*rp*Math.sin(Math.PI/8)*(g.z1-g.z0);o.parea=Math.abs(area2(g.polys[0]));return o}          // treads of 60 and the post
+  const S=stParts(P0,e,g),F=S.F;
+  for(const X of S.runs){o.treads+=X.R.n-1;o.svol+=Math.abs(area2(X.pr))*g.W;o.parea+=Math.abs(area2(X.R.rect));for(const b of X.tf)o.tfa+=(b[1]-b[0])*g.W;for(const b of X.rf)o.rfa+=(b[3]-b[2])*g.W}
+  for(const L of S.lands){const a=Math.abs(area2(L.l.poly));o.svol+=Math.abs(area2(L.sp))*(L.z1-L.z0);o.parea+=a;if(F.tt>0)o.tfa+=a}
+  o.tfv=o.tfa*F.tt;o.rfv=o.rfa*F.rt;return o}
+/* what the elements joined to a stair take from its structure (Revit: Join Geometry): worked out on its solids, not on the block a stair fills */
+function stCut(P0,e){const S=stParts(P0,e);if(!S)return 0;const E=new Map(P0.els.map(x=>[x.id,x])),C=[];
+  for(const q of (P0.joins||[]).concat(P0.cuts||[]))if(q[1]===e.id){const o=E.get(q[0]);if(o&&joinable(o)){const c=joinSolid(P0,o);if(c.length)C.push(c)}}
+  if(!C.length)return 0;let loss=0;
+  for(const t of stSolids(S)){if(!t.length)continue;const bb=triBox(t);let A=csgFromTris(t,0),hit=false;for(const c of C)if(boxHit(bb,triBox(c),0)){A=csgSub(A,csgFromTris(c,1));hit=true}if(hit)loss+=Math.max(0,triVol(t)-triVol(csgToTris(A)))}
+  return loss}
+/* the volume of a stair: its structure, less what joins take (they see it as the block it fills, which a stair is not) */
+{const f0=quantities;quantities=P0=>{const q=f0(P0);for(const e of P0.els){if(e.cat!=='stair')continue;const o=q.get(e.id);if(!o||o.svol==null)continue;
+  let loss=0;if(o.cutv>0)try{loss=stCut(P0,e)}catch(err){loss=0}o.vol=Math.max(0,o.svol-loss);delete o.svol}return q}}
+/* the material takeoff: the structure (its material, as before), a row for the material of the treads' finish and one for the risers' (one when they are the same) */
+{const f0=mtoParts;mtoParts=(P0,e,Q,tr)=>{const L=f0(P0,e,Q,tr);if(e.cat!=='stair'||!L.length)return L;const q=Q.get(e.id)||{},T=typ(P0,e)||{},by=new Map(L.filter(x=>!x.p).map(x=>[x.k,x])),
+    fin=(s,a,v)=>{if(!(a>0))return;const m=stMat(P0,T,s);let r=by.get(m.k);if(!r){r={k:m.k,n:m.M?m.M.name:mtoLab(m.b,tr),b:m.b,a:0,v:0,rho:m.M&&+m.M.rho>0?+m.M.rho:MK_RHO[m.b]||MK_RHO.auto,p:0};by.set(m.k,r)}r.a+=a;r.v+=v};
+  fin('t',q.tfa,q.tfv);fin('r',q.rfa,q.rfv);return[...by.values(),...L.filter(x=>x.p)]}}
+/* schedules of stairs: Actual Number of Treads, Actual Riser Height, Actual Tread Depth, the volume and the areas of the finishes; the type's values */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='stair')return F;const T=e=>typ(Q,e)||{},q=k=>(e,X)=>{const o=X.Q.get(e.id);return o&&typeof o[k]==='number'?o[k]:''},G=e=>stairGeo(Q,e);
+  F.push({k:'treads',l:tr('sf_treads'),g:q('treads'),num:1,dec:0,sum:1,grp:'q'},{k:'rh',l:tr('sf_rh'),g:e=>G(e).r,num:1,u:'mm',dec:0,grp:'q'},{k:'td',l:tr('sf_td'),g:e=>G(e).g,num:1,u:'mm',dec:0,grp:'q'},
+    {k:'vol',l:tr('c_vol'),g:q('vol'),num:1,u:'m3',sum:1,grp:'q'},{k:'tfa',l:tr('sf_tfa'),g:q('tfa'),num:1,u:'m2',sum:1,grp:'q'},{k:'rfa',l:tr('sf_rfa'),g:q('rfa'),num:1,u:'m2',sum:1,grp:'q'});
+  for(const k of ['wst','lth','tth','nos','rth'])F.push({k:'T.'+k,l:tr('f_'+k),g:e=>{const x=T(e)[k];return x==null||x===''||!isFinite(+x)?'':+x},grp:'t',num:1,u:'mm',dec:0,ed:'tp',tf:[k,'num']});
+  for(const k of ['tmat','rmat'])F.push({k:'T.'+k,l:tr('f_'+k),g:(e,X)=>stMatName(Q,T(e),k[0],X.tr),grp:'t'});return F}}
+SF_DEF.stair=['type','level','risers','treads','vol','count'];          // a new schedule of stairs
+/* a value typed in a schedule for a stair type: as in Edit Type, kept in its range, emptied: unset */
+{const f0=tpSet107;tpSet107=(e,f,el)=>{const k=f&&f.tf&&f.tf[0];if(!e||e.cat!=='stair'||!ST_NUM[k])return f0(e,f,el);const T=tpType107(e);if(!T)return;const raw=String(el.value).trim(),again=()=>schRedraw107();
+  let x=null;if(raw){const v=parseFloat(raw);if(!isFinite(v)||v<0){again();return}x=clamp(Math.round(v*10)/10,ST_NUM[k][0],ST_NUM[k][1]);if((k==='tth'||k==='rth')&&!x)x=null}
+  if(x==null?T[k]==null:T[k]!=null&&+T[k]===x){again();return}edit(()=>{if(x==null)delete T[k];else T[k]=x});toast(t('tpe_done',T.name,P.els.filter(y=>y.cat==='stair'&&typ(P,y)===T).length))}}
+/* Properties of stairs: the treads, the structure and the finishes */
+XP.push((c,els)=>{if(c!=='stair')return'';const Q=QTY();let n=0,v=0,ta=0,ra=0;for(const x of els){const o=Q.get(x.id)||{};n+=o.treads||0;v+=o.vol||0;ta+=o.tfa||0;ra+=o.rfa||0}
+  const e=els[0],T=typ(P,e)||{},same=els.every(x=>x.type===e.type),fm=s=>same?' · '+stMatName(P,T,s,t)+' '+Math.round(+T[s+'th'])+' '+t('u_mm'):'';
+  let h=PR.grp('g_stfin')+PR.ro('p_treads',String(n))+PR.ro('p_volume',fmtVol(v)+' '+volUnit());
+  if(els.length===1){const g=stairGeo(P,e);if(!g.spiral){const F=stFin(g.T,g);h+=PR.ro('p_stwaist',Math.round(F.v*g.g/Math.hypot(g.g,g.r))+' '+t('u_mm'))+(g.lands.length?PR.ro('f_lth',Math.round(F.lth)+' '+t('u_mm')):'')}}
+  if(ta>0)h+=PR.ro('p_tfarea',fmtArea(ta)+' '+areaUnit()+fm('t'));if(ra>0)h+=PR.ro('p_rfarea',fmtArea(ra)+' '+areaUnit()+fm('r'));return h});
+/* IFC: the values of Pset_StairCommon; a stair has base quantities (its length and the net volume of its structure); its finishes in PENUM_BIM */
+function ifcCPr(P0,e,id,T,L,prop,tr,X3){if(e.cat!=='stair'||id!==e.id)return L;const g=stairGeo(P0,e),nt=g.spiral?g.spiral.treads.length:g.runs.reduce((s,R)=>s+R.n-1,0);
+  L.push(prop('NumberOfRiser',g.N,'IFCCOUNTMEASURE'),prop('NumberOfTreads',nt,'IFCCOUNTMEASURE'),prop('RiserHeight',g.r,'IFCPOSITIVELENGTHMEASURE'),prop('TreadLength',g.g,'IFCPOSITIVELENGTHMEASURE'));
+  if(!g.spiral){const F=stFin(g.T,g);if(F.ns>0)L.push(prop('NosingLength',F.ns,X3?'IFCPOSITIVELENGTHMEASURE':'IFCLENGTHMEASURE'));L.push(prop('WaistThickness',F.v*g.g/Math.hypot(g.g,g.r),'IFCPOSITIVELENGTHMEASURE'))}return L}
+{const f0=ifcClass;ifcClass=(P0,e)=>{const C=f0(P0,e);return e&&e.cat==='stair'&&C[0]==='IFCSTAIR'&&!C[3]?[C[0],C[1],C[2],'Qto_StairBaseQuantities']:C}}
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(e.cat!=='stair'||id!==e.id)return r;const g=stairGeo(P0,e);if(g.spiral)return r;const F=stFin(g.T,g),q=stQty(P0,e,g);
+  if(F.ws!=null)r.push(prop('StructuralDepth',fx2(F.ws)+' mm'));if(g.lands.length)r.push(prop('LandingThickness',fx2(F.lth)+' mm'));
+  if(F.tt>0)r.push(prop('TreadFinish',stMatName(P0,g.T,'t',tr)+' '+fx2(F.tt)+' mm'),prop('TreadFinishArea',fx2(q.tfa/1e6)+' m²'));if(F.rt>0)r.push(prop('RiserFinish',stMatName(P0,g.T,'r',tr)+' '+fx2(F.rt)+' mm'),prop('RiserFinishArea',fx2(q.rfa/1e6)+' m²'));return r}}
+
+/* ---- Edit Type of a stair: the structure and the finishes ---- */
+/* a length: empty is unset (what it then is shows in the box), ✕ unsets it */
+RG_TF.stf=(T,f)=>{const k=f[0],has=T[k]!=null&&T[k]!=='',ph=k==='wst'?t('stf_plumb'):k==='lth'?'190':k==='nos'?t('stf_nos'):t('stf_none');
+  return(k==='wst'?`<div class="pg" style="margin:4px -16px;padding-left:16px">${t('g_stfin')}</div>`:'')+`<div class="fr"><label for="tf_${k}">${esc(t('f_'+k)+' ('+t('u_mm')+')')}</label><span style="display:flex;gap:6px;align-items:center"><input type="number" id="tf_${k}" data-tf="${k}" data-stf="1" value="${has?esc(T[k]):''}" min="${ST_NUM[k][0]}" max="${ST_NUM[k][1]}" step="5" placeholder="${esc(ph)}" style="flex:1">${has?`<button type="button" class="btn" data-td="nc:${k}" title="${t('vg_clear')}" aria-label="${t('vg_clear')}">✕</button>`:''}</span></div>`};
+/* what a finish is made of: a material of its own kind, or a material of the project */
+RG_TF.stm=(T,f)=>{const k=f[0],s=k[0],o=T[s+'m'],M=o&&o.mid!=null?matList().find(x=>x.id===+o.mid)||null:null,cur=ST_FM.includes(T[k])?T[k]:'stone';
+  return`<div class="fr"><label for="tf_${k}">${esc(t('f_'+k))}</label><select id="tf_${k}" data-tf="${k}" data-stm="1">${ST_FM.map(m=>`<option value="${m}"${!M&&m===cur?' selected':''}>${esc(mtoLab(m,t))}</option>`).join('')}${matList().map(x=>`<option value="c:${x.id}"${x===M?' selected':''}>${esc(x.name)}</option>`).join('')}</select></div>`};
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);return cat==='stair'&&F?F.concat([['wst','stf'],['lth','stf'],['tth','stf'],['nos','stf'],['tmat','stm'],['rth','stf'],['rmat','stm']]):F}}
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='stair')return;const T=(P.types.stair||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;
+  H.change=ev=>{const el=ev.target,d=el&&el.dataset;if(!d||(!d.stf&&!d.stm))return c0(ev);const k=d.tf,back=()=>dlgTypes('stair',T.id);
+    if(d.stm){if(k!=='tmat'&&k!=='rmat')return back();const s=k[0],v=String(el.value);
+      if(v.slice(0,2)==='c:'){const mid=+v.slice(2);if(!matList().some(M=>M.id===mid))return back();edit(()=>{T[s+'m']={mid}})}else if(ST_FM.includes(v))edit(()=>{T[k]=v;delete T[s+'m']});return back()}
+    if(!ST_NUM[k])return back();const raw=String(el.value).trim();if(!raw){if(T[k]!=null)edit(()=>{delete T[k]});return back()}const v=parseFloat(raw);if(!isFinite(v)||v<0)return back();
+    let x=clamp(Math.round(v*10)/10,ST_NUM[k][0],ST_NUM[k][1]);if((k==='tth'||k==='rth')&&!x)x=null;if(x==null?T[k]==null:T[k]!=null&&+T[k]===x)return back();
+    edit(()=>{if(x==null)delete T[k];else T[k]=x});return back()}}}
+/* the values a stair type keeps; the stock stair types of a new project get a structure, landings and finishes, once */
+{const f0=newProject;newProject=en=>{const Q=f0(en);Q.stF=0;return Q}}
+XC.push(()=>{const TY=P.types;if(!TY||!Array.isArray(TY.stair))return;const ids=new Set(matList().map(M=>M.id));
+  for(const T of TY.stair){for(const k in ST_NUM)if(T[k]!==undefined){const x=T[k]===null||T[k]===''?NaN:+T[k];if(!isFinite(x)||x<0)delete T[k];else T[k]=clamp(x,ST_NUM[k][0],ST_NUM[k][1])}
+    for(const k of ['tth','rth'])if(T[k]===0)delete T[k];for(const k of ['tmat','rmat'])if(T[k]!==undefined&&!ST_FM.includes(T[k]))delete T[k];
+    for(const k of ['tm','rm'])if(T[k]!==undefined){const o=T[k];if(o&&typeof o==='object'&&Number.isInteger(o.mid)&&ids.has(o.mid))T[k]={mid:o.mid};else delete T[k]}}
+  if(P.stF!==0)return;P.stF=1;const used=new Set(P.els.filter(e=>e.cat==='stair').map(e=>e.type));
+  for(const T of TY.stair)if(!used.has(T.id)&&![...Object.keys(ST_NUM),'tmat','rmat','tm','rm'].some(k=>T[k]!=null))Object.assign(T,{wst:150,lth:150,tth:40,tmat:'stone',rth:30,rmat:'stone',nos:20})});
+
+Object.assign(STR,{g_stfin:['โครงสร้างและผิวบันได','Structure and Finishes'],
+  f_wst:['ความหนาท้องบันได','Structural Depth'],f_lth:['ความหนาชานพัก','Landing Thickness'],f_tth:['ผิวลูกนอน: ความหนา','Tread Thickness'],f_tmat:['ผิวลูกนอน: วัสดุ','Tread Material'],
+  f_rth:['ผิวลูกตั้ง: ความหนา','Riser Thickness'],f_rmat:['ผิวลูกตั้ง: วัสดุ','Riser Material'],f_nos:['จมูกบันได: ระยะยื่น','Nosing Length'],
+  stf_plumb:['190 วัดแนวดิ่ง (แบบเดิม)','190 measured plumb (as before)'],stf_none:['ไม่มี','None'],stf_nos:['22 (อัตโนมัติ)','22 (auto)'],
+  p_treads:['จำนวนลูกนอน','Number of Treads'],p_stwaist:['ท้องบันไดหนา (ตั้งฉาก)','Waist, square to the slope'],p_tfarea:['ผิวลูกนอนและชานพัก','Tread and Landing Finish'],p_rfarea:['ผิวลูกตั้ง','Riser Finish'],
+  sf_treads:['จำนวนลูกนอน','Actual Number of Treads'],sf_rh:['ลูกตั้งสูงจริง','Actual Riser Height'],sf_td:['ลูกนอนลึกจริง','Actual Tread Depth'],sf_tfa:['พื้นที่ผิวลูกนอน','Tread Finish Area'],sf_rfa:['พื้นที่ผิวลูกตั้ง','Riser Finish Area']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -22013,6 +22473,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[a_brace]] ((BR)): วาดในแปลนเหมือนคาน แต่ปลายสองข้างอยู่ต่างระดับกัน · แถบตัวเลือกมี [[o_brl1]] และ [[o_brl2]] พร้อมระยะจากระดับ (เช่น จากชั้น 1 ขึ้นไปชั้น 2 หรือระดับเดียวกันโดยให้ปลายสูง 2400 เพื่อทำค้ำยันรูปตัว K) · วาดทีละตัว ไม่ต่อเนื่อง · คานธรรมดาก็เอียงได้: ตั้ง [[p_endoff]] ในคุณสมบัติ · [[p_struse]] สลับระหว่างคานกับค้ำยัน · ความยาวและปริมาตรวัดตามแนวเอียง
 - [[t_bsys]] ((BS)): ชี้ในช่องที่คานหรือผนังล้อมรอบ คานซอยจะวางขนานกับด้านที่ตัวชี้อยู่ใกล้ แล้วคลิก · หรือเลือก [[a_rect]] / [[a_line]] ร่างขอบเขตเอง (คานขนานกับด้านแรกที่วาด) · แถบตัวเลือกและคุณสมบัติมี [[p_bstype]] [[p_bsrule]] (ระยะห่างคงที่ จำนวนคงที่ ระยะห่างสูงสุด ระยะช่องว่าง) และ [[p_bsjust]] · เมื่อเลือกชุดคาน: [[a_bsdir]] หมุนคานไปขนานกับด้านถัดไป [[a_bsremove]] แยกเป็นคานเดี่ยว ลากจุดมุมเพื่อแก้ขอบเขต · ตารางโครงสร้างและ [[a_boq]] นับคานในชุดรวมกับคานชนิดเดียวกัน
 - [[t_truss]]: เลือกชนิด (Howe, Pratt, Warren, จั่ว) แล้วคลิกปลายสองข้าง คอร์ดบน คอร์ดล่าง และชิ้นส่วนยึดจะสร้างตามชนิดและ [[p_trussh]] · [[p_trussoff]] คือความสูงของคอร์ดล่างจากระดับชั้น · ขนาดหน้าตัด ระยะช่วง และราคาเป็นของชนิด แก้ที่ [[edit_type]]
+- [[g_trmem]] (Revit: Structural Framing Type ของ Top Chords, Bottom Chords, Vertical Webs และ Diagonal Webs): ใน [[edit_type]] ของโครงถัก ตั้ง [[trf_tc]] [[trf_bc]] [[trf_vw]] และ [[trf_dw]] เป็นชนิดคานใดก็ได้ของโครงการ เช่น เหล็กรูปพรรณ · ตัวเลือกสุดท้าย [[trm_load]] เปิดตารางเหล็ก ติ๊กขนาดแล้วกดโหลด หน้าตัดนั้นเป็นชนิดคานใหม่และเป็นชนิดของชิ้นส่วนนั้นทันที · เว็บตั้งคือเว็บที่ตั้งตรง เว็บอื่นเป็นเว็บทแยง · ตามขนาด คือแท่งตันขนาด [[f_cw]] × [[f_ch]] สำหรับคอร์ด หรือ [[f_ww]] × [[f_wh]] สำหรับเว็บ แบบเดิม · 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดจริง แปลนกว้างตามคอร์ด · ชิ้นส่วนที่มีชนิดหน้าตัดตัดปลายที่จุดต่อเอง: เว็บจบที่ผิวคอร์ด คอร์ดต่อมุมเฉียงที่ยอดและที่หักมุม คอร์ดบนวางบนคอร์ดล่างที่ส้นและไม่ยื่นเลยปลายคอร์ดล่าง · ปริมาตรและน้ำหนักคิดจากพื้นที่หน้าตัดคูณความยาวตัด (Cut Length) แผงคุณสมบัติบอกชิ้นส่วนแต่ละแบบและ [[c_kg]] ซึ่งเป็นฟิลด์ของตารางโครงถักด้วย ตารางวัสดุแยกแถวตามวัสดุของชิ้นส่วน · [[a_purge]] ไม่ล้างชนิดคานที่โครงถักใช้อยู่ · โครงถักตั้งต้นของโครงการใหม่ใช้คอร์ด C 150×65×20×3.2 และเว็บ L 50×50×6
+> ต่างจาก Revit: ชิ้นส่วนเป็นส่วนหนึ่งของโครงถัก ไม่ใช่คานแยกแต่ละตัว จึงเลือก ติดป้าย หรือเปลี่ยนชนิดทีละชิ้นไม่ได้ ไม่มี Start/End Release หรือ Angle ของชิ้นส่วน และระยะตัดปลายที่จุดต่อโปรแกรมกำหนดให้ ปรับเองไม่ได้
 - ฐานราก อยู่ในแท็บ [[tab_struct]] แผง [[p_found]] · [[t_footing]]: เลือกชนิด (ขนาด) แล้วคลิกบนเสา ฐานรากจะอยู่ใต้เสาโดยหลังฐานรากอยู่ที่โคนเสา และย้ายตามเสา · [[a_footcols]] ใส่ให้เสาที่เลือก หรือเสาทุกต้นของชั้นนี้ที่ยังไม่มี · [[a_footgrids]] วางที่จุดตัดของกริดทุกจุด (หรือเฉพาะกริดที่เลือก) · คลิกที่ว่างเพื่อวางฐานรากเองได้ ตั้ง [[p_footoff]] ในแผงคุณสมบัติ · ควรตั้ง [[p_baseoff]] ของเสาให้ลึกถึงระดับฐานรากก่อน
 - ฐานรากเสาเข็ม: ใน แก้ชนิด ของฐานราก เลือก [[f_pn]] 1–9 ต้น แล้วตั้ง [[f_pk]] (เจาะ สปัน สี่เหลี่ยม ไอ ไมโครไพล์) ขนาด ความยาว ระยะห่าง ระยะขอบ [[f_pq]] และ [[f_pcost]] (เว้นว่าง = ราคาที่โปรแกรมคิดจากขนาดและความยาว · เข็มชนิด ขนาด และความยาวเดียวกันใช้ราคาเดียวกันทั้งโครงการ) · รูปฐานตามจำนวนเข็ม (3 ต้นเป็นสามเหลี่ยมตัดมุม) · แปลนแสดงเข็มเป็นเส้นประ แปลนโครงสร้างมีกากบาทที่เข็ม · 3 มิติ รูปด้าน และรูปตัดแสดงเข็มเต็มความยาว · BOQ นับเข็มเป็นต้น แยกตามชนิด ขนาด และความยาว · IFC ส่งเข็มเป็น IfcPile และฐานเป็น PILE_CAP · [[a_ldtake]] บอกจำนวนเข็มที่เสาแต่ละต้นต้องใช้ · ชนิดตั้งต้น PC1–PC4
 - [[t_wfoot]] ((FT)): คลิกบนผนัง ฐานรากแถบจะยาวตามผนัง (เกินปลายผนังข้างละครึ่งความกว้างเพื่อให้ชนกันที่มุม) และเปลี่ยนตามผนัง · [[a_wfootall]] ใส่ให้ผนังทุกแนวของชั้นนี้
@@ -22052,6 +22514,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # บันได ทางลาด ราวกันตก
 - [[t_stair]]: คลิกจุดเริ่ม แล้วคลิกบอกทิศขึ้น จำนวนขั้นคิดจากความสูงชั้นให้เอง เลือก [[p_stshape]] ได้: ช่วงตรง ตัว L หรือตัว U มีชานพัก หรือ[[st_S]] (คลิกจุดศูนย์กลาง แล้วคลิกจุดเริ่มที่ขอบนอก ระยะนั้นคือรัศมี ลูกนอนวัดที่แนวเดินกึ่งกลางขั้น มีเสากลาง และปุ่มใส่ราวกันตกได้ราวที่ขอบนอก) · บันไดเวียน: คลิกศูนย์กลาง จุดเริ่ม แล้วคลิกจุดปลาย (Center-Ends) หรือกด Enter ให้มุมตามจำนวนลูกตั้ง แก้ภายหลังที่ [[p_stsweep]]
+- [[g_stfin]] (Revit: Structural Depth ของ Monolithic Run, Monolithic Thickness ของชานพัก, Tread/Riser Thickness, Nosing Length, Tread/Riser Material): ใน [[edit_type]] ของบันได ตั้ง [[f_wst]] (ความหนาใต้มุมในของขั้น วัดตั้งฉากกับความชัน · เว้นว่าง: 190 มม. วัดแนวดิ่ง แบบเดิม) [[f_lth]] (เว้นว่าง: 190) [[f_tth]] กับ [[f_tmat]] (ผิวลูกนอนและชานพัก) [[f_rth]] กับ [[f_rmat]] (ผิวลูกตั้ง) วัสดุผิวเป็นหิน กระเบื้อง ไม้ ปูน โลหะ หรือวัสดุของโครงการก็ได้ · [[f_nos]] คือระยะที่ลูกนอนยื่นเลยลูกตั้งข้างล่าง (เว้นว่าง: 22 มม. เมื่อขั้นใหญ่พอ แบบเดิม) · ค่าที่เว้นว่างไว้บอกค่าที่ใช้อยู่ในช่อง ปุ่ม ✕ ล้างค่า · ผิวอยู่ภายในความสูงลูกตั้งและระยะลูกนอน: ผิวลูกนอนสำเร็จอยู่ที่ระดับขั้นเดิม โครงสร้างถอยลงและถอยหลังตามความหนาผิว ผิวลูกนอนสอดใต้ผิวลูกตั้งขั้นถัดไป ชานพักเว้นร่องใต้ขอบให้ผิวลูกตั้งขั้นสุดท้าย · 3 มิติ รูปด้าน และรูปตัดแสดงผิวเป็นชิ้นสีของวัสดุ ตัดเป็นสีอ่อนกว่าคอนกรีตแบบชั้นของผนัง · แผงคุณสมบัติบอก [[p_treads]] ปริมาตรโครงสร้าง (หักส่วนที่ชิ้นที่เชื่อมรูปทรงกันตัดออก) [[p_stwaist]] [[f_lth]] และพื้นที่ผิว · ตารางบันไดมีฟิลด์ [[sf_treads]] [[sf_rh]] [[sf_td]] ปริมาตร [[sf_tfa]] [[sf_rfa]] และค่าของชนิดซึ่งแก้ในตารางได้ · ตารางวัสดุแยกแถวคอนกรีตกับวัสดุผิว · IFC ส่ง Pset_StairCommon (NumberOfRiser, NumberOfTreads, RiserHeight, TreadLength, NosingLength, WaistThickness) และ Qto_StairBaseQuantities · ชนิดบันไดตั้งต้นของโครงการใหม่: ท้องบันได 150 ชานพัก 150 ผิวหินลูกนอน 40 ลูกตั้ง 30 จมูก 20
+> ต่างจาก Revit: ชานพักใช้ผิวเดียวกับลูกนอนเสมอ (Use Same Finish as Run) ไม่มีรูปทรงจมูกบันได (Nosing Profile) ท้องบันไดเรียบ (ไม่มี Stepped) ผิวไม่ใช่ชิ้นแยกจึงเลือกหรือติดป้ายทีละแผ่นไม่ได้ และบันไดเวียนยังเป็นแผ่นลูกนอนหนา 60 บนเสากลาง ไม่มีผิว
 - [[t_ramp]]: คลิกปลายล่างแล้วปลายบน โปรแกรมเตือนถ้าชันเกินค่าของชนิด
 - [[t_railing]]: วาดเป็นเส้น หรือเลือกบันได/ทางลาดแล้วกด [[a_railhost]]
 
@@ -22163,6 +22627,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[a_brace]] ((BR)): drawn in a plan like a beam, but its two ends are at different heights · the options bar has the [[o_brl1]] and the [[o_brl2]], each with its offset (from Level 1 up to Level 2, say, or the same level with the far end 2400 up, for a K of two braces) · braces are drawn one at a time, not as a chain · a plain beam can slope as well: set its [[p_endoff]] in Properties · [[p_struse]] turns a beam into a brace and back · length and volume are measured along the slope
 - [[t_bsys]] ((BS)): point inside a bay closed by beams or walls: the beams go along the side the pointer is nearest to; click to make them · or choose [[a_rect]] / [[a_line]] and sketch the outline (the beams go along the first side drawn) · the options bar and Properties have the [[p_bstype]], the [[p_bsrule]] (Fixed Distance, Fixed Number, Maximum Spacing, Clear Spacing) and the [[p_bsjust]] · with a beam system selected: [[a_bsdir]] turns the beams to lie along the next side, [[a_bsremove]] leaves them as beams of their own, and dragging a corner changes the outline · the structure schedule and the [[a_boq]] count its beams with the beams of their type
 - [[t_truss]]: choose the type (Howe, Pratt, Warren, gabled) and click its two ends: the chords and the webs follow from the type and the [[p_trussh]] · [[p_trussoff]] is the height of the bottom chord above the level · the sections, the panel length and the cost belong to the type: [[edit_type]]
+- [[g_trmem]] of a truss (Revit: the Structural Framing Type of Top Chords, Bottom Chords, Vertical Webs and Diagonal Webs): in [[edit_type]] of a truss set [[trf_tc]], [[trf_bc]], [[trf_vw]] and [[trf_dw]] to any beam type of the project, a steel section say · the last choice, [[trm_load]], opens the steel tables: tick a size and load it, and it is a new beam type and the type of those members at once · a vertical web stands straight up; the other webs are diagonal · By size is a solid bar of [[f_cw]] × [[f_ch]] for chords, [[f_ww]] × [[f_wh]] for webs, as before · 3D views, elevations and sections show the sections, plans the width of the chords · members of framing types are cut back at their joints: a web stops at the faces of the chords, a chord is mitred where it turns, a top chord sits on the bottom chord at a heel and stops at its end · their volume and weight count the area of the section times the cut length (Revit: Cut Length); Properties show what each kind of member is and the [[c_kg]], a field of truss schedules too; material takeoffs have a row for the material of the members · [[a_purge]] keeps the beam types that trusses use · the stock trusses of a new project have chords of C 150×65×20×3.2 and webs of L 50×50×6
+> Unlike Revit: the members are parts of their truss, not beams of their own, so they cannot be selected, tagged or given another type one by one, they have no Start/End Release or Angle, and their cutbacks are set by the program
 - Foundations are on the [[tab_struct]] tab, in the [[p_found]] panel · [[t_footing]]: choose the type (the size), then click a column: the footing goes under it with its top at the base of the column, and follows the column · [[a_footcols]] does it for the selected columns, or for every column of this level that has none · [[a_footgrids]] puts one at every crossing of the grids (or of the selected grids) · click anywhere else to place a footing by hand, and set its [[p_footoff]] in Properties · give the columns a [[p_baseoff]] down to the foundation level first
 - Pile caps: in Edit Type of a footing choose [[f_pn]] (1–9), then [[f_pk]] (bored, spun, square, I, micro), its size, length, spacing, edge distance, [[f_pq]] and [[f_pcost]] (left empty: the program's price from its size and length · piles of the same kind, size and length share one price in the project) · the cap's outline follows the piles (three make a triangle with cut corners) · plans show the piles dashed, plans of the structure with a cross on each · 3D views, elevations and sections show the piles their whole length · the BOQ counts piles, a row for each kind, size and length · IFC export writes each pile as IfcPile and the cap as a PILE_CAP · [[a_ldtake]] says how many piles each column needs · stock types PC1–PC4
 - [[t_wfoot]] ((FT)): click a wall; the strip is as long as the wall (half its own width longer at either end, so that the strips of two walls meet at a corner) and follows it · [[a_wfootall]] does it for every wall of this level
@@ -22202,6 +22668,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # Stairs, ramps, railings
 - [[t_stair]]: click the start, then the direction up. The number of risers follows from the storey height. [[p_stshape]]: straight, L or U with a landing, or [[st_S]] (click the centre, then the start on the outer edge, which sets the radius, then click where it ends (Center-Ends) or press Enter for a Full-Step Spiral that the risers turn; the tread is measured on the walk line half-way across; it has a centre post, and the railing button puts a railing on the outer edge) · [[p_stsweep]] changes the sweep afterwards
+- [[g_stfin]] (Revit: the Structural Depth of a monolithic run, the Monolithic Thickness of a landing, Tread/Riser Thickness, Nosing Length, Tread/Riser Material): in [[edit_type]] of a stair set [[f_wst]] (under the inner corners of the steps, square to the slope · left empty: 190 mm measured plumb, as before), [[f_lth]] (left empty: 190), [[f_tth]] and [[f_tmat]] (the finish of the treads and landings), [[f_rth]] and [[f_rmat]] (the finish of the risers); a finish is stone, tile, wood, screed, metal or any material of the project · [[f_nos]] is how far a tread stands out over the riser below it (left empty: 22 mm where the steps are big enough, as before) · an empty box shows the value in use, ✕ empties it · the finishes are inside the riser height and the going: a finished tread is where the step was, the structure stands back and down by the finishes, a tread runs under the finish of the riser behind it, and a landing leaves room under its edge for the finish of the last riser · 3D views, elevations and sections show the finishes in the colours of their materials, cut lighter than the concrete as the layers of a wall · Properties show the [[p_treads]], the volume of the structure (less what joined elements take), the [[p_stwaist]], the [[f_lth]] and the areas of the finishes · stair schedules have [[sf_treads]], [[sf_rh]], [[sf_td]], the volume, [[sf_tfa]], [[sf_rfa]] and the values of the type, which can be typed in the schedule · material takeoffs have a row for the concrete and one for each finish · IFC export gives Pset_StairCommon (NumberOfRiser, NumberOfTreads, RiserHeight, TreadLength, NosingLength, WaistThickness) and Qto_StairBaseQuantities · the stock stair types of a new project: a structure of 150, landings of 150, stone treads of 40 and risers of 30, a nosing of 20
+> Unlike Revit: landings always have the finish of the treads (Use Same Finish as Run), there are no nosing profiles, the underside is smooth (not stepped), the finishes are not elements of their own, so they cannot be selected or tagged one by one, and a spiral stair still has treads of 60 on its post, without finishes
 - [[t_ramp]]: click the low end, then the high end. The program warns when it is steeper than its type allows
 - [[t_railing]]: drawn as a line, or select a stair or ramp and press [[a_railhost]]
 
@@ -22648,6 +23116,9 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.112 · ต่อหลังคา (Join/Unjoin Roof): คลิกขอบหลังคาด้านที่จะยืด แล้วคลิกหลังคาอีกผืนหรือผนัง หลังคายืดออกไปจนผิวชนหลังคาหรือผนังนั้น เกิดตะเข้รางที่รอยต่อเอง ด้านที่ต่อกลายเป็นหน้าจั่ว · ใช้ได้ในแปลน 3 มิติ รูปด้าน และรูปตัด · พื้นที่ที่ยืดออกอยู่ในแผงคุณสมบัติ ตาราง ปริมาณ และราคา · คลิกขอบที่ต่ออยู่ หรือกด เลิกต่อทุกด้าน เพื่อคืนรูปเดิม
 - V1.113 · ปลายคานเหล็ก (Beam/Column Joins, Cope): คานเหล็กตัดปลายเองที่ผิวเสาที่ปลายของมันอยู่ข้างใน ที่ข้างคานที่มันวางชนกลางช่วง และที่มุมที่ปลายคานสองตัวชนกัน (ร่นห่าง 10 มม.) · เครื่องมือ รอยต่อคานกับเสา สลับตัวที่วิ่งผ่าน ต่อแบบเฉียง หรือห้ามต่อ · บากปลายคาน ให้เอวคานยื่นถึงเอวของคานหรือเสาที่มันชน · ระยะยื่น ระยะร่น ระยะบาก และความยาวตัด อยู่ในแผงคุณสมบัติ ตาราง และน้ำหนักเหล็กใน BOQ
 - V1.114 · ชนิดกลุ่ม (Groups): [[browser]] มีหมวดกลุ่ม แยกกลุ่มโมเดลกับกลุ่มรายละเอียด พร้อมจำนวนชุด คลิกชื่อเพื่อวางชุดใหม่ เลือกทุกชุด เปลี่ยนชื่อ บันทึก โหลดใหม่ หรือลบ · บันทึกกลุ่มเป็นไฟล์ .penbim (Save Group) และโหลดไฟล์งานเข้ามาเป็นกลุ่ม (Load as Group) ชนิดและวัสดุที่ยังไม่มีมาด้วย ชั้นเรียงจากชั้นของแปลนขึ้นไป · โหลดใหม่ (Reload) เปลี่ยนทุกชุดตามไฟล์ แต่ละชุดอยู่ที่เดิม · เปลี่ยนชนิดของชุดที่เลือกได้ในแผงคุณสมบัติ ชื่อกลุ่มเปลี่ยนพร้อมกันทุกชุด · วางกลุ่มที่สูงหลายชั้นในแปลนชั้นอื่น ชั้นบนย้ายตามด้วย และเห็นเส้นขอบกลุ่มตามเคอร์เซอร์ · ชิ้นที่เชื่อมกัน (Join/Cut Geometry) คัดลอกไปด้วยกันยังเชื่อมกันอยู่ · แก้ข้อความที่ขึ้นผิดที่ 16 จุด เช่น วางบัวผนังแล้วขึ้นข้อความของระบบสวิตช์ ระดับตัดแปลนขึ้นว่า ดินตัด ข้อความ 3 มิติใหม่ขึ้นคำว่า วัสดุ ตรวจวงจรขึ้นว่ายังไม่มีตู้ไฟ ทั้งที่มีแล้ว
+- V1.115 · ตารางวัสดุ (Material Takeoff) และ Excel: [[a_newmto]] สร้างตารางวัสดุของหมวดใดก็ได้ หนึ่งแถวต่อวัสดุของแต่ละชิ้น ผนัง พื้น ฝ้า หลังคาแยกตามชั้น มีช่อง วัสดุ: ชื่อ ประเภท พื้นที่ ปริมาตร ความหนาแน่น น้ำหนัก และทาสี (As Paint) เลือกช่อง เรียง จัดกลุ่ม และวางบนแผ่นงานได้เหมือนตารางอื่น · ส่งออกตารางเป็นไฟล์ Excel (.xlsx) ทีละตารางหรือทุกตารางในไฟล์เดียว ตัวเลขยังเป็นตัวเลข มีหัวตาราง กลุ่ม ยอดรวม และสีตามตาราง · [[a_mtake]] นับเหล็กรูปพรรณเป็นโลหะ เพิ่มโครงถัก ชุดคาน และเสาเข็ม หลังคาที่ไม่ได้เลือกวัสดุใช้วัสดุตามที่วาด วัสดุของโครงการที่ไม่ได้ใส่ความหนาแน่นใช้ค่าของวัสดุพื้นฐาน และมีปุ่ม [[mk_sched]] · สีตามเงื่อนไขของตาราง ([[sp_cf]]) เทียบกับค่าที่ตารางแสดง (ตร.ม. ลบ.ม. ม.) เหมือนตัวกรอง
+- V1.116 · ชิ้นส่วนของโครงถัก (Truss Members): [[edit_type]] ของโครงถักให้ชนิดหน้าตัดแก่คอร์ดบน คอร์ดล่าง เว็บตั้ง และเว็บทแยงแยกกันได้ จากชนิดคานของโครงการ หรือเพิ่มจากตารางเหล็กในหน้าต่างเดียวกัน · 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดเหล็กจริง ตัดปลายที่จุดต่อ (เว็บจบที่ผิวคอร์ด คอร์ดต่อมุมเฉียง คอร์ดบนวางบนคอร์ดล่างที่ส้น) ปริมาตรและน้ำหนักคิดจากหน้าตัดคูณความยาวตัด แผงคุณสมบัติและตารางบอกชิ้นส่วนแต่ละแบบและ [[c_kg]] ตารางวัสดุแยกแถวตามวัสดุของชิ้นส่วน IFC ส่งชื่อหน้าตัดและน้ำหนักเหล็ก · โครงถักตั้งต้นของโครงการใหม่ใช้คอร์ด C 150×65×20×3.2 และเว็บ L 50×50×6 · [[a_transfer]] และ [[a_gload]] พาชนิดหน้าตัดของชิ้นส่วนมาด้วย · แก้: โครงถักกรรไกรและโครงถักโค้งไม่มีเว็บซ้อนทับคอร์ดบนช่วงแรกที่ส้นแล้ว (เดิมนับซ้ำ) · ชื่อ [[a_gload]] ใต้แถบเครื่องมือ ชื่อ [[a_wpset]] และหน่วยราคาของชนิดโครงถักขึ้นเป็นรหัส
+- V1.117 · โครงสร้างและผิวบันได (Revit: Structural Depth, Monolithic Thickness, Tread/Riser Thickness, Nosing Length): [[edit_type]] ของบันไดมีกลุ่ม [[g_stfin]]: [[f_wst]] วัดตั้งฉากกับความชัน [[f_lth]] ผิวลูกนอนและชานพัก ผิวลูกตั้ง (ความหนาและวัสดุ หิน กระเบื้อง ไม้ ปูน โลหะ หรือวัสดุของโครงการ) และ [[f_nos]] · 3 มิติ รูปด้าน และรูปตัดแสดงผิวเป็นชิ้นของวัสดุ ผิวอยู่ในความสูงลูกตั้งเดิม · บันไดทุกตัวมีปริมาตรโครงสร้าง (เดิมไม่มี) ในแผงคุณสมบัติ ตารางโครงสร้าง ตารางวัสดุ และ IFC · ตารางบันไดมีจำนวนลูกนอน ลูกตั้งสูงจริง ลูกนอนลึกจริง ปริมาตร และพื้นที่ผิว · ตารางวัสดุแยกแถวคอนกรีตกับผิว · IFC ส่ง Pset_StairCommon และ Qto_StairBaseQuantities · ชนิดบันไดตั้งต้นของโครงการใหม่มีท้องบันได 150 ชานพัก 150 ผิวหิน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -22852,6 +23323,9 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.112 · Join/Unjoin Roof: click the edge of a roof to carry on, then another roof or a wall: the roof runs on until its top meets that roof or the wall, with valleys where they meet, and the joined side becomes a gable · in plans, 3D views, elevations and sections · the area it adds is in Properties, schedules, quantities and the BOQ · click a joined edge, or Unjoin All, to put it back
 - V1.113 · The ends of steel beams (Beam/Column Joins, Cope): a steel beam is cut back by itself at the face of a column its end is in, at the side of a beam it frames into, and at a corner where it meets the end of another (10 mm clear) · Beam/Column Joins switches which one runs on, mitres them or disallows a join · Apply Coping runs its web on to the web of the beam or column it meets · extensions, cutbacks, coping distance and the Cut Length in Properties, schedules and the steel weight of the BOQ
 - V1.114 · Group types: the [[browser]] has Groups, model and detail, with the number of instances of each; click one to place an instance, select all instances, rename, save, reload or delete it · Save Group writes an instance as a .penbim file, and Load as Group brings a project file's model in as a group (its types and materials that are not here come with it; its levels go on the plan's level and up) · Reload puts a file's content in every instance, each where it stands · the Type Selector of a selected group swaps it for another type, and renaming a group renames every instance · Place Group moves a group that spans levels up or down with the plan, and its outline follows the cursor · joined elements (Join/Cut Geometry) copied together stay joined · 16 labels that showed another feature's text are fixed, among them: placing a wall sweep asked for a switch, a plan's Cut Plane read Cut, new Model Text read Material, and the circuit check said there was no panel when there was one
+- V1.115 · Material Takeoff and Excel: [[a_newmto]] makes a material takeoff of any category, one row for each material of each element, walls, floors, ceilings and roofs by layer, with the Material fields Name, Class, Area, Volume, Density, Weight and As Paint; its fields, sorting, grouping and sheets work as in any schedule · schedules export to Excel (.xlsx), one or all of them in one file: numbers stay numbers, with the headings, groups, totals and colours of the schedule · [[a_mtake]] counts steel sections as metal and adds trusses, beam systems and piles; a roof with no material chosen takes the one it is drawn with, a project material with no density takes its base material's, and [[mk_sched]] opens it as a schedule · the conditional colours of a schedule ([[sp_cf]]) compare the values it shows (m², m³, m), as its filters do
+- V1.116 · Truss members: [[edit_type]] of a truss gives its top chords, bottom chords, vertical webs and diagonal webs each a framing type, a beam type of the project or one loaded from the steel tables in the same dialog · 3D views, elevations and sections show the steel sections, cut back at the joints (webs stop at the faces of the chords, chords are mitred, a top chord sits on the bottom chord at a heel); volume and weight count the section times the cut length; Properties and schedules show what each kind of member is and the [[c_kg]]; material takeoffs have a row for the material of the members; IFC export names the sections and the steel mass · the stock trusses of a new project have chords of C 150×65×20×3.2 and webs of L 50×50×6 · [[a_transfer]] and [[a_gload]] bring the framing types of the members along · Fixed: scissor and bowstring trusses no longer have a web lying on the first top chord at each heel (it was counted twice) · the name of [[a_gload]] under the ribbon, of [[a_wpset]], and the unit of a truss type's price showed their keys
+- V1.117 · Stair structure and finishes (Revit: Structural Depth, Monolithic Thickness, Tread/Riser Thickness, Nosing Length): [[edit_type]] of a stair has [[g_stfin]]: the [[f_wst]] square to the slope, the [[f_lth]], the finish of the treads and landings and that of the risers (a thickness and a material: stone, tile, wood, screed, metal or any material of the project) and the [[f_nos]] · 3D views, elevations and sections show the finishes in their materials, inside the riser height as it was · every stair has the volume of its structure (it had none) in Properties, structural schedules, material takeoffs and IFC · stair schedules have the treads, the actual riser height and tread depth, the volume and the areas of the finishes · material takeoffs have a row for the concrete and one for each finish · IFC export gives Pset_StairCommon and Qto_StairBaseQuantities · the stock stair types of a new project have a structure of 150, landings of 150 and stone finishes
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -23212,6 +23686,14 @@ A camera that follows a path through the building: watch it move, and export it 
 - [[g_split]]: เลือกตารางที่วางบนแผ่นงาน แล้วใส่ [[p_seg]] ในแผงคุณสมบัติ ตารางยาวแบ่งเป็นช่วงวางเรียงกัน แต่ละช่วงมีหัวตาราง ผลรวมอยู่ใต้ช่วงสุดท้าย
 - มาตราส่วนของมุมมองมีตั้งแต่ 1 : 1 ถึง 1 : 5000 และ [[scl_custom]] พิมพ์ตัวเลขเองได้
 
+# ตารางถอดปริมาณวัสดุ (Material Takeoff)
+[[a_newmto]] (แท็บ [[tab_view]] กลุ่ม [[p_create]] หรือ ＋ ใต้หัวข้อ [[br_sched]] ในเบราว์เซอร์โครงการ) สร้างตารางวัสดุของหมวดหนึ่ง เช่น ผนัง พื้น หลังคา คาน หรือ [[ns_multi]] หนึ่งแถวต่อวัสดุของแต่ละชิ้น
+- ผนัง พื้น ฝ้า และหลังคาที่ชนิดมีหลายชั้น ([[a_wlayers]]) แยกแถวตามชั้น วัสดุเดียวกันหลายชั้นในชิ้นเดียวรวมเป็นแถวเดียว · ชิ้นอื่นใช้วัสดุของชนิด เหล็กรูปพรรณนับเป็นโลหะ แผ่นเพลทของเสาและคานเหล็กเป็นอีกแถว โครงถักแยกแถวตามวัสดุของชิ้นส่วน ([[g_trmem]]) · ผิวที่ทาวัสดุ (Paint) เป็นแถวของมันเอง ช่อง [[mto_f_paint]] ขึ้นว่า ใช่
+- [[a_schedflds]]: กลุ่ม [[mto_g_m]] มี [[mto_f_name]] [[mto_f_class]] [[mto_f_area]] [[mto_f_vol]] [[mto_f_rho]] และ [[mto_f_kg]] (ความหนาแน่นที่ใส่ใน [[a_materials]] หรือค่าของวัสดุพื้นฐาน) ตามด้วยช่องของชิ้นงาน · ขนาดของชิ้นงานซ้ำทุกแถวของชิ้นนั้น จึงไม่รวมยอด
+- ตารางใหม่เรียงตามชื่อวัสดุ มีท้ายกลุ่มพร้อมยอดรวมของแต่ละวัสดุ · ปรับได้ที่ [[a_schedprops]] เช่น ไม่ติ๊ก [[sp_item]] ให้เหลือแถวเดียวต่อวัสดุ · วางบนแผ่นงานและส่งออกได้เหมือนตารางอื่น
+- [[a_mtake]] (แท็บ [[tab_manage]]): ปุ่ม [[mk_sched]] สร้างตาราง [[mto_sname]] หนึ่งแถวต่อวัสดุและหมวดเหมือนหน้าต่างนั้น
+> ต่างจาก Revit: ถอดวัสดุได้ 12 หมวด (ผนัง พื้น ฝ้า หลังคา บันได ทางลาด เสา คาน ชุดคาน โครงถัก ฐานรากเดี่ยว ฐานรากใต้ผนัง) ประตู หน้าต่าง เฟอร์นิเจอร์ ผนังกระจก (Curtain Wall) และงานระบบยังไม่อยู่ในตาราง · พื้นที่ของแต่ละชั้นเท่ากับพื้นที่ผิวของชิ้นงาน · ชิ้นส่วนโครงถักที่ตั้งเป็น ตามขนาด นับเป็นแท่งตัน ให้หน้าตัดเหล็กได้ที่ [[edit_type]] ([[g_trmem]])
+
 # พารามิเตอร์ของโครงการ (Project Parameters)
 ช่องข้อมูลที่คุณเพิ่มเองให้ชิ้นงาน เช่น อัตราทนไฟ ผู้รับเหมา หรือค่า U — เปิดที่ [[a_pparams]] (แท็บ [[tab_manage]] กลุ่ม [[p_settings]])
 - กด [[pp_add]] แล้วตั้งชื่อ เลือกชนิดข้อมูล (ข้อความ จำนวนเต็ม ตัวเลข ความยาว พื้นที่ หรือ ใช่/ไม่) เลือก [[pp_group]] และติ๊ก [[pp_cats]]
@@ -23227,6 +23709,8 @@ A camera that follows a path through the building: watch it move, and export it 
 
 # ส่งออก
 ปุ่ม [[a_csv]] บนแถบล่างของตาราง หรือเมนู [[tab_file]] แล้วเลือก [[m_csv]] ไฟล์ CSV เปิดได้ด้วย Excel
+- [[a_xlsx]] (ข้างปุ่ม [[a_csv]] กลุ่ม [[p_schexp]] ของแถบเครื่องมือ หรือเมนู [[tab_file]] แล้วเลือก [[m_xlsx]]): ตารางที่เปิดอยู่เป็นไฟล์ Excel (.xlsx) ตามที่ตารางแสดง ทั้งคอลัมน์ การเรียง หัวกลุ่ม ท้ายกลุ่ม หัวคอลัมน์ ยอดรวม และสีตามเงื่อนไข · ตัวเลขยังเป็นตัวเลข (หน่วยตามตาราง) ใช้สูตรต่อใน Excel ได้ · หัวตารางค้างอยู่ด้านบนและพิมพ์ซ้ำทุกหน้า ตารางที่ไม่จัดกลุ่มมีตัวกรองที่หัวคอลัมน์
+- [[a_xlsxall]] หรือ [[m_xlsxall]]: ทุกตารางของโครงการในไฟล์เดียว หนึ่งชีตต่อตาราง ชื่อชีตตามชื่อตาราง
 `],en:['Schedules and cost',`
 Schedules are read from the model: change the model and they change with it. Nothing is counted by hand.
 
@@ -23253,6 +23737,14 @@ Under [[br_sched]] in the [[browser]]: walls, doors, windows, rooms, furniture, 
 - [[g_split]]: select a schedule placed on a sheet and give its [[p_seg]] in Properties: a long schedule is split into segments side by side, each with its headings, the totals under the last
 - view scales run from 1 : 1 to 1 : 5000, and [[scl_custom]] takes any number
 
+# Material Takeoff
+[[a_newmto]] (the [[tab_view]] tab, [[p_create]], or ＋ under [[br_sched]] in the Project Browser) makes a material takeoff of a category, such as walls, floors, roofs or beams, or a [[ns_multi]] one: one row for each material of each element
+- walls, floors, ceilings and roofs whose type has layers ([[a_wlayers]]) give a row for each layer, and a material in two layers of one element one row · other elements take the material of their type, steel sections are metal, the plates of steel columns and beams are a row of their own, and a truss has a row for the material of each kind of its members ([[g_trmem]]) · a face painted with a material (Paint) is a row of its own, with [[mto_f_paint]] Yes
+- [[a_schedflds]]: the [[mto_g_m]] group holds [[mto_f_name]], [[mto_f_class]], [[mto_f_area]], [[mto_f_vol]], [[mto_f_rho]] and [[mto_f_kg]] (the density set in [[a_materials]], or the base material's), then the element's own fields · an element's dimensions repeat on each of its rows, so they are not totalled
+- a new takeoff is sorted by material, with a footer and the totals of each · change it in [[a_schedprops]]: with [[sp_item]] off, one row for each material · it goes on sheets and out to files as any schedule does
+- [[a_mtake]] (the [[tab_manage]] tab): [[mk_sched]] makes a [[mto_sname]] with a row for each material and category, as the dialog has them
+> Unlike Revit: 12 categories have materials here (walls, floors, ceilings, roofs, stairs, ramps, columns, beams, beam systems, trusses, isolated and wall foundations); doors, windows, furniture, curtain walls and the MEP categories are not in the takeoffs yet · each layer takes the area of its element's face · truss members left By size count as solid bars: give them steel sections in [[edit_type]] ([[g_trmem]])
+
 # Project Parameters
 Fields of your own for the elements, such as a fire rating, a contractor or a U-value — open [[a_pparams]] (the [[tab_manage]] tab, [[p_settings]])
 - [[pp_add]], then give the name, the type of parameter (text, integer, number, length, area or yes/no), the [[pp_group]] group and the [[pp_cats]] it applies to
@@ -23268,6 +23760,8 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 
 # Export
 [[a_csv]] in the bar at the bottom of the schedule, or the [[tab_file]] menu and [[m_csv]]. A CSV file opens in Excel.
+- [[a_xlsx]] (beside [[a_csv]], in the [[p_schexp]] panel of the ribbon, or the [[tab_file]] menu and [[m_xlsx]]): the schedule that is open as an Excel file (.xlsx), laid out as the schedule shows it: its columns, sorting, group headers and footers, headings, totals and conditional colours · numbers stay numbers (in the units of the table), ready for formulas · the headers stay in sight and print on every page, and a schedule without groups has filters on its headers
+- [[a_xlsxall]] or [[m_xlsxall]]: every schedule of the project in one file, a sheet for each, named after it
 `]},
 {id:'sheet',icon:'sheet',th:['แผ่นงาน การพิมพ์ และไฟล์',`
 # ทำแผ่นงาน
@@ -23295,6 +23789,7 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 - [[m_ifc]]: โมเดลทั้งหลังเป็นไฟล์ IFC4 สำหรับเปิดในโปรแกรม BIM อื่น (Revit, ArchiCAD, Navisworks, โปรแกรมดู IFC) — ทุกชิ้นเป็นคลาส IFC ตามหมวด อยู่ในชั้นของมัน มีรูปทรง 3 มิติ สี คุณสมบัติ และปริมาณ ห้องเป็น IfcSpace เมื่อใช้ผ่านหน้า Claude ไฟล์ .ifc จะอยู่ในไฟล์ .zip
 - [[m_dxf]] และ [[m_dxfall]]: สำหรับเปิดต่อใน AutoCAD เมื่อใช้ผ่านหน้า Claude ไฟล์ .dxf จะอยู่ในไฟล์ .zip ต้องแตกไฟล์ก่อน
 - [[m_csv]]: ตารางที่เปิดอยู่
+- [[m_xlsx]] และ [[m_xlsxall]]: ตารางที่เปิดอยู่ หรือทุกตาราง เป็นไฟล์ Excel (.xlsx) หนึ่งชีตต่อตาราง
 > เมื่อเปิดโปรแกรมผ่านหน้า Claude จะมีหน้าต่างถามยืนยันก่อนบันทึกไฟล์ทุกครั้ง ให้กดยืนยัน
 
 # เปิดและนำเข้า
@@ -23341,6 +23836,7 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 - [[m_ifc]]: the whole model as an IFC4 file, to open in other BIM programs (Revit, ArchiCAD, Navisworks, IFC viewers) — every element as the IFC class of its category, in its storey, with its 3D shape, colour, properties and quantities; rooms are IfcSpace. Inside Claude the .ifc comes in a .zip file
 - [[m_dxf]] and [[m_dxfall]]: to go on in AutoCAD. Inside Claude the .dxf comes in a .zip file: unzip it first
 - [[m_csv]]: the schedule that is open
+- [[m_xlsx]] and [[m_xlsxall]]: the schedule that is open, or every schedule, as an Excel file (.xlsx), a sheet for each
 > When the program runs inside Claude, a prompt asks you to confirm before each file is saved. Confirm it.
 
 # Opening and importing
@@ -23633,7 +24129,7 @@ function dlgHelp(id){let cur=HELP.find(c=>c.id===id)||HELP.find(c=>c.id===ui.hel
    What differs from Revit's defaults is kept with the preferences of this browser (ui.keymap, see applyKeymap in 62-input.js).  The whole set can be written to a file
    and read back, and a KeyboardShortcuts.xml exported by Revit is read as well: its commands are matched by their CommandId (RVT_CMD). */
 const KCTX=['@line','@rect','@arc','@circle','@pickl','@pick','@finish','@cancel','@fliph','@flipf','@openview','@flipsec','secsplit','@ridge','@railhost','@leader','@dimlock','@dimeq','@placeview','@similar','@selsame','@filter','@legendfill','lcomp','@sheetrevs','@warnsel','@insadd','@insedit','@insrem','@linadd','@linedit','@linrem','@footcols','@footgrids','@wfootall','@bsauto','@bsdir','@bsremove','@mtface','@mtplane','@tofront','@toback','@actview','@deactview','@attach','@detach','@editprof','@resetprof','@cvph','@topoedit','@wkedit','@wkopen','@wkplay','@wkframes','@wkexport','@capends','@capdel','@justify'],
-  KFILE={'@new':'m_new','@sample':'m_sample','@open':'m_open','@save':'m_save','@pdf':'m_pdf','@pdfall':'a_pdfall','@png':'m_png','@dxfout':'m_dxf','@dxfall':'m_dxfall','@ifcout':'m_ifc','@csv':'m_csv'},
+  KFILE={'@new':'m_new','@sample':'m_sample','@open':'m_open','@save':'m_save','@pdf':'m_pdf','@pdfall':'a_pdfall','@png':'m_png','@dxfout':'m_dxf','@dxfall':'m_dxfall','@ifcout':'m_ifc','@csv':'m_csv','@xlsx':'m_xlsx','@xlsxall':'m_xlsxall'},
   KRES=[['Esc','k_esc'],['Enter','a_repeat'],['Tab','k_tab'],['Space','k_space'],['Shift','k_shift'],['← ↑ → ↓','k_arrows'],['Delete','a_delete'],['F1','a_help'],['Ctrl+Z','a_undo'],['Ctrl+Y','a_redo'],['Ctrl+S','a_save'],['Ctrl+O','m_open'],['Ctrl+P','a_pdf'],
     ['Ctrl+C','a_copyclip'],['Ctrl+X','a_cut'],['Ctrl+V','a_paste'],['Ctrl+A','k_selall'],['Ctrl+←','a_selprev']];
 /* the commands of Revit that have one here, by the CommandId Revit writes into KeyboardShortcuts.xml (Autodesk's own lists of commands for Revit 2018 to 2026;
@@ -24643,6 +25139,19 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r32={I:()=>({P,ui,IDX}),fin:id=>{const e=IDX.get(id),g=e&&stairGeo(P,e);return g?stFin(g.T,g):null},
+  parts:id=>{const e=IDX.get(id),S=e&&stParts(P,e);return S?{F:S.F,hw:S.hw,W:S.g.W,r:S.g.r,g:S.g.g,N:S.g.N,runs:S.runs.map(X=>({A:X.R.A,dx:X.R.dx,dy:X.R.dy,nx:X.R.nx,ny:X.R.ny,z0:X.R.z0,z1:X.R.z1,n:X.R.n,len:X.R.len,pr:X.pr,tf:X.tf,rf:X.rf,top:X.top})),lands:S.lands.map(L=>({poly:L.l.poly,z:L.l.z,sp:L.sp,z0:L.z0,z1:L.z1}))}:null},
+  q:id=>Object.assign({},QTY().get(id)||{}),mesh:id=>MSm().items.filter(it=>it.id===id).map(it=>({c:it.c,mt:it.mt,tmid:it.tmid,ly:it.ly,v:triVol(it.t),nt:it.t.length/9,nl:it.l.length/6})),
+  geo:id=>{const e=IDX.get(id),g=e&&stairGeo(P,e);return g?{N:g.N,r:g.r,g:g.g,W:g.W,shape:g.shape,runs:g.runs.map(R=>({n:R.n,len:R.len,z0:R.z0,z1:R.z1})),lands:g.lands.map(l=>({z:l.z,poly:l.poly})),spiral:!!g.spiral}:null},
+  parts2:id=>{const e=IDX.get(id);return e?mtoParts(P,e,QTY(),t):null},sf:()=>sfAll(P,'stair',t).map(f=>f.k),ifcC:id=>ifcClass(P,IDX.get(id)),cut:id=>{const e=IDX.get(id);return e?stCut(P,e):null},
+  matUsed:id=>matUsed(id),purge:()=>purgeable(P),json:()=>projectJSON(),loadText:s=>loadText(s),newp:en=>newProject(!!en),tr:(k,...a)=>t(k,...a)};
+window.PenumBIM.r31={I:()=>({P,ui,IDX}),mem:id=>{const e=IDX.get(id);return e?trussMembers(P,e).map(m=>({k:m.k,vk:m.vk,ft:m.ft?m.ft.id:null,w:m.w,h:m.h,ar:m.ar,kg:m.kg,cl:m.cl,ct:m.ct?m.ct.map(c=>c.map(q=>({F:q.F,N:q.N,on:!!q.on}))):null,mat:m.mat.b,mid:m.mat.M?m.mat.M.id:null,a:m.a,b:m.b})):null},
+  mesh:id=>MSm().items.filter(it=>it.id===id).map(it=>({c:it.c,mt:it.mt,tmid:it.tmid,cat:it.cat,t:it.t.length/9,l:it.l.length/6,s:(it.s||[]).length})),loop:id=>trussLoop(P,IDX.get(id)),z:id=>zRange(P,IDX.get(id)),hw:id=>lineHW(IDX.get(id)),
+  fields:id=>(tdFields('truss',(P.types.truss||[]).find(x=>x.id===id))||[]).map(f=>f[0]),parts:id=>{const e=IDX.get(id);return e?mtoParts(P,e,QTY(),t):null},sf:()=>sfAll(P,'truss',t).map(f=>f.k),
+  purge:()=>purgeable(P),json:()=>projectJSON(),loadText:s=>loadText(s),newp:en=>newProject(!!en),tr:(k,...a)=>t(k,...a)};
+window.PenumBIM.r30={I:()=>({P,ui,IDX}),parts:id=>{const e=IDX.get(id);return e?mtoParts(P,e,QTY(),t):null},mtake:()=>mtakeRows(P),sched:id=>{const v=viewById(id);return v?schedView(P,v,t):null},
+  fields:cat=>mtoAll(P,cat,t).map(f=>({k:f.k,l:f.l,grp:f.grp,sum:!!f.sum})),all:()=>xlAll().map(v=>v.id),t:(k,...a)=>t(k,...a),json:()=>projectJSON(),loadText:s=>loadText(s),
+  xl:ids=>{const L=ids.map(viewById).filter(Boolean),u8=xlsxBook(L.map(v=>({v,S:schedView(P,v,t)})));let s='';for(let i=0;i<u8.length;i+=8192)s+=String.fromCharCode.apply(null,u8.subarray(i,i+8192));return btoa(s)}};
 window.PenumBIM.r29={I:()=>({P,ui,IDX}),list:()=>gtList().map(r=>({gt:r.gt,name:r.name,n:r.n,top:r.top?r.top.id:0,det:r.det,recs:r.recs.map(g=>g.id)})),
   file:g=>{const S=gsFile(g);return S?JSON.stringify(S):null},text:(txt,file,gt)=>glText(txt,file,gt||0),json:()=>projectJSON(),loadText:s=>loadText(s),
   t:(k,...a)=>t(k,...a),mem:g=>gtMem(g).map(e=>e.id),top:gt=>{const g=gtTop(gt);return g?g.id:0},corner:g=>gtCorner(gtMem(g)),
