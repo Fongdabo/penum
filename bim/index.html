@@ -13946,7 +13946,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=121,V1_NAME='V1.110';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=122,V1_NAME='V1.111';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -20272,6 +20272,293 @@ Object.assign(STR,{a_colv:['เสาแนวดิ่ง (Vertical Column)','V
   p_slx:['ปลายบนเยื้องจากฐาน X','Top Offset from Base X'],p_sly:['ปลายบนเยื้องจากฐาน Y','Top Offset from Base Y'],p_slvang:['มุมจากแนวดิ่ง','Angle from Vertical'],p_sldir:['ทิศที่เอียง (0° = ขวา)','Lean Direction (0° = right)'],
   p_slb:['การตัดปลายล่าง (Base Cut Style)','Base Cut Style'],p_slt:['การตัดปลายบน (Top Cut Style)','Top Cut Style'],cut_h:['แนวนอน','Horizontal'],cut_p:['ตั้งฉากแกนเสา','Perpendicular'],cut_v:['แนวตั้ง','Vertical'],
   p_sleb:['ระยะยื่นปลายล่าง (Base Extension)','Base Extension'],p_slet:['ระยะยื่นปลายบน (Top Extension)','Top Extension'],p_slang:['มุมเอียง','Slant Angle'],c_slang:['มุมเอียง (°)','Slant Angle (°)']});
+/* ===== 111 switch systems (Revit: Modify | Lighting Fixtures > Create Systems > Switch, Select Switch; Modify | Switch Systems > Edit Switch System) and the
+   lighting of rooms (Revit: the Average Estimated Illumination of a space, by the lumen method) =====
+   A light names the switch that turns it on: e.lsw, the id of a device whose type is a switch or an occupancy sensor, and on a switch of several gangs e.lsg,
+   the gang (from 1; left out: the first).  The switch keeps the Switch ID of each gang (S.sids = ['a', 'b']); a light shows the one of its gang, in Properties,
+   schedules, tags, IFC and next to it in a plan.  Copied together a light follows its copied switch; copied alone it stays on the switch it had.
+   The lighting of a room: E = Σ(Φ · LLF · CU) ÷ A on its workplane.  Φ is the Initial Intensity of the type (or its watts × a typical efficacy), LLF its
+   Light Loss Factor (0.8), CU the type's own or worked out from the room: a box of the ceiling plane at the fixtures, the walls and the workplane, which pass
+   light to one another (view factors of the box the size of the room, reflectances of the ceiling and floor cavities), so the shape and the height of the
+   room and its surfaces count as in the zonal cavity method.  A room asks for a lighting level by how it is used (r.ltq sets its own); the color scheme
+   'lux' fills it below, at or above that level. */
+const SSY_KINDS=['sw1','sw2','sw3','motion'];
+const ssyIsP=(P0,e)=>!!e&&e.cat==='device'&&SSY_KINDS.includes((typ(P0,e)||{}).kind),ssyIs=e=>ssyIsP(P,e);
+const ssyGangsT=T=>{const g=Math.round(+((T||{}).gang));return g>=1&&g<=4?g:(T||{}).kind==='sw2'?2:1},ssyGangs=e=>ssyGangsT(typ(P,e));
+const ssyId=(S,g)=>S&&Array.isArray(S.sids)&&S.sids[g]!=null?String(S.sids[g]):'';
+const ssyG=e=>+e.lsg||0;
+const ssyOf=e=>{if(!e||e.cat!=='light'||e.lsw==null)return null;const S=IDX.get(e.lsw);return ssyIs(S)?S:null};
+const ssyLightId=e=>{const S=ssyOf(e);return S?ssyId(S,ssyG(e)):''};
+const ssyLights=(S,g)=>P.els.filter(e=>e.cat==='light'&&e.lsw===S.id&&(g==null||ssyG(e)===g));
+/* the next Switch ID no switch of the level has: a … z, aa, ab … */
+function ssyNext(lv){const used=new Set();for(const e of P.els)if(e.cat==='device'&&e.level===lv&&Array.isArray(e.sids))for(const s of e.sids)if(s)used.add(String(s).toLowerCase());
+  for(let n=0;n<702;n++){const s=n<26?String.fromCharCode(97+n):String.fromCharCode(96+Math.floor(n/26))+String.fromCharCode(97+n%26);if(!used.has(s))return s}return''}
+function ssyPut(e,S,g){e.lsw=S.id;if(g>0)e.lsg=g;else delete e.lsg;if(!ssyId(S,g)){const a=Array.isArray(S.sids)?S.sids.slice():[];while(a.length<=g)a.push('');a[g]=ssyNext(S.level);S.sids=a}}
+const ssyDrop=e=>{delete e.lsw;delete e.lsg};
+/* what a project may hold: a light on a switch that is gone, or is no longer a switch, comes off it; Switch IDs only on switches, one per gang */
+function ssyClean(P0){const sw=new Map();
+  for(const e of P0.els){if(e.cat==='device'&&ssyIsP(P0,e)){sw.set(e.id,e);if(e.sids!==undefined){const n=ssyGangsT(typ(P0,e)),a=Array.isArray(e.sids)?e.sids.slice(0,n).map(s=>s==null?'':String(s).trim().slice(0,12)):[];while(a.length&&!a[a.length-1])a.pop();if(a.length)e.sids=a;else delete e.sids}}
+    else if(e.sids!==undefined)delete e.sids;
+    if(e.cat!=='light'&&(e.lsw!==undefined||e.lsg!==undefined))ssyDrop(e)}
+  for(const e of P0.els){if(e.cat!=='light'||(e.lsw===undefined&&e.lsg===undefined))continue;const S=e.lsw!=null?sw.get(e.lsw):null;if(!S){ssyDrop(e);continue}
+    if(e.lsg!==undefined){const g=Math.round(+e.lsg);if(g>=1&&g<ssyGangsT(typ(P0,S)))e.lsg=g;else delete e.lsg}}
+  for(const T of (P0.types&&P0.types.device)||[])if(T.gang!==undefined){const g=Math.round(+T.gang);if(SSY_KINDS.includes(T.kind)&&T.gang!==''&&g>=1&&g<=4)T.gang=g;else delete T.gang}}
+XC.push(()=>ssyClean(P));
+XS.push(()=>{ui.ssyp=null;ui.ssye=null});
+
+/* the tools work in a plan of the level of what they start from that shows it: the active view, another plan of the level, or its electrical plan */
+function ssyView(els){const lv=els[0].level,ok=x=>!!x&&x.kind==='plan'&&!x.draft&&!x.legend&&!x.rcp&&x.area==null&&x.level===lv&&els.some(e=>planShow(x,e));if(ok(activeView()))return;
+  const pv=P.views.find(ok);if(pv){showView(pv.id);return}const q=planOf(lv);if(q){if(activeView()!==q)showView(q.id);ensureToolView('light')}}
+/* ---- Select Switch: the lights picked go on the switch clicked next ---- */
+XT.swpick={ok:v=>v.kind==='plan'&&!v.draft,
+  on(){const L=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='light');if(!L.length){toast(t('sw_need'));return false}ssyView(L);ui.ssyp={ids:L.map(e=>e.id)};ui.sel=new Set(ui.ssyp.ids)},off(){ui.ssyp=null},
+  hint(){return ui.ssyp?t('h_swpick',ui.ssyp.ids.length):''},hov(pn,v,p){const h=hitPlan(v,p),e=h&&IDX.get(h.id);return ssyIs(e)?e.id:null},
+  opt(who){const k=ui.opt.swg==null?'':String(ui.opt.swg),o=(val,l)=>`<option value="${val}"${String(val)===k?' selected':''}>${esc(l)}</option>`;
+    return who+`<label>${t('o_swgang')}<select data-opt="swg" id="opt_swg">${o('',t('swg_auto'))}${[1,2,3,4].map(i=>o(i,String(i))).join('')}</select></label><span>${t('o_swpick')}</span>`},
+  click(pn,v,p){const A=ui.ssyp;if(!A)return;const h=hitPlan(v,p),S=h&&IDX.get(h.id);if(!ssyIs(S)){toast(t('sw_pick'));return}
+    const n=ssyGangs(S),gk=ui.opt.swg;let g=0;if(gk!=null&&gk!==''){g=Math.round(+gk)-1;if(!(g>=0&&g<n)){toast(t('sw_nogang',n));return}}else for(let i=0;i<n;i++)if(!ssyLights(S,i).length){g=i;break}
+    const L=A.ids.map(id=>IDX.get(id)).filter(e=>e&&e.cat==='light');if(!L.length){setTool('modify');return}
+    edit(()=>{for(const e of L)ssyPut(e,S,g)});ui.sel=new Set([S.id,...ssyLights(S,g).map(e=>e.id)]);setTool('modify');toast(t('sw_done',L.length,ssyId(S,g)||'—'));refresh()},
+  draw(pn,ctx,v,nav,g){const A=ui.ssyp,S=ui.hov!=null?IDX.get(ui.hov):null;if(!A||!ssyIs(S))return;ssyLegs(g,ctx,S,A.ids.map(id=>IDX.get(id)).filter(Boolean),C.sel,v.scale||100)},
+  fin(){setTool('modify');refresh()}};
+/* ---- Edit Switch System: a click on a light puts it on the switch (the gang picked in the options bar) or takes it off ---- */
+const ssySw=()=>{const E=ui.ssye,S=E&&IDX.get(E.sw);return ssyIs(S)?S:null};
+const ssyGe=S=>clamp(Math.round(+ui.opt.swge||0),0,ssyGangs(S)-1);
+function ssySelSys(){const S=ssySw();if(S)ui.sel=new Set([S.id,...ssyLights(S,ssyGe(S)).map(e=>e.id)])}
+XT.swedit={ok:v=>v.kind==='plan'&&!v.draft,
+  on(){const sel=[...ui.sel].map(id=>IDX.get(id)).filter(Boolean);let S=sel.find(ssyIs)||null,g=0;
+    if(S){const L=sel.find(e=>e.cat==='light'&&e.lsw===S.id);if(L)g=ssyG(L)}else{const L=sel.find(e=>ssyOf(e));if(L){S=ssyOf(L);g=ssyG(L)}}
+    if(!S){toast(t('swe_need'));return false}ssyView([S]);ui.ssye={sw:S.id};ui.opt.swge=Math.min(g,ssyGangs(S)-1);ui.sel=new Set([S.id,...ssyLights(S,ui.opt.swge).map(e=>e.id)])},off(){ui.ssye=null},
+  hint(){const S=ssySw();if(!S)return'';const g=ssyGe(S);return t('h_swedit',ssyId(S,g)||'—',ssyLights(S,g).length)},hov(pn,v,p){const h=hitPlan(v,p),e=h&&IDX.get(h.id);return e&&e.cat==='light'?e.id:null},
+  opt(who){const S=ssySw();if(!S)return who;const n=ssyGangs(S),g=ssyGe(S);
+    return who+`<span>${esc(t('p_swid'))}: <b>${esc(ssyId(S,g)||'—')}</b></span>`+(n>1?`<label>${t('o_swgang')}<select data-opt="swge" id="opt_swge" data-re="1">${Array.from({length:n},(_,i)=>`<option value="${i}"${i===g?' selected':''}>${i+1}${ssyId(S,i)?' ('+esc(ssyId(S,i))+')':''}</option>`).join('')}</select></label>`:'')+`<span>${t('o_swedit')}</span>`},
+  click(pn,v,p){const S=ssySw();if(!S)return;const h=hitPlan(v,p),e=h&&IDX.get(h.id);if(!e||e.cat!=='light'){toast(t('swe_pick'));return}const g=ssyGe(S),inS=e.lsw===S.id&&ssyG(e)===g;
+    edit(()=>{if(inS)ssyDrop(e);else ssyPut(e,S,g)});ssySelSys();toast(t(inS?'swe_removed':'swe_added',ssyId(S,g)||'—'));refresh()},
+  fin(){setTool('modify');refresh()}};
+document.addEventListener('change',e=>{const el=e.target;if(el&&el.id==='opt_swge'&&ui.tool==='swedit'){ui.opt.swge=+el.value||0;ssySelSys();refresh()}});
+XA.swsys=()=>setTool('swpick');
+XA.swfin=()=>{setTool('modify');refresh()};
+XA.swsel=()=>{const out=new Set();for(const id of ui.sel){const e=IDX.get(id);if(!e)continue;if(ssyIs(e)){out.add(e.id);for(const x of ssyLights(e))out.add(x.id)}else{const S=ssyOf(e);if(S){out.add(S.id);for(const x of ssyLights(S,ssyG(e)))out.add(x.id)}}}
+  if(!out.size){toast(t('sw_none'));return}ui.sel=out;refresh()};
+XA.swrem=()=>{const L=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='light'&&e.lsw!=null);if(!L.length){toast(t('sw_none'));return}edit(()=>{for(const e of L)ssyDrop(e)});toast(t('sw_removed',L.length));refresh()};
+/* the ribbon: Switch with lights selected; Edit Switch System, Select Switch System and Remove once a switch or a light on one is */
+XR.push(tl=>{if(tl==='swedit')return[{t:'p_swsys',b:['swedit','@swfin']}];if(tl!=='modify')return[];const sel=[...ui.sel].map(id=>IDX.get(id)).filter(Boolean),L=sel.filter(e=>e.cat==='light'),S=sel.filter(ssyIs);if(!L.length&&!S.length)return[];
+  const on=L.some(e=>ssyOf(e)),b=[];if(L.length)b.push('@swsys');if(on||S.length)b.push('swedit','@swsel');if(on)b.push('@swrem');return[{t:'p_swsys',b}]});
+/* the switch leg of a switch system: a dashed line from the switch to each of its lights (on screen, while one of them is selected or being picked) */
+function ssyCtr(S,sc){const W=typ(P,S)||{};return devCeiling(W)?[S.x,S.y]:localF(S)(0,1.25*sc*1.35)}
+function ssyLegs(g,ctx,S,L,color,sc){const c=ssyCtr(S,sc);ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.2;g.dash([1.6,1.2]);for(const e of L)g.seg(c,[e.x,e.y]);g.dash(null);ctx.restore()}
+/* in a plan: the Switch ID by each light and by each switch (Properties of the view: Show Switch IDs), and the legs of what is selected */
+const ssyExt=(e,sc)=>{const kd=(typ(P,e)||{}).kind,S=compSize(P,e);return kd==='down'||kd==='high'?Math.max(S.w/2,(kd==='high'?1.7:1.25)*sc):Math.max(S.w,2.4*sc)/2};
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||v.legend||!P.els.some(e=>e.cat==='light'&&e.lsw!=null))return;const sc=v.scale||100;
+  if(v.swids!==0&&!catHid(v,'tag')){const L=of('light').map(x=>x[0]).filter(e=>ssyLightId(e)),S=of('device').map(x=>x[0]).filter(e=>ssyIs(e)&&Array.isArray(e.sids)&&e.sids.some(Boolean));
+    if(L.length||S.length){g.lay('swid');
+      for(const e of L){g.el(e);g.text(ssyLightId(e),[e.x+ssyExt(e,sc)+1.1*sc,e.y+1.9*sc],2.2,{color:hl(e.id)||ECOL,it:true,halo:true,align:'left'})}
+      for(const e of S){g.el(e);const c=ssyCtr(e,sc);g.text(e.sids.filter(Boolean).join(','),[c[0]+1.9*sc,c[1]-1.7*sc],2.2,{color:hl(e.id)||ECOL,it:true,halo:true,align:'left'})}}}
+  if(!o.screen||!ui.sel.size||ui.tool==='swpick')return;
+  if(ui.tool==='swedit'){const S=ssySw();if(S&&S.level===v.level){const M=ssyLights(S,ssyGe(S)).filter(x=>x.level===v.level);if(M.length)ssyLegs(g,ctx,S,M,col.sel,sc)}return}const done=new Set();
+  for(const id of ui.sel){const e=IDX.get(id);if(!e)continue;const S=ssyIs(e)?e:ssyOf(e);if(!S||done.has(S.id+'|'+(ssyIs(e)?'*':ssyG(e))))continue;done.add(S.id+'|'+(ssyIs(e)?'*':ssyG(e)));
+    const M=ssyLights(S,ssyIs(e)?null:ssyG(e)).filter(x=>x.level===v.level);if(M.length&&S.level===v.level)ssyLegs(g,ctx,S,M,col.sel,sc)}});
+XVR.push(v=>v.kind==='plan'&&!v.draft&&!v.legend&&P.els.some(e=>e.cat==='light'&&e.lsw!=null)?PR.grp('g_elec')+PR.chk('swids','p_swids',v.swids!==0):'');
+XVF.push((v,key,raw)=>{if(key!=='swids')return false;edit(()=>{if(raw)delete v.swids;else v.swids=0});return true});
+DXF_LAYER.swid=['E-LITE-IDEN',2];
+/* copies: a light copied with its switch goes on the copy of the switch, and a copied switch takes Switch IDs no other switch of its level has; pasted from another
+   project, a light whose switch did not come along leaves it */
+function ssyFresh(ids){for(const id of ids){const S=IDX.get(id);if(!S||S.cat!=='device'||!Array.isArray(S.sids))continue;
+  for(let g=0;g<S.sids.length;g++){const s=String(S.sids[g]||'').toLowerCase();if(s&&P.els.some(e=>e!==S&&e.cat==='device'&&e.level===S.level&&Array.isArray(e.sids)&&e.sids.some(q=>String(q||'').toLowerCase()===s)))S.sids[g]=ssyNext(S.level)}}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;for(const id of out){const c=IDX.get(id);if(c&&c.cat==='light'&&c.lsw!=null&&M.has(c.lsw))c.lsw=M.get(c.lsw)}ssyFresh(out);return out}}
+{const f0=clipCopy;clipCopy=cut=>{f0(cut);if(ui.clip)ui.clip.pg=P.guid}}
+{const f0=pasteObjs;pasteObjs=(objs,...a)=>{const L=objs.some(o=>o.cat==='light'&&o.lsw!=null);if(L)for(const o of objs)o._ssy=o.id;let out;try{out=f0(objs,...a)}finally{if(L)for(const o of objs)delete o._ssy}
+  if(L){const M=new Map(),home=!ui.clip||!ui.clip.pg||ui.clip.pg===P.guid;for(const id of out){const c=IDX.get(id);if(c&&c._ssy!=null)M.set(c._ssy,c.id)}
+    for(const id of out){const c=IDX.get(id);if(!c)continue;if(c.cat==='light'&&c.lsw!=null){if(M.has(c.lsw))c.lsw=M.get(c.lsw);else if(!home)ssyDrop(c)}delete c._ssy}}
+  ssyFresh(out);return out}}
+/* IFC: the Switch ID in the property set of the program */
+const SSY_IFC=new WeakMap();
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id)return r;
+  if(e.cat==='light'&&e.lsw!=null){let M=SSY_IFC.get(P0.els);if(!M){M=new Map(P0.els.map(x=>[x.id,x]));SSY_IFC.set(P0.els,M)}const S=M.get(e.lsw),s=S&&Array.isArray(S.sids)?S.sids[+e.lsg||0]:'';if(s)r.push(prop('SwitchID',String(s)))}
+  else if(e.cat==='device'&&Array.isArray(e.sids)&&e.sids.some(Boolean))r.push(prop('SwitchID',e.sids.filter(Boolean).join(', ')));return r}}
+/* the type of a switch: how many gangs (left out: by its kind, two for a two-gang switch) */
+RG_TF.swgang=(T,f)=>{const k=f[0],cur=T.gang!=null&&T.gang!==''?String(Math.round(+T.gang)):'';return`<div class="fr"><label for="tf_${k}">${esc(t('f_gang'))}</label><select id="tf_${k}" data-tf="${k}"><option value=""${cur?'':' selected'}>${esc(t('swg_kind',T.kind==='sw2'?2:1))}</option>${[1,2,3,4].map(i=>`<option value="${i}"${cur===String(i)?' selected':''}>${i}</option>`).join('')}</select></div>`};
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);return cat==='device'&&F&&T&&SSY_KINDS.includes(T.kind)?F.concat([['gang','swgang']]):F}}
+
+/* ---- the lighting of rooms ---- */
+const ILU_REQ={bed:150,living:200,dining:200,kitchen:300,office:500,meeting:500,class:300,retail:300,lobby:100,toilet:200,none:100,other:300};          // lux on the workplane by how a room is used
+const iluReq=u=>ILU_REQ[u]||300;
+const ILU_EFF={down:90,panel:100,batten:100,high:130,wall:80},ILU_UP={batten:0.15,high:0.05,wall:0.45};          // lm/W of a fixture whose type gives no Initial Intensity; the share of its light that goes up
+const iluOn=T=>!!T&&T.kind!=='emer'&&T.kind!=='exit';          // emergency lights and exit signs are left out
+const iluLm=T=>+T.lm>0?+T.lm:Math.round((+T.load||0)*(ILU_EFF[T.kind]||90)),iluLLF=T=>+T.llf>0&&+T.llf<=1?+T.llf:0.8,iluCUT=T=>+T.cu>0&&+T.cu<=1.5?+T.cu:null;
+const ILU_D={wp:750,rc:75,rw:50,rf:20};
+const iluDef=P0=>{const d=Object.assign({},ILU_D),s=P0.ilu&&typeof P0.ilu==='object'?P0.ilu:{};for(const k in d){const n=+s[k];if(s[k]!=null&&s[k]!==''&&isFinite(n))d[k]=n}return d};
+/* the view factor between two equal parallel rectangles a × b facing each other c apart */
+function iluFpar(a,b,c){const X=a/c,Y=b/c,X2=X*X,Y2=Y*Y,q1=Math.sqrt(1+X2),q2=Math.sqrt(1+Y2);
+  return 2/(Math.PI*X*Y)*(Math.log(Math.sqrt((1+X2)*(1+Y2)/(1+X2+Y2)))+X*q2*Math.atan(X/q2)+Y*q1*Math.atan(Y/q1)-X*Math.atan(X)-Y*Math.atan(Y))}
+/* the reflectance a cavity (the ceiling above the fixtures, the floor under the workplane) shows at its opening */
+const iluCav=(rb,rw,A,p,h)=>{if(!(h>1))return rb;const As=A+p*h,r=(rb*A+rw*p*h)/As;return r*A/(As-r*As+r*A)};
+function iluSolve3(m,s){const d=a=>a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])-a[0][1]*(a[1][0]*a[2][2]-a[1][2]*a[2][0])+a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]),D=d(m);if(Math.abs(D)<1e-12)return null;
+  return[0,1,2].map(k=>d(m.map((r,i)=>r.map((x,j)=>j===k?s[i]:x)))/D)}
+/* CU: of the light leaving the fixtures (up: the share that goes up), what reaches the workplane, straight or by the ceiling and the walls.  A (mm²), p (mm): the room;
+   h (mm): the fixtures above the workplane; rc, rw, rf (0–1): the ceiling cavity, the walls, the floor cavity.  The room is taken as the rectangle of its area and perimeter */
+function iluCU(A,p,h,rc,rw,rf,up){if(!(A>0)||!(p>0))return 0;h=Math.max(h,100);const s=p/2,D=s*s-4*A;let a,b;if(D>0){a=(s+Math.sqrt(D))/2;b=A/a}else a=b=Math.sqrt(A);
+  const Fcf=clamp(iluFpar(a,b,h),0,1),Fcw=1-Fcf,Fwc=Math.min(0.5,A*Fcw/(p*h)),Fww=1-2*Fwc,d=1-up;
+  const M=[[0,rw*Fwc,rc*Fcf],[rf*Fcw,rw*Fww,rc*Fcw],[rf*Fcf,rw*Fwc,0]],x=iluSolve3(M.map((r,i)=>r.map((q,j)=>(i===j?1:0)-q)),[d*Fcf,d*Fcw,up]);return x?clamp(x[0],0,1.5):0}
+/* one row per room: {id, number, name, level, use, open, area, perim, req, auto, n (fixtures that light it), L (their ids), lm, W (all its lights), avg (lux), lpd (W/m²),
+   cu, rcr, llf, wp, hl (the fixtures above the floor), hc (the ceiling), need (fixtures of ntype that reach req), st: 'l' below, 'o' meets, 'h' over 1.5 ×, 'x' not enclosed} */
+function iluRooms(P0){const out=[],R=new Map(),D=iluDef(P0),byLv=new Map();
+  const reg=r=>{if(P0===P)return REG(r.level,r.ph||'new',dsE(P,r));const k=r.level+'|'+(r.ph||'')+'|'+(r.dop||'');let g=R.get(k);if(!g){g=regions(P0,r.level,r.ph||'new',dsE(P0,r));R.set(k,g)}return g};
+  for(const e of P0.els)if(e.cat==='light')(byLv.get(e.level)||byLv.set(e.level,[]).get(e.level)).push(e);
+  for(const r of P0.els){if(r.cat!=='room')continue;const g=reg(r),i=regionAt(g,r.x,r.y),G=i>=0?g[i]:null,use=loadUseOf(r),auto=!(r.ltq!=null&&r.ltq!==''&&isFinite(+r.ltq)),req=auto?iluReq(use):Math.max(0,+r.ltq);
+    const row={id:r.id,number:r.number||'',name:r.name||'',level:r.level,use,open:!G,req,auto,n:0,L:[],lm:0,W:0,avg:0,lpd:0,cu:0,rcr:0,llf:0,need:0,ntype:'',st:'x'};out.push(row);if(!G||!(G.area>0))continue;
+    const A=G.area,pr=G.perim,lv=lvl(P0,r.level),up=levelAbove(P0,r.level),ce=ceilingAt(P0,r.level,r.x,r.y),mine=(byLv.get(r.level)||[]).filter(e=>regionAt(g,e.x,e.y)===i);row.area=A;row.perim=pr;
+    const wp=r.lwp!=null?+r.lwp:D.wp,rc=(r.lrc!=null?+r.lrc:D.rc)/100,rw=(r.lrw!=null?+r.lrw:D.rw)/100,rf=(r.lrf!=null?+r.lrf:D.rf)/100;
+    let sl=0,sz=0;const on=[];for(const e of mine){const T=typ(P0,e)||{};row.W+=+T.load||0;row.L.push(e.id);if(!iluOn(T))continue;const lm=iluLm(T);on.push([e,T,lm]);sl+=lm;sz+=lm*(+e.off||0)}
+    const T0=(P0.types.light||[]).find(iluOn),hc0=ce?ce.off:up&&lv?up.elev-lv.elev:3000,hl=on.length?(sl>0?sz/sl:on.reduce((s,q)=>s+(+q[0].off||0),0)/on.length):Math.min(hc0,T0&&+T0.elev||2600),hc=Math.max(hc0,hl);
+    const hr=Math.max(hl-wp,100),rcE=iluCav(rc,rw,A,pr,hc-hl),rfE=iluCav(rf,rw,A,pr,wp),CU=new Map(),cuOf=T=>{const c=iluCUT(T);if(c!=null)return c;const u=ILU_UP[T.kind]||0;if(!CU.has(u))CU.set(u,iluCU(A,pr,hr,rcE,rw,rfE,u));return CU.get(u)};
+    let F=0,FL=0;const byT=new Map();for(const [e,T,lm] of on){const f=iluLLF(T);F+=lm*f*cuOf(T);FL+=lm*f;row.n++;row.lm+=lm;byT.set(T,(byT.get(T)||0)+lm)}
+    Object.assign(row,{wp,hl,hc,rc,rw,rf,rcr:2.5*hr*pr/A,avg:F/(A/1e6),lpd:row.W/(A/1e6),cu:FL>0?F/FL:cuOf({kind:'down'}),llf:sl>0?FL/sl:0.8});
+    row.st=row.req>0&&row.avg<row.req*0.995?'l':row.req>0&&row.avg>row.req*1.5?'h':'o';
+    {let T=null,b=-1;for(const [q,lm] of byT)if(lm>b){b=lm;T=q}if(!T)T=(P0.types.light||[]).find(iluOn)||null;if(T&&row.req>0){const per=iluLm(T)*iluLLF(T)*cuOf(T);if(per>0){row.need=Math.ceil(row.req*A/1e6/per-1e-9);row.ntype=T.name||''}}}}
+  return out}
+let ILUC=null;
+const ILUm=()=>{if(!ILUC||ILUC.v!==VER||ILUC.P!==P){const r=iluRooms(P);ILUC={v:VER,P,r,m:new Map(r.map(x=>[x.id,x]))}}return ILUC.r},iluRow=id=>{ILUm();return ILUC.m.get(id)||null};
+const iluRowX=(X,e)=>{const P0=X&&X.P||P;if(P0===P||!X)return iluRow(e.id);if(!X._ilu)X._ilu=new Map(iluRooms(P0).map(r=>[r.id,r]));return X._ilu.get(e.id)||null};
+/* what a project may hold: the defaults, a room's own values, a type's photometrics */
+XC.push(()=>{const num=(o,k,lo,hi,dec)=>{if(o[k]===undefined)return;const n=+o[k];if(o[k]===''||o[k]==null||!isFinite(n))delete o[k];else o[k]=Math.round(clamp(n,lo,hi)*dec)/dec};
+  if(P.ilu!==undefined){if(!P.ilu||typeof P.ilu!=='object')delete P.ilu;else{const q={};for(const k of ['wp','rc','rw','rf'])if(P.ilu[k]!=null&&P.ilu[k]!==''&&isFinite(+P.ilu[k]))q[k]=+P.ilu[k];num(q,'wp',0,5000,1);for(const k of ['rc','rw','rf'])num(q,k,0,95,1);for(const k in q)if(q[k]===ILU_D[k])delete q[k];if(Object.keys(q).length)P.ilu=q;else delete P.ilu}}
+  for(const e of P.els)if(e.cat==='room'){num(e,'ltq',0,20000,1);num(e,'lwp',0,5000,1);for(const k of ['lrc','lrw','lrf'])num(e,k,0,95,1)}
+  for(const T of (P.types&&P.types.light)||[]){if(T.lm!==undefined&&!(+T.lm>0))delete T.lm;else num(T,'lm',1,1e6,1);if(T.llf!==undefined&&!(+T.llf>0))delete T.llf;else num(T,'llf',0.01,1,100);if(T.cu!==undefined&&!(+T.cu>0))delete T.cu;else num(T,'cu',0.01,1.5,100)}});
+/* the type of a light: Initial Intensity, Light Loss Factor, Coefficient of Utilization (left empty: worked out) */
+RG_TF.ilu=(T,f)=>{const k=f[0],has=T[k]!=null&&T[k]!=='',ph=k==='lm'?money(iluLm(Object.assign({},T,{lm:0})))+' ('+t('auto')+')':k==='llf'?'0.8 ('+t('auto')+')':t('ilu_cuauto');
+  return`<div class="fr"><label for="tf_${k}">${esc(t('f_'+k)+(k==='lm'?' (lm)':''))}</label><span style="display:flex;gap:6px;align-items:center"><input type="number" id="tf_${k}" data-tf="${k}" value="${has?esc(T[k]):''}" min="0"${k==='lm'?' step="50"':' step="0.01" max="'+(k==='llf'?1:1.5)+'"'} placeholder="${esc(ph)}" style="flex:1">${has?`<button type="button" class="btn" data-td="nc:${k}" title="${t('vg_clear')}" aria-label="${t('vg_clear')}">✕</button>`:''}</span></div>`};
+TYPE_FIELDS.light.push(['lm','ilu'],['llf','ilu'],['cu','ilu']);
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='light')return;const T=(P.types.light||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;          // emptied: worked out again
+  H.change=e=>{const el=e.target,k=el.dataset&&el.dataset.tf;if((k==='lm'||k==='llf'||k==='cu')&&!String(el.value).trim()){if(T[k]!==undefined)edit(()=>{delete T[k]});return dlgTypes('light',T.id)}return c0(e)}}}
+/* Properties: the switch system of lights and switches; the lighting of rooms */
+function iluRoomRows(els){const D=iluDef(P),one=els.length===1?iluRow(els[0].id):null,U=t('u_mm');
+  const V=k=>{const a=els[0][k]!=null?els[0][k]:'';return els.every(x=>(x[k]!=null?x[k]:'')===a)?{v:a}:null};
+  const nin=(k,l,ph,u,a)=>{const q=V(k);return`<div class="pr"><label for="p_${k}">${t(l)}</label><div><input type="number" id="p_${k}" data-p="${k}" value="${q?esc(q.v):''}" placeholder="${esc(q?ph:t('varies'))}" ${a||''}>${u?`<span class="u">${u}</span>`:''}</div></div>`};
+  let h=PR.grp('g_ilu')+nin('ltq','p_ltreq',els.length===1?iluReq(loadUseOf(els[0]))+' ('+t('auto')+')':t('auto'),'lx','min="0" step="50"');
+  if(one&&(one.open||!(one.area>0)))h+=PR.ro('p_ltavg',t('not_enclosed'));
+  else if(one){h+=PR.ro('p_ltavg',money(one.avg)+' lx · '+t('ilu_st_'+one.st))+PR.ro('p_ltn',one.n+' · '+money(one.lm)+' lm')+PR.ro('p_ltlpd',one.lpd.toFixed(1)+' W/m²')+PR.ro('p_ltcu',one.cu.toFixed(2)+' · RCR '+one.rcr.toFixed(2));
+    if(one.st==='l'&&one.need)h+=PR.ro('p_ltneed',one.need+' × '+one.ntype)}
+  h+=nin('lwp','p_lwp',String(D.wp),U,'min="0" max="5000" step="50"')+nin('lrc','p_lrc',String(D.rc),'%','min="0" max="95" step="5"')+nin('lrw','p_lrw',String(D.rw),'%','min="0" max="95" step="5"')+nin('lrf','p_lrf',String(D.rf),'%','min="0" max="95" step="5"');
+  return h+`<div class="pa"><button class="btn" data-act="ltg">${t('a_ltg')}…</button></div>`}
+const ssyIdIn=(g,n,val,varies)=>`<div class="pr"><label for="p_sid${g}">${esc(n>1?t('p_swidg',g+1):t('p_swid'))}</label><div><input type="text" id="p_sid${g}" data-p="sid${g}" value="${esc(val)}" maxlength="12"${varies?` placeholder="${t('varies')}"`:''}></div></div>`;
+XP.push((cat,els)=>{
+  if(cat==='light'){const ids=els.map(ssyLightId),S0=ssyOf(els[0]),one=els.every(e=>ssyOf(e)===S0),on=els.some(e=>ssyOf(e));let h=PR.grp('p_swsys')+PR.ro('p_swid',ids.every(x=>x===ids[0])?(ids[0]||'—'):t('varies'));
+    if(one&&S0){const T=typ(P,S0)||{};h+=PR.ro('p_swsel',[T.mark||T.name||'',(lvl(P,S0.level)||{}).name||''].filter(Boolean).join(' · '))}
+    h+=`<div class="pa"><button class="btn" data-act="swsys">${t('a_swsys')}…</button>${on?`<button class="btn" data-tool="swedit">${t('t_swedit')}</button><button class="btn" data-act="swrem">${t('a_swrem')}</button>`:''}</div>`;
+    if(els.every(x=>x.type===els[0].type)){const T=typ(P,els[0])||{};if(iluOn(T))h+=PR.grp('g_photo')+PR.ro('f_lm',money(iluLm(T))+' lm'+(+T.lm>0?'':' ('+t('auto')+')'))+PR.ro('f_llf',iluLLF(T).toFixed(2))+(iluCUT(T)!=null?PR.ro('f_cu',iluCUT(T).toFixed(2)):'')}
+    if(els.length===1){const r=ILUm().find(q=>q.L.includes(els[0].id));if(r)h+=PR.ro('p_ltroom',[r.number,r.name].filter(Boolean).join(' ')+(r.open?'':' · '+money(r.avg)+' lx'))}
+    return h}
+  if(cat==='device'&&els.every(ssyIs)){const n=Math.min(...els.map(ssyGangs));let h=PR.grp('p_swsys');
+    for(let g=0;g<n;g++){const v=els.map(e=>ssyId(e,g)),same=v.every(x=>x===v[0]);h+=ssyIdIn(g,n,same?v[0]:'',!same)}
+    if(els.length===1)h+=PR.ro('p_swn',String(ssyLights(els[0]).length));
+    return h+`<div class="pa"><button class="btn" data-tool="swedit">${t('t_swedit')}</button><button class="btn" data-act="swsel">${t('a_swsel')}</button></div>`}
+  if(cat==='room')return iluRoomRows(els);
+  return''});
+XF.push((cat,o,key,raw)=>{if(cat!=='device'||!/^sid[0-3]$/.test(key))return false;if(!ssyIs(o))return true;const g=+key[3];if(g>=ssyGangs(o))return true;
+  const s=String(raw==null?'':raw).trim().slice(0,12),a=Array.isArray(o.sids)?o.sids.slice():[];while(a.length<=g)a.push('');a[g]=s;o.sids=a;return true});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||!['ltq','lwp','lrc','lrw','lrf'].includes(key))return false;const s=String(raw==null?'':raw).trim(),n=parseFloat(s);
+  if(s===''||!isFinite(n)){delete o[key];return true}o[key]=key==='ltq'?clamp(Math.round(n),0,20000):key==='lwp'?clamp(Math.round(n),0,5000):clamp(Math.round(n),0,95);return true});
+/* schedules and tags: Switch ID of lights and switches; the lighting of rooms */
+{const f0=sfAll;sfAll=(P0,cat,tr)=>{const F=f0(P0,cat,tr),add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{}));
+  if(cat==='light'){add('swid',tr('p_swid'),(e,X)=>{if(e.lsw==null)return'';X=X||{};const Q=X.P||P;if(!X._ssyS)X._ssyS=new Map(Q.els.filter(x=>x.cat==='device').map(x=>[x.id,x]));const S=X._ssyS.get(e.lsw);return S&&Array.isArray(S.sids)?String(S.sids[+e.lsg||0]||''):''});
+    add('lmi',tr('f_lm'),e=>{const T=typ(P0,e)||{};return iluOn(T)?iluLm(T):''},{num:1,dec:0,sum:1})}
+  else if(cat==='device'){add('swid',tr('p_swid'),e=>Array.isArray(e.sids)?e.sids.filter(Boolean).join(', '):'');
+    add('swn',tr('p_swn'),(e,X)=>{X=X||{};const Q=X.P||P;if(!ssyIsP(Q,e))return'';if(!X._ssyN){X._ssyN=new Map();for(const x of Q.els)if(x.cat==='light'&&x.lsw!=null)X._ssyN.set(x.lsw,(X._ssyN.get(x.lsw)||0)+1)}return X._ssyN.get(e.id)||0},{num:1,dec:0,sum:1})}
+  else if(cat==='room'){add('ltq',tr('p_ltreq'),(e,X)=>{const r=iluRowX(X,e);return r?r.req:''},{num:1,dec:0});add('ltavg',tr('p_ltavg'),(e,X)=>{const r=iluRowX(X,e);return r&&!r.open&&r.area>0?Math.round(r.avg):''},{num:1,dec:0,grp:'q'});
+    add('ltlpd',tr('p_ltlpd'),(e,X)=>{const r=iluRowX(X,e);return r&&!r.open&&r.area>0?Math.round(r.lpd*10)/10:''},{num:1,dec:1,grp:'q'})}
+  return F}}
+/* the schedule Lighting Analysis by Room (made on demand) */
+{const f0=scheduleTable;scheduleTable=(P0,kind,tr,o)=>kind==='ilu'?iluTable(P0,tr):f0(P0,kind,tr,o)}
+function iluTable(P0,tr){const ln=id=>{const l=lvl(P0,id);return l?l.name:''},rows=[];
+  const cols=[{k:'number',label:tr('c_number')},{k:'name',label:tr('c_name')},{k:'level',label:tr('c_level')},{k:'use',label:tr('c_use')},{k:'area',label:tr('c_area'),num:1,u:'m2',fix:1},{k:'req',label:tr('c_ltreq'),num:1,dec:0},
+    {k:'n',label:tr('c_ltn'),num:1,dec:0},{k:'lm',label:tr('c_ltlm'),num:1,dec:0,sep:1},{k:'W',label:tr('c_ltw'),num:1,dec:0,sep:1},{k:'lpd',label:tr('c_ltlpd'),num:1,dec:1},{k:'rcr',label:'RCR',num:1,dec:2},{k:'cu',label:'CU',num:1,dec:2},
+    {k:'avg',label:tr('c_ltavg'),num:1,dec:0},{k:'st',label:tr('c_ltst')},{k:'need',label:tr('c_ltneed'),num:1,dec:0}];
+  for(const r of iluRooms(P0)){const c=!r.open&&r.area>0;rows.push({_ids:[r.id,...r.L],number:r.number,name:r.name,level:ln(r.level),_o:elev(P0,r.level),use:tr('use_'+r.use)+(r.open?' · '+tr('not_enclosed'):''),area:r.area||0,req:r.req,
+    n:c?r.n:'',lm:c?r.lm:'',W:c?r.W:'',lpd:c?r.lpd:'',rcr:c?r.rcr:'',cu:c?r.cu:'',avg:c?r.avg:'',st:tr('ilu_st_'+r.st),need:c&&r.st==='l'?r.need:''})}
+  rows.sort((a,b)=>a._o-b._o||String(a.number).localeCompare(String(b.number),undefined,{numeric:true})||a._ids[0]-b._ids[0]);          // a row picks its room and the fixtures in it
+  const sum=k=>rows.reduce((s,r)=>s+(typeof r[k]==='number'?r[k]:0),0),A=sum('area'),W=sum('W');return{cols,rows,foot:{number:tr('c_total'),area:A,n:sum('n'),lm:sum('lm'),W,lpd:A>0?W/(A/1e6):''}}}
+XA.ltgsched=()=>{let v=P.views.find(x=>x.kind==='schedule'&&x.sched==='ilu');if(!v)edit(()=>{v={id:P.seq++,kind:'schedule',sched:'ilu',name:t('ilu_sched'),scale:100,detail:'coarse',hidden:[],hiddenCats:[]};P.views.push(v)});closeDlg();showView(v.id)};
+/* the color scheme of rooms by their lighting: below, at or over 1.5 × what they ask for */
+CS_KEYS.push('lux');
+const ILU_COL={l:'#ff8f78',o:'#6fd6a0',h:'#ffd866'},ILU_ORD=['l','o','h','x'];
+{const f0=colorScheme;colorScheme=(P0,key,areaOf)=>key==='lux'?iluScheme(P0):f0(P0,key,areaOf)}
+function iluScheme(P0){const own=P0.cfs&&P0.cfs.lux&&typeof P0.cfs.lux==='object'?P0.cfs.lux:{},M=new Map(),of=new Map(),rows=(P0===P?ILUm():iluRooms(P0)).slice().sort((a,b)=>a.id-b.id);
+  for(const r of rows){const v=r.st;let it=M.get(v);if(!it){const def=v==='x'?CS_OPEN:ILU_COL[v];it={v,def,color:csHex(own[v])||def,n:0};M.set(v,it)}it.n++;of.set(r.id,it)}
+  return{key:'lux',items:[...M.values()].sort((a,b)=>ILU_ORD.indexOf(a.v)-ILU_ORD.indexOf(b.v)),of,lim:csLimits(P0)}}
+{const f0=csLabel;csLabel=(S,it,tr)=>S.key==='lux'&&!S.akey?(it.v==='x'?tr('not_enclosed'):tr('csl_'+it.v)):f0(S,it,tr)}
+XA.ltgfill=()=>{let v=activeView();if(!(v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.area==null))v=planOf(ui.level)||P.views.find(x=>x.kind==='plan'&&!x.draft&&x.area==null);if(!v){toast(t('cfleg_na'));return}
+  edit(()=>{v.cs='lux'});closeDlg();showView(v.id);toast(t('ilu_filled',v.name))};
+/* Lighting Analysis: the defaults, then every room with its level, its fixtures and what it reaches */
+function dlgIlu(){const D=iluDef(P),rows=ILUm(),was=$('#dlg').open&&ui.dlg&&ui.dlg.ilu,k0=was&&$('#dlg #iluRooms')?$('#dlg #iluRooms').scrollTop:0,lv=new Map(P.levels.map(l=>[l.id,l.name]));
+  const num=(k,u,step,max)=>`<label><span>${t('ilu_'+k)}</span><span><input type="number" data-ild="${k}" value="${D[k]}" step="${step}" min="0" max="${max}"><small>${u}</small></span></label>`;
+  const tr=rows.slice().sort((a,b)=>elev(P,a.level)-elev(P,b.level)||String(a.number).localeCompare(String(b.number),undefined,{numeric:true})||a.id-b.id).map(r=>{const c=!r.open&&r.area>0,e=IDX.get(r.id);
+    return`<tr data-ilr="${r.id}"${c?'':' class="off"'}><td>${esc(r.number)}</td><td>${esc(r.name)}${c?'':' <small style="color:var(--warn)">'+t('not_enclosed')+'</small>'}</td><td>${esc(lv.get(r.level)||'')}</td><td>${esc(t('use_'+r.use))}</td><td class="n">${c?fmtM2(r.area):''}</td>
+      <td class="n"><input type="number" data-ilq="${r.id}" min="0" step="50" value="${e&&e.ltq!=null?e.ltq:''}" placeholder="${iluReq(r.use)}" aria-label="${esc(t('p_ltreq'))}"></td><td class="n">${c?r.n:''}</td><td class="n">${c?money(r.lm):''}</td><td class="n">${c?r.lpd.toFixed(1):''}</td><td class="n">${c?r.cu.toFixed(2):''}</td>
+      <td class="n"><b${c&&r.st==='l'?' style="color:var(--warn)"':''}>${c?money(r.avg):''}</b></td><td>${c?esc(t('ilu_st_'+r.st)):''}</td><td class="n">${c&&r.st==='l'&&r.need?r.need+' × '+esc(r.ntype):''}</td></tr>`}).join('');
+  const body=`<p class="note">${t('ilu_intro')}</p><h4>${t('ilu_defs')}</h4><div class="ldg">${num('wp',t('u_mm'),50,5000)}${num('rc','%',5,95)}${num('rw','%',5,95)}${num('rf','%',5,95)}</div>
+    <h4>${t('ilu_rooms')}</h4>${rows.length?`<div class="tblw" id="iluRooms" style="max-height:44vh"><table class="tbl"><thead><tr><th>${t('c_number')}</th><th>${t('c_name')}</th><th>${t('c_level')}</th><th>${t('c_use')}</th><th class="n">${t('c_area')} (${t('u_m2')})</th><th class="n">${t('c_ltreq')}</th><th class="n">${t('c_ltn')}</th><th class="n">${t('c_ltlm')}</th><th class="n">${t('c_ltlpd')}</th><th class="n">CU</th><th class="n">${t('c_ltavg')}</th><th>${t('c_ltst')}</th><th class="n">${t('c_ltneed')}</th></tr></thead><tbody>${tr}</tbody></table></div>`:`<p class="note warn">${t('ilu_none')}</p>`}
+    <p class="note">${t('ilu_note')}</p>`;
+  openDlg(t('a_ltg'),body,`<button class="btn" data-ilx="reset"${P.ilu?'':' disabled'}>${t('ld_reset')}</button><button class="btn" data-act="ltgsched">${t('a_ltgsched')}</button><button class="btn" data-act="ltgfill">${t('a_ltgfill')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,{ilu:1,
+    change(ev){const el=ev.target,d=el.dataset;
+      if(d.ild){const n=parseFloat(el.value);edit(()=>{const q=Object.assign({},P.ilu||{});if(isFinite(n))q[d.ild]=n;else delete q[d.ild];P.ilu=q});dlgIlu();return}
+      if(d.ilq){const id=+d.ilq;edit(()=>{const r=IDX.get(id);if(r)applyField('room',r,'ltq',el.value)});dlgIlu()}},
+    click(ev){if(ev.target.dataset.ilx==='reset'){edit(()=>{delete P.ilu});dlgIlu();return}if(ev.target.closest('input,button'))return;const tr=ev.target.closest('tr[data-ilr]');if(!tr)return;const r=iluRow(+tr.dataset.ilr);if(!r)return;
+      closeDlg();const lt=r.L.map(id=>IDX.get(id)).filter(Boolean),A=activeView(),ok=v=>!!v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.level===r.level&&v.area==null,sh=v=>!lt.length||lt.some(e=>planShow(v,e));
+      const pv=ok(A)&&sh(A)?A:P.views.find(v=>ok(v)&&sh(v))||(ok(A)?A:planOf(r.level));if(pv&&A!==pv)showView(pv.id);ui.sel=new Set([r.id,...r.L]);setTool('modify');refresh()}},'wide');
+  if(was){const b=$('#dlg #iluRooms');if(b)b.scrollTop=k0}}
+XA.ltg=dlgIlu;
+/* the ribbon: Analyze › Lighting, and Systems › Analyze & Report */
+{const A=RIBBON.find(r=>r.id==='analyze'),i=A?A.panels.findIndex(p=>p.t==='p_loads'):-1;if(A)A.panels.splice(i<0?A.panels.length:i+1,0,{t:'p_ilu',b:['@ltg','@ltgsched','@ltgfill']});
+  const S=RIBBON.find(r=>r.id==='sys'),q=S&&S.panels.find(p=>p.t==='p_analyze');if(q){const j=q.b.indexOf('@loads');q.b.splice(j<0?q.b.length:j+1,0,'@ltg')}}
+/* the buttons */
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  const plate=(x,y)=>`<path class="i-Sb i-e" fill="#acbbd2" ${E} d="M${x+0.7} ${y+0.7}h8v11.6h-8z"/><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M${x} ${y}h8v11.6h-8z"/><path class="i-Sc i-e" fill="#7184a2" ${E} d="M${x+2.6} ${y+3}h2.8v5.6h-2.8z"/><path class="i-Pb i-e" fill="#d7dfea" ${E} d="M${x+2.6} ${y+3}h2.8v2.4h-2.8z"/>`;
+  const bulb=(x,y,r)=>`<path class="i-Ab i-e" fill="#fab034" ${E} d="M${x-r} ${y}a${r} ${r} 0 1 0 ${2*r} 0a${r} ${r} 0 1 0 ${-2*r} 0z"/><path class="i-Aa" fill="#ffe799" d="M${x-r*0.55} ${y-r*0.2}a${r*0.38} ${r*0.38} 0 1 0 ${r*0.76} 0a${r*0.38} ${r*0.38} 0 1 0 ${-r*0.76} 0z"/>`;
+  const leg=(a,b,c,d)=>`<path class="i-kA" fill="none" stroke-linecap="round" stroke="#fab034" style="stroke-width:1.2" stroke-dasharray="1.5 1.3" d="M${a} ${b} ${c} ${d}"/>`;
+  const sh=`<ellipse class="i-sh" fill="#000" opacity=".25" cx="7.5" cy="21.6" rx="5" ry="1"/>`;
+  sp.insertAdjacentHTML('beforeend',
+    `<symbol id="i-swsys" viewBox="0 0 24 24">${sh}${plate(2.6,8.4)}${leg(11,11,16,6.8)}${bulb(18,5.6,3)}</symbol>`
+    +`<symbol id="i-swedit" viewBox="0 0 24 24">${sh}${plate(2.6,8.4)}${leg(11,10.6,15,6.2)}${bulb(17,4.8,2.5)}<path class="i-Ab i-e" fill="#fab034" ${E} d="M13.6 21.4l.7-2.9 6.2-6.2 2.2 2.2-6.2 6.2z"/><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M13.6 21.4l.7-2.9 2.2 2.2z"/></symbol>`
+    +`<symbol id="i-swsel" viewBox="0 0 24 24">${sh}${plate(2.6,9.2)}${leg(11,11.4,14.6,7.4)}${leg(11,13.6,17.6,15.4)}${bulb(16.4,5.8,2.4)}${bulb(19.4,16.4,2.4)}<path class="i-kB" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#5c9af0" style="stroke-width:1" stroke-dasharray="1.6 1.2" d="M1.4 2.2h21.2v20.2H1.4z"/></symbol>`
+    +`<symbol id="i-swrem" viewBox="0 0 24 24">${sh}${plate(2.6,8.4)}${leg(11,11,15.2,7.6)}${bulb(17.4,6.4,3)}<path class="i-Rb i-e" fill="#ed4947" ${E} d="M13.4 15.6h9v3.4h-9z"/><path class="i-Pa" fill="#f6f8fb" d="M15 16.7h5.8v1.2H15z"/></symbol>`
+    +`<symbol id="i-ltg" viewBox="0 0 24 24"><path class="i-Pb i-e" fill="#d7dfea" ${E} d="M2 17.6 12 13.4l10 4.2-10 4.2z"/><path class="i-Aa" fill="#ffe799" opacity=".75" d="M9.4 7.6h5.2L19 17.6l-7 2.9-7-2.9z"/><path class="i-Ab" fill="#fab034" opacity=".55" d="M12 15.2l4.3 1.9-4.3 1.8-4.3-1.8z"/>`
+      +`<path class="i-Sb i-e" fill="#acbbd2" ${E} d="M7.4 7.8a4.6 4.6 0 0 1 9.2 0z"/><path class="i-Sc i-e" fill="#7184a2" ${E} d="M8.8 7.8h6.4l-.6 1.4H9.4z"/><path class="i-kS3" fill="none" stroke-linecap="round" stroke="#7184a2" style="stroke-width:1.3" d="M12 1.6v1.8"/></symbol>`
+    +`<symbol id="i-ltgsched" viewBox="0 0 24 24"><path class="i-Sb i-e" fill="#acbbd2" ${E} d="M3.6 4.6h15.2v17h-15.2z"/><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M2.8 3.8h15.2v17H2.8z"/><path class="i-Sc i-e" fill="#7184a2" ${E} d="M2.8 3.8h15.2v3.4H2.8z"/>`
+      +`<path class="i-kS3" fill="none" stroke="#7184a2" style="stroke-width:.8" d="M2.8 10.6h15.2M2.8 14h15.2M2.8 17.4h15.2M8 7.2v13.6"/>${bulb(18.6,16.4,3.2)}</symbol>`
+    +`<symbol id="i-ltgfill" viewBox="0 0 24 24"><path class="i-Ra i-e" fill="#ffa597" ${E} d="M2.4 3.2h9v8.4h-9z"/><path class="i-Ta i-e" fill="#aeefdc" ${E} d="M11.4 3.2h10.2v8.4H11.4z"/><path class="i-Ta i-e" fill="#aeefdc" ${E} d="M2.4 11.6h6.6v9.2H2.4z"/><path class="i-Aa i-e" fill="#ffe799" ${E} d="M9 11.6h12.6v9.2H9z"/>`
+      +`<path class="i-kD" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#222937" style="stroke-width:1.1" d="M2.4 3.2h19.2v17.6H2.4zM11.4 3.2v8.4M2.4 11.6h19.2M9 11.6v9.2"/>${bulb(16.4,7.4,2)}</symbol>`)})();
+Object.assign(BTN,{'@swsys':['swsys',''],swpick:['swsys',''],swedit:['swedit',''],'@swsel':['swsel',''],'@swrem':['swrem',''],'@swfin':['finish',''],'@ltg':['ltg',''],'@ltgsched':['ltgsched',''],'@ltgfill':['ltgfill','']});
+Object.assign(STR,{a_swsys:['สวิตช์ (Switch)','Switch'],t_swpick:['เลือกสวิตช์ (Select Switch)','Select Switch'],t_swedit:['แก้ระบบสวิตช์ (Edit Switch System)','Edit Switch System'],
+  a_swsel:['เลือกทั้งระบบสวิตช์','Select Switch System'],a_swrem:['ถอดออกจากระบบสวิตช์','Remove from Switch System'],a_swfin:['เสร็จแก้ระบบสวิตช์','Finish Editing System'],
+  p_swsys:['ระบบสวิตช์ (Switch System)','Switch System'],
+  h_swpick:['คลิกสวิตช์ที่จะคุมโคม {0} ดวงที่เลือกไว้ · Esc ยกเลิก','Click the switch for the {0} selected lighting fixtures · Esc to cancel'],
+  h_swedit:['แก้ระบบสวิตช์ {0}: คลิกโคมเพื่อเพิ่มหรือถอดออก (ตอนนี้ {1} ดวง) · Enter หรือ Esc เมื่อเสร็จ','Editing switch system {0}: click a lighting fixture to add it or take it off ({1} now) · Enter or Esc when done'],
+  sw_need:['เลือกโคมไฟก่อน แล้วกด สวิตช์','Select lighting fixtures first, then Switch'],sw_pick:['คลิกที่สวิตช์ (ทางเดียว สองช่อง สองทาง หรือเซ็นเซอร์ตรวจจับคน)','Click a switch (single-pole, two-gang, three-way or occupancy sensor)'],
+  sw_nogang:['สวิตช์นี้มี {0} ช่อง','This switch has {0} gang(s)'],sw_done:['โคม {0} ดวงอยู่ในระบบสวิตช์ {1} แล้ว','{0} lighting fixture(s) now on switch {1}'],
+  swe_need:['เลือกสวิตช์ หรือโคมที่อยู่ในระบบสวิตช์ก่อน','Select a switch, or a lighting fixture on a switch, first'],swe_pick:['คลิกที่โคมไฟ','Click a lighting fixture'],
+  swe_added:['เพิ่มเข้าระบบสวิตช์ {0} แล้ว','Added to switch system {0}'],swe_removed:['ถอดออกจากระบบสวิตช์ {0} แล้ว','Taken off switch system {0}'],
+  sw_removed:['ถอดโคม {0} ดวงออกจากระบบสวิตช์แล้ว','{0} lighting fixture(s) taken off their switch'],sw_none:['ไม่มีอะไรที่เลือกอยู่ในระบบสวิตช์','Nothing selected is on a switch'],
+  o_swgang:['ช่องสวิตช์ (Gang)','Gang'],swg_auto:['ช่องว่างถัดไป','Next free gang'],o_swpick:['คลิกสวิตช์ในแปลน','Click the switch in the plan'],o_swedit:['คลิกโคมเพื่อเพิ่มหรือถอดออก','Click fixtures to add or take off'],
+  swg_kind:['ตามชนิด ({0})','By kind ({0})'],f_gang:['จำนวนช่อง (Gang)','Number of Gangs'],
+  p_swid:['รหัสสวิตช์ (Switch ID)','Switch ID'],p_swidg:['รหัสสวิตช์ ช่อง {0}','Switch ID, Gang {0}'],p_swsel:['สวิตช์','Switch'],p_swn:['จำนวนโคมที่คุม','Fixtures Switched'],p_swids:['แสดงรหัสสวิตช์','Show Switch IDs'],
+  f_lm:['ปริมาณแสงตั้งต้น (Initial Intensity)','Initial Intensity'],f_llf:['ตัวประกอบการลดแสง (Light Loss Factor)','Light Loss Factor'],f_cu:['สัมประสิทธิ์การใช้ประโยชน์ (CU)','Coefficient of Utilization'],
+  ilu_cuauto:['คิดจากรูปห้อง','Worked out from the room'],g_ilu:['แสงสว่าง (Lighting)','Lighting'],g_photo:['ค่าทางแสง (Photometrics)','Photometrics'],
+  p_ltreq:['ความสว่างที่ต้องการ (Required Lighting Level)','Required Lighting Level'],p_ltavg:['ความสว่างเฉลี่ยโดยประมาณ (Average Estimated Illumination)','Average Estimated Illumination'],
+  p_ltlpd:['กำลังไฟแสงสว่างต่อพื้นที่ (LPD)','Lighting Power Density'],p_ltn:['โคมในห้อง','Lighting Fixtures'],p_ltneed:['โคมที่ควรมีโดยประมาณ','Fixtures to Meet (est.)'],p_ltcu:['CU เฉลี่ย','Average CU'],p_ltroom:['ห้อง','Room'],
+  p_lwp:['ระดับพื้นที่ทำงาน (Lighting Calculation Workplane)','Lighting Calculation Workplane'],p_lrc:['การสะท้อนแสงของฝ้า (Ceiling Reflectance)','Ceiling Reflectance'],p_lrw:['การสะท้อนแสงของผนัง (Wall Reflectance)','Wall Reflectance'],p_lrf:['การสะท้อนแสงของพื้น (Floor Reflectance)','Floor Reflectance'],
+  a_ltg:['วิเคราะห์แสงสว่าง (Lighting Analysis)','Lighting Analysis'],a_ltgsched:['ตารางวิเคราะห์แสงสว่าง','Lighting Schedule'],a_ltgfill:['ระบายสีห้องตามแสงสว่าง','Color Rooms by Lighting'],p_ilu:['แสงสว่าง','Lighting'],
+  ilu_intro:['คำนวณความสว่างเฉลี่ยบนระดับพื้นที่ทำงานของแต่ละห้องด้วยวิธีลูเมน (Lumen Method): ปริมาณแสงของโคมในห้อง × ตัวประกอบการลดแสง × CU ÷ พื้นที่ห้อง · CU คิดจากขนาดและความสูงของห้อง ความสูงโคม และการสะท้อนแสงของฝ้า ผนัง พื้น (แสงสะท้อนไปมาระหว่างพื้นผิว) เมื่อชนิดโคมไม่ได้กำหนด CU ไว้ · ไฟฉุกเฉินและป้ายทางหนีไฟไม่นับ',
+    'The average illumination on the workplane of each room, by the lumen method: the light of the fixtures in the room × the light loss factor × the CU ÷ the area of the room · the CU comes from the size and height of the room, the height of the fixtures and the reflectances of its ceiling, walls and floor (light passed back and forth between them) when the fixture type gives none · emergency lights and exit signs are left out'],
+  ilu_defs:['ค่าตั้งต้นของทุกห้อง','Defaults for every room'],ilu_wp:['ระดับพื้นที่ทำงาน','Workplane height'],ilu_rc:['การสะท้อนแสงของฝ้า','Ceiling reflectance'],ilu_rw:['การสะท้อนแสงของผนัง','Wall reflectance'],ilu_rf:['การสะท้อนแสงของพื้น','Floor reflectance'],
+  ilu_rooms:['ห้อง','Rooms'],ilu_none:['ยังไม่มีห้อง วางห้องก่อน (สถาปัตยกรรม › ห้อง)','No rooms yet: place rooms first (Architecture › Room)'],
+  ilu_note:['ความสว่างที่ต้องการตั้งต้นตามการใช้ห้อง (ระดับเดียวกับ EN 12464-1 และคู่มือของสมาคมไฟฟ้าแสงสว่างแห่งประเทศไทย) แก้ได้รายห้อง · ผลเป็นค่าเฉลี่ยโดยประมาณ ไม่ใช่การจำลองแสงทีละจุด · คลิกแถวเพื่อเลือกห้องและโคมของห้องนั้น',
+    'The required levels start from how a room is used (of the order of EN 12464-1 and the TIEA guide) and can be set room by room · the result is an estimated average, not a point-by-point simulation · click a row to select the room and its fixtures'],
+  ilu_sched:['วิเคราะห์แสงสว่างรายห้อง','Lighting Analysis by Room'],ilu_filled:['ระบายสีห้องของ {0} ตามแสงสว่างแล้ว','{0}: rooms filled by their lighting'],
+  ilu_st_l:['ต่ำกว่าเกณฑ์','Below'],ilu_st_o:['ผ่านเกณฑ์','Meets'],ilu_st_h:['เกิน 1.5 เท่า','Over 1.5×'],ilu_st_x:['ไม่มีขอบเขตปิด','Not enclosed'],
+  cs_lux:['แสงสว่างเทียบเกณฑ์','Lighting Level'],cs_t_lux:['ความสว่างของห้องเทียบเกณฑ์','Room Lighting Level'],
+  csl_l:['ต่ำกว่าเกณฑ์','Below the required level'],csl_o:['ผ่านเกณฑ์ (ไม่เกิน 1.5 เท่า)','Meets it (up to 1.5×)'],csl_h:['สูงกว่าเกณฑ์เกิน 1.5 เท่า','Over 1.5× the required level'],
+  c_ltreq:['ต้องการ (lx)','Required (lx)'],c_ltn:['โคม','Fixtures'],c_ltlm:['ลูเมน','Lumens'],c_ltw:['วัตต์','Watts'],c_ltlpd:['W/ตร.ม.','W/m²'],c_ltavg:['เฉลี่ย (lx)','Average (lx)'],c_ltst:['ผล','Result'],c_ltneed:['โคมที่ควรมี','Fixtures to Meet']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -21183,6 +21470,8 @@ The [[tab_insert]] tab: [[a_dxfin]] lays a DXF under the plan, and its lines can
 @keys EE LF DV EW CT CN
 - [[t_eequip]]: ตู้ไฟ หม้อแปลง เครื่องกำเนิดไฟฟ้า
 - [[t_light]] และ [[t_device]]: โคม สวิตช์ เต้ารับ อุปกรณ์แจ้งเหตุ กำหนด [[p_panel]] และ [[p_circuit]] ในแผงคุณสมบัติ
+- [[a_swsys]] (เลือกโคมแล้วกดในแผง [[p_swsys]]): คลิกสวิตช์ที่จะคุมโคมเหล่านั้น โคมได้ [[p_swid]] ของสวิตช์ (a b c … ไม่ซ้ำกันในชั้น) แสดงในแปลนข้างโคมและข้างสวิตช์ ([[p_swids]] ในคุณสมบัติของแปลน) · สวิตช์ 2 ช่องมีรหัสของแต่ละช่อง ([[o_swgang]] ในแถบตัวเลือก หรือ [[f_gang]] ในชนิด) · แก้รหัสได้ที่สวิตช์ในแผงคุณสมบัติ
+- [[t_swedit]]: คลิกโคมเพื่อเพิ่มเข้าหรือถอดออก Enter เมื่อเสร็จ · [[a_swsel]] · [[a_swrem]] · คัดลอกโคมไปพร้อมสวิตช์ โคมชุดใหม่ใช้สวิตช์ชุดใหม่ · [[p_swid]] ใช้ได้ในตาราง ป้ายกำกับ และ IFC
 - [[t_wire]]: คลิกจากอุปกรณ์ตัวแรกไปตัวถัดไป คลิกจุดสุดท้ายซ้ำหรือกด ((Enter)) เพื่อจบ
 - [[t_tray]] และ [[t_conduit]]: วาดเป็นเส้นเหมือนท่อ
 
@@ -21255,6 +21544,8 @@ Select ducts, pipes or risers (drag a box for several), then use the [[p_ductins
 @keys EE LF DV EW CT CN
 - [[t_eequip]]: panels, transformers, generators
 - [[t_light]] and [[t_device]]: luminaires, switches, receptacles, fire alarm devices; give them a [[p_panel]] and a [[p_circuit]] in Properties
+- [[a_swsys]] (select lighting fixtures, then click it in the [[p_swsys]] panel): click the switch that turns them on; they take its [[p_swid]] (a, b, c … not repeated on a level), shown in a plan by each fixture and by the switch ([[p_swids]] in the Properties of the plan) · a two-gang switch has an ID for each gang ([[o_swgang]] in the options bar, or [[f_gang]] in its type) · type the IDs on the switch in Properties
+- [[t_swedit]]: click fixtures to add them or take them off, Enter when done · [[a_swsel]] · [[a_swrem]] · fixtures copied with their switch go on the copy · the [[p_swid]] can be shown in schedules, tags and IFC
 - [[t_wire]]: click from the first device to the next; click the last point again or press ((Enter)) to finish
 - [[t_tray]] and [[t_conduit]]: drawn as lines, like pipes
 
@@ -21486,6 +21777,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.108 · ล็อกมุมมอง 3 มิติ: ปุ่มกุญแจบนแถบล่างของมุมมอง บันทึกมุมกล้องและล็อก คืนมุมกล้อง หรือปลดล็อก · ติดป้ายกำกับในมุมมอง 3 มิติ ป้ายตามชิ้นงานไป และ ติดป้ายทั้งหมด ในภาพไอโซเมตริก · มุมมองที่ล็อกบนแผ่นงานแสดงตามกรอบที่ล็อกไว้ ในมาตราส่วนของมุมมอง พร้อมป้าย ใน PDF และ DXF
 - V1.109 · หลังคา: เชิงชาย รางน้ำฝน และฝ้าชายคา แบบมีชนิด (แท็บสถาปัตย์ › สร้าง) คลิกขอบหลังคาเพื่อวางตามชายคาด้านนั้น หรือคลิกในหลังคาเพื่อวางรอบ · เชิงชายขึ้นตามปั้นลมของหน้าจั่ว ต่อมุมกันเอง · รางน้ำห้อยนอกเชิงชาย · ฝ้าชายคาปิดใต้ชายคาถึงผนัง · แทนที่เชิงชาย รางน้ำ และฝ้าที่หลังคาวาดให้เองบนด้านนั้น · อยู่ในตาราง BOQ IFC และ DXF
 - V1.110 · เสาเอียง: แผงการวางของเครื่องมือเสามี เสาแนวดิ่ง และ เสาเอียง (คลิกจุดฐานแล้วคลิกจุดบน ในแปลน รูปด้าน รูปตัด หรือ 3 มิติ) · รูปแบบเสา ตามจุดปลายหรือตามมุม · ตัดปลายแนวนอน ตั้งฉาก หรือแนวตั้ง พร้อมระยะยื่น · ลากปลายเสาได้ · แปลนตัดเสาที่ระดับตัด · ความยาวตามแกนอยู่ใน BOQ เหล็กเสริม และแรงลงเสา
+- V1.111 · ระบบสวิตช์และแสงสว่าง: เลือกโคมแล้วกด สวิตช์ จากนั้นคลิกสวิตช์ที่คุม โคมได้รหัสสวิตช์ (a b c) แสดงในแปลน · แก้ระบบสวิตช์ เพิ่มหรือถอดโคม · วิเคราะห์แสงสว่าง: ความสว่างเฉลี่ยของทุกห้อง (วิธีลูเมน CU จากรูปห้องและการสะท้อนแสง) เทียบเกณฑ์ตามการใช้ห้อง · ตารางรายห้อง และระบายสีห้องที่ต่ำกว่า ผ่าน หรือเกินเกณฑ์
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -21528,6 +21820,14 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - [[p_lay]]: [[pl_two]] หรือ [[pl_one]] · [[p_ways]]: ช่องที่ไม่มีวงจรเป็น [[pnl_space]] · [[a_pnlspare]]: เพิ่มวงจรสำรองที่ช่องใดก็ได้ พร้อมจำนวนขั้วและพิกัดเบรกเกอร์ · วงจรใหม่ได้หมายเลขช่องว่างแรกที่พอสำหรับจำนวนขั้ว
 - [[a_pnlbal]]: ย้ายวงจร 1 ขั้วของตู้ 3 เฟสไปช่องอื่นให้โหลดสามเฟสใกล้กันที่สุด สายและพิกัดเบรกเกอร์ที่พิมพ์ไว้ย้ายตาม (ย้อนกลับได้) · [[a_ckcheck]] เตือนเมื่อตู้ไม่สมดุลเกิน 20% สองวงจรใช้ช่องเดียวกัน หรือใช้ช่องเกินจำนวนช่องของตู้
 ! ตารางขนาดสายที่มีมาให้เป็นค่าโดยประมาณ ต้องตรวจกับมาตรฐานที่ใช้จริงก่อนนำผลไปใช้
+
+# แสงสว่าง
+[[a_ltg]] (แท็บ [[tab_analyze]] แผง [[p_ilu]] และในแผงคุณสมบัติของห้อง): ความสว่างเฉลี่ยบนระดับพื้นที่ทำงานของทุกห้องด้วยวิธีลูเมน จากโคมที่อยู่ในห้อง · CU คิดจากขนาดและความสูงของห้อง ความสูงโคม และการสะท้อนแสงของฝ้า ผนัง พื้น (แสงสะท้อนไปมาระหว่างพื้นผิว)
+- [[p_ltreq]] ตั้งต้นตามการใช้ห้อง (ห้องนอน 150 · ห้องนั่งเล่น 200 · ครัว 300 · สำนักงาน 500 · ทางเดิน 100 lx …) แก้ได้ในแผงคุณสมบัติของห้องหรือในหน้าต่างวิเคราะห์ · [[p_lwp]] (750 mm) [[p_lrc]] [[p_lrw]] [[p_lrf]] (75 / 50 / 20%) ตั้งได้ทั้งโครงการหรือรายห้อง
+- ชนิดโคม ([[edit_type]]): [[f_lm]] (ว่างไว้ = วัตต์ × ประสิทธิภาพทั่วไปของโคม LED) · [[f_llf]] (0.8) · [[f_cu]] (ว่างไว้ = คิดจากห้อง) · ไฟฉุกเฉินและป้ายทางหนีไฟไม่นับ
+- [[a_ltgsched]]: ตารางรายห้อง พื้นที่ โคม ลูเมน W/ตร.ม. RCR CU ความสว่างเฉลี่ย ผล และจำนวนโคมที่ควรมี · [[a_ltgfill]]: ระบายสีห้องในแปลน [[csl_l]] / [[csl_o]] / [[csl_h]] (แบบสี [[cs_lux]] ใส่ [[t_cfleg]] ได้)
+- ตารางของห้องและป้ายกำกับห้องแสดง [[p_ltavg]] [[p_ltreq]] และ [[p_ltlpd]] ได้
+! เป็นค่าเฉลี่ยโดยประมาณสำหรับออกแบบเบื้องต้น ไม่ใช่การจำลองแสงทีละจุด ความสม่ำเสมอของแสงและแสงจากหน้าต่างไม่ได้คิด
 
 # ตรวจการชน
 [[a_clash]]: เลือกหมวดสองชุด เช่น ท่อลมกับคาน โปรแกรมหาคู่ที่กินพื้นที่ซ้อนกัน คลิกแถวในรายงานเพื่อไปดูคู่นั้นในแบบ (มีกรอบส้มบอกจุดที่ชนในแปลนและ 3D) ท่อที่ต่อถึงกันหรือเข้าเครื่องไม่นับเป็นการชน · [[clash_from]] แต่ละชุดเลือกได้ว่าหมวดมาจากโครงการนี้หรือจากโมเดล IFC ที่ลิงก์ไว้ (เช่น งานระบบของเรากับโครงสร้างของผู้ออกแบบ) · ตรวจด้วยรูปทรงจริงใน 3 มิติ ท่อที่ลอดช่องเปิดไม่นับ · เลือกชิ้นไว้ก่อนแล้วติ๊ก ชุดที่ 1 เฉพาะชิ้นที่เลือกไว้ เพื่อตรวจแค่ชิ้นเหล่านั้นกับชุดที่ 2 · ส่งออกรายงานเป็น CSV หรือ HTML · [[a_clashlast]] เปิดผลการตรวจครั้งก่อนขึ้นมาดูอีกครั้ง
@@ -21678,6 +21978,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.108 · Locked 3D views: the padlock in the view's bottom bar saves the orientation and locks it, restores it, or unlocks the view · tags in 3D views, which follow their elements, and Tag All in an isometric · a locked 3D view on a sheet shows the frame it was locked at, at the view's scale, with its tags, in PDF and DXF
 - V1.109 · Roofs: fascias, gutters and soffits with types of their own (Architecture › Build): click the edge of a roof to run one along that eave, or inside the roof to go all round · a fascia climbs the rake of a gable and mitres at the corners · a gutter hangs outside the fascia · a soffit closes the overhang back to the wall · each takes the place of the fascia, gutter or soffit the roof drew by itself on that side · in schedules, the cost estimate, IFC and DXF
 - V1.110 · Slanted columns: the column tool's Placement panel has Vertical Column and Slanted Column (click the base, then the top, in a plan, an elevation, a section or a 3D view) · Column Style end point or angle driven · horizontal, perpendicular or vertical end cuts, with extensions · drag the ends · plans cut it at their cut plane · its length along the axis is in the BOQ, its rebar and the load takedown
+- V1.111 · Switch systems and lighting: select lighting fixtures, click Switch, then the switch that turns them on: they take its Switch ID (a, b, c), shown in plans · Edit Switch System adds or takes off fixtures · Lighting Analysis: the average illumination of every room (lumen method, the CU from the room's shape and reflectances) against the level its use asks for · a schedule by room, and rooms filled below, at or over that level
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -21720,6 +22021,14 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[p_lay]]: [[pl_two]] or [[pl_one]] · [[p_ways]]: a way with no circuit is a [[pnl_space]] · [[a_pnlspare]]: a spare on any way, with its poles and breaker · a new circuit takes the first free way that has room for its poles
 - [[a_pnlbal]]: moves the single-pole circuits of a three-phase panel to other ways so that the three phases carry as near the same load as they can; their wires and typed breakers follow (it can be undone) · [[a_ckcheck]] warns of a panel more than 20% out of balance, two circuits on one way, and more ways used than the panel has
 ! The stock table of wire sizes is an approximation: check it against the standard in force before the results are used
+
+# Lighting
+[[a_ltg]] (the [[tab_analyze]] tab, [[p_ilu]] panel, and the Properties of a room): the average illumination on the workplane of every room by the lumen method, from the fixtures in it · the CU comes from the size and height of the room, the height of the fixtures and the reflectances of its ceiling, walls and floor (light passed back and forth between them)
+- the [[p_ltreq]] starts from how the room is used (bedroom 150 · living room 200 · kitchen 300 · office 500 · corridor 100 lx …) and can be set in the Properties of the room or in the dialog · the [[p_lwp]] (750 mm) and the [[p_lrc]], [[p_lrw]] and [[p_lrf]] (75 / 50 / 20%) for the whole project or room by room
+- fixture types ([[edit_type]]): [[f_lm]] (left empty: its watts × a typical LED efficacy) · [[f_llf]] (0.8) · [[f_cu]] (left empty: worked out from the room) · emergency lights and exit signs are left out
+- [[a_ltgsched]]: a schedule by room with the area, fixtures, lumens, W/m², RCR, CU, average illumination, result and the fixtures it takes · [[a_ltgfill]]: rooms filled in the plan [[csl_l]] / [[csl_o]] / [[csl_h]] (the color scheme [[cs_lux]]; add a [[t_cfleg]])
+- a schedule of rooms and a room tag can show the [[p_ltavg]], the [[p_ltreq]] and the [[p_ltlpd]]
+! An estimated average for early design, not a point-by-point simulation: the evenness of the light and daylight are not counted
 
 # Interference check
 [[a_clash]]: pick two sets of categories, ducts against beams for one. Pairs that occupy the same space are listed; click a row to go to that pair (an orange box marks where they clash in plans and 3D). Runs that join each other or enter a machine are not clashes · [[clash_from]]: each side takes its categories from the current project or from a linked IFC model (our services against the designer's structure, say) · the check goes by the true 3D shapes, so a run through an opening does not clash · with elements selected, tick Categories 1: only the selected elements to check just those against Categories 2 · the report exports as CSV or HTML · [[a_clashlast]] brings the result of the last check back
@@ -22406,7 +22715,7 @@ function helpHtml(body){const out=[];let list='';const close=()=>{if(list)out.pu
 const helpOf=c=>c[ui.lang==='en'?'en':'th'],HELP_BLOCKS='h4,p,li,.hkeys>div';
 /* F1 with a tool in hand opens the chapter of that tool; with one kind of thing selected, the chapter of that; in a sheet or a schedule, theirs */
 const HELP_AT={arch:['wall','wsweep','wrev','door','window','column','beam','bsys','truss','footing','wfoot','floor','sedge','ceiling','roof','rfas','rgut','rsof','stair','ramp','railing','room','rsep','area','aline','furn','level','grid','mline','mtext','rplane','opening','shaft','topo','pad','subreg','propline','clabel'],
-  mep:['duct','riser','ductacc','terminal','equip','cvflex','pipe','ppipe','pipeacc','fixture','sprinkler','wire','tray','conduit','eequip','device','light'],
+  mep:['duct','riser','ductacc','terminal','equip','cvflex','pipe','ppipe','pipeacc','fixture','sprinkler','wire','tray','conduit','eequip','device','light','swpick','swedit'],
   annot:['dim','adim','rdim','ddim','ldim','spot','measure','text','tag','rtag','knote','mtag','trnum','sym','dline','region','dcomp','rdet','dins','cloud','lcomp','cfleg'],select:['move','copy','rotate','mirror','mirrorp','array','align','trim','trim1','trimn','split','splitgap','offset','scale','match','paste','join','unjoin','swjoin','cutg','uncutg','paint','unpaint','splitface'],views:['section','secsplit','callout','demolish','walk','walkedit'],sheet:['vref','matchline']};
 function helpTopic(){const pick=k=>{for(const c in HELP_AT)if(HELP_AT[c].includes(k))return c;return''},cats=ui.sel.size?selCats():[],c=pick(ui.tool)||(cats.length===1?pick(cats[0]):'');if(c)return c;const v=activeView();if(v&&v.kind==='sheet')return'sheet';if(v&&v.kind==='schedule')return'sched';return ui.helpAt||'start'}
 /* what the search goes through: every block of every chapter, as plain text, in the language shown */
@@ -23461,6 +23770,11 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r26={I:()=>({P,ui,IDX,undoN:undoS.length}),rooms:()=>ILUm().map(r=>Object.assign({},r)),cu:(A,p,h,rc,rw,rf,up)=>iluCU(A,p,h,rc,rw,rf,up),fpar:(a,b,c)=>iluFpar(a,b,c),cav:(rb,rw,A,p,h)=>iluCav(rb,rw,A,p,h),
+  lid:id=>ssyLightId(IDX.get(id)),sw:id=>{const e=IDX.get(id);return e?{lsw:e.lsw,lsg:e.lsg,sids:e.sids}:null},sched:k=>scheduleTable(P,k,t,{}),
+  scheme:()=>{const S=CSm('lux');return S?{items:S.items.map(i=>({v:i.v,n:i.n,color:i.color,l:csLabel(S,i,t)})),of:[...S.of].map(([k,v])=>[k,v.v])}:null},
+  sf:cat=>sfAll(P,cat,t).map(f=>f.k),sfv:(id,k)=>{const e=IDX.get(id),f=sfAll(P,e.cat,t).find(q=>q.k===k);return f?f.g(e,sfCtx(P,t,QTY())):null},tg:(id,k)=>tgVal(IDX.get(id),k),
+  dxf:id=>planDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),warn:()=>warnings(P).map(w=>({k:w.k,ids:w.ids})),t:(k,...a)=>t(k,...a)};
 window.PenumBIM.r25={I:()=>({P,ui,IDX,undoN:undoS.length}),
   geo:id=>{const e=IDX.get(id),G=e&&slMake(P,e);return G?{zr:G.zr,H:G.H,L:G.L,len:G.len,a:G.a,D:G.D,B:G.B,T:G.T,ang:G.ang,dir:G.dir}:null},
   loop:id=>columnLoop(P,IDX.get(id)),loop0:id=>slLoop0(P,IDX.get(id)),cut:(id,z)=>{const e=IDX.get(id),G=e&&slMake(P,e);return G?G.at(slLoop0(P,e),z):null},
