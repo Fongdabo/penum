@@ -3887,7 +3887,7 @@ function scheduleTable(P,kind,tr,o){
   if(kind==='sheets'){cols=[{k:'no',label:tr('c_sheetno')},{k:'name',label:tr('c_sheetname')},{k:'size',label:tr('c_size')},{k:'count',label:tr('c_viewsn'),num:1,dec:0},{k:'rev',label:tr('c_rev')}];
     for(const s of P.views)if(s.kind==='sheet'){const R=sheetRevs(P,s);rows.push({no:s.number,name:s.name,size:s.size,count:(s.vps||[]).length,rev:R.length?revNo(P,R[R.length-1],s):''})}rows.sort((a,b)=>String(a.no).localeCompare(String(b.no),undefined,{numeric:true}))}
   else if(kind==='views'){cols=[{k:'name',label:tr('c_viewname')},{k:'kind',label:tr('c_viewkind')},{k:'scale',label:tr('c_scale')},{k:'sheet',label:tr('c_onsheet')}];
-    for(const x of P.views)if(x.kind!=='sheet'&&x.kind!=='schedule')rows.push({name:x.name,kind:tr('vk_'+viewKind(x)),scale:x.kind==='3d'?'':'1 : '+(x.scale||100),sheet:P.views.filter(s=>s.kind==='sheet'&&(s.vps||[]).some(q=>q.view===x.id)).map(s=>s.number).join(', ')})}
+    for(const x of P.views)if(x.kind!=='sheet'&&x.kind!=='schedule')rows.push({name:x.name,kind:tr('vk_'+viewKind(x)),scale:x.kind==='3d'&&!lk3Sc(x)?'':'1 : '+(x.scale||100),sheet:P.views.filter(s=>s.kind==='sheet'&&(s.vps||[]).some(q=>q.view===x.id)).map(s=>s.number).join(', ')})}
   else if(kind==='notes'){cols=[{k:'no',label:'#',num:1,dec:0},{k:'kind',label:tr('c_type')},{k:'text',label:tr('nb_text'),wrap:1},{k:'view',label:tr('c_viewname')},{k:'sheet',label:tr('c_onsheet')}];          /* Note Block: the text notes and symbols of the views (Revit: View > Schedules > Note Block) */
     const vn=new Map(P.views.map(x=>[x.id,x]));let no=0;for(const a of P.ann){if(a.cat!=='text'&&a.cat!=='sym')continue;const x=vn.get(a.view);if(!x)continue;rows.push({id:a.id,no:++no,kind:a.cat==='text'?tr('t_text'):tr('t_sym')+' · '+tr('sy_'+a.k),text:a.cat==='text'?String(a.text||'').replace(/\s*\n\s*/g,' / '):(a.note||''),view:x.name,sheet:P.views.filter(q=>q.kind==='sheet'&&(q.vps||[]).some(z=>z.view===x.id)).map(q=>q.number).join(', ')})}}
   else if(kind==='wall'){cols=[{k:'type',label:tr('c_type')},{k:'level',label:tr('c_level')},{k:'count',label:tr('c_count'),num:1,dec:0},{k:'len',label:tr('c_len'),num:1,u:'m'},{k:'area',label:tr('c_area'),num:1,u:'m2'},{k:'vol',label:tr('c_vol'),num:1,u:'m3'}];
@@ -8068,6 +8068,7 @@ function drawSheet(ctx,sh,T,o){
       if(B.segs>1)for(let k=0;k<B.segs;k++){sx=x0+k*(B.tw+B.gap);seg(B.cells.slice(k*B.per,(k+1)*B.per),k===B.segs-1)}else seg(B.cells,true)}
     else{const sc=glScene(MSm(),VER);if(sc){let k=dpr;const mx=Math.max(pw*k,ph*k);if(mx>4000)k*=4000/mx;let nav2,opt;
         if(V.kind==='3d'&&walkOf(V))nav2=wkNav(V);          /* a walkthrough on a sheet: the frame it is at */
+        else if(V.kind==='3d'&&lk3On(V))nav2=lk3Nav(V,pw/ph);          /* 108 a locked 3D view: the frame it was locked at */
         else if(V.kind==='3d'){const n=navOf(V),bb=MSm().bb;nav2={yaw:n.yaw,pitch:n.pitch,persp:n.persp,t:[(bb[0]+bb[3])/2,(bb[1]+bb[4])/2,(bb[2]+bb[5])/2],hh:Math.hypot(bb[3]-bb[0],bb[4]-bb[1],bb[5]-bb[2])/2*1.04*Math.max(1,ph/pw*1.1)}}
         else{const s2=T.s/(V.scale||100);nav2={s:s2,ox:-B.E.x0*s2,oy:-B.E.y0*s2}}
         const R=V.kind!=='3d'&&B.rot?B.rot:0,pw0=R?B.w0*T.s:pw,ph0=R?B.h0*T.s:ph,ix=R?-pw0/2:X(x0),iy=R?-ph0/2:Y(y0);if(R){ctx.translate(X(x0)+pw/2,Y(y0)+ph/2);ctx.rotate(R)}          // V1.106 Rotation on Sheet
@@ -8084,7 +8085,7 @@ function drawSheet(ctx,sh,T,o){
 
 /* ===== 46 title blocks: drawing them on a sheet, and the Title Block dialog (the rules are in 26-sheetx.js) ===== */
 /* the texts a title block shows for a sheet */
-function tbTxt(sh){const I=P.info,scs=[...new Set(sh.vps.map(p=>{const V=p._v||viewById(p.view);return V&&V.kind!=='3d'&&V.kind!=='schedule'?V.scale||100:0}).filter(Boolean))];
+function tbTxt(sh){const I=P.info,scs=[...new Set(sh.vps.map(p=>{const V=p._v||viewById(p.view);return V&&(V.kind!=='3d'||lk3Sc(V,p))&&V.kind!=='schedule'?V.scale||100:0}).filter(Boolean))];
   return{project:I.name||'',client:(I.client||'—')+(I.address?'  ·  '+I.address:''),title:sh.name||'',by:sh.by||I.author||'',chk:sh.chk||'',app:sh.app||'',date:sh.date||I.date||revToday(),scale:scs.length===1?'1:'+scs[0]:scs.length?t('as_shown'):'—',no:String(sh.number||'—'),pno:I.number||''}}
 const tbFit=(s,w,mm,bold)=>fitTxt(String(s),w*2.2/mm,bold);          // a text cut to a width (mm) at a size (mm)
 /* a text in lines no wider than w: broken at spaces, and anywhere when a word alone is too long (Thai is written without spaces) */
@@ -12667,7 +12668,7 @@ const TYPE_FIELDS={wall:[['thickness','num'],['hatch','sel',['diag','solid','non
   railing:[['kind','sel',['rvert','rhorz','rglass','rhand']],['h','num'],['post','num'],['ps','num'],['color','color']],ramp:[['width','num'],['thickness','num'],['maxSlope','num','1 : n',0.5],['mat','sel',TYPE_MATS.ramp],['color','color']],
   furn:[['kind','sel',['bed','nstand','wardrobe','sofa','sofal','ctable','rtable','table','chair','dset','ochair','desk','shelf','cabinet','tvstand','tvset','lamp','curtain','rug','kbase','kwall','fridge','washer','stove','hood','car','person','tree','shrub','pot','slab','pave','fam']],['grp','sel',['furn','case','appl','site']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],
   eequip:[['kind','sel',['lc','db','mdb','tx','gen','ssw']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],tray:[['elb','sel',TFIT_ELB,'telb_'],['kind','sel',['ladder','perf','wway']]],conduit:[]};
-function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&d.cat==='etext')||(cat==='tag'&&d.cat==='etag'))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
+function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&d.cat==='etext')||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
   const CWD={vLay:'near',vSp:1500,vNum:3,vJ:'ctr',hLay:'near',hSp:1500,hNum:2,hJ:'ctr',mw:50,md:T.thickness,mpro:'rect',bm:'yes',mcol:'#575e69',cwpan:'glass',pcol:'#b9bec6'};const TV=T.kind==='curtain'?Object.assign({},CWD,...Object.entries(T).filter(x=>x[1]!=null).map(([k,v])=>({[k]:v}))):T;          // a curtain type shows the defaults of what it leaves unset
   const F=[['name','text'],...(cat==='vp'?[]:[['mark','text']]),...(flat?[]:[['kn','kn']]),...((cat==='wall'&&T.kind==='curtain'?CW_FIELDS:tdFields(cat,T))||[]),...(flat?[]:[['cost','num']])],fr=f=>{const k=f[0];
       if(RG_TF[f[1]])return RG_TF[f[1]](T,f);
@@ -12899,7 +12900,7 @@ function act(a,arg,el){
     case'eov':dlgEOV();break;case'eoh':ovToggle(false,'h',1);break;case'eot':ovToggle(false,'tr',80);break;case'eog':ovToggle(false,'tr',50);break;case'voh':ovToggle(true,'h',1);break;case'vot':ovToggle(true,'tr',80);break;case'vog':ovToggle(true,'tr',50);break;
     case'sheet':{let id;edit(()=>{const n=P.views.filter(x=>x.kind==='sheet').length+1,s={id:P.seq++,kind:'sheet',name:t('sheet_name')+' '+n,number:'A-'+(100+n),size:'A3',vps:[],scale:1,hidden:[],hiddenCats:[]};P.views.push(s);id=s.id;
         if(v&&v.kind!=='sheet')addViewport(s,v.id)});showView(id);toast(t('sheet_made'));break}
-    case'dup':if(!v)break;showMenu(el||$('#ribbon'),[{act:'dupv',label:t('a_dupv'),icon:'dup'},...(v.kind==='plan'||v.kind==='elev'||v.kind==='section'||v.kind==='sheet'?[{act:'dupd',label:t('a_dupd'),icon:'dup'}]:[]),...(depOk(v)?[{act:'dupdep',label:t('a_dupdep'),icon:'dup'}]:[]),...(v.kind==='sheet'?[{act:'dupsv',label:t('a_dupsv'),icon:'dup'}]:[])]);break;
+    case'dup':if(!v)break;showMenu(el||$('#ribbon'),[{act:'dupv',label:t('a_dupv'),icon:'dup'},...(v.kind==='plan'||v.kind==='elev'||v.kind==='section'||v.kind==='sheet'||lk3Able(v)?[{act:'dupd',label:t('a_dupd'),icon:'dup'}]:[]),...(depOk(v)?[{act:'dupdep',label:t('a_dupdep'),icon:'dup'}]:[]),...(v.kind==='sheet'?[{act:'dupsv',label:t('a_dupsv'),icon:'dup'}]:[])]);break;
     case'dupv':case'dupd':if(!v)break;{let id;          // Duplicate / Duplicate with Detailing (dimensions, text and wiring come along)
         edit(()=>{const c=JSON.parse(JSON.stringify(v));c.id=id=P.seq++;delete c.callout;delete c.parent;          // the copy of a callout is a plan of its own
           let nm=v.name+' ('+t('copy_suffix')+')',i=2;while(P.views.some(x=>x.name===nm))nm=v.name+' ('+t('copy_suffix')+' '+(i++)+')';c.name=nm;
@@ -12917,7 +12918,7 @@ function act(a,arg,el){
     case'openview':{const e=IDX.get([...ui.sel][0]);if(!e)break;if(e.cat==='section'){const sv=P.views.find(x=>x.kind==='section'&&x.section===e.id);if(sv)showView(sv.id)}else if(e.cat==='vp')showView(e.view);else if(e.cat==='callout')showView(e.cv);break}
     case'ridge':edit(()=>{for(const id of ui.sel){const e=IDX.get(id);if(e&&e.cat==='roof')e.alt=(e.alt||0)+1}});break;
     case'rotapply':applyRotate(parseFloat(ui.opt.angle));break;
-    case'selsame':{const e=IDX.get([...ui.sel][0]);if(!e){toast(t('need_sel'));break}const pool=e.cat==='vp'?((vpSheet(e)||{}).vps||[]):e.cat==='grid'?P.grids:ANN.includes(e.cat)?P.ann.filter(x=>x.view===e.view):P.els;ui.sel=new Set(pool.filter(x=>x.cat===e.cat&&x.type===e.type&&(e.cat!=='dline'||(x.style||'thin')===(e.style||'thin'))).map(x=>x.id));refresh();toast(t('n_selected',ui.sel.size));break}
+    case'selsame':{const e=IDX.get([...ui.sel][0]);if(!e){toast(t('need_sel'));break}const pool=e.cat==='vp'?((vpSheet(e)||{}).vps||[]):e.cat==='grid'?P.grids:ANN.includes(e.cat)||EA_CAT[e.cat]||e.cat==='tag3'?P.ann.filter(x=>x.view===e.view):P.els;ui.sel=new Set(pool.filter(x=>x.cat===e.cat&&x.type===e.type&&(e.cat!=='dline'||(x.style||'thin')===(e.style||'thin'))).map(x=>x.id));refresh();toast(t('n_selected',ui.sel.size));break}
     case'zoomsel':{const vv=activeView();if(!vv||vv.kind!=='plan'||!ui.sel.size)break;let B=null;for(const id of expandSel(ui.sel)){const e=IDX.get(id),b=e&&elBox(vv,e);if(b)B=B?[Math.min(B[0],b[0]),Math.min(B[1],b[1]),Math.max(B[2],b[2]),Math.max(B[3],b[3])]:b}
       if(B){const pn=PANES[ui.ap],n=navOf(vv),m=1500;navPush(vv);fit2D(n,B[0]-m,B[1]-m,B[2]+m,B[3]+m,pn.w,pn.h,20);n.auto=false;redraw()}break}}
 }
@@ -13943,7 +13944,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=118,V1_NAME='V1.107';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=119,V1_NAME='V1.108';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -16013,7 +16014,7 @@ XF.push((c,o,key,raw)=>{if(c!=='text'&&c!=='etext')return false;const lh=c==='et
   if(key==='etxtype'){const id=+raw,T=(P.types.text||[]).find(x=>x.id===id);if(T){o.type=id;o.size=T.tsz}return true}
   return false});
 /* Purge Unused: a type that texts of elevations use is in use */
-{const f0=purgeable;purgeable=Q=>{const A=Q.ann||[];return f0(Q).filter(it=>!(it.g==='type'&&((it.cat==='text'&&A.some(d=>d.cat==='etext'&&d.type===it.id))||(it.cat==='tag'&&A.some(d=>d.cat==='etag'&&d.type===it.id)))))}}
+{const f0=purgeable;purgeable=Q=>{const A=Q.ann||[];return f0(Q).filter(it=>!(it.g==='type'&&((it.cat==='text'&&A.some(d=>d.cat==='etext'&&d.type===it.id))||(it.cat==='tag'&&A.some(d=>(d.cat==='etag'||d.cat==='tag3')&&d.type===it.id)))))}}
 /* the Text and Tag tools in Properties: their type only (the words are typed in the view) */
 {const f0=catRows;catRows=(cat,els,isNew)=>isNew&&(cat==='text'||cat==='tag')?`<div class="pnote">${t(cat==='text'?'n_textnew':'n_tagnew')}</div>`:f0(cat,els,isNew)}
 
@@ -16072,10 +16073,10 @@ XC.push(()=>{if(!Array.isArray(P.types.tag)||!P.types.tag.length)P.types.tag=tgS
       if(A.length){delete A[0].nl;T.tgl=A}else delete T.tgl}
     if(!TG_SHAPE.includes(T.tgshape))T.tgshape='auto';T.tgsz=TG_SZ.includes(String(T.tgsz))?String(T.tgsz):'auto';if(!TG_BOLD.includes(T.tgbold))T.tgbold='auto'}
   P.ann=P.ann.filter(d=>d.cat!=='etag'||ids.has(d.el));
-  for(const d of P.ann){if(d.cat!=='tag'&&d.cat!=='etag')continue;if(d.type==null||!TL.some(x=>x.id===d.type))d.type=T0;if(d.ori!=null&&d.ori!=='v')delete d.ori;if(d.cat==='etag'&&d.lead!=null&&d.lead!==true)delete d.lead}});
+  for(const d of P.ann){if(d.cat!=='tag'&&d.cat!=='etag'&&d.cat!=='tag3')continue;if(d.type==null||!TL.some(x=>x.id===d.type))d.type=T0;if(d.ori!=null&&d.ori!=='v')delete d.ori;if(d.cat==='etag'&&d.lead!=null&&d.lead!==true)delete d.lead}});
 /* a tag made with the tool: the type chosen in Properties, the orientation of the options bar */
 XN.push(s0=>{if(ui.tool!=='tag'||!P.types.tag||!P.types.tag.length)return;const ty=defs('tag').type,vt=ui.opt.tagOri==='v';
-  for(const d of P.ann)if(d.id>=s0&&(d.cat==='tag'||d.cat==='etag')){if(d.type==null)d.type=ty;if(vt)d.ori='v'}});
+  for(const d of P.ann)if(d.id>=s0&&(d.cat==='tag'||d.cat==='etag'||d.cat==='tag3')){if(d.type==null)d.type=ty;if(vt)d.ori='v'}});
 /* the label in Type Properties, and its editor (Revit: Edit Label) */
 function tgFieldList(){const out=[['_def',t('tgf__def')],['sysk',t('tgf_sysk')],['zc',t('tgf_zc')],['zt',t('tgf_zt')],['zb',t('tgf_zb')]],seen=new Map();
   for(const c of ['*',...TAG_CATS]){let F=[];try{F=sfAll(P,c,t)}catch(err){continue}for(const f of F){if(f.k==='count'||f.k==='cat')continue;const l=String(f.l||f.k);let a=seen.get(f.k);if(!a)seen.set(f.k,a={l:[l],c:[]});else if(!a.l.includes(l)&&a.l.length<2)a.l.push(l);if(c!=='*'&&!a.c.includes(c))a.c.push(c)}}
@@ -16084,7 +16085,7 @@ function tgFieldList(){const out=[['_def',t('tgf__def')],['sysk',t('tgf_sysk')],
 function tgLabelText(T){const A=T.tgl||[];if(!A.length)return t('tgl_std');const FN=new Map(tgFieldList());return A.map((q,i)=>(q.nl&&i?' ⏎ ':'')+(q.pre||'')+'['+(FN.get(q.f)||q.f)+']'+(q.suf||'')).join('')}
 function tgTypeRows(T){return`<div class="fr"><label>${t('tgl_t')}</label><span class="note" style="align-self:center">${esc(tgLabelText(T))}</span></div><div class="pa" style="padding:2px 0 6px"><button class="btn" data-td="tglab">${t('a_tglab')}…</button></div>`}
 /* an element to show the label on: one selected (or the element of a selected tag), else a duct or a pipe, else anything a tag can name */
-function tgSample(){for(const id of ui.sel){const x=IDX.get(id);if(!x)continue;if(TAG_CATS.includes(x.cat))return x;if((x.cat==='tag'||x.cat==='etag')&&IDX.get(x.el))return IDX.get(x.el)}
+function tgSample(){for(const id of ui.sel){const x=IDX.get(id);if(!x)continue;if(TAG_CATS.includes(x.cat))return x;if((x.cat==='tag'||x.cat==='etag'||x.cat==='tag3')&&IDX.get(x.el))return IDX.get(x.el)}
   return P.els.find(e=>e.cat==='duct'||e.cat==='pipe')||P.els.find(e=>TAG_CATS.includes(e.cat))||null}
 function dlgTagLabel(T){const FL=tgFieldList(),FN=new Map(FL),A=(T.tgl||[]).map(x=>Object.assign({},x)),
     opt=cur=>FL.map(([k,l])=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(l)}</option>`).join('')+(FN.has(cur)?'':`<option value="${esc(cur)}" selected>${esc(cur)}</option>`),
@@ -16124,14 +16125,14 @@ XD.push(()=>{let ch=false;const VS=new Map(),vw=id=>{if(!VS.has(id))VS.set(id,vi
 let CLMAP=new Map();
 {const f0=ev3Clone;ev3Clone=ids=>{const out=f0(ids),M=CLMAP;let drop=false;for(const id of out.slice()){const d=IDX.get(id);if(!d||d.cat!=='etag')continue;if(M.has(d.el)){d.el=M.get(d.el);delete d.ax;delete d.ay}else{P.ann=P.ann.filter(x=>x!==d);out.splice(out.indexOf(id),1);drop=true}}
   if(drop)IDX=indexProject(P);return out}}
-XA.etagtype=()=>{const d=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&(x.cat==='etag'||x.cat==='tag'));dlgTypes('tag',d?tgT(d).id:undefined)};
-XP.push((c,els)=>{if(c!=='etag')return'';const L=P.types.tag||[],t0=tgT(els[0]),same=els.every(d=>tgT(d)===t0),V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};
+XA.etagtype=()=>{const d=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&(x.cat==='etag'||x.cat==='tag'||x.cat==='tag3'));dlgTypes('tag',d?tgT(d).id:undefined)};
+XP.push((c,els)=>{if(c!=='etag'&&c!=='tag3')return'';const L=P.types.tag||[],t0=tgT(els[0]),same=els.every(d=>tgT(d)===t0),V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};
   let h=PR.grp('g_identity')+PR.sel('etgtype','type',same&&t0?t0.id:'',L.map(x=>[x.id,x.name]))+`<div class="pa"><button class="btn" data-act="etagtype">${t('edit_type')}</button></div>`;
   if(els.length===1){const e=IDX.get(els[0].el);if(e)h+=PR.ro('p_tagof',elName(e))+PR.ro('p_text',tgLines(els[0],e,t0).join(' / '))}
-  return h+PR.grp('g_graphics')+PR.chk('lead','p_leader',V(x=>!!x.lead)===true)+PR.sel('tgori','p_tagori',V(x=>x.ori==='v'?'v':'h'),[['h',t('tgo_h')],['v',t('tgo_v')]])+`<div class="pnote">${t('n_etag')}</div>`});
-XF.push((c,o,key,raw)=>{if(c!=='tag'&&c!=='etag')return false;
+  return h+PR.grp('g_graphics')+PR.chk('lead','p_leader',V(x=>!!x.lead)===true)+PR.sel('tgori','p_tagori',V(x=>x.ori==='v'?'v':'h'),[['h',t('tgo_h')],['v',t('tgo_v')]])+`<div class="pnote">${t(c==='tag3'?'n_tag3':'n_etag')}</div>`});
+XF.push((c,o,key,raw)=>{if(c!=='tag'&&c!=='etag'&&c!=='tag3')return false;
   if(key==='tgori'){if(raw==='v')o.ori='v';else delete o.ori;return true}
-  if(c!=='etag')return false;
+  if(c!=='etag'&&c!=='tag3')return false;
   if(key==='etgtype'){const id=+raw;if((P.types.tag||[]).some(x=>x.id===id))o.type=id;return true}
   if(key==='lead'){if(raw)o.lead=true;else delete o.lead;return true}
   return false});
@@ -19360,7 +19361,7 @@ BTN.vp=['placeview',''];
 /* ---- the title of a viewport: shown or not, its line, its place and its size ---- */
 function vtGeo(sh,vp,B,x0,y0,NOS){const T=vpT(vp),V=B.V,ns=sh?(sh.vps||[]).filter(q=>!vpIsSch(q)).length:1,show=T.vst==='n'?false:T.vst==='m'?ns>1:true,line=T.vln!=='no';
   const sz=+T.vtsz||3.2,k=sz/3.2,bx=x0+(+vp.tx||0),by=y0+B.h+2.2+(+vp.ty||0),len=vp.tl!=null?+vp.tl:Math.min(B.w,70),no=(NOS||(sh&&vp.id>0?vpNos(P,sh):new Map())).get(vp.id)||'',tx=no?8.4*k:0;
-  const nm=V.tos||V.name,sl=V.kind==='3d'?t('nts'):t('scale')+' 1:'+(V.scale||100),tw=Math.max(twmm(nm,true)*sz/2.2,twmm(sl,false)*k);
+  const nm=V.tos||V.name,sl=V.kind==='3d'&&!lk3Sc(V,vp)?t('nts'):t('scale')+' 1:'+(V.scale||100),tw=Math.max(twmm(nm,true)*sz/2.2,twmm(sl,false)*k);
   return{T,k,sz,show,line,bx,by,len,no,nm,sl,tx,bb:[bx,by-1,bx+Math.max(line?len:0,tx+tw),by+8.2*k]}}
 function vpTitle(ctx,g,sh,vp,V,B,x0,y0,NOS,col){const G=vtGeo(sh,vp,B,x0,y0,NOS);if(!G.show)return;const k=G.k,c=G.T.vcol||undefined,bx=G.bx,ty=G.by,tx=bx+G.tx;
   ctx.strokeStyle=c||col.ink;if(G.line){ctx.lineWidth=g.lw(+G.T.vlw||0.35);g.seg([bx,ty],[bx+G.len,ty])}
@@ -19644,6 +19645,160 @@ Object.assign(STR,{a_hilite:['ไฮไลต์ในโมเดล','Highligh
   cb_note:['ค่าของช่องต่อกันเป็นข้อความเดียวในคอลัมน์ใหม่ ตามลำดับในรายการ · ช่องที่ว่างถูกข้ามพร้อมคำนำหน้าและคำต่อท้าย · ตัวคั่นอยู่หลังค่าของช่องนั้น · คอลัมน์ใหม่เรียงลำดับ จัดกลุ่ม และออกไปกับ CSV และแผ่นงานได้','The values of the fields are joined into one text in a new column, in the order of the list · an empty one is left out with its prefix and suffix · a separator goes after its value · the new column can be sorted and grouped by, and goes into the CSV and onto sheets'],
   cb_done:['เพิ่มคอลัมน์ {0} แล้ว','Column {0} added'],sp_ts:['ขนาดตัวอักษรชื่อตาราง (Title Text)','Title Text'],sp_hs:['ขนาดตัวอักษรหัวคอลัมน์ (Header Text)','Header Text'],sp_bs:['ขนาดตัวอักษรเนื้อหา (Body Text)','Body Text'],
   tp_tip:['ค่าของชนิด {0}: เปลี่ยนแล้วทุกชิ้นของชนิดนี้เปลี่ยนตาม','A value of the type {0}: every element of this type changes with it'],tp_done:['เปลี่ยนชนิด {0} แล้ว · มีผลกับ {1} ชิ้น','Type {0} changed · elements of this type: {1}'],tp_small:['ค่านี้น้อยเกินไป','This value is too small']});
+/* ===== 108 locked 3D views and their tags (V1.108; Revit: the View Control Bar's Unlocked / Locked 3D View — Save Orientation and Lock View, Restore Orientation
+   and Lock View, Unlock View — and Tag by Category in a locked 3D view, the view on a sheet at its scale) =====
+   v.lk3 = {yaw, pitch, t:[x, height, y], hh, asp, persp?, fov?, on}: the camera a 3D view was locked at (t its target, hh half the height it framed, asp the width over
+   the height of that frame); on 0: unlocked, the orientation kept for Restore.  While a view is locked it zooms and pans but does not orbit, and on a sheet it shows
+   that frame at its scale (an orthographic view) with its tags.
+   A tag of a 3D view, {cat:'tag3', view, el, a:[fx, fy, fz], o:[dx, dy], lead?, ori?, type}: a, where its leader points, as fractions of the box of its element
+   (it stays on the element when the element moves or grows); o, where the tag stands from there, in millimetres on paper (right, down).  Shown while the view is locked. */
+const A3C=[0.5,0.5,0.5];
+let LK3T=0,EB3={ms:null,m:null};
+const lk3Able=v=>!!v&&v.kind==='3d'&&!walkOf(v),lk3On=v=>lk3Able(v)&&!!v.lk3&&!!v.lk3.on;
+/* a locked orthographic view on a sheet is drawn at its scale (its viewport is not given a size of its own, as when a single view is printed) */
+const lk3Sc=(V,vp)=>!!V&&lk3On(V)&&!V.lk3.persp&&!(vp&&vp.w>0);
+/* the camera of a locked view for a frame of width / height asp: the frame it was locked at, all of it inside */
+function lk3Nav(v,asp){const L=v.lk3,n={yaw:L.yaw,pitch:L.pitch,persp:!!L.persp,t:L.t.slice(),hh:L.hh*Math.max(1,L.asp/(asp>0?asp:L.asp))};if(L.fov)n.fov=L.fov;return n}
+/* Save Orientation and Lock View: the camera of the view as it is in its pane */
+function lk3Lock(v,pn){const n=navOf(v),w=pn&&pn.w>2?pn.w:1600,h=pn&&pn.h>2?pn.h:900;if(n.fit)fitView(v,w,h);
+  const r=x=>Math.round(x*1e6)/1e6,L={yaw:r(n.yaw),pitch:r(n.pitch),t:n.t.map(x=>Math.round(x)),hh:Math.max(50,Math.round(n.hh)),asp:Math.round(w/h*1e4)/1e4,on:1};if(n.persp)L.persp=1;if(n.fov>0)L.fov=n.fov;
+  v.lk3=L;Object.assign(n,{yaw:L.yaw,pitch:L.pitch,t:L.t.slice(),hh:L.hh,lk3ok:1})}
+/* the box of the model an element takes in the 3D views [x0, y0, z0, x1, y1, z1] (plan x, plan y, height), worked out again when the model changes */
+function elBox3(id){const MS=MSm();if(EB3.ms!==MS){const m=new Map();for(const it of MS.items){const q=it.t;if(it.id==null||!q||!q.length)continue;let b=m.get(it.id);if(!b)m.set(it.id,b=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity]);
+      for(let i=0;i<q.length;i+=3){const x=q[i],z=q[i+1],y=q[i+2];if(x<b[0])b[0]=x;if(x>b[3])b[3]=x;if(y<b[1])b[1]=y;if(y>b[4])b[4]=y;if(z<b[2])b[2]=z;if(z>b[5])b[5]=z}}EB3={ms:MS,m}}
+  return EB3.m.get(id)||null}
+/* an element whose tag shows in v: drawn there (its category, Hide in View, the phase, the discipline, the section box) */
+function tag3Vis(v,d,e){if(!e||!TAG_CATS.includes(e.cat)||catHid(v,e.cat)||catHid(v,'tag')||hidEl(v,e)||(d&&hidDatum(v,d)))return false;const B=elBox3(e.id);if(!B)return false;
+  const PQ=PHm(v);if(PQ&&PQ.hid&&PQ.hid.has(e.id))return false;if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;
+  const S=v.sboxOn&&v.sbox;return!(S&&(B[3]<S[0]||B[0]>S[3]||B[4]<S[1]||B[1]>S[4]||B[5]<S[2]||B[2]>S[5]))}
+const tag3List=v=>lk3On(v)?P.ann.filter(d=>d.cat==='tag3'&&d.view===v.id):[];
+/* where the leader of a tag points in a frame W x H (px of the screen, mm of paper) that camera matrix M fills; null where its element is not drawn */
+function tag3Geo(v,d,M,W,H){const e=IDX.get(d.el);if(!tag3Vis(v,d,e))return null;const B=elBox3(e.id),f=Array.isArray(d.a)?d.a:A3C,x=B[0]+(B[3]-B[0])*f[0],y=B[1]+(B[4]-B[1])*f[1],z=B[2]+(B[5]-B[2])*f[2];
+  const cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15];if(!(cw>1e-6))return null;return{e,a:[(cx/cw+1)/2*W,(1-cy/cw)/2*H]}}
+const tag3O=d=>Array.isArray(d.o)?d.o:[0,0];
+
+/* ---- the orientation is held: zoom and pan, no orbit ---- */
+function lk3Hold(v,n){const L=v.lk3;let mv=false;
+  if(Math.abs(n.yaw-L.yaw)>1e-9||Math.abs(n.pitch-L.pitch)>1e-9){n.yaw=L.yaw;n.pitch=L.pitch;mv=true}if(!!n.persp!==!!L.persp){n.persp=!!L.persp;mv=true}
+  if((+n.fov||0)!==(+L.fov||0)){if(L.fov)n.fov=L.fov;else delete n.fov;mv=true}
+  if(mv&&n.lk3ok&&Date.now()-LK3T>2500){LK3T=Date.now();toast(t('lk3_held'),4500)}n.lk3ok=1}          // the message only when the view was shown locked and someone tried to turn it
+{const f0=drawPane;drawPane=function(pn){const v=paneView(pn.i);if(v&&v.kind==='3d'){const on=lk3On(v);if(on)lk3Hold(v,navOf(v));else if(ui.nav[v.id])ui.nav[v.id].lk3ok=0;pn.cube.classList.toggle('lk3',on)}else pn.cube.classList.remove('lk3');
+  f0(pn);if(lk3On(v)&&pn.vn.textContent)pn.vn.textContent+='  ·  '+t('lk3_badge')}}
+/* a locked view opened again: its own camera; Zoom to Fit (and the house of the ViewCube) frames what it was locked at */
+{const f0=navOf;navOf=v=>{const had=!!ui.nav[v.id],n=f0(v);if(!had&&lk3On(v)){const L=v.lk3;n.yaw=L.yaw;n.pitch=L.pitch;n.persp=!!L.persp;if(L.fov)n.fov=L.fov;n.fit=true}return n}}
+{const f0=fitView;fitView=function(v,w,h){if(!lk3On(v))return f0.apply(this,arguments);const n=navOf(v),L=v.lk3;n.fit=false;n.auto=true;n.fw=w;n.fh=h;n.t=L.t.slice();n.hh=L.hh*Math.max(1,L.asp/(w/h))}}
+XA.persp=(arg,el)=>{const pn=PANES[el&&el.dataset.pane!=null?+el.dataset.pane:ui.ap],vv=pn&&paneView(pn.i);if(!vv||vv.kind!=='3d')return;if(lk3On(vv)){toast(t('lk3_held'),4500);return}const n=navOf(vv);n.persp=!n.persp;vv.persp=n.persp;refresh()};
+
+/* ---- the padlock of the view bar and its three commands ---- */
+const lk3Pane=arg=>{const i=arg!=null&&arg!==''&&isFinite(+arg)?+arg:ui.ap;return PANES[i]&&paneView(i)?PANES[i]:null};
+const lk3View=arg=>{const pn=lk3Pane(arg),v=pn&&paneView(pn.i);if(!v||v.kind!=='3d'){toast(t('lk3_na'));return null}if(walkOf(v)){toast(t('lk3_walk'));return null}return{pn,v}};
+XA.lk3menu=(arg,el)=>{const q=lk3View(arg);if(!q)return;const{pn,v}=q,a=String(pn.i),it=[{act:'lk3save',arg:a,label:t('a_lk3save'),icon:'lock3'}];
+  if(v.lk3)it.push({act:'lk3restore',arg:a,label:t('a_lk3restore'),icon:'lock3'});if(lk3On(v))it.push({act:'lk3unlock',arg:a,label:t('a_lk3unlock'),icon:'unlock3'});showMenu(el||pn.vcb,it)};
+XA.lk3save=arg=>{const q=lk3View(arg);if(!q)return;edit(()=>{lk3Lock(q.v,q.pn)});toast(t('lk3_saved'),6000)};
+XA.lk3restore=arg=>{const q=lk3View(arg);if(!q)return;const{v}=q;if(!v.lk3){toast(t('lk3_none'));return}if(!v.lk3.on)edit(()=>{v.lk3.on=1});
+  const n=navOf(v),L=v.lk3;navPush(v);n.yaw=L.yaw;n.pitch=L.pitch;n.persp=!!L.persp;if(L.fov)n.fov=L.fov;else delete n.fov;n.fit=true;n.lk3ok=1;refresh();toast(t('lk3_restored'),4500)};
+XA.lk3unlock=arg=>{const q=lk3View(arg);if(!q)return;const{v}=q;if(!lk3On(v))return;edit(()=>{v.lk3.on=0});
+  ui.sel=new Set([...ui.sel].filter(id=>{const d=IDX.get(id);return!(d&&d.cat==='tag3'&&d.view===v.id)}));refresh();toast(t(P.ann.some(d=>d.cat==='tag3'&&d.view===v.id)?'lk3_unlockedt':'lk3_unlocked'),6000)};
+{const f0=renderVCB;renderVCB=pn=>{f0(pn);const v=paneView(pn.i);if(!lk3Able(v))return;const on=lk3On(v),i=pn.i,tip=esc(t(on?'lk3_on':'lk3_off')),
+    b=`<button class="vb" data-act="lk3menu" data-arg="${i}" aria-pressed="${on}" aria-haspopup="menu" title="${tip}" aria-label="${tip}">${icon(on?'lock3':'unlock3')}</button>`,pp=pn.vcb.querySelector('[data-act="persp"]');
+  if(pp)pp.insertAdjacentHTML('afterend',b);else pn.vcb.insertAdjacentHTML('afterbegin',b);
+  if(on&&!v.lk3.persp){const st=pn.vcb.querySelector('[data-vp="style"]'),sc=v.scale||100,s=`<select data-vp="scale" data-pane="${i}" id="vcScale${i}" title="${t('scale')}">${sclOpts(sc).map(q=>q[0]).map(a=>`<option value="${a}"${String(a)===String(sc)?' selected':''}>${a==='c'?t('scl_custom'):'1 : '+a}</option>`).join('')}</select>`;
+    if(st)st.insertAdjacentHTML('beforebegin',s);else pn.vcb.insertAdjacentHTML('afterbegin',s)}}}          // the scale of the view: what it is drawn at on a sheet, and the size of its tags
+/* Properties of a locked view: Perspective cannot change while it is locked; an orthographic one has its View Scale under it (Revit: Graphics › View Scale) */
+{const f0=viewRows;viewRows=v=>{const h=f0(v);if(!lk3On(v))return h;const k='data-p="persp"',i=h.indexOf(k);if(i<0)return h;const j=h.lastIndexOf('<div class="pr"',i),dis=h.slice(0,i)+k+' disabled'+h.slice(i+k.length);
+  return v.lk3.persp||j<0?dis:dis.slice(0,j)+PR.sel('scale','p_scale',v.scale||100,sclOpts(v.scale||100))+dis.slice(j)}}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',
+    `<symbol id="i-lock3" viewBox="0 0 24 24"><path fill="none" stroke="#2a3550" stroke-width="2.3" stroke-linecap="round" d="M8.2 11V8.1a3.8 3.8 0 0 1 7.6 0V11"/><path class="i-Ac" fill="#c36c0b" ${E} d="M5.4 11.6h13.2v9.6H5.4z"/><path class="i-Aa" fill="#ffd36a" ${E} d="M5.4 10.6h13.2v9.6H5.4z"/><path fill="#2a3550" d="M12 13.4a1.5 1.5 0 0 1 .8 2.8v2h-1.6v-2a1.5 1.5 0 0 1 .8-2.8z"/></symbol>`
+   +`<symbol id="i-unlock3" viewBox="0 0 24 24"><path fill="none" stroke="#7184a2" stroke-width="2.3" stroke-linecap="round" d="M8.2 11V7.4a3.8 3.8 0 0 1 7.4-1.2"/><path class="i-Sb" fill="#acbbd2" ${E} d="M5.4 10.6h13.2v9.6H5.4z"/><path fill="#2a3550" d="M12 13.4a1.5 1.5 0 0 1 .8 2.8v2h-1.6v-2a1.5 1.5 0 0 1 .8-2.8z"/></symbol>`)})();
+{const st=document.createElement('style');st.textContent='.cube.lk3{opacity:.42;filter:grayscale(1)}';document.head.appendChild(st)}
+
+/* ---- the tags on the screen: drawn over the model, picked and dragged by their heads ---- */
+const tag3K=(pn,nav)=>pn.h/(2*nav.hh);          // px of the screen to a millimetre of the model at the target (what a millimetre of paper is at the view's scale)
+function tag3Screen(pn,ctx,v,nav){const L=v.lk3,asp=pn.w/pn.h,M=camMatrix(orbitCam(nav,asp),MSm().bb),k=tag3K(pn,nav),sc=v.scale||100;
+  /* the frame the view was locked at (what a sheet shows), once the screen is zoomed or panned away from it */
+  if(Math.abs(nav.hh-L.hh*Math.max(1,L.asp/asp))>L.hh*0.004||Math.hypot(nav.t[0]-L.t[0],nav.t[1]-L.t[1],nav.t[2]-L.t[2])>L.hh*0.004){const c=orbitCam(nav,asp),hw=L.hh*L.asp,Q=[];
+    for(const [i,j] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const g=[0,1,2].map(m=>L.t[m]+c.r[m]*hw*i+c.u[m]*L.hh*j),cx=M[0]*g[0]+M[4]*g[1]+M[8]*g[2]+M[12],cy=M[1]*g[0]+M[5]*g[1]+M[9]*g[2]+M[13],cw=M[3]*g[0]+M[7]*g[1]+M[11]*g[2]+M[15];if(!(cw>1e-6)){Q.length=0;break}Q.push([(cx/cw+1)/2*pn.w,(1-cy/cw)/2*pn.h])}
+    if(Q.length===4){ctx.save();ctx.strokeStyle=C.muted;ctx.lineWidth=1;ctx.setLineDash([6,4]);ctx.beginPath();Q.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.stroke();ctx.restore()}}
+  const D=tag3List(v);if(!D.length)return;const g=painter(ctx,{s:k,ox:0,oy:0},sc,C,ui.thin);
+  for(const d of D){const G=tag3Geo(v,d,M,pn.w,pn.h);if(!G)continue;const a=[G.a[0]/k,G.a[1]/k],o=tag3O(d),hi=ui.sel.has(d.id)?C.sel:ui.hov===d.id?C.hot:null;
+    ctx.save();try{tgPaint(g,C,hi,G.e,tgT(d),d,[a[0]+o[0]*sc,a[1]+o[1]*sc],a)}finally{ctx.restore()}}}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(lk3On(v)){ctx.save();try{tag3Screen(pn,ctx,v,nav)}finally{ctx.restore()}}}}
+/* the tag under the pointer (the last drawn first) */
+function tag3At(pn,v,p){const D=tag3List(v);if(!D.length)return null;const nav=navOf(v),M=camMatrix(orbitCam(nav,pn.w/pn.h),MSm().bb),k=tag3K(pn,nav),sc=v.scale||100,w={x:p.x/k,y:p.y/k};
+  for(let i=D.length-1;i>=0;i--){const d=D[i],G=tag3Geo(v,d,M,pn.w,pn.h);if(!G)continue;const a=[G.a[0]/k,G.a[1]/k],o=tag3O(d);if(tgDistAt(G.e,tgT(d),d,[a[0]+o[0]*sc,a[1]+o[1]*sc],a,w,sc)<4/k)return d}return null}
+{const f0=hoverPane;hoverPane=(pn,v,p)=>{if(v&&lk3On(v)&&ui.tool==='modify'&&!ui.zoomr){const d=tag3At(pn,v,p);if(d){showCoord(v,p);pn.cv.style.cursor=ui.sel.has(d.id)?'move':'pointer';hint();if(ui.hov!==d.id){ui.hov=d.id;redraw()}return}}return f0(pn,v,p)}}
+/* a click on a tag picks it (Ctrl adds or takes away, Shift takes away); a drag moves it; a double-click types the mark of its element */
+function tag3Bind(pn){const w=pn.cvw,xy=e=>{const r=pn.cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+  w.addEventListener('pointerdown',e=>{if(e.button!==0||e.target!==pn.cv)return;const v=paneView(pn.i);if(!lk3On(v)||ui.tool!=='modify'||ui.zoomr)return;const p=xy(e),d=tag3At(pn,v,p);if(!d)return;
+    e.stopPropagation();e.preventDefault();closeMenu();if(ui.inl)closeInline();setActivePane(pn.i);
+    if(e.ctrlKey||e.metaKey){if(ui.sel.has(d.id))ui.sel.delete(d.id);else ui.sel.add(d.id);refresh();return}if(e.shiftKey){ui.sel.delete(d.id);refresh();return}
+    if(!ui.sel.has(d.id))ui.sel=new Set([d.id]);refresh();
+    const o0=tag3O(d).slice(),s0=p,id=e.pointerId;let moved=false;try{w.setPointerCapture(id)}catch(_){}
+    const mv=ev=>{if(ev.pointerId!==id)return;ev.stopPropagation();const q=xy(ev);if(!moved&&Math.hypot(q.x-s0.x,q.y-s0.y)<4)return;if(!moved){moved=true;snapshot();ui.dragging=true}
+      const n=navOf(v),pm=tag3K(pn,n)*(v.scale||100),r=x=>Math.round(x*100)/100;d.o=[r(o0[0]+(q.x-s0.x)/pm),r(o0[1]+(q.y-s0.y)/pm)];redraw()};
+    const up=ev=>{if(ev.pointerId!==id)return;ev.stopPropagation();w.removeEventListener('pointermove',mv,true);w.removeEventListener('pointerup',up,true);w.removeEventListener('pointercancel',up,true);try{w.releasePointerCapture(id)}catch(_){}
+      if(moved){ui.dragging=false;commit()}};
+    w.addEventListener('pointermove',mv,true);w.addEventListener('pointerup',up,true);w.addEventListener('pointercancel',up,true)},true);
+  w.addEventListener('dblclick',e=>{if(e.target!==pn.cv&&e.target!==w)return;const v=paneView(pn.i);if(!lk3On(v)||ui.tool!=='modify'||ui.inl)return;const p=xy(e),d=tag3At(pn,v,p);if(!d)return;e.stopPropagation();
+    const te=IDX.get(d.el);if(te&&('mark' in te))openInline(pn,p.x,p.y,te.mark||'',val=>{if(val.trim())edit(()=>applyField(te.cat,te,'mark',val))},true)},true)}
+{const f0=bindPane;bindPane=pn=>{f0(pn);tag3Bind(pn)}}
+
+/* ---- Tag by Category in a 3D view: the view is locked first (Revit asks for that too) ---- */
+function tag3Click(pn,v,p){const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id),B=e&&TAG_CATS.includes(e.cat)&&P.els.includes(e)?elBox3(e.id):null;if(!B){toast(t('tag_pick'));return}
+  const was=lk3On(v),lead=!!ui.opt.tagLead,q=pk.p,fr=(c,a,b)=>b-a>1?Math.round(clamp((c-a)/(b-a),0,1)*1000)/1000:0.5;
+  edit(()=>{if(!was)lk3Lock(v,pn);const o={id:P.seq++,cat:'tag3',view:v.id,el:e.id,a:[fr(q[0],B[0],B[3]),fr(q[2],B[1],B[4]),fr(q[1],B[2],B[5])],o:lead?[7,-7]:[0,0]};if(lead)o.lead=true;P.ann.push(o)});
+  if(!was)toast(t('lk3_auto'),7000)}
+{const X=XT3.tag,ok0=X.ok,ck0=X.click,hn0=X.hint;X.ok=v=>ok0(v)||lk3Able(v);X.click=function(pn,v,p){return v&&v.kind==='3d'?tag3Click(pn,v,p):ck0.apply(this,arguments)};X.hint=v=>v&&v.kind==='3d'?t(lk3On(v)?'tg3_h':'tg3_h0'):hn0(v)}
+/* Tag All in a locked 3D view: what it shows inside the frame it was locked at, that has no tag there yet */
+function tag3Lacking(v){const has=new Set(P.ann.filter(d=>d.cat==='tag3'&&d.view===v.id).map(d=>d.el)),L=v.lk3,M=camMatrix(orbitCam(lk3Nav(v,L.asp),L.asp),MSm().bb),by=new Map();
+  for(const e of P.els){if(!TAG_CATS.includes(e.cat)||has.has(e.id)||!tag3Vis(v,null,e))continue;const B=elBox3(e.id),x=(B[0]+B[3])/2,y=(B[1]+B[4])/2,z=(B[2]+B[5])/2,cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15];
+    if(!(cw>1e-6)||Math.abs(cx/cw)>1||Math.abs(cy/cw)>1)continue;(by.get(e.cat)||by.set(e.cat,[]).get(e.cat)).push(e)}return by}
+function tag3All(v){const by=tag3Lacking(v);if(!by.size){toast(t('tagall_none'));return}const pick=ui.tag3All||(ui.tag3All={cats:['duct','pipe','equip','terminal','tray','conduit'],lead:true}),cats=TAG_CATS.filter(c=>by.has(c));
+  openDlg(t('a_tagall')+' — '+v.name,`<p class="note">${t('tg3_allnote')}</p><div class="chks">${cats.map(c=>`<label><input type="checkbox" data-ta3="${c}"${pick.cats.includes(c)?' checked':''}>${esc(t('cat_'+c))} (${by.get(c).length})</label>`).join('')}</div>
+    <div class="fr" style="margin-top:10px"><label for="ta3Lead">${t('p_leader')}</label><input type="checkbox" id="ta3Lead"${pick.lead?' checked':''}></div>`,
+    `<button class="btn" data-ta3="all">${t('sel_all')}</button><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ta3="run">${t('ok')}</button>`,
+    {change(e){const c=e.target.dataset.ta3;if(e.target.id==='ta3Lead'){pick.lead=e.target.checked;return}if(!c)return;const i=pick.cats.indexOf(c);if(e.target.checked){if(i<0)pick.cats.push(c)}else if(i>=0)pick.cats.splice(i,1)},
+     click(e){const a=e.target.dataset.ta3;if(a==='all'){pick.cats=cats.slice();tag3All(v);return}if(a!=='run')return;const use=cats.filter(c=>pick.cats.includes(c));if(!use.length){toast(t('tagall_pick'));return}let n=0;
+       edit(()=>{for(const c of use)for(const el of by.get(c)){const o={id:P.seq++,cat:'tag3',view:v.id,el:el.id,a:A3C.slice(),o:pick.lead?[7,-7]:[0,0]};if(pick.lead)o.lead=true;P.ann.push(o);n++}});closeDlg();toast(t('tagall_done',n))}})}
+{const f0=dlgTagAll;dlgTagAll=function(){const v=activeView();if(!lk3Able(v))return f0.apply(this,arguments);if(!lk3On(v)){toast(t('tg3_lock'),6000);return}tag3All(v)}}
+
+/* ---- on a sheet: the frame it was locked at, at the view's scale, and its tags in millimetres of paper ---- */
+{const f0=vpBox;vpBox=vp=>{const B=f0(vp);if(!B||!lk3Sc(B.V,vp))return B;const L=B.V.lk3,sc=B.V.scale||100;return Object.assign({},B,{w:clamp(2*L.hh*L.asp/sc,10,3000),h:clamp(2*L.hh/sc,10,3000)})}}
+function tag3Paper(ctx,g,V,B,x0,y0,col){const D=tag3List(V);if(!D.length)return;const asp=B.w/B.h,M=camMatrix(orbitCam(lk3Nav(V,asp),asp),MSm().bb),X=g.X,Y=g.Y,was=ctx.layerNow?ctx.layerNow():null;
+  ctx.save();ctx.beginPath();ctx.rect(X(x0),Y(y0),X(x0+B.w)-X(x0),Y(y0+B.h)-Y(y0));ctx.clip();g.lay('tag');
+  for(const d of D){const G=tag3Geo(V,d,M,B.w,B.h);if(!G)continue;const a=[x0+G.a[0],y0+G.a[1]],o=tag3O(d);g.el(d);tgPaint(g,col,null,G.e,tgT(d),d,[a[0]+o[0],a[1]+o[1]],a)}
+  ctx.restore();if(was)ctx.layer(was[0],was[1])}          // what is drawn after the tags (the title block) stays on the layer it was on
+/* the DXF recorder says which layer it is on */
+{const f0=dxfRecorder;dxfRecorder=function(){const r=f0.apply(this,arguments),c=r.ctx,L0=c.layer;let last=['',undefined];c.layer=function(k,e){last=[k,e];return L0.call(this,k,e)};c.layerNow=()=>last.slice();return r}}
+{const f0=vpTitle;vpTitle=function(ctx,g,sh,vp,V,B,x0,y0,NOS,col){f0.apply(this,arguments);if(lk3On(V))tag3Paper(ctx,g,V,B,x0,y0,col)}}
+
+/* ---- kept valid; a copy of a tag goes with the copy of its element (alone it would tag the same element twice) ---- */
+XC.push(()=>{const vs=new Map();for(const v of P.views){if(v.kind==='3d')vs.set(v.id,v);if(v.lk3===undefined)continue;const L=v.lk3,f=x=>x!=null&&x!==''&&isFinite(+x);
+    if(!lk3Able(v)||!L||typeof L!=='object'||![L.yaw,L.pitch,L.hh,L.asp].every(f)||!(+L.hh>0)||!(+L.asp>0)||!Array.isArray(L.t)||L.t.length!==3||!L.t.every(f)){delete v.lk3;continue}
+    const o={yaw:+L.yaw,pitch:clamp(+L.pitch,-1.5,1.5),t:L.t.map(Number),hh:clamp(+L.hh,50,1e6),asp:clamp(+L.asp,0.05,20),on:L.on?1:0};if(L.persp)o.persp=1;if(f(L.fov)&&+L.fov>0)o.fov=clamp(+L.fov,5,150);v.lk3=o}
+  if(!P.ann.some(d=>d.cat==='tag3'))return;const E=new Map(P.els.map(e=>[e.id,e])),f=(x,lo,hi,d)=>x!=null&&x!==''&&isFinite(+x)?clamp(+x,lo,hi):d;
+  P.ann=P.ann.filter(d=>{if(d.cat!=='tag3')return true;const v=vs.get(d.view),e=E.get(d.el);return!!v&&lk3Able(v)&&!!e&&TAG_CATS.includes(e.cat)});
+  for(const d of P.ann){if(d.cat!=='tag3')continue;d.a=Array.isArray(d.a)&&d.a.length===3?d.a.map(x=>Math.round(f(x,0,1,0.5)*1000)/1000):A3C.slice();d.o=Array.isArray(d.o)&&d.o.length===2?d.o.map(x=>Math.round(f(x,-1000,1000,0)*100)/100):[0,0];
+    if(d.lead!=null&&d.lead!==true)delete d.lead}});
+{const f0=cloneIds;cloneIds=ids=>{const L=[...ids],tg=L.map(id=>IDX.get(id)).filter(d=>d&&d.cat==='tag3'),ti=new Set(tg.map(d=>d.id)),out=f0(L.filter(id=>!ti.has(id)));
+  if(tg.length){const M=CLMAP;let n=0;for(const d of tg)if(M.has(d.el)){const c=JSON.parse(JSON.stringify(d));c.id=P.seq++;c.el=M.get(d.el);P.ann.push(c);out.push(c.id);n++}if(n)IDX=indexProject(P)}return out}}
+/* undo and redo hand back the ids of what they take away, and a view made next takes one: it must not find the camera of the view that had its id
+   (a new sheet after a copy of a 3D view was undone was drawn blank) */
+{const f0=undo,f1=redo,prune=()=>{for(const k of Object.keys(ui.nav))if(!viewById(+k)){delete ui.nav[k];if(ui.navHist)delete ui.navHist[k]}};undo=function(){f0.apply(this,arguments);prune()};redo=function(){f1.apply(this,arguments);prune()}}
+Object.assign(STR,{a_lk3save:['บันทึกมุมกล้องและล็อกมุมมอง (Save Orientation and Lock View)','Save Orientation and Lock View'],a_lk3restore:['คืนมุมกล้องที่บันทึกไว้และล็อก (Restore Orientation and Lock View)','Restore Orientation and Lock View'],
+  a_lk3unlock:['ปลดล็อกมุมมอง (Unlock View)','Unlock View'],lk3_on:['มุมมอง 3 มิติล็อกอยู่ (Locked 3D View)','Locked 3D View'],lk3_off:['มุมมอง 3 มิติยังไม่ล็อก (Unlocked 3D View)','Unlocked 3D View'],lk3_badge:['ล็อกมุมมอง','Locked'],
+  lk3_saved:['ล็อกมุมมองแล้ว · ซูมและเลื่อนได้ แต่หมุนไม่ได้ · ติดป้ายกำกับในมุมมองนี้ได้','View locked · it zooms and pans but does not orbit · tags can be placed in it now'],lk3_restored:['กลับไปมุมที่บันทึกไว้และล็อกแล้ว','Back at the saved orientation, locked'],
+  lk3_unlocked:['ปลดล็อกแล้ว หมุนได้','Unlocked; the view orbits again'],lk3_unlockedt:['ปลดล็อกแล้ว หมุนได้ · ป้ายกำกับของมุมมองนี้ซ่อนไว้ จะกลับมาเมื่อคืนมุมกล้องและล็อก','Unlocked; the view orbits again · its tags are hidden and come back with Restore Orientation and Lock View'],
+  lk3_held:['มุมมองนี้ล็อกอยู่ จึงหมุนไม่ได้ · ปลดล็อกได้ที่ปุ่มกุญแจบนแถบล่างของมุมมอง','This view is locked and does not orbit · unlock it with the padlock in the bar at the bottom of the view'],
+  lk3_none:['ยังไม่มีมุมกล้องที่บันทึกไว้ · ใช้ บันทึกมุมกล้องและล็อกมุมมอง ก่อน','No orientation is saved yet · use Save Orientation and Lock View first'],lk3_walk:['มุมมองเดินชม (Walkthrough) ล็อกไม่ได้','A walkthrough cannot be locked'],lk3_na:['ใช้กับมุมมอง 3 มิติ','Works in a 3D view'],
+  lk3_auto:['ล็อกมุมมองให้แล้ว ป้ายจึงอยู่กับที่ (Save Orientation and Lock View) · ปลดล็อกได้ที่ปุ่มกุญแจบนแถบล่างของมุมมอง','The view was locked so that its tags hold their place (Save Orientation and Lock View) · unlock it with the padlock in the bar at the bottom of the view'],
+  tg3_h:['คลิกชิ้นงานในมุมมอง 3 มิติเพื่อติดป้าย (ท่อ ท่อลม อุปกรณ์ ประตู ผนัง …) · ติ๊กเส้นชี้ที่แถบตัวเลือกเพื่อวางป้ายห่างออกมา','Click an element of the 3D view to tag it (a pipe, a duct, a component, a door, a wall …) · tick Leader in the options bar to place the tag off to the side'],
+  tg3_h0:['มุมมองนี้ยังไม่ล็อก · คลิกชิ้นงานเพื่อติดป้าย แล้วโปรแกรมจะล็อกมุมมองให้','This view is not locked yet · click an element to tag it and the view is locked for you'],
+  tg3_lock:['ล็อกมุมมองก่อน (ปุ่มกุญแจบนแถบล่างของมุมมอง › บันทึกมุมกล้องและล็อกมุมมอง)','Lock the view first (the padlock in the bar at the bottom of the view › Save Orientation and Lock View)'],
+  tg3_allnote:['ติดป้ายให้ทุกชิ้นที่มุมมองนี้แสดงอยู่ในกรอบที่ล็อกไว้และยังไม่มีป้าย เลือกหมวดที่ต้องการ','Tags everything this view shows inside the frame it was locked at that has no tag yet. Choose the categories.'],
+  n_tag3:['ป้ายในมุมมอง 3 มิติที่ล็อกตามชิ้นงานไปเมื่อชิ้นงานย้าย ลากป้ายเพื่อจัดตำแหน่ง ดับเบิลคลิกเพื่อแก้เลขกำกับ · ป้ายซ่อนไว้ระหว่างที่มุมมองปลดล็อก','A tag of a locked 3D view goes with its element when the element moves; drag it to place it, double-click it to edit the mark · the tags hide while the view is unlocked'],
+  cat_tag3:['ป้ายกำกับ','Tags']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -20017,6 +20172,8 @@ ZE และ ZX ทำงานเหมือน ZF · ZZ เหมือน ZR
 - รูปแบบการแสดงผล เลือกได้จากแถบล่างของมุมมอง: [[st_wire]] ((WF)) · [[st_hidden]] ((HL)) · [[st_shaded]] ((SD)) · [[st_colors]] · [[st_real]]
 - [[st_real]] มีวัสดุ แสงอาทิตย์ และเงา ตั้งดวงอาทิตย์ตามวัน เวลา และสถานที่ได้ที่ [[a_sun]] ((SU)) ปรับความเข้มแสงและเงาที่ [[a_gdo]] ((GD))
 - [[persp]]: ปุ่มบนแถบล่างของมุมมอง สลับระหว่างภาพขนานกับภาพทัศนียภาพ
+- ปุ่มกุญแจบนแถบล่างของมุมมอง 3 มิติ: [[a_lk3save]] ล็อกมุมกล้องไว้ ซูมและเลื่อนได้แต่หมุนไม่ได้ · [[a_lk3restore]] กลับไปมุมที่บันทึกไว้แล้วล็อก · [[a_lk3unlock]] ให้หมุนได้อีก (ป้ายกำกับของมุมมองซ่อนไว้จนกว่าจะล็อกอีกครั้ง) · ในมุมมองที่ล็อก เส้นประบอกกรอบที่แผ่นงานแสดง และ ซูมพอดี ((ZF)) กลับไปที่กรอบนั้น
+- มุมมอง 3 มิติที่ล็อกบนแผ่นงาน แสดงตามกรอบที่ล็อกไว้ ในมาตราส่วนของมุมมอง (เลือกที่แถบล่างหรือในคุณสมบัติของมุมมอง) พร้อมป้ายกำกับ ทั้งบนหน้าจอ ใน PDF และ DXF (ภาพทัศนียภาพไม่ตามมาตราส่วน)
 - [[a_selbox]] ((BX)): เลือกชิ้นงานแล้วกด BX จะได้กล่องตัดรอบสิ่งที่เลือก ลากหน้ากล่องเพื่อผ่าดูภายใน เปิดปิดกล่องได้ที่ [[p_sbox]] ในแผงคุณสมบัติของมุมมอง
 - [[a_v3dmep]]: มุมมอง 3 มิติที่ตัวอาคารโปร่ง เห็นงานระบบชัด
 `],en:['Zoom, pan, orbit',`
@@ -20038,6 +20195,8 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - The visual style is chosen in the bar at the bottom of the view: [[st_wire]] ((WF)) · [[st_hidden]] ((HL)) · [[st_shaded]] ((SD)) · [[st_colors]] · [[st_real]]
 - [[st_real]] has materials, sun and shadows. Set the sun by date, time and place in [[a_sun]] ((SU)); light and shadow strength in [[a_gdo]] ((GD))
 - [[persp]]: the button in the bar at the bottom of the view switches between a parallel and a perspective picture
+- The padlock in the bar at the bottom of a 3D view: [[a_lk3save]] keeps the camera where it is, so the view zooms and pans but does not orbit · [[a_lk3restore]] goes back to the saved orientation and locks it · [[a_lk3unlock]] lets it orbit again (its tags hide until it is locked again) · in a locked view a dashed frame shows what sheets show, and Zoom to Fit ((ZF)) goes back to it
+- A locked 3D view on a sheet shows the frame it was locked at, at the view's scale (chosen in the bar at the bottom or in the view's Properties), with its tags, on the screen, in PDF and in DXF (a perspective view is not to scale)
 - [[a_selbox]] ((BX)): select something and press BX for a section box around it; drag a face of the box to cut into the building. [[p_sbox]] in the view's properties turns the box on and off
 - [[a_v3dmep]]: a 3D view with the building see-through, so the services stand out
 `]},
@@ -20831,6 +20990,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.105 · ระยะจากจุดฐานและระยะพิกัด (Baseline / Ordinate Dimension), เลขลูกขั้นบันได (Tread Number) และป้ายวัสดุ (Material Tag): ชนิดเส้นบอกระยะเลือกรูปแบบสายระยะได้ ตัวเลขนับจากจุดตั้งต้นและพิมพ์แก้ได้ · เลขลูกนอนหรือลูกตั้งบนบันไดทุกรูปแบบ · ป้ายบอกชั้นวัสดุของผนัง พื้น หลังคา และฝ้า ในแปลน รูปด้าน และรูปตัด
 - V1.106 · ชีตและมุมมองบนชีต: กระดาษ A0 แนวตั้ง และขนาดกำหนดเอง · ชนิดมุมมองบนชีต (Viewport Type) กำหนดการแสดงชื่อ เส้นใต้ชื่อ ความหนา สี และขนาดตัวอักษร · ชื่อบนชีต (Title on Sheet) · หมุนมุมมองบนชีต 90° · ลากชื่อมุมมองและปรับความยาวเส้น · ทำสำเนาชีตพร้อมมุมมอง
 - V1.107 · ตาราง: เลือกหลายแถวด้วย Ctrl หรือ Shift และ ไฮไลต์ในโมเดล · รวมพารามิเตอร์ (Combine Parameters) · คลิกหัวคอลัมน์เพื่อเลือก แล้วซ่อน แสดงทั้งหมด รวมหัวคอลัมน์ หรือแยก · หัวตารางค้างอยู่ด้านบนเมื่อเลื่อน · ขนาดตัวอักษรชื่อ หัวคอลัมน์ และเนื้อหา · แก้ค่าของชนิดในตารางได้
+- V1.108 · ล็อกมุมมอง 3 มิติ: ปุ่มกุญแจบนแถบล่างของมุมมอง บันทึกมุมกล้องและล็อก คืนมุมกล้อง หรือปลดล็อก · ติดป้ายกำกับในมุมมอง 3 มิติ ป้ายตามชิ้นงานไป และ ติดป้ายทั้งหมด ในภาพไอโซเมตริก · มุมมองที่ล็อกบนแผ่นงานแสดงตามกรอบที่ล็อกไว้ ในมาตราส่วนของมุมมอง พร้อมป้าย ใน PDF และ DXF
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -21020,6 +21180,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.105 · Baseline and Ordinate dimensions, Tread Number and Material Tag: a dimension type sets its string type, measured from an origin and typed into · treads or risers numbered on any stair · tags that name the layer of a wall, floor, roof or ceiling in plans, elevations and sections
 - V1.106 · Sheets and viewports: A0, portrait and custom paper sizes · viewport types (show title, extension line, line weight, colour, text size) · Title on Sheet · Rotation on Sheet · the title dragged and its line resized · Duplicate Sheet with Views
 - V1.107 · Schedules: several rows picked with Ctrl or Shift, and Highlight in Model · Combine Parameters · click column headers to pick them, then Hide, Unhide All, Group or Ungroup · the headers stay in sight while the table scrolls · title, header and body text sizes · type values typed in the schedule
+- V1.108 · Locked 3D views: the padlock in the view's bottom bar saves the orientation and locks it, restores it, or unlocks the view · tags in 3D views, which follow their elements, and Tag All in an isometric · a locked 3D view on a sheet shows the frame it was locked at, at the view's scale, with its tags, in PDF and DXF
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -21117,6 +21278,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[a_tagall]]: ติดป้ายให้ทุกชิ้นที่ยังไม่มีป้ายในมุมมองนี้ เลือกหมวดได้
 - [[a_tags]]: เปิดปิดการแสดงป้ายของมุมมอง (ป้ายห้องไม่ขึ้นกับปุ่มนี้)
 - [[t_tag]] ในรูปด้านและรูปตัด: คลิกท่อ ประตู คาน หรืออุปกรณ์ ป้ายตามชิ้นงานไปเมื่อย้าย · ชนิดป้าย (แก้ชนิด › แก้ป้ายกำกับ): แสดงหลายค่าต่อกัน เช่น ขนาดท่อ + ระดับ CL หรือระบบ + ขนาด หรือขึ้นบรรทัดใหม่ ใส่ข้อความหน้าและหลังได้ เลือกรูปกรอบ ขนาดตัวอักษร ตัวหนา · ป้ายแนวตั้ง: เลือกที่แถบตัวเลือกหรือแผงคุณสมบัติ
+- [[t_tag]] ในมุมมอง 3 มิติ: คลิกท่อ ท่อลม อุปกรณ์ ประตู หรือผนัง ถ้ามุมมองยังไม่ล็อก โปรแกรมจะล็อกให้ · ป้ายตามชิ้นงานไปเมื่อย้ายหรือยืด ลากป้ายเพื่อจัดตำแหน่ง ดับเบิลคลิกเพื่อแก้เลขกำกับ · [[a_tagall]] ในมุมมอง 3 มิติที่ล็อก ติดป้ายทุกชิ้นในกรอบที่ยังไม่มีป้าย เช่น ท่อทั้งระบบในภาพไอโซเมตริก
 - Keynote (แผง [[p_keynote]]): ตาราง Keynote ของโครงการเก็บรหัสกับข้อความ เช่น 04.A1 ผนังก่ออิฐมอญ · [[a_knel]]: คลิกบนองค์ประกอบ ป้ายจะแสดง Keynote ของชนิดขององค์ประกอบนั้น ชนิดที่ยังไม่มี Keynote โปรแกรมจะให้เลือกจากตารางเมื่อใส่ครั้งแรก (แก้ทีหลังได้ที่ [[edit_type]] ช่อง Keynote) · [[a_knuser]]: คลิกบนองค์ประกอบแล้วเลือก Keynote ให้ป้ายนั้นเอง ไม่เกี่ยวกับชนิด · แถบตัวเลือกมี [[p_leader]] และ [[p_knstyle]] (รหัส รหัสในกรอบ หรือข้อความ) · ลากป้ายเพื่อย้าย ลากปลายลูกศรเพื่อชี้จุดอื่น ดับเบิลคลิกเพื่อเปลี่ยน Keynote
 - [[a_knset]]: แก้ตาราง (รหัส ข้อความ รหัสแม่) เพิ่ม ลบ นำเข้าและส่งออกเป็นไฟล์ข้อความแบบเดียวกับ Revit (คั่นด้วย Tab) · [[kn_numbering]]: [[kn_bykey]] ป้ายแสดงรหัส · [[kn_bysheet]] ป้ายแสดงเลข 1, 2, 3 … นับแยกแต่ละแผ่นงาน
 - [[a_knlegend]]: ตารางรายการ Keynote ที่ใช้อยู่ วางบนแผ่นงานได้ · ติ๊ก [[p_knsheet]] เพื่อให้แต่ละแผ่นงานแสดงเฉพาะ Keynote ของมุมมองบนแผ่นนั้น
@@ -21185,6 +21347,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[a_tagall]]: tags everything in this view that has no tag yet, by category
 - [[a_tags]]: shows or hides the tags of the view (room tags do not go by this switch)
 - [[t_tag]] in elevations and sections: click a pipe, a door, a beam or a component; the tag goes with it when it moves · tag types (Edit Type › Edit Label): several values in a row, such as size + CL elevation or system + size, or on a new line, with a prefix and a suffix; the shape, the text size and bold · a vertical tag: in the options bar or in Properties
+- [[t_tag]] in 3D views: click a pipe, a duct, a component, a door or a wall; a view that is not locked yet is locked for you · the tag goes with its element when it moves or grows; drag the tag to place it, double-click it to edit the mark · [[a_tagall]] in a locked 3D view tags everything in its frame that has no tag yet, such as every pipe of an isometric
 - Keynotes (the [[p_keynote]] panel): the keynote table of the project pairs keys with texts, such as 04.A1 Brick wall · [[a_knel]]: click an element and the tag shows the keynote of its type; a type that has none yet is given one from the table the first time (and can be changed later in [[edit_type]], in the Keynote box) · [[a_knuser]]: click an element and choose a keynote for that tag alone, whatever its type says · the options bar has [[p_leader]] and the [[p_knstyle]] (the key, the key in a box, or the text) · drag the tag to move it, drag the end of its arrow to point elsewhere, double-click it for another keynote
 - [[a_knset]]: edit the table (key, text, parent key), add and delete rows, import and export it as a text file of the kind Revit uses (fields parted by tabs) · [[kn_numbering]]: [[kn_bykey]], the tags show the keys · [[kn_bysheet]], the tags show 1, 2, 3 … counted for each sheet by itself
 - [[a_knlegend]]: the schedule of the keynotes in use; it can be placed on sheets · tick [[p_knsheet]] and every sheet lists only the keynotes of the views on it
@@ -22801,6 +22964,13 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r23={I:()=>({P,ui,IDX,undoN:undoS.length}),lk:id=>{const v=viewById(id);return v&&v.lk3?JSON.parse(JSON.stringify(v.lk3)):null},
+  nav:id=>{const n=navOf(viewById(id));return{yaw:n.yaw,pitch:n.pitch,t:n.t.slice(),hh:n.hh,persp:!!n.persp,fit:!!n.fit}},
+  tags:id=>{const v=viewById(id),pn=PANES[paneOf(id)];if(!v||!pn)return[];const nav=navOf(v),M=camMatrix(orbitCam(nav,pn.w/pn.h),MSm().bb),k=tag3K(pn,nav),sc=v.scale||100,r=pn.cv.getBoundingClientRect();
+    return P.ann.filter(d=>d.cat==='tag3'&&d.view===id).map(d=>{const G=lk3On(v)&&tag3Geo(v,d,M,pn.w,pn.h),o=tag3O(d);return{id:d.id,el:d.el,a:d.a,o:o.slice(),lead:!!d.lead,type:d.type,ori:d.ori||'',shown:!!G,
+      ax:G?r.left+G.a[0]:null,ay:G?r.top+G.a[1]:null,hx:G?r.left+G.a[0]+o[0]*sc*k:null,hy:G?r.top+G.a[1]+o[1]*sc*k:null}})},
+  vpbox:id=>{const vp=IDX.get(id),B=vp&&vpBox(vp);return B?{w:B.w,h:B.h}:null},title:(sid,vpid)=>{const sh=viewById(sid),vp=sh.vps.find(q=>q.id===vpid);return vtGeo(sh,vp,vpBox(vp),0,0,null).sl},tb:sid=>tbTxt(viewById(sid)).scale,
+  dxf:id=>sheetDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),box3:id=>elBox3(id),t:(k,...a)=>t(k,...a)};
 window.PenumBIM.r22={I:()=>({P,ui,IDX,undoN:undoS.length}),sv:id=>{const S=schedView(P,viewById(id),t);return{cols:S.cols.map(c=>c.k),labels:S.cols.map(c=>colLabel(c)),rows:S.rows.map(r=>Object.assign({},r)),hg:S.hg||null,app:S.app||null}},
   box:id=>{const B=schedBox(viewById(id));return{w:B.w,h:B.h,cw:B.cw,hh:B.hh,rh:B.rh||5.4,top:B.top||7,ts:B.ts||3,hs:B.hs||2.2,bs:B.bs||2.2,hg:B.hg||null,cells:B.cells.length,head:B.head}},
   vpbox:id=>{const vp=IDX.get(id),B=vp&&vpBox(vp);return B?{w:B.w,h:B.h,segs:B.segs||1,per:B.per||0}:null},csv:id=>scheduleCSV(viewById(id)),hs:()=>({v:HS107.v,ks:HS107.ks.slice()}),
