@@ -1344,9 +1344,11 @@ function trussLayout(kind,L,H,panel,mem){
       else M.push(left?{a:[s0,0],b:[s1,H],k:'web'}:{a:[s1,0],b:[s0,H],k:'web'})}}
   return{n,M}}
 const trussH=(P,e)=>{const T=typ(P,e)||{};return Math.max(200,+e.h||+T.h||1200)};
-/* the members of a truss in the model: [{k, a:[x,y,z], b:[x,y,z], w (across the truss), h (in its plane)}] */
-function trussMembers(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<100)return[];const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,z0=elev(P,e.level)+(e.off||0),Y=trussLayout(TRUSS_KINDS.includes(T.kind)?T.kind:'howe',L,trussH(P,e),T.panel,T.mem);
-  return Y.M.map(m=>{const c=m.k!=='web';return{k:m.k,a:[e.x1+ux*m.a[0],e.y1+uy*m.a[0],z0+m.a[1]],b:[e.x1+ux*m.b[0],e.y1+uy*m.b[0],z0+m.b[1]],w:c?(T.cw||100):(T.ww||75),h:c?(T.ch||100):(T.wh||75)}})}
+/* the members of a truss in the model: [{k, a:[x,y,z], b:[x,y,z], w (across the truss), h (in its plane)}]; placed by trFrame (section 130) when it is not as before V1.130,
+   with nv the normal of each section and ls the layout's s at either end */
+function trussMembers(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<100)return[];const F=trPlain(e)?null:trFrame(P,e),ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,z0=elev(P,e.level)+(e.off||0),Y=trussLayout(TRUSS_KINDS.includes(T.kind)?T.kind:'howe',F?F.Ls:L,trussH(P,e),T.panel,T.mem);
+  return Y.M.filter(m=>!(m.k==='top'&&e.ctc===0)&&!(m.k==='bot'&&e.cbc===0)).map(m=>{const c=m.k!=='web',w=c?(T.cw||100):(T.ww||75),h=c?(T.ch||100):(T.wh||75);if(F)return F.mem(m,w,h);
+    return{k:m.k,a:[e.x1+ux*m.a[0],e.y1+uy*m.a[0],z0+m.a[1]],b:[e.x1+ux*m.b[0],e.y1+uy*m.b[0],z0+m.b[1]],w,h}})}
 function trussLoop(P,e){const T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,cw=trCW(P,T),nx=-(e.y2-e.y1)/L*cw/2,ny=(e.x2-e.x1)/L*cw/2;return[[e.x1+nx,e.y1+ny],[e.x2+nx,e.y2+ny],[e.x2-nx,e.y2-ny],[e.x1-nx,e.y1-ny]]}
 /* the closed regions a set of lines bounds: [{poly, src, area}] — src[k]: the line the edge from poly[k] to poly[k+1] lies on.  The walk round the faces of the graph that regions() makes for rooms */
 function planFaces(segs){const S=segs.map(w=>Object.assign({L:Math.hypot(w.x2-w.x1,w.y2-w.y1)},w)).filter(w=>w.L>1),nodes=[],node=(x,y)=>{for(let i=0;i<nodes.length;i++)if(Math.abs(nodes[i][0]-x)<3&&Math.abs(nodes[i][1]-y)<3)return i;nodes.push([x,y]);return nodes.length-1};
@@ -1553,7 +1555,7 @@ function zRange(P,e){
   if(c==='wall'||c==='column'||c==='riser'){const z0=base+(e.baseOff||0);let z1=e.top&&lvl(P,e.top)?elev(P,e.top)+(e.topOff||0):z0+(e.height||3000);if(z1<z0+100)z1=z0+100;return[z0,z1]}
   if(c==='beam'){const T=typ(P,e),z=beamZ(P,e),h=T?T.h:400,br=e.use==='brace';return[Math.min(z[0],z[1])-(br?h/2:h),Math.max(z[0],z[1])+(br?h/2:0)]}
   if(c==='bsys'){const z1=base+(e.off||0);return[z1-(bsysType(P,e).h||400),z1]}
-  if(c==='truss'){const T=typ(P,e)||{},z0=base+(e.off||0);return[z0-trCD(P,T,'bc')/2,z0+trussH(P,e)+trCD(P,T,'tc')/2]}
+  if(c==='truss'){if(!trPlain(e))return trZR(P,e);const T=typ(P,e)||{},z0=base+(e.off||0);return[z0-trCD(P,T,'bc')/2,z0+trussH(P,e)+trCD(P,T,'tc')/2]}
   if(c==='footing'||c==='wfoot'){const T=typ(P,e),z1=base+(e.off||0);return[z1-(T&&T.h?T.h:300),z1]}          // a foundation hangs down from its top
   if(c==='floor'){const T=typ(P,e),z1=base+(e.off||0);return[z1-(T?T.thickness:150),z1]}
   if(c==='ceiling'){const T=typ(P,e),z0=base+(e.off==null?2600:e.off);return[z0,z0+(T?T.thickness:12)]}          // off: height of the underside above the level
@@ -7756,7 +7758,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
       for(const p of e.pts){const s=(p[0]-cx)*-uy+(p[1]-cy)*ux;if(s<s0)s0=s;if(s>s1)s1=s}const P0=[cx-uy*(s0+hw),cy+ux*(s0+hw)],P1=[cx-uy*(s1-hw),cy+ux*(s1-hw)];
       if(s1-s0>8*sc){ctx.lineWidth=h?1.4:g.lw(0.13);g.seg(P0,P1);arrowHead(g,P1,P0,1.8);arrowHead(g,P0,P1,1.8);if(v.tags!==false)g.text(bsysLabel(e),[cx+ux*2.2*sc,cy+uy*2.2*sc],1.8,{rot:Math.atan2(ux,-uy),color:h||S.ink,mono:true,halo:true})}}}
   // trusses: seen from above, the width of the chords, with the centre line and the mark of the type
-  for(const [e,tm] of of('truss')){g.el(e);const h=hl(e.id),T=typ(P,e)||{},bs=vr9B(tm,S,det);if(bs.f){const bl=trussLoop(P,e);g.path(bl);if(!vgCut(g,bl,col,S.ink,c=>{ctx.fillStyle=c;g.path(bl);ctx.fill()})){ctx.fillStyle=bs.f;ctx.fill()}g.cut(1)}ctx.strokeStyle=h||bs.c;ctx.lineWidth=h?1.6:g.lw(bs.w);g.dash(bs.d);g.path(trussLoop(P,e));ctx.stroke();g.cut(0);ctx.lineWidth=h?1.4:g.lw(0.18);g.dash([4,1,0.6,1]);g.seg([e.x1,e.y1],[e.x2,e.y2]);g.dash(null);
+  for(const [e,tm] of of('truss')){g.el(e);const h=hl(e.id),T=typ(P,e)||{},bs=vr9B(tm,S,det);const LP=trPlanLoops(P,e);if(bs.f){for(const bl of LP){g.path(bl);if(!vgCut(g,bl,col,S.ink,c=>{ctx.fillStyle=c;g.path(bl);ctx.fill()})){ctx.fillStyle=bs.f;ctx.fill()}}g.cut(1)}ctx.strokeStyle=h||bs.c;ctx.lineWidth=h?1.6:g.lw(bs.w);g.dash(bs.d);for(const bl of LP){g.path(bl);ctx.stroke()}g.cut(0);ctx.lineWidth=h?1.4:g.lw(0.18);g.dash([4,1,0.6,1]);g.seg([e.x1,e.y1],[e.x2,e.y2]);g.dash(null);
     if(v.tags!==false&&T.mark){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;if(L>10*sc)g.text(T.mark,[(e.x1+e.x2)/2-(e.y2-e.y1)/L*2.2*sc,(e.y1+e.y2)/2+(e.x2-e.x1)/L*2.2*sc],1.8,{rot:Math.atan2(e.y2-e.y1,e.x2-e.x1),color:h||S.ink,bold:true,halo:true})}}
   // model text: lying on the level, its letters; standing, what is seen of it from above
   for(const [e] of of('mtext')){g.el(e);const h=hl(e.id);ctx.strokeStyle=h||A.ink;ctx.fillStyle=h||A.ink;ctx.lineWidth=h?1.7:g.lw(0.13);g.dash(null);mtPlan(g,ctx,e)}
@@ -8712,6 +8714,7 @@ function hitPlan(v,p){
     else if(k==='wfoot')add(e.id,polyEdgeDist(w.x,w.y,wfootLoop(P,e)),pr(e,9));
     else if(k==='mtext'){const lp=mtextLoop(P,e);add(e.id,inPoly(w.x,w.y,lp)?0:polyEdgeDist(w.x,w.y,lp),pr(e,3))}          // a model text: by what the plan shows of it; on the face of a wall it is picked before the wall
     else if(k==='bsys'){let d=polyEdgeDist(w.x,w.y,e.pts);const hw=(bsysType(P,e).w||200)/2;for(const b of bsysBeams(P,e))d=Math.min(d,segDist(w.x,w.y,b.x1,b.y1,b.x2,b.y2)-hw);add(e.id,d,pr(e,9))}          // a beam system: by its outline or one of its beams
+    else if(k==='truss'&&!trUpright(e)){let d=bowDist(w.x,w.y,e)-3/nav.s;for(const lp of trPlanLoops(P,e))d=Math.min(d,inPoly(w.x,w.y,lp)?0:polyEdgeDist(w.x,w.y,lp));add(e.id,d,pr(e,6))}          // turned or leaning: by its members as the plan shows them (V1.130)
     else if(LINE_CATS.includes(k))add(e.id,bowDist(w.x,w.y,e)-Math.max(lineHW(e),3/nav.s),pr(e,k==='wall'?5:6));
     else if(k==='stair'){const st=stairGeo(P,e);if(st.polys.some(pl=>inPoly(w.x,w.y,pl)))add(e.id,0,pr(e,7))}
     else if(k==='roof'){const R=roofGeo(P,e);let d=polyEdgeDist(w.x,w.y,R.out||R.eave);for(const f of R.faces)if(f.i>=0)d=Math.min(d,polyEdgeDist(w.x,w.y,f.loop));add(e.id,d,pr(e,9))}
@@ -8858,7 +8861,7 @@ function newLineEl(cat,level,a,b){
   const d=defs(cat),o={id:P.seq++,cat,type:d.type,level,x1:a.x,y1:a.y,x2:b.x,y2:b.y};
   if(cat==='wall')return Object.assign(o,{baseOff:d.baseOff||0,top:resolveTop(level,d.top),topOff:0,height:d.height||3000});
   if(cat==='beam'){if(!braceMode())return Object.assign(o,{off:d.off||0});const B=braceEnds(level);o.level=B.L1;Object.assign(o,{use:'brace',off:B.o1,off2:B.o2});if(B.L2!==B.L1)o.lv2=B.L2;return o}          // a brace: from the start level and its offset to the end level and its offset (the options bar)
-  if(cat==='truss'){const q={off:d.off||0};if(+d.h>0)q.h=+d.h;return Object.assign(o,q)}
+  if(cat==='truss'){const q={off:d.off||0};if(+d.h>0)q.h=+d.h;for(const k of TR_IK)if(d[k]!=null)q[k]=d[k];return Object.assign(o,q)}
   if(cat==='railing')return Object.assign(o,{off:d.off||0});
   if(cat==='ramp')return Object.assign(o,{baseOff:d.baseOff||0,top:d.top>0&&lvl(P,d.top)?d.top:0,topOff:d.topOff||0,rise:d.rise||450});
   if(cat==='duct')return Object.assign(o,{w:d.w,h:d.h,off:d.off,sys:d.sys,flow:d.flow||0});
@@ -13960,7 +13963,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=140,V1_NAME='V1.129';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=141,V1_NAME='V1.130';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15533,7 +15536,7 @@ function ev3Lift(ids,dz){let n=0;const R=q=>Math.round(q*10)/10;
   for(const id of ids){const e=IDX.get(id);if(!e)continue;const c=e.cat;if(c==='level'){e.elev=R(e.elev+dz);continue}if(c==='grid'||c==='section'||!P.els.includes(e))continue;
     if(c==='wall'||c==='column'||c==='riser'||c==='shaft'||c==='ramp'){e.baseOff=R((e.baseOff||0)+dz);if(e.top&&lvl(P,e.top))e.topOff=R((e.topOff||0)+dz)}
     else if(c==='mass')e.baseOff=R((e.baseOff||0)+dz);
-    else if(c==='beam'||c==='railing'){e.off=R((e.off||0)+dz);if(e.off2!=null)e.off2=R(e.off2+dz)}
+    else if(c==='beam'||c==='railing'||c==='truss'){e.off=R((e.off||0)+dz);if(e.off2!=null)e.off2=R(e.off2+dz)}
     else if(c==='ceiling')e.off=R((e.off==null?2600:e.off)+dz);
     else if(c==='mline'){if(Array.isArray(e.vz))e.vz=e.vz.map(z=>R(z+dz));else e.off=R((e.off||0)+dz)}
     else if(HOSTED.includes(c))e.sill=R((e.sill||0)+dz);
@@ -21628,7 +21631,7 @@ function trUses(P0,e,id){const T=typ(P0,e)||{};return TR_MK.some(k=>T[k]===id)}
 function trMatOf(P0,B,cat){const M=B&&B.mid!=null&&Array.isArray(P0.mats)?P0.mats.find(x=>x.id===B.mid)||null:null;return{M,b:M?M.base:mtoBase(cat,B)}}
 /* each member with its kind (vk), its framing type (ft), its section: w × h, the area ar; its material (mat), its length between its cuts (cl) and the kilograms of steel in it (kg) */
 {const f0=trussMembers;trussMembers=(P0,e)=>{const T=typ(P0,e)||{},M=f0(P0,e);let own=null,any=false;
-  for(const m of M){const vk=m.k==='top'?'tc':m.k==='bot'?'bc':Math.abs(m.a[0]-m.b[0])<1&&Math.abs(m.a[1]-m.b[1])<1?'vw':'dw',B=trFT(P0,T,vk);m.vk=vk;m.cl=Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]);
+  for(const m of M){const vk=m.k==='top'?'tc':m.k==='bot'?'bc':(m.ls?Math.abs(m.ls[0]-m.ls[1])<1:Math.abs(m.a[0]-m.b[0])<1&&Math.abs(m.a[1]-m.b[1])<1)?'vw':'dw',B=trFT(P0,T,vk);m.vk=vk;m.cl=Math.hypot(m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]);
     if(B){m.ft=B;m.w=+B.w||200;m.h=+B.h||400;m.ar=stlT(B)?stlA(B):m.w*m.h;m.mat=trMatOf(P0,B,'beam');any=true}else{m.ar=m.w*m.h;m.mat=own||(own=trMatOf(P0,T,'truss'))}}
   if(any)trCuts(M,e);for(const m of M)m.kg=m.mat.b==='metal'?m.ar*STL_RHO*m.cl/1000:0;
   return M}}
@@ -21636,12 +21639,12 @@ function trMatOf(P0,B,cat){const M=B&&B.mid!=null&&Array.isArray(P0.mats)?P0.mat
    to another of its kind, a top chord on the face of the bottom chord and square with its end at a heel.  m.ct=[the cuts at a, at b]: planes {F, N (into the
    member), on: for the face of a chord, that chord {o, u, L}}; m.cl becomes its length between them along its line (Revit: Cut Length).  Members of the truss
    type's own sizes are drawn and counted node to node, as before */
-function trCuts(M,e){const L0=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nv=[-(e.y2-e.y1)/L0,(e.x2-e.x1)/L0,0],
+function trCuts(M,e){const L0=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nv0=[-(e.y2-e.y1)/L0,(e.x2-e.x1)/L0,0],nvOf=m=>m.nv||nv0,          // the normal of a member's section (V1.130: its own once the truss turns)
     sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],len=a=>Math.hypot(a[0],a[1],a[2]),unit=a=>{const l=len(a)||1;return[a[0]/l,a[1]/l,a[2]/l]},
     crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],add=(a,b,s)=>[a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s],neg=a=>[-a[0],-a[1],-a[2]],near=(p,q)=>len(sub(p,q))<1,
-    C=M.filter(m=>m.k!=='web').map(m=>{const u=unit(sub(m.b,m.a));return{m,u,L:len(sub(m.b,m.a)),up:unit(crs(u,nv))}}),
+    C=M.filter(m=>m.k!=='web').map(m=>{const u=unit(sub(m.b,m.a));return{m,u,L:len(sub(m.b,m.a)),up:unit(crs(u,nvOf(m)))}}),
     at=p=>{const r=[];for(const c of C){const s=dot(sub(p,c.m.a),c.u);if(s<-1||s>c.L+1||len(sub(p,add(c.m.a,c.u,s)))>1)continue;r.push({c,end:near(p,c.m.a)?0:near(p,c.m.b)?1:-1})}return r},          // the chords whose line passes through p, and at which of their ends
-    face=(c,p,d)=>{const s=dot(c.up,d);if(Math.abs(s)<0.05)return null;const N=s<0?neg(c.up):c.up;return{F:add(p,N,c.m.h/2),N,on:{o:c.m.a,u:c.u,L:c.L}}};          // the face of chord c towards a member leaving p along d
+    face=(c,p,d)=>{let s=dot(c.up,d),N0=c.up,hh=c.m.h/2;if(c.m.nv){const s2=dot(c.m.nv,d);if(Math.abs(s2)>Math.abs(s)){s=s2;N0=c.m.nv;hh=c.m.w/2}}if(Math.abs(s)<0.05)return null;const N=s<0?neg(N0):N0;return{F:add(p,N,hh),N,on:{o:c.m.a,u:c.u,L:c.L}}};          // V1.130: or the side of a chord that keeps its section upright as the truss turns          // the face of chord c towards a member leaving p along d
   for(const m of M){if(!m.ft)continue;const ct=[[],[]],d=[unit(sub(m.b,m.a)),unit(sub(m.a,m.b))];
     for(const k of [0,1]){const p=k?m.b:m.a,dk=d[k];
       for(const {c,end} of at(p)){if(c.m===m)continue;
@@ -21649,7 +21652,7 @@ function trCuts(M,e){const L0=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nv=[-(e.y2-e.y1
         if(c.m.k===m.k){if(end>=0)ct[k].push({F:p,N:unit(sub(dk,end?neg(c.u):c.u)),on:null});continue}          // a mitre where the chord turns: the plane half way between the two
         if(m.k==='top'){const f=face(c,p,dk);if(f)ct[k].push(f);if(end>=0){const N=end?neg(c.u):c.u;if(dot(N,dk)>0.05)ct[k].push({F:p,N,on:null})}}}}          // a heel: on the bottom chord, and no further out than its end
     if(!ct[0].length&&!ct[1].length)continue;
-    const U=unit(crs(d[0],nv)),l=m.cl,lim=-2*Math.max(m.w,m.h),ta=trTrim(ct[0],m.a,d[0]),tb=trTrim(ct[1],m.b,d[1]);let ok=l-ta-tb>1;
+    const nv=nvOf(m),U=unit(crs(d[0],nv)),l=m.cl,lim=-2*Math.max(m.w,m.h),ta=trTrim(ct[0],m.a,d[0]),tb=trTrim(ct[1],m.b,d[1]);let ok=l-ta-tb>1;
     for(const i of [-1,1])for(const j of [-1,1]){if(!ok)break;const o=add(add([0,0,0],nv,i*m.w/2),U,j*m.h/2),sa=trTrim(ct[0],add(m.a,o,1),d[0]),sb=trTrim(ct[1],add(m.b,o,1),d[1]);ok=sa>lim&&sb>lim&&l-sa-sb>1}          // its corners too: a member too short for its cuts, or cut to a point, stays as it was
     if(ok){m.ct=ct;m.cl=l-ta-tb}}}
 /* how far into a member a point X of its end (untrimmed) moves along d before it is clear of the cuts there: past the face of each chord whose ends it meets
@@ -21684,9 +21687,9 @@ function trExt(m,S,E,smooth){const cen=lp=>{const n=lp.length,c=[0,0,0];for(cons
     const u=O[(i+k-1)%k],w=O[(i+1)%k];m.s.push({a:p,b:q,n1:[(p[0]+u[0])/2-c[0],(p[1]+u[1])/2-c[1],(p[2]+u[2])/2-c[2]],n2:[(p[0]+w[0])/2-c[0],(p[1]+w[1])/2-c[1],(p[2]+w[2])/2-c[2]]})}}
 /* a truss in 3D: a mesh for the members of each framing type, in its colour and material, and one for those of the truss type's sizes.  A chord is a little narrower
    than its section (2 mm, a top chord 3), so that its faces and those of a web or of the other chord never lie on each other */
-function trussMesh(P0,e,K,items){const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L],by=new Map(),
+function trussMesh(P0,e,K,items){const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n0=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L],by=new Map(),
     mesh=B=>{const k=B?B.id:0;let m=by.get(k);if(!m){m=K.mk(e.id,'truss',hex2rgb(B?B.color||(stlT(B)?STL_COL:'#b4b9c0'):T.color||'#8f99a6'));m.mt=B?matOf('beam',B):matOf('truss',T);if(B)m.tmid=B.mid!=null?B.mid:0;by.set(k,m)}return m};
-  for(const q of trussMembers(P0,e)){const m=mesh(q.ft||null),c=q.k==='web'?0:q.ft&&q.k==='top'?3:2;
+  for(const q of trussMembers(P0,e)){const m=mesh(q.ft||null),c=q.k==='web'?0:q.ft&&q.k==='top'?3:2,n=q.nv?[q.nv[0],q.nv[2],q.nv[1]]:n0;
     if(!q.ft){K.bar3(m,[q.a[0],q.a[2],q.a[1]],[q.b[0],q.b[2],q.b[1]],n,q.w-c,q.h);continue}
     const st=stlT(q.ft),w=q.w/2,h=q.h/2;trMember(m,q,st?stlShape(q.ft):[[[-w,-h],[w,-h],[w,h],[-w,h]]],n,c?Math.max(0.5,(q.w-c)/q.w):1,st&&q.ft.sec==='CHS')}
   for(const m of by.values())items.push(m)}
@@ -22871,8 +22874,8 @@ Object.assign(STR,{t_shcrtn:['หมุนทิศเหนือจริง',
    For the file the meshes are built again with each member of a truss a mesh of its own (pk 'tm:<truss>:<n>'); ifcWrite writes each as an IfcMember (top and
    bottom chords CHORD, webs STRUT in IFC4) with its length, aggregated by the truss's IfcElementAssembly, which has no body of its own and stands in the storey */
 let TRS_EACH=false;
-{const f0=trussMesh;trussMesh=(P0,e,K,items)=>{if(!TRS_EACH)return f0(P0,e,K,items);const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L];let i=0;
-  for(const q of trussMembers(P0,e)){const B=q.ft||null,m=K.mk(e.id,'truss',hex2rgb(B?B.color||(stlT(B)?STL_COL:'#b4b9c0'):T.color||'#8f99a6'));m.mt=B?matOf('beam',B):matOf('truss',T);if(B)m.tmid=B.mid!=null?B.mid:0;
+{const f0=trussMesh;trussMesh=(P0,e,K,items)=>{if(!TRS_EACH)return f0(P0,e,K,items);const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,n0=[-(e.y2-e.y1)/L,0,(e.x2-e.x1)/L];let i=0;
+  for(const q of trussMembers(P0,e)){const n=q.nv?[q.nv[0],q.nv[2],q.nv[1]]:n0,B=q.ft||null,m=K.mk(e.id,'truss',hex2rgb(B?B.color||(stlT(B)?STL_COL:'#b4b9c0'):T.color||'#8f99a6'));m.mt=B?matOf('beam',B):matOf('truss',T);if(B)m.tmid=B.mid!=null?B.mid:0;
     m.pk='tm:'+e.id+':'+(i++);m.tq={k:q.k,ft:B&&B.name||'',len:Math.hypot(q.b[0]-q.a[0],q.b[1]-q.a[1],q.b[2]-q.a[2])};const c=q.k==='web'?0:B&&q.k==='top'?3:2;
     if(!B)K.bar3(m,[q.a[0],q.a[2],q.a[1]],[q.b[0],q.b[2],q.b[1]],n,q.w-c,q.h);
     else{const st=stlT(B),w=q.w/2,h=q.h/2;trMember(m,q,st?stlShape(B):[[[-w,-h],[w,-h],[w,h],[-w,h]]],n,c?Math.max(0.5,(q.w-c)/q.w):1,st&&B.sec==='CHS')}
@@ -23632,6 +23635,102 @@ Object.assign(STR,{
   hn_done:['วางที่แขวน {0} ตัว ห่างกัน {1} (สูงสุด {2}) · {3}','Placed {0} hangers {1} apart (at most {2}) · {3}'],hn_done1:['วางที่แขวน 1 ตัว · {0}','Placed a hanger · {0}'],
   hn_doneR:['วางที่แขวน {0} ตัวบนท่อ {1} แนว','Placed {0} hangers on {1} runs'],hn_repl:[' · แทนที่ของเดิม {0} ตัว',' · {0} replaced'],
   hn_sel0:['เลือกท่อก่อน หรือคลิกท่อด้วยเครื่องมือที่แขวน','Select runs first, or click runs with the Hanger tool'],hn_cp1:['ที่แขวนคัดลอกไปวางได้พร้อมท่อที่แขวนเท่านั้น','A hanger is pasted only with its run']});
+/* ===== 130 the instance parameters of a truss (V1.130; Revit: the Properties of a truss › Start / End Level Offset, Bearing Chord, Create Top Chord, Create
+   Bottom Chord, Rotation Angle, Rotate Chords With Truss, Bearing Vertical Justification, Truss Height, Non Bearing Offset, Span; the webs' Vertical / Perpendicular) =====
+   A truss {cat:'truss', x1 … y2, off, h} also keeps, each left out when it is as before:
+    off2 the height of the end of its line above the level (off that of its start; left out: the line is level),
+    brg 'top' when its top chord lies on the line and the truss hangs below it (left out: its bottom chord), bvj 'top' | 'bot' when the top or the bottom of the
+    section of that chord is on the line (left out: its centre), tra the degrees it is turned about its line (positive turns its top to the right, looking from its
+    start to its end), rcw 0 when its chords keep their sections upright as it turns, nbo how far its other chord stands to the right of the line (the truss leans),
+    ctc 0 / cbc 0 when it has no top / no bottom chord.
+   Its type's wo 'p' turns the layout of a truss whose line slopes with that line, its webs square to the chords (Revit: Perpendicular); left out, its webs stand
+   plumb and its height is upright (Revit: Vertical).  A truss with none of these is built, drawn and counted exactly as before. */
+const TR_IK=['off2','brg','bvj','tra','rcw','nbo','ctc','cbc'],TR_BVJ=['top','mid','bot'];
+const trU=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l]},trX=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  trDot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],trAdd=(a,b,s)=>[a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s],
+  trRot=(v,k,a)=>{const c=Math.cos(a),s=Math.sin(a),x=trX(k,v),d=trDot(k,v)*(1-c);return[v[0]*c+x[0]*s+k[0]*d,v[1]*c+x[1]*s+k[1]*d,v[2]*c+x[2]*s+k[2]*d]};          // v turned by a about the unit axis k
+/* the model's x, y (down the plan) and height are left-handed: W × k is the right of a line looking along it, and a truss turned by +a turns by -a about its line */
+const trAng=n=>{let a=((n%360)+360)%360;if(a>180)a-=360;return Math.round(a*100)/100};          // degrees from -180 (left out) to 180
+/* does the truss stand upright in the vertical plane of its line (its plan as before)?  is it placed as before (level, its bottom chord's centre on its line)? */
+const trUpright=e=>!+e.tra&&!+e.nbo,trSloped=e=>e.off2!=null&&Math.abs((+e.off2||0)-(+e.off||0))>=0.5,trPlain=e=>trUpright(e)&&!trSloped(e)&&e.brg!=='top'&&!e.bvj;
+/* the length of its line, along its slope (Revit: Span) */
+const trSpan=(P0,e)=>{const L=Math.hypot(e.x2-e.x1,e.y2-e.y1);return trSloped(e)?Math.hypot(L,(+e.off2||0)-(+e.off||0)):L};
+/* where the members of a truss go: pt(s, z) the point s along its layout and z above its bottom chord, A the step of s, Wl that of z (up in its plane once it
+   leans), nv the normal of its plane, Ls the length of its layout; mem(m, w, h) a member of its layout in the model, with the normal of its section (nv): a web
+   in the plane of the truss, a chord square to the truss as it turns (rcw 0: square to the plane it is placed on, its section upright) */
+function trFrame(P0,e){const T=typ(P0,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,zs=elev(P0,e.level)+(+e.off||0),dz=trSloped(e)?(+e.off2||0)-(+e.off||0):0,
+    H=trussH(P0,e),perp=T.wo==='p'&&dz!==0,Ls=perp?Math.hypot(L,dz):L,A=perp?[ux*L/Ls,uy*L/Ls,dz/Ls]:[ux,uy,dz/L],k=trU(A),
+    Wb=perp?trU([-k[0]*k[2],-k[1]*k[2],1-k[2]*k[2]]):[0,0,1],a=(+e.tra||0)*Math.PI/180,W=a?trRot(Wb,k,-a):Wb,R=trU(trX(W,k)),top=e.brg==='top',d=+e.nbo||0,
+    Wl=trAdd(W,R,(top?-d:d)/H),nv=trU(trX(Wl,A)),cn=trU(trX(e.rcw===0?Wb:W,A)),Wc=e.rcw===0?Wb:W,J=trU(trAdd(Wc,k,-trDot(Wc,k))),
+    jv=e.bvj==='top'?-1:e.bvj==='bot'?1:0,O=trAdd(trAdd([e.x1,e.y1,zs],J,jv*trCD(P0,T,top?'tc':'bc')/2),Wl,top?-H:0),
+    pt=(s,z)=>[O[0]+A[0]*s+Wl[0]*z,O[1]+A[1]*s+Wl[1]*z,O[2]+A[2]*s+Wl[2]*z];
+  return{L,Ls,H,A,W,Wl,R,nv,pt,
+    mem:(m,w,h)=>{const p=pt(m.a[0],m.a[1]),q=pt(m.b[0],m.b[1]);let n=nv;
+      if(m.k!=='web'){const D=trU([q[0]-p[0],q[1]-p[1],q[2]-p[2]]),c=trAdd(cn,D,-trDot(cn,D)),l=Math.hypot(c[0],c[1],c[2]);if(l>1e-6)n=[c[0]/l,c[1]/l,c[2]/l]}
+      return{k:m.k,a:p,b:q,w,h,nv:n,ls:[m.a[0],m.b[0]]}}}}
+/* how high a truss reaches: its bottom and its top chords where it stands upright, the reach of its members as it turns */
+function trZR(P0,e){const F=trFrame(P0,e),T=typ(P0,e)||{},cs=Math.hypot(F.A[0],F.A[1])/Math.hypot(F.A[0],F.A[1],F.A[2])||1,hb=trCD(P0,T,'bc')/2/cs,ht=trCD(P0,T,'tc')/2/cs,
+    z=[0,F.Ls].map(s=>[F.pt(s,0)[2],F.pt(s,F.H)[2]]);
+  if(trUpright(e))return[Math.min(z[0][0]-hb,z[1][0]-hb,z[0][1]-ht,z[1][1]-ht),Math.max(z[0][0]+hb,z[1][0]+hb,z[0][1]+ht,z[1][1]+ht)];
+  const r=Math.max(trCW(P0,T)/2,hb,ht),all=z.flat();return[Math.min(...all)-r,Math.max(...all)+r]}
+/* what a plan shows of a truss: the width of its chords along its line where it stands upright (as before); turned or leaning, each member as seen from above */
+function trPlanLoops(P0,e){if(trUpright(e))return[trussLoop(P0,e)];
+  return trussMembers(P0,e).map(m=>{const D=trU([m.b[0]-m.a[0],m.b[1]-m.a[1],m.b[2]-m.a[2]]),n=m.nv||trU([-(e.y2-e.y1),e.x2-e.x1,0]),up=trU(trX(D,n)),p=[];
+    for(const o of [m.a,m.b])for(const i of [-1,1])for(const j of [-1,1])p.push([o[0]+n[0]*i*m.w/2+up[0]*j*m.h/2,o[1]+n[1]*i*m.w/2+up[1]*j*m.h/2]);return hullOf(p)}).filter(l=>l.length>=3)}
+/* the Span of a truss whose line slopes is along the slope */
+{const f0=quantities;quantities=P0=>{const q=f0(P0);for(const e of P0.els)if(e.cat==='truss'&&trSloped(e)){const o=q.get(e.id);if(o)o.len=trSpan(P0,e)}return q}}
+/* a mirrored truss turns and leans the other way, so that it is the mirror image of what it was */
+{const f0=mapPoints;mapPoints=(e,fn,mirror,ang)=>{f0(e,fn,mirror,ang);if(mirror&&e.cat==='truss'){if(+e.tra)e.tra=trAng(-e.tra);if(+e.nbo)e.nbo=-e.nbo}}}
+/* Create Similar on a truss takes its parameters, those it leaves out as well */
+{const f0=createSimilar;createSimilar=()=>{const e=IDX.get([...ui.sel][0]);if(e&&e.cat==='truss'){const d=defs('truss');for(const k of TR_IK)if(e[k]!=null)d[k]=e[k];else delete d[k];if(e.h==null)d.h=0}return f0()}}
+/* a truss or a beam whose line slopes, split: each piece keeps the slope, its ends at the height of the line where it was cut */
+{const f0=splitLine;splitLine=(e,w,gap)=>{const s0=P.seq,sl=!!e&&(e.cat==='truss'||e.cat==='beam')&&e.off2!=null&&!e.bow,lv2=e&&e.cat==='beam'&&e.lv2?e.lv2:e&&e.level,
+    L0=sl?Math.hypot(e.x2-e.x1,e.y2-e.y1):0,X1=sl?[e.x1,e.y1]:null,z1=sl?elev(P,e.level)+(+e.off||0):0,z2=sl?elev(P,lv2)+(+e.off2||0):0;
+  f0(e,w,gap);if(!sl||P.seq===s0||L0<1)return;const c=P.els.find(x=>x.id===s0);if(!c)return;
+  const z=(x,y)=>z1+(z2-z1)*Math.hypot(x-X1[0],y-X1[1])/L0,R=v=>Math.round(v*10)/10;e.off2=R(z(e.x2,e.y2)-elev(P,lv2));c.off=R(z(c.x1,c.y1)-elev(P,c.level))}}
+/* ---- Properties: Constraints, Structural and Dimensions as in Revit ---- */
+function trRows(els,isNew){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},U=t('u_mm'),Q=isNew?null:QTY(),S=k=>els.reduce((s,x)=>s+((Q.get(x.id)||{})[k]||0),0);
+  let h=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_reflevel',V(x=>x.level),lvOpts());
+  h+=PR.num('off','p_startoff',V(x=>+x.off||0),U,'step="50"')+PR.num('off2','p_endoff',V(x=>x.off2!=null?+x.off2:+x.off||0),U,'step="50"');
+  h+=PR.grp('g_structural')+PR.sel('brg','p_brg',V(x=>x.brg==='top'?'top':'bot'),[['bot',t('brg_bot')],['top',t('brg_top')]])+PR.chk('ctc','p_ctc',els.every(x=>x.ctc!==0))+PR.chk('cbc','p_cbc',els.every(x=>x.cbc!==0))
+    +PR.num('tra','p_trrot',V(x=>+x.tra||0),'°','step="15" min="-180" max="180"')+PR.chk('rcw','p_rcw',els.every(x=>x.rcw!==0))+PR.sel('bvj','p_bvj',V(x=>x.bvj||'mid'),TR_BVJ.map(k=>[k,t('bvj_'+k)]));
+  h+=PR.grp('g_dims')+PR.num('h','p_trussh',V(x=>isNew?(+x.h||(defType('truss').h||1200)):trussH(P,x)),U,'step="50" min="200"')+PR.num('nbo','p_nbo',V(x=>+x.nbo||0),U,'step="50"');
+  if(!isNew){h+=PR.ro('p_spanlen',fmtLen(S('len'))+' '+unitName());
+    if(els.length===1){const T=typ(P,e)||{},F=trFrame(P,e),Y=trussLayout(TRUSS_KINDS.includes(T.kind)?T.kind:'howe',trPlain(e)?Math.hypot(e.x2-e.x1,e.y2-e.y1):F.Ls,trussH(P,e),T.panel,T.mem);
+      h+=PR.ro('p_panels',String(Y.n))+PR.ro('p_members',String(trussMembers(P,e).length))}
+    h+=PR.ro('p_memlen',fmtLen(S('mlen'))+' '+unitName())}
+  return h}
+{const f0=catRows;catRows=(cat,els,isNew)=>cat==='truss'?trRows(els,isNew):f0(cat,els,isNew)}
+XF.push((cat,o,key,raw)=>{if(cat!=='truss'||!TR_IK.includes(key))return false;const n=parseFloat(raw);
+  if(key==='off2'){if(isFinite(n)){o.off2=Math.round(clamp(n,-1e5,1e5)*10)/10;if(!trSloped(o))delete o.off2}}
+  else if(key==='brg'){if(raw==='top')o.brg='top';else delete o.brg}
+  else if(key==='bvj'){if(raw==='top'||raw==='bot')o.bvj=raw;else delete o.bvj}
+  else if(key==='tra'){if(isFinite(n)){const a=trAng(n);if(a)o.tra=a;else delete o.tra}}
+  else if(key==='nbo'){if(isFinite(n)){const v=Math.round(clamp(n,-5e4,5e4));if(v)o.nbo=v;else delete o.nbo}}
+  else if(raw===true||raw==='true'||raw==='1'||raw===1)delete o[key];else o[key]=0;          // ctc, cbc, rcw: ticked as before, cleared 0
+  return true});
+/* ---- schedules of trusses: the fields of each of them ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='truss')return F;const yn=(X,b)=>X.tr(b?'o_yes':'o_no'),MM=p=>({num:1,u:'mm',dec:0,ed:'mm',p}),
+    i=F.findIndex(f=>f.k==='off');if(i<0)return F;F[i].l=tr('p_startoff');
+  F.splice(i+1,0,Object.assign({k:'off2',l:tr('p_endoff'),g:e=>e.off2!=null?+e.off2:+e.off||0,grp:'i'},MM('off2')),{k:'brg',l:tr('p_brg'),g:(e,X)=>X.tr(e.brg==='top'?'brg_top':'brg_bot'),grp:'i'},
+    {k:'ctc',l:tr('p_ctc'),g:(e,X)=>yn(X,e.ctc!==0),grp:'i'},{k:'cbc',l:tr('p_cbc'),g:(e,X)=>yn(X,e.cbc!==0),grp:'i'},{k:'tra',l:tr('p_trrot'),g:e=>+e.tra||0,num:1,dec:1,grp:'i'},
+    {k:'rcw',l:tr('p_rcw'),g:(e,X)=>yn(X,e.rcw!==0),grp:'i'},{k:'bvj',l:tr('p_bvj'),g:(e,X)=>X.tr('bvj_'+(e.bvj||'mid')),grp:'i'},Object.assign({k:'nbo',l:tr('p_nbo'),g:e=>+e.nbo||0,grp:'i'},MM('nbo')));
+  return F}}
+/* ---- the type: how the webs of a truss whose line slopes stand ---- */
+TYPE_FIELDS.truss.push(['wo','sel',['v','p'],'wo_']);
+/* files: what is not one of these goes */
+XC.push(()=>{for(const e of P.els){if(e.cat!=='truss')continue;
+    if(e.off2!=null){const v=+e.off2;if(e.off2===''||!isFinite(v))delete e.off2;else{e.off2=clamp(v,-1e5,1e5);if(!trSloped(e))delete e.off2}}
+    if(e.brg!==undefined&&e.brg!=='top')delete e.brg;if(e.bvj!==undefined&&e.bvj!=='top'&&e.bvj!=='bot')delete e.bvj;
+    if(e.tra!==undefined){const a=+e.tra,b=isFinite(a)&&e.tra!==''?trAng(a):0;if(b)e.tra=b;else delete e.tra}
+    if(e.nbo!==undefined){const v=+e.nbo;if(isFinite(v)&&e.nbo!==''&&Math.round(v))e.nbo=Math.round(clamp(v,-5e4,5e4));else delete e.nbo}
+    for(const k of ['ctc','cbc','rcw'])if(e[k]!==undefined&&e[k]!==0)delete e[k]}
+  for(const T of (P.types&&P.types.truss)||[])if(T.wo!==undefined&&T.wo!=='p')delete T.wo});
+Object.assign(STR,{p_brg:['คอร์ดรับน้ำหนัก (Bearing Chord)','Bearing Chord'],brg_bot:['คอร์ดล่าง','Bottom'],brg_top:['คอร์ดบน','Top'],
+  p_ctc:['สร้างคอร์ดบน (Create Top Chord)','Create Top Chord'],p_cbc:['สร้างคอร์ดล่าง (Create Bottom Chord)','Create Bottom Chord'],p_trrot:['มุมหมุน (Rotation Angle)','Rotation Angle'],
+  p_rcw:['หมุนคอร์ดตามโครงถัก (Rotate Chords With Truss)','Rotate Chords With Truss'],p_bvj:['แนวหน้าตัดคอร์ดรับน้ำหนัก (Bearing Vertical Justification)','Bearing Vertical Justification'],
+  bvj_top:['ขอบบน','Top'],bvj_mid:['กึ่งกลาง','Center'],bvj_bot:['ขอบล่าง','Bottom'],p_nbo:['ระยะเยื้องคอร์ดที่ไม่รับน้ำหนัก (Non Bearing Offset)','Non Bearing Offset'],
+  f_wo:['การวางเว็บเมื่อโครงถักเอียง (Web Orientation)','Web Orientation'],wo_v:['ตั้งดิ่ง (Vertical)','Vertical'],wo_p:['ตั้งฉากกับคอร์ด (Perpendicular)','Perpendicular']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -24247,9 +24346,11 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_cope]] และ [[t_uncope]] (แผง [[p_geometry]] หรือแท็บแก้ไขเมื่อเลือกคานเหล็ก): คลิกคาน H, I หรือรางน้ำ แล้วคลิกคานหรือเสาที่ปลายของมันชน · ชนคาน: ปีกบนหรือปีกล่างที่จะชนปีกของคานนั้นถูกบากออก เอวยื่นไปถึงเอวของคานนั้น · ชนเสาทางด้านเอว: คานยื่นเข้าไประหว่างปีกเสาถึงเอวเสา · ห่างตาม [[p_cpd]] (10 มม.) · ใช้ได้ในแปลน 3 มิติ รูปด้าน และรูปตัด · [[a_uncopeall]] ในแผงคุณสมบัติ
 - [[a_brace]] ((BR)): วาดในแปลนเหมือนคาน แต่ปลายสองข้างอยู่ต่างระดับกัน · แถบตัวเลือกมี [[o_brl1]] และ [[o_brl2]] พร้อมระยะจากระดับ (เช่น จากชั้น 1 ขึ้นไปชั้น 2 หรือระดับเดียวกันโดยให้ปลายสูง 2400 เพื่อทำค้ำยันรูปตัว K) · วาดทีละตัว ไม่ต่อเนื่อง · คานธรรมดาก็เอียงได้: ตั้ง [[p_endoff]] ในคุณสมบัติ · [[p_struse]] สลับระหว่างคานกับค้ำยัน · ความยาวและปริมาตรวัดตามแนวเอียง
 - [[t_bsys]] ((BS)): ชี้ในช่องที่คานหรือผนังล้อมรอบ คานซอยจะวางขนานกับด้านที่ตัวชี้อยู่ใกล้ แล้วคลิก · หรือเลือก [[a_rect]] / [[a_line]] ร่างขอบเขตเอง (คานขนานกับด้านแรกที่วาด) · แถบตัวเลือกและคุณสมบัติมี [[p_bstype]] [[p_bsrule]] (ระยะห่างคงที่ จำนวนคงที่ ระยะห่างสูงสุด ระยะช่องว่าง) และ [[p_bsjust]] · เมื่อเลือกชุดคาน: [[a_bsdir]] หมุนคานไปขนานกับด้านถัดไป [[a_bsremove]] แยกเป็นคานเดี่ยว ลากจุดมุมเพื่อแก้ขอบเขต · ตารางโครงสร้างและ [[a_boq]] นับคานในชุดรวมกับคานชนิดเดียวกัน
-- [[t_truss]]: เลือกชนิด (Howe, Pratt, Warren, จั่ว) แล้วคลิกปลายสองข้าง คอร์ดบน คอร์ดล่าง และชิ้นส่วนยึดจะสร้างตามชนิดและ [[p_trussh]] · [[p_trussoff]] คือความสูงของคอร์ดล่างจากระดับชั้น · ขนาดหน้าตัด ระยะช่วง และราคาเป็นของชนิด แก้ที่ [[edit_type]]
+- [[t_truss]]: เลือกชนิด (Howe, Pratt, Warren, จั่ว) แล้วคลิกปลายสองข้าง คอร์ดบน คอร์ดล่าง และชิ้นส่วนยึดจะสร้างตามชนิดและ [[p_trussh]] · [[p_startoff]] คือความสูงของแนววาง (กึ่งกลางคอร์ดล่าง) จากระดับชั้น · ขนาดหน้าตัด ระยะช่วง และราคาเป็นของชนิด แก้ที่ [[edit_type]]
 - [[g_trmem]] (Revit: Structural Framing Type ของ Top Chords, Bottom Chords, Vertical Webs และ Diagonal Webs): ใน [[edit_type]] ของโครงถัก ตั้ง [[trf_tc]] [[trf_bc]] [[trf_vw]] และ [[trf_dw]] เป็นชนิดคานใดก็ได้ของโครงการ เช่น เหล็กรูปพรรณ · ตัวเลือกสุดท้าย [[trm_load]] เปิดตารางเหล็ก ติ๊กขนาดแล้วกดโหลด หน้าตัดนั้นเป็นชนิดคานใหม่และเป็นชนิดของชิ้นส่วนนั้นทันที · เว็บตั้งคือเว็บที่ตั้งตรง เว็บอื่นเป็นเว็บทแยง · ตามขนาด คือแท่งตันขนาด [[f_cw]] × [[f_ch]] สำหรับคอร์ด หรือ [[f_ww]] × [[f_wh]] สำหรับเว็บ แบบเดิม · 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดจริง แปลนกว้างตามคอร์ด · ชิ้นส่วนที่มีชนิดหน้าตัดตัดปลายที่จุดต่อเอง: เว็บจบที่ผิวคอร์ด คอร์ดต่อมุมเฉียงที่ยอดและที่หักมุม คอร์ดบนวางบนคอร์ดล่างที่ส้นและไม่ยื่นเลยปลายคอร์ดล่าง · ปริมาตรและน้ำหนักคิดจากพื้นที่หน้าตัดคูณความยาวตัด (Cut Length) แผงคุณสมบัติบอกชิ้นส่วนแต่ละแบบและ [[c_kg]] ซึ่งเป็นฟิลด์ของตารางโครงถักด้วย ตารางวัสดุแยกแถวตามวัสดุของชิ้นส่วน · [[a_purge]] ไม่ล้างชนิดคานที่โครงถักใช้อยู่ · โครงถักตั้งต้นของโครงการใหม่ใช้คอร์ด C 150×65×20×3.2 และเว็บ L 50×50×6
 > ต่างจาก Revit: ชิ้นส่วนเป็นส่วนหนึ่งของโครงถัก ไม่ใช่คานแยกแต่ละตัว จึงเลือก ติดป้าย หรือเปลี่ยนชนิดทีละชิ้นไม่ได้ ไม่มี Start/End Release หรือ Angle ของชิ้นส่วน และระยะตัดปลายที่จุดต่อโปรแกรมกำหนดให้ ปรับเองไม่ได้
+- คุณสมบัติของโครงถักแต่ละตัว (Revit: ค่า instance ของโครงถัก): [[p_startoff]] และ [[p_endoff]] คือความสูงของแนววางที่ปลายเริ่มและปลายจบ ตั้งไม่เท่ากันโครงถักจะเอียงตามแนว เว็บตั้งดิ่งและวัดความสูงในแนวดิ่ง หรือถ้าตั้ง [[f_wo]] ของชนิดเป็น [[wo_p]] รูปโครงถักจะหมุนตามแนว เว็บตั้งฉากกับคอร์ด · [[p_brg]]: คอร์ดที่วางบนแนว [[brg_bot]] หรือ [[brg_top]] (โครงถักห้อยลงใต้แนว) · [[p_bvj]]: ขอบบน กึ่งกลาง หรือขอบล่างของหน้าตัดคอร์ดนั้นอยู่บนแนว · [[p_ctc]] และ [[p_cbc]]: เอาติ๊กออกแล้วโครงถักไม่มีคอร์ดนั้น เว็บ ปริมาณ และตารางก็ไม่นับ · [[p_trrot]]: หมุนโครงถักรอบแนววาง มุมบวกพาด้านบนไปทางขวา (มองจากปลายเริ่มไปปลายจบ) 90° คือวางนอน · เอาติ๊ก [[p_rcw]] ออกแล้วหน้าตัดคอร์ดยังตั้งตรง · [[p_nbo]]: คอร์ดอีกเส้นเยื้องไปทางขวาของแนวเท่านี้ โครงถักจึงเอียง · โครงถักที่ Mirror หมุนและเอียงไปอีกข้าง · แปลนแสดงโครงถักที่หมุนหรือเอียงเป็นชิ้นส่วนแต่ละชิ้นตามที่เห็นจากด้านบน และคลิกเลือกที่ชิ้นส่วนได้
+> ต่างจาก Revit: การวางเว็บ (ตั้งดิ่งหรือตั้งฉาก) เป็นค่าของชนิดโครงถัก ไม่ใช่ของเว็บแต่ละชิ้นใน Family และโครงถักที่เยื้องคอร์ดยังมีชิ้นส่วนทั้งหมดอยู่ในระนาบเดียว
 - ฐานราก อยู่ในแท็บ [[tab_struct]] แผง [[p_found]] · [[t_footing]]: เลือกชนิด (ขนาด) แล้วคลิกบนเสา ฐานรากจะอยู่ใต้เสาโดยหลังฐานรากอยู่ที่โคนเสา และย้ายตามเสา · [[a_footcols]] ใส่ให้เสาที่เลือก หรือเสาทุกต้นของชั้นนี้ที่ยังไม่มี · [[a_footgrids]] วางที่จุดตัดของกริดทุกจุด (หรือเฉพาะกริดที่เลือก) · คลิกที่ว่างเพื่อวางฐานรากเองได้ ตั้ง [[p_footoff]] ในแผงคุณสมบัติ · ควรตั้ง [[p_baseoff]] ของเสาให้ลึกถึงระดับฐานรากก่อน
 - ฐานรากเสาเข็ม: ใน แก้ชนิด ของฐานราก เลือก [[f_pn]] 1–9 ต้น แล้วตั้ง [[f_pk]] (เจาะ สปัน สี่เหลี่ยม ไอ ไมโครไพล์) ขนาด ความยาว ระยะห่าง ระยะขอบ [[f_pq]] และ [[f_pcost]] (เว้นว่าง = ราคาที่โปรแกรมคิดจากขนาดและความยาว · เข็มชนิด ขนาด และความยาวเดียวกันใช้ราคาเดียวกันทั้งโครงการ) · รูปฐานตามจำนวนเข็ม (3 ต้นเป็นสามเหลี่ยมตัดมุม) · แปลนแสดงเข็มเป็นเส้นประ แปลนโครงสร้างมีกากบาทที่เข็ม · 3 มิติ รูปด้าน และรูปตัดแสดงเข็มเต็มความยาว · BOQ นับเข็มเป็นต้น แยกตามชนิด ขนาด และความยาว · IFC ส่งเข็มเป็น IfcPile และฐานเป็น PILE_CAP · [[a_ldtake]] บอกจำนวนเข็มที่เสาแต่ละต้นต้องใช้ · ชนิดตั้งต้น PC1–PC4
 - [[t_wfoot]] ((FT)): คลิกบนผนัง ฐานรากแถบจะยาวตามผนัง (เกินปลายผนังข้างละครึ่งความกว้างเพื่อให้ชนกันที่มุม) และเปลี่ยนตามผนัง · [[a_wfootall]] ใส่ให้ผนังทุกแนวของชั้นนี้
@@ -24404,9 +24505,11 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_cope]] and [[t_uncope]] (the [[p_geometry]] panel, or the Modify tab of a selected steel beam): click an H, I or channel beam, then the beam or column its end meets · at a beam: the top or bottom flange that would run into its flange is cut back and the web runs on to its web · at the web side of a column: the beam runs in between the column's flanges to its web · its [[p_cpd]] (10 mm) clear · in plans, 3D views, elevations and sections · [[a_uncopeall]] in Properties
 - [[a_brace]] ((BR)): drawn in a plan like a beam, but its two ends are at different heights · the options bar has the [[o_brl1]] and the [[o_brl2]], each with its offset (from Level 1 up to Level 2, say, or the same level with the far end 2400 up, for a K of two braces) · braces are drawn one at a time, not as a chain · a plain beam can slope as well: set its [[p_endoff]] in Properties · [[p_struse]] turns a beam into a brace and back · length and volume are measured along the slope
 - [[t_bsys]] ((BS)): point inside a bay closed by beams or walls: the beams go along the side the pointer is nearest to; click to make them · or choose [[a_rect]] / [[a_line]] and sketch the outline (the beams go along the first side drawn) · the options bar and Properties have the [[p_bstype]], the [[p_bsrule]] (Fixed Distance, Fixed Number, Maximum Spacing, Clear Spacing) and the [[p_bsjust]] · with a beam system selected: [[a_bsdir]] turns the beams to lie along the next side, [[a_bsremove]] leaves them as beams of their own, and dragging a corner changes the outline · the structure schedule and the [[a_boq]] count its beams with the beams of their type
-- [[t_truss]]: choose the type (Howe, Pratt, Warren, gabled) and click its two ends: the chords and the webs follow from the type and the [[p_trussh]] · [[p_trussoff]] is the height of the bottom chord above the level · the sections, the panel length and the cost belong to the type: [[edit_type]]
+- [[t_truss]]: choose the type (Howe, Pratt, Warren, gabled) and click its two ends: the chords and the webs follow from the type and the [[p_trussh]] · [[p_startoff]] is the height of its line (the centre of its bottom chord) above the level · the sections, the panel length and the cost belong to the type: [[edit_type]]
 - [[g_trmem]] of a truss (Revit: the Structural Framing Type of Top Chords, Bottom Chords, Vertical Webs and Diagonal Webs): in [[edit_type]] of a truss set [[trf_tc]], [[trf_bc]], [[trf_vw]] and [[trf_dw]] to any beam type of the project, a steel section say · the last choice, [[trm_load]], opens the steel tables: tick a size and load it, and it is a new beam type and the type of those members at once · a vertical web stands straight up; the other webs are diagonal · By size is a solid bar of [[f_cw]] × [[f_ch]] for chords, [[f_ww]] × [[f_wh]] for webs, as before · 3D views, elevations and sections show the sections, plans the width of the chords · members of framing types are cut back at their joints: a web stops at the faces of the chords, a chord is mitred where it turns, a top chord sits on the bottom chord at a heel and stops at its end · their volume and weight count the area of the section times the cut length (Revit: Cut Length); Properties show what each kind of member is and the [[c_kg]], a field of truss schedules too; material takeoffs have a row for the material of the members · [[a_purge]] keeps the beam types that trusses use · the stock trusses of a new project have chords of C 150×65×20×3.2 and webs of L 50×50×6
 > Unlike Revit: the members are parts of their truss, not beams of their own, so they cannot be selected, tagged or given another type one by one, they have no Start/End Release or Angle, and their cutbacks are set by the program
+- The Properties of a truss (Revit: its instance parameters): [[p_startoff]] and [[p_endoff]] are the heights of its line at its start and its end; set them apart and the truss slopes along its line, its webs plumb and its height upright, or, with the type's [[f_wo]] set to [[wo_p]], its layout turns with the line and its webs stand square to the chords · [[p_brg]]: the chord that lies on the line, [[brg_bot]] or [[brg_top]] (the truss hangs below it) · [[p_bvj]]: the top, the centre or the bottom of that chord's section is on the line · [[p_ctc]] and [[p_cbc]]: cleared, the truss has no such chord, and its webs, quantities and schedules leave it out · [[p_trrot]]: the truss turns about its line, a positive angle taking its top to the right (looking from its start to its end); 90° lays it flat · with [[p_rcw]] cleared its chords keep their sections upright · [[p_nbo]]: the other chord stands this far to the right of the line, so the truss leans · a mirrored truss turns and leans the other way · plans show a truss that is turned or leans as each of its members is seen from above, and pick it by them
+> Unlike Revit: how the webs stand (Vertical or Perpendicular) is set for the truss type, not for each web in the truss family, and a truss with a Non Bearing Offset keeps all its members in one plane
 - Foundations are on the [[tab_struct]] tab, in the [[p_found]] panel · [[t_footing]]: choose the type (the size), then click a column: the footing goes under it with its top at the base of the column, and follows the column · [[a_footcols]] does it for the selected columns, or for every column of this level that has none · [[a_footgrids]] puts one at every crossing of the grids (or of the selected grids) · click anywhere else to place a footing by hand, and set its [[p_footoff]] in Properties · give the columns a [[p_baseoff]] down to the foundation level first
 - Pile caps: in Edit Type of a footing choose [[f_pn]] (1–9), then [[f_pk]] (bored, spun, square, I, micro), its size, length, spacing, edge distance, [[f_pq]] and [[f_pcost]] (left empty: the program's price from its size and length · piles of the same kind, size and length share one price in the project) · the cap's outline follows the piles (three make a triangle with cut corners) · plans show the piles dashed, plans of the structure with a cross on each · 3D views, elevations and sections show the piles their whole length · the BOQ counts piles, a row for each kind, size and length · IFC export writes each pile as IfcPile and the cap as a PILE_CAP · [[a_ldtake]] says how many piles each column needs · stock types PC1–PC4
 - [[t_wfoot]] ((FT)): click a wall; the strip is as long as the wall (half its own width longer at either end, so that the strips of two walls meet at a corner) and follows it · [[a_wfootall]] does it for every wall of this level
@@ -24925,6 +25028,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.127 · Keynote ของวัสดุ (Material Keynote แบบ Revit): คลิกชั้นวัสดุของผนัง พื้น หลังคา หรือฝ้า ในแปลน รูปด้าน รูปตัด หรือมุมมอง 3 มิติ ป้ายแสดง Keynote ของวัสดุตรงหัวลูกศร · ตั้ง Keynote ของวัสดุได้ใน วัสดุ (Materials) ทั้งวัสดุของโครงการและวัสดุมาตรฐาน · ตารางวัสดุ (Material Takeoff) มีช่อง วัสดุ: Keynote · คำอธิบาย Keynote นับรวมกับป้ายอื่น
 - V1.128 · เส้นบอกระยะในมุมมอง 3 มิติ (แบบ Revit): วัดระยะระหว่างปลายหรือกึ่งกลางท่อ ท่อลม และคาน (จับแนวศูนย์กลาง) และมุมหรือผิวชิ้นงาน ตามแกน X แกน Y แนวดิ่ง หรือระยะจริง · ยึดกับชิ้นงานและอ่านค่าใหม่เมื่อชิ้นงานย้าย · หมุนตามมุมมองโดยไม่ต้องล็อก · ขึ้นบนแผ่นงาน PDF และ DXF · แก้: ซ่อนตามหมวด (Hide in View › Category) ของข้อความ ระดับ ป้าย และ Keynote ในรูปด้าน รูปตัด และ 3 มิติ ซ่อนได้แล้ว และป้ายใน 3 มิติไม่มีแถว Phasing
 - V1.129 · ที่แขวนท่อ (Hanger แบบ Revit Fabrication): ห่วง (Clevis) ก้านเดียวสำหรับท่อกลม และแบบราง (Trapeze) สองก้านสำหรับท่อลม รางเดินสาย และท่อทุกแบบ · คลิกท่อเพื่อแขวนตลอดแนวตามระยะห่างของขนาดและวัสดุ (เหล็ก ทองแดง พลาสติก) หรือวางทีละตัว · ก้านยาวขึ้นถึงใต้พื้น คาน หรือหลังคาที่อยู่เหนือเอง · ย้าย คัดลอก ตัด และลบไปพร้อมท่อ · อยู่ในแปลน 3 มิติ รูปตัด ตาราง BOQ (เป็นชุด และเหล็กเส้นเกลียวเป็นเมตร) IFC และ DXF
+- V1.130 · ค่าของโครงถักแต่ละตัวแบบ Revit: ระยะปลายเริ่มและปลายจบจากระดับ (โครงถักเอียง เว็บตั้งดิ่ง หรือตั้งฉากกับคอร์ดตามชนิด) คอร์ดรับน้ำหนักบนหรือล่าง แนวหน้าตัดคอร์ดรับน้ำหนัก สร้างคอร์ดบนหรือคอร์ดล่าง มุมหมุนพร้อมหมุนคอร์ดตามโครงถัก และระยะเยื้องคอร์ดที่ไม่รับน้ำหนัก · มีผลในแปลน 3 มิติ รูปด้าน รูปตัด ปริมาณ ตาราง และ IFC
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -25156,6 +25260,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.127 · Material Keynote, as in Revit: click a layer of a wall, a floor, a roof or a ceiling in a plan, an elevation, a section or a 3D view and the tag shows the keynote of the material its arrow points at · materials are given their keynotes in Materials, the project's own and the stock ones · the Material Takeoff has a Material: Keynote field · the Keynote Legend counts them with the others
 - V1.128 · Dimensions in 3D views, as in Revit: measure between the ends or the middle of pipes, ducts and beams (on their centre lines) and the corners or faces of elements, along X, along Y, vertically or the true distance · they hold on to their elements and read again when those move · they turn with the view, which need not be locked · on sheets, in PDF and in DXF · fixed: Hide in View › Category hides the text, spots, tags and keynotes of elevations, sections and 3D views, and the annotations of 3D views have no Phasing rows
 - V1.129 · Hangers, as in Revit Fabrication: a clevis on one rod for round runs and a trapeze on two rods for ducts, trays and any run · click a run to hang it end to end, spaced by its size and material (steel, copper, plastic), or place them one at a time · the rods reach up to the underside of the floor, beam or roof above by themselves · they move, copy, split and delete with their runs · in plans, 3D, sections, schedules, the BOQ (sets, and threaded rod by the metre), IFC and DXF
+- V1.130 · Truss instance parameters, as in Revit: Start and End Level Offset (a sloping truss, its webs plumb or, by its type, square to the chords), Bearing Chord top or bottom, Bearing Vertical Justification, Create Top Chord and Create Bottom Chord, Rotation Angle with Rotate Chords With Truss, and Non Bearing Offset · in plans, 3D views, elevations, sections, quantities, schedules and IFC
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -26985,6 +27090,16 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r44={I:()=>({P,ui,IDX,undoN:undoS.length}),
+  mem:id=>{const e=IDX.get(id);return e?trussMembers(P,e).map(m=>({k:m.k,vk:m.vk,a:m.a.slice(),b:m.b.slice(),w:m.w,h:m.h,nv:m.nv?m.nv.slice():null,cl:m.cl,ft:m.ft?m.ft.id:null,ct:m.ct?[m.ct[0].length,m.ct[1].length]:null})):null},
+  frame:id=>{const e=IDX.get(id),F=e&&trFrame(P,e);return F?{L:F.L,Ls:F.Ls,H:F.H,A:F.A,W:F.W,Wl:F.Wl,R:F.R,nv:F.nv,o:F.pt(0,0)}:null},
+  zr:id=>zRange(P,IDX.get(id)),plain:id=>trPlain(IDX.get(id)),loops:id=>trPlanLoops(P,IDX.get(id)),q:id=>JSON.parse(JSON.stringify(QTY().get(id)||null)),
+  hit:(vid,x,y)=>{const v=viewById(vid),n=navOf(v),q=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return q?q.id:null},
+  items:id=>MSm().items.filter(m=>m.id===id).map(m=>({cat:m.cat,tri:(m.t||[]).length/9})),
+  bbox3:id=>{const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];for(const m of MSm().items)if(m.id===id)for(let i=0;i<m.t.length;i+=3){const p=[m.t[i],m.t[i+2],m.t[i+1]];for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],p[k]);hi[k]=Math.max(hi[k],p[k])}}return{lo,hi}},
+  sf:()=>sfAll(P,'truss',t).map(f=>f.k),cs:flds=>{const S=schedView(P,{id:-1,kind:'schedule',name:'tr',sched:'cat',scat:'truss',flds:flds||SF_DEF.truss.slice(),hidden:[],hiddenCats:[],sp:{}},t);return{cols:S.cols.map(c=>c.k),rows:S.rows.map(r=>S.cols.map(c=>r[c.k]))}},
+  td:id=>tdFields('truss',(P.types.truss||[]).find(x=>x.id===id)).map(f=>f[0]),ifc:()=>ifcText().text,dxf:id=>planDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),t:(k,...a)=>t(k,...a),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),lift:(ids,dz)=>{let n=0;edit(()=>{n=ev3Lift(ids,dz)});return n},defs:()=>JSON.parse(JSON.stringify(defs('truss')))};
 window.PenumBIM.r43={I:()=>({P,ui,IDX,undoN:undoS.length}),
   geo:id=>{const e=IDX.get(id),G=e&&hnGeo(hnX(),e);return G?{h:G.h.id,T:G.T.id,k:G.k,rod:G.rod,bs:G.bs,d:G.d,L:G.L,p:G.p.slice(),zc:G.zc,zt:G.zt,zb:G.zb,W:G.W,H:G.H,bl:G.bl,z:G.z.slice(),att:G.att,free:G.free,
     rods:G.rods.map(r=>({x:r.x,y:r.y,z0:r.z0,z1:r.z1,s:r.s?r.s.id:null})),rl:hnRodL(G)}:null},
