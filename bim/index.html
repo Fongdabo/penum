@@ -4712,8 +4712,9 @@ function joinClean(P){const E=new Map(P.els.map(e=>[e.id,e]));
    an Element Keynote shows the keynote of the type of its element, a User Keynote the one it was given itself (uk).  ks: what it shows — left out the key,
    'box' the key in a box, 'text' the text of the keynote.  du, dn: where it stands, au, an: where its leader points, both measured along and across its element as the
    places of tags are (tagFrame), so that it stays with the element.
-   P.knBy: 'sheet' numbers the keynotes of each sheet 1, 2, 3 … in the order of their keys (Revit: Numbering Method By sheet); left out, a tag shows the key itself. */
-const KN_STYLES=['num','box','text'];
+   P.knBy: 'sheet' numbers the keynotes of each sheet 1, 2, 3 … in the order of their keys (Revit: Numbering Method By sheet); left out, a tag shows the key itself.
+   Elevations, sections and 3D views have keynote tags of their own (eknote, knote3: section 126), counted and numbered with these. */
+const KN_STYLES=['num','box','text'],KN_CATS=new Set(['knote','eknote','knote3']);
 /* the stock table (KN_STOCK), the keynotes the stock types start with (KN_DEF, KN_MARK, knDefaults) and knStock are in 10-model.js, which makes new projects with them */
 const knTable=P=>Array.isArray(P.kn)?P.kn:[];
 const knRow=(P,k)=>k?knTable(P).find(r=>r[0]===k)||null:null,knText=(P,k)=>{const r=knRow(P,k);return r?r[1]:''};
@@ -4742,7 +4743,7 @@ function knKeyOf(P,get,d){if(d.uk)return d.uk;const e=get(d.el),T=e&&(e.cat==='b
 const knSheetOf=(P,vid)=>P.views.find(s=>s.kind==='sheet'&&(s.vps||[]).some(p=>p.view===vid))||null;
 /* the keynotes in use: [{key, text, n: how many tags, views}] by their keys.  sheet: only those of the views placed on that sheet; view: only those of that view */
 function knUsed(P,get,o){o=o||{};const on=o.sheet?new Set((o.sheet.vps||[]).map(p=>p.view)):null,by=new Map();
-  for(const a of P.ann||[]){if(a.cat!=='knote'||(on&&!on.has(a.view))||(o.view&&a.view!==o.view)||!get(a.el))continue;const k=knKeyOf(P,get,a);if(!k)continue;let r=by.get(k);if(!r){r={key:k,text:knText(P,k),n:0,views:new Set()};by.set(k,r)}r.n++;r.views.add(a.view)}
+  for(const a of P.ann||[]){if(!KN_CATS.has(a.cat)||(on&&!on.has(a.view))||(o.view&&a.view!==o.view)||!get(a.el))continue;const k=knKeyOf(P,get,a);if(!k)continue;let r=by.get(k);if(!r){r={key:k,text:knText(P,k),n:0,views:new Set()};by.set(k,r)}r.n++;r.views.add(a.view)}
   return[...by.values()].sort((a,b)=>knCmp(a.key,b.key))}
 /* By sheet: the number each key has where the view is — on its sheet, or in the view itself while it is on none */
 function knNums(P,get,vid){const sh=knSheetOf(P,vid),m=new Map();knUsed(P,get,sh?{sheet:sh}:{view:vid}).forEach((r,i)=>m.set(r.key,i+1));return m}
@@ -9410,7 +9411,7 @@ function bindPane(pn){
     if(v.kind==='plan'){const gb=!ui.inl&&gridBubbleAt(v,p);if(gb){editGridName(pn,gb);return}const h=hitPlan(v,p),el=h&&IDX.get(h.id);if(actDbl(pn,v,p,!!el)||!el)return;if(el.grp&&!ui.ge&&P.els.includes(el)&&!(ui.sel.size===1&&ui.sel.has(el.id))){grpEditStart(el.grp);return}          /* as in Revit: a double-click on a group edits it (75-groups) */
       if(el.cat==='section'){const sv=P.views.find(x=>x.kind==='section'&&x.section===el.id);if(sv)showView(sv.id)}
       else if(el.cat==='text'){openInline(pn,p.x,p.y,el.text,val=>{if(val.trim())edit(()=>{el.text=val.trim()})},true,true)}
-      else if(el.cat==='knote'){const te=IDX.get(el.el),T=te&&knTypeOf(te);dlgKnPick(knKeyOf(P,tagGet,el),key=>edit(()=>{if(el.uk)el.uk=key;else if(T)T.kn=key}),el.uk?t('a_knuser'):t('kn_fortype',T?T.name:''))}          // another keynote: for this tag, or for the type
+      else if(el.cat==='knote')knRepick(el);          // another keynote: for this tag, or for the type
       else if(el.cat==='mtext'){openInline(pn,p.x,p.y,el.text,val=>{if(val.trim())edit(()=>{el.text=val.trim()})},true,true)}          // as Edit Text of Revit
       else if(el.cat==='room'||el.cat==='area'){openInline(pn,p.x,p.y,el.name,val=>{if(val.trim())edit(()=>{el.name=val.trim()})},true)}
       else if(el.cat==='rtag'){const te=IDX.get(el.el);if(te)openInline(pn,p.x,p.y,te.name||'',val=>{if(val.trim())edit(()=>{te.name=val.trim()})},true)}          // the name of a room is edited through its tag
@@ -9419,7 +9420,7 @@ function bindPane(pn){
       else if(el.cat==='callout')showView(el.cv);else if(el.cat==='vref'){const I=vrefInfo(P,el);if(I.V)showView(I.V.id)}          // as in Revit: the mark is edited through its tag
       else if(el.cat==='dim'&&!ui.inl){const D=dimGeo(el);if(D){const nav=navOf(v),m=dsTP(el,D,v.scale);ui.sel=new Set([el.id]);refresh();openInline(pn,m[0]*nav.s+nav.ox,m[1]*nav.s+nav.oy,fmtLen(dsV(el,D.val)),val=>{const mm=parseLen(val);if(isFinite(mm))dsDrive(el,mm)})}}}
     else if(v.kind==='sheet'){const vp=hitSheet(v,p);if(vp&&vp.sa)saDbl(pn,v,p,vp.sa);else if(vp&&!vp.cloud)actStart(vp,true)}          // as in Revit: a double-click on a viewport activates its view (a view that is no plan opens in its tab)
-    else if((v.kind==='elev'||v.kind==='section')&&!ui.inl){const h=hitElev(v,p);if(h&&h.part==='ann'){const d=IDX.get(h.id);if(d&&d.cat==='etext')openInline(pn,p.x,p.y,d.text,val=>{if(val.trim())edit(()=>{d.text=val.trim()})},true,true);else if(d&&d.cat==='etag'){const te=IDX.get(d.el);if(te&&('mark' in te))openInline(pn,p.x,p.y,te.mark||'',val=>{if(val.trim())edit(()=>applyField(te.cat,te,'mark',val))},true)}}else if(h)editLevelText(pn,v,h.part==='line'?Object.assign(h,{part:'elev',x:p.x-48,y:p.y}):h)}});
+    else if((v.kind==='elev'||v.kind==='section')&&!ui.inl){const h=hitElev(v,p);if(h&&h.part==='ann'){const d=IDX.get(h.id);if(d&&d.cat==='etext')openInline(pn,p.x,p.y,d.text,val=>{if(val.trim())edit(()=>{d.text=val.trim()})},true,true);else if(d&&d.cat==='eknote')knRepick(d);else if(d&&d.cat==='etag'){const te=IDX.get(d.el);if(te&&('mark' in te))openInline(pn,p.x,p.y,te.mark||'',val=>{if(val.trim())edit(()=>applyField(te.cat,te,'mark',val))},true)}}else if(h)editLevelText(pn,v,h.part==='line'?Object.assign(h,{part:'elev',x:p.x-48,y:p.y}):h)}});
   pn.sched.addEventListener('click',e=>{setActivePane(pn.i);const tr=e.target.closest('tr.pick');if(tr&&!/^(INPUT|SELECT|OPTION|BUTTON)$/.test(e.target.tagName)){ui.sel=schPick107(pn,tr,e);refresh()}else schHClick107(pn,e)});
   pn.sched.addEventListener('change',e=>{const el=e.target,val=Math.max(0,parseFloat(el.value)||0);
     if(el.dataset.sf!=null||el.dataset.kn!=null||el.dataset.kf!=null){sfChange(el);return}          // typed in a schedule of a category or of keys (V1.87)
@@ -9502,21 +9503,30 @@ function knNumsOf(v){if(P.knBy!=='sheet'||!v)return null;if(KNC.ver!==VER)KNC={v
 /* what a keynote tag looks like: what it says, its lines, the size of its letters (paper mm), half its width and height */
 function knGeo(d,v){const L=knLabel(P,tagGet,d,knNumsOf(v)),tx=d.ks==='text',lines=tx?knWrap(L.s,30):[L.s],sz=tx?2.2:2.5;let w=0;for(const s of lines)w=Math.max(w,twmm(s,!tx)*sz/2.2);
   return{L,lines,sz,hw:w/2+(d.ks==='box'?1.7:0.8),hh:lines.length*sz*0.68+(d.ks==='box'?1.3:0.5)}}
-function drawKnote(g,d,col,hi,v){if(!tagShown(v,d))return;const G=tagGeo(d,v);if(!G)return;const ctx=g.ctx,sc=g.scale,K=knGeo(d,v),ink=hi||(K.L.none||K.L.lost?col.warn:col.ink),p=G.p,hw=K.hw*sc,hh=K.hh*sc;
-  if(d.lead&&!(Math.abs(G.a[0]-p[0])<hw&&Math.abs(G.a[1]-p[1])<hh)){const left=G.a[0]<p[0],q=[p[0]+(left?-hw:hw),p[1]],k=[q[0]+(left?-2:2)*sc,p[1]];          // the leader: a short landing beside the tag, then to the arrow
-    ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=hi?1.4:g.lw(0.13);g.dash(null);g.path([q,k,G.a],true);ctx.stroke();arrowHead(g,k,G.a,1.8)}
+function drawKnote(g,d,col,hi,v){if(!tagShown(v,d))return;const G=tagGeo(d,v);if(G)knPaint(g,d,v,G.p,G.a,col,hi)}
+/* a keynote tag with its middle at p and the arrow of its leader at A, in the frame g draws (a plan; an elevation, a section or a 3D view: 126) */
+function knPaint(g,d,v,p,A,col,hi){const ctx=g.ctx,sc=g.scale,K=knGeo(d,v),ink=hi||(K.L.none||K.L.lost?col.warn:col.ink),hw=K.hw*sc,hh=K.hh*sc;
+  if(d.lead&&A&&!(Math.abs(A[0]-p[0])<hw&&Math.abs(A[1]-p[1])<hh)){const left=A[0]<p[0],q=[p[0]+(left?-hw:hw),p[1]],k=[q[0]+(left?-2:2)*sc,p[1]];          // the leader: a short landing beside the tag, then to the arrow
+    ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=hi?1.4:g.lw(0.13);g.dash(null);g.path([q,k,A],true);ctx.stroke();arrowHead(g,k,A,1.8)}
   if(d.ks==='box'){g.path([[p[0]-hw,p[1]-hh],[p[0]+hw,p[1]-hh],[p[0]+hw,p[1]+hh],[p[0]-hw,p[1]+hh]]);ctx.fillStyle=col.paper;ctx.fill();ctx.strokeStyle=ink;ctx.lineWidth=hi?1.6:g.lw(0.18);ctx.stroke()}
   K.lines.forEach((s,i)=>g.text(s,[p[0],p[1]+(i-(K.lines.length-1)/2)*K.sz*1.36*sc],K.sz,{bold:d.ks!=='text',color:ink,halo:d.ks!=='box'}))}
-function knDist(v,d,w,sc){if(!tagShown(v,d))return Infinity;const G=tagGeo(d,v);if(!G)return Infinity;const K=knGeo(d,v),p=G.p,hw=K.hw*sc,hh=K.hh*sc,dx=Math.abs(w.x-p[0])-hw,dy=Math.abs(w.y-p[1])-hh;if(dx<=0&&dy<=0)return 0;
-  let m=Math.max(dx,dy);if(d.lead){const left=G.a[0]<p[0],k=[p[0]+(left?-hw-2*sc:hw+2*sc),p[1]];m=Math.min(m,segDist(w.x,w.y,k[0],k[1],G.a[0],G.a[1]))}return m}
+function knDist(v,d,w,sc){if(!tagShown(v,d))return Infinity;const G=tagGeo(d,v);return G?knDistAt(d,v,G.p,G.a,w,sc):Infinity}
+function knDistAt(d,v,p,A,w,sc){const K=knGeo(d,v),hw=K.hw*sc,hh=K.hh*sc,dx=Math.abs(w.x-p[0])-hw,dy=Math.abs(w.y-p[1])-hh;if(dx<=0&&dy<=0)return 0;
+  let m=Math.max(dx,dy);if(d.lead&&A){const left=A[0]<p[0],k=[p[0]+(left?-hw-2*sc:hw+2*sc),p[1]];m=Math.min(m,segDist(w.x,w.y,k[0],k[1],A[0],A[1]))}return m}
 /* the Keynote tool: click an element; the tag goes beside the click, its leader points at the click */
 function knClick(pn,v,p,w){const e=knTarget(v,p);if(!e){toast(t('kn_pick'));return}if(v.tags===false){toast(t('tag_off'));return}const F=tagFrame(P,tagGet,e);if(!F)return;
   const lead=ui.opt.knLead!==false,sc=v.scale||100,ks=KN_STYLES.includes(ui.opt.knStyle)?ui.opt.knStyle:'num',x=w.x+(lead?8*sc:0),y=w.y-(lead?8*sc:0),loc=(px,py)=>[Math.round((px-F.x)*F.ux+(py-F.y)*F.uy),Math.round(-(px-F.x)*F.uy+(py-F.y)*F.ux)],q=loc(x,y),o={id:0,cat:'knote',view:avid(v),el:e.id,du:q[0],dn:q[1]};
-  if(lead){const a=loc(w.x,w.y);o.lead=true;o.au=a[0];o.an=a[1]}if(ks!=='num')o.ks=ks;
-  const T=knTypeOf(e),put=(key,user)=>edit(()=>{if(user)o.uk=key;else if(T)T.kn=key;o.id=P.seq++;P.ann.push(o)});
+  if(lead){const a=loc(w.x,w.y);o.lead=true;o.au=a[0];o.an=a[1]}if(ks!=='num')o.ks=ks;knPlace(e,o)}
+/* a keynote tag the tool made, put in once its keynote is known: a User Keynote is given one of its own; an Element Keynote shows the keynote of the type of its
+   element, chosen first when the type has none (as in Revit: a type that has no keynote yet is given one when it is first tagged).  pre runs in the same step of
+   undo before it is put in, post after */
+function knPlace(e,o,pre,post){const T=knTypeOf(e),put=(key,user)=>{edit(()=>{if(pre)pre();if(user)o.uk=key;else if(T)T.kn=key;o.id=P.seq++;P.ann.push(o)});if(post)post()};
   if(knUser()){dlgKnPick(ui.opt.knLast||'',key=>{ui.opt.knLast=key;put(key,true)},t('a_knuser'));return}
   if(T&&T.kn&&knRow(P,T.kn)){put(T.kn,false);return}
-  dlgKnPick('',key=>put(key,false),t('kn_fortype',T?T.name:''))}          // as in Revit: a type that has no keynote yet is given one when it is first tagged
+  dlgKnPick('',key=>put(key,false),t('kn_fortype',T?T.name:''))}
+/* another keynote for a keynote tag (a double-click on it): for the tag itself when it has one of its own, else for the type of its element */
+function knRepick(d){const te=IDX.get(d.el),T=te&&knTypeOf(te);
+  dlgKnPick(knKeyOf(P,tagGet,d),key=>edit(()=>{const x=IDX.get(d.id)||d,e=IDX.get(x.el),U=e&&knTypeOf(e);if(x.uk)x.uk=key;else if(U)U.kn=key}),d.uk?t('a_knuser'):t('kn_fortype',T?T.name:''))}
 /* choose a keynote from the table: cb(key) */
 function dlgKnPick(cur,cb,title){let sel=knRow(P,cur)?cur:'';const list=q=>{const R=knTree(P).filter(r=>!q||(r.k+' '+r.t).toLowerCase().includes(q));
     return R.length?R.map(r=>`<button type="button" class="knr" data-kn="${esc(r.k)}" style="padding-left:${10+(q?0:r.d)*18}px" aria-pressed="${r.k===sel}"><b>${esc(r.k)}</b><span>${esc(r.t)}</span></button>`).join(''):`<p class="note">${t('kn_nomatch')}</p>`};
@@ -9543,7 +9553,7 @@ function dlgKnSet(keep){const dc=keep?$('#dlg .knt'):null,top=dc?dc.scrollTop:0,
        if(el.id==='knIn'){const f=el.files[0];el.value='';if(!f)return;const r=new FileReader();r.onload=()=>{if(knImportText(String(r.result)))dlgKnSet()};r.readAsText(f);return}
        const f=el.dataset.knf;if(!f)return;const i=f.lastIndexOf(':'),k=f.slice(0,i),c=+f.slice(i+1),val=el.value.trim();
        if(c===0){if(val===k)return;if(!knKeyOk(val)||knRow(P,val)){toast(t(knRow(P,val)?'kn_dupkey':'kn_badkey'));dlgKnSet(true);return}
-         edit(()=>{const T=knTable(P).map(r=>r.slice());for(const r of T){if(r[0]===k)r[0]=val;if(r[2]===k)r[2]=val}P.kn=T;for(const q in P.types)for(const x of P.types[q])if(x.kn===k)x.kn=val;for(const a of P.ann)if(a.cat==='knote'&&a.uk===k)a.uk=val})}          // a key that changes is changed wherever it is used
+         edit(()=>{const T=knTable(P).map(r=>r.slice());for(const r of T){if(r[0]===k)r[0]=val;if(r[2]===k)r[2]=val}P.kn=T;for(const q in P.types)for(const x of P.types[q])if(x.kn===k)x.kn=val;for(const a of P.ann)if(KN_CATS.has(a.cat)&&a.uk===k)a.uk=val})}          // a key that changes is changed wherever it is used
        else if(c===2&&val&&(val===k||!knRow(P,val)||knUnder(val,k))){toast(t('kn_noparent'));dlgKnSet(true);return}
        else knEdit(T=>{const r=T.find(x=>x[0]===k);if(r)r[c]=val});dlgKnSet(true)},
      click(e){const x=e.target.dataset.knx;if(!x)return;
@@ -12665,7 +12675,7 @@ const TYPE_FIELDS={wall:[['thickness','num'],['hatch','sel',['diag','solid','non
   railing:[['kind','sel',['rvert','rhorz','rglass','rhand']],['h','num'],['post','num'],['ps','num'],['color','color']],ramp:[['width','num'],['thickness','num'],['maxSlope','num','1 : n',0.5],['mat','sel',TYPE_MATS.ramp],['color','color']],
   furn:[['kind','sel',['bed','nstand','wardrobe','sofa','sofal','ctable','rtable','table','chair','dset','ochair','desk','shelf','cabinet','tvstand','tvset','lamp','curtain','rug','kbase','kwall','fridge','washer','stove','hood','car','person','tree','shrub','pot','slab','pave','fam']],['grp','sel',['furn','case','appl','site']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],
   eequip:[['kind','sel',['lc','db','mdb','tx','gen','ssw']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],tray:[['elb','sel',TFIT_ELB,'telb_'],['kind','sel',['ladder','perf','wway']]],conduit:[]};
-function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)||(cat==='beam'&&e.cat==='truss'&&trUses(P,e,T.id))).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&d.cat==='etext')||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
+function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)||(cat==='beam'&&e.cat==='truss'&&trUses(P,e,T.id))).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&d.cat==='edim')||(cat==='text'&&(d.cat==='etext'||d.cat==='text3'))||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
   const CWD={vLay:'near',vSp:1500,vNum:3,vJ:'ctr',hLay:'near',hSp:1500,hNum:2,hJ:'ctr',mw:50,md:T.thickness,mpro:'rect',bm:'yes',mcol:'#575e69',cwpan:'glass',pcol:'#b9bec6'};const TV=T.kind==='curtain'?Object.assign({},CWD,...Object.entries(T).filter(x=>x[1]!=null).map(([k,v])=>({[k]:v}))):T;          // a curtain type shows the defaults of what it leaves unset
   const F=[['name','text'],...(cat==='vp'?[]:[['mark','text']]),...(flat?[]:[['kn','kn']]),...((cat==='wall'&&T.kind==='curtain'?CW_FIELDS:tdFields(cat,T))||[]),...(flat?[]:[['cost','num']])],fr=f=>{const k=f[0];
       if(RG_TF[f[1]])return RG_TF[f[1]](T,f);
@@ -12915,7 +12925,7 @@ function act(a,arg,el){
     case'openview':{const e=IDX.get([...ui.sel][0]);if(!e)break;if(e.cat==='section'){const sv=P.views.find(x=>x.kind==='section'&&x.section===e.id);if(sv)showView(sv.id)}else if(e.cat==='vp')showView(e.view);else if(e.cat==='callout')showView(e.cv);break}
     case'ridge':edit(()=>{for(const id of ui.sel){const e=IDX.get(id);if(e&&e.cat==='roof')e.alt=(e.alt||0)+1}});break;
     case'rotapply':applyRotate(parseFloat(ui.opt.angle));break;
-    case'selsame':{const e=IDX.get([...ui.sel][0]);if(!e){toast(t('need_sel'));break}const pool=e.cat==='vp'?((vpSheet(e)||{}).vps||[]):e.cat==='grid'?P.grids:ANN.includes(e.cat)||EA_CAT[e.cat]||e.cat==='tag3'?P.ann.filter(x=>x.view===e.view):P.els;ui.sel=new Set(pool.filter(x=>x.cat===e.cat&&x.type===e.type&&(e.cat!=='dline'||(x.style||'thin')===(e.style||'thin'))).map(x=>x.id));refresh();toast(t('n_selected',ui.sel.size));break}
+    case'selsame':{const e=IDX.get([...ui.sel][0]);if(!e){toast(t('need_sel'));break}const pool=e.cat==='vp'?((vpSheet(e)||{}).vps||[]):e.cat==='grid'?P.grids:ANN.includes(e.cat)||EA_CAT[e.cat]||e.cat==='tag3'||A3K.has(e.cat)?P.ann.filter(x=>x.view===e.view):P.els;ui.sel=new Set(pool.filter(x=>x.cat===e.cat&&x.type===e.type&&(e.cat!=='dline'||(x.style||'thin')===(e.style||'thin'))).map(x=>x.id));refresh();toast(t('n_selected',ui.sel.size));break}
     case'zoomsel':{const vv=activeView();if(!vv||vv.kind!=='plan'||!ui.sel.size)break;let B=null;for(const id of expandSel(ui.sel)){const e=IDX.get(id),b=e&&elBox(vv,e);if(b)B=B?[Math.min(B[0],b[0]),Math.min(B[1],b[1]),Math.max(B[2],b[2]),Math.max(B[3],b[3])]:b}
       if(B){const pn=PANES[ui.ap],n=navOf(vv),m=1500;navPush(vv);fit2D(n,B[0]-m,B[1]-m,B[2]+m,B[3]+m,pn.w,pn.h,20);n.auto=false;redraw()}break}}
 }
@@ -13941,7 +13951,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=134,V1_NAME='V1.123';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=137,V1_NAME='V1.126';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15998,7 +16008,7 @@ XC.push(()=>{if(!Array.isArray(P.types.text)||!P.types.text.length)P.types.text=
 /* a text made with the tool: the type chosen in Properties, the alignment of the options bar */
 XN.push(s0=>{if(ui.tool!=='text'||!P.types.text||!P.types.text.length)return;const D=defs('text'),ha=ui.opt.textHa;
   for(const d of P.ann)if(d.id>=s0&&(d.cat==='text'||d.cat==='etext')&&d.type==null){d.type=D.type;const T=P.types.text.find(x=>x.id===d.type);if(T)d.size=T.tsz;if(ha==='c'||ha==='r')d.ha=ha}});
-XA.etexttype=()=>{const d=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&(x.cat==='etext'||x.cat==='text'));dlgTypes('text',d?txT(d).id:undefined)};
+XA.etexttype=()=>{const d=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&(x.cat==='etext'||x.cat==='text'||x.cat==='text3'));dlgTypes('text',d?txT(d).id:undefined)};
 /* Properties of texts: the type and the words of a text of an elevation or a section (a plan's text has them already), the alignment and the angle */
 const txDeg=d=>d.rot?Math.round(-d.rot*100)/100:0;
 XP.push((c,els)=>{if(c!=='text'&&c!=='etext')return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};let h='';
@@ -19270,15 +19280,15 @@ XT3.mtag={ok:v=>ev3EV(v),hint:()=>t('h_mtag'),
   for(const d of eaList(v)){if(d.cat!=='emtag')continue;const e=IDX.get(d.el);if(etgShown(v,d,e)&&mtDist(mtName(e,d.f),[d.x,d.y],[d.x2,d.y2],d.lead,w,sc)*nav.s<4)return{id:d.id,part:'ann'}}return null}}
 /* the tags keep their place from their elements, as the other tags of elevations do; the point of the arrow stays on its element */
 XD.push(()=>{let ch=false;const R=q=>Math.round(q*10)/10;
-  for(const d of P.ann){if(d.cat!=='emtag')continue;const v=viewById(d.view),e=IDX.get(d.el);if(!v||!e)continue;const A=etgAnchor(v,e);if(!A)continue;const ax=R(A[0]),ay=R(A[1]);
+  for(const d of P.ann){if(d.cat!=='emtag'&&d.cat!=='eknote')continue;const v=viewById(d.view),e=IDX.get(d.el);if(!v||!e)continue;const A=etgAnchor(v,e);if(!A)continue;const ax=R(A[0]),ay=R(A[1]);
     if(d.ax==null||d.ay==null){d.ax=ax;d.ay=ay;d.x0=d.x;d.y0=d.y;ch=true;continue}
     if(Math.abs(d.ax-ax)<0.05&&Math.abs(d.ay-ay)<0.05){if(d.x0!==d.x||d.y0!==d.y){d.x0=d.x;d.y0=d.y;ch=true}continue}
     if(d.x===d.x0&&d.y===d.y0){const dx=ax-d.ax,dy=ay-d.ay;d.x=R(d.x+dx);d.y=R(d.y+dy);d.x2=R(d.x2+dx);d.y2=R(d.y2+dy)}d.ax=ax;d.ay=ay;d.x0=d.x;d.y0=d.y;ch=true}
   return ch});
-{const f0=ev3Clone;ev3Clone=ids=>{const out=f0(ids),M=CLMAP;let drop=false;for(const id of out.slice()){const d=IDX.get(id);if(!d||d.cat!=='emtag')continue;if(M.has(d.el)){d.el=M.get(d.el);delete d.ax;delete d.ay}else{P.ann=P.ann.filter(x=>x!==d);out.splice(out.indexOf(id),1);drop=true}}
+{const f0=ev3Clone;ev3Clone=ids=>{const out=f0(ids),M=CLMAP;let drop=false;for(const id of out.slice()){const d=IDX.get(id);if(!d||(d.cat!=='emtag'&&d.cat!=='eknote'))continue;if(M.has(d.el)){d.el=M.get(d.el);delete d.ax;delete d.ay}else{P.ann=P.ann.filter(x=>x!==d);out.splice(out.indexOf(id),1);drop=true}}
   if(drop)IDX=indexProject(P);return out}}
 /* dragged or moved without its element, a tag with a leader moves its text: the arrow stays on the element (Revit: the leader end stays attached) */
-{const f0=ev3Shift;ev3Shift=(v,ids,dh,dz)=>{const S=new Set(ids),keep=[];for(const id of ids){const d=IDX.get(id);if(d&&d.cat==='emtag'&&d.lead&&!S.has(d.el))keep.push([d,d.x2,d.y2])}
+{const f0=ev3Shift;ev3Shift=(v,ids,dh,dz)=>{const S=new Set(ids),keep=[];for(const id of ids){const d=IDX.get(id);if(d&&(d.cat==='emtag'||d.cat==='eknote')&&d.lead&&!S.has(d.el))keep.push([d,d.x2,d.y2])}
   const n=f0(v,ids,dh,dz);for(const [d,x2,y2] of keep){d.x2=x2;d.y2=y2}return n}}
 XC.push(()=>{if(!P.ann.some(a=>a.cat==='emtag'))return;const ids=new Set(P.els.map(e=>e.id));P.ann=P.ann.filter(d=>d.cat!=='emtag'||(ids.has(d.el)&&isFinite(d.x2)&&isFinite(d.y2)));
   for(const d of P.ann){if(d.cat!=='emtag')continue;if(d.f!=null){const x=+d.f;if(isFinite(x))d.f=clamp(x,0,1);else delete d.f}if(d.lead)d.lead=true;else delete d.lead}});
@@ -19778,7 +19788,7 @@ XC.push(()=>{const vs=new Map();for(const v of P.views){if(v.kind==='3d')vs.set(
   P.ann=P.ann.filter(d=>{if(d.cat!=='tag3')return true;const v=vs.get(d.view),e=E.get(d.el);return!!v&&lk3Able(v)&&!!e&&TAG_CATS.includes(e.cat)});
   for(const d of P.ann){if(d.cat!=='tag3')continue;d.a=Array.isArray(d.a)&&d.a.length===3?d.a.map(x=>Math.round(f(x,0,1,0.5)*1000)/1000):A3C.slice();d.o=Array.isArray(d.o)&&d.o.length===2?d.o.map(x=>Math.round(f(x,-1000,1000,0)*100)/100):[0,0];
     if(d.lead!=null&&d.lead!==true)delete d.lead}});
-{const f0=cloneIds;cloneIds=ids=>{const L=[...ids],tg=L.map(id=>IDX.get(id)).filter(d=>d&&d.cat==='tag3'),ti=new Set(tg.map(d=>d.id)),out=f0(L.filter(id=>!ti.has(id)));
+{const f0=cloneIds;cloneIds=ids=>{const L=[...ids],tg=L.map(id=>IDX.get(id)).filter(d=>d&&(d.cat==='tag3'||d.cat==='knote3'||d.cat==='spot3')),ti=new Set(tg.map(d=>d.id)),out=f0(L.filter(id=>!ti.has(id)));
   if(tg.length){const M=CLMAP;let n=0;for(const d of tg)if(M.has(d.el)){const c=JSON.parse(JSON.stringify(d));c.id=P.seq++;c.el=M.get(d.el);P.ann.push(c);out.push(c.id);n++}if(n)IDX=indexProject(P)}return out}}
 /* undo and redo hand back the ids of what they take away, and a view made next takes one: it must not find the camera of the view that had its id
    (a new sheet after a copy of a 3D view was undone was drawn blank) */
@@ -21251,7 +21261,7 @@ XA.gsavet=arg=>{const r=gtTop(+arg);if(r)gsSave(r.id)};
 const glOpen=()=>BF&&BF.openFile?BF.openFile('.penbim,.json,application/json'):new Promise(res=>{const i=document.createElement('input');i.type='file';i.accept='.penbim,.json';i.style.display='none';
   i.onchange=async()=>{const f=i.files&&i.files[0];i.remove();if(!f){res(null);return}try{res({file:f.name,text:await f.text()})}catch(e){res(null)}};document.body.appendChild(i);i.click()});
 /* gt: reload that type; 0: load a new one */
-async function glPick(gt){if(ui.ge){toast(t('ge_busy'));return}const take=(txt,file)=>{if(txt==null){toast(t('gl_bad'));return}glText(txt,file,gt)};
+async function grpPick(gt){if(ui.ge){toast(t('ge_busy'));return}const take=(txt,file)=>{if(txt==null){toast(t('gl_bad'));return}glText(txt,file,gt)};
   if(BF&&BF.ok){await BF.folder(false);const L=BF.name()?await BF.list('.penbim'):null;
     if(L){const when=x=>new Date(x).toLocaleString(ui.lang==='en'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
       openDlg(t(gt?'a_greload':'a_gload'),`<p class="note">${esc(gt?t('gl_rl_note',gtName(gt)):t('gl_note'))}</p><p class="note">${esc(t('bf_list',BF.name()))}</p>${L.length?`<div class="bf-l">${L.map(f=>`<button class="btn" data-glf="${esc(f.file)}"><span>${esc(f.file.replace(/\.penbim$/i,''))}</span><small>${esc(when(f.at))}</small></button>`).join('')}</div>`:`<p>${t('bf_none')}</p>`}`,
@@ -21259,9 +21269,9 @@ async function glPick(gt){if(ui.ge){toast(t('ge_busy'));return}const take=(txt,f
         {async click(ev){const o=ev.target.closest('[data-glf]'),x=ev.target.closest('[data-glx]');if(o){const f=o.dataset.glf,txt=await BF.read(f);closeDlg();take(txt,f);return}
           if(x){closeDlg();const r=await glOpen();if(r)take(r.text,r.file)}}});return}}
   const r=await glOpen();if(r)take(r.text,r.file)}
-XA.gload=()=>glPick(0);
-XA.greload=()=>{const g=selGroup();if(!g||gtDet(g)){toast(t('grp_none'));return}glPick(grpType(g))};
-XA.greloadt=arg=>{if(gtTop(+arg))glPick(+arg)};
+XA.gload=()=>grpPick(0);
+XA.greload=()=>{const g=selGroup();if(!g||gtDet(g)){toast(t('grp_none'));return}grpPick(grpType(g))};
+XA.greloadt=arg=>{if(gtTop(+arg))grpPick(+arg)};
 /* what of a project file comes in: its model (less links, areas, what is excluded from a group or lies in a secondary design option, and what has lost
    its host), its lowest level, its corner and outlines */
 function glContent(S){const main=dsMain(S),opt=Array.isArray(S.dos)&&S.dos.length>0;
@@ -22865,6 +22875,254 @@ function trsAsm(E,G,S,oh,AX,TRPS,pset,prop,tr,P0,n){for(const [id,o] of TRPS){co
   E('IFCRELAGGREGATES('+G('rela:'+id)+','+oh+',$,$,'+a+',('+o.L.join(',')+'))');const lv=lvl(P0,e.level),mk=String(e.mark||T.mark||''),pr=[prop('Category',tr('cat_truss')),prop('Type',tn)];
   if(mk)pr.push(prop('Mark',mk));if(lv)pr.push(prop('Level',lv.name));pr.push(prop('ElementId',e.id,'IFCINTEGER'),prop('Members',o.L.length,'IFCINTEGER'));pset(id,'PENUM_BIM',pr,a)}}
 Object.assign(STR,{tm_top:['คอร์ดบน','Top chord'],tm_bot:['คอร์ดล่าง','Bottom chord'],tm_web:['ชิ้นค้ำ (Web)','Web']});
+/* ===== 125 text notes and spot elevations in locked 3D views (V1.125; Revit: Annotate › Text, Spot Elevation and Spot Coordinate in a 3D view, shown while the
+   view is locked and on a sheet at its scale, with its tags) =====
+   A text of a 3D view, {cat:'text3', view, p:[x, y, z], o:[dx, dy], text, type, size, ha?, lead?, elb?:[dx, dy]}: p a point of the model (plan x, plan y, height),
+   where its leader points, or where the text was put when it has none; o where its first line stands from p, in millimetres of paper (right, down); elb the elbow
+   of a leader of two segments, from p the same way.  It reads level across the view, by its text type, as a text of a plan does.
+   A spot of a 3D view, {cat:'spot3', view, el, a:[fx, fy, fz], o:[dx, dy], k?:'coord', zk?, org?, rb?, ind?}: a the point it reads, as fractions of the box of its
+   element (it goes with the element when the element moves); o where its symbol stands from that point, in millimetres of paper.  It reads the height of that point
+   (of a duct, a pipe, a tray, a conduit or a beam: its centre line, top or foot there, as Display Elevations says) from ±0.00, the survey point or a level
+   (Elevation Origin), after its Elevation Indicator; a spot coordinate reads the northing and the easting of the point by Location, and its elevation. */
+const A3K=new Set(['text3','spot3']),A3CAT={text3:'text',spot3:'spot'},SP3_SZ=2.5,SP3_LH=3.4;
+const ann3Of=v=>!v?[]:P.ann.filter(d=>A3K.has(d.cat)&&d.view===v.id);
+/* what a locked view shows of them: by the categories Text Notes and Spot Elevations of its Visibility/Graphics, and Hide in View */
+const ann3List=v=>lk3On(v)?P.ann.filter(d=>A3K.has(d.cat)&&d.view===v.id&&!catHid(v,A3CAT[d.cat])&&!hidDatum(v,d)):[];
+/* the point of the model a text or a spot stands on: its own, or the point of its element; null when the element is not drawn */
+function ann3Pt(d){if(d.cat==='text3')return Array.isArray(d.p)&&d.p.length===3?d.p:null;const B=d.el!=null?elBox3(d.el):null;if(!B)return null;const f=Array.isArray(d.a)?d.a:A3C;
+  return[B[0]+(B[3]-B[0])*f[0],B[1]+(B[4]-B[1])*f[1],B[2]+(B[5]-B[2])*f[2]]}
+/* where a point of the model falls in a frame W x H that camera matrix M fills (px of the screen, mm of paper); null behind the camera */
+function ann3Prj(M,q,W,H){const x=q[0],y=q[1],z=q[2],cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15];return cw>1e-6?[(cx/cw+1)/2*W,(1-cy/cw)/2*H]:null}
+/* a spot shows while its element does (its category, Hide in View, the phase, the discipline) and its point is inside the section box */
+function spot3Vis(v,d){const e=IDX.get(d.el);if(!e||!P.els.includes(e)||catHid(v,e.cat)||hidEl(v,e))return false;const PQ=PHm(v);if(PQ&&PQ.hid&&PQ.hid.has(e.id))return false;
+  if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;const q=ann3Pt(d),S=v.sboxOn&&v.sbox;
+  return!!q&&!(S&&(q[0]<S[0]-1||q[0]>S[3]+1||q[1]<S[1]-1||q[1]>S[4]+1||q[2]<S[2]-1||q[2]>S[5]+1))}
+const ann3Shown=(v,d)=>d.cat==='text3'||spot3Vis(v,d);          // a keynote tag (126) as a spot: while its element shows
+
+/* ---- what a spot reads, and how it is drawn ---- */
+/* the heights at its point: of a run or a beam {c, t, b} there (as a spot of a plan reads them), else the height of the point itself */
+function spot3Z(d,q){const e=IDX.get(d.el);if(e&&(SP_RUN.has(e.cat)||e.cat==='beam')){const h=spHostZ(null,{x:q[0],y:q[1],el:e.id});if(h)return h}return{c:q[2],t:q[2],b:q[2]}}
+/* its lines: the elevation (CL, TOP, BOT of a run or a beam), or the northing, the easting and the elevation */
+function spot3Lines(d,q){const e=IDX.get(d.el)||{cat:''},Z=spot3Z(d,q);if(d.k!=='coord')return spLines(e,d,Z);const k=SP_RUN.has(e.cat)||e.cat==='beam'?spZk(e,d):'c',NE=surveyNE(q[0],q[1]);
+  return['N '+fmtLen(NE[0]),'E '+fmtLen(NE[1]),(d.ind||t('ea_el'))+' '+fmtElev(spOrgZ(d,Z[k==='tb'?'c':k]))]}
+/* a spot whose point falls at a (in the frame it is drawn in; sc: what a millimetre of paper is there): s where its symbol stands, its lines, the box round them */
+function spot3Geo(d,a,q,sc){const L=spot3Lines(d,q),o=tag3O(d),s=[a[0]+o[0]*sc,a[1]+o[1]*sc],lead=Math.hypot(o[0],o[1])>=0.5,up=(1.6+SP3_LH*(L.length-1)+1.4)*sc;TXM.font='10px '+MONO;
+  const w=Math.max(6,...L.map(x=>TXM.measureText(x).width/10*SP3_SZ));
+  if(d.k==='coord')return{L,s,lead,w,y:s[1],box:[s[0],s[1]-up,s[0]+(w+1.4)*sc,s[1]+0.6*sc]};
+  const y=s[1]-3*sc;return{L,s,lead,w,y,box:[s[0]-1.9*sc,y-up,s[0]+(2.8+w)*sc,s[1]+0.4*sc]}}
+/* the dot on its point and the leader to the symbol: an elevation's triangle with its tip there and its values over the line, a coordinate's values over a shoulder */
+function spot3Paint(g,col,hi,d,a,G){const ctx=g.ctx,sc=g.scale,ink=hi||col.ink,s=G.s,n=G.L.length,tx=(x,i,dx)=>g.text(x,[s[0]+dx*sc,G.y-1.6*sc-(n-1-i)*SP3_LH*sc],SP3_SZ,{align:'left',color:ink,mono:true,halo:true});
+  ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=hi?1.8:g.lw(0.18);
+  if(G.lead)g.seg(a,s);if(G.lead||d.k==='coord'){g.circle(a,0.6);ctx.fill()}
+  if(d.k==='coord'){g.seg(s,[s[0]+(G.w+1.4)*sc,s[1]]);G.L.forEach((x,i)=>tx(x,i,0.6));return}
+  g.path([[s[0],s[1]],[s[0]-1.8*sc,G.y],[s[0]+1.8*sc,G.y]]);ctx.stroke();g.seg([s[0]-1.8*sc,G.y],[s[0]+(2.8+G.w)*sc,G.y]);G.L.forEach((x,i)=>tx(x,i,2.6))}
+function spot3Dist(G,a,w){const b=G.box;let m=Math.hypot(Math.max(b[0]-w.x,0,w.x-b[2]),Math.max(b[1]-w.y,0,w.y-b[3]));if(G.lead)m=Math.min(m,segDist(w.x,w.y,a[0],a[1],G.s[0],G.s[1]));return m}
+/* a text of a 3D view as a text of a plan in the frame it is drawn in: a where its point falls, sc what a millimetre of paper is there */
+function text3As(d,a,sc){const o=tag3O(d),q={id:d.id,cat:'text',view:d.view,type:d.type,size:d.size,text:d.text,x:a[0]+o[0]*sc,y:a[1]+o[1]*sc};if(d.ha)q.ha=d.ha;
+  if(d.lead){q.lead=[a[0],a[1]];if(Array.isArray(d.elb))q.elb=[a[0]+d.elb[0]*sc,a[1]+d.elb[1]*sc]}return q}
+
+/* ---- on the screen: over the model of a locked view; picked, dragged and edited as its tags are ---- */
+function ann3Frame(pn,v){const nav=navOf(v);return{nav,M:camMatrix(orbitCam(nav,pn.w/pn.h),MSm().bb),k:tag3K(pn,nav),sc:v.scale||100}}
+function ann3Screen(pn,ctx,v){const D=ann3List(v);if(!D.length)return;const F=ann3Frame(pn,v),g=painter(ctx,{s:F.k,ox:0,oy:0},F.sc,C,ui.thin);
+  for(const d of D){const q=ann3Pt(d);if(!q||!ann3Shown(v,d))continue;const G=ann3Prj(F.M,q,pn.w,pn.h);if(!G)continue;const a=[G[0]/F.k,G[1]/F.k],hi=ui.sel.has(d.id)?C.sel:ui.hov===d.id?C.hot:null;
+    ctx.save();try{if(d.cat==='text3')drawText(g,text3As(d,a,F.sc),C,hi);else if(d.cat==='knote3')knPaint(g,d,v,kn3At(d,a,F.sc),a,C,hi);else spot3Paint(g,C,hi,d,a,spot3Geo(d,a,q,F.sc))}finally{ctx.restore()}}}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(lk3On(v)){ctx.save();try{ann3Screen(pn,ctx,v)}finally{ctx.restore()}}}}
+/* the text or the spot under the pointer (the last drawn first) */
+function ann3Hit(pn,v,p){const D=ann3List(v);if(!D.length)return null;const F=ann3Frame(pn,v),w={x:p.x/F.k,y:p.y/F.k},tol=4/F.k;
+  for(let i=D.length-1;i>=0;i--){const d=D[i],q=ann3Pt(d);if(!q||!ann3Shown(v,d))continue;const G=ann3Prj(F.M,q,pn.w,pn.h);if(!G)continue;const a=[G[0]/F.k,G[1]/F.k];
+    if((d.cat==='text3'?textDist(text3As(d,a,F.sc),w,F.sc,tol):d.cat==='knote3'?knDistAt(d,v,kn3At(d,a,F.sc),a,w,F.sc):spot3Dist(spot3Geo(d,a,q,F.sc),a,w))<tol)return d}return null}
+{const f0=hoverPane;hoverPane=(pn,v,p)=>{if(v&&lk3On(v)&&ui.tool==='modify'&&!ui.zoomr&&!tag3At(pn,v,p)){const d=ann3Hit(pn,v,p);
+    if(d){showCoord(v,p);pn.cv.style.cursor=ui.sel.has(d.id)?'move':'pointer';hint();if(ui.hov!==d.id){ui.hov=d.id;redraw()}return}}return f0(pn,v,p)}}
+/* a click picks it (Ctrl adds or takes away, Shift takes away); a drag moves the text, or the symbol of a spot; a double-click on a text edits its words */
+function ann3Bind(pn){const w=pn.cvw,xy=e=>{const r=pn.cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+  w.addEventListener('pointerdown',e=>{if(e.button!==0||e.target!==pn.cv)return;const v=paneView(pn.i);if(!lk3On(v)||ui.tool!=='modify'||ui.zoomr)return;const p=xy(e);if(tag3At(pn,v,p))return;const d=ann3Hit(pn,v,p);if(!d)return;
+    e.stopPropagation();e.preventDefault();closeMenu();if(ui.inl)closeInline();setActivePane(pn.i);
+    if(e.ctrlKey||e.metaKey){if(ui.sel.has(d.id))ui.sel.delete(d.id);else ui.sel.add(d.id);refresh();return}if(e.shiftKey){ui.sel.delete(d.id);refresh();return}
+    if(!ui.sel.has(d.id))ui.sel=new Set([d.id]);refresh();
+    const o0=tag3O(d).slice(),s0=p,id=e.pointerId;let moved=false;try{w.setPointerCapture(id)}catch(_){}
+    const mv=ev=>{if(ev.pointerId!==id)return;ev.stopPropagation();const q=xy(ev);if(!moved&&Math.hypot(q.x-s0.x,q.y-s0.y)<4)return;if(!moved){moved=true;snapshot();ui.dragging=true}
+      const n=navOf(v),pm=tag3K(pn,n)*(v.scale||100),r=x=>Math.round(x*100)/100;d.o=[r(o0[0]+(q.x-s0.x)/pm),r(o0[1]+(q.y-s0.y)/pm)];redraw()};
+    const up=ev=>{if(ev.pointerId!==id)return;ev.stopPropagation();w.removeEventListener('pointermove',mv,true);w.removeEventListener('pointerup',up,true);w.removeEventListener('pointercancel',up,true);try{w.releasePointerCapture(id)}catch(_){}
+      if(moved){ui.dragging=false;commit()}};
+    w.addEventListener('pointermove',mv,true);w.addEventListener('pointerup',up,true);w.addEventListener('pointercancel',up,true)},true);
+  w.addEventListener('dblclick',e=>{if(e.target!==pn.cv&&e.target!==w)return;const v=paneView(pn.i);if(!lk3On(v)||ui.tool!=='modify'||ui.inl)return;const p=xy(e);if(tag3At(pn,v,p))return;const d=ann3Hit(pn,v,p);if(d&&d.cat==='knote3'){e.stopPropagation();knRepick(d);return}if(!d||d.cat!=='text3')return;
+    e.stopPropagation();openInline(pn,p.x,p.y,d.text||'',val=>{const s=val.trim();if(s)edit(()=>{const x=IDX.get(d.id);if(x)x.text=s.slice(0,2000)})},true,true)},true)}
+{const f0=bindPane;bindPane=pn=>{f0(pn);ann3Bind(pn)}}
+
+/* ---- the points the tools take: on what is drawn under the pointer, or on the plane through the target of the camera, square to the view ---- */
+function ann3Plane(pn,v,p){const n=navOf(v),c=orbitCam(n,pn.w/pn.h),R=camRay(c,MSm().bb,p.x/pn.w*2-1,1-p.y/pn.h*2),den=dot3(R.d,c.f);if(Math.abs(den)<1e-9)return null;
+  const s=(dot3(n.t,c.f)-dot3(R.o,c.f))/den,g=[0,1,2].map(i=>R.o[i]+R.d[i]*s);return[Math.round(g[0]),Math.round(g[2]),Math.round(g[1])]}
+function ann3Surf(pn,v,p){const pk=pickAt3(pn,v,p);return pk&&pk.p?[Math.round(pk.p[0]),Math.round(pk.p[2]),Math.round(pk.p[1])]:ann3Plane(pn,v,p)}
+/* a point of the model moved in the plane of a locked view by dx, dy millimetres of paper (right, down) */
+function ann3Move(v,q,dx,dy){const L=v.lk3,c=orbitCam(lk3Nav(v,L.asp),L.asp),sc=v.scale||100,g=[q[0],q[2],q[1]].map((x,i)=>x+c.r[i]*dx*sc-c.u[i]*dy*sc);return[Math.round(g[0]),Math.round(g[2]),Math.round(g[1])]}
+/* the leader drawn so far, to the pointer */
+function ann3Rubber(pn,ctx,v,pts){if(!pts.length)return;const F=ann3Frame(pn,v),S=pts.map(q=>ann3Prj(F.M,q,pn.w,pn.h)).filter(Boolean),c=ui.cur&&ui.curPane===pn.i?ui.cur:null;if(!S.length)return;
+  ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.4;ctx.beginPath();S.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));if(c)ctx.lineTo(c.x,c.y);ctx.stroke();
+  for(const q of S){ctx.beginPath();ctx.arc(q[0],q[1],3,0,Math.PI*2);ctx.fill()}}
+
+/* ---- the Text tool in a 3D view: with a leader, the point of its arrow on the model first (and its elbow), then where the text goes; the view is locked for it ---- */
+const t3Need=()=>{const m=ui.opt.textLead||'none';return m==='two'?2:m==='one'?1:0};
+function text3Click(pn,v,p){const A=ui.t3&&ui.t3.v===v.id?ui.t3:(ui.t3={v:v.id,pts:[]});
+  if(A.pts.length<t3Need()){const q=A.pts.length?ann3Plane(pn,v,p):ann3Surf(pn,v,p);if(!q)return;A.pts.push(q);hint();redraw();return}
+  const L=A.pts.slice(),at={x:p.x,y:p.y};ui.t3=null;
+  openInline(pn,p.x,p.y,'',val=>{const s=val.trim();if(!s){refresh();return}const was=lk3On(v);
+    edit(()=>{if(!was)lk3Lock(v,pn);const F=ann3Frame(pn,v),pm=F.k*F.sc,r=x=>Math.round(x*100)/100,q0=L[0]||ann3Plane(pn,v,at)||[0,0,0],G=ann3Prj(F.M,q0,pn.w,pn.h)||[at.x,at.y],
+        o={id:P.seq++,cat:'text3',view:v.id,p:q0.slice(),o:L.length?[r((at.x-G[0])/pm),r((at.y-G[1])/pm)]:[0,0],text:s.slice(0,2000)},TL=P.types.text||[],T=TL.find(x=>x.id===defs('text').type)||TL[0],ha=ui.opt.textHa;
+      if(T){o.type=T.id;o.size=T.tsz}if(ha==='c'||ha==='r')o.ha=ha;
+      if(L.length){o.lead=true;const E=L[1]&&ann3Prj(F.M,L[1],pn.w,pn.h);if(E)o.elb=[r((E[0]-G[0])/pm),r((E[1]-G[1])/pm)]}P.ann.push(o)});
+    if(!was)toast(t('an3_auto'),7000)},true,true);refresh()}
+XT3.text={ok:v=>lk3Able(v),click:text3Click,draw:(pn,ctx,v)=>{const A=ui.t3;if(A&&A.v===v.id)ann3Rubber(pn,ctx,v,A.pts)},
+  hint:v=>{const n=ui.t3&&ui.t3.v===v.id?ui.t3.pts.length:0;return n<t3Need()?t(n?'h_tlead2':'h_tlead1')+(n?'':' · '+t('an3_tsurf')):t(lk3On(v)?'an3_th':'an3_th0')}};
+
+/* ---- Spot Elevation and Spot Coordinate in a 3D view: a click on a face of the model, a click where the symbol goes ---- */
+/* where the symbol stands from the point, in millimetres of paper: on the point when the second click is close to the first */
+const spot3O=(dx,dy)=>Math.hypot(dx,dy)<1.5?[0,0]:[Math.round(dx*100)/100,Math.round(dy*100)/100];
+/* the level a relative spot is measured from when it is placed: the highest at or below its point */
+function spot3RelBase(d){const q=ann3Pt(d),z=q?q[2]:0,L=sortedLevels(P);let b=L[0];for(const l of L)if(l.elev<=z+1)b=l;return b?b.id:0}
+function spot3Click(pn,v,p){if(ui.opt.spotK==='slope'){toast(t('sp3_noslope'),6000);return}const A=ui.s3&&ui.s3.v===v.id?ui.s3:null;
+  if(!A){const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id),B=e&&P.els.includes(e)?elBox3(e.id):null;if(!B||!pk.p){toast(t('sp3_pick'));return}
+    const q=pk.p,fr=(c,a,b)=>b-a>1?Math.round(clamp((c-a)/(b-a),0,1)*1e5)/1e5:0.5,S=ui.s3={cat:'spot3',v:v.id,view:v.id,el:e.id,a:[fr(q[0],B[0],B[3]),fr(q[2],B[1],B[4]),fr(q[1],B[2],B[5])]};
+    if(ui.opt.spotK==='coord')S.k='coord';const so=ui.opt.spOrg;if(so==='sp'||so==='rel'){S.org=so;if(so==='rel')S.rb=spot3RelBase(S)}ui.hov=null;hint();redraw();return}
+  const F=ann3Frame(pn,v),q=ann3Pt(A),G=q&&ann3Prj(F.M,q,pn.w,pn.h);ui.s3=null;if(!G){refresh();return}const pm=F.k*F.sc,o=spot3O((p.x-G[0])/pm,(p.y-G[1])/pm),was=lk3On(v);
+  edit(()=>{if(!was)lk3Lock(v,pn);const d={id:P.seq++,cat:'spot3',view:v.id,el:A.el,a:A.a.slice(),o};for(const k of ['k','org','rb'])if(A[k]!=null)d[k]=A[k];P.ann.push(d)});
+  if(!was)toast(t('an3_auto'),7000);hint()}
+/* the spot as it will be, at the pointer */
+function spot3Preview(pn,ctx,v){const A=ui.s3;if(!A||A.v!==v.id)return;const F=ann3Frame(pn,v),q=ann3Pt(A),G=q&&ann3Prj(F.M,q,pn.w,pn.h);if(!G)return;const c=ui.cur&&ui.curPane===pn.i?ui.cur:null,pm=F.k*F.sc,a=[G[0]/F.k,G[1]/F.k],
+    d=Object.assign({},A,{o:c?spot3O((c.x-G[0])/pm,(c.y-G[1])/pm):[0,0]});spot3Paint(painter(ctx,{s:F.k,ox:0,oy:0},F.sc,C,ui.thin),C,C.sel,d,a,spot3Geo(d,a,q,F.sc))}
+{const X=XT3.spot,ok0=X.ok,ck0=X.click,hv0=X.hov,dr0=X.draw,hn0=X.hint;X.ok=v=>ok0(v)||lk3Able(v);
+  X.click=function(pn,v,p){return v&&v.kind==='3d'?spot3Click(pn,v,p):ck0.apply(this,arguments)};
+  X.hov=function(pn,v,p){if(!v||v.kind!=='3d')return hv0.apply(this,arguments);if(ui.s3&&ui.s3.v===v.id)return null;const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id);return e&&P.els.includes(e)?e.id:null};
+  X.draw=function(pn,ctx,v,nav){if(!v||v.kind!=='3d')return dr0.apply(this,arguments);spot3Preview(pn,ctx,v)};
+  X.hint=v=>v&&v.kind==='3d'?t(ui.opt.spotK==='slope'?'sp3_noslope':ui.s3&&ui.s3.v===v.id?'sp3_h2':!lk3On(v)?'sp3_h0':ui.opt.spotK==='coord'?'sp3_h1c':'sp3_h1'):hn0(v)}
+/* the Elevation Origin of the options bar for a spot coordinate of a 3D view too (it has an elevation) */
+{const f0=renderOptbar;renderOptbar=()=>{f0();const v=activeView();if(ui.tool!=='spot'||ui.opt.spotK!=='coord'||!v||v.kind!=='3d')return;const ob=$('#optbar'),o=ui.opt.spOrg||'';if(!ob||$('#opt_spOrg'))return;
+  ob.insertAdjacentHTML('beforeend',`<label for="opt_spOrg">${t('sp_org')}</label><select data-opt="spOrg" id="opt_spOrg">${[['','sp_org_pb'],['sp','sp_org_sp'],['rel','sp_org_rel']].map(q=>`<option value="${q[0]}"${o===q[0]?' selected':''}>${t(q[1])}</option>`).join('')}</select>`)}}
+/* Escape takes back the points picked so far first */
+{const f0=cancelTool;cancelTool=hard=>{if(!hard&&!ui.inl&&((ui.t3&&ui.t3.pts.length)||ui.s3)){ui.t3=null;ui.s3=null;refresh();return}ui.t3=null;ui.s3=null;f0(hard)}}
+{const f0=setTool;setTool=(tool,silent)=>{ui.t3=null;ui.s3=null;f0(tool,silent)}}
+XS.push(()=>{ui.t3=null;ui.s3=null});
+/* Unlock View hides them with the tags; what was picked of them is let go */
+{const f0=XA.lk3unlock;XA.lk3unlock=function(arg){const pn=lk3Pane(arg),v=pn&&paneView(pn.i),on=lk3On(v);f0.apply(this,arguments);if(!on||lk3On(v))return;
+  ui.sel=new Set([...ui.sel].filter(id=>{const d=IDX.get(id);return!(d&&A3K.has(d.cat)&&d.view===v.id)}));if(ann3Of(v).length){refresh();toast(t('an3_unlocked'),6000)}}}
+
+/* ---- Properties ---- */
+XP.push((c,els)=>{if(c!=='text3')return'';const L=P.types.text||[],t0=txT(els[0]),same=els.every(d=>txT(d).id===t0.id),V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};
+  return PR.grp('g_identity')+PR.sel('tx3type','type',same?t0.id:'',L.map(x=>[x.id,x.name]))+`<div class="pa"><button class="btn" data-act="etexttype">${t('edit_type')}</button></div>`+PR.grp('g_text')+PR.area('tx3text','p_text',V(x=>x.text||''))
+    +PR.grp('g_graphics')+PR.chk('tx3lead','p_leader',V(x=>!!x.lead)===true)+PR.sel('tx3ha','p_talign',V(x=>x.ha||'l'),[['l',t('tha_l')],['c',t('tha_c')],['r',t('tha_r')]])+`<div class="pnote">${t('n_text3')}</div>`});
+XF.push((c,o,key,raw)=>{if(c!=='text3')return false;
+  if(key==='tx3type'){const T=(P.types.text||[]).find(x=>x.id===+raw);if(T){o.type=T.id;o.size=T.tsz}return true}
+  if(key==='tx3text'){const s=String(raw==null?'':raw).trim();if(s)o.text=s.slice(0,2000);return true}
+  if(key==='tx3ha'){const Y=()=>txLay(Object.assign({},o,{cat:'text',x:0,y:0}),1,TEXT_LH),A=Y();if(raw==='c'||raw==='r')o.ha=raw;else delete o.ha;const B=Y(),u=tag3O(o);          // the lines stay where they are
+    o.o=[Math.round((u[0]+A.a0-B.a0)*100)/100,u[1]];return true}
+  if(key==='tx3lead'){if(!raw){delete o.lead;delete o.elb;return true}if(o.lead)return true;o.lead=true;const u=tag3O(o),v=viewById(o.view);
+    if(Math.hypot(u[0],u[1])<0.5&&v&&v.lk3&&Array.isArray(o.p)){o.p=ann3Move(v,o.p,-9,7);o.o=[9,-7]}return true}          // a text on its point: the arrow goes 9 mm left and 7 mm below it, the text stays
+  return false});
+XP.push((c,els)=>{if(c!=='spot3')return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},one=els.length===1?els[0]:null,e=one&&IDX.get(one.el),q=one&&ann3Pt(one);let h='';
+  if(e)h+=PR.grp('g_identity')+PR.ro('sp_host',elName(e))+(q?PR.ro('p_text',spot3Lines(one,q).join(' / ')):'');
+  if(els.every(d=>{const x=IDX.get(d.el);return!!x&&(SP_RUN.has(x.cat)||x.cat==='beam')}))h+=PR.sel('sp3zk','sp_zk',V(d=>spZk(IDX.get(d.el),d)),['c','t','b','tb'].map(k=>[k,t('sp_zk_'+k)]));
+  const o=V(x=>x.org==='sp'||x.org==='rel'?x.org:'pb');
+  return h+PR.grp('g_constraints')+PR.sel('sp3org','sp_org',o,[['pb',t('sp_org_pb')],['sp',t('sp_org_sp')],['rel',t('sp_org_rel')]])+(o==='rel'?PR.sel('sp3rb','sp_rb',V(x=>lvl(P,x.rb)?x.rb:''),lvOpts()):'')
+    +PR.grp('g_text')+PR.text('sp3ind','sp_ind',V(x=>x.ind||''))+PR.grp('g_graphics')+PR.chk('sp3lead','p_leader',V(x=>Math.hypot(...tag3O(x))>=0.5)===true)+`<div class="pnote">${t('n_spot3')}</div>`});
+XF.push((c,o,key,raw)=>{if(c!=='spot3')return false;
+  if(key==='sp3zk'){if(['c','t','b','tb'].includes(raw))o.zk=raw;return true}
+  if(key==='sp3org'){if(raw==='sp'){o.org='sp';delete o.rb}else if(raw==='rel'){o.org='rel';if(!lvl(P,o.rb))o.rb=spot3RelBase(o)}else{delete o.org;delete o.rb}return true}
+  if(key==='sp3rb'){const l=lvl(P,+raw);if(l&&o.org==='rel')o.rb=l.id;return true}
+  if(key==='sp3ind'){const s=String(raw||'').trim().slice(0,12);if(s)o.ind=s;else delete o.ind;return true}
+  if(key==='sp3lead'){const u=tag3O(o);o.o=!raw?[0,0]:Math.hypot(u[0],u[1])>=0.5?u.slice():[7,-7];return true}
+  return false});
+
+/* ---- on a sheet: in millimetres of paper, at the view's scale, after its tags ---- */
+function ann3Paper(ctx,g,V,B,x0,y0,col){const D=ann3List(V);if(!D.length)return;const asp=B.w/B.h,M=camMatrix(orbitCam(lk3Nav(V,asp),asp),MSm().bb),X=g.X,Y=g.Y,was=ctx.layerNow?ctx.layerNow():null;
+  ctx.save();ctx.beginPath();ctx.rect(X(x0),Y(y0),X(x0+B.w)-X(x0),Y(y0+B.h)-Y(y0));ctx.clip();
+  for(const d of D){const q=ann3Pt(d);if(!q||!ann3Shown(V,d))continue;const G=ann3Prj(M,q,B.w,B.h);if(!G)continue;const a=[x0+G[0],y0+G[1]];g.lay(A3CAT[d.cat]);g.el(d);
+    if(d.cat==='text3')drawText(g,text3As(d,a,1),col,null);else if(d.cat==='knote3')knPaint(g,d,V,kn3At(d,a,1),a,col,null);else spot3Paint(g,col,null,d,a,spot3Geo(d,a,q,1))}
+  ctx.restore();if(was)ctx.layer(was[0],was[1])}
+{const f0=vpTitle;vpTitle=function(ctx,g,sh,vp,V,B,x0,y0,NOS,col){f0.apply(this,arguments);if(lk3On(V))ann3Paper(ctx,g,V,B,x0,y0,col)}}
+
+/* ---- kept valid: of a 3D view that can be locked; a spot on an element that is there; a text of words, of a text type ---- */
+XC.push(()=>{if(!P.ann.some(d=>A3K.has(d.cat)))return;const vs=new Map(P.views.filter(v=>v.kind==='3d').map(v=>[v.id,v])),E=new Set(P.els.map(e=>e.id)),f=(x,lo,hi,d)=>x!=null&&x!==''&&isFinite(+x)?clamp(+x,lo,hi):d,
+    ok3=a=>Array.isArray(a)&&a.length===3&&a.every(x=>x!=null&&x!==''&&isFinite(+x)),ok2=a=>Array.isArray(a)&&a.length===2&&a.every(x=>x!=null&&x!==''&&isFinite(+x)),r2=x=>Math.round(f(x,-1000,1000,0)*100)/100;
+  P.ann=P.ann.filter(d=>{if(!A3K.has(d.cat))return true;const v=vs.get(d.view);if(!v||!lk3Able(v))return false;return d.cat!=='text3'?E.has(d.el):ok3(d.p)&&!!String(d.text==null?'':d.text).trim()});
+  const TL=P.types.text||[];
+  for(const d of P.ann){if(!A3K.has(d.cat))continue;d.o=ok2(d.o)?d.o.map(r2):[0,0];
+    if(d.cat==='text3'){d.p=d.p.map(x=>Math.round(+x));d.text=String(d.text).slice(0,2000);let T=d.type!=null?TL.find(x=>x.id===d.type):null;
+      if(!T&&TL.length){const sz=+d.size>0?Math.round(+d.size*100)/100:2.5;T=TL.find(x=>x.tsz===sz&&txPlain(x))||TL[0]}if(T){d.type=T.id;d.size=T.tsz}
+      if(d.ha!=null&&d.ha!=='c'&&d.ha!=='r')delete d.ha;if(d.lead!=null&&d.lead!==true)delete d.lead;if(!d.lead||!ok2(d.elb))delete d.elb;else d.elb=d.elb.map(r2);continue}
+    d.a=ok3(d.a)?d.a.map(x=>Math.round(f(x,0,1,0.5)*1e5)/1e5):A3C.slice();if(d.cat!=='spot3')continue;if(d.k!=null&&d.k!=='coord')delete d.k;if(d.zk!=null&&!['c','t','b','tb'].includes(d.zk))delete d.zk;
+    if(d.org!=='sp'&&d.org!=='rel')delete d.org;if(d.org==='rel'&&!lvl(P,+d.rb))d.rb=spot3RelBase(d);if(d.org==='rel')d.rb=+d.rb;else delete d.rb;
+    if(d.ind!=null){const s=typeof d.ind==='string'?d.ind.trim().slice(0,12):'';if(s)d.ind=s;else delete d.ind}}});
+/* Purge Unused: a text type that texts of 3D views use is in use */
+{const f0=purgeable;purgeable=Q=>{const A=Q.ann||[];return f0(Q).filter(it=>!(it.g==='type'&&it.cat==='text'&&A.some(d=>d.cat==='text3'&&d.type===it.id)))}}
+Object.assign(STR,{
+  lk3_saved:['ล็อกมุมมองแล้ว · ซูมและเลื่อนได้ แต่หมุนไม่ได้ · ใส่ป้าย ข้อความ และค่าระดับในมุมมองนี้ได้','View locked · it zooms and pans but does not orbit · tags, text notes and spot elevations can be placed in it now'],
+  an3_auto:['ล็อกมุมมองให้แล้ว ข้อความ ค่าระดับ และป้ายจึงอยู่กับที่ · ปลดล็อกได้ที่ปุ่มกุญแจบนแถบล่างของมุมมอง','The view was locked so that its annotations hold their place · unlock it with the padlock in the bar at the bottom of the view'],
+  an3_unlocked:['ปลดล็อกแล้ว หมุนได้ · ป้าย ข้อความ และค่าระดับของมุมมองนี้ซ่อนไว้ จะกลับมาเมื่อคืนมุมกล้องและล็อก','Unlocked; the view orbits again · its tags, text notes and spots are hidden and come back with Restore Orientation and Lock View'],
+  an3_th:['คลิกตำแหน่งข้อความ แล้วพิมพ์ · Shift+Enter ขึ้นบรรทัดใหม่ · ข้อความวางตรงกับหน้าจอ อ่านได้เสมอ','Click a position, then type · Shift+Enter starts a new line · the text stands square to the view, so it always reads'],
+  an3_th0:['มุมมองนี้ยังไม่ล็อก · คลิกตำแหน่งแล้วพิมพ์ข้อความ โปรแกรมจะล็อกมุมมองให้','This view is not locked yet · click a position and type: the view is locked for you'],
+  an3_tsurf:['คลิกบนชิ้นงาน หัวลูกศรจะชี้ที่ผิวของชิ้นนั้น','click on the model and the arrow points at its face'],
+  sp3_h0:['มุมมองนี้ยังไม่ล็อก · คลิกผิวชิ้นงานที่จะอ่านค่า แล้วคลิกที่วางสัญลักษณ์ โปรแกรมจะล็อกมุมมองให้','This view is not locked yet · click a face of the model, then where the symbol goes: the view is locked for you'],
+  sp3_h1:['คลิกผิวชิ้นงานที่จะอ่านค่าระดับ (ท่อ ท่อลม และคานอ่านแนวกึ่งกลาง ขอบบน หรือขอบล่าง)','Click a face of the model to read its elevation (a pipe, a duct or a beam reads its centre line, top or foot)'],
+  sp3_h1c:['คลิกผิวชิ้นงานที่จะอ่านค่าพิกัด N E และระดับ','Click a face of the model to read its northing, easting and elevation'],
+  sp3_h2:['คลิกที่วางสัญลักษณ์ (คลิกใกล้จุดเดิมถ้าไม่ต้องการเส้นชี้)','Click where the symbol goes (click near the point for no leader)'],
+  sp3_pick:['คลิกบนผิวชิ้นงานในมุมมอง','Click a face of the model in the view'],
+  sp3_noslope:['ความลาด ณ จุด ใช้ในแปลน รูปด้าน และรูปตัด · ในมุมมอง 3 มิติใช้ ระดับ ณ จุด หรือ พิกัด ณ จุด','Spot Slope works in plans, elevations and sections · in a 3D view use Spot Elevation or Spot Coordinate'],
+  n_text3:['ข้อความในมุมมอง 3 มิติที่ล็อก วางตรงกับหน้าจอ ลากเพื่อย้าย ดับเบิลคลิกเพื่อแก้ข้อความ · ซ่อนไว้ระหว่างที่มุมมองปลดล็อก','A text of a locked 3D view, square to the view: drag it to move it, double-click it to edit its words · hidden while the view is unlocked'],
+  n_spot3:['ค่าระดับในมุมมอง 3 มิติที่ล็อก อ่านค่าที่จุดบนชิ้นงานและตามชิ้นงานไปเมื่อย้าย ลากเพื่อย้ายสัญลักษณ์ · ซ่อนไว้ระหว่างที่มุมมองปลดล็อก','A spot of a locked 3D view: it reads the point of its element and goes with it when it moves; drag it to move the symbol · hidden while the view is unlocked'],
+  cat_text3:['ข้อความ','Text Notes'],cat_spot3:['ระดับ ณ จุด','Spot Elevations']});
+/* ===== 126 keynotes in elevations, sections and locked 3D views (V1.126; Revit: Annotate › Tag › Keynote — Element and User — used in an elevation, a section
+   or a locked 3D view, counted by the Keynote Legend and numbered by sheet with those of the plans) =====
+   In an elevation or a section {cat:'eknote', view, el, x, y (the middle of the tag), x2, y2 (the point its arrow is on), lead?, uk?, ks?, ax, ay, x0, y0}, in the
+   coordinates of the view, kept with its element as its material tags are; in a 3D view {cat:'knote3', view, el, a:[fx, fy, fz] (the point of its arrow as fractions
+   of the box of its element), o:[dx, dy] (the middle of the tag from there, in millimetres of paper), lead?, uk?, ks?}, shown while the view is locked, as its
+   tags and texts are.  Either shows the keynote of the type of its element, or its own (uk), as a keynote tag of a plan does. */
+EA_CAT.eknote='knote';PH_NO.add('eknote');A3K.add('knote3');A3CAT.knote3='knote';
+/* the middle of a keynote tag of a 3D view whose point falls at a, in a frame where a millimetre of paper is sc */
+function kn3At(d,a,sc){const o=tag3O(d);return[a[0]+o[0]*sc,a[1]+o[1]*sc]}
+
+/* ---- in an elevation or a section: drawn over the view (on the layer of keynotes in DXF), picked as its other annotations are ---- */
+{const f0=eaDraw;eaDraw=(ctx,g,v,col,hl,o)=>{f0(ctx,g,v,col,hl,o);const D=eaList(v).filter(d=>d.cat==='eknote');if(!D.length)return;const was=ctx.layerNow?ctx.layerNow():null;g.lay('knote');
+  for(const d of D){const e=IDX.get(d.el);if(!etgShown(v,d,e))continue;g.el(d);knPaint(g,d,viewById(d.view)||v,[d.x,d.y],[d.x2,d.y2],col,hl(d.id))}if(was)ctx.layer(was[0],was[1])}}
+{const f0=eaHit;eaHit=(v,p,nav)=>{const h=f0(v,p,nav);if(h||ui.tool!=='modify')return h;const sc=v.scale||100,w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};
+  for(const d of eaList(v)){if(d.cat!=='eknote')continue;const e=IDX.get(d.el);if(etgShown(v,d,e)&&knDistAt(d,viewById(d.view)||v,[d.x,d.y],[d.x2,d.y2],w,sc)*nav.s<4)return{id:d.id,part:'ann'}}return null}}
+
+/* ---- the Keynote tool in an elevation, a section or a 3D view: a click on an element; the arrow on the point clicked, the tag beside it (on it without a leader) ---- */
+function eknClick(pn,v,p){const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id);if(!knCan(e)||!P.els.includes(e)||!ev3Box(v,e)){toast(t('kn_pick'));return}
+  const n=navOf(v),sc=v.scale||100,lead=ui.opt.knLead!==false,ks=KN_STYLES.includes(ui.opt.knStyle)?ui.opt.knStyle:'num',w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s},
+    o={id:0,cat:'eknote',view:avid(v),el:e.id,x:Math.round(w.x+(lead?8*sc:0)),y:Math.round(w.y-(lead?8*sc:0)),x2:Math.round(w.x),y2:Math.round(w.y)};
+  if(lead)o.lead=true;if(ks!=='num')o.ks=ks;knPlace(e,o)}
+/* in a 3D view the arrow is on the face clicked; a view that is not locked yet is locked for it in the same step */
+function kn3Click(pn,v,p){const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id),B=knCan(e)&&P.els.includes(e)?elBox3(e.id):null;if(!B||!pk.p){toast(t('kn_pick'));return}
+  const q=pk.p,fr=(c,a,b)=>b-a>1?Math.round(clamp((c-a)/(b-a),0,1)*1e4)/1e4:0.5,lead=ui.opt.knLead!==false,ks=KN_STYLES.includes(ui.opt.knStyle)?ui.opt.knStyle:'num',
+    o={id:0,cat:'knote3',view:v.id,el:e.id,a:[fr(q[0],B[0],B[3]),fr(q[2],B[1],B[4]),fr(q[1],B[2],B[5])],o:lead?[8,-8]:[0,0]},was=lk3On(v);
+  if(lead)o.lead=true;if(ks!=='num')o.ks=ks;
+  knPlace(e,o,()=>{const x=viewById(v.id);if(x&&!lk3On(x))lk3Lock(x,pn)},()=>{if(!was)toast(t('an3_auto'),7000)})}
+XT3.knote={ok:v=>ev3EV(v)||lk3Able(v),click:(pn,v,p)=>v.kind==='3d'?kn3Click(pn,v,p):eknClick(pn,v,p),
+  hov(pn,v,p){const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id);return knCan(e)&&P.els.includes(e)?e.id:null},
+  hint:v=>t(v.kind!=='3d'?'kn_hev':lk3On(v)?'kn_h3':'kn_h30')};
+
+/* ---- kept with their elements: an elevation's as its material tags (the point of the arrow moves with its element; a copy goes with the copy of its element),
+   a 3D view's as its tags ---- */
+XC.push(()=>{if(!P.ann.some(d=>d.cat==='eknote'||d.cat==='knote3'))return;const E=new Map(P.els.map(e=>[e.id,e])),f=x=>x!=null&&x!==''&&isFinite(+x);
+  P.ann=P.ann.filter(d=>(d.cat!=='eknote'&&d.cat!=='knote3')||(knCan(E.get(d.el))&&(d.cat==='knote3'||[d.x,d.y,d.x2,d.y2].every(f))));
+  for(const d of P.ann){if(d.cat!=='eknote'&&d.cat!=='knote3')continue;if(d.cat==='eknote')for(const k of ['x','y','x2','y2'])d[k]=+d[k];
+    if(d.uk!=null&&!knKeyOk(d.uk))delete d.uk;if(d.ks!=null&&d.ks!=='box'&&d.ks!=='text')delete d.ks;if(d.lead)d.lead=true;else delete d.lead}});
+
+/* ---- Properties: those of a keynote tag of a plan; the leader turned on moves a tag that stands on its point aside, so that the leader shows ---- */
+XP.push((c,els)=>{if(c!=='eknote'&&c!=='knote3')return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};return knRows(els,V)});
+XF.push((c,o,key,raw)=>{if(c!=='eknote'&&c!=='knote3')return false;if(knField(o,key,raw))return true;if(key!=='lead')return false;
+  if(!raw){delete o.lead;return true}if(o.lead)return true;o.lead=true;
+  if(c==='knote3'){const u=tag3O(o);if(Math.hypot(u[0],u[1])<0.5)o.o=[8,-8];return true}
+  const v=viewById(o.view),k=8*((v&&v.scale)||100);if(Math.abs(o.x-o.x2)<1&&Math.abs(o.y-o.y2)<1){o.x=Math.round(o.x2+k);o.y=Math.round(o.y2-k)}return true});
+/* Create Similar: the Keynote tool set as the one selected */
+{const f0=createSimilar;createSimilar=()=>{const e=IDX.get([...ui.sel][0]);if(!e||(e.cat!=='eknote'&&e.cat!=='knote3'))return f0();
+  ui.opt.knKind=e.uk?'user':'el';ui.opt.knStyle=e.ks||'num';ui.opt.knLead=!!e.lead;if(e.uk)ui.opt.knLast=e.uk;setTool('knote')}}
+Object.assign(STR,{
+  kn_hev:['คลิกชิ้นงานในรูปด้านหรือรูปตัดที่จะใส่ Keynote หัวลูกศรชี้จุดที่คลิก · Esc จบ','Click the element of the elevation or the section the keynote is for; its arrow points where you click · Esc to finish'],
+  kn_h3:['คลิกชิ้นงานในมุมมอง 3 มิติที่จะใส่ Keynote หัวลูกศรชี้ผิวชิ้นงานตรงที่คลิก · Esc จบ','Click the element of the 3D view the keynote is for; its arrow points at the face you click · Esc to finish'],
+  kn_h30:['มุมมองนี้ยังไม่ล็อก · คลิกชิ้นงานที่จะใส่ Keynote แล้วโปรแกรมจะล็อกมุมมองให้','This view is not locked yet · click the element the keynote is for and the view is locked for you'],
+  lk3_saved:['ล็อกมุมมองแล้ว · ซูมและเลื่อนได้ แต่หมุนไม่ได้ · ใส่ป้าย Keynote ข้อความ และค่าระดับในมุมมองนี้ได้','View locked · it zooms and pans but does not orbit · tags, keynotes, text notes and spot elevations can be placed in it now'],
+  an3_unlocked:['ปลดล็อกแล้ว หมุนได้ · ป้าย Keynote ข้อความ และค่าระดับของมุมมองนี้ซ่อนไว้ จะกลับมาเมื่อคืนมุมกล้องและล็อก','Unlocked; the view orbits again · its tags, keynotes, text notes and spots are hidden and come back with Restore Orientation and Lock View'],
+  cat_eknote:['ป้าย Keynote','Keynote Tags'],cat_knote3:['ป้าย Keynote','Keynote Tags']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -24150,6 +24408,9 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.121 · พิกัดร่วม (Revit: Manage › Project Location › Coordinates): แผง [[p_projloc]] ในแท็บ [[tab_manage]] มี [[a_shcacq]] [[t_shcspec]] [[t_shcrep]] และ [[t_shcmove]] · ลิงก์ DXF, IFC, Point Cloud และนำเข้าจุดผิวดิน วางตามพิกัดร่วมได้ · ระดับ ณ จุด วัดจากหมุดสำรวจหรือจากชั้นได้ พร้อมคำนำหน้าค่าระดับ
 - V1.122 · ส่งออกตามพิกัดร่วม: IFC เลือกจุดอ้างอิงพิกัด (ภายใน จุดฐาน หมุดสำรวจ พิกัดร่วม) พร้อม IfcMapConversion ตามระบบ EPSG · ลิงก์ IFC อ่าน IfcMapConversion · DXF ของแปลนเป็นพิกัดร่วม เมตรหรือมิลลิเมตร · [[t_shcrtn]]
 - V1.123 · โครงถักใน IFC: คอร์ดบน คอร์ดล่าง และชิ้นค้ำแต่ละชิ้นเป็น IfcMember ของโครงถัก (IfcElementAssembly ชนิด TRUSS) พร้อมหน้าตัดและความยาว แบบเดียวกับ Revit
+- V1.124 · แก้: คลิกในมุมมอง 3 มิติเลือกชิ้นงานได้อีกครั้ง และชิ้นงานที่ชี้อยู่สว่างขึ้น (ตั้งแต่ V1.114 การคลิกในมุมมอง 3 มิติเปิดหน้าต่างเลือกไฟล์ของ โหลดกลุ่ม แทน)
+- V1.125 · ข้อความ ระดับ ณ จุด และพิกัด ณ จุด ในมุมมอง 3 มิติที่ล็อก (แบบ Revit): ข้อความมีเส้นชี้ชี้ผิวชิ้นงาน วางตรงกับหน้าจอ · ค่าระดับอ่านจุดบนผิวชิ้นงาน ท่อ ท่อลม และคานอ่าน CL/TOP/BOT และตามชิ้นงานไปเมื่อย้าย · ค่าพิกัดอ่าน N E และระดับ · แสดงบนแผ่นงานตามมาตราส่วน ใน PDF และ DXF
+- V1.126 · Keynote ในรูปด้าน รูปตัด และมุมมอง 3 มิติที่ล็อก (แบบ Revit): คลิกชิ้นงาน หัวลูกศรชี้จุดที่คลิก ป้ายแสดง Keynote ของชนิดหรือที่กำหนดเอง เป็นรหัส รหัสในกรอบ หรือข้อความ · ป้ายตามชิ้นงานไปเมื่อย้าย · คำอธิบาย Keynote นับรวมกับแปลน และเลขตามแผ่นงานนับทุกมุมมองบนแผ่นงาน · แสดงบนแผ่นงาน ใน PDF และ DXF
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -24375,6 +24636,9 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.121 · Shared coordinates (Revit: Manage › Project Location › Coordinates): the [[p_projloc]] panel on the [[tab_manage]] tab has [[a_shcacq]], [[t_shcspec]], [[t_shcrep]] and [[t_shcmove]] · DXF, IFC and point cloud links and Import Points can be placed by shared coordinates · spot elevations can be measured from the survey point or from a level, with an elevation indicator
 - V1.122 · Export in shared coordinates: IFC Coordinate Base (internal, project base point, survey point, shared) with IfcMapConversion to an EPSG system · Link IFC reads IfcMapConversion · DXF of plans in shared coordinates, in metres or millimetres · [[t_shcrtn]]
 - V1.123 · Trusses in IFC: each top chord, bottom chord and web is an IfcMember of its truss (an IfcElementAssembly of type TRUSS), with its section and length, as Revit exports them
+- V1.124 · Fix: a click in a 3D view picks the element again, and what is under the pointer lights up (since V1.114 a click in a 3D view opened the file picker of Load as Group instead)
+- V1.125 · Text notes, spot elevations and spot coordinates in locked 3D views, as in Revit: texts square to the view with leaders that point at faces of the model · spots that read a point of the model (CL, TOP or BOT of a pipe, a duct or a beam) and go with their elements · spot coordinates with the northing, the easting and the elevation · on sheets at the view's scale, in PDF and in DXF
+- V1.126 · Keynotes in elevations, sections and locked 3D views, as in Revit: click an element and the arrow points where you click; the tag shows the keynote of its type or one of its own, as the key, the key in a box or the text · it goes with its element · the Keynote Legend counts them with the plans', and By Sheet numbering counts every view on the sheet · on sheets, in PDF and in DXF
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -24481,7 +24745,9 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[a_tags]]: เปิดปิดการแสดงป้ายของมุมมอง (ป้ายห้องไม่ขึ้นกับปุ่มนี้)
 - [[t_tag]] ในรูปด้านและรูปตัด: คลิกท่อ ประตู คาน หรืออุปกรณ์ ป้ายตามชิ้นงานไปเมื่อย้าย · ชนิดป้าย (แก้ชนิด › แก้ป้ายกำกับ): แสดงหลายค่าต่อกัน เช่น ขนาดท่อ + ระดับ CL หรือระบบ + ขนาด หรือขึ้นบรรทัดใหม่ ใส่ข้อความหน้าและหลังได้ เลือกรูปกรอบ ขนาดตัวอักษร ตัวหนา · ป้ายแนวตั้ง: เลือกที่แถบตัวเลือกหรือแผงคุณสมบัติ
 - [[t_tag]] ในมุมมอง 3 มิติ: คลิกท่อ ท่อลม อุปกรณ์ ประตู หรือผนัง ถ้ามุมมองยังไม่ล็อก โปรแกรมจะล็อกให้ · ป้ายตามชิ้นงานไปเมื่อย้ายหรือยืด ลากป้ายเพื่อจัดตำแหน่ง ดับเบิลคลิกเพื่อแก้เลขกำกับ · [[a_tagall]] ในมุมมอง 3 มิติที่ล็อก ติดป้ายทุกชิ้นในกรอบที่ยังไม่มีป้าย เช่น ท่อทั้งระบบในภาพไอโซเมตริก
+- [[t_text]] [[t_spot]] และ [[a_spotcoord]] ในมุมมอง 3 มิติ: ข้อความวางตรงกับหน้าจอ อ่านได้เสมอ ตั้ง [[p_leader]] 1 หรือ 2 ท่อนที่แถบตัวเลือก แล้วคลิกผิวชิ้นงานที่หัวลูกศรจะชี้ก่อน · ค่าระดับ: คลิกผิวชิ้นงาน แล้วคลิกที่วางสัญลักษณ์ ท่อ ท่อลม และคานเลือก [[sp_zk]] ได้ ตั้ง [[sp_org]] ได้ ค่าตามชิ้นงานไปเมื่อย้าย · ค่าพิกัดอ่าน N E และระดับ · ถ้ามุมมองยังไม่ล็อก โปรแกรมจะล็อกให้ · ลากเพื่อย้าย ดับเบิลคลิกข้อความเพื่อแก้ · แสดงบนแผ่นงานพร้อมป้าย ใน PDF และ DXF
 - Keynote (แผง [[p_keynote]]): ตาราง Keynote ของโครงการเก็บรหัสกับข้อความ เช่น 04.A1 ผนังก่ออิฐมอญ · [[a_knel]]: คลิกบนองค์ประกอบ ป้ายจะแสดง Keynote ของชนิดขององค์ประกอบนั้น ชนิดที่ยังไม่มี Keynote โปรแกรมจะให้เลือกจากตารางเมื่อใส่ครั้งแรก (แก้ทีหลังได้ที่ [[edit_type]] ช่อง Keynote) · [[a_knuser]]: คลิกบนองค์ประกอบแล้วเลือก Keynote ให้ป้ายนั้นเอง ไม่เกี่ยวกับชนิด · แถบตัวเลือกมี [[p_leader]] และ [[p_knstyle]] (รหัส รหัสในกรอบ หรือข้อความ) · ลากป้ายเพื่อย้าย ลากปลายลูกศรเพื่อชี้จุดอื่น ดับเบิลคลิกเพื่อเปลี่ยน Keynote
+- Keynote ในรูปด้าน รูปตัด และมุมมอง 3 มิติ: ใช้ [[a_knel]] หรือ [[a_knuser]] ในมุมมองนั้นได้เลย คลิกชิ้นงาน หัวลูกศรชี้จุดที่คลิก (ในมุมมอง 3 มิติชี้ผิวชิ้นงาน และถ้ามุมมองยังไม่ล็อก โปรแกรมจะล็อกให้) · ป้ายตามชิ้นงานไปเมื่อย้าย ลากเพื่อย้ายป้าย ดับเบิลคลิกเพื่อเปลี่ยน Keynote · [[a_knlegend]] นับรวมกับแปลน และเลขตามแผ่นงานนับทุกมุมมองบนแผ่นงานนั้น
 - [[a_knset]]: แก้ตาราง (รหัส ข้อความ รหัสแม่) เพิ่ม ลบ นำเข้าและส่งออกเป็นไฟล์ข้อความแบบเดียวกับ Revit (คั่นด้วย Tab) · [[kn_numbering]]: [[kn_bykey]] ป้ายแสดงรหัส · [[kn_bysheet]] ป้ายแสดงเลข 1, 2, 3 … นับแยกแต่ละแผ่นงาน
 - [[a_knlegend]]: ตารางรายการ Keynote ที่ใช้อยู่ วางบนแผ่นงานได้ · ติ๊ก [[p_knsheet]] เพื่อให้แต่ละแผ่นงานแสดงเฉพาะ Keynote ของมุมมองบนแผ่นนั้น
 - [[t_sym]]: สัญลักษณ์ 2 มิติของมุมมองนั้น ขนาดคงที่บนกระดาษ: ทิศเหนือ 2 แบบ มาตราส่วนกราฟิก (ปรับตามมาตราส่วนของมุมมอง) เส้นกึ่งกลาง ℄ ลูกศร เส้นตัดขาด สามเหลี่ยมระดับ · เลือกในแถบตัวเลือกแล้วคลิกวาง ((Space)) หมุน 90° · ใช้ได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์
@@ -24550,7 +24816,9 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[a_tags]]: shows or hides the tags of the view (room tags do not go by this switch)
 - [[t_tag]] in elevations and sections: click a pipe, a door, a beam or a component; the tag goes with it when it moves · tag types (Edit Type › Edit Label): several values in a row, such as size + CL elevation or system + size, or on a new line, with a prefix and a suffix; the shape, the text size and bold · a vertical tag: in the options bar or in Properties
 - [[t_tag]] in 3D views: click a pipe, a duct, a component, a door or a wall; a view that is not locked yet is locked for you · the tag goes with its element when it moves or grows; drag the tag to place it, double-click it to edit the mark · [[a_tagall]] in a locked 3D view tags everything in its frame that has no tag yet, such as every pipe of an isometric
+- [[t_text]], [[t_spot]] and [[a_spotcoord]] in 3D views: a text stands square to the view, so it always reads; with a [[p_leader]] of one or two segments (the options bar) the first click is the face of the model its arrow points at · a spot: click a face of the model, then where its symbol goes; a pipe, a duct or a beam has [[sp_zk]], every spot an [[sp_org]], and the value follows the element when it moves · a spot coordinate reads the northing, the easting and the elevation · a view that is not locked yet is locked for you · drag them to move them, double-click a text to edit it · on sheets with the tags, in PDF and in DXF
 - Keynotes (the [[p_keynote]] panel): the keynote table of the project pairs keys with texts, such as 04.A1 Brick wall · [[a_knel]]: click an element and the tag shows the keynote of its type; a type that has none yet is given one from the table the first time (and can be changed later in [[edit_type]], in the Keynote box) · [[a_knuser]]: click an element and choose a keynote for that tag alone, whatever its type says · the options bar has [[p_leader]] and the [[p_knstyle]] (the key, the key in a box, or the text) · drag the tag to move it, drag the end of its arrow to point elsewhere, double-click it for another keynote
+- Keynotes in elevations, sections and 3D views: use [[a_knel]] or [[a_knuser]] in that view; click an element and the arrow points where you click (in a 3D view at the face you click; a view that is not locked yet is locked for you) · the tag goes with its element; drag it to move it, double-click it for another keynote · the [[a_knlegend]] counts them with the plans', and By Sheet numbers every view on the sheet
 - [[a_knset]]: edit the table (key, text, parent key), add and delete rows, import and export it as a text file of the kind Revit uses (fields parted by tabs) · [[kn_numbering]]: [[kn_bykey]], the tags show the keys · [[kn_bysheet]], the tags show 1, 2, 3 … counted for each sheet by itself
 - [[a_knlegend]]: the schedule of the keynotes in use; it can be placed on sheets · tick [[p_knsheet]] and every sheet lists only the keynotes of the views on it
 - [[t_sym]]: 2D marks of one view that keep their size on paper: two north arrows, a graphic scale (it follows the scale of the view), the centre line mark ℄, an arrow, a break mark, a level mark · choose one in the options bar and click to place it, ((Space)) turns it 90° · they work in plans, drafting views and legends
@@ -26196,6 +26464,16 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r40={I:()=>({P,ui,IDX,undoN:undoS.length}),ek:id=>{const v=viewById(id);if(!v)return[];const pn=PANES[paneOf(id)],n=pn?navOf(v):null,r=pn?pn.cv.getBoundingClientRect():null,S=new Set(eaList(v)),X=(a,b,c)=>r?a+b*n.s+c:null;
+    return P.ann.filter(d=>d.cat==='eknote'&&d.view===id).map(d=>Object.assign(JSON.parse(JSON.stringify(d)),{shown:S.has(d)&&etgShown(v,d,IDX.get(d.el)),sx:r&&X(r.left,d.x,n.ox),sy:r&&X(r.top,d.y,n.oy),ax2:r&&X(r.left,d.x2,n.ox),ay2:r&&X(r.top,d.y2,n.oy),
+      lab:knLabel(P,tagGet,d,knNumsOf(viewById(d.view))).s}))},lab:id=>{const d=IDX.get(id);return d?knLabel(P,tagGet,d,knNumsOf(viewById(d.view))):null},
+  used:sid=>knUsed(P,tagGet,sid?{sheet:viewById(sid)}:null).map(r=>({key:r.key,n:r.n,views:[...r.views]})),box:(vid,id)=>ev3Box(viewById(vid),IDX.get(id)),dxf:id=>sheetDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),t:(k,...a)=>t(k,...a)};
+window.PenumBIM.r39={I:()=>({P,ui,IDX,undoN:undoS.length}),list:id=>{const v=viewById(id),pn=PANES[paneOf(id)];if(!v||!pn)return[];const F=ann3Frame(pn,v),r=pn.cv.getBoundingClientRect(),S=new Set(ann3List(v));
+    return ann3Of(v).map(d=>{const q=ann3Pt(d),G=q&&S.has(d)&&ann3Shown(v,d)?ann3Prj(F.M,q,pn.w,pn.h):null,o=tag3O(d);return Object.assign(JSON.parse(JSON.stringify(d)),{q:q&&q.slice(),shown:!!G,ax:G?r.left+G[0]:null,ay:G?r.top+G[1]:null,
+      hx:G?r.left+G[0]+o[0]*F.sc*F.k:null,hy:G?r.top+G[1]+o[1]*F.sc*F.k:null,lines:d.cat==='spot3'&&q?spot3Lines(d,q):null})})},
+  surf:(i,x,y)=>{const pn=PANES[i],v=pn&&paneView(i);return v?ann3Surf(pn,v,{x,y}):null},plane:(i,x,y)=>{const pn=PANES[i],v=pn&&paneView(i);return v?ann3Plane(pn,v,{x,y}):null},
+  pick:(i,x,y)=>{const pn=PANES[i],v=pn&&paneView(i),pk=v&&pickAt3(pn,v,{x,y});return pk&&pk.p?{id:pk.id,p:pk.p.slice()}:null},box3:id=>elBox3(id),lines:id=>{const d=IDX.get(id),q=d&&ann3Pt(d);return q?spot3Lines(d,q):null},
+  z:(id,x,y)=>spHostZ(null,{x,y,el:id}),dxf:id=>sheetDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),t:(k,...a)=>t(k,...a)};
 window.PenumBIM.r38={items:O=>ifcItems(O||{}).map(m=>({id:m.id,pk:m.pk||null,cat:m.cat,n:(m.t||[]).length,tq:m.tq||null})),mem:id=>trussMembers(P,IDX.get(id)).length};window.PenumBIM.r37={M:()=>shcM(),base:g=>ifcBase(g),mc:g=>ifcMC(g),ifc:O=>{const r=ifcText(O);return typeof r==='string'?r:r.text},read:s=>ifcRead(s),mapPt:(B,x,y)=>shcMapPt(B,x,y),linkOf:B=>shcLinkOf(B),dxf:(id,O)=>planDXF(viewById(id),O),rtn:a=>rtnSet(a),set:()=>shcSet(),dms:d=>ifcDMS(d),geoNote:(g,c)=>ifcGeoNote(g,c,shcSet())};window.PenumBIM.r36={I:()=>({P,ui,IDX,CADB}),place:(E,N)=>shcPlace(E,N),ne:(x,y)=>surveyNEof(P.info||{},x,y),near:(E,N)=>shcNear(E,N),frame:id=>shcFrameOf(IDX.get(id)),
   linkOf:id=>{const e=IDX.get(id);return e?shcLinkOf(CADB.get(e.key)):null},on:id=>shcOn(IDX.get(id)),acq:id=>shcAcq(IDX.get(id)),spec:(x,y,z,N,E,EL,A)=>shcSpec(x,y,z,N,E,EL,A),reloc:(dx,dy)=>shcRelocate(dx,dy),
   zAt:(x,y)=>shcZAt(activeView(),x,y),tpi:txt=>tpImportText(txt),vals:(x,y,z)=>shcVals(x,y,z),text:R=>shcText(R),to:(id,u,v)=>linkF(IDX.get(id)).to(u,v),from:(id,x,y)=>linkF(IDX.get(id)).from(x,y),
