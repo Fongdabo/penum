@@ -13985,7 +13985,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=151,V1_NAME='V1.140';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=152,V1_NAME='V1.141';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -25388,6 +25388,355 @@ Object.assign(STR,{
   lpt_impnote:['ความยาวในไฟล์ คูณมาตราส่วนนำเข้า เป็นมิลลิเมตรบนกระดาษ · acadiso.lin เป็นมิลลิเมตร acad.lin เป็นนิ้ว','The lengths of the file times the import scale are mm of paper · acadiso.lin is in mm, acad.lin in inches'],
   lpt_impd:['นำเข้าแล้ว {0} ลาย','{0} patterns imported'],
   pg_lpat:['ลายเส้น (Line Patterns)','Line Patterns'],tp_k_lpat:['ลายเส้น (Line Patterns)','Line patterns']});
+/* ===== 141 Insert Views from File and Insert 2D Elements from File (V1.141; Revit: Insert › Import › Insert from File › Insert Views from File, and
+   Insert 2D Elements from File) =====
+   Insert Views from File opens another project file and copies the drafting views, legends, schedules and sheets ticked in its list (Views: all of them or one
+   kind; the one clicked is previewed) into this project, as Revit does.  What they draw comes with them: texts, detail lines, filled regions, dimensions,
+   detail components, repeating details, insulation, symbols, revision clouds, legend components and the pictures of sheets, in the groups they were in.  So do
+   the types these use (by name: a type of the same name here is used as it is, else it is added, as Transfer Project Standards adds it), the line styles and
+   patterns of the project's own they are drawn with, the project parameters and keys their schedules show, the revisions of their clouds and sheets, and the
+   title blocks and guide grids of the sheets.  A sheet brings the drafting views, legends and schedules placed on it; a view of the model on it (a plan, a
+   section, a 3D view) stays behind, as in Revit.  A view name or a sheet number already taken here gets a number after it.  What needs the model (a tag, a
+   dimension to a wall) does not come.
+   Insert 2D Elements from File copies the annotations of one view of the file (a drafting view, a legend or a plan, less what needs the model) into the plan,
+   drafting view or legend in front: they follow the pointer and a click places them, with the scale and detail level of the view they come from when
+   Transfer view scale and detail level is ticked. */
+const IFV_CATS=new Set(['dline','region','text','dim','adim','rdim','cloud','sym','dcomp','rdet','dins','knote','tag','rtag','mtag','trnum','vref','lcomp','simg']),IFV_K=['draft','legend','sched','sheet'];
+/* what a view can be inserted as: 'draft', 'legend', 'sched' or 'sheet'; '' for a view of the model (and the graphical column schedule and a panel schedule,
+   which are drawn from it) */
+const ifvKind=v=>!v||typeof v!=='object'?'':v.kind==='plan'&&v.draft&&!v.gcs?(v.legend?'legend':'draft'):v.kind==='schedule'&&v.sched!=='pnl'?'sched':v.kind==='sheet'?'sheet':'';
+const ifvLabel=v=>v.kind==='sheet'?(v.number!=null&&String(v.number)!==''?v.number+' - ':'')+String(v.name||''):String(v.name||'');
+/* the views of S that can be inserted, by kind then by name (sheets by number) */
+function ifvList(S){const L=[];for(const v of Array.isArray(S.views)?S.views:[]){const k=ifvKind(v);if(k&&v.id!=null)L.push({v,k})}
+  return L.sort((a,b)=>IFV_K.indexOf(a.k)-IFV_K.indexOf(b.k)||ifvLabel(a.v).localeCompare(ifvLabel(b.v),undefined,{numeric:true}))}
+/* the annotations of the views vids of S that come: those of the kinds above that need nothing left behind (a dimension to a wall, a tag of an element that does
+   not come, a view reference to a view that does not come; vok: the views that come).  R.drop counts the rest */
+function ifvAnn(S,vids,vok,R){const all=(Array.isArray(S.ann)?S.ann:[]).filter(d=>d&&typeof d==='object'&&vids.has(d.view));
+  let A=all.filter(d=>IFV_CATS.has(d.cat)&&(d.cat!=='vref'||vok.has(d.tv)));
+  for(let i=0;i<6;i++){const ids=new Set(A.map(d=>d.id)),A2=A.filter(d=>d.cat==='dim'?[d.a,d.b].every(r=>r&&(r.k==='pt'||ids.has(r.id))):d.cat==='adim'?ids.has(d.a)&&ids.has(d.b):isTag(d)||d.cat==='rdim'||d.cat==='trnum'?ids.has(d.el):true);
+    if(A2.length===A.length)break;A=A2}
+  if(R)R.drop+=all.length-A.length;return A}
+/* A less what view v hides (they come with Insert Views, hidden as they were; previews and Insert 2D Elements leave them out) */
+const ifvVis=(v,A)=>{const h=new Set(v&&Array.isArray(v.hidden)?v.hidden:[]);return h.size?A.filter(d=>!h.has(d.id)):A};
+/* the types, line styles and patterns that the annotations A and the viewports VPS of S use, brought into this project by name (one of the same name here is used
+   as it is).  ty(cat, id there) → the id here; ls(key there) → the key here ('' : none) */
+function ifvTypes(S,A,VPS,R){const ST=S.types&&typeof S.types==='object'?S.types:{},used={},use=(c,id)=>{if(id==null||!Array.isArray(ST[c]))return;(used[c]||(used[c]=new Set())).add(id)};
+  for(const d of A){if(d.cat==='lcomp')use(d.tcat,d.type);else if(d.type!=null)use(d.cat,d.type)}
+  for(const q of VPS)use('vp',q.type);
+  for(const id of used.rdet||[]){const T=ST.rdet.find(x=>x&&x.id===id);if(T)use('dcomp',T.detail)}          // a repeating detail draws a detail component
+  const S2={types:{},mats:[],msys:[],pseg:S.pseg,fpat:S.fpat,lpat:S.lpat},picks=['mats'],had={};
+  for(const c in used){if(!Array.isArray(P.types[c]))continue;const L=ST[c].filter(T=>T&&used[c].has(T.id));if(!L.length)continue;S2.types[c]=L;picks.push('type:'+c);had[c]=new Set(P.types[c].map(T=>T.name))}
+  const mu=new Set(),walk=o=>{if(!o||typeof o!=='object')return;if(Array.isArray(o)){for(const x of o)walk(x);return}for(const k in o){if(k==='mid'&&o[k]!=null)mu.add(+o[k]);else if(o[k]&&typeof o[k]==='object')walk(o[k])}};
+  for(const c in S2.types)walk(S2.types[c].filter(T=>!had[c].has(T.name)));S2.mats=(Array.isArray(S.mats)?S.mats:[]).filter(M=>M&&mu.has(M.id));          // the materials of the types that come in
+  const lu=new Set(),SL=S.ls&&typeof S.ls==='object'?S.ls:{};for(const d of A){if(d.cat==='dline'&&d.style)lu.add(d.style);if(d.cat==='region'&&d.ls&&d.ls!=='inv')lu.add(d.ls)}
+  S2.ls={};for(const k of lu)if(!LSTYLE[k]&&SL[k]&&SL[k].own)S2.ls[k]=SL[k];if(Object.keys(S2.ls).length)picks.push('ls');else delete S2.ls;          // the line styles of its own the file draws them with
+  transferStandards(P,S2,picks,false);
+  const tmap={};for(const c in S2.types){const m=tmap[c]=new Map();for(const T of S2.types[c]){const q=P.types[c].find(x=>x.name===T.name);if(q)m.set(T.id,q.id);if(had[c].has(T.name))R.tUse++;else R.tAdd++}}
+  const lmap=new Map();for(const k in S2.ls||{}){const nm=S2.ls[k].name,q=Object.keys(P.ls||{}).find(x=>P.ls[x]&&P.ls[x].own&&P.ls[x].name===nm);if(q)lmap.set(k,q)}
+  return{ty:(c,id)=>tmap[c]?tmap[c].get(id):undefined,ls:k=>!k||LSTYLE[k]?k:lmap.get(k)||''}}
+/* the revisions of S the clouds and sheets that come name, here: one of the same date and description, else a copy, after the others */
+function ifvRevs(S,ids,R){const m=new Map(),SR=Array.isArray(S.revs)?S.revs:[];
+  for(const id of ids){if(m.has(id))continue;const r=SR.find(x=>x&&x.id===id);if(!r)continue;const q=(P.revs||[]).find(x=>String(x.date||'')===String(r.date||'')&&String(x.desc||'')===String(r.desc||''));
+    if(q){m.set(id,q.id);continue}const n=Object.assign(JSON.parse(JSON.stringify(r)),{id:P.seq++});(P.revs||(P.revs=[])).push(n);m.set(id,n.id);R.rev++}
+  return m}
+/* a project parameter of S that a schedule shows, here: the one of the same name when it is of the same kind, else a copy (Revit adds it); '' when it cannot be */
+function ifvPP(S,qid,M,R){if(M.pp.has(qid))return M.pp.get(qid);const q=ppList(S).find(x=>x&&x.id===qid),nm=q?String(q.name||'').trim():'';let r='';
+  if(nm){const h=ppList(P).find(x=>String(x.name).toLowerCase()===nm.toLowerCase());
+    if(h)r=h.pt===q.pt&&!!h.inst===!!q.inst?h.id:'';else{let k=1;while(ppList(P).some(x=>x.id==='q'+k))k++;r='q'+k;P.pp=ppList(P).concat([Object.assign(JSON.parse(JSON.stringify(q)),{id:r,name:nm})]);R.pp++}}
+  M.pp.set(qid,r);return r}
+/* a key schedule of S that a schedule shows a column of: the one that comes with it, else one here of the same category and name; 0 when there is none */
+function ifvKv(S,id,M){if(M.vm.has(id))return M.vm.get(id);const v=(S.views||[]).find(x=>x&&x.id===id);if(!v||v.sched!=='key')return 0;
+  const h=P.views.find(x=>x.kind==='schedule'&&x.sched==='key'&&x.kcat===v.kcat&&String(x.kname||'')===String(v.kname||''));return h?h.id:0}
+/* own things of S that sheets and schedules name by id, here: one of the same name, else a copy (title blocks, guide grids, area schemes) */
+function ifvOwn(S,list,dst,id,M,key){const mm=M[key];if(mm.has(id))return mm.get(id);const T=(Array.isArray(S[list])?S[list]:[]).find(x=>x&&x.id===id);let r;
+  if(T){const h=(P[dst]||[]).find(x=>x&&x.name===T.name);if(h)r=h.id;else{const n=Object.assign(JSON.parse(JSON.stringify(T)),{id:P.seq++});(P[dst]||(P[dst]=[])).push(n);r=n.id}}
+  mm.set(id,r);return r}
+/* a fill pattern or a line pattern of S's own (u<n>) that an override names, here: one of the same name, else a copy; '' when there is none.  A stock one stays */
+function ifvFp(S,k,M){if(typeof k!=='string'||!/^u\d+$/.test(k))return k;if(M.fp.has(k))return M.fp.get(k);const q=S.fpat&&S.fpat[k]?fpClean(S.fpat[k]):null;let r='';
+  if(q){r=fpOwnKeys().find(x=>P.fpat[x].name===q.name)||'';if(!r){r='u'+(P.seq++);(P.fpat||(P.fpat={}))[r]=q}}M.fp.set(k,r);return r}
+function ifvLp(S,k,M){if(typeof k!=='string'||!/^u\d+$/.test(k))return k;if(M.lp.has(k))return M.lp.get(k);const q=S.lpat&&S.lpat[k]?lpClean(S.lpat[k]):null;let r='';
+  if(q){r=lpOwnKeys(P).find(x=>P.lpat[x].name===q.name)||'';if(!r){r='u'+(P.seq++);(P.lpat||(P.lpat={}))[r]=q}}M.lp.set(k,r);return r}
+/* the phase and the phase filter of a view of S, here by name */
+function ifvPhase(S,c){if(c.phase!=null){const nm=phName(S,c.phase,t),q=nm?phList(P).find(x=>phName(P,x.id,t)===nm):null;if(q)c.phase=q.id;else delete c.phase}
+  if(c.pf!=null){const F=pfList(S).find(x=>x&&x.id===c.pf),nm=F?pfName(F,t):'',q=nm?pfList(P).find(x=>pfName(x,t)===nm):null;if(q)c.pf=q.id;else delete c.pf}}
+/* a view of S as a view of this project (its id given in M.vm); its viewports are put on later */
+function ifvView(S,v,M,R){const k=ifvKind(v);let c=JSON.parse(JSON.stringify(v));
+  if(k==='sched')c=JSON.parse(JSON.stringify(c).replace(/\bpp_(q\d+)\b/g,(m,id)=>'pp_'+(ifvPP(S,id,M,R)||'gone')).replace(/\bkv:(\d+)\b/g,(m,id)=>'kv:'+ifvKv(S,+id,M)));          // the fields of project parameters and of keys
+  c.id=M.vm.get(v.id);for(const q of ['dep','parent','callout','scope','sbox','tpl','flt','dov','pnl','pnm','eov'])delete c[q];          // the graphics of its own elements: by their new ids, once they are pasted
+  const nm=String(v.name==null?'':v.name).trim()||t('ifv_c_'+k),u=uniqView(nm);if(u!==nm)R.ren++;c.name=u;ifvPhase(S,c);
+  for(const [o,f] of vgPats({views:[c]})){const r=ifvFp(S,o[f],M);if(r)o[f]=r;else delete o[f]}
+  for(const [o,f] of lpRefs({views:[c]})){const r=ifvLp(S,o[f],M);if(r)o[f]=r;else delete o[f]}
+  if(k==='sched'&&c.sched==='area'&&c.ascheme!=null&&!AREA_STOCK.includes(c.ascheme)){const r=ifvOwn(S,'aschemes','aschemes',c.ascheme,M,'as');c.ascheme=r!=null?r:'gross'}
+  if(k==='sheet'){if(typeof c.tb==='number'){const r=ifvOwn(S,'tbs','tbs',c.tb,M,'tb');if(r!=null)c.tb=r;else delete c.tb}
+    if(c.gg!=null){const r=ifvOwn(S,'ggrids','ggrids',c.gg,M,'gg');if(r!=null)c.gg=r;else delete c.gg}
+    if(Array.isArray(c.revs)){c.revs=c.revs.map(id=>M.rev.get(id)).filter(x=>x!=null);if(!c.revs.length)delete c.revs}
+    const no=String(c.number==null?'':c.number);if(no&&P.views.some(x=>x.kind==='sheet'&&String(x.number)===no)){c.number=shNextNo(no);R.renum++}
+    c.vps=[]}
+  c.hidden=[];return c}
+/* the annotations A of S as objects to paste: types, line styles, views, revisions and pictures of here; what they were grouped in kept aside for ifvPaste */
+function ifvObjs(S,A,M,R){const out=[];
+  for(const d of A){const c=JSON.parse(JSON.stringify(d));
+    if(c.cat==='lcomp'){const q=M.ty(c.tcat,c.type);if(q==null){R.drop++;continue}c.type=q}
+    else if(c.type!=null&&Array.isArray(P.types[c.cat])){const q=M.ty(c.cat,c.type);if(q!=null)c.type=q;else delete c.type}
+    if(c.cat==='dline'&&c.style){const q=M.ls(c.style);if(q)c.style=q;else delete c.style}
+    if(c.cat==='region'&&c.ls&&c.ls!=='inv'){const q=M.ls(c.ls);if(q)c.ls=q;else delete c.ls}
+    if(c.cat==='vref'){const q=M.vm.get(c.tv);if(q==null){R.drop++;continue}c.tv=q}
+    if(c.cat==='cloud'){const q=M.rev.get(c.rev);if(q!=null)c.rev=q;else delete c.rev}
+    if(c.cat==='simg'){const q=ifvImg(S,c.key);if(!q){R.drop++;continue}c.key=q}
+    for(const k of ['gp','pin','rpin'])delete c[k];
+    c._lg=d.id;c._lgg=c.grp||0;c._lgi=Array.isArray(c.gin)?c.gin.slice():null;c._lgk=c.gk;for(const k of ['grp','gk','gin','gx'])delete c[k];out.push(c)}
+  return out}
+/* a picture of a sheet of S, kept here (once: the same picture already here is used) */
+function ifvImg(S,key){if(typeof key!=='string'||!key)return'';const B=S.cad&&typeof S.cad==='object'?S.cad[key]:null;
+  if(!B||!B.img||typeof B.src!=='string'||!Array.isArray(B.L)){const H=CADB.get(key);return H&&H.img?key:''}
+  for(const [k,X] of CADB)if(X&&X.img&&X.src===B.src)return k;
+  const k=CADB.has(key)?'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6):key;CADB.set(k,B);return k}
+/* paste objs into view moved by (dx, dy), as a paste from another project; the groups they were in made again (G: the groups and group types made so far).
+   Returns the new annotations; G.idm: id in S → the new one */
+function ifvPaste(S,objs,dx,dy,view,G){const keep=ui.clip;let out=[];ui.clip={objs:[],pg:'~'+(S.guid||'file')};try{out=pasteObjs(objs,dx,dy,0,view)}finally{ui.clip=keep}
+  const made=[];for(const id of out){const c=IDX.get(id);if(c&&c._lg!=null){G.idm.set(c._lg,c);made.push(c)}}
+  const fresh=sg=>{let id=G.gm.get(sg);if(id)return id;const r=G.SG.get(sg)||{},k=r.gt||sg;let T=G.tm.get(k);id=P.seq++;if(!T){T={gt:id,name:gtFree(String(r.name||t('grp_name')).slice(0,40))};G.tm.set(k,T)}
+    if(!P.groups)P.groups=[];P.groups.push({id,name:T.name,gt:T.gt});G.gm.set(sg,id);return id};
+  for(const c of made){if(c._lgg){c.grp=fresh(c._lgg);if(c._lgk!=null)c.gk=c._lgk;if(c._lgi&&c._lgi.length)c.gin=c._lgi.map(fresh)}for(const k of ['_lg','_lgg','_lgi','_lgk'])delete c[k]}
+  return made}
+const ifvG=S=>({idm:new Map(),gm:new Map(),tm:new Map(),SG:new Map((Array.isArray(S.groups)?S.groups:[]).filter(g=>g&&g.id!=null).map(g=>[g.id,g]))});
+/* the views ids of S, and what the sheets among them hold, into this project.  R counts.  Returns {V: the new views, vm: id in S → id here} */
+function ifvInsert(S,ids,R){const by=new Map((Array.isArray(S.views)?S.views:[]).filter(v=>v&&v.id!=null).map(v=>[v.id,v])),pick=new Set();
+  for(const id of ids){const v=by.get(id);if(!v||!ifvKind(v))continue;pick.add(id);
+    if(v.kind==='sheet')for(const q of Array.isArray(v.vps)?v.vps:[]){const w=q&&by.get(q.view),k=ifvKind(w);if(k&&k!=='sheet')pick.add(w.id);else if(q)R.vpOut++}}          // a view of the model on a sheet stays behind
+  const L=[...pick].map(id=>by.get(id)).sort((a,b)=>IFV_K.indexOf(ifvKind(a))-IFV_K.indexOf(ifvKind(b))),vm=new Map();for(const v of L)vm.set(v.id,P.seq++);
+  const vids=new Set(L.map(v=>v.id)),A=ifvAnn(S,vids,vids,R),VPS=[];for(const v of L)if(v.kind==='sheet')for(const q of v.vps||[])if(q&&vm.has(q.view))VPS.push(q);
+  const T=ifvTypes(S,A,VPS,R),M={vm,ty:T.ty,ls:T.ls,pp:new Map(),tb:new Map(),gg:new Map(),as:new Map(),fp:new Map(),lp:new Map(),rev:null},rids=new Set();
+  for(const d of A)if(d.cat==='cloud'&&d.rev!=null)rids.add(d.rev);for(const v of L)if(v.kind==='sheet'&&Array.isArray(v.revs))for(const r of v.revs)rids.add(r);M.rev=ifvRevs(S,rids,R);
+  const V=L.map(v=>{const c=ifvView(S,v,M,R);P.views.push(c);return c}),G=ifvG(S);
+  L.forEach((v,i)=>{const c=V[i],own=A.filter(d=>d.view===v.id);if(own.length)ifvPaste(S,ifvObjs(S,own,M,R),0,0,c,G)});
+  L.forEach((v,i)=>{const c=V[i];          // what the view hid, and the graphics of its own elements, by the new ids
+    if(Array.isArray(v.hidden)){const h=v.hidden.map(id=>G.idm.get(id)).filter(Boolean).map(e=>e.id);c.hidden=h}
+    if(v.eov&&typeof v.eov==='object'){const o={};for(const k in v.eov){const e=G.idm.get(+k);if(e)o[e.id]=JSON.parse(JSON.stringify(v.eov[k]))}
+      if(Object.keys(o).length){const W={views:[{eov:o}]};for(const [q,f] of vgPats(W)){const r=ifvFp(S,q[f],M);if(r)q[f]=r;else delete q[f]}for(const [q,f] of lpRefs(W)){const r=ifvLp(S,q[f],M);if(r)q[f]=r;else delete q[f]}c.eov=o}}
+    if(v.kind==='sheet')c.vps=(v.vps||[]).filter(q=>q&&vm.has(q.view)).map(q=>{const o=JSON.parse(JSON.stringify(q));o.id=P.seq++;o.view=vm.get(q.view);if(o.type!=null){const r=M.ty('vp',q.type);if(r!=null)o.type=r;else delete o.type}return o})});
+  IDX=indexProject(P);return{V,vm}}
+/* fn() as one step of undo: 'ok' when it made something.  'none' (it made nothing) and 'err' (it failed: a toast says so) leave the project, undo and redo
+   as they were */
+function ifvEdit(fn){const U0=undoS.slice(),R0=redoS.slice();let r='none';
+  edit(()=>{try{if(fn())r='ok'}catch(e){r='err';console.error(e)}if(r!=='ok'){P=JSON.parse(undoS[undoS.length-1]);IDX=indexProject(P)}});
+  if(r!=='ok'){undoS.length=0;undoS.push(...U0);redoS.length=0;redoS.push(...R0)}if(r==='err')toast(t('ifv_err'),6000);return r}
+/* run it as one step of undo: the first sheet inserted (else the first view) is opened, and the toast says what came */
+function ifvRun(S,ids){const R={tAdd:0,tUse:0,drop:0,vpOut:0,pp:0,ren:0,renum:0,rev:0};let X=null;const r=ifvEdit(()=>(X=ifvInsert(S,ids,R)).V.length);
+  if(r!=='ok'){if(r==='none')toast(t('ifv_nothing'));return null}
+  closeDlg();const sh=X.V.find(c=>c.kind==='sheet');showView((sh||X.V[0]).id);
+  const n={};for(const c of X.V){const k=ifvKind(c);n[k]=(n[k]||0)+1}
+  toast([t('ifv_done',IFV_K.filter(k=>n[k]).map(k=>t('ifv_g_'+k)+' '+n[k]).join(', ')),t('gl_types',R.tAdd,R.tUse),R.pp?t('ifv_pp',R.pp):'',R.rev?t('ifv_rev',R.rev):'',R.ren+R.renum?t('ifv_ren',R.ren+R.renum):'',
+    R.vpOut?t('ifv_vpout',R.vpOut):'',R.drop?t('ifv_drop',R.drop):''].filter(Boolean).join(' · '),10000);refresh();return{X,R}}
+
+/* ---- the file ---- */
+/* a project file read: S (null and a toast when it is not one) */
+function ifvTake(txt,file){let o=null;try{o=JSON.parse(txt)}catch(e){}const S=o&&o.fmt==='saoek'?migrate(o,ui.lang==='en'):null;if(!S){toast(t('gl_bad'));return null}return S}
+/* pick a project file: from the folder of PENUM when there is one (as Load as Group does), else from the computer.  two: for Insert 2D Elements */
+async function ifvPick(two){const take=(txt,file)=>{if(txt==null){toast(t('gl_bad'));return}const S=ifvTake(txt,file);if(!S)return;const nm=String(file||'').replace(/^.*[\\/]/,'');if(two)dlgIfv2(S,nm);else dlgIfv(S,nm)};
+  if(BF&&BF.ok){await BF.folder(false);const L=BF.name()?await BF.list('.penbim'):null;
+    if(L){const when=x=>new Date(x).toLocaleString(ui.lang==='en'?'en-GB':'th-TH',{dateStyle:'medium',timeStyle:'short'});
+      openDlg(t(two?'a_ins2d':'a_insviews'),`<p class="note">${esc(t(two?'ifv2_pick':'ifv_pick'))}</p><p class="note">${esc(t('bf_list',BF.name()))}</p>${L.length?`<div class="bf-l">${L.map(f=>`<button class="btn" data-ivf="${esc(f.file)}"><span>${esc(f.file.replace(/\.penbim$/i,''))}</span><small>${esc(when(f.at))}</small></button>`).join('')}</div>`:`<p>${t('bf_none')}</p>`}`,
+        `<button class="btn" data-ivo="any">${t('bf_other')}</button><button class="btn primary" data-close="1">${t('cancel')}</button>`,
+        {async click(ev){const o=ev.target.closest('[data-ivf]'),x=ev.target.closest('[data-ivo]');if(o){const f=o.dataset.ivf,txt=await BF.read(f);closeDlg();take(txt,f);return}
+          if(x){closeDlg();const r=await glOpen();if(r)take(r.text,r.file)}}});return}}
+  const r=await glOpen();if(r)take(r.text,r.file)}
+XA.insviews=()=>ifvPick(false);
+XA.ins2d=()=>{if(!ifv2Ok(activeView())){toast(t('ifv2_view'),5000);return}ifvPick(true)};
+
+/* ---- Insert Views: the dialog (Revit: Insert Views — Views: a list to tick, Check All / Check None, a preview of the one clicked) ---- */
+function dlgIfv(S,file,st){st=st||{f:'all',pick:new Set(),cur:null};const L=ifvList(S),shown=L.filter(x=>st.f==='all'||x.k===st.f);
+  if(st.cur==null||!shown.some(x=>x.v.id===st.cur))st.cur=shown.length?shown[0].v.id:null;
+  const rows=IFV_K.map(k=>{const G=shown.filter(x=>x.k===k);if(!G.length)return'';
+    return`<div class="ifvg">${esc(t('ifv_g_'+k))} (${G.length})</div>`+G.map(x=>`<div class="ifvr${x.v.id===st.cur?' on':''}" data-ivc="${x.v.id}"><input type="checkbox" data-ivp="${x.v.id}"${st.pick.has(x.v.id)?' checked':''} aria-label="${esc(ifvLabel(x.v))}"><span>${esc(ifvLabel(x.v))}</span></div>`).join('')}).join('');
+  const body=`<p class="note">${esc(t('ifv_note',file||'—'))}</p><div class="ifvx"><div><div class="fr"><label for="ifvF">${t('ifv_views')}</label><select id="ifvF">${['all',...IFV_K].map(k=>`<option value="${k}"${st.f===k?' selected':''}>${t('ifv_f_'+k)}</option>`).join('')}</select></div>`
+    +`<div class="ifvl">${rows||`<p class="note" style="padding:6px 10px">${t(L.length?'ifv_nokind':'ifv_none')}</p>`}</div><div class="pa" style="padding:6px 0 0"><button class="btn" data-ivx="all"${shown.length?'':' disabled'}>${t('ifv_all')}</button><button class="btn" data-ivx="none"${shown.length?'':' disabled'}>${t('ifv_nonebtn')}</button></div></div>`
+    +`<div><div class="ifvh">${t('ifv_prev')}</div><canvas id="ifvCv" aria-label="${esc(t('ifv_prev'))}"></canvas><p class="note" id="ifvI"></p></div></div>`;
+  const okB=()=>{const b=$('#dlg [data-ivx="ok"]');if(b)b.disabled=!st.pick.size};
+  openDlg(t('a_insviews'),body,`<span class="note" id="ifvN" style="margin:0">${st.pick.size?esc(t('ifv_picked',st.pick.size)):''}</span><span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ivx="ok"${st.pick.size?'':' disabled'}>${t('ok')}</button>`,{
+    click(e){const x=e.target.closest('[data-ivx]');if(x){if(x.disabled)return;const a=x.dataset.ivx;
+        if(a==='ok'){if(st.pick.size)ifvRun(S,[...st.pick]);return}
+        for(const q of shown)if(a==='all')st.pick.add(q.v.id);else st.pick.delete(q.v.id);for(const c of $$('#dlg [data-ivp]'))c.checked=st.pick.has(+c.dataset.ivp);okB();ifvCount(st);return}
+      const r=e.target.closest('[data-ivc]');if(!r||e.target.matches('input'))return;st.cur=+r.dataset.ivc;for(const q of $$('#dlg .ifvr'))q.classList.toggle('on',q===r);ifvShow(S,st.cur)},
+    change(e){const el=e.target;if(el.id==='ifvF'){st.f=el.value;dlgIfv(S,file,st);return}if(el.dataset.ivp==null)return;const id=+el.dataset.ivp;if(el.checked)st.pick.add(id);else st.pick.delete(id);
+      okB();ifvCount(st);if(st.cur!==id){st.cur=id;for(const q of $$('#dlg .ifvr'))q.classList.toggle('on',+q.dataset.ivc===id);ifvShow(S,id)}}},'ifv');
+  ifvShow(S,st.cur)}
+function ifvCount(st){const n=$('#ifvN');if(n)n.textContent=st.pick.size?t('ifv_picked',st.pick.size):''}
+/* the preview of view id of S, and a line on what comes with it */
+function ifvShow(S,id){const cv=$('#ifvCv'),inf=$('#ifvI');if(!cv)return;const v=(S.views||[]).find(x=>x&&x.id===id),k=ifvKind(v),ctx=ifvCanvas(cv);if(!ctx)return;let info='';
+  if(k==='draft'||k==='legend'){const A=ifvAnn(S,new Set([v.id]),new Set(),null);ifvDrawView(ctx,cv._w,cv._h,S,v,ifvVis(v,A));info=t('ifv_info_v',t('ifv_c_'+k),v.scale||100,A.length)}
+  else if(k==='sched')info=ifvSchedPrev(ctx,cv._w,cv._h,S,v);
+  else if(k==='sheet')info=ifvSheetPrev(ctx,cv._w,cv._h,S,v);
+  if(inf)inf.textContent=info}
+/* the canvas at the size it is shown, white */
+function ifvCanvas(cv){const r=cv.getBoundingClientRect(),W=Math.max(200,Math.round(r.width||360)),H=Math.max(150,Math.round(r.height||280)),dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);cv._w=W;cv._h=H;const ctx=cv.getContext('2d');if(!ctx)return null;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);return ctx}
+
+/* ---- the drawing of a preview: the annotations of a view of S, drawn as PENUM draws them where it can without S being the project ---- */
+/* the box of annotations A in the model (mm), sc the scale they are drawn at */
+function ifvBox(S,A,sc){let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const add=(x,y)=>{if(!isFinite(x)||!isFinite(y))return;if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y};
+  for(const d of A){if(d.cat==='text'){const b=textBox(d,sc);add(b[0],b[1]);add(b[2],b[3]);if(d.lead)add(d.lead[0],d.lead[1])}
+    else if(d.cat==='dline')for(const q of bowPts(d))add(q[0],q[1]);
+    else if(Array.isArray(d.pts))for(const q of d.pts)add(q[0],q[1]);
+    else if(d.cat==='dim'){for(const r of [d.a,d.b])if(r&&r.k==='pt')add(r.x,r.y)}
+    else if(d.x1!=null){add(d.x1,d.y1);add(d.x2,d.y2)}
+    else if(d.cat==='simg'){add(d.x-d.w/2,d.y-d.h/2);add(d.x+d.w/2,d.y+d.h/2)}
+    else if(d.cat==='dcomp'&&d.x!=null){const T=ifvT(S,'dcomp',d.type),W=dcMap(d.x,d.y,d.rot,d.mir);let n=0;if(T)try{for(const it of dcShape(dcParams(T,d)).items)for(const p of it.p){const q=W(p[0],p[1]);add(q[0],q[1]);n++}}catch(e){}
+      if(!n){add(d.x-50,d.y-50);add(d.x+50,d.y+50)}}          // what it draws
+    else if(d.x!=null){const r=d.cat==='lcomp'?600:3*sc;add(d.x-r,d.y-r);add(d.x+r,d.y+r)}}
+  return x1>=x0?[x0,y0,x1,y1]:null}
+const ifvT=(S,c,id)=>{const L=S.types&&Array.isArray(S.types[c])?S.types[c]:[];return L.find(x=>x&&x.id===id)||L[0]||null};
+/* a view of S fitted into W × H */
+function ifvDrawView(ctx,W,H,S,v,A){const sc=v.scale||100,B=ifvBox(S,A,sc);
+  if(!B){ctx.fillStyle='#9ca3af';ctx.font='13px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(t('ifv_blank'),W/2,H/2);return}
+  const m=14,bw=Math.max(B[2]-B[0],sc),bh=Math.max(B[3]-B[1],sc),s=Math.min((W-2*m)/bw,(H-2*m)/bh,4/sc*10),T={s,ox:W/2-(B[0]+B[2])/2*s,oy:H/2-(B[1]+B[3])/2*s};
+  ifvPaint(painter(ctx,T,sc,PRINT,false),S,v,A)}
+/* draw annotations A of view v of S with painter g: filled regions first, as a drafting view draws them */
+function ifvPaint(g,S,v,A){const ctx=g.ctx,col=PRINT,ink=col.ink;ctx.lineJoin='miter';ctx.lineCap='butt';
+  for(const pass of [0,1])for(const d of A){if((d.cat==='region')!==(pass===0))continue;try{ifvOne(g,S,v,d,col,ink)}catch(e){}g.dash(null)}}
+function ifvOne(g,S,v,d,col,ink){const ctx=g.ctx,sc=g.scale;
+  switch(d.cat){
+    case'region':{if(!Array.isArray(d.pts)||d.pts.length<3)return;const T=ifvT(S,'region',d.type)||{fp:'dup'};if(T.mk!=='no'){g.path(d.pts);ctx.fillStyle=col.paper;ctx.fill()}
+      for(const [k,c] of [[T.bp,T.bc],[T.fp,T.fc]])if(k){if(FP_ST[k])fpDraw(g,d.pts,k,c||ink,{w:+T.pw||0});else g.hatch(d.pts,1.5,c||col.muted)}
+      if(d.ls==='inv')return;const Ls=d.ls?lsGet(S,d.ls):null;ctx.strokeStyle=(Ls&&Ls[2])||ink;ctx.lineWidth=g.lw(Ls?Ls[0]:0.18);g.dash(Ls&&Ls[1]);g.path(d.pts);ctx.stroke();return}
+    case'dline':{const Ls=lsGet(S,d.style||'thin');ctx.strokeStyle=Ls[2]||ink;ctx.lineWidth=g.lw(Ls[0]);g.dash(Ls[1]);g.path(bowPts(d),true);ctx.stroke();return}
+    case'text':drawText(g,d,col,null);return;
+    case'dim':{const a=d.a&&d.a.k==='pt'?[d.a.x,d.a.y]:null,b=d.b&&d.b.k==='pt'?[d.b.x,d.b.y]:null;if(!a||!b)return;const off=+d.off||0;let G;
+      if(d.mode==='h'){const y=a[1]+off;G={a,b,p:[a[0],y],q:[b[0],y],val:Math.abs(b[0]-a[0])}}else if(d.mode==='v'){const x=a[0]+off;G={a,b,p:[x,a[1]],q:[x,b[1]],val:Math.abs(b[1]-a[1])}}
+      else{const L=Math.hypot(b[0]-a[0],b[1]-a[1])||1,nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;G={a,b,p:[a[0]+nx*off,a[1]+ny*off],q:[b[0]+nx*off,b[1]+ny*off],val:L}}
+      drawDim(g,G,col.dim,(d.pre?d.pre+' ':'')+(d.txt||fmtDim(G.val))+(d.suf?' '+d.suf:''));return}
+    case'cloud':{if(!Array.isArray(d.pts)||d.pts.length<2)return;const n=d.pts.length,ccw=area2(d.pts)>0?1:-1,ch=Math.max(5,2.6*g.pm);ctx.strokeStyle=col.hot;ctx.lineWidth=g.lw(0.3);ctx.beginPath();
+      for(let i=0;i<n;i++){const a=d.pts[i],b=d.pts[(i+1)%n],ax=g.X(a[0]),ay=g.Y(a[1]),bx=g.X(b[0]),by=g.Y(b[1]),L=Math.hypot(bx-ax,by-ay);if(L<1)continue;const k=Math.max(1,Math.round(L/ch)),ux=(bx-ax)/L,uy=(by-ay)/L,r=L/k/2,th=Math.atan2(uy,ux);
+        for(let j=0;j<k;j++){const cx=ax+ux*r*(2*j+1),cy=ay+uy*r*(2*j+1);ctx.moveTo(cx-ux*r,cy-uy*r);ctx.arc(cx,cy,r,th+Math.PI,th,ccw<0)}}ctx.stroke();return}
+    case'sym':drawSym(g,d,col,null,v);return;
+    case'dcomp':{const T=ifvT(S,'dcomp',d.type);if(T)ifvDc(g,T,d,dcMap(d.x,d.y,d.rot,d.mir),col);return}
+    case'rdet':{const G=rdetGeo(S,d);if(G)for(const at of G.at)ifvDc(g,G.T,null,dcMap(at.x,at.y,at.rot,at.mir),col);return}
+    case'dins':{const G=dinsGeo(d);if(!G)return;ctx.strokeStyle=ink;ctx.lineWidth=g.lw(0.18);g.path(G.pts,true);ctx.stroke();return}
+    case'lcomp':{const T=ifvT(S,d.tcat,d.type)||{},x=d.x,y=d.y,box=(a,b,p,q)=>[[a,b],[p,b],[p,q],[a,q]];ctx.strokeStyle=ink;ctx.lineWidth=g.lw(0.25);
+      if(d.tcat==='wall'){const l=(d.len||1500)/2,h=(+T.thickness||200)/2,pl=box(x-l,y-h,x+l,y+h);g.path(pl);ctx.fillStyle=col.paper;ctx.fill();g.hatch(pl,1.1,ink);g.path(pl);ctx.lineWidth=g.lw(0.35);ctx.stroke();return}
+      if(d.tcat==='door'||d.tcat==='window'){const w=(+T.width||900)/2;for(const s of [box(x-w-300,y-50,x-w,y+50),box(x+w,y-50,x+w+300,y+50)]){g.path(s);ctx.fillStyle=col.poche;ctx.fill()}
+        if(d.tcat==='door'){ctx.beginPath();ctx.moveTo(g.X(x-w),g.Y(y-50));ctx.lineTo(g.X(x-w),g.Y(y-50-2*w));ctx.stroke();ctx.beginPath();ctx.arc(g.X(x-w),g.Y(y-50),2*w*g.pm/sc,-Math.PI/2,0);ctx.stroke()}else{g.path(box(x-w,y-30,x+w,y+30));ctx.stroke();g.seg([x-w,y],[x+w,y])}return}
+      const r=300;g.path(box(x-r,y-r,x+r,y+r));ctx.stroke();g.seg([x-r,y-r],[x+r,y+r]);g.seg([x-r,y+r],[x+r,y-r]);return}
+    case'simg':{const b=[[d.x-d.w/2,d.y-d.h/2],[d.x+d.w/2,d.y-d.h/2],[d.x+d.w/2,d.y+d.h/2],[d.x-d.w/2,d.y+d.h/2]];g.path(b);ctx.fillStyle='#e5e7eb';ctx.fill();ctx.strokeStyle=col.muted;ctx.lineWidth=g.lw(0.18);ctx.stroke();g.seg(b[0],b[2]);g.seg(b[1],b[3]);return}}}
+/* a detail component of type T drawn with W, as dcDraw draws it */
+function ifvDc(g,T,d,W,col){const ctx=g.ctx,sh=dcShape(dcParams(T,d));
+  for(const it of sh.items){const pts=it.p.map(p=>W(p[0],p[1]));g.path(pts,!!it.open);
+    if(!it.open){if(it.fill==='mask'){ctx.fillStyle=col.paper;ctx.fill()}else if(it.fill==='solid'){ctx.fillStyle=col.ink;ctx.fill()}else if(it.fill==='hatch'){ctx.fillStyle=col.paper;ctx.fill();g.hatch(pts,1,col.ink);g.path(pts)}}
+    if(it.w!=='none'){ctx.strokeStyle=col.ink;ctx.lineWidth=g.lw(it.w==='cut'?0.35:0.18);ctx.stroke()}}}
+/* the fields a schedule of S shows, with their names in S */
+function ifvFlds(S,v){try{if(v.sched==='cat'){const F=sfAll(S,v.scat==='*'||SF_CATS.includes(v.scat)?v.scat:'*',t);return sfFlds(Object.assign({},v),F).map(k=>(F.find(f=>f.k===k)||{l:k}).l)}
+    if(v.sched==='key'){const F=sfAll(S,v.kcat,t),ks=Array.isArray(v.kflds)?v.kflds:[];return[t('ks_keyname')].concat(ks.map(k=>(F.find(f=>f.k===k)||{l:k}).l))}}catch(e){}return null}
+/* a schedule: its name, its columns and (a key schedule) its keys, which come with it; the rows of the others come from this project */
+function ifvSchedPrev(ctx,W,H,S,v){const F=ifvFlds(S,v)||[],keys=v.sched==='key'?(v.krows||[]).map(r=>[String(r.key||'')].concat((Array.isArray(v.kflds)?v.kflds:[]).map(k=>r.v&&r.v[k]!=null?String(r.v[k]):''))):null,n=Math.max(1,F.length);
+  const x0=12,w=W-24,cw=w/n,rh=22;let y=14;ctx.textBaseline='middle';ctx.fillStyle='#111827';ctx.font='600 14px '+FONT;ctx.textAlign='center';ctx.fillText(ifvFit(ctx,String(v.name||''),w),W/2,y+8);y+=24;
+  ctx.strokeStyle='#9ca3af';ctx.lineWidth=1;ctx.fillStyle='#eef2f7';ctx.fillRect(x0,y,w,rh);ctx.strokeRect(x0+0.5,y+0.5,w-1,rh);ctx.font='600 11px '+FONT;ctx.fillStyle='#111827';
+  F.forEach((l,i)=>ctx.fillText(ifvFit(ctx,l,cw-6),x0+cw*(i+0.5),y+rh/2));for(let i=1;i<n;i++){ctx.beginPath();ctx.moveTo(x0+cw*i+0.5,y);ctx.lineTo(x0+cw*i+0.5,y+rh);ctx.stroke()}y+=rh;
+  const rows=keys||[],nr=keys?Math.min(rows.length,Math.floor((H-y-14)/rh)):Math.min(5,Math.floor((H-y-34)/rh));ctx.font='11px '+FONT;
+  for(let r=0;r<nr;r++){ctx.strokeStyle='#d1d5db';ctx.strokeRect(x0+0.5,y+0.5,w-1,rh);for(let i=1;i<n;i++){ctx.beginPath();ctx.moveTo(x0+cw*i+0.5,y);ctx.lineTo(x0+cw*i+0.5,y+rh);ctx.stroke()}
+    if(keys){ctx.fillStyle='#111827';(rows[r]||[]).slice(0,n).forEach((s,i)=>ctx.fillText(ifvFit(ctx,s,cw-6),x0+cw*(i+0.5),y+rh/2))}else{ctx.fillStyle='#e5e7eb';for(let i=0;i<n;i++)ctx.fillRect(x0+cw*i+cw*0.2,y+rh/2-3,cw*0.6,6)}y+=rh}
+  if(!keys){ctx.fillStyle='#6b7280';ctx.font='12px '+FONT;ctx.fillText(ifvFit(ctx,t('ifv_rows'),w),W/2,y+16)}
+  return v.sched==='key'?t('ifv_info_key',(v.krows||[]).length):t('ifv_info_sched',F.length||'—')}
+function ifvFit(ctx,s,w){s=String(s);if(ctx.measureText(s).width<=w)return s;let n=s.length;while(n>1&&ctx.measureText(s.slice(0,n)+'…').width>w)n--;return s.slice(0,n)+'…'}
+/* a sheet: its paper and title block, its own texts and lines, and its viewports: drafting views and legends drawn, schedules as tables, views of the model
+   (which stay behind) as dashed frames */
+function ifvSheetPrev(ctx,W,H,S,sh){const SZ=shSize(sh),s=Math.min((W-20)/SZ[0],(H-20)/SZ[1]),T={s,ox:(W-SZ[0]*s)/2,oy:(H-SZ[1]*s)/2},g=painter(ctx,T,1,PRINT,false),by=new Map((S.views||[]).filter(x=>x&&x.id!=null).map(x=>[x.id,x]));
+  ctx.fillStyle='#ffffff';ctx.fillRect(T.ox,T.oy,SZ[0]*s,SZ[1]*s);ctx.strokeStyle='#9ca3af';ctx.lineWidth=1;ctx.strokeRect(T.ox+0.5,T.oy+0.5,SZ[0]*s-1,SZ[1]*s-1);
+  ctx.strokeStyle='#111827';ctx.lineWidth=g.lw(0.35);g.path([[10,10],[SZ[0]-10,10],[SZ[0]-10,SZ[1]-10],[10,SZ[1]-10]]);ctx.stroke();
+  const B=tbOf(S,sh),G=tbGeo(B.lay,SZ,B),b=G.blk;ctx.lineWidth=g.lw(0.25);g.path([[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]]);ctx.stroke();
+  const tall=b[3]-b[1]>b[2]-b[0];g.text(String(sh.number==null?'':sh.number),tall?[(b[0]+b[2])/2,b[3]-12]:[b[2]-18,(b[1]+b[3])/2],6,{bold:true});g.text(String(sh.name||''),tall?[(b[0]+b[2])/2,b[3]-26]:[b[0]+6,(b[1]+b[3])/2],3.5,tall?{}:{align:'left'});
+  let come=0,stay=0;
+  for(const q of Array.isArray(sh.vps)?sh.vps:[]){const V=q&&by.get(q.view),k=ifvKind(V);if(!V)continue;
+    if(k==='draft'||k==='legend'){come++;const sc=V.scale||100,A=ifvVis(V,ifvAnn(S,new Set([V.id]),new Set(),null)),E=ifvBox(S,A,sc);if(!E)continue;const m=3*sc,T2={s:s/sc,ox:T.ox+q.x*s-(E[0]+E[2])/2*s/sc,oy:T.oy+q.y*s-(E[1]+E[3])/2*s/sc};
+      ifvPaint(painter(ctx,T2,sc,PRINT,false),S,V,A);const hy=q.y+((E[3]-E[1])/2+m)/sc+4;g.text(String(V.name||''),[q.x-((E[2]-E[0])/2+m)/sc,hy],2.5,{align:'left',bold:true});continue}
+    if(k==='sched'){come++;const F=ifvFlds(S,V)||[1,2,3],w=Math.max(60,Math.min(200,F.length*24)),nr=V.sched==='key'?Math.max(1,(V.krows||[]).length):6,h=8+nr*5,x0=q.x-w/2,y0=q.y-h/2;ctx.strokeStyle='#4b5563';ctx.lineWidth=g.lw(0.18);
+      g.path([[x0,y0],[x0+w,y0],[x0+w,y0+h],[x0,y0+h]]);ctx.stroke();for(let i=0;i<=nr;i++)g.seg([x0,y0+8+i*5],[x0+w,y0+8+i*5]);for(let i=1;i<F.length;i++)g.seg([x0+w*i/F.length,y0+3],[x0+w*i/F.length,y0+h]);
+      g.text(String(V.name||''),[q.x,y0+1.6],2.4,{bold:true});continue}
+    stay++;const w=+q.w>0?+q.w:100,h=+q.h>0?+q.h:70,x0=q.x-w/2,y0=q.y-h/2;ctx.strokeStyle='#9ca3af';ctx.lineWidth=1;g.dash([2,1.5]);g.path([[x0,y0],[x0+w,y0],[x0+w,y0+h],[x0,y0+h]]);ctx.stroke();g.dash(null);
+    g.text(String(V.name||''),[q.x,q.y-2.5],3,{color:'#6b7280'});g.text(t('ifv_stays'),[q.x,q.y+2.5],2.6,{color:'#9ca3af'})}
+  const A=ifvVis(sh,ifvAnn(S,new Set([sh.id]),new Set(),null));if(A.length)ifvPaint(g,S,sh,A);
+  return t('ifv_info_sheet',String(sh.number==null?'':sh.number),come)+(stay?t('ifv_info_stay',stay):'')}
+
+/* ---- Insert 2D Elements from File (Revit: pick a view of the file, then place what it draws in the view in front; Transfer view scale and detail level) ---- */
+/* the 2D elements of view v of S that can come (R.drop counts those that need the model) */
+const ifv2Ann=(S,v,R)=>ifvVis(v,ifvAnn(S,new Set([v.id]),new Set(),R));
+/* the views of S whose 2D elements can come, with how many: drafting views, legends, plans (a dependent plan draws those of its primary) */
+function ifv2List(S){const out=[];for(const v of Array.isArray(S.views)?S.views:[]){if(!v||v.kind!=='plan'||v.dep!=null||v.gcs)continue;const n=ifv2Ann(S,v,null).length;if(n)out.push({v,k:v.draft?(v.legend?'legend':'draft'):'plan',n})}
+  const O=['draft','legend','plan'];return out.sort((a,b)=>O.indexOf(a.k)-O.indexOf(b.k)||String(a.v.name||'').localeCompare(String(b.v.name||''),undefined,{numeric:true}))}
+function dlgIfv2(S,file,st){const tv=activeView();if(!ifv2Ok(tv)){toast(t('ifv2_view'),5000);return}const L=ifv2List(S);st=st||{cur:L.length?L[0].v.id:null,tr:false};
+  const rows=['draft','legend','plan'].map(k=>{const G=L.filter(x=>x.k===k);if(!G.length)return'';return`<div class="ifvg">${esc(t(k==='plan'?'ifv2_g_plan':'ifv_g_'+k))}</div>`+G.map(x=>`<div class="ifvr${x.v.id===st.cur?' on':''}" data-ivc="${x.v.id}" role="option" aria-selected="${x.v.id===st.cur}"><span>${esc(String(x.v.name||''))}</span><small style="margin-left:auto;opacity:.7">${x.n}</small></div>`).join('')}).join('');
+  const body=`<p class="note">${esc(t('ifv2_note',file||'—',String(tv.name||'')))}</p><div class="ifvx"><div><div class="ifvl" role="listbox">${rows||`<p class="note" style="padding:6px 10px">${t('ifv2_none')}</p>`}</div>`
+    +`<div class="chks" style="padding:8px 0 0;grid-template-columns:1fr"><label><input type="checkbox" id="ifv2Tr"${st.tr?' checked':''}${tv.dep!=null?' disabled':''}> ${t('ifv2_tr')}</label></div></div>`
+    +`<div><div class="ifvh">${t('ifv_prev')}</div><canvas id="ifvCv" aria-label="${esc(t('ifv_prev'))}"></canvas><p class="note" id="ifvI"></p></div></div>`;
+  openDlg(t('a_ins2d'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ivx="ok"${st.cur!=null?'':' disabled'}>${t('ok')}</button>`,{
+    click(e){const x=e.target.closest('[data-ivx]');if(x){if(x.disabled||st.cur==null)return;const sv=(S.views||[]).find(v=>v&&v.id===st.cur);closeDlg();if(sv)ifv2Start(S,sv,st.tr,file);return}
+      const r=e.target.closest('[data-ivc]');if(!r)return;st.cur=+r.dataset.ivc;for(const q of $$('#dlg .ifvr')){q.classList.toggle('on',q===r);q.setAttribute('aria-selected',q===r)}ifv2Show(S,st.cur)},
+    change(e){if(e.target.id==='ifv2Tr')st.tr=e.target.checked}},'ifv');
+  ifv2Show(S,st.cur)}
+function ifv2Show(S,id){const cv=$('#ifvCv'),inf=$('#ifvI');if(!cv)return;const v=(S.views||[]).find(x=>x&&x.id===id),ctx=ifvCanvas(cv);if(!ctx||!v)return;const R={drop:0},A=ifv2Ann(S,v,R);
+  ifvDrawView(ctx,cv._w,cv._h,S,v,A);if(inf)inf.textContent=t('ifv_info_v',t(v.draft?(v.legend?'ifv_c_legend':'ifv_c_draft'):'ifv_c_plan'),v.scale||100,A.length)+(R.drop?' · '+t('ifv_drop',R.drop):'')}
+/* the outline of annotations A for the preview under the pointer, at scale sc: lines, edges, the boxes of texts and of what stands at a point */
+function ifvSegs(S,A,sc){const out=[],box=b=>out.push([b[0],b[1],b[2],b[1]],[b[2],b[1],b[2],b[3]],[b[2],b[3],b[0],b[3]],[b[0],b[3],b[0],b[1]]),poly=(p,open)=>{for(let i=0;i+1<p.length+(open?0:1);i++){const a=p[i],b=p[(i+1)%p.length];out.push([a[0],a[1],b[0],b[1]])}};
+  for(const d of A){if(out.length>6000)break;
+    if(d.cat==='dline')poly(bowPts(d),true);else if(d.cat==='text')box(textBox(d,sc));else if(Array.isArray(d.pts)&&d.pts.length>1)poly(d.pts,d.cat==='wire');
+    else if(d.cat==='dim'){if(d.a&&d.b&&d.a.k==='pt'&&d.b.k==='pt')out.push([d.a.x,d.a.y,d.b.x,d.b.y])}
+    else if(d.x1!=null)out.push([d.x1,d.y1,d.x2,d.y2]);
+    else if(d.x!=null){const B=ifvBox(S,[d],sc);if(B)box(B)}}
+  return out}
+function ifv2Start(S,sv,tr,file){const v=activeView();if(!ifv2Ok(v)){toast(t('ifv2_view'),5000);return}const A=ifv2Ann(S,sv,null),sc=tr&&v.dep==null?sv.scale||v.scale||100:v.scale||100,B=ifvBox(S,A,sc);
+  if(!B){toast(t('ifv2_none'));return}ui.if2={S,sv,tr:!!tr&&v.dep==null,name:String(sv.name||''),segs:ifvSegs(S,A,sc),box:B,o:[Math.round((B[0]+B[2])/20)*10,Math.round((B[1]+B[3])/20)*10]};
+  setTool('ifv2',true);if(ui.tool!=='ifv2')ui.if2=null;else refresh()}          // not a command to repeat: it needs the file
+/* place them in view v moved by (dx, dy): R counts; returns the ids of what was placed */
+function ifv2Put(S,sv,v,dx,dy,tr,R){const pv=v.dep!=null?viewById(v.dep)||v:v,A=ifv2Ann(S,sv,R),A2=A.filter(d=>d.cat!=='lcomp'||pv.legend);R.drop+=A.length-A2.length;
+  const T=ifvTypes(S,A2,[],R),M={vm:new Map(),ty:T.ty,ls:T.ls,rev:null},rids=new Set();for(const d of A2)if(d.cat==='cloud'&&d.rev!=null)rids.add(d.rev);M.rev=ifvRevs(S,rids,R);
+  if(tr&&v.dep==null){const s=+sv.scale;if(Number.isInteger(s)&&s>=1&&s<=5000)v.scale=s;if(['coarse','medium','fine'].includes(sv.detail))v.detail=sv.detail}
+  const made=ifvPaste(S,ifvObjs(S,A2,M,R),dx,dy,pv,ifvG(S));IDX=indexProject(P);return made.map(c=>c.id)}
+/* place what L holds (ui.if2) in view v with its point L.o at (x, y), as one step of undo; returns the ids placed and the counts */
+function ifv2Place(L,v,x,y){const R={tAdd:0,tUse:0,drop:0,rev:0};let ids=[];const r=ifvEdit(()=>(ids=ifv2Put(L.S,L.sv,v,Math.round(x-L.o[0]),Math.round(y-L.o[1]),L.tr,R)).length);
+  if(r==='none')toast(t('ifv2_none'));if(r!=='ok')return{ids:[],R};
+  ui.sel=new Set(ids);toast([t('ifv2_done',ids.length),t('gl_types',R.tAdd,R.tUse),R.drop?t('ifv_drop',R.drop):''].filter(Boolean).join(' · '),8000);refresh();return{ids,R}}
+const ifv2Ok=v=>!!v&&v.kind==='plan'&&!v.gcs;
+XT.ifv2={ok:ifv2Ok,on(){if(!ui.if2){toast(t('gl_bad'));return false}},off(to){if(to!=='ifv2')ui.if2=null},hint:()=>ui.if2?t('h_ifv2',ui.if2.name):'',
+  draw(pn,ctx,v,nav,g){const L=ui.if2,c=gtCur(pn,nav);if(!L||!c||!ifv2Ok(v))return;gtPreview(ctx,g,v,L.segs,c[0]-L.o[0],c[1]-L.o[1],L.box,L.name)},
+  click(pn,v,p,w,pt){const L=ui.if2;if(!L)return;setTool('modify');ifv2Place(L,v,pt.x,pt.y)}};
+
+/* ---- the look of the dialogs, the ribbon (Insert › Import, after Place Decal), the icons ---- */
+{const st=document.createElement('style');st.textContent='dialog.ifv{width:min(900px,calc(100% - 32px))}dialog .ifvx{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:14px;align-items:start}@media (max-width:760px){dialog .ifvx{grid-template-columns:minmax(0,1fr)}}'
+  +'dialog .ifvl{max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:2px 0 6px}dialog .ifvg{font-weight:600;font-size:12px;color:var(--muted);padding:8px 10px 2px}'
+  +'dialog .ifvr{display:flex;align-items:center;gap:8px;padding:4px 10px;cursor:pointer;min-width:0}dialog .ifvr:hover{background:rgba(60,130,246,.08)}dialog .ifvr.on{background:rgba(60,130,246,.18)}dialog .ifvr span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}dialog .ifvr input{flex:none;margin:0}'
+  +'dialog .ifvh{font-weight:600;margin:2px 0 6px}dialog #ifvCv{display:block;width:100%;height:300px;border:1px solid var(--line);border-radius:6px;background:#fff}';document.head.appendChild(st)}
+Object.assign(BTN,{'@insviews':['insviews',''],'@ins2d':['ins2d','']});
+{const m=(RIBBON.find(r=>r.id==='insert')||{panels:[]}).panels.find(p=>p.t==='p_import');if(m)for(const b of ['@insviews','@ins2d'])if(!m.b.includes(b))m.b.push(b)}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"',
+    paper=`<path class="i-Pc i-e" fill="#9fadc0" ${E} d="M4.4 5.5h12.4a1.6 1.6 0 0 1 1.6 1.6v10.4a1.6 1.6 0 0 1-1.6 1.6h-12.4a1.6 1.6 0 0 1-1.6-1.6v-10.4a1.6 1.6 0 0 1 1.6-1.6z"/><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M4.4 4h12.4a1.6 1.6 0 0 1 1.6 1.6v10.4a1.6 1.6 0 0 1-1.6 1.6h-12.4a1.6 1.6 0 0 1-1.6-1.6v-10.4a1.6 1.6 0 0 1 1.6-1.6z"/>`,
+    badge=`<path class="i-Tb i-e" fill="#38bc9c" ${E} d="M13 13h7.2a1.4 1.4 0 0 1 1.4 1.4v4.6a1.4 1.4 0 0 1-1.4 1.4h-7.2a1.4 1.4 0 0 1-1.4-1.4v-4.6a1.4 1.4 0 0 1 1.4-1.4z"/><path class="i-lw" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.2" d="M14 16.7h5.2M17 14.5l2.4 2.2-2.4 2.2"/>`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-insviews" viewBox="0 0 24 24">${paper}<path class="i-Ba" fill="#b9d8ff" d="M4.6 5.8h5.4v4.6h-5.4z"/><path class="i-kB" fill="none" stroke="#5c9af0" style="stroke-width:.7" d="M4.6 5.8h5.4v4.6h-5.4zM4.6 9.2l3.4-3.4M6.4 10.4l3.6-3.6"/>`
+    +`<path class="i-kD" fill="none" stroke="#222937" style="stroke-width:.6" d="M11.4 5.8h5.2v4.6h-5.2zM11.4 7.3h5.2M11.4 8.8h5.2M13.8 5.8v4.6M4.6 12.6h6"/>${badge}</symbol>`
+    +`<symbol id="i-ins2d" viewBox="0 0 24 24">${paper}<path class="i-Ba" fill="#b9d8ff" d="M4.8 10.2l3.6-3.6 4.4 2.6v3h-8z"/><path class="i-kB" fill="none" stroke="#5c9af0" style="stroke-width:.7" d="M4.8 10.2l3.6-3.6 4.4 2.6v3h-8z"/>`
+    +`<path class="i-kD" fill="none" stroke="#222937" style="stroke-width:.65" d="M4.8 14.6h6.4M4.8 13.5v2.2M11.2 13.5v2.2M4.1 15.3l1.4-1.4M10.5 15.3l1.4-1.4"/>${badge}</symbol>`)})();
+Object.assign(STR,{
+  a_insviews:['แทรกมุมมองจากไฟล์','Insert Views from File'],a_ins2d:['แทรกชิ้นงาน 2 มิติจากไฟล์','Insert 2D Elements from File'],
+  ifv_pick:['เลือกไฟล์งาน (.penbim) ที่จะแทรกมุมมองร่าง คำอธิบายสัญลักษณ์ ตารางปริมาณ หรือชีตเข้ามา','Pick the project file (.penbim) to insert drafting views, legends, schedules or sheets from'],
+  ifv2_pick:['เลือกไฟล์งาน (.penbim) ที่มีเส้น ข้อความ และรายละเอียดที่ต้องการ','Pick the project file (.penbim) with the lines, text and details you want'],
+  ifv_note:['ไฟล์ {0} · ติ๊กมุมมองที่จะคัดลอกเข้ามา คลิกชื่อเพื่อดูตัวอย่าง · ชนิด รูปแบบเส้น และกลุ่มที่ใช้ตามมาด้วย (ชื่อที่มีอยู่แล้วใช้ของโครงการนี้)',
+    '{0} · tick the views to copy in; click a name to preview it · the types, line styles and groups they use come with them (where a name is here already, this project\'s is used)'],
+  ifv_views:['มุมมอง','Views'],ifv_f_all:['แสดงทุกมุมมองและชีต','Show all views and sheets'],ifv_f_draft:['เฉพาะมุมมองร่าง','Drafting views only'],ifv_f_legend:['เฉพาะคำอธิบายสัญลักษณ์','Legends only'],
+  ifv_f_sched:['เฉพาะตารางปริมาณ','Schedules only'],ifv_f_sheet:['เฉพาะชีต','Sheets only'],
+  ifv_g_draft:['มุมมองร่าง','Drafting Views'],ifv_g_legend:['คำอธิบายสัญลักษณ์','Legends'],ifv_g_sched:['ตารางปริมาณ','Schedules'],ifv_g_sheet:['ชีต','Sheets'],ifv2_g_plan:['แปลน','Plans'],
+  ifv_c_draft:['มุมมองร่าง','Drafting view'],ifv_c_legend:['คำอธิบายสัญลักษณ์','Legend'],ifv_c_sched:['ตารางปริมาณ','Schedule'],ifv_c_sheet:['ชีต','Sheet'],ifv_c_plan:['แปลน','Plan'],
+  ifv_all:['เลือกทั้งหมด','Check All'],ifv_nonebtn:['ไม่เลือกเลย','Check None'],ifv_picked:['เลือกไว้ {0}','Ticked: {0}'],ifv_prev:['ตัวอย่าง','Preview'],
+  ifv_none:['ไฟล์นี้ไม่มีมุมมองร่าง คำอธิบายสัญลักษณ์ ตารางปริมาณ หรือชีต','This file has no drafting views, legends, schedules or sheets'],ifv_nokind:['ไม่มีมุมมองประเภทนี้ในไฟล์','The file has none of this kind'],
+  ifv_blank:['(ว่าง)','(empty)'],ifv_stays:['(ไม่มาด้วย)','(stays behind)'],ifv_rows:['แถวมาจากโมเดลของโครงการนี้','The rows come from this project\'s model'],
+  ifv_info_v:['{0} · 1 : {1} · {2} ชิ้น','{0} · 1 : {1} · items: {2}'],ifv_info_sched:['ตารางปริมาณ · {0} ช่อง · แถวมาจากโมเดลของโครงการนี้','Schedule · fields: {0} · its rows come from this project\'s model'],
+  ifv_info_key:['ตารางคีย์ (Key Schedule) · {0} คีย์ มาด้วย','Key schedule · its keys come with it: {0}'],ifv_info_sheet:['ชีต {0} · มุมมองบนชีตที่มาด้วย {1}','Sheet {0} · views on it that come with it: {1}'],
+  ifv_info_stay:[' · มุมมองของโมเดล {0} ไม่มาด้วย',' · views of the model that stay behind: {0}'],
+  ifv_done:['แทรกแล้ว: {0}','Inserted: {0}'],ifv_pp:['เพิ่มพารามิเตอร์โครงการ {0}','project parameters added: {0}'],ifv_rev:['เพิ่มรายการแก้ไขแบบ (Revision) {0}','revisions added: {0}'],
+  ifv_ren:['ชื่อหรือเลขชีตที่ซ้ำเติมเลขต่อท้าย {0}','names or sheet numbers taken here, given a number after them: {0}'],ifv_vpout:['มุมมองของโมเดลบนชีต {0} ไม่มาด้วย','views of the model on the sheets that stay behind: {0}'],
+  ifv_drop:['ชิ้นที่ต้องอาศัยโมเดล {0} ไม่มาด้วย','items that need the model and do not come: {0}'],ifv_nothing:['ไม่มีอะไรให้แทรก','Nothing to insert'],ifv_err:['แทรกไม่สำเร็จ โครงการยังเหมือนเดิม','The insert failed; the project is as it was'],
+  ifv2_note:['ไฟล์ {0} · เลือกมุมมองหนึ่งอัน เส้น ข้อความ ระยะ ลวดลาย และชิ้นรายละเอียดของมุมมองนั้นจะตามเมาส์มา คลิกเพื่อวางใน “{1}”',
+    '{0} · pick one view: its lines, text, dimensions, regions and detail components follow the pointer, and a click places them in “{1}”'],
+  ifv2_tr:['ใช้มาตราส่วนและระดับรายละเอียดของมุมมองต้นฉบับ (Transfer view scale and detail level)','Transfer view scale and detail level'],
+  ifv2_none:['ไม่มีชิ้นงาน 2 มิติที่แทรกได้','No 2D elements to insert'],ifv2_view:['เปิดแปลน มุมมองร่าง หรือคำอธิบายสัญลักษณ์ก่อน แล้วจึงแทรกชิ้นงาน 2 มิติ','Open a plan, a drafting view or a legend first, then insert the 2D elements'],
+  t_ifv2:['แทรกชิ้นงาน 2 มิติจากไฟล์','Insert 2D Elements from File'],h_ifv2:['คลิกเพื่อวางชิ้นงาน 2 มิติจาก “{0}” · Esc ยกเลิก','Click to place the 2D elements of “{0}” · Esc cancels'],ifv2_done:['วางชิ้นงาน 2 มิติแล้ว {0} ชิ้น','2D elements placed: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -26748,6 +27097,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.138 · ป้ายและระดับคานแบบ Revit ([[a_beamann]]): ใส่ป้ายคานและค่าระดับ ณ จุดให้ทุกคานในแปลนครั้งเดียว ได้ถึง 6 ตำแหน่งต่อคาน คานราบกับคานเอียงตั้งแยกกัน · ป้ายวางตามแนวองค์ประกอบได้ ([[p_tagori]]: [[tgo_m]])
 - V1.139 · ชุดปั๊มทำงาน/สำรองแบบ Revit ([[a_mesnew]]): รวมปั๊มที่ต่อขนานเป็นชุด ตั้งจำนวนปั๊มทำงานและสำรอง อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน ท่อของปั๊มแต่ละตัว ท่อร่วม และด้านดูดได้อัตราไหลและขนาดตามนั้น
 - V1.140 · ลายเส้นแบบ Revit ([[a_lpats]]): สร้างลายของโครงการจากประ จุด และช่องว่าง ทำสำเนาลายที่มีมาให้ หรือนำเข้าจากไฟล์ .lin ของ AutoCAD แล้วใช้ในรูปแบบเส้น Object Styles การแสดงผลของมุมมอง ตัวกรอง และเฟส · ไฟล์ DXF ที่ส่งออกมีชนิดเส้นของแต่ละลาย
+- V1.141 · แทรกมุมมองจากไฟล์แบบ Revit ([[a_insviews]]): คัดลอกมุมมองร่าง คำอธิบายสัญลักษณ์ ตารางปริมาณ และชีตจากไฟล์งานอื่น พร้อมชนิด รูปแบบเส้น และกลุ่มที่ใช้ ดูตัวอย่างก่อนแทรก · [[a_ins2d]] วางเส้น ข้อความ และรายละเอียดจากมุมมองของไฟล์อื่นลงในมุมมองที่เปิดอยู่
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -26991,6 +27341,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.138 · Beam Annotations, as in Revit ([[a_beamann]]): tags and spot elevations on every beam of a plan at once, at up to six places round each beam, level and sloped beams each with their own · a tag can lie along its element ([[p_tagori]]: [[tgo_m]])
 - V1.139 · Mechanical Equipment Sets, as in Revit ([[a_mesnew]]): pumps in parallel as one set, with the pumps on duty and on standby; the flow of the system is shared by the pumps on duty, and the pipes of each pump, the headers and the suction side carry it and are sized for it
 - V1.140 · Line Patterns, as in Revit ([[a_lpats]]): patterns of the project's own made of dashes, dots and spaces, a copy of a stock one, or line types read from an AutoCAD .lin file, for line styles, Object Styles, Visibility/Graphics, filters and phases · an exported DXF keeps each as a linetype of its own
+- V1.141 · Insert Views from File, as in Revit ([[a_insviews]]): drafting views, legends, schedules and sheets from another project file, with the types, line styles and groups they use, previewed before they come · [[a_ins2d]] places the lines, text and details of a view of another file in the view in front
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -27228,6 +27579,9 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[a_rcp]]: มองขึ้นไปที่ฝ้า ใช้วางฝ้า โคม และหัวจ่ายลม
 - [[a_draftview]]: หน้าว่างสำหรับวาดรายละเอียดด้วยเส้นและข้อความ
 - [[a_legend]]: ตารางสัญลักษณ์ กด [[a_legendfill]] เพื่อเติมสัญลักษณ์ที่โครงการใช้ให้เลย
+- [[a_insviews]] (แท็บ [[tab_insert]] กลุ่ม [[p_import]]): คัดลอกมุมมองร่าง คำอธิบายสัญลักษณ์ ตารางปริมาณ และชีต จากไฟล์งานอื่นมาไว้ในโครงการนี้ ติ๊กที่ต้องการในรายการ (เลือกดูทีละประเภทได้ คลิกชื่อเพื่อดูตัวอย่าง) · เส้น ข้อความ ระยะ ลวดลาย ชิ้นรายละเอียด รูปภาพ และกลุ่ม ตามมาด้วย ชนิดที่ใช้มาตามชื่อ (ชื่อที่มีอยู่แล้วใช้ของโครงการนี้) · ชีตพามุมมองร่าง คำอธิบายสัญลักษณ์ และตารางที่วางบนชีตมาด้วย แปลนหรือรูปตัดของโมเดลไม่มา · ตารางพาพารามิเตอร์โครงการที่แสดงมาด้วย · ชื่อหรือเลขชีตที่ซ้ำจะเติมเลขต่อท้าย
+- [[a_ins2d]]: เลือกมุมมองหนึ่งในไฟล์งานอื่น เส้น ข้อความ และรายละเอียดของมุมมองนั้นจะตามเมาส์มา คลิกเพื่อวางในแปลน มุมมองร่าง หรือคำอธิบายสัญลักษณ์ที่เปิดอยู่ · ติ๊ก [[ifv2_tr]] เพื่อใช้มาตราส่วนเดียวกับต้นฉบับ
+> ต่างจาก Revit: ชิ้นที่ต้องอาศัยโมเดล (ป้ายกำกับ ระยะที่วัดจากผนัง) ไม่มาด้วย · [[a_ins2d]] วางได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์ (ยังไม่วางในรูปด้านหรือรูปตัด)
 - [[a_gcs]] (Revit: Graphical Column Schedule; แท็บ [[tab_view]] กลุ่ม [[p_create]] หรือ ＋ ใต้หัวข้อ [[br_sched]]): ตารางรูปเสาของทั้งโครงการ ตำแหน่งเสาเรียงจากซ้ายไปขวา ระดับชั้นเป็นเส้นแนวนอนพร้อมชื่อและค่าระดับ เสาแต่ละต้นวาดจากฐานถึงยอดตามความกว้างจริงที่มาตราส่วนของมุมมอง พร้อมชื่อชนิดตามแนวเสา ใต้ตารางคือ [[p_cloc]] · แผงคุณสมบัติ: [[p_gcsgrp]] (ตำแหน่งที่เสาเหมือนกันทุกชั้นรวมเป็นช่องเดียว) [[p_gcsoff]] [[p_gcsmat]] [[p_gcslb]] [[p_gcslt]] [[p_gcss0]] [[p_gcss1]] [[p_gcsseg]] (0 = แถวเดียว) [[p_gcscw]] และ [[p_gcstot]] · ดับเบิลคลิกเสาในตารางเพื่อไปที่เสานั้นในแปลน · วางบนชีต พิมพ์ PDF และส่งออก DXF ได้ เติมข้อความหรือเส้นได้ · ตารางเปลี่ยนตามทันทีเมื่อแก้เสา ชนิด กริด หรือระดับ
 > ต่างจาก Revit: ซ่อนระดับทีละชั้น (Hidden Levels) ระยะเลยระดับบนและล่าง และขนาดตัวอักษรของตารางยังตั้งไม่ได้ · คลิกเสาในตารางเพื่อเลือกไม่ได้ ใช้ดับเบิลคลิกไปที่แปลนแทน · เสาเอียงไม่อยู่ในตาราง เหมือน Revit
 - [[a_dup]]: ได้มุมมองอีกอันที่ตั้งค่าการแสดงผลแยกกันได้ (ใช้กับแปลนและ 3 มิติ)
@@ -27294,6 +27648,9 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[a_rcp]]: the ceiling, looked up at; ceilings, luminaires and air terminals are placed here
 - [[a_draftview]]: an empty page for details drawn with lines and text
 - [[a_legend]]: a table of symbols; [[a_legendfill]] adds the symbols the project uses
+- [[a_insviews]] (the [[tab_insert]] tab, [[p_import]]): copies drafting views, legends, schedules and sheets from another project file into this one: tick them in the list (one kind at a time if you like; click a name to preview it) · their lines, text, dimensions, regions, detail components, pictures and groups come with them, and the types they use, by name (where a name is here already, this project's type is used) · a sheet brings the drafting views, legends and schedules placed on it; plans and sections of the model stay behind · a schedule brings the project parameters it shows · a name or a sheet number taken here gets a number after it
+- [[a_ins2d]]: pick one view of another project file: its lines, text and details follow the pointer, and a click places them in the plan, drafting view or legend in front · tick [[ifv2_tr]] to take the scale of the view they come from
+> Unlike Revit: what needs the model (tags, dimensions to walls) does not come · [[a_ins2d]] places into plans, drafting views and legends (not yet into elevations or sections)
 - [[a_gcs]] (Revit: Graphical Column Schedule; the [[tab_view]] tab, [[p_create]], or ＋ under [[br_sched]]): a schedule that draws the columns of the whole project, the locations from left to right, the levels as lines across with their names and elevations; each column runs from its base to its top at its true width at the scale of the view, the name of its type along it, and the [[p_cloc]] under it · in Properties: [[p_gcsgrp]] (locations with the same columns on every level share one place), [[p_gcsoff]], [[p_gcsmat]], [[p_gcslb]], [[p_gcslt]], [[p_gcss0]], [[p_gcss1]], [[p_gcsseg]] (0 = one row), [[p_gcscw]] and [[p_gcstot]] · double-click a column in it to go to that column in a plan · it goes on sheets, prints to PDF and exports to DXF, and text and lines can be added to it · it follows every change to columns, types, grids and levels at once
 > Unlike Revit: there are no Hidden Levels, no extensions above the top and below the bottom level and no text sizes to set · a click does not select a column in the schedule: double-click it to go to a plan · slanted columns are left out, as in Revit
 - [[a_dup]]: a second view that keeps its own display settings (plans and 3D views)
@@ -28831,6 +29188,12 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r55={I:()=>({P,ui,IDX,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),list:S=>ifvList(S).map(x=>({id:x.v.id,k:x.k,name:ifvLabel(x.v)})),kind:v=>ifvKind(v),
+  ann:(S,ids,ok)=>ifvAnn(S,new Set(ids),new Set(ok||ids),{drop:0}).map(d=>d.id),take:(s,f)=>ifvTake(s,f),dlg:(S,f)=>dlgIfv(S,f||'test.penbim'),dlg2:(S,f)=>dlgIfv2(S,f||'test.penbim'),run:(S,ids)=>{const r=ifvRun(S,ids);return r?{R:r.R,V:r.X.V.map(c=>c.id),vm:[...r.X.vm]}:null},
+  list2:S=>ifv2List(S).map(x=>({id:x.v.id,k:x.k,n:x.n})),start2:(S,id,tr)=>ifv2Start(S,(S.views||[]).find(v=>v.id===id),tr,'test.penbim'),
+  put2:(S,id,vid,dx,dy,tr)=>ifv2Place({S,sv:(S.views||[]).find(v=>v.id===id),tr:!!tr,o:[0,0]},viewById(vid),dx,dy),
+  segs:(S,id,sc)=>ifvSegs(S,ifvAnn(S,new Set([id]),new Set(),null),sc),box:(S,id,sc)=>ifvBox(S,ifvAnn(S,new Set([id]),new Set(),null),sc),if2:()=>ui.if2?{name:ui.if2.name,o:ui.if2.o,box:ui.if2.box,n:ui.if2.segs.length,tr:ui.if2.tr}:null,
+  str:()=>projStr(),loadText:s=>loadText(s),cad:k=>CADB.get(k)||null,cadKeys:()=>[...CADB.keys()],cadPut:(k,B)=>CADB.set(k,B),pick:two=>ifvPick(two),undo:()=>undo(),redo:()=>redo(),av:()=>{const v=activeView();return v?v.id:null},tool:()=>ui.tool};
 window.PenumBIM.r54={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),ls:k=>lsGet(P,k),dash:k=>lpDash(k),d:k=>lpD(k),norm:a=>lpNorm(a),uses:k=>lpUses(k),
   refs:()=>lpRefs(P).map(x=>[x[2],x[1],x[0][x[1]]]),keys:()=>lpOwnKeys(),name:k=>lpName(k),opts:(T,c)=>lpOpts(T==='ls'?LS_PAT:VG_PAT,c),ovOne:q=>ovOne(q,true),patOf:k=>lsPatOf(k),
   dxf:id=>planDXF(viewById(id)),sheetDxf:id=>sheetDXF(viewById(id)),lin:s=>linParse(s),pick:(L,fn)=>dlgLinPick(L,fn||'test.lin'),purge:()=>purgeable(P),std:S=>standardsOf(S),dupes:(S,p)=>transferDupes(P,S,p),
