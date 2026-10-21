@@ -1246,10 +1246,10 @@ const LSTYLE={thin:[0.13,null],medium:[0.25,null],wide:[0.5,null],hidden:[0.18,[
    lsGet → [pen in mm, dashes in mm of paper or null, colour or null]; a key that is not there is the thin line */
 const LS_PAT={solid:null,hidden:[2,1],center:[6,1.2,1.2,1.2],demolished:[1,1],dash:[3,1.5],dot:[0.6,1.2],dashdot:[5,1.5,0.6,1.5]},LS_STOCK_PAT={thin:'solid',medium:'solid',wide:'solid',hidden:'hidden',center:'center',demolished:'demolished'},LS_W=[0.09,0.13,0.18,0.25,0.35,0.5,0.7,1];
 const lsKeys=P=>Object.keys(LSTYLE).concat(Object.keys(P.ls||{}).filter(k=>!LSTYLE[k]&&P.ls[k]&&P.ls[k].own));
-function lsGet(P,key){const L=P.ls||{};if(!LSTYLE[key]&&!(L[key]&&L[key].own))key='thin';const S=LSTYLE[key]||LSTYLE.thin,o=L[key]||{};return[o.w>0?o.w:S[0],typeof o.p==='string'&&o.p in LS_PAT?LS_PAT[o.p]:S[1],o.c||null]}
+function lsGet(P,key){const L=P.ls||{};if(!LSTYLE[key]&&!(L[key]&&L[key].own))key='thin';const S=LSTYLE[key]||LSTYLE.thin,o=L[key]||{};return[o.w>0?o.w:S[0],typeof o.p==='string'&&Object.prototype.hasOwnProperty.call(LS_PAT,o.p)?LS_PAT[o.p]:lpDash(o.p,P)||S[1],o.c||null]}
 function lsClean(P){if(!P.ls||typeof P.ls!=='object'||Array.isArray(P.ls)){delete P.ls;return}const out={},names=new Set();
   for(const k in P.ls){const o=P.ls[k],stock=!!LSTYLE[k];if(!o||typeof o!=='object'||(!stock&&!(o.own&&/^u\d+$/.test(k))))continue;const r={};
-    if(LS_W.includes(+o.w))r.w=+o.w;if(typeof o.p==='string'&&o.p in LS_PAT)r.p=o.p;if(typeof o.c==='string'&&/^#[0-9a-f]{6}$/i.test(o.c))r.c=o.c.toLowerCase();
+    if(LS_W.includes(+o.w))r.w=+o.w;if(lpOk(LS_PAT,o.p,P))r.p=o.p;if(typeof o.c==='string'&&/^#[0-9a-f]{6}$/i.test(o.c))r.c=o.c.toLowerCase();
     if(stock){if(r.w===LSTYLE[k][0])delete r.w;if(r.p===LS_STOCK_PAT[k])delete r.p}          // of a stock style only what is not as it comes
     else{let nm=String(o.name||'').trim().slice(0,40)||k;while(names.has(nm))nm+=' 2';names.add(nm);r.own=1;r.name=nm;if(!r.w)r.w=0.18;if(!r.p)r.p='solid'}
     if(Object.keys(r).length)out[k]=r}
@@ -5016,7 +5016,7 @@ function phaseClean(P){
     if(!seen.has('new'))out.push({id:'new'});if(out.length===2&&out[0].id==='ex'&&out[1].id==='new'&&!out.some(q=>q.name||q.desc))delete P.phases;else P.phases=out}
   if(P.pfilters!==undefined){const out=[],seen=new Set();if(Array.isArray(P.pfilters))for(const q of P.pfilters){if(!q||typeof q.id!=='string'||!/^[a-z0-9]{1,12}$/.test(q.id)||q.id==='none'||seen.has(q.id))continue;seen.add(q.id);const o={id:q.id};for(const k of ['n','e','d','t'])o[k]=PF_V.includes(q[k])?q[k]:'cat';const n=String(q.name||'').trim().slice(0,60);if(n)o.name=n;else if(!PF_STOCK.some(s=>s[0]===q.id))o.name=q.id;out.push(o)}
     if(out.length)P.pfilters=out;else delete P.pfilters}
-  if(P.pgo!==undefined){const out={};if(P.pgo&&typeof P.pgo==='object')for(const k of ['e','d','n','t']){const q=P.pgo[k];if(!q||typeof q!=='object')continue;const r={};if(typeof q.c==='string'&&/^#[0-9a-f]{6}$/i.test(q.c))r.c=q.c.toLowerCase();if(+q.w>0&&+q.w<=1)r.w=+q.w;if(typeof q.p==='string'&&/^(dash|dot|dashdot|center)$/.test(q.p))r.p=q.p;if(q.h)r.h=1;out[k]=r}
+  if(P.pgo!==undefined){const out={};if(P.pgo&&typeof P.pgo==='object')for(const k of ['e','d','n','t']){const q=P.pgo[k];if(!q||typeof q!=='object')continue;const r={};if(typeof q.c==='string'&&/^#[0-9a-f]{6}$/i.test(q.c))r.c=q.c.toLowerCase();if(+q.w>0&&+q.w<=1)r.w=+q.w;if(typeof q.p==='string'&&(/^(dash|dot|dashdot|center|hidden|demolished)$/.test(q.p)||lpOwn(q.p,P)))r.p=q.p;if(q.h)r.h=1;out[k]=r}
     if(Object.keys(out).length)P.pgo=out;else delete P.pgo}
   const I=phIndex(P),F=new Set(pfList(P).map(q=>q.id));
   for(const e of P.els){if(e.ph!==undefined&&(!phased(e)||e.ph==='new'||!I.has(e.ph)))delete e.ph;if(e.dem!==undefined&&(!phased(e)||!I.has(e.dem)||I.get(e.dem)<phAt(I,e.ph)))delete e.dem}
@@ -5960,7 +5960,7 @@ function dxfRecorder(o){o=o||{};
   const noFill=o.noFill||DXF_NOFILL;let M=[1,0,0,1,0,0],stack=[],path=[],sub=null,pend=null,lay='0',cat='',pat=0,clips=[],dash=null,ord=0;
   const tp=(x,y)=>[M[0]*x+M[2]*y+M[4],M[1]*x+M[3]*y+M[5]],msc=()=>Math.sqrt(Math.abs(M[0]*M[3]-M[1]*M[2]))||1,mrot=()=>Math.atan2(M[1],M[0]);
   const L=()=>{if(!pat)return lay;const n=(lay+'-PATT').slice(0,31);if(!layers.has(n))layers.set(n,8);return n};
-  const lt=()=>!dash||!dash.length?'':dash.length>=4?'CENTER':dash[0]<=2.5*sc?'HIDDEN':'DASHED';
+  const LPM=lpDxfMatch(sc),lt=()=>!dash||!dash.length?'':LPM(dash)||(dash.length>=4?'CENTER':dash[0]<=2.5*sc?'HIDDEN':'DASHED');
   const add=e=>{e.ord=ord++;e.bb=e.k==='tx'?[e.x,e.y,e.x,e.y]:e.k==='so'?dxBox(e.p):e.k==='pl'?dxBox(dxFlat(e.v,e.a,false)):[e.x-e.r,e.y-e.r,e.x+e.r,e.y+e.r];ents.push(e)};
   const start=p=>{sub={v:[p],a:[null],c:false,only:null};path.push(sub);pend=null};
   const to=p=>{if(!sub){start(pend||p);if(!pend)return}const q=sub.v[sub.v.length-1];if(Math.hypot(p[0]-q[0],p[1]-q[1])<1e-6)return;sub.v.push(p);sub.a.push(null);sub.only=null};
@@ -6075,7 +6075,7 @@ function dxfWrite(ents,layers,o){o=o||{};const sc=o.scale||100,out=[],w=(c,v)=>{
   w(0,'SECTION');w(2,'HEADER');w(9,'$ACADVER');w(1,'AC1009');w(9,'$DWGCODEPAGE');w(3,'ANSI_874');w(9,'$INSBASE');w(10,'0.0');w(20,'0.0');w(30,'0.0');
   w(9,'$EXTMIN');w(10,n(x0));w(20,n(y0));w(30,'0.0');w(9,'$EXTMAX');w(10,n(x1));w(20,n(y1));w(30,'0.0');w(9,'$LTSCALE');w(40,n(sc));w(0,'ENDSEC');
   w(0,'SECTION');w(2,'TABLES');
-  const LT=[['CONTINUOUS','Solid line',[]],['DASHED','Dashed __ __ __ __',[3,-1.5]],['HIDDEN','Hidden _ _ _ _ _ _',[1.6,-0.9]],['CENTER','Center ____ _ ____ _',[9,-1.5,1.5,-1.5]]];
+  const LT=[['CONTINUOUS','Solid line',[]],['DASHED','Dashed __ __ __ __',[3,-1.5]],['HIDDEN','Hidden _ _ _ _ _ _',[1.6,-0.9]],['CENTER','Center ____ _ ____ _',[9,-1.5,1.5,-1.5]]].concat(lpDxfLT(ents));
   w(0,'TABLE');w(2,'LTYPE');w(70,LT.length);for(const [nm,ds,p] of LT){w(0,'LTYPE');w(2,nm);w(70,0);w(3,ds);w(72,65);w(73,p.length);w(40,n(p.reduce((s,v)=>s+Math.abs(v),0)));for(const v of p)w(49,n(v))}w(0,'ENDTAB');
   const names=new Map();for(const [nm,c] of layers)names.set(dxfName(nm),c);for(const e of ents){const k=dxfName(e.L);if(!names.has(k))names.set(k,7)}if(!names.has('0'))names.set('0',7);
   w(0,'TABLE');w(2,'LAYER');w(70,names.size);for(const [nm,c] of [...names].sort((a,b)=>a[0]<b[0]?-1:1)){w(0,'LAYER');w(2,nm);w(70,0);w(62,c||7);w(6,'CONTINUOUS')}w(0,'ENDTAB');
@@ -11995,14 +11995,14 @@ function dlgObjStyles(keep){const dc=keep?$('#dlg .clr'):null,top=dc?dc.scrollTo
   const row=c=>{if(VG_NOOV.has(c))return'';const q=O[c]||{};
     return(VG_GRP[c]?`<tr class="grp"><th colspan="5">${t(VG_GRP[c])}</th></tr>`:'')+`<tr${ovHas(q)?' class="set"':''}><td>${esc(t('cat_'+c))}</td><td class="vc"><input type="color" data-os="${c}:c" value="${q.c||ink}"${q.c?'':' class="unset"'} aria-label="${t('vg_color')}">${q.c?`<button type="button" class="x" data-osx="${c}" title="${t('vg_clear')}">✕</button>`:''}</td>`
       +['w','wc'].map(k=>`<td><select data-os="${c}:${k}" aria-label="${t(k==='w'?'os_weight':'os_wcut')}"><option value="">${t('os_default')}</option>${VG_W.map(w=>`<option value="${w}"${q[k]===w?' selected':''}>${w.toFixed(2)} ${t('u_mm')}</option>`).join('')}</select></td>`).join('')
-      +`<td><select data-os="${c}:p" aria-label="${t('vg_pattern')}"><option value="">${t('os_default')}</option>${Object.keys(VG_PAT).map(k=>`<option value="${k}"${q.p===k?' selected':''}>${t('lp_'+k)}</option>`).join('')}</select></td></tr>`};
+      +`<td><select data-os="${c}:p" aria-label="${t('vg_pattern')}"><option value="">${t('os_default')}</option>${lpOpts(VG_PAT,q.p)}</select></td></tr>`};
   openDlg(t('a_objstyles'),`<p class="note">${t('os_note')}</p><div class="clr vgt"><table><thead><tr><th>${t('os_cat')}</th><th>${t('os_color')}</th><th>${t('os_weight')}</th><th>${t('os_wcut')}</th><th>${t('os_pattern')}</th></tr></thead><tbody>${VG_CATS.map(row).join('')}</tbody></table></div>`,
     `<button class="btn" data-osx="*"${n?'':' disabled'}>${t('os_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
     {change(e){const a=(e.target.dataset.os||'').split(':');if(a.length!==2)return;const el=e.target;osSet(a[0],a[1],a[1]==='w'||a[1]==='wc'?parseFloat(el.value)||0:el.value);dlgObjStyles(true)},
      click(e){const x=e.target.dataset.osx;if(x==null)return;if(x==='*')edit(()=>{delete P.os});else osSet(x,'c','');dlgObjStyles(true)}},'vg os');
   if(dc){const d2=$('#dlg .clr');if(d2)d2.scrollTop=top}}
 /* ---------- line styles ---------- */
-const lsName=k=>{const o=(P.ls||{})[k];return o&&o.own?o.name:t('ls_'+(LSTYLE[k]?k:'thin'))},lsPatOf=k=>{const o=(P.ls||{})[k]||{};return o.p&&o.p in LS_PAT?o.p:(LS_STOCK_PAT[k]||'solid')};
+const lsName=k=>{const o=(P.ls||{})[k];return o&&o.own?o.name:t('ls_'+(LSTYLE[k]?k:'thin'))},lsPatOf=k=>{const o=(P.ls||{})[k]||{};return lpOk(LS_PAT,o.p)?o.p:(LS_STOCK_PAT[k]||'solid')};
 const lsUsed=k=>P.els.filter(e=>e.cat==='mline'&&(e.style||'thin')===k).length+P.ann.filter(d=>d.cat==='dline'&&(d.style||'thin')===k).length;
 function lsEdit(fn){edit(()=>{const o=JSON.parse(JSON.stringify(P.ls||{}));fn(o);P.ls=o})}
 function lsFree(base){const N=new Set(lsKeys(P).map(lsName));let n=base,i=2;while(N.has(n))n=base+' '+(i++);return n}
@@ -12013,7 +12013,7 @@ function dlgLineStyles(keep){const dc=keep?$('#dlg .clr'):null,top=dc?dc.scrollT
     return`<tr><td>${own?`<input data-ls="${k}:name" value="${esc(o.name)}" maxlength="40" aria-label="${t('p_name')}">`:esc(t('ls_'+k))}</td>`
       +`<td><select data-ls="${k}:w" aria-label="${t('os_weight')}">${LS_W.map(w=>`<option value="${w}"${S[0]===w?' selected':''}>${w.toFixed(2)} ${t('u_mm')}</option>`).join('')}</select></td>`
       +`<td class="vc"><input type="color" data-ls="${k}:c" value="${S[2]||ink}"${S[2]?'':' class="unset"'} aria-label="${t('os_color')}">${S[2]?`<button type="button" class="x" data-lsx="${k}:noc" title="${t('vg_clear')}">✕</button>`:''}</td>`
-      +`<td><select data-ls="${k}:p" aria-label="${t('os_pattern')}">${Object.keys(LS_PAT).map(q=>`<option value="${q}"${pk===q?' selected':''}>${t('lp_'+q)}</option>`).join('')}</select></td>`
+      +`<td><select data-ls="${k}:p" aria-label="${t('os_pattern')}">${lpOpts(LS_PAT,pk)}</select></td>`
       +`<td class="n">${n||''}</td><td class="fb">${own?`<button type="button" data-lsx="${k}:del" title="${t('ls_del')}" aria-label="${t('ls_del')}">✕</button>`:ch?`<button type="button" data-lsx="${k}:reset" title="${t('ls_stock')}" aria-label="${t('ls_stock')}">↺</button>`:''}</td></tr>`};
   openDlg(t('a_linestyles'),`<p class="note">${t('ls_note')}</p><div class="clr vgt"><table><thead><tr><th>${t('ls_style')}</th><th>${t('os_weight')}</th><th>${t('os_color')}</th><th>${t('os_pattern')}</th><th>${t('ls_used')}</th><th></th></tr></thead><tbody>${lsKeys(P).map(row).join('')}</tbody></table></div>`,
     `<button class="btn" data-lsx=":new">${t('ls_new')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
@@ -12043,7 +12043,7 @@ const ovHas=q=>!!(q&&(q.c||q.w||q.wc||q.p||q.cc||q.pc||q.h||q.tr>0||q.sf||q.sfc|
 /* subcategories (Revit: the + beside a category in Visibility/Graphics): parts of a category that can be hidden or drawn their own way, key 'cat.part' */
 const VG_SUB={door:['frame','panel','swing'],window:['frame','glass','sill']},VG_SUBK=Object.keys(VG_SUB).flatMap(c=>VG_SUB[c].map(x=>c+'.'+x));
 /* one override, with only what an override can be; null when nothing is left */
-function ovOne(q,tr){if(!q||typeof q!=='object')return null;const r={};if(typeof q.c==='string'&&/^#[0-9a-f]{6}$/i.test(q.c))r.c=q.c.toLowerCase();if(VG_W.includes(+q.w))r.w=+q.w;if(VG_W.includes(+q.wc))r.wc=+q.wc;if(typeof q.p==='string'&&VG_PAT[q.p])r.p=q.p;if(typeof q.cc==='string'&&/^#[0-9a-f]{6}$/i.test(q.cc))r.cc=q.cc.toLowerCase();if(typeof q.pc==='string'&&VG_PAT[q.pc])r.pc=q.pc;if(q.h)r.h=1;vgPOne(q,r);
+function ovOne(q,tr){if(!q||typeof q!=='object')return null;const r={};if(typeof q.c==='string'&&/^#[0-9a-f]{6}$/i.test(q.c))r.c=q.c.toLowerCase();if(VG_W.includes(+q.w))r.w=+q.w;if(VG_W.includes(+q.wc))r.wc=+q.wc;if(lpOk(VG_PAT,q.p))r.p=q.p;if(typeof q.cc==='string'&&/^#[0-9a-f]{6}$/i.test(q.cc))r.cc=q.cc.toLowerCase();if(lpOk(VG_PAT,q.pc))r.pc=q.pc;if(q.h)r.h=1;vgPOne(q,r);
   const n=Math.round(+q.tr);if(n>0&&tr)r.tr=Math.min(100,n);return ovHas(r)?r:null}
 /* keep only what is valid: the overrides by category, by element (of elements that still exist) and the filters of the view (of filters that still exist) */
 function ovClean(v){const o={};if(v.ov&&typeof v.ov==='object')for(const k of VG_CATS.concat(VG_SUBK)){if(VG_NOOV.has(k))continue;const r=ovOne(v.ov[k],VG_TR.has(k));if(r)o[k]=r}if(Object.keys(o).length)v.ov=o;else delete v.ov;
@@ -12095,7 +12095,7 @@ function vgCtx(ctx,v,col,pm,thin){const R=ovRes(v);if(!R)return ctx;let any=!!P.
   const keep=new Set([col.sel,col.hot,REVC,col.paper,'transparent']),paper=css2rgb(col.paper),memo=new Map(),fns=new Map(),stack=[];let cur=null,curK='',curE=null,pat=0,own=0,cutM=0,rawS=null,rawF=null,rawLW=null,rawD=null;
   const mapc=(val,fill)=>{const cc=cur&&(cutM&&cur.cc||cur.c);if(!cur||own||(!cc&&!cur.h)||typeof val!=='string'||keep.has(val))return val;const lf=fill&&cur.lf?1:0,key=(cc||'')+(cur.h?'~':'|')+(lf?'f':'')+val;let r=memo.get(key);if(r===undefined){let c=css2rgb(cc||val);if(cur.h)c=c.map((x,i)=>x+(paper[i]-x)*htMix(0.5));if(lf)c=c.map((x,i)=>x+(paper[i]-x)*0.78);r='rgb('+c.map(x=>Math.round(x*255)).join(',')+')';memo.set(key,r)}return r},
     mapw=val=>{const w=cur&&!pat&&!own?(cutM&&cur.wc)||cur.w:0;return w?(thin?1:Math.max(0.8,Math.min(8,w*pm))):val},          // what the plan cuts is drawn with the cut weight (Object Styles: Cut), the rest with the projection weight
-    mapd=a=>{const pp=cur&&(cutM&&cur.pc||cur.p);return pp&&!pat&&!own?VG_PAT[pp].map(m=>Math.max(1.5,m*pm)):(a||[])},
+    mapd=a=>{const pp=cur&&(cutM&&cur.pc||cur.p);return pp&&!pat&&!own?(lpDash(pp)||VG_PAT[pp]||[]).map(m=>Math.max(1.5,m*pm)):(a||[])},
     sync=()=>{if(rawS!=null)ctx.strokeStyle=mapc(rawS);if(rawF!=null)ctx.fillStyle=mapc(rawF,1);if(rawLW!=null)ctx.lineWidth=mapw(rawLW);ctx.setLineDash(mapd(rawD))},
     setCur=q=>{const n=ov2d(q)?q:null;if(n!==cur){cur=n;sync()}},
     special={vgq:()=>cur,layer(k,x){curK=k;curE=null;if(ctx.layer)ctx.layer(k,x);setCur(R(k,null))},el(e){curE=e;if(ctx.el)ctx.el(e);setCur(R(curK,e))},
@@ -12116,9 +12116,9 @@ function glOv(v,col){const R=ovRes(v);if(!R)return null;const bg=css2rgb(col.pap
 const hex6=c=>{const r=css2rgb(c);return'#'+r.map(x=>Math.round(clamp(x,0,1)*255).toString(16).padStart(2,'0')).join('')};
 const vgViewOK=v=>!!v&&v.kind!=='schedule'&&v.kind!=='sheet';
 /* the cells of one override in a table: colour (with a cross to clear it), pen, pattern, halftone, transparency.  key: what the controls are called; gl: a 3D view; dis: nothing can be changed */
-function ovCells(key,q,gl,tr,ink,dis,nocut){q=q||{};const D=dis?' disabled':'',cutC=gl||nocut?'':`<td class="vc"><input type="color" data-ov="${key}:cc" value="${q.cc||ink}"${q.cc?'':' class="unset"'} aria-label="${t('vg_ccolor')}"${D}>${q.cc&&!dis?`<button type="button" class="x" data-ovx="${key}:cc" title="${t('vg_clear')}">✕</button>`:''}</td><td><select data-ov="${key}:wc" aria-label="${t('vg_cweight')}"${D}><option value="">${t('vg_same')}</option>${VG_W.map(w=>`<option value="${w}"${q.wc===w?' selected':''}>${w.toFixed(2)} ${t('u_mm')}</option>`).join('')}</select></td><td><select data-ov="${key}:pc" aria-label="${t('vg_cpattern')}"${D}><option value="">${t('vg_same')}</option>${Object.keys(VG_PAT).map(k=>`<option value="${k}"${q.pc===k?' selected':''}>${t('lp_'+k)}</option>`).join('')}</select></td>`;return`<td class="vc"><input type="color" data-ov="${key}:c" value="${q.c||ink}"${q.c?'':' class="unset"'} aria-label="${t('vg_color')}"${D}>${q.c&&!dis?`<button type="button" class="x" data-ovx="${key}:c" title="${t('vg_clear')}">✕</button>`:''}</td>`
+function ovCells(key,q,gl,tr,ink,dis,nocut){q=q||{};const D=dis?' disabled':'',cutC=gl||nocut?'':`<td class="vc"><input type="color" data-ov="${key}:cc" value="${q.cc||ink}"${q.cc?'':' class="unset"'} aria-label="${t('vg_ccolor')}"${D}>${q.cc&&!dis?`<button type="button" class="x" data-ovx="${key}:cc" title="${t('vg_clear')}">✕</button>`:''}</td><td><select data-ov="${key}:wc" aria-label="${t('vg_cweight')}"${D}><option value="">${t('vg_same')}</option>${VG_W.map(w=>`<option value="${w}"${q.wc===w?' selected':''}>${w.toFixed(2)} ${t('u_mm')}</option>`).join('')}</select></td><td><select data-ov="${key}:pc" aria-label="${t('vg_cpattern')}"${D}><option value="">${t('vg_same')}</option>${lpOpts(VG_PAT,q.pc)}</select></td>`;return`<td class="vc"><input type="color" data-ov="${key}:c" value="${q.c||ink}"${q.c?'':' class="unset"'} aria-label="${t('vg_color')}"${D}>${q.c&&!dis?`<button type="button" class="x" data-ovx="${key}:c" title="${t('vg_clear')}">✕</button>`:''}</td>`
     +`<td><select data-ov="${key}:w" aria-label="${t('vg_weight')}"${gl||dis?' disabled':''}><option value="">${t('vg_same')}</option>${VG_W.map(w=>`<option value="${w}"${q.w===w?' selected':''}>${w.toFixed(2)} ${t('u_mm')}</option>`).join('')}</select></td>`
-    +`<td><select data-ov="${key}:p" aria-label="${t('vg_pattern')}"${gl||dis?' disabled':''}><option value="">${t('vg_same')}</option>${Object.keys(VG_PAT).map(k=>`<option value="${k}"${q.p===k?' selected':''}>${t('lp_'+k)}</option>`).join('')}</select></td>`
+    +`<td><select data-ov="${key}:p" aria-label="${t('vg_pattern')}"${gl||dis?' disabled':''}><option value="">${t('vg_same')}</option>${lpOpts(VG_PAT,q.p)}</select></td>`
     +`<td class="c"><input type="checkbox" data-ov="${key}:h" aria-label="${t('vg_half')}"${q.h?' checked':''}${D}></td>`
     +`<td>${tr?`<input type="number" data-ov="${key}:tr" aria-label="${t('vg_transp')}" min="0" max="100" step="10" value="${q.tr||0}"${gl&&!dis?'':' disabled'}>`:''}</td>`+cutC}
 const ovRead=(el,k)=>k==='c'||k==='cc'||k==='sf'||k==='sfc'||k==='cf'||k==='cfc'?el.value:k==='w'||k==='wc'?parseFloat(el.value)||0:k==='p'||k==='pc'?el.value:k==='h'?el.checked:clamp(Math.round(+el.value||0),0,100);
@@ -13985,7 +13985,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=150,V1_NAME='V1.139';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=151,V1_NAME='V1.140';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -25216,6 +25216,178 @@ Object.assign(STR,{a_mesnew:['สร้างชุดปั๊ม','Create Set'
   mes_one:['เลือกปั๊มในชุดหนึ่งชุด กับปั๊มที่จะเพิ่ม','Select pumps of one set and the pumps to add'],mes_addnone:['เลือกปั๊มที่จะเพิ่มด้วย (ปั๊มที่ยังไม่อยู่ในชุด)','Select the pumps to add as well (pumps in no set)'],
   mes_added:['เพิ่มปั๊ม {0} ตัวเข้า {1}','{0} pumps added to {1}'],mes_nomem:['เลือกปั๊มที่อยู่ในชุด','Select a pump of a set'],mes_removed:['เอาปั๊ม {0} ตัวออกจากชุด','{0} pumps removed from their set'],
   mes_gone:['{0} เหลือปั๊มไม่ถึง 2 ตัว จึงยกเลิกชุด','{0} has fewer than two pumps left and is deleted'],mes_deleted:['ยกเลิก {0} แล้ว ปั๊มยังอยู่','{0} deleted; the pumps stay']});
+/* ===== 140 Line Patterns (V1.140; Revit: Manage › Additional Settings › Line Patterns — the runs of dashes, dots and spaces that line styles, Object Styles,
+   Visibility/Graphics, filters, Override Graphics in View and the graphics of phases draw lines with; Line Pattern Properties: a name and a list of Dash, Space and
+   Dot with their lengths) =====
+   P.lpat = {u<seq>: {name, d}}: d as in an AutoCAD .lin file or a DXF line type, in mm of paper: a dash > 0, a space < 0, a dot 0; a dash or a dot and then a space,
+   up to LP_MAX of them.  A pattern keeps its size on paper at any scale (as the stock ones do).  The stock patterns (LS_PAT, VG_PAT) stay as they were and cannot
+   be changed: Duplicate makes one of the project from one.  A pattern of the project can be picked wherever a stock one can, by its key; when one is deleted
+   what used it takes its own again (a stock line style its stock pattern, a line style of the project solid, an override nothing).
+   An AutoCAD .lin file brings its line types in (dashes, spaces and dots; the text and shapes of a complex one are left out).  A DXF export has a line type for
+   each pattern of the project it draws with (lpDxfMatch, lpDxfLT in 82-dxf.js). */
+const LP_MAX=10,LP_DOT=0.25,LP_ST=['dash','dot','dashdot','center','hidden','demolished'];          // the most dashes and dots of a pattern; how long a dot is drawn (mm of paper); the stock patterns of the dialog
+Object.assign(VG_PAT,{hidden:LS_PAT.hidden,demolished:LS_PAT.demolished});          // overrides, Object Styles and phases may have every stock pattern
+/* a key a select or a file may give: a stock pattern of T, or one of the project */
+function lpOk(T,k,Q){return typeof k==='string'&&(Object.prototype.hasOwnProperty.call(T,k)||!!lpOwn(k,Q))}
+/* a pattern of the project Q (the open one), or null */
+function lpOwn(k,Q){Q=Q||P;const o=Q&&Q.lpat;return o&&typeof o==='object'&&typeof k==='string'&&/^u\d+$/.test(k)&&Object.prototype.hasOwnProperty.call(o,k)&&o[k]&&Array.isArray(o[k].d)?o[k]:null}
+/* the dashes of a pattern of the project as a canvas draws them (mm of paper: dash, gap, …; a dot is a short dash), or null */
+function lpDash(k,Q){const o=lpOwn(k,Q);return o?o.d.map(x=>x>0?x:x<0?-x:LP_DOT):null}
+/* any pattern in the form of d (a stock one from its dashes); [] for solid */
+const lpStock=k=>{const a=typeof k==='string'?(Object.prototype.hasOwnProperty.call(LS_PAT,k)?LS_PAT[k]:Object.prototype.hasOwnProperty.call(VG_PAT,k)?VG_PAT[k]:null):null;return a&&a.length?a.map((x,i)=>i%2?-x:x):null};
+function lpD(k){const o=lpOwn(k);return o?o.d:(lpStock(k)||[])}
+/* a run of numbers as a pattern: two spaces or two dashes in a row are one, it begins with a dash or a dot and ends with a space (a dash at its end runs on into
+   the first), lengths 0.1–100 mm (a dash shorter than 0.05 mm is a dot), up to LP_MAX dashes and dots; null when no pattern is left */
+function lpNorm(a){const r=[];for(const x0 of Array.isArray(a)?a:[]){const x=+x0;if(!isFinite(x))continue;const n=r.length;if(n&&(r[n-1]<0)===(x<0))r[n-1]+=x;else r.push(x)}
+  if(r.length>1&&r[0]<0){const s=r.shift();if(r[r.length-1]<0)r[r.length-1]+=s;else r.push(s)}
+  if(r.length>2&&r[r.length-1]>=0)r[0]+=r.pop();
+  if(!r.length||r.length%2)return null;const out=[];
+  for(let i=0;i<r.length&&out.length<2*LP_MAX;i+=2){let m=r[i];m=m<0.05?0:Math.round(clamp(m,0.1,100)*100)/100;out.push(m,-Math.round(clamp(-r[i+1],0.1,100)*100)/100)}
+  return out}
+/* a pattern as it may be kept, or null */
+function lpClean(q){if(!q||typeof q!=='object')return null;const name=String(q.name==null?'':q.name).trim().slice(0,60),d=lpNorm(q.d);return name&&d?{name,d}:null}
+/* the patterns of the project, by name */
+const lpOwnKeys=Q=>{Q=Q||P;const o=Q&&Q.lpat;if(!o||typeof o!=='object')return[];const lc=ui.lang==='en'?'en':'th';return Object.keys(o).filter(k=>lpOwn(k,Q)).sort((a,b)=>String(o[a].name).localeCompare(String(o[b].name),lc))};
+const lpName=k=>{const o=lpOwn(k);return o?o.name:t('lp_'+(LP_ST.includes(k)?k:'solid'))};
+const lpNameTaken=(s,but)=>LP_ST.concat(['solid']).some(k=>t('lp_'+k)===s)||lpOwnKeys().some(k=>k!==but&&P.lpat[k].name===s);
+function lpFree(base){let n=String(base).slice(0,60),i=2;while(lpNameTaken(n))n=String(base).slice(0,54)+' '+(i++);return n}
+/* the options of a pattern select: the stock patterns of T, then those of the project */
+function lpOpts(T,cur){const o=(k,l)=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(l)}</option>`,own=lpOwnKeys();
+  return Object.keys(T).map(k=>o(k,t('lp_'+k))).join('')+(own.length?`<optgroup label="${esc(t('lpt_own'))}">${own.map(k=>o(k,lpName(k))).join('')}</optgroup>`:'')}
+/* a picture of a pattern: a line w × h px at pm px to the mm of paper, in the colour of the text (as a canvas draws it: no dash or gap under 1.5 px) */
+function lpSvgD(d,w,h,pm){pm=pm||4;const a=(d||[]).map(x=>Math.max(1.5,(x>0?x:x<0?-x:LP_DOT)*pm));
+  return`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="vertical-align:middle;flex:none"><line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="currentColor" stroke-width="1.6"${a.length?` stroke-dasharray="${a.map(x=>+x.toFixed(2)).join(' ')}"`:''}/></svg>`}
+const lpSvg=(k,w,h,pm)=>lpSvgD(lpD(k),w,h,pm);
+/* every place of project Q that names a line pattern: [object, field, what] — what: 'ls' a line style, 'os' Object Styles, 'pgo' the graphics of a phase,
+   'ov' an override of a view or a view template (by category, by element, by filter) */
+function lpRefs(Q){const out=[],add=(o,f,w)=>{if(o&&typeof o==='object'&&typeof o[f]==='string'&&o[f])out.push([o,f,w])},ov=(q,w)=>{add(q,'p',w);add(q,'pc',w)},
+    vw=v=>{if(!v||typeof v!=='object')return;if(v.ov&&typeof v.ov==='object')for(const k in v.ov)ov(v.ov[k],'ov');if(v.eov&&typeof v.eov==='object')for(const k in v.eov)ov(v.eov[k],'ov');if(Array.isArray(v.flt))for(const x of v.flt)ov(x&&x.ov,'ov')};
+  if(Q.ls&&typeof Q.ls==='object')for(const k in Q.ls)add(Q.ls[k],'p','ls');
+  if(Q.os&&typeof Q.os==='object')for(const k in Q.os)ov(Q.os[k],'os');
+  if(Q.pgo&&typeof Q.pgo==='object')for(const k in Q.pgo)add(Q.pgo[k],'p','pgo');
+  for(const v of Array.isArray(Q.views)?Q.views:[])vw(v);for(const T of Array.isArray(Q.vtpl)?Q.vtpl:[])vw(T&&T.val);return out}
+/* what draws with pattern k: the line styles, the graphics of phases (as they are, stock ones too) and Object Styles and the overrides that name it */
+function lpUses(k){let n=0;for(const s of lsKeys(P))if(lsPatOf(s)===k)n++;const G=pgoOf(P);for(const s of ['e','d','n','t'])if(G[s]&&G[s].p===k)n++;
+  for(const [o,f,w] of lpRefs(P))if((w==='os'||w==='ov')&&o[f]===k)n++;return n}
+/* a reference to a pattern that is gone: a line style of the project is solid, anything else takes its own */
+const lpUnset=(o,f,w)=>{if(w==='ls'&&o.own)o.p='solid';else delete o[f]};
+/* a pattern of the project goes; returns how many things used it */
+function lpDrop(k){const n=lpUses(k);if(P.lpat){delete P.lpat[k];if(!Object.keys(P.lpat).length)delete P.lpat}for(const [o,f,w] of lpRefs(P))if(o[f]===k)lpUnset(o,f,w);return n}
+/* ---- Line Patterns (Manage › Line Patterns) ---- */
+function dlgLpats(sel){const L=LP_ST.concat(lpOwnKeys()),cur=L.includes(sel)?sel:L.includes(ui.lpSel)?ui.lpSel:L[0],o=lpOwn(cur),d=lpD(cur),av=activeView(),sc=av&&av.scale>0?av.scale:100;ui.lpSel=cur;
+  const row=k=>`<tr data-lk="${esc(k)}" style="cursor:pointer${k===cur?';background:rgba(60,130,246,.16)':''}"><td>${lpSvg(k,150,12)}</td><td>${esc(lpName(k))}${lpOwn(k)?'':` <span style="opacity:.6">· ${t('lpt_stock')}</span>`}</td><td class="n">${lpUses(k)||''}</td></tr>`;
+  const segs=[];for(let i=0;i+1<d.length;i+=2)segs.push([d[i],-d[i+1]]);
+  const val=(f,i,x,lab)=>o?`<span style="display:flex;align-items:center;gap:6px"><input type="number" data-lp="${f}:${i}" min="0.1" max="100" step="0.25" value="${x}" aria-label="${esc(lab)}" style="width:90px"><span>${t('lpt_mm')}</span></span>`:`${x} ${t('lpt_mm')}`;
+  let ed=`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${esc(lpName(cur))}</div>`+(o?`<div class="fr"><label for="lpName">${t('lpt_name')}</label><input id="lpName" data-lp="name" value="${esc(o.name)}" maxlength="60" autocomplete="off"></div>`:`<p class="note">${t('lpt_ro')}</p>`);
+  ed+=`<div class="tblw" style="max-height:220px"><table class="tbl" id="lpSeg"><thead><tr><th class="n">#</th><th>${t('lpt_type')}</th><th>${t('lpt_value')}</th><th></th></tr></thead><tbody>`
+    +segs.map(([m,s],i)=>`<tr><td class="n">${2*i+1}</td><td>${o?`<select data-lp="t:${i}" aria-label="${esc(t('lpt_type')+' '+(2*i+1))}"><option value="dash"${m>0?' selected':''}>${t('lpt_dash')}</option><option value="dot"${m>0?'':' selected'}>${t('lpt_dot')}</option></select>`:t(m>0?'lpt_dash':'lpt_dot')}</td>`
+      +`<td>${m>0?val('m',i,m,t('lpt_dash')+' '+(2*i+1)):'—'}</td><td class="fb">${o?`<button type="button" data-lx="rm:${i}"${segs.length>1?'':' disabled'} title="${t('lpt_rm')}" aria-label="${t('lpt_rm')}">✕</button>`:''}</td></tr>`
+      +`<tr><td class="n">${2*i+2}</td><td>${t('lpt_space')}</td><td>${val('s',i,s,t('lpt_space')+' '+(2*i+2))}</td><td></td></tr>`).join('')
+    +(segs.length?'':`<tr><td></td><td colspan="3">${t('lp_solid')}</td></tr>`)+`</tbody></table></div>`;
+  if(o)ed+=`<div class="pa" style="padding:0"><button class="btn" data-lx="add:dash"${segs.length<LP_MAX?'':' disabled'}>+ ${t('lpt_dash')}</button><button class="btn" data-lx="add:dot"${segs.length<LP_MAX?'':' disabled'}>+ ${t('lpt_dot')}</button></div>`;
+  const len=d.reduce((a,x)=>a+Math.abs(x),0);
+  ed+=`<div class="fr"><label>${t('lpt_prev')}</label><span class="lpv" style="display:flex;flex-direction:column;gap:4px">${lpSvgD(d,300,16,4)}</span></div>`
+    +(len?`<p class="note">${t('lpt_len',+len.toFixed(2),fmtLen(len*sc)+' '+unitName(),sc)}${o?' · '+t('lpt_note',LP_MAX):''}</p>`:'');
+  const body=`<p class="note">${t('lpt_intro')}</p><div class="tblw" style="max-height:230px"><table class="tbl" id="lpRows"><thead><tr><th>${t('lpt_look')}</th><th>${t('lpt_name')}</th><th class="n">${t('lpt_used')}</th></tr></thead><tbody>${L.map(row).join('')}</tbody></table></div>`
+    +`<div class="pa" style="padding:0"><button class="btn primary" data-lx="new">${t('lpt_new')}</button><button class="btn" data-lx="dup">${t('duplicate')}</button><button class="btn danger" data-lx="del"${o?'':' disabled'}>${t('lpt_del')}</button><button class="btn" data-lx="imp">${t('lpt_imp')}…</button></div>`+ed;
+  openDlg(t('a_lpats'),body,`<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,{
+    click(e){const x=e.target.closest('[data-lx]'),tr=e.target.closest('tr[data-lk]');if(tr&&!x){dlgLpats(tr.dataset.lk);return}if(!x||x.disabled)return;const a=x.dataset.lx;
+      if(a==='new'){let id;edit(()=>{id='u'+(P.seq++);(P.lpat||(P.lpat={}))[id]={name:lpFree(t('lpt_newname')),d:[3,-1.5]}});dlgLpats(id);return}
+      if(a==='dup'){const dd=lpD(cur);if(!dd.length)return;let id;edit(()=>{id='u'+(P.seq++);(P.lpat||(P.lpat={}))[id]={name:lpFree(lpName(cur)+' ('+t('copy_suffix')+')'),d:dd.slice()}});dlgLpats(id);return}
+      if(a==='del'&&o){let n=0;edit(()=>{n=lpDrop(cur)});if(n)toast(t('lpt_freed',n),5000);dlgLpats();return}
+      if(a==='imp'){linImport();return}
+      if(o&&a.slice(0,4)==='add:'){if(o.d.length<2*LP_MAX)edit(()=>{P.lpat[cur].d.push(a==='add:dot'?0:3,-1.5)});dlgLpats(cur);return}
+      if(o&&a.slice(0,3)==='rm:'){const i=+a.slice(3);if(o.d.length>2&&2*i<o.d.length)edit(()=>{P.lpat[cur].d.splice(2*i,2)});dlgLpats(cur)}},
+    change(e){const f=e.target.dataset.lp;if(!f||!o)return;const v=e.target.value;
+      if(f==='name'){const s=String(v).trim().slice(0,60);if(s&&s!==o.name){if(lpNameTaken(s,cur))toast(t('lpt_dupname'));else edit(()=>{P.lpat[cur].name=s})}dlgLpats(cur);return}
+      const a=f.split(':'),i=+a[1];
+      if(a[0]==='t'){edit(()=>{P.lpat[cur].d[2*i]=v==='dot'?0:3});dlgLpats(cur);return}
+      const n=parseFloat(v);if(!(n>=0.1&&n<=100)){toast(t('lpt_bad'));dlgLpats(cur);return}
+      edit(()=>{const q=P.lpat[cur];if(a[0]==='m')q.d[2*i]=n;else q.d[2*i+1]=-n});dlgLpats(cur)}});
+  const r=$('#lpRows tr[data-lk="'+cur+'"]');if(r)r.scrollIntoView({block:'nearest'})}
+XA.lpats=()=>dlgLpats();
+/* ---- AutoCAD .lin files: *NAME,description then A,dash,-space,0,… in the units of the file; the [text or shapes] of a complex line type are left out ---- */
+function linParse(s){const out=[];let cur=null;
+  for(const raw of String(s).split(/\r\n|\r|\n/)){const ln=raw.trim();if(!ln||ln[0]===';')continue;
+    if(ln[0]==='*'){const b=ln.slice(1),i=b.indexOf(',');cur={name:(i<0?b:b.slice(0,i)).trim().slice(0,60),desc:i<0?'':b.slice(i+1).trim().slice(0,80),d:null,cx:false};if(cur.name&&out.length<300)out.push(cur);else cur=null;continue}
+    if(!cur||cur.d||!/^A\s*,/i.test(ln))continue;let body=ln.replace(/^A\s*,/i,'');if(body.includes('[')){cur.cx=true;body=body.replace(/\[[^\]]*\]?/g,'')}
+    const a=body.split(',').map(x=>x.trim()).filter(x=>x!=='').map(Number).filter(x=>isFinite(x));if(a.length)cur.d=a.slice(0,64)}
+  return out.filter(p=>p.d&&lpNorm(p.d))}
+function linImport(){const inp=document.createElement('input');inp.type='file';inp.accept='.lin,.txt,text/plain';
+  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;if(f.size>3e6){toast(t('fpt_big'));return}
+    f.text().then(s=>{const L=linParse(s);if(!L.length){toast(t('lpt_badf'),6000);return}dlgLinPick(L,f.name)},()=>toast(t('lpt_badf'),6000))};
+  inp.click()}
+/* which line types of the file to take, in which units and at what scale (a file whose lengths go past 2 is taken to be in mm, as acadiso.lin is) */
+function dlgLinPick(L,fn,st){st=st||{pick:new Set(L.length===1?[0]:[]),mm:L.some(p=>p.d.some(x=>Math.abs(x)>2)),sc:1};const u=st.mm?1:25.4;
+  const prev=p=>{const d=lpNorm(p.d.map(x=>x*u*st.sc));return d?lpSvgD(d,120,10,3):'—'};
+  const body=`<p class="note">${t('lpt_impn',L.length,esc(fn))}</p><div class="clr" style="max-height:260px;overflow:auto">${L.map((p,i)=>`<label style="display:flex;gap:8px;align-items:center;padding:2px 0"><input type="checkbox" data-pi="${i}"${st.pick.has(i)?' checked':''}>${prev(p)}<span>${esc(p.name)}${p.desc?` <span style="opacity:.65">— ${esc(p.desc)}</span>`:''}${p.cx?` <span style="opacity:.65">(${t('lpt_cx')})</span>`:''}</span></label>`).join('')}</div>`
+    +`<div class="fr"><label for="lpU">${t('fpt_units')}</label><select id="lpU" data-lq="mm"><option value="1"${st.mm?' selected':''}>${t('u_mm')}</option><option value="0"${st.mm?'':' selected'}>${t('fpt_in')}</option></select></div>`
+    +`<div class="fr"><label for="lpS">${t('fpt_sc')}</label><input id="lpS" data-lq="sc" type="number" step="0.1" min="0" value="${st.sc}"></div><p class="note">${t('lpt_impnote')}</p>`;
+  openDlg(t('lpt_imp'),body,`<button class="btn" data-lw="back">${t('cancel')}</button><span style="flex:1"></span><button class="btn primary" data-lw="ok"${st.pick.size?'':' disabled'}>${t('fpt_impok')}</button>`,{
+    change(e){const el=e.target;if(el.dataset.pi!=null){const i=+el.dataset.pi;if(el.checked)st.pick.add(i);else st.pick.delete(i);const b=$('#dlg [data-lw="ok"]');if(b)b.disabled=!st.pick.size;return}
+      const k=el.dataset.lq;if(k==='mm')st.mm=el.value==='1';else if(k==='sc'){const n=parseFloat(el.value);if(n>0)st.sc=n}else return;dlgLinPick(L,fn,st)},
+    click(e){const q=e.target.dataset.lw;if(q==='back'){dlgLpats();return}if(q!=='ok'||!st.pick.size)return;let last=null,bad=0;
+      edit(()=>{const dst=P.lpat||(P.lpat={});for(const i of [...st.pick].sort((a,b)=>a-b)){const p=L[i],o=lpClean({name:lpFree(p.name),d:p.d.map(x=>x*u*st.sc)});if(!o){bad++;continue}last='u'+(P.seq++);dst[last]=o}if(!Object.keys(dst).length)delete P.lpat});
+      const n=st.pick.size-bad;dlgLpats(last||undefined);toast(t('lpt_impd',n)+(bad?' · '+t('fpt_skip',bad):''),5000)}})}
+/* ---- DXF: a line type for each pattern of the project, named after it (PENUM_LP<n>, n its place in the order they were made, when its name has no letters a DXF can keep) ---- */
+const LP_DXF_RES=['CONTINUOUS','DASHED','HIDDEN','CENTER','BYLAYER','BYBLOCK'];
+function lpDxfNames(){const m=new Map(),used=new Set(LP_DXF_RES);let i=0;for(const k of lpOwnKeys().sort((a,b)=>a.slice(1)-b.slice(1))){i++;let n=dxfName(P.lpat[k].name);if(!/[A-Z]/.test(n)||used.has(n))n='PENUM_LP'+i;while(used.has(n))n=(n+'_').slice(-31);used.add(n);m.set(k,n)}return m}
+/* for a recorder at sc units to the mm of paper: (dashes it is given) → the line type of the pattern of the project they are, or ''.  A pattern with the dashes of a stock one is left to it */
+function lpDxfMatch(sc){const L=[],same=(e,a)=>e.length===a.length&&e.every((x,i)=>Math.abs(x-a[i])<=1e-6*Math.max(1,Math.abs(x)));
+  if(typeof P==='object'&&P&&P.lpat){const ST=Object.values(LS_PAT).concat(Object.values(VG_PAT)).filter(a=>a&&a.length);
+    for(const [k,nm] of lpDxfNames()){const d=lpDash(k);if(!ST.some(a=>same(a,d)))L.push([nm,d.map(m=>Math.max(1.5,m*sc))])}}
+  return a=>{if(L.length&&a&&a.length)for(const [nm,e] of L)if(same(e,a))return nm;return''}}
+/* the line types of the patterns of the project the entities use: [name, description, d] */
+function lpDxfLT(ents){if(typeof P!=='object'||!P||!P.lpat)return[];const used=new Set();for(const e of ents)if(e.lt)used.add(e.lt);const out=[];
+  for(const [k,nm] of lpDxfNames())if(used.has(nm)){const o=P.lpat[k],art=o.d.map(x=>x>0?'__':x<0?' ':'.').join('');out.push([nm,((/^[\x20-\x7e]+$/.test(o.name)?o.name:'PENUM')+' '+art+art).slice(0,47),o.d])}
+  return out}
+/* ---- the project tidied: its patterns (names one of a kind), and no reference to one that is gone ---- */
+XC.push(()=>{if(P.lpat!==undefined){const o={},N=new Set(),src=P.lpat&&typeof P.lpat==='object'&&!Array.isArray(P.lpat)?P.lpat:{};
+    for(const k of Object.keys(src)){if(!/^u\d+$/.test(k))continue;const q=lpClean(src[k]);if(!q)continue;let nm=q.name;for(let i=2;N.has(nm);i++)nm=q.name.slice(0,54)+' '+i;q.name=nm;N.add(nm);o[k]=q}
+    if(Object.keys(o).length)P.lpat=o;else delete P.lpat}
+  for(const [o,f,w] of lpRefs(P))if(/^u\d+$/.test(o[f])&&!lpOwn(o[f]))lpUnset(o,f,w)});
+/* ---- Purge Unused: the patterns of the project nothing names ---- */
+{const f0=purgeable;purgeable=Q=>{const out=f0(Q);if(Q.lpat&&typeof Q.lpat==='object'){const u=new Set(lpRefs(Q).map(x=>x[0][x[1]]));for(const k in Q.lpat)if(!u.has(k))out.push({g:'lpat',id:k,name:String((Q.lpat[k]||{}).name||k)})}return out}}
+{const f0=purgeApply;purgeApply=(Q,items)=>{const now=purgeable(Q),mine=items.filter(it=>it.g==='lpat'&&now.some(x=>x.g==='lpat'&&x.id===it.id));let n=f0(Q,items.filter(it=>it.g!=='lpat'));
+  for(const it of mine)if(Q.lpat&&Q.lpat[it.id]){delete Q.lpat[it.id];n++}if(Q.lpat&&!Object.keys(Q.lpat).length)delete Q.lpat;return n}}
+/* ---- Transfer Project Standards: the patterns, by name; the line styles, Object Styles and view templates that come over bring the patterns they use ---- */
+{const f0=standardsOf;standardsOf=S=>{const out=f0(S),n=S.lpat&&typeof S.lpat==='object'?Object.keys(S.lpat).filter(k=>/^u\d+$/.test(k)&&lpClean(S.lpat[k])).length:0;if(n)out.push({k:'lpat',n});return out}}
+{const f0=transferDupes;transferDupes=(Q,S,picks)=>{let n=f0(Q,S,picks);if(picks.includes('lpat')&&S.lpat&&typeof S.lpat==='object'){const N=new Set(lpOwnKeys(Q).map(k=>Q.lpat[k].name));for(const k in S.lpat){const q=/^u\d+$/.test(k)&&lpClean(S.lpat[k]);if(q&&N.has(q.name))n++}}return n}}
+{const f0=transferStandards;transferStandards=(Q,S,picks,ow)=>{const want=new Set(picks),src=S.lpat&&typeof S.lpat==='object'&&!Array.isArray(S.lpat)?S.lpat:{},R0={added:0,replaced:0,skipped:0},map={},cp=o=>JSON.parse(JSON.stringify(o));
+  const here=nm=>lpOwnKeys(Q).find(x=>Q.lpat[x].name===nm)||'',take=k=>/^u\d+$/.test(k)&&Object.prototype.hasOwnProperty.call(src,k)?lpClean(src[k]):null;
+  const bring=k=>{if(map[k]!==undefined)return map[k];const q=take(k);if(!q)return map[k]='';let r=here(q.name);if(!r){r='u'+(Q.seq++);(Q.lpat||(Q.lpat={}))[r]=q;if(want.has('lpat'))R0.added++}return map[k]=r};
+  if(want.has('lpat'))for(const k of Object.keys(src)){const q=take(k);if(!q)continue;const mine=here(q.name);if(mine){map[k]=mine;if(ow){Q.lpat[mine]=q;R0.replaced++}else R0.skipped++}else bring(k)}
+  const fix=(o,f,w)=>{const k=o[f];if(typeof k!=='string'||!/^u\d+$/.test(k))return;const r=bring(k);if(r)o[f]=r;else lpUnset(o,f,w)},S2=Object.assign({},S);
+  if(want.has('ls')&&S.ls&&typeof S.ls==='object'){S2.ls={};for(const q in S.ls){const o=S.ls[q];if(!o||typeof o!=='object'){S2.ls[q]=o;continue}const c=Object.assign({},o);
+      if(o.own?ow||!Object.values(Q.ls||{}).some(x=>x&&x.own&&x.name===o.name):ow||!(Q.ls&&Q.ls[q]))fix(c,'p','ls');S2.ls[q]=c}}          // what comes over: overwritten, or new here
+  if(want.has('os')&&S.os&&typeof S.os==='object'){S2.os={};for(const q in S.os){const o=S.os[q];if(!o||typeof o!=='object'){S2.os[q]=o;continue}const c=Object.assign({},o);if(ow||!(Q.os&&Q.os[q]!=null)){fix(c,'p','os');fix(c,'pc','os')}S2.os[q]=c}}
+  if(want.has('vtpl')&&Array.isArray(S.vtpl))S2.vtpl=S.vtpl.map(T=>{if(!T||typeof T!=='object'||!(ow||!(Q.vtpl||[]).some(x=>x.kind===T.kind&&x.name===T.name)))return T;const c=cp(T);for(const [o,f,w] of lpRefs({vtpl:[c]}))fix(o,f,w);return c});
+  const R=f0(Q,S2,picks,ow);R.added+=R0.added;R.replaced+=R0.replaced;R.skipped+=R0.skipped;return R}}
+/* ---- the ribbon: Manage › Settings, after Line Styles ---- */
+Object.assign(BTN,{'@lpats':['lpats','']});
+{const m=(RIBBON.find(r=>r.id==='manage')||{panels:[]}).panels.find(p=>p.t==='p_settings');if(m&&!m.b.includes('@lpats'))m.b.splice(m.b.includes('@linestyles')?m.b.indexOf('@linestyles')+1:m.b.length,0,'@lpats')}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"',
+    ln=(cls,c,w,da,y,cap)=>`<path class="${cls}" fill="none" stroke-linecap="${cap||'butt'}" stroke-linejoin="round" stroke="${c}" style="stroke-width:${w};stroke-dasharray:${da}" d="M5.4 ${y}h13.2"/>`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-lpats" viewBox="0 0 24 24"><path class="i-Pc i-e" fill="#9fadc0" ${E} d="M4.6 4.7h14.8a2 2 0 0 1 2 2v12.4a2 2 0 0 1-2 2h-14.8a2 2 0 0 1-2-2v-12.4a2 2 0 0 1 2-2z"/><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M4.6 3.2h14.8a2 2 0 0 1 2 2v12.4a2 2 0 0 1-2 2h-14.8a2 2 0 0 1-2-2v-12.4a2 2 0 0 1 2-2z"/>`
+    +`<path class="i-kB" fill="none" stroke-linecap="round" stroke="#5c9af0" style="stroke-width:.8" d="M5.4 5.6v2M10 5.6v2M12.2 5.6v2M5.4 6.6h6.8"/>`
+    +ln('i-kD','#222937',1.8,'4.6 2.2',9.6)+ln('i-kR','#ed4947',1.5,'4 1.4 0.6 1.4',13.6)+ln('i-kD','#222937',1.6,'0.01 2.3',17.4,'round')+`</symbol>`)})();
+Object.assign(STR,{
+  a_lpats:['ลายเส้น (Line Patterns)','Line Patterns'],
+  lpt_intro:['ลายเส้นคือชุดของเส้นประ จุด และช่องว่าง ใช้กับรูปแบบเส้น (Line Styles) Object Styles การแสดงผลของมุมมอง ตัวกรอง การแสดงผลเฉพาะชิ้น และการแสดงผลของเฟส · ความยาวเป็นมิลลิเมตรบนกระดาษ ลายจึงเท่าเดิมทุกมาตราส่วน · ลายที่มีมาให้แก้ไม่ได้ ให้ทำสำเนาแล้วแก้',
+    'A line pattern is a run of dashes, dots and spaces; line styles, Object Styles, Visibility/Graphics, filters, Override Graphics in View and the graphics of phases draw with them · lengths are in mm of paper, so a pattern looks the same at any scale · the stock patterns cannot be changed: duplicate one to change it'],
+  lpt_look:['ลาย','Line Pattern'],lpt_name:['ชื่อลาย','Name'],lpt_used:['ใช้อยู่','Used by'],lpt_stock:['มีมาให้','stock'],lpt_new:['ลายใหม่','New'],lpt_del:['ลบลาย','Delete'],lpt_imp:['นำเข้าไฟล์ .lin','Import .lin'],
+  lpt_ro:['ลายที่มีมาให้แก้ไม่ได้ กด ทำสำเนา เพื่อสร้างลายของโครงการจากลายนี้','A stock pattern cannot be changed: Duplicate it to make one of the project from it'],
+  lpt_type:['ชนิด','Type'],lpt_mm:['มม.','mm'],lpt_value:['ความยาว','Value'],lpt_dash:['ประ (Dash)','Dash'],lpt_dot:['จุด (Dot)','Dot'],lpt_space:['ช่องว่าง (Space)','Space'],
+  lpt_rm:['ลบประหรือจุดนี้ กับช่องว่างที่ตามมา','Remove this dash or dot and the space after it'],lpt_prev:['ตัวอย่าง','Preview'],
+  lpt_len:['ลายหนึ่งชุดยาว {0} มม. บนกระดาษ = {1} ที่มาตราส่วน 1:{2}','One repeat is {0} mm on paper, {1} at 1:{2}'],
+  lpt_note:['ประและช่องว่างยาว 0.1–100 มม. จุดไม่มีความยาว · มีประหรือจุดได้ไม่เกิน {0} ตัว แต่ละตัวตามด้วยช่องว่าง','dashes and spaces are 0.1–100 mm, a dot has no length · up to {0} dashes or dots, each followed by a space'],
+  lpt_bad:['ความยาวต้องเป็นตัวเลข 0.1 ถึง 100 มม.','A length must be a number from 0.1 to 100 mm'],lpt_newname:['ลายเส้นใหม่','New pattern'],lpt_dupname:['มีลายชื่อนี้แล้ว','There is a pattern of that name already'],
+  lpt_freed:['รูปแบบเส้นและการแสดงผล {0} รายการที่ใช้ลายนี้กลับไปใช้ลายเดิม','{0} line styles and overrides that used it went back to their own pattern'],lpt_own:['ลายของโครงการ','Patterns of the project'],
+  lpt_badf:['ไม่พบลายในไฟล์ (ไฟล์ .lin ขึ้นต้นแต่ละลายด้วยบรรทัด *ชื่อ ตามด้วยบรรทัด A,ประ,-ช่องว่าง,…)','No line types found (a .lin file starts each with a line *name, then a line A,dash,-space,…)'],
+  lpt_impn:['ไฟล์ {1} มี {0} ลาย เลือกลายที่จะนำเข้า','{1} has {0} line types: tick the ones to import'],lpt_cx:['ข้อความหรือรูปในลายถูกตัดออก','its text or shapes are left out'],
+  lpt_impnote:['ความยาวในไฟล์ คูณมาตราส่วนนำเข้า เป็นมิลลิเมตรบนกระดาษ · acadiso.lin เป็นมิลลิเมตร acad.lin เป็นนิ้ว','The lengths of the file times the import scale are mm of paper · acadiso.lin is in mm, acad.lin in inches'],
+  lpt_impd:['นำเข้าแล้ว {0} ลาย','{0} patterns imported'],
+  pg_lpat:['ลายเส้น (Line Patterns)','Line Patterns'],tp_k_lpat:['ลายเส้น (Line Patterns)','Line patterns']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -26575,6 +26747,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.137 · บันไดขั้นเวียนแบบ Revit ([[st_LW]], [[st_UW]]): เลี้ยวด้วยขั้นเวียนแทนชานพัก แบบสมดุลหรือจุดเดียว ตั้งขั้นตรงช่วงต้น/ปลายและความกว้างขั้นที่ขอบในได้ พร้อมราว แปลน 3 มิติ และ IFC
 - V1.138 · ป้ายและระดับคานแบบ Revit ([[a_beamann]]): ใส่ป้ายคานและค่าระดับ ณ จุดให้ทุกคานในแปลนครั้งเดียว ได้ถึง 6 ตำแหน่งต่อคาน คานราบกับคานเอียงตั้งแยกกัน · ป้ายวางตามแนวองค์ประกอบได้ ([[p_tagori]]: [[tgo_m]])
 - V1.139 · ชุดปั๊มทำงาน/สำรองแบบ Revit ([[a_mesnew]]): รวมปั๊มที่ต่อขนานเป็นชุด ตั้งจำนวนปั๊มทำงานและสำรอง อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน ท่อของปั๊มแต่ละตัว ท่อร่วม และด้านดูดได้อัตราไหลและขนาดตามนั้น
+- V1.140 · ลายเส้นแบบ Revit ([[a_lpats]]): สร้างลายของโครงการจากประ จุด และช่องว่าง ทำสำเนาลายที่มีมาให้ หรือนำเข้าจากไฟล์ .lin ของ AutoCAD แล้วใช้ในรูปแบบเส้น Object Styles การแสดงผลของมุมมอง ตัวกรอง และเฟส · ไฟล์ DXF ที่ส่งออกมีชนิดเส้นของแต่ละลาย
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -26817,6 +26990,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.137 · Winder stairs, as in Revit ([[st_LW]], [[st_UW]]): they turn on winders instead of a landing, Balanced or Single Point, with parallel treads at the start and the end and a minimum width on the inside; railings, plans, 3D and IFC have them
 - V1.138 · Beam Annotations, as in Revit ([[a_beamann]]): tags and spot elevations on every beam of a plan at once, at up to six places round each beam, level and sloped beams each with their own · a tag can lie along its element ([[p_tagori]]: [[tgo_m]])
 - V1.139 · Mechanical Equipment Sets, as in Revit ([[a_mesnew]]): pumps in parallel as one set, with the pumps on duty and on standby; the flow of the system is shared by the pumps on duty, and the pipes of each pump, the headers and the suction side carry it and are sized for it
+- V1.140 · Line Patterns, as in Revit ([[a_lpats]]): patterns of the project's own made of dashes, dots and spaces, a copy of a stock one, or line types read from an AutoCAD .lin file, for line styles, Object Styles, Visibility/Graphics, filters and phases · an exported DXF keeps each as a linetype of its own
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -26943,6 +27117,8 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[t_dline]] ((DL)): เส้น 2 มิติ เลือก [[p_lstyle]] ได้ (บาง กลาง หนา ประ ศูนย์กลาง รื้อถอน และรูปแบบที่สร้างเอง)
 - [[t_dline]] และ [[t_mline]] วาดเป็นส่วนโค้งได้ ([[a_arc]]: คลิกจุดเริ่ม จุดปลาย แล้วจุดที่โค้งผ่าน หรือพิมพ์[[lc_r]]แล้วกด Enter) หรือเป็น[[a_circle]] (คลิกจุดศูนย์กลาง แล้วจุดบนวง หรือพิมพ์[[lc_r]]) · เส้นโมเดลโค้งได้ในแปลน เส้นรายละเอียดโค้งได้ทุกมุมมอง · จับจุดได้ที่ปลาย กึ่งกลาง จุดศูนย์กลาง จุดควอดแรนต์ และจุดสัมผัส · ลากจุดศูนย์กลางของวงกลมเพื่อย้าย ลากจุดบนวงเพื่อเปลี่ยนขนาด · ระยะชั่วคราวและ Properties แก้[[lc_r]]และ[[p_bow]]ได้ · [[t_offset]]ได้เส้นโค้งร่วมศูนย์ · [[t_split]]แบ่งส่วนโค้งได้ (วงกลมแบ่งไม่ได้) · [[t_rdim]] [[t_ddim]] [[t_ldim]] วัดเส้นโค้งได้ · [[t_trim]] [[t_trim1]] [[t_offset]] และ [[t_split]] ใช้กับเส้นรายละเอียดเส้นตรงได้ ทั้งในแปลนและในมุมมองร่าง
 - [[a_linestyles]] (แท็บ [[tab_manage]]): แก้น้ำหนัก สี และลายของรูปแบบเส้นที่มีมาให้ หรือกด [[ls_new]] เพื่อสร้างรูปแบบของโครงการเอง ใช้ได้ทั้งกับเส้นรายละเอียดและเส้นโมเดล · เส้นที่วาดไว้เปลี่ยนตามทันที · ลบรูปแบบที่มีเส้นใช้อยู่ เส้นเหล่านั้นกลับเป็นเส้นบาง
+- [[a_lpats]] (แท็บ [[tab_manage]]): ลายของเส้นคือชุดของ [[lpt_dash]] [[lpt_dot]] และ [[lpt_space]] ยาวเป็นมิลลิเมตรบนกระดาษ จึงเท่าเดิมทุกมาตราส่วน · กด [[lpt_new]] หรือ [[duplicate]] ลายที่มีมาให้ แล้วแก้ชื่อและความยาวทีละแถว ดูตัวอย่างได้ทันที · [[lpt_imp]] อ่านลายแบบง่ายจากไฟล์ .lin ของ AutoCAD · ลายของโครงการเลือกได้ใน [[a_linestyles]] [[a_objstyles]] [[a_vg]] ตัวกรอง [[a_eov]] และการแสดงผลของเฟส · ไฟล์ DXF ที่ส่งออกมีชนิดเส้น (Linetype) ของลายเหล่านี้ · ลบลายแล้วสิ่งที่ใช้อยู่กลับไปใช้ลายเดิม
+> ต่างจาก Revit: ลายที่มีมาให้แก้ไม่ได้ ให้ทำสำเนาเป็นลายของโครงการแล้วแก้
 - [[a_fpats]] (แท็บ [[tab_manage]]): ลายแบบเขียนแบบ (ขนาดคงที่บนกระดาษทุกมาตราส่วน) และแบบโมเดล (ขนาดของจริง เช่น กระเบื้อง 600 × 600) · [[fpt_new]] สร้างเส้นขนานหรือตาราง กำหนดมุมและระยะห่าง · [[duplicate]] ลายที่มีมาให้แล้วแก้ · [[fpt_imp]] อ่านลายจากไฟล์ .pat ของ AutoCAD หรือ Revit · ชนิดของพื้นที่ลาย และ [[mt_sp]] / [[mt_cp]] ของ [[a_materials]] ใช้ลายเหล่านี้ · ลบลายแล้วสิ่งที่ใช้อยู่เปลี่ยนเป็นไม่มีลาย
 - [[t_region]]: วาดขอบเขตแล้วระบายลายตามชนิดของพื้นที่ (เส้นทแยง ตาราง ทึบ จุด คอนกรีต ดิน ฯลฯ) · เลือกชนิดที่ Properties · แก้ชนิด (Edit Type): ลายด้านหน้าและด้านหลัง สีของลาย น้ำหนักเส้นลาย และการบังสิ่งที่อยู่ข้างใต้ · เลือกเส้นขอบที่แถบตัวเลือก ([[rg_bline]]: แบบเส้นใดก็ได้ หรือ [[lw_inv]]) · [[t_mregion]]: พื้นที่ว่างที่บังสิ่งที่อยู่ข้างใต้ เส้นขอบมองไม่เห็น · [[t_cloud]]: วงรอบส่วนที่แก้ไขแบบ
 - [[t_dcomp]]: ภาพ 2 มิติของชิ้นส่วนตามขนาดจริง — ไม้หน้าตัด เหล็ก H รางน้ำ ฉาก เหล็กกล่อง ท่อ เหล็กเส้น อิฐ อิฐบล็อก แผ่นเหล็ก สลักเกลียว และเส้นตัดย่อ · เลือกชนิดที่ Type Selector แล้วคลิกวาง กด ((Space)) หมุนทีละ 90° · ชิ้นส่วนบังเส้นที่อยู่ข้างใต้ · เส้นตัดย่อปรับ [[p_dcw]] และ [[p_dch]] ได้ที่แผงคุณสมบัติ · ขนาดของชนิดแก้ที่ [[edit_type]]
@@ -27019,6 +27195,8 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[t_dline]] ((DL)): a 2D line, with a [[p_lstyle]] (thin, medium, wide, hidden, centre, demolished, and the styles made in the project)
 - [[t_dline]] and [[t_mline]] can be drawn as arcs ([[a_arc]]: click the start, the end, then a point it passes through, or type its [[lc_r]] and press Enter) or as a [[a_circle]] (click the centre, then a point on it, or type its [[lc_r]]) · model lines curve in plans, detail lines in any view · they snap at their ends, middle, centre, quadrants and tangents · drag the centre of a circle to move it, a point on it to resize it · the temporary dimension and Properties change the [[lc_r]] and the [[p_bow]] · [[t_offset]] gives a concentric curve · [[t_split]] splits an arc (not a circle) · [[t_rdim]], [[t_ddim]] and [[t_ldim]] measure them · [[t_trim]], [[t_trim1]], [[t_offset]] and [[t_split]] work on straight detail lines too, in plans and in drafting views
 - [[a_linestyles]] (the [[tab_manage]] tab): give a stock line style another pen, colour or pattern, or press [[ls_new]] for a style of the project's own; detail lines and model lines use them · the lines already drawn follow at once · when a style in use is deleted its lines are thin lines again
+- [[a_lpats]] (the [[tab_manage]] tab): a line pattern is a run of [[lpt_dash]], [[lpt_dot]] and [[lpt_space]] measured in mm of paper, so it looks the same at any scale · press [[lpt_new]], or [[duplicate]] a stock pattern, then change its name and lengths row by row with the preview beside them · [[lpt_imp]] reads the simple line types of an AutoCAD .lin file · the patterns of the project can be picked in [[a_linestyles]], [[a_objstyles]], [[a_vg]], filters, [[a_eov]] and the graphics of phases · an exported DXF has a linetype for each of them · what used a deleted pattern goes back to its own
+> Unlike Revit: the stock patterns cannot be changed; duplicate one to make it the project's own
 - [[a_fpats]] (the [[tab_manage]] tab): drafting patterns (the same size on paper at any scale) and model patterns (the size of the real thing, such as 600 × 600 tiles) · [[fpt_new]] makes parallel lines or a crosshatch at an angle and spacing · [[duplicate]] a stock pattern to change it · [[fpt_imp]] reads patterns from an AutoCAD or Revit .pat file · filled region types and the [[mt_sp]] and [[mt_cp]] of [[a_materials]] use them · what used a deleted pattern has none
 - [[t_region]]: an outline filled with the patterns of its type (diagonal, crosshatch, solid, dots, concrete, earth …) · pick the type in Properties · Edit Type: the foreground and background patterns, their colours, the line weight of the patterns and whether it masks what is under it · the boundary is chosen on the options bar ([[rg_bline]]: any line style, or [[lw_inv]]) · [[t_mregion]]: a blank area that hides what is under it, with invisible lines · [[t_cloud]]: a cloud around what was revised
 - [[t_dcomp]]: a 2D drawing of a part at its real size — lumber cut across, wide flange, channel, angle, tube, pipe, rebar, brick, hollow block, plate, anchor bolt, and the break line · choose the type in the Type Selector and click to place it, ((Space)) turns it 90° · a component covers the lines under it · a break line takes its own [[p_dcw]] and [[p_dch]] in Properties · the sizes of a type are edited with [[edit_type]]
@@ -28653,6 +28831,10 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r54={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),ls:k=>lsGet(P,k),dash:k=>lpDash(k),d:k=>lpD(k),norm:a=>lpNorm(a),uses:k=>lpUses(k),
+  refs:()=>lpRefs(P).map(x=>[x[2],x[1],x[0][x[1]]]),keys:()=>lpOwnKeys(),name:k=>lpName(k),opts:(T,c)=>lpOpts(T==='ls'?LS_PAT:VG_PAT,c),ovOne:q=>ovOne(q,true),patOf:k=>lsPatOf(k),
+  dxf:id=>planDXF(viewById(id)),sheetDxf:id=>sheetDXF(viewById(id)),lin:s=>linParse(s),pick:(L,fn)=>dlgLinPick(L,fn||'test.lin'),purge:()=>purgeable(P),std:S=>standardsOf(S),dupes:(S,p)=>transferDupes(P,S,p),
+  transfer:(S,p,ow)=>{let R=null;edit(()=>{R=transferStandards(P,S,p,ow)});return R},json:()=>projectJSON(),loadText:s=>loadText(s),dlg:k=>dlgLpats(k),dxfNames:()=>[...lpDxfNames()]};
 window.PenumBIM.r53={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),
   water:()=>{const W=waterflow(P,pszOpt());return{nets:W.nets.map(n=>({sys:n.sys,kind:n.kind,from:n.from,flow:n.flow,heads:n.heads,fu:n.fu,ids:n.ids,mes:n.mes,root:n.root?n.root.id:null,worst:n.worst?{dp:n.worst.dp,len:n.worst.len,end:n.worst.end}:null,vmax:n.vmax})),
     pipes:[...W.pipes].map(([id,r])=>({id,flow:r.flow,heads:r.heads,fu:r.fu,kind:r.kind,ni:r.ni}))}},
