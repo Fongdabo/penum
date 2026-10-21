@@ -5594,9 +5594,9 @@ function waterflow(P,o){
   const G=runGraph(P,'pipe',true),N=G.nodes,E=G.edges,par=new Int32Array(N.length).fill(-2),L=E.map(()=>null),LS=E.map(()=>null),pipes=new Map(),nets=[],heat=new Map(),slope=[],back=[];
   const acc=P.els.filter(e=>e.cat==='pipeacc'),rough=e=>pipeRo(P,e),dia=ed=>ed.riser?(ed.riser.w||100):runW(ed.r.e),idOf=ed=>ed.riser?ed.riser.id:ed.r.e.id;
   const zero=()=>({fu:0,q:0,n:0,m:0,wc:0,heads:0,lf:0}),add=(a,b)=>{a.fu+=b.fu;a.q+=b.q;a.n+=b.n;a.m=Math.max(a.m,b.m);a.wc+=b.wc;a.heads+=b.heads;a.lf+=b.lf;return a};
-  const seen=new Uint8Array(N.length),groups=[];
+  const seen=new Uint8Array(N.length),groups=[],MEST=new Map();
   for(let s=0;s<N.length;s++){if(seen[s])continue;const ns=[],q=[s];seen[s]=1;while(q.length){const i=q.pop();ns.push(i);for(const a of N[i].arms)if(!seen[a.far]){seen[a.far]=1;q.push(a.far)}}groups.push(ns)}
-  groups.sort((a,b)=>(SCL(N[b[0]].sys)==='HW')-(SCL(N[a[0]].sys)==='HW'));        // hot water first: the heater's draw is part of the cold water that feeds it
+  groups.sort((a,b)=>(SCL(N[b[0]].sys)==='HW')-(SCL(N[a[0]].sys)==='HW'));mesOrder(P,groups,N);        // hot water first: the heater's draw is part of the cold water that feeds it
   for(const ns of groups){const sys0=N[ns[0]].sys||'CW',sys=sys0==='S'&&ns.some(i=>N[i].arms.length)&&ns.every(i=>N[i].arms.every(a=>(a.ed.riser||a.ed.r.e).sys==='W'))?'W':sys0,fl=fluidOf(P,sys),kind=WKIND[sys]||'',role=kind==='sup'?(SCL(sys)==='HW'?'h':'c'):kind==='drain'?'d':kind==='fire'?'s':'';
     const kOf=q=>(typ(P,q)||{}).kind,loadEq=q=>{const k=kOf(q);return kind==='chw'?(k==='ahu'||k==='fcu'):kind==='fire'?k==='fhc':kind==='cdw'&&k==='chiller'};
     const srcEq=q=>{const k=kOf(q);return kind==='sup'?(SCL(sys)==='HW'?k==='heater':k==='tank'||k==='pump'):kind==='fire'?(k==='pump'||k==='tank'||k==='fpump'||k==='jpump'):kind==='chw'?(k==='chiller'||k==='pump'):kind==='cdw'&&(k==='tower'||k==='pump')};
@@ -5617,8 +5617,8 @@ function waterflow(P,o){
     par[root]=-1;let loop=false;
     const walk=i=>{const r=load(i);for(const a of N[i].arms){if(a.ed.i===par[i])continue;if(par[a.far]!==-2){loop=true;continue}par[a.far]=a.ed.i;const g=walk(a.far);L[a.ed.i]=g;add(r,g)}return r};
     const tot=walk(root);
-    const qOf=g=>kind==='sup'?Math.min(hunter(g.fu),g.q>0?g.q:Infinity):kind==='fire'?Math.min(g.heads,des.n)*des.q:kind==='chw'||kind==='cdw'?g.lf:0;
-    const loss=ed=>{const q=qOf(L[ed.i]),c=pipeCalc(ed.riser?dia(ed):pipeIn(P,ed.r.e,dia(ed)),q,rough(ed.riser||ed.r.e),fl),pv=fl.rho*c.v*c.v/2;let k=0;
+    const qOf=g=>kind==='sup'?Math.min(hunter(g.fu),g.q>0?g.q:Infinity):kind==='fire'?Math.min(g.heads,des.n)*des.q:kind==='chw'||kind==='cdw'?g.lf:0,FQ=mesFlows(P,ns,N,par,L,tot,qOf,kind,root,G,MEST);
+    const loss=ed=>{const q=FQ.q(ed,qOf(L[ed.i])),c=pipeCalc(ed.riser?dia(ed):pipeIn(P,ed.r.e,dia(ed)),q,rough(ed.riser||ed.r.e),fl),pv=fl.rho*c.v*c.v/2;let k=0;
       if(!ed.riser){const e=ed.r.e;for(const a of acc){if(a.level!==e.level)continue;const t=((a.x-e.x1)*ed.r.ux+(a.y-e.y1)*ed.r.uy)/ed.r.L,d=Math.abs((a.x-e.x1)*-ed.r.uy+(a.y-e.y1)*ed.r.ux);if(d<40&&t>=ed.t0&&t<ed.t1)k+=WLOSS[kOf(a)]||0}}
       return{q,v:c.v,dpm:c.dp,pv,fr:c.dp*ed.len/1000,fit:k*pv}};
     let worst=null,vmax=0;const press=kind==='sup'||kind==='fire'||kind==='chw'||kind==='cdw';
@@ -5633,13 +5633,13 @@ function waterflow(P,o){
     const ids=new Set(),dead=new Set(),done=new Set(),sect=[];
     for(const i of ns){const n=N[i];for(const r of n.risers)ids.add(r.id);
       if(i!==root&&n.arms.length===1&&!isLoad(i)&&!n.equips.length&&!n.risers.length&&!n.arms[0].ed.riser)dead.add(n.arms[0].ed.r.e.id);
-      for(const a of n.arms){const ed=a.ed;if(done.has(ed.i))continue;done.add(ed.i);const id=idOf(ed),g=L[ed.i]||zero(),q=qOf(g),w=kind==='drain'?g.fu:kind==='fire'?g.heads:q,p=pipes.get(id);ids.add(id);
+      for(const a of n.arms){const ed=a.ed;if(done.has(ed.i))continue;done.add(ed.i);const id=idOf(ed),g=FQ.g(ed,L[ed.i]||zero()),q=FQ.q(ed,qOf(g)),w=kind==='drain'?g.fu:kind==='fire'?g.heads:q,p=pipes.get(id);ids.add(id);
         if(!p||w>p.w)pipes.set(id,{sys,kind,ni:nets.length,w,fu:g.fu,n:g.n,m:g.m,wc:g.wc,heads:g.heads,flow:q});
         if(kind==='drain'&&!ed.riser&&g.fu>0){const e=ed.r.e;if((e.slope||0)<drainSlope(runW(e))-1e-9){if(!slope.includes(e.id))slope.push(e.id)}
           if((e.slope||0)>0&&par[ed.b]===ed.i&&!back.includes(e.id))back.push(e.id)}}}       // the far end of the run is upstream: the pipe falls away from the outlet
-    if(worst){for(let i=worst.node;par[i]>=0;){const ed=E[par[i]],S=LS[ed.i],g=L[ed.i];sect.push({id:idOf(ed),dia:dia(ed),len:ed.len,fu:g.fu,heads:g.heads,q:S.q,v:S.v,dpm:S.dpm,fr:S.fr,fit:S.fit});i=ed.a===i?ed.b:ed.a}sect.reverse()}
+    if(worst){for(let i=worst.node;par[i]>=0;){const ed=E[par[i]],S=LS[ed.i],g=FQ.g(ed,L[ed.i]);sect.push({id:idOf(ed),dia:dia(ed),len:ed.len,fu:g.fu,heads:g.heads,q:S.q,v:S.v,dpm:S.dpm,fr:S.fr,fit:S.fit});i=ed.a===i?ed.b:ed.a}sect.reverse()}
     if(kind==='sup'&&SCL(sys)==='HW')for(const q of N[root].equips)if(srcEq(q))heat.set(q.id,{fu:tot.fu,q:tot.q});
-    nets.push({ri:root,ns,sys,kind,from,root:from==='equip'?N[root].equips.find(srcEq):null,riser:from==='riser'?N[root].risers[0]:null,ids:[...ids],fu:tot.fu,n:tot.n,heads:tot.heads,wc:tot.wc,flow:qOf(tot),vmax,worst,sect,loop,dead:[...dead]})}
+    nets.push({ri:root,ns,sys,kind,from,root:from==='equip'?N[root].equips.find(srcEq):null,riser:from==='riser'?N[root].risers[0]:null,ids:[...ids],fu:tot.fu,n:tot.n,heads:tot.heads,wc:tot.wc,flow:Math.max(qOf(tot),FQ.T),vmax,worst,sect,loop,dead:[...dead],mes:FQ.sets})}
   const have=new Set(G.R.map(r=>SCL(r.e.sys||'CW')));
   return{pipes,nets,lost:{c:have.has('CW')?G.lost.c:[],d:have.has('S')||have.has('W')?G.lost.d:[],s:have.has('FP')?G.lost.s:[]},slope,back,G,par,L,LS}}
 /* the size every pipe should have for what it carries. o:{mode,vmax,fric,min,wcMin,haz} -> Map id -> mm (only pipes that carry something) */
@@ -13442,7 +13442,7 @@ function sysbHTML(){const open=ui.treeOpen||(ui.treeOpen={});for(const k of ['sb
   R.comps.forEach((c,i)=>{const du=new Map();for(const r of c.rows)du.set(r.id,Math.max(du.get(r.id)||0,r.flow));const ids=[...(c.root?[c.root.id]:[]),...du.keys(),...c.terms];
     m+=grp('sbm'+i,`${c.sys} ${i+1} · ${dlSrc(c)} · ${fl(c.total)}`,all(ids)+(c.root?it(c.root):'')+[...du].map(([id,f])=>it(IDX.get(id),fl(f))).join('')+c.terms.map(id=>{const e=IDX.get(id);return it(e,e?fl(+e.flow||0):'')}).join(''))});
   if(R.loose.length)m+=grp('sbm_l',t('sb_loose',R.loose.length),all(R.loose)+R.loose.map(id=>it(IDX.get(id))).join(''));
-  let p='';const W=waterflow(P);W.nets.forEach((n,i)=>{p+=grp('sbp'+i,`${n.sys} ${i+1}`+(n.root?' · '+(n.root.mark||(typ(P,n.root)||{}).name||''):''),all(n.ids)+n.ids.map(id=>it(IDX.get(id))).join(''))});
+  let p='';const W=waterflow(P);W.nets.forEach((n,i)=>{p+=grp('sbp'+i,`${n.sys} ${i+1}`+(n.root?' · '+(n.root.mark||(typ(P,n.root)||{}).name||''):''),all(n.ids)+mesSB(n)+n.ids.map(id=>it(IDX.get(id))).join(''))});
   let el='';const by=new Map();for(const c of circuits(P)){if(!by.has(c.panel))by.set(c.panel,[]);by.get(c.panel).push(c)}
   for(const [pn,cs] of by)el+=grp('sbe_'+pn,pn+' · '+money(cs.reduce((a,c)=>a+c.load,0))+' W',cs.map(c=>grp('sbe_'+pn+'_'+c.circuit,t('sb_ck',c.circuit||'–')+' · '+money(c.load)+' W',all(c.els.map(e=>e.id))+c.els.map(e=>it(e)).join(''))).join(''));
   return grp('sb_m',t('sb_mech'),m||none)+grp('sb_p',t('sb_pipe'),p||none)+grp('sb_e',t('sb_elec'),el||none)}
@@ -13985,7 +13985,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=149,V1_NAME='V1.138';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=150,V1_NAME='V1.139';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -25061,6 +25061,161 @@ Object.assign(STR,{a_beamann:['ป้ายและระดับคาน','B
   ba_c_none:['ไม่มี','None'],ba_c_tag:['ป้ายคาน (Tag)','Structural Framing Tag'],ba_c_t:['ระดับหลังคาน (TOP)','Spot Elevation: Top'],ba_c_b:['ระดับท้องคาน (BOT)','Spot Elevation: Bottom'],ba_c_tb:['ระดับหลังและท้องคาน','Spot Elevation: Top & Bottom'],
   ba_ty:['ชนิดป้าย','Tag type'],ba_h:['ระยะจากปลายคาน','Horizontal offset at ends'],ba_v:['ระยะห่างจากขอบคาน','Vertical offset'],ba_mm:['มม. บนกระดาษ','mm on paper'],
   ba_none:['แปลนนี้ไม่มีคานที่แสดงเต็ม (คานต้องไม่ถูกซ่อนหรือแสดงจาง)','This plan shows no beams in full (not hidden, not in halftone)'],ba_done:['ใส่ป้าย {0} ป้าย และค่าระดับ {1} จุด','{0} tags and {1} spot elevations placed']});
+/* ===== 139 Mechanical Equipment Sets (V1.139; Revit: pumps in parallel as one set — Mechanical Equipment Set with Add / Remove, On Duty and On Standby; the flow
+   of the system is shared by the pumps on duty and the pipes of the set are sized for what they carry) =====
+   P.mes [{id, name, sb}]: the sets, sb the pumps on standby (none when it is missing); On Duty is the rest of the pumps, at least one.  A pump of a set has
+   e.mes: the id of its set.  The pumps of a set are of one kind (pump, fire pump or jockey pump: the kind of the first of them), at least two; a set left with
+   fewer goes, and so does a pump that is no longer a pump. */
+const MES_KINDS=['pump','fpump','jpump'];
+const mesKind=e=>e&&e.cat==='equip'?equipKind(typ(P,e)||{}):'',mesPump=e=>MES_KINDS.includes(mesKind(e));
+const mesById=id=>(P.mes||[]).find(s=>s.id===id)||null,mesOf=e=>e&&e.mes!=null?mesById(e.mes):null;
+const mesMembers=S=>S?P.els.filter(e=>e.cat==='equip'&&e.mes===S.id):[];
+const mesDuty=(S,M)=>Math.max(1,M-clamp(Math.floor(+S.sb||0),0,Math.max(0,M-1)));
+function mesNextName(){const L=P.mes||[];for(let n=1;;n++){const s=t('mes_name',n);if(!L.some(x=>x.name===s))return s}}
+/* the order waterflow() takes its networks in: one with a pump of a set that serves nothing (the suction side of the pumps) after the network the set supplies,
+   so that the flow of the set is known by then */
+function mesOrder(Q,groups,N){if(!Array.isArray(Q.mes)||!Q.mes.length)return;const late=new Map();
+  for(const ns of groups){if(!ns.some(i=>N[i].equips.some(q=>q.mes!=null)))continue;const kind=WKIND[N[ns[0]].sys||'CW']||'',
+      ld=q=>{const k=equipKind(typ(Q,q)||{});return kind==='chw'?k==='ahu'||k==='fcu':kind==='fire'?k==='fhc':kind==='cdw'&&k==='chiller'};
+    if(!ns.some(i=>N[i].fix.length||N[i].equips.some(ld)))late.set(ns,1)}
+  if(late.size)groups.sort((a,b)=>(late.get(a)||0)-(late.get(b)||0))}
+/* the flows of the pipes of a set in one network of waterflow(), in place of what the loads alone give.  The set shares the flow T of the system: q = T / d to each
+   of the d pumps on duty.  A pipe with m of the M pumps beyond it has k of them on duty, any k from lo = max(0, d − (M − m)) to hi = min(d, m), and carries
+   |LB − k·q|, LB being what goes to the far side of it without the set: it is given the most of that.
+   - the network starts at a pump of the set (the set supplies what it serves): LB is the flow of the loads beyond the pipe; pipes with no pump beyond them keep theirs;
+   - the network serves nothing (the suction side of the pumps, or their discharge into a chiller): T is the flow of the set from the network it supplies, and LB is T
+     where the other end of the network lies beyond the pipe (its root when no pump of the set is at the root, else a machine not of the set, a riser leading away or
+     an open end), else 0.
+   ns, N, par, L, tot, qOf, kind, root: those of the network in waterflow(); G the graph; ST the flows of the sets found so far (id → {T, H: sprinkler heads}).
+   Gives {m: edge index → flow, h: edge index → heads (fire), T: the flow the sets add to a network that serves nothing, sets: [{id, M, mg, d, sb, T, q, mode}],
+   q(ed, q0), g(ed, load)}: the flow and the load of an edge as waterflow() takes them */
+function mesFlows(Q,ns,N,par,L,tot,qOf,kind,root,G,ST){
+  const m=new Map(),h=new Map(),sets=[],F={m,h,T:0,sets,q:(ed,q0)=>m.has(ed.i)?m.get(ed.i):q0,g:(ed,g)=>g&&h.has(ed.i)?Object.assign({},g,{heads:h.get(ed.i)}):g};
+  if(!Array.isArray(Q.mes)||!Q.mes.length||!kind||kind==='drain'||!ns.some(i=>N[i].equips.some(q=>q.mes!=null)))return F;
+  // the nodes as the walk reached them from the root, the place of each and the node before it
+  const ord=[root],rk=new Map([[root,0]]),pa=new Map();
+  for(let k=0;k<ord.length;k++){const i=ord[k];for(const a of N[i].arms)if(par[a.far]===a.ed.i&&!rk.has(a.far)){rk.set(a.far,ord.length);pa.set(a.far,i);ord.push(a.far)}}
+  const at=new Map();for(const i of ord)at.set(N[i],i);
+  const pp=new Map();for(const x of G.pports||[]){const i=at.get(x.n);if(i==null)continue;if(!pp.has(x.q))pp.set(x.q,[]);pp.get(x.q).push(i)}
+  const first=a=>a.reduce((x,y)=>rk.get(x)<=rk.get(y)?x:y);
+  // each pump of a set stands at one node: the end of a pipe at one of its connections, else a node at the pump (an end first), the nearest the root first
+  const byS=new Map();for(const i of ord)for(const q of N[i].equips){if(q.cat!=='equip'||q.mes==null)continue;let o=byS.get(q.mes);if(!o)byS.set(q.mes,o=new Map());if(!o.has(q))o.set(q,[]);o.get(q).push(i)}
+  const sById=new Map(Q.mes.map(s=>[s.id,s])),cnt=new Map();for(const e of Q.els)if(e.cat==='equip'&&e.mes!=null)cnt.set(e.mes,(cnt.get(e.mes)||0)+1);
+  const Tg=qOf(tot);let src=false;
+  for(const [sid,mem] of byS){const S=sById.get(sid),M=cnt.get(sid)||0;if(!S||M<2)continue;
+    const nodeOf=new Map();for(const [q,eqN] of mem){const P1=pp.get(q),lf=eqN.filter(i=>N[i].arms.length===1);nodeOf.set(q,P1&&P1.length?first(P1):first(lf.length?lf:eqN))}
+    const mine=new Set(nodeOf.values()),Mg=nodeOf.size,d=mesDuty(S,M),dg=Math.min(d,Mg),rootHas=N[root].equips.some(q=>q.mes===sid);
+    let mode='',T=0,H=0,c=-1;
+    if(rootHas&&Tg>0&&!src){mode='src';T=Tg;H=tot.heads||0;src=true;const o=ST.get(sid);if(!o||T>o.T)ST.set(sid,{T,H})}
+    else if(!(Tg>0)){const o=ST.get(sid);if(o&&o.T>0){T=o.T;H=o.H;
+        if(!rootHas)c=root;else{const ok=i=>!mine.has(i);c=ord.find(i=>ok(i)&&N[i].equips.some(q=>q.mes!==sid))??ord.find(i=>ok(i)&&N[i].risers.length>0&&N[i].arms.every(a=>!a.ed.riser))??ord.find(i=>ok(i)&&N[i].arms.length===1)??-1}
+        if(c>=0)mode='cp'}}
+    if(!T){const o=ST.get(sid);if(o)T=o.T}
+    sets.push({id:sid,M,mg:Mg,d,sb:M-d,T,q:T>0?T/d:0,mode});
+    if(!mode||!(T>0)||!dg)continue;
+    const q=T/dg,sub=new Map(),cs=new Map();for(const i of mine)sub.set(i,[...nodeOf.values()].filter(x=>x===i).length);if(c>=0)cs.set(c,1);
+    for(let k=ord.length-1;k>0;k--){const i=ord[k],p=pa.get(i);if(sub.get(i))sub.set(p,(sub.get(p)||0)+sub.get(i));if(cs.get(i))cs.set(p,(cs.get(p)||0)+cs.get(i))}
+    for(let k=1;k<ord.length;k++){const i=ord[k],ei=par[i],mm=sub.get(i)||0;if(mode==='src'&&!mm)continue;
+      const LB=mode==='src'?(L[ei]?qOf(L[ei]):0):cs.get(i)?T:0,lo=Math.max(0,dg-(Mg-mm)),hi=Math.min(dg,mm),f=Math.max(Math.abs(LB-lo*q),Math.abs(LB-hi*q));
+      m.set(ei,mode==='src'?f:(m.get(ei)||0)+f);if(kind==='fire'){const hh=Math.ceil(H*f/T-1e-9);h.set(ei,mode==='src'?hh:(h.get(ei)||0)+hh)}}
+    if(mode==='cp')F.T+=T}
+  return F}
+/* the flow of a set as the calculations find it: the most it supplies to any network, shared by its pumps on duty */
+function mesInfo(S){const W=waterNow(),M=mesMembers(S).length,d=mesDuty(S,M);let T=0,sys='';for(const n of W.nets)for(const x of n.mes||[])if(x.id===S.id&&x.T>T){T=x.T;sys=n.sys}
+  return{T,q:T>0?T/d:0,d,sb:M-d,M,sys}}
+/* files and every change: the sets, their pumps and the pumps on standby */
+XC.push(()=>{let L=P.mes;if(L!=null&&!Array.isArray(L)){delete P.mes;L=null}const sets=new Map();
+  if(L){for(const s of L){if(!s||typeof s!=='object'||s.id==null||!Number.isFinite(+s.id)||sets.has(+s.id))continue;const o={id:+s.id,name:String(s.name==null?'':s.name).trim().slice(0,60)};if(+s.sb>0)o.sb=Math.floor(+s.sb);sets.set(o.id,o)}
+    for(const id of sets.keys())if(id>=P.seq)P.seq=id+1}
+  const by=new Map();for(const e of P.els){if(e.mes==null)continue;const s=sets.get(+e.mes);if(!s||!mesPump(e)){delete e.mes;continue}e.mes=s.id;if(!by.has(s.id))by.set(s.id,[]);by.get(s.id).push(e)}
+  for(const [id,M] of by){M.sort((a,b)=>a.id-b.id);const k=mesKind(M[0]),ok=M.filter(e=>{if(mesKind(e)===k)return true;delete e.mes;return false});
+    if(ok.length<2){for(const e of ok)delete e.mes;by.delete(id)}else by.set(id,ok)}
+  const out=[];for(const s of sets.values()){const M=by.get(s.id);if(!M)continue;if(s.sb>M.length-1)s.sb=M.length-1;if(!(s.sb>0))delete s.sb;out.push(s)}
+  if(out.length){P.mes=out;for(const s of out)if(!s.name)s.name=mesNextName()}else delete P.mes});
+/* the commands (the Mechanical Equipment Set panel of Modify, with pumps selected) */
+const mesSel=()=>[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&mesPump(e)),mesIdsOf=E=>[...new Set(E.map(e=>e.mes).filter(x=>x!=null&&mesById(x)))];
+XA.mesnew=()=>{const F=mesSel().filter(e=>!mesOf(e));if(F.length<2){toast(t('mes_need2'));return}const k=mesKind(F[0]);if(F.some(e=>mesKind(e)!==k)){toast(t('mes_kind'));return}
+  let S;edit(()=>{if(!P.mes)P.mes=[];S={id:P.seq++,name:mesNextName(),sb:1};P.mes.push(S);for(const e of F)e.mes=S.id});ui.sel=new Set(F.map(e=>e.id));refresh();toast(t('mes_made',S.name,F.length,F.length-1,1))};
+XA.mesadd=()=>{const E=mesSel(),S=mesIdsOf(E);if(S.length!==1){toast(t('mes_one'));return}const s=mesById(S[0]),k=mesKind(mesMembers(s)[0]),F=E.filter(e=>!mesOf(e));
+  if(!F.length){toast(t('mes_addnone'));return}if(F.some(e=>mesKind(e)!==k)){toast(t('mes_kind'));return}edit(()=>{for(const e of F)e.mes=s.id});toast(t('mes_added',F.length,s.name))};
+XA.mesrem=()=>{const E=mesSel().filter(e=>mesOf(e));if(!E.length){toast(t('mes_nomem'));return}const gone=mesIdsOf(E).map(mesById).filter(s=>mesMembers(s).filter(e=>!E.includes(e)).length<2).map(s=>s.name);
+  edit(()=>{for(const e of E)delete e.mes});toast(t('mes_removed',E.length)+(gone.length?' · '+t('mes_gone',gone.join(', ')):''))};
+XA.messel=()=>{const S=mesIdsOf(mesSel());if(!S.length){toast(t('mes_nomem'));return}ui.sel=new Set(P.els.filter(e=>e.cat==='equip'&&S.includes(e.mes)).map(e=>e.id));setTool('modify');refresh()};
+XA.mesdel=()=>{const S=mesIdsOf(mesSel());if(!S.length){toast(t('mes_nomem'));return}const nm=S.map(id=>mesById(id).name).join(', ');
+  edit(()=>{P.mes=(P.mes||[]).filter(s=>!S.includes(s.id));for(const e of P.els)if(S.includes(e.mes))delete e.mes});toast(t('mes_deleted',nm))};
+XR.push(tl=>{if(tl!=='modify'||!ui.sel.size)return[];const E=mesSel();if(!E.length)return[];const free=E.filter(e=>!mesOf(e)),ins=E.filter(e=>mesOf(e)),b=[];
+  if(!ins.length)b.push('@mesnew');else if(free.length&&mesIdsOf(ins).length===1)b.push('@mesadd');if(ins.length)b.push('@mesrem','@messel','@mesdel');return[{t:'p_mes',b}]});
+/* Properties of pumps of one set: its name, its pumps on duty and on standby, its flow and the flow of each pump on duty */
+XP.push((c,els)=>{if(c!=='equip')return'';const S=mesOf(els[0]);if(!S||!els.every(e=>e.mes===S.id))return'';const M=mesMembers(S).length,d=mesDuty(S,M),I=mesInfo(S),wq=q=>q>0?fmtWater(q)+' '+waterUnit():'—';
+  return PR.grp('g_mes')+PR.text('mesname','p_mesname',S.name)+PR.ro('p_mesn',String(M))+PR.num('mesduty','p_onduty',d,'',`step="1" min="1" max="${M}"`)+PR.num('messb','p_onsb',M-d,'',`step="1" min="0" max="${M-1}"`)
+    +PR.ro('p_mesflow',wq(I.T))+PR.ro('p_mesq',wq(I.q))+`<div class="pnote">${t('n_mes')}</div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='equip'||(key!=='mesname'&&key!=='mesduty'&&key!=='messb'))return false;const S=mesOf(o);if(!S)return true;const M=mesMembers(S).length;
+  if(key==='mesname'){const s=String(raw).trim().slice(0,60);if(s)S.name=s;return true}
+  let n=parseInt(raw,10);if(!isFinite(n))return true;if(key==='mesduty')n=M-n;n=clamp(n,0,M-1);if(n)S.sb=n;else delete S.sb;return true});
+/* plans: a dashed frame round the pumps of a set that has one of them selected, its name and its pumps on duty and on standby above it */
+XPL1.push((ctx,g,v,T,col,o,of)=>{if(!o.screen||v.kind!=='plan'||v.draft||!P.mes||!P.mes.length)return;const on=new Set();for(const id of ui.sel){const e=IDX.get(id);if(e&&e.mes!=null)on.add(e.mes)}if(!on.size)return;
+  const sc=v.scale||100,B=new Map();
+  for(const [e] of of('equip')){if(!on.has(e.mes))continue;const S=compSize(P,e);let b=B.get(e.mes);if(!b)B.set(e.mes,b=[Infinity,Infinity,-Infinity,-Infinity]);
+    for(const p of rectLoop(e.x,e.y,S.w,S.d,e.rot||0)){b[0]=Math.min(b[0],p[0]);b[1]=Math.min(b[1],p[1]);b[2]=Math.max(b[2],p[0]);b[3]=Math.max(b[3],p[1])}}
+  for(const [id,b] of B){const S=mesById(id);if(!S)continue;const k=2.5*sc,x0=b[0]-k,y0=b[1]-k,x1=b[2]+k,y1=b[3]+k,c=col.sel||col.accent,M=mesMembers(S).length,d=mesDuty(S,M);
+    ctx.strokeStyle=c;ctx.lineWidth=1.4;g.dash([2.4,1.2]);g.path([[x0,y0],[x1,y0],[x1,y1],[x0,y1]]);ctx.stroke();g.dash(null);
+    g.text(S.name+' · '+t('mes_dsb',d,M-d),[x0,y0-2*sc],2.4,{color:c,halo:true,align:'left',bold:true})}});
+/* the System Browser and the pipe report: each set with its pumps on duty and on standby and the flow of each pump on duty */
+const mesLine=x=>{const S=mesById(x.id);return S?[S,t('mes_dsb',x.d,x.sb)+(x.T>0?' · '+fmtWater(x.q)+' '+waterUnit()+' '+t('mes_each'):'')]:null};
+const mesSB=n=>(n.mes||[]).map(x=>{const L=mesLine(x);if(!L)return'';const ids=mesMembers(L[0]).map(e=>e.id);return`<button class="ti mes" data-act="sbsel" data-arg="${ids.join(',')}"><span>◇ ${esc(L[0].name)} · ${esc(L[1])}</span></button>`}).join('');
+const mesPR=(n,row)=>(n.mes||[]).map(x=>{const L=mesLine(x);return L?row(esc(L[0].name),esc(L[1])):''}).join('');
+/* schedules of mechanical equipment: the set, its pumps on duty and on standby, the flow of each pump on duty */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='equip')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),
+    S=e=>e.mes!=null&&Array.isArray(Q.mes)?Q.mes.find(s=>s.id===e.mes)||null:null,N=s=>Q.els.filter(e=>e.cat==='equip'&&e.mes===s.id).length;
+  add('mes',tr('sf_mes'),e=>{const s=S(e);return s?s.name:''});
+  add('mesduty',tr('p_onduty'),e=>{const s=S(e);return s?mesDuty(s,N(s)):''},{num:1,dec:0});
+  add('messb',tr('p_onsb'),e=>{const s=S(e);if(!s)return'';const n=N(s);return n-mesDuty(s,n)},{num:1,dec:0});
+  add('mesq',tr('p_mesq')+' ('+waterUnit()+')',e=>{const s=S(e);if(!s||Q!==P)return'';const I=mesInfo(s);return I.q>0?flowIn(I.q,1):''},{num:1,dec:2});
+  return F}}
+/* IFC: the set in the property set of the program */
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='equip'||e.mes==null||!Array.isArray(P0.mes))return r;const s=P0.mes.find(x=>x.id===e.mes);if(!s)return r;
+  const M=P0.els.filter(x=>x.cat==='equip'&&x.mes===s.id).length,d=mesDuty(s,M);r.push(prop('MechanicalEquipmentSet',s.name),prop('OnDuty',d,'IFCINTEGER'),prop('OnStandby',M-d,'IFCINTEGER'));
+  if(P0===P){const I=mesInfo(s);if(I.q>0)r.push(prop('FlowPerPumpOnDuty',fx2(I.q)+' L/s'))}return r}}
+/* copies: the copies of all the pumps of a set make a set of their own (the name of the set when it is free, else the next one; as many on standby); a pump copied
+   without the rest of its set is in no set.  full(set id, copies) → the set copied from, or null */
+function mesCopies(cl,full){const by=new Map();for(const c of cl){if(!c||c.cat!=='equip'||c.mes==null)continue;if(!by.has(c.mes))by.set(c.mes,[]);by.get(c.mes).push(c)}
+  for(const [s,L] of by){const d=full(s,L);if(!d){for(const c of L)delete c.mes;continue}if(!P.mes)P.mes=[];const nm=d.name&&!P.mes.some(x=>x.name===d.name)?d.name:mesNextName(),S={id:P.seq++,name:nm};
+    if(d.sb>0)S.sb=d.sb;P.mes.push(S);for(const c of L)c.mes=S.id}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids);if(!P.mes||!P.mes.length)return out;const cl=out.map(id=>IDX.get(id));
+  mesCopies(cl,(s,L)=>{const S=mesById(s);if(!S)return null;const n=P.els.filter(e=>e.cat==='equip'&&e.mes===s&&!L.includes(e)).length;return n>=2&&n===L.length?S:null});return out}}
+{const f0=clipCopy;clipCopy=cut=>{const c0=ui.clip,S=new Map();for(const id of expandSel(ui.sel)){const e=IDX.get(id),s=mesOf(e);if(s&&!S.has(s.id))S.set(s.id,{id:s.id,name:s.name,sb:s.sb||0,n:mesMembers(s).length})}
+  f0(cut);if(ui.clip&&ui.clip!==c0)ui.clip.mes=[...S.values()]}}
+{const f0=pasteObjs;pasteObjs=(objs,...a)=>{const C=ui.clip&&ui.clip.objs===objs&&Array.isArray(ui.clip.mes)?ui.clip.mes:null,out=f0(objs,...a);if(!objs.some(o=>o.mes!=null))return out;
+  mesCopies(out.map(id=>IDX.get(id)),(s,L)=>{const d=C&&C.find(x=>x.id===s);return d&&d.n>=2&&L.length===d.n?d:null});return out}}
+/* the panel, its buttons and their icons */
+Object.assign(BTN,{'@mesnew':['mesnew',''],'@mesadd':['mesadd',''],'@mesrem':['mesrem',''],'@messel':['messel',''],'@mesdel':['mesdel','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"',
+    pump=(x,y)=>`<path class="i-Sc i-e" fill="#7184a2" ${E} d="M${x} ${y+5.2}h7.6v1.5h-7.6z"/><path class="i-Sb i-e" fill="#acbbd2" ${E} d="M${x+0.4} ${y+1.6}h4v3.6h-4z"/>`
+      +`<path class="i-kd" fill="none" stroke="#2a3550" stroke-linecap="round" style="stroke-width:.5" d="M${x+1.4} ${y+2.4}v2M${x+2.4} ${y+2.4}v2M${x+3.4} ${y+2.4}v2"/>`
+      +`<path class="i-Bb i-e" fill="#5c9af0" ${E} d="M${x+5.2} ${y}h1.3v1.8h-1.3z"/><path class="i-Bb i-e" fill="#5c9af0" ${E} d="M${x+3.7} ${y+3.4}a2.15 2.15 0 1 0 4.3 0a2.15 2.15 0 1 0-4.3 0z"/>`,
+    frame=(x0,y0,x1,y1)=>`<path class="i-kB" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#5c9af0" style="stroke-width:1" stroke-dasharray="1.6 1.2" d="M${x0} ${y0}H${x1}V${y1}H${x0}z"/>`,
+    badge=(cls,x,y,mark)=>`<path class="i-${cls}c" fill="${cls==='T'?'#137961':'#a31e27'}" d="M${x-4.2} ${y+0.6}a4.2 4.2 0 1 0 8.4 0a4.2 4.2 0 1 0-8.4 0z"/><path class="i-${cls}b i-e" fill="${cls==='T'?'#38bc9c':'#ed4947'}" ${E} d="M${x-4.2} ${y}a4.2 4.2 0 1 0 8.4 0a4.2 4.2 0 1 0-8.4 0z"/><path class="i-lw" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.5" d="${mark}"/>`,
+    arrow=(x0,x1,y,cls)=>`<path class="i-${cls}b" fill="none" stroke="${cls==='T'?'#38bc9c':'#ed4947'}" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.6" d="M${x0} ${y}H${x1}M${x1+(x1>x0?-2:2)} ${y-2}L${x1} ${y}L${x1+(x1>x0?-2:2)} ${y+2}"/>`,
+    sh='<ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21" rx="10" ry="1"/>',two=pump(1.9,11.6)+pump(12.2,11.6),
+    sym=(id,b)=>`<symbol id="i-${id}" viewBox="0 0 24 24">${sh}${b}</symbol>`;
+  sp.insertAdjacentHTML('beforeend',sym('mesnew',frame(1,9.2,21.4,20.4)+two+badge('T',18.6,5.4,'M18.6 3.3v4.2M16.5 5.4h4.2'))
+    +sym('mesadd',frame(1,9.2,11.4,20.4)+pump(2.3,11.6)+pump(14.6,13.4)+arrow(22,13.6,8.6,'T'))
+    +sym('mesrem',frame(1,9.2,11.4,20.4)+pump(2.3,11.6)+pump(14.6,13.4)+arrow(8.2,21.6,6.6,'R'))
+    +sym('messel',frame(1,9.2,21.4,20.4)+two+'<path class="i-Ka" fill="currentColor" d="M14.6 2.4l7.4 4.6-3.4 1-1.4 3.4z"/><path class="i-kd" fill="none" stroke-linejoin="round" stroke="#2a3550" style="stroke-width:0.7" d="M14.6 2.4l7.4 4.6-3.4 1-1.4 3.4z"/>')
+    +sym('mesdel',frame(1,9.2,21.4,20.4)+two+badge('R',18.6,5.4,'M17 3.8l3.2 3.2M20.2 3.8l-3.2 3.2')))})();
+{const st=document.createElement('style');st.textContent='#tree .ti.mes span{color:var(--accent,#0b62d6)}';document.head.appendChild(st)}
+Object.assign(STR,{a_mesnew:['สร้างชุดปั๊ม','Create Set'],a_mesadd:['เพิ่มเข้าชุด','Add to Set'],a_mesrem:['เอาออกจากชุด','Remove from Set'],a_messel:['เลือกทั้งชุด','Select Set'],a_mesdel:['ยกเลิกชุด','Delete Set'],
+  p_mes:['ชุดปั๊ม (Mechanical Equipment Set)','Mechanical Equipment Set'],g_mes:['ชุดปั๊ม (Mechanical Equipment Set)','Mechanical Equipment Set'],sf_mes:['ชุดปั๊ม','Mechanical Equipment Set'],
+  p_mesname:['ชื่อชุด','Set Name'],p_mesn:['จำนวนปั๊มในชุด','Pumps in Set'],p_onduty:['ทำงาน (On Duty)','On Duty'],p_onsb:['สำรอง (On Standby)','On Standby'],
+  p_mesflow:['อัตราไหลของชุด','Calculated Flow'],p_mesq:['อัตราไหลต่อปั๊มที่ทำงาน','Flow per Pump on Duty'],
+  n_mes:['อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน ท่อของปั๊มแต่ละตัวและท่อร่วมคิดอัตราไหลมากที่สุดที่ผ่านได้ ไม่ว่าปั๊มตัวไหนทำงาน','The flow of the system is shared by the pumps on duty; the pipes of each pump and the headers carry the most that can pass whichever pumps are on duty'],
+  mes_name:['ชุดปั๊ม {0}','Pump Set {0}'],mes_dsb:['ทำงาน {0} · สำรอง {1}','{0} on duty · {1} on standby'],mes_each:['ต่อปั๊ม','each'],
+  mes_need2:['เลือกปั๊มที่ยังไม่อยู่ในชุดตั้งแต่ 2 ตัวขึ้นไป','Select two or more pumps that are in no set'],
+  mes_kind:['ปั๊มในชุดเดียวกันต้องเป็นชนิดเดียวกัน (ปั๊มน้ำ ปั๊มดับเพลิง หรือปั๊มรักษาแรงดัน)','The pumps of a set must be of one kind (pump, fire pump or jockey pump)'],
+  mes_made:['สร้าง {0}: ปั๊ม {1} ตัว ทำงาน {2} สำรอง {3}','{0} made: {1} pumps, {2} on duty, {3} on standby'],
+  mes_one:['เลือกปั๊มในชุดหนึ่งชุด กับปั๊มที่จะเพิ่ม','Select pumps of one set and the pumps to add'],mes_addnone:['เลือกปั๊มที่จะเพิ่มด้วย (ปั๊มที่ยังไม่อยู่ในชุด)','Select the pumps to add as well (pumps in no set)'],
+  mes_added:['เพิ่มปั๊ม {0} ตัวเข้า {1}','{0} pumps added to {1}'],mes_nomem:['เลือกปั๊มที่อยู่ในชุด','Select a pump of a set'],mes_removed:['เอาปั๊ม {0} ตัวออกจากชุด','{0} pumps removed from their set'],
+  mes_gone:['{0} เหลือปั๊มไม่ถึง 2 ตัว จึงยกเลิกชุด','{0} has fewer than two pumps left and is deleted'],mes_deleted:['ยกเลิก {0} แล้ว ปั๊มยังอยู่','{0} deleted; the pumps stay']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -25217,7 +25372,7 @@ function dlgPipeReport(){
   const was=$('#dlg').open&&ui.dlg&&ui.dlg.pr,k0=was&&$('#dlg .dc')?$('#dlg .dc').scrollTop:0,opened=was?new Set($$('#dlg details[open]').map(d=>d.dataset.net)):new Set();
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`,kinds=new Set(nets.map(x=>x.n.kind)),wq=q=>fmtWater(q)+' '+waterUnit()+(ufOf().fw==='ls'?' · '+Math.round(q*60)+' L/min':'');          // litres a second read better with litres a minute beside them
   const cards=nets.map(({n,i})=>{const w=n.worst,pr=PRESS[n.kind]&&n.flow>0,src=n.root?esc(n.root.mark||t('cat_equip')):n.riser?t('cat_riser'):n.from==='open'?t('sr_openend'):'—';
-    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src);
+    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src)+mesPR(n,row);
     if(n.kind==='sup')h+=row(t('pr_fixtures'),n.n)+row(t('pr_wsfu'),n.fu.toFixed(1))+row(t('pr_flow'),wq(n.flow));
     else if(n.kind==='drain')h+=row(t('pr_fixtures'),n.n)+row(t('pr_dfu'),n.fu);
     else if(n.kind==='fire')h+=row(t('pr_heads'),n.heads)+row(t('pr_fpflow',Math.min(n.heads,des.n)),wq(n.flow));
@@ -26014,6 +26169,8 @@ The [[tab_insert]] tab: [[a_dxfin]] lays a DXF under the plan, and its lines can
 - [[t_ductacc]]: ใบปรับลม ลิ้นกันไฟ ข้อต่ออ่อน อุปกรณ์ลดเสียง — ชี้บนท่อลมแล้วคลิก จะรับขนาดและระดับจากท่อ
 - [[t_terminal]]: หัวจ่าย หัวลมกลับ หัวระบาย หัวจ่ายแนวยาว ใส่ [[p_flow]] ของแต่ละหัว
 - [[t_equip]]: AHU, FCU, คอนเดนซิ่งยูนิต, แอร์ฝังฝ้า, VRF, ชิลเลอร์, คูลลิ่งทาวเวอร์, ปั๊ม, พัดลม, ถังน้ำ, เครื่องทำน้ำร้อน
+- [[a_mesnew]] (Revit: Mechanical Equipment Set): เลือกปั๊มชนิดเดียวกันตั้งแต่ 2 ตัวที่ต่อขนานกัน แล้วกด [[a_mesnew]] ในแผง [[p_mes]] ของแท็บแก้ไข ได้ชุดปั๊มที่มีเส้นประล้อมเมื่อเลือกปั๊มในชุด · ตั้ง [[p_mesname]] [[p_onduty]] และ [[p_onsb]] ในคุณสมบัติ (เริ่มต้นสำรอง 1 ตัว) · อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน: ท่อของปั๊มแต่ละตัวคิดอัตราไหลของปั๊มหนึ่งตัว ท่อร่วมคิดอัตราไหลมากที่สุดที่ปั๊มที่ทำงานส่งผ่านได้ และด้านดูดของปั๊มได้อัตราไหลของชุดด้วย · [[a_mesadd]] [[a_mesrem]] [[a_messel]] [[a_mesdel]] · ตารางรายการเครื่องจักรมีช่อง [[sf_mes]] [[p_onduty]] [[p_onsb]] และ [[p_mesq]]
+> ต่างจาก Revit: ชุดไม่ใช่ชิ้นงานที่เลือกได้เอง เลือกผ่านปั๊มในชุด ([[a_messel]]) · ใช้กับปั๊มเท่านั้น และไม่ตรวจว่าปั๊มต่ออนุกรมกัน
 
 # ประปา สุขาภิบาล ดับเพลิง
 @keys PI FP PA PX SK
@@ -26089,6 +26246,8 @@ With a tool active, [[properties]] shows what is about to be drawn: type, size, 
 - [[t_ductacc]]: dampers, flexible connectors, attenuators — point at a duct and click; it takes the size and elevation of the duct
 - [[t_terminal]]: supply, return and exhaust terminals and linear slots; give each its [[p_flow]]
 - [[t_equip]]: AHU, FCU, condensing unit, cassette, VRF, chiller, cooling tower, pump, fan, tank, water heater
+- [[a_mesnew]], as in Revit's Mechanical Equipment Set: select two or more pumps of one kind that work in parallel and press [[a_mesnew]] in the [[p_mes]] panel of Modify; a dashed frame shows the set while one of its pumps is selected · set the [[p_mesname]], [[p_onduty]] and [[p_onsb]] in Properties (one on standby to begin with) · the flow of the system is shared by the pumps on duty: each pump's own pipes carry one pump's flow, a header the most that the pumps on duty can send through it, and the suction side of the pumps carries the flow of the set too · [[a_mesadd]], [[a_mesrem]], [[a_messel]], [[a_mesdel]] · equipment schedules have the fields [[sf_mes]], [[p_onduty]], [[p_onsb]] and [[p_mesq]]
+> Unlike Revit: the set is not an element to select by itself; select it through its pumps ([[a_messel]]) · pumps only, and pumps in series are not checked
 
 # Plumbing and fire protection
 @keys PI FP PA PX SK
@@ -26415,6 +26574,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.136 · บันไดหลายชั้นแบบ Revit (Multistory Stairs): [[a_mstlv]] ให้บันไดต่อขึ้นไปทุกชั้นที่เลือก ช่วงที่สูงต่างกันปรับลูกตั้งเอง พร้อมราว เลือกและแก้ทั้งชุดในครั้งเดียว · แปลนชั้นกลางแสดงขึ้น/ลงแบบ Revit
 - V1.137 · บันไดขั้นเวียนแบบ Revit ([[st_LW]], [[st_UW]]): เลี้ยวด้วยขั้นเวียนแทนชานพัก แบบสมดุลหรือจุดเดียว ตั้งขั้นตรงช่วงต้น/ปลายและความกว้างขั้นที่ขอบในได้ พร้อมราว แปลน 3 มิติ และ IFC
 - V1.138 · ป้ายและระดับคานแบบ Revit ([[a_beamann]]): ใส่ป้ายคานและค่าระดับ ณ จุดให้ทุกคานในแปลนครั้งเดียว ได้ถึง 6 ตำแหน่งต่อคาน คานราบกับคานเอียงตั้งแยกกัน · ป้ายวางตามแนวองค์ประกอบได้ ([[p_tagori]]: [[tgo_m]])
+- V1.139 · ชุดปั๊มทำงาน/สำรองแบบ Revit ([[a_mesnew]]): รวมปั๊มที่ต่อขนานเป็นชุด ตั้งจำนวนปั๊มทำงานและสำรอง อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน ท่อของปั๊มแต่ละตัว ท่อร่วม และด้านดูดได้อัตราไหลและขนาดตามนั้น
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -26444,6 +26604,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 # ท่อน้ำ
 1. [[a_pipesize]]: คิดจากสุขภัณฑ์ที่ต่ออยู่ (หน่วยสุขภัณฑ์ WSFU และ DFU) จำนวนหัวสปริงเกลอร์ และเครื่องน้ำเย็น แล้วเสนอขนาดท่อ
 2. [[a_pipereport]] ((PC)): ตรวจว่าสุขภัณฑ์ทุกชิ้นมีท่อน้ำและท่อระบาย ท่อระบายลาดเอียงพอ และขนาดไม่เล็กกว่าที่คำนวณได้ พร้อมแรงดันสูญเสียและแรงดันที่ต้องการที่ต้นทาง ส่งออกเป็น CSV ได้
+3. ปั๊มที่ต่อขนานเป็นชุด ([[a_mesnew]]): อัตราไหลของระบบแบ่งเท่ากันให้ปั๊มที่ทำงาน ท่อแต่ละช่วงคิดอัตราไหลมากที่สุดที่ผ่านได้ ไม่ว่าปั๊มตัวไหนทำงานหรือสำรอง ด้านดูดของปั๊ม (ระบบที่ไม่มีภาระต่อ) ใช้อัตราไหลของชุดจากด้านที่ปั๊มจ่าย
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -26655,6 +26816,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.136 · Multistory stairs, as in Revit: [[a_mstlv]] takes a stair on up through the levels ticked (a storey of another height gets its own risers), with its railings, picked and changed as one · plans of the levels between show it going up and down
 - V1.137 · Winder stairs, as in Revit ([[st_LW]], [[st_UW]]): they turn on winders instead of a landing, Balanced or Single Point, with parallel treads at the start and the end and a minimum width on the inside; railings, plans, 3D and IFC have them
 - V1.138 · Beam Annotations, as in Revit ([[a_beamann]]): tags and spot elevations on every beam of a plan at once, at up to six places round each beam, level and sloped beams each with their own · a tag can lie along its element ([[p_tagori]]: [[tgo_m]])
+- V1.139 · Mechanical Equipment Sets, as in Revit ([[a_mesnew]]): pumps in parallel as one set, with the pumps on duty and on standby; the flow of the system is shared by the pumps on duty, and the pipes of each pump, the headers and the suction side carry it and are sized for it
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -26684,6 +26846,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 # Pipes
 1. [[a_pipesize]]: worked out from the fixtures connected (fixture units, WSFU and DFU), the number of sprinkler heads and the chilled water machines; sizes are proposed
 2. [[a_pipereport]] ((PC)): checks that every fixture has its water and its drain, that drains fall enough and that no pipe is smaller than worked out, with the pressure loss and the pressure needed at the source. It exports to CSV
+3. Pumps in a set ([[a_mesnew]]): the flow of the system is shared equally by the pumps on duty, and each pipe carries the most that can pass through it whichever pumps are on duty or on standby; the suction side of the pumps (a network with no loads) takes the flow of the set from the side the pumps supply
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -28490,6 +28653,12 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r53={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),
+  water:()=>{const W=waterflow(P,pszOpt());return{nets:W.nets.map(n=>({sys:n.sys,kind:n.kind,from:n.from,flow:n.flow,heads:n.heads,fu:n.fu,ids:n.ids,mes:n.mes,root:n.root?n.root.id:null,worst:n.worst?{dp:n.worst.dp,len:n.worst.len,end:n.worst.end}:null,vmax:n.vmax})),
+    pipes:[...W.pipes].map(([id,r])=>({id,flow:r.flow,heads:r.heads,fu:r.fu,kind:r.kind,ni:r.ni}))}},
+  sizes:()=>{const o=pszOpt(),W=waterflow(P,o);return[...pipeSizes(P,W,o)]},info:id=>{const S=mesById(id);return S?mesInfo(S):null},clone:ids=>cloneIds(ids),members:id=>mesMembers(mesById(id)).map(e=>e.id),
+  rows:()=>$('#props').innerHTML,ribbon:()=>ctxPanels(),sb:()=>sysbHTML(),field:(k,id)=>{const f=sfAll(P,'equip',t).find(x=>x.k===k),e=IDX.get(id);return f&&e?f.g(e,{tr:t}):null},
+  fields:()=>sfAll(P,'equip',t).map(f=>[f.k,f.l]),ifc:()=>ifcText().text,json:()=>projectJSON(),loadText:s=>loadText(s),report:()=>{dlgPipeReport();const h=$('#dlg').innerHTML;closeDlg();return h}};
 window.PenumBIM.r52={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),cfg:()=>baCfg(),ang:(x,y)=>baAng(x,y),frame:id=>baFrame(IDX.get(id)),sloped:id=>baSloped(IDX.get(id)),
   beams:(vid,sel)=>baBeams(viewById(vid),sel?new Set(sel):null).map(e=>e.id),show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
   place:(vid,ids,C,rm)=>{let n;edit(()=>{n=baPlace(viewById(vid),ids.map(id=>IDX.get(id)),Object.assign(baCfg(),C||{}),!!rm)});return n},
