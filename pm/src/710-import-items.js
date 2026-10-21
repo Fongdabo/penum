@@ -58,7 +58,12 @@ async function impReadPdf(file){await libLoad('pdf.min.js');pdfjsLib.GlobalWorke
     const H=row(seg.hdr),mid=k=>(k.lo+k.hi)/2,near=(l,k,max)=>{if(!l)return '';let b=null,d=max;l.cells.forEach(c=>{const dd=Math.abs((c.x+c.e)/2-mid(k));if(dd<d){d=dd;b=c}});return b?b.s:''};
     const ab=seg.above?C.map(k=>near(seg.above,k,140)):[],be=seg.below?C.map(k=>near(seg.below,k,30)):[];
     const head=C.map((k,i)=>impTxt([H[i]||ab[i]||'',be[i]||''].join(' ')));
-    return [head,...seg.lines.map(row)]};
+    // a header centred over right-aligned numbers (or left-aligned text) in a wide column clusters apart from them: an empty
+    // headed column takes the cells of the unheaded column beside it
+    const D=seg.lines.map(row),cnt=c=>D.filter(r=>impTxt(r[c])).length;
+    head.forEach((h,c)=>{if(!h||cnt(c))return;const N=[c-1,c+1].filter(k=>k>=0&&k<head.length&&!head[k]&&cnt(k));if(!N.length)return;
+      const k=N.length>1&&cnt(N[0])>cnt(N[1])?N[0]:N[N.length-1];D.forEach(r=>{r[c]=r[k];r[k]=''})});
+    return [head,...D]};
   if(!segs.length){segs.push({hdr:{cells:[]},lines:pages.flat(),pages:[1]})}
   const out={};segs.forEach(sg=>{const a=Math.min(...sg.pages),b=Math.max(...sg.pages);let k='ตารางหน้า '+(a===b?a:a+'–'+b);while(out[k])k+=' ';out[k]=grid(sg)});
   // lines outside the tables (summary rows on another page) are still read for the overhead / discount rows
@@ -73,7 +78,7 @@ function impReadText(txt){const lines=String(txt||'').replace(/\r/g,'').split('\
 const IMPHD=[['no',/^(ลำดับ|ที่|no\.?|item|#)$/i],['desc',/รายการ|รายละเอียด|description|desc|ชื่อ/i],['q',/จำนวน(?!เงิน)|ปริมาณ|q'?ty|quantity/i],['unit',/(?<!ต่อ|\/|ละ)หน่วย(?!ละ)(?!.*ราคา)|^unit$/i],
   ['m',/(วัสดุ|ของ|material).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(วัสดุ|material)|^(ค่า)?(วัสดุ|ของ|materials?)( cost)?$/i],
   ['l',/(แรง|labou?r|ติดตั้ง).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(แรง|labou?r)|^(ค่า)?(แรง|แรงงาน|labou?r|ติดตั้ง)( cost)?$/i],
-  ['up',/ราคาต่อหน่วย|ราคา\/หน่วย|unit ?price|rate/i],['amt',/^(รวม|รวมเงิน|จำนวนเงิน|ราคารวม|amount|total|grand total|รวมทั้งสิ้น)/i]];
+  ['up',/ราคา\s*ต่อ\s*หน่วย|ราคา\s*\/\s*หน่วย|unit ?price|rate/i],['amt',/^(รวม|รวมเงิน|จำนวน\s*เงิน|ราคารวม|amount|total|grand total|รวมทั้งสิ้น)/i]];
 const impHits=r=>(r||[]).filter(c=>IMPHD.some(([,re])=>re.test(impTxt(c)))).length;
 function impHeaderRow(rows){let best=0,score=-1;rows.slice(0,40).forEach((r,i)=>{const s=impHits(r);if(s>score){score=s;best=i}});if(score<2)return 0;
   // the second line of a two-line header ("ราคาต่อหน่วย | จำนวนเงิน" under "ค่าวัสดุ | ค่าแรง") scores well too: start at the line above it
