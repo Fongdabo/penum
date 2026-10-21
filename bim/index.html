@@ -7031,8 +7031,18 @@ const GLR={gl:null,c:null,scene:null,ver:-1};
 const LIGHT=(()=>{const v=[0.36,0.80,0.48],l=Math.hypot(v[0],v[1],v[2]);return v.map(x=>x/l)})();
 const VS_T='attribute vec3 aP;attribute vec3 aN;attribute vec4 aC;uniform mat4 uM;uniform vec4 uClip;uniform vec4 uDP;varying float vZ;varying vec3 vN;varying vec4 vC;varying float vD;varying vec3 vP;'+
   'void main(){vZ=(dot(aP,uDP.xyz)+uDP.w)*0.001;vN=aN;vC=aC;vP=aP;vD=(dot(aP,uClip.xyz)+uClip.w)*0.001;gl_Position=uM*vec4(aP,1.0);}';
-/* section box: what lies outside [uB0,uB1] is not drawn */
-const BOXU='uniform float uUseBox;uniform vec3 uB0;uniform vec3 uB1;varying vec3 vP;',BOXT='if(uUseBox>0.5&&(any(lessThan(vP,uB0))||any(greaterThan(vP,uB1))))discard;';
+/* section box: what lies outside [uB0,uB1] is not drawn; uBR [cos, sin] turns it in plan (135): the box is then in its own frame, bq */
+const BOXU='uniform float uUseBox;uniform vec3 uB0;uniform vec3 uB1;uniform vec2 uBR;varying vec3 vP;',
+  BOXT='if(uUseBox>0.5){vec3 bq=vec3(vP.x*uBR.x-vP.z*uBR.y,vP.y,vP.x*uBR.y+vP.z*uBR.x);if(any(lessThan(bq,uB0))||any(greaterThan(bq,uB1)))discard;}';
+/* a box of the renderer [x0, y0, z0, x1, y1, z1] (GL axes) that may carry r = [cos, sin] of the angle it is turned in plan (135): boxQ a GL point in its frame,
+   boxG back, boxOut outside it (by more than e), boxAABB the box of its corners in GL, boxMid its middle in GL */
+const boxUni=(gl,u,box)=>{gl.uniform3f(u.uB0,box[0],box[1],box[2]);gl.uniform3f(u.uB1,box[3],box[4],box[5]);gl.uniform2f(u.uBR,box.r?box.r[0]:1,box.r?box.r[1]:0)},
+  boxQ=(box,x,y,z)=>box.r?[x*box.r[0]-z*box.r[1],y,x*box.r[1]+z*box.r[0]]:[x,y,z],
+  boxOut=(box,x,y,z,e)=>{const q=boxQ(box,x,y,z);return q[0]<box[0]-e||q[0]>box[3]+e||q[1]<box[1]-e||q[1]>box[4]+e||q[2]<box[2]-e||q[2]>box[5]+e},
+  boxG=(box,q)=>box.r?[q[0]*box.r[0]+q[2]*box.r[1],q[1],-q[0]*box.r[1]+q[2]*box.r[0]]:q.slice(0,3),
+  boxAABB=box=>{if(!box.r)return box.slice(0,6);const o=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];
+    for(let i=0;i<8;i++){const p=boxG(box,[box[i&1?3:0],box[i&2?4:1],box[i&4?5:2]]);for(let k=0;k<3;k++){if(p[k]<o[k])o[k]=p[k];if(p[k]>o[k+3])o[k+3]=p[k]}}return o},
+  boxMid=box=>boxG(box,[(box[0]+box[3])/2,(box[1]+box[4])/2,(box[2]+box[5])/2]);
 /* Depth Cueing: vZ = metres behind the front of the view; between uDC.x and uDC.y the colour fades into the paper (uDCc), uDC.z at the most */
 const DCU='varying float vZ;uniform vec3 uDC;uniform vec3 uDCc;';
 const FS_T='precision mediump float;'+DCU+'varying vec3 vN;varying vec4 vC;varying float vD;uniform vec3 uL;uniform vec3 uV;uniform float uUseClip;uniform float uFar;uniform float uMode;uniform float uTint;uniform float uAlpha;uniform vec4 uU;'+BOXU+
@@ -7179,7 +7189,9 @@ function glInit(){
 const NOCUT=new Set(['furn','fixture','equip','eequip','light','device','terminal','sprinkler']);
 function cutThrough(it,clip){if(!it.nc)return false;const b=it.bb;let mn=Infinity,mx=-Infinity;for(let i=0;i<8;i++){const d=clip[0]*b[i&1?3:0]+clip[1]*b[i&2?4:1]+clip[2]*b[i&4?5:2]+clip[3];if(d<mn)mn=d;if(d>mx)mx=d}return mn<0&&mx>0}
 /* the same for a section box: 0 the box cuts it like anything else (or it lies inside), 1 the box passes through it and its middle is inside: shown whole, 2 its middle is outside: not shown */
-function boxState(it,box){if(!it.nc)return 0;const b=it.bb;if(b[0]>=box[0]&&b[1]>=box[1]&&b[2]>=box[2]&&b[3]<=box[3]&&b[4]<=box[4]&&b[5]<=box[5])return 0;
+function boxState(it,box){if(!it.nc)return 0;const b=it.bb;
+  if(box.r){let all=true;for(let i=0;i<8&&all;i++)if(boxOut(box,b[i&1?3:0],b[i&2?4:1],b[i&4?5:2],0))all=false;if(all)return 0;return boxOut(box,(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2,0)?2:1}          // turned (135)
+  if(b[0]>=box[0]&&b[1]>=box[1]&&b[2]>=box[2]&&b[3]<=box[3]&&b[4]<=box[4]&&b[5]<=box[5])return 0;
   const x=(b[0]+b[3])/2,y=(b[1]+b[4])/2,z=(b[2]+b[5])/2;return x>=box[0]&&x<=box[3]&&y>=box[1]&&y<=box[4]&&z>=box[2]&&z<=box[5]?1:2}
 /* what the services are made of in the Realistic style where a mesh does not say: glazed sanitary ware, sheet metal and machines (the numbers are MAT of 20-geom.js) */
 const CATMAT={footing:5,wfoot:5,fixture:14,equip:8,eequip:8,duct:8,ductacc:8,terminal:8,pipeacc:8,sprinkler:8,tray:8,conduit:8};
@@ -7245,16 +7257,16 @@ function glShadow(o,R,cast,part){
       gl.bindFramebuffer(gl.FRAMEBUFFER,null)}catch(e){GLR.fb=0}}
   if(!GLR.fb||!cast.length)return null;
   const L=R.sun,f=[-L[0],-L[1],-L[2]],rl=Math.hypot(f[2],f[0]),r=rl<1e-4?[1,0,0]:[-f[2]/rl,0,f[0]/rl],u=[r[1]*f[2]-r[2]*f[1],r[2]*f[0]-r[0]*f[2],r[0]*f[1]-r[1]*f[0]],box=o.box;
-  let bb=sc.bb;if(box){const q=[Math.max(bb[0],box[0]),Math.max(bb[1],box[1]),Math.max(bb[2],box[2]),Math.min(bb[3],box[3]),Math.min(bb[4],box[4]),Math.min(bb[5],box[5])];if(q[0]<q[3]&&q[1]<q[4]&&q[2]<q[5])bb=q}
+  let bb=sc.bb;if(box){const B=boxAABB(box),q=[Math.max(bb[0],B[0]),Math.max(bb[1],B[1]),Math.max(bb[2],B[2]),Math.min(bb[3],B[3]),Math.min(bb[4],B[4]),Math.min(bb[5],B[5])];if(q[0]<q[3]&&q[1]<q[4]&&q[2]<q[5])bb=q}
   let a0=Infinity,a1=-Infinity,b0=Infinity,b1=-Infinity;for(let i=0;i<8;i++){const p=[bb[i&1?3:0],bb[i&2?4:1],bb[i&4?5:2]],a=dot3(p,r),b=dot3(p,u);if(a<a0)a0=a;if(a>a1)a1=a;if(b<b0)b0=b;if(b>b1)b1=b}
   const cam={r,u,f,ortho:true,cR:(a0+a1)/2,cU:(b0+b1)/2,hw:(a1-a0)/2*1.01+30,hh:(b1-b0)/2*1.01+30},M=camMatrix(cam,bb),dr=depthRange(cam,bb),N=GLR.shN,texel=2*Math.max(cam.hw,cam.hh)/N;
   let hs=cast.length;for(const it of cast)hs=(hs*31+it.t0+it.tn*7)>>>0;
-  const key=[GLR.ver,L.map(x=>x.toFixed(4)),box?box.map(x=>Math.round(x)):'',o.clip?o.clip.map(x=>x.toFixed(3)):'',o.far||0,hs].join('|');
+  const key=[GLR.ver,L.map(x=>x.toFixed(4)),box?box.map(x=>Math.round(x)).concat(box.r?box.r.map(x=>x.toFixed(5)):[]):'',o.clip?o.clip.map(x=>x.toFixed(3)):'',o.far||0,hs].join('|');
   if(key!==GLR.shKey){GLR.shKey=key;const d=GLR.dep.u,clip=o.clip||[0,0,0,1];if(GLR.scis)gl.disable(gl.SCISSOR_TEST);          // the picture may be drawn in strips (a section with jogs); the shadow map is not
     gl.bindFramebuffer(gl.FRAMEBUFFER,GLR.fb);gl.viewport(0,0,N,N);gl.colorMask(true,true,true,true);gl.depthMask(true);gl.clearColor(1,1,1,1);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.CULL_FACE);gl.disable(gl.BLEND);gl.disable(gl.STENCIL_TEST);gl.disable(gl.POLYGON_OFFSET_FILL);
     gl.useProgram(GLR.dep.p);gl.enableVertexAttribArray(0);gl.disableVertexAttribArray(1);gl.disableVertexAttribArray(2);gl.disableVertexAttribArray(3);gl.bindBuffer(gl.ARRAY_BUFFER,GLR.bT);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    gl.uniformMatrix4fv(d.uM,false,M);gl.uniform4fv(d.uClip,clip);gl.uniform1f(d.uUseClip,o.clip?1:0);gl.uniform1f(d.uFar,o.clip&&o.far>0?o.far*0.001:9000);gl.uniform1f(d.uUseBox,box?1:0);if(box){gl.uniform3f(d.uB0,box[0],box[1],box[2]);gl.uniform3f(d.uB1,box[3],box[4],box[5])}if(d.uLz)gl.uniform1f(d.uLz,0);
+    gl.uniformMatrix4fv(d.uM,false,M);gl.uniform4fv(d.uClip,clip);gl.uniform1f(d.uUseClip,o.clip?1:0);gl.uniform1f(d.uFar,o.clip&&o.far>0?o.far*0.001:9000);gl.uniform1f(d.uUseBox,box?1:0);if(box)boxUni(gl,d,box);if(d.uLz)gl.uniform1f(d.uLz,0);
     part(d,cast,'t0','tn',gl.TRIANGLES);gl.bindFramebuffer(gl.FRAMEBUFFER,null);if(GLR.scis)gl.enable(gl.SCISSOR_TEST)}
   return{M,texel,bias:Math.max(8,texel*1.2)/(dr[1]-dr[0])}}
 
@@ -7315,7 +7327,7 @@ function glAO(o,cam,bb,M,list,part){const gl=GLR.gl;if(!GLR.ao||!GLR.aob||!GLR.d
   const f=cam.f;let d0=Infinity,d1=-Infinity;for(let i=0;i<8;i++){const d=dot3([bb[i&1?3:0],bb[i&2?4:1],bb[i&4?5:2]],f);if(d<d0)d0=d;if(d>d1)d1=d}if(!cam.ortho)d0=dot3(cam.eye,f);const lz=Math.max(1,d1-d0),d=GLR.dep.u,box=o.box;
   gl.bindFramebuffer(gl.FRAMEBUFFER,F.fb);gl.viewport(0,0,o.w,o.h);gl.colorMask(true,true,true,true);gl.clearColor(1,1,1,1);gl.clearDepth(1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.BLEND);gl.disable(gl.STENCIL_TEST);gl.disable(gl.POLYGON_OFFSET_FILL);gl.disable(gl.DITHER);          // dithering would scatter the packed depth
   gl.useProgram(GLR.dep.p);gl.enableVertexAttribArray(0);for(let i=1;i<4;i++)gl.disableVertexAttribArray(i);gl.bindBuffer(gl.ARRAY_BUFFER,GLR.bT);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-  gl.uniformMatrix4fv(d.uM,false,M);gl.uniform4fv(d.uClip,o.clip||[0,0,0,1]);gl.uniform1f(d.uUseClip,o.clip?1:0);gl.uniform1f(d.uFar,o.clip&&o.far>0?o.far*0.001:9000);gl.uniform1f(d.uUseBox,box?1:0);if(box){gl.uniform3f(d.uB0,box[0],box[1],box[2]);gl.uniform3f(d.uB1,box[3],box[4],box[5])}
+  gl.uniformMatrix4fv(d.uM,false,M);gl.uniform4fv(d.uClip,o.clip||[0,0,0,1]);gl.uniform1f(d.uUseClip,o.clip?1:0);gl.uniform1f(d.uFar,o.clip&&o.far>0?o.far*0.001:9000);gl.uniform1f(d.uUseBox,box?1:0);if(box)boxUni(gl,d,box);
   gl.uniform4f(d.uVf,f[0],f[1],f[2],-d0);gl.uniform1f(d.uLz,lz);part(d,list,'t0','tn',gl.TRIANGLES);gl.uniform1f(d.uLz,0);gl.enable(gl.DITHER);
   const mp=[cam.ortho?2*cam.hh/o.h:0,cam.ortho?0:2*(cam.tan||Math.tan(22.5*Math.PI/180))/o.h];
   gl.bindFramebuffer(gl.FRAMEBUFFER,FB.fb);gl.viewport(0,0,o.w,o.h);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT);let u=GLR.ao.u;gl.useProgram(GLR.ao.p);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.disable(gl.DITHER);
@@ -7350,7 +7362,7 @@ function glRender1(o){
   const gl=GLR.gl,sc=GLR.scene;if(!gl||!sc)return false;const c=GLR.c;if(c.width!==o.w||c.height!==o.h){c.width=o.w;c.height=o.h}
   for(const G of [GLR.tri,GLR.line,GLR.real])if(G&&G.u.uDC){const D=o.dcue;gl.useProgram(G.p);gl.uniform3f(G.u.uDC,D?D.s:0,D?D.e:1,D?D.l:0);if(D){if(G.u.uDP)gl.uniform4fv(G.u.uDP,D.p);if(G.u.uDCc)gl.uniform3fv(G.u.uDCc,o.bg)}}
   let style=o.style||'shaded';const R=style==='real'&&GLR.real?(o.real||{sun:LIGHT}):null;if(style==='real'&&!R)style='shaded';
-  const box=o.box||null,setBox=(u,on)=>{gl.uniform1f(u.uUseBox,on&&box?1:0);if(box){gl.uniform3f(u.uB0,box[0],box[1],box[2]);gl.uniform3f(u.uB1,box[3],box[4],box[5])}};
+  const box=o.box||null,setBox=(u,on)=>{gl.uniform1f(u.uUseBox,on&&box?1:0);if(box)boxUni(gl,u,box)};
   const cam=o.cam,clip=o.clip||[0,0,0,1],far=o.clip&&o.far>0?o.far*0.001:9000,selc=o.selc,isSel=it=>!!(o.sel&&o.sel.has(it.id))||it.id===o.hov;
   const NC=new Set();let all=o.hide?sc.items.filter(it=>!o.hide(it)):sc.items;
   if(o.clip)for(const it of all)if(cutThrough(it,clip))NC.add(it);
@@ -7423,9 +7435,9 @@ function glRender1(o){
       capG.forEach(([l,c],i)=>{if(i){gl.clear(gl.STENCIL_BUFFER_BIT);gl.enableVertexAttribArray(1);gl.enableVertexAttribArray(2);gl.bindBuffer(gl.ARRAY_BUFFER,GLR.bT);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);gl.uniform1f(u.uUseClip,1)}count(l);fill(c)});gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL)}
     if(box){ // cap each face of the section box that faces the viewer, the same way: where the face lies inside a solid
       const cen=[(box[0]+box[3])/2,(box[1]+box[4])/2,(box[2]+box[5])/2];gl.disableVertexAttribArray(1);gl.disableVertexAttribArray(2);
-      for(let i=0;i<6;i++){const ax=i%3,mx=i>=3,nrm=[0,0,0];nrm[ax]=mx?1:-1;const fc=cen.slice();fc[ax]=box[i];const vw=cam.ortho?cam.f:[fc[0]-cam.eye[0],fc[1]-cam.eye[1],fc[2]-cam.eye[2]];if(dot3(nrm,vw)>=0)continue;
-        const pl=[0,0,0,0];pl[ax]=mx?-1:1;pl[3]=mx?box[i]:-box[i];
-        const a1=(ax+1)%3,a2=(ax+2)%3,q=(s1,s2)=>{const p=fc.slice();p[a1]=s1?box[a1+3]:box[a1];p[a2]=s2?box[a2+3]:box[a2];return p},quad=new Float32Array([...q(0,0),...q(1,0),...q(1,1),...q(0,0),...q(1,1),...q(0,1)]);
+      for(let i=0;i<6;i++){const ax=i%3,mx=i>=3,nrm=[0,0,0];nrm[ax]=mx?1:-1;const fc=cen.slice();fc[ax]=box[i];const fg=boxG(box,fc),vw=cam.ortho?cam.f:[fg[0]-cam.eye[0],fg[1]-cam.eye[1],fg[2]-cam.eye[2]];if(dot3(boxG(box,nrm),vw)>=0)continue;
+        const pl=[0,0,0,0];pl[ax]=mx?-1:1;pl[3]=mx?box[i]:-box[i];{const g=boxG(box,pl);pl[0]=g[0];pl[1]=g[1];pl[2]=g[2]}
+        const a1=(ax+1)%3,a2=(ax+2)%3,q=(s1,s2)=>{const p=fc.slice();p[a1]=s1?box[a1+3]:box[a1];p[a2]=s2?box[a2+3]:box[a2];return boxG(box,p)},quad=new Float32Array([...q(0,0),...q(1,0),...q(1,1),...q(0,0),...q(1,1),...q(0,1)]);
         const capF=(list,c)=>{gl.clear(gl.STENCIL_BUFFER_BIT);gl.colorMask(false,false,false,false);gl.depthMask(false);gl.disable(gl.DEPTH_TEST);gl.enable(gl.STENCIL_TEST);gl.stencilFunc(gl.ALWAYS,0,255);
           gl.stencilOpSeparate(gl.FRONT,gl.KEEP,gl.KEEP,gl.DECR_WRAP);gl.stencilOpSeparate(gl.BACK,gl.KEEP,gl.KEEP,gl.INCR_WRAP);
           gl.enableVertexAttribArray(1);gl.enableVertexAttribArray(2);gl.bindBuffer(gl.ARRAY_BUFFER,GLR.bT);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);gl.uniform4fv(u.uClip,pl);gl.uniform1f(u.uUseClip,1);gl.uniform1f(u.uUseBox,0);runs(list,'t0','tn',gl.TRIANGLES);
@@ -7475,7 +7487,7 @@ function glPick(o,nx,ny){if(o.strips&&o.strips.length){const h=o.cam.cR+nx*o.cam
       const qx=ty*e1z-tz*e1y,qy=tz*e1x-tx*e1z,qz=tx*e1y-ty*e1x,vv=(D[0]*qx+D[1]*qy+D[2]*qz)*inv;if(vv<0||uu+vv>1)continue;
       const t=(e2x*qx+e2y*qy+e2z*qz)*inv;if(t<=0||t>=bt)continue;
       if(clip&&!whole){const hx=O[0]+D[0]*t,hy=O[1]+D[1]*t,hz=O[2]+D[2]*t,dd=hx*clip[0]+hy*clip[1]+hz*clip[2]+clip[3];if(dd<0||(far&&dd>far))continue}
-      if(box&&!whole){const hx=O[0]+D[0]*t,hy=O[1]+D[1]*t,hz=O[2]+D[2]*t;if(hx<box[0]-1||hx>box[3]+1||hy<box[1]-1||hy>box[4]+1||hz<box[2]-1||hz>box[5]+1)continue}
+      if(box&&!whole){const hx=O[0]+D[0]*t,hy=O[1]+D[1]*t,hz=O[2]+D[2]*t;if(boxOut(box,hx,hy,hz,1))continue}
       bt=t;best=it;bi=i}}
   // model lines have no faces: the one nearest to the ray within a few pixels is taken, unless a face stands in front of it
   if(sc.lin){const LN=sc.lin,cm=o.cam,px=cm.ortho?2*cm.hh/o.h:0;let bl=null,bd=Infinity,bp=null;
@@ -7483,7 +7495,7 @@ function glPick(o,nx,ny){if(o.strips&&o.strips.length){const h=o.cam.cR+nx*o.cam
       for(let i=it.l0*3,e=(it.l0+it.ln)*3;i<e;i+=6){const ax=LN[i],ay=LN[i+1],az=LN[i+2],ex=LN[i+3]-ax,ey=LN[i+4]-ay,ez=LN[i+5]-az,wx=ax-O[0],wy=ay-O[1],wz=az-O[2];
         const b=D[0]*ex+D[1]*ey+D[2]*ez,c=ex*ex+ey*ey+ez*ez,d=D[0]*wx+D[1]*wy+D[2]*wz,f=ex*wx+ey*wy+ez*wz,den=c-b*b,s=den>1e-9?Math.max(0,Math.min(1,(b*d-f)/den)):0,t=d+b*s;if(t<=0&&!cm.ortho)continue;
         const hx=ax+ex*s,hy=ay+ey*s,hz=az+ez*s,dist=Math.hypot(O[0]+D[0]*t-hx,O[1]+D[1]*t-hy,O[2]+D[2]*t-hz),tol=7*(px||2*cm.tan*t/o.h);if(dist>tol||dist>=bd||t>bt+tol+30)continue;
-        if(clip){const dd=hx*clip[0]+hy*clip[1]+hz*clip[2]+clip[3];if(dd<0||(far&&dd>far))continue}if(box&&(hx<box[0]-1||hx>box[3]+1||hy<box[1]-1||hy>box[4]+1||hz<box[2]-1||hz>box[5]+1))continue;
+        if(clip){const dd=hx*clip[0]+hy*clip[1]+hz*clip[2]+clip[3];if(dd<0||(far&&dd>far))continue}if(box&&boxOut(box,hx,hy,hz,1))continue;
         bd=dist;bl=it;bp=[hx,hy,hz]}}
     if(bl)return{id:bl.id,cat:bl.cat,p:bp}}
   if(!best)return null;const ux=P[bi+3]-P[bi],uy=P[bi+4]-P[bi+1],uz=P[bi+5]-P[bi+2],vx=P[bi+6]-P[bi],vy=P[bi+7]-P[bi+1],vz=P[bi+8]-P[bi+2],ax=uy*vz-uz*vy,ay=uz*vx-ux*vz,az=ux*vy-uy*vx,nl=Math.hypot(ax,ay,az)||1;
@@ -8411,7 +8423,7 @@ function fitView(v,w,h){const nav=navOf(v);nav.fit=false;nav.auto=true;nav.fw=w;
   if(v.kind==='plan'){const E=planExtents(v),m=6*v.scale;fit2D(nav,E.x0-m,E.y0-m,E.x1+m,E.y1+m,w,h,14)}
   else if(v.kind==='elev'||v.kind==='section'){const E=elevExtents(v),sc=v.scale||100;fit2D(nav,E.h0-16*sc,-E.z1-16*sc,E.h1+36*sc,-E.z0+10*sc,w,h,10)}
   else if(v.kind==='sheet'){const S=sheetSize(v);fit2D(nav,0,0,S[0],S[1],w,h,16)}
-  else if(v.kind==='3d'){if(walkOf(v)){wkFit(v,nav);return}const bb=sboxGL(v)||dspBB(v);nav.t=[(bb[0]+bb[3])/2,(bb[1]+bb[4])/2,(bb[2]+bb[5])/2];nav.hh=Math.hypot(bb[3]-bb[0],bb[4]-bb[1],bb[5]-bb[2])/2*1.06*Math.max(1,h/w*1.1)}}
+  else if(v.kind==='3d'){if(walkOf(v)){wkFit(v,nav);return}const bb=sboxGL(v)||dspBB(v);nav.t=bb.r?boxMid(bb):[(bb[0]+bb[3])/2,(bb[1]+bb[4])/2,(bb[2]+bb[5])/2];nav.hh=Math.hypot(bb[3]-bb[0],bb[4]-bb[1],bb[5]-bb[2])/2*1.06*Math.max(1,h/w*1.1)}}
 function zoomFit(){const v=activeView();if(v){navOf(v).fit=true;redraw()}}
 
 /* ---- panes ---- */
@@ -8428,7 +8440,7 @@ function panesFill(){while(ui.panes.length<TILE_MAX)ui.panes.push(0);ui.panes.le
 function initPanes(){
   const faces=[['front','translateZ(24px)'],['back','rotateY(180deg) translateZ(24px)'],['right','rotateY(90deg) translateZ(24px)'],['left','rotateY(-90deg) translateZ(24px)'],['top','rotateX(90deg) translateZ(24px)'],['bottom','rotateX(-90deg) translateZ(24px)']];
   $('#panes').innerHTML=[...Array(TILE_MAX).keys()].map(i=>`<div class="pane" data-i="${i}"${i?' hidden':''}><div class="cvw"><canvas></canvas><div class="sched" hidden></div><div class="vname"></div>
-    <div class="cube" hidden><button class="hm" data-cube="home" title="Home">${icon('home')}</button><div class="c3"><div class="ring"><b>N</b><b>E</b><b>S</b><b>W</b></div>${faces.map(f=>`<div class="f" data-cube="${f[0]}" style="transform:${f[1]}"></div>`).join('')}</div></div></div><div class="vcb"></div></div>`).join('');
+    <div class="cube" hidden><button class="hm" data-cube="home" title="Home">${icon('home')}</button><button class="cl" data-act="cubelock" data-arg="${i}" hidden>${icon('lock3')}</button><button class="cm" data-act="cubemenu" data-arg="${i}" aria-haspopup="menu">▾</button><div class="c3"><div class="ring"><b>N</b><b>E</b><b>S</b><b>W</b></div><div class="c3f">${faces.map(f=>`<div class="f" data-cube="${f[0]}" style="transform:${f[1]}"><span class="lb"></span>${CUBE_Z.map(z=>`<i data-z="${z}"></i>`).join('')}</div>`).join('')}</div></div></div></div><div class="vcb"></div></div>`).join('');
   $$('#panes .pane').forEach((el,i)=>{const cv=el.querySelector('canvas');PANES.push({i,el,cvw:el.querySelector('.cvw'),cv,ctx:cv.getContext('2d'),sched:el.querySelector('.sched'),vn:el.querySelector('.vname'),cube:el.querySelector('.cube'),c3:el.querySelector('.c3'),vcb:el.querySelector('.vcb'),w:0,h:0,key:''})});
   for(const pn of PANES)bindPane(pn);
   new ResizeObserver(()=>redraw()).observe($('#panes'))}
@@ -9358,7 +9370,7 @@ function bindPane(pn){
     else if(drag.mode==='orbit'){nav.yaw=drag.n.yaw+dx*0.008;nav.pitch=clamp(drag.n.pitch+dy*0.008,-1.45,Math.PI/2)}
     else if(drag.mode==='box')ui.box={x0:drag.sx,y0:drag.sy,x1:p.x,y1:p.y};
     else if(drag.mode==='sun'){const q=sunDrag(v,p,pn);if(q)hint(t('h_sundrag',q.time,Math.round(q.az),Math.round(q.alt)))}
-    else if(drag.mode==='sbox'){sboxDrag(v,drag,p);hint(t('h_sbox',fmtLen(v.sbox[drag.g.i]),unitName()))}
+    else if(drag.mode==='sbox'){sboxDrag(v,drag,p);hint(drag.g.rot?t('h_sboxa',String(+sboxAng(v).toFixed(2))):t('h_sbox',fmtLen(v.sbox[drag.g.i]),unitName()))}
     else if(drag.mode==='crop')cropDrag(v,drag,p);
     else if(drag.mode==='emk'){const nav=navOf(v),r=x=>Math.round(x/10)*10;drag.ev.mk=[r(drag.m0[0]+(p.x-drag.sx)/nav.s),r(drag.m0[1]+(p.y-drag.sy)/nav.s)];redraw()}
     else if(drag.mode==='bpt')bpDrag(v,drag,p);
@@ -9435,8 +9447,8 @@ function bindPane(pn){
     if(el.dataset.ck!=null){const k=el.dataset.ck;edit(()=>{const o=Object.assign({},P.ckt||{});if(val>0)o[k]={brk:val};else delete o[k];P.ckt=o})}          // the rating of a circuit, typed in the panel schedule; 0 lets the program choose again
     else if(el.dataset.pk)edit(()=>{P.prices[el.dataset.pk]=val});          // rows priced per size (pipes, trays, fittings) keep their own price
     else if(el.dataset.tid){const ty=(P.types[el.dataset.tc]||[]).find(x=>x.id===+el.dataset.tid);if(ty)edit(()=>{ty.cost=val})}});
-  pn.cube.addEventListener('click',e=>{const k=e.target.closest('[data-cube]');if(!k)return;const v=view();if(!v||v.kind!=='3d')return;const n=navOf(v),H=Math.PI/2,
-    m={front:[H,0],back:[-H,0],right:[0,0],left:[Math.PI,0],top:[H,H],bottom:[H,-1.45],home:[Math.PI*0.27,0.5]}[k.dataset.cube];if(m){navPush(v);n.yaw=m[0];n.pitch=m[1];if(k.dataset.cube==='home')n.fit=true;setActivePane(pn.i);redraw()}});
+  pn.cube.addEventListener('click',e=>{const k=e.target.closest('[data-cube]');if(!k)return;const v=view();if(!v||v.kind!=='3d')return;          // a face, an edge or a corner of it, or the house (135)
+    const z=e.target.closest('[data-z]');setActivePane(pn.i);cubeClick(pn,v,k.dataset.cube,z?z.dataset.z.split(',').map(Number):[0,0])});
   pn.el.addEventListener('pointerdown',()=>{if(ui.ap!==pn.i){setActivePane(pn.i);redraw()}},true)}
 
 /* ---------- keyboard ---------- */
@@ -11386,31 +11398,33 @@ XD.push(()=>{for(const v of P.views)if(v.walk){const n=ui.nav[v.id];if(n)n.fit=t
 XS.push(()=>{if(WKP){cancelAnimationFrame(WKP.raf);WKP=null}ui.wkf={};ui.wk=null;ui.wkNew=null;WKQ=null});
 
 /* ===== 68 section box of a 3D view (Revit: Properties > Extents > Section Box; Selection Box, BX) =====
-   v.sbox=[x0,y0,z0,x1,y1,z1] in model mm (x, y plan; z elevation), v.sboxOn switches it. The renderer takes it as [x0,z0,y0,x1,z1,y1]. */
-const sboxGL=v=>v.kind==='3d'&&v.sboxOn&&v.sbox?[v.sbox[0],v.sbox[2],v.sbox[1],v.sbox[3],v.sbox[5],v.sbox[4]]:null;
+   v.sbox=[x0,y0,z0,x1,y1,z1] in model mm (x, y plan; z elevation), v.sboxOn switches it. The renderer takes it as [x0,z0,y0,x1,z1,y1].
+   v.sboxA (135): the box turned counterclockwise in plan by so many degrees about the origin's vertical, v.sbox then in its own frame; the renderer's box carries r. */
+const sboxGL=v=>{if(!(v.kind==='3d'&&v.sboxOn&&v.sbox))return null;const b=[v.sbox[0],v.sbox[2],v.sbox[1],v.sbox[3],v.sbox[5],v.sbox[4]],a=sboxAng(v)*Math.PI/180;if(a)b.r=[Math.cos(a),Math.sin(a)];return b};
 /* box around the whole model, or around the given element ids, with a margin */
 function sboxAround(ids,pad){const MS=MSm(),set=ids?new Set(ids):null,b=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];
   for(const it of MS.items){if(set&&!set.has(it.id))continue;const t=it.t;for(let i=0;i<t.length;i+=3){if(t[i]<b[0])b[0]=t[i];if(t[i]>b[3])b[3]=t[i];if(t[i+2]<b[1])b[1]=t[i+2];if(t[i+2]>b[4])b[4]=t[i+2];if(t[i+1]<b[2])b[2]=t[i+1];if(t[i+1]>b[5])b[5]=t[i+1]}}
   if(!isFinite(b[0]))return null;return[b[0]-pad,b[1]-pad,b[2]-pad,b[3]+pad,b[4]+pad,b[5]+pad]}
-function sboxToggle(v,on){edit(()=>{v.sboxOn=on;if(on&&!v.sbox)v.sbox=sboxAround(null,300)||[-1000,-1000,-500,9000,7000,6000]});navOf(v).fit=true;refresh()}
+function sboxToggle(v,on){edit(()=>{v.sboxOn=on;if(on&&!v.sbox){v.sbox=sboxAround(null,300)||[-1000,-1000,-500,9000,7000,6000];delete v.sboxA}});navOf(v).fit=true;refresh()}
 /* Selection Box: the default 3D view, cut down to what is selected */
 function selectionBox(){if(!ui.sel.size){toast(t('need_sel'));return}const ids=[...expandSel(ui.sel)],b=sboxAround(ids,600);if(!b){toast(t('sbox_none'));return}
-  const v=activeView(),d=v&&v.kind==='3d'?v:P.views.find(x=>x.kind==='3d');edit(()=>{d.sbox=b;d.sboxOn=true});showView(d.id);navOf(d).fit=true;refresh()}
+  const v=activeView(),d=v&&v.kind==='3d'?v:P.views.find(x=>x.kind==='3d');edit(()=>{d.sbox=b;d.sboxOn=true;delete d.sboxA});showView(d.id);navOf(d).fit=true;refresh()}
 /* pane pixels of a model point (x, y plan; z elevation) in 3D view v */
 function proj3(pn,v,x,y,z){const nav=navOf(v),M=camMatrix(orbitCam(nav,pn.w/pn.h),MSm().bb),cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15]||1;return[(cx/cw+1)/2*pn.w,(1-cy/cw)/2*pn.h]}
 /* the six faces: [index into v.sbox, axis 0..2] and their centres */
 function sboxFaces(b){const c=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2],out=[];for(let i=0;i<6;i++){const ax=i%3,p=c.slice();p[ax]=b[i];out.push({i,ax,p})}return out}
-function drawSBox(pn,ctx,v){ui.sbh=[];if(!v.sboxOn||!v.sbox||catHid(v,'sbox'))return;const b=v.sbox,P3=(x,y,z)=>proj3(pn,v,x,y,z),K=[];
+function drawSBox(pn,ctx,v){ui.sbh=[];if(!v.sboxOn||!v.sbox||catHid(v,'sbox'))return;const b=v.sbox,P3=(u,w,z)=>{const q=sboxXY(v,u,w);return proj3(pn,v,q[0],q[1],z)},K=[];
   for(let i=0;i<8;i++)K.push(P3(b[i&1?3:0],b[i&2?4:1],b[i&4?5:2]));
   ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=1;ctx.globalAlpha=0.75;ctx.setLineDash([6,4]);ctx.beginPath();for(const [a,c] of [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]]){ctx.moveTo(K[a][0],K[a][1]);ctx.lineTo(K[c][0],K[c][1])}ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
   if(ui.tool==='modify'&&pn.i===ui.ap)for(const f of sboxFaces(b)){const s=P3(f.p[0],f.p[1],f.p[2]),q=f.p.slice();q[f.ax]+=1000;const e=P3(q[0],q[1],q[2]),dx=e[0]-s[0],dy=e[1]-s[1],L=Math.hypot(dx,dy);          // grips: a face follows the pointer along its own axis
       ctx.fillStyle=C.paper;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(s[0],s[1],6,0,7);ctx.fill();ctx.stroke();
       if(L>4){const ux=dx/L,uy=dy/L,sg=f.i<3?-1:1;ctx.fillStyle=C.sel;ctx.beginPath();ctx.moveTo(s[0]+ux*sg*4.2,s[1]+uy*sg*4.2);ctx.lineTo(s[0]-ux*sg*2-uy*3,s[1]-uy*sg*2+ux*3);ctx.lineTo(s[0]-ux*sg*2+uy*3,s[1]-uy*sg*2-ux*3);ctx.closePath();ctx.fill()}
       ui.sbh.push({x:s[0],y:s[1],i:f.i,ax:f.ax,dx:dx/1000,dy:dy/1000,pane:pn.i})}
+  if(ui.tool==='modify'&&pn.i===ui.ap)sboxRotGrip(pn,ctx,v,K);          // the round arrow that turns it (135)
   ctx.restore()}
 const sboxGripAt=(pn,p)=>(ui.sbh||[]).find(g=>g.pane===pn.i&&Math.hypot(g.x-p.x,g.y-p.y)<=9);
 /* drag of a face: pointer movement measured along the face's axis as it lies on the screen */
-function sboxDrag(v,d,p){const g=d.g,l2=g.dx*g.dx+g.dy*g.dy;if(l2<1e-9)return;const mm=((p.x-d.sx)*g.dx+(p.y-d.sy)*g.dy)/l2,b=v.sbox,inc=50;let val=Math.round((d.v0+mm)/inc)*inc;
+function sboxDrag(v,d,p){if(d.g.rot){sboxTurn(v,d,p);return}const g=d.g,l2=g.dx*g.dx+g.dy*g.dy;if(l2<1e-9)return;const mm=((p.x-d.sx)*g.dx+(p.y-d.sy)*g.dy)/l2,b=v.sbox,inc=50;let val=Math.round((d.v0+mm)/inc)*inc;
   if(g.i<3)val=Math.min(val,b[g.i+3]-100);else val=Math.max(val,b[g.i-3]+100);b[g.i]=val}
 
 /* ===== 68 sheet composition: guide grids, detail numbers of viewports, view references, matchlines (the rules are in 26-sheetx.js) ===== */
@@ -11947,7 +11961,8 @@ function applyTheme(){const r=document.documentElement;let m=ui.theme;
 function refreshChrome(){
   const sig=[...ui.sel].join(',');if(sig!==ui.selSig){if(ui.selArr&&ui.selArr.length)ui.prevSel=ui.selArr;ui.selSig=sig;ui.selArr=[...ui.sel]}          // what Select Previous (Ctrl+←) brings back
   document.documentElement.lang=ui.lang;renderRibbon();renderOptbar();renderTabs();renderProps();renderTree();
-  PANES.forEach(pn=>{pn.cube.querySelectorAll('.f').forEach(f=>{f.textContent=t('cube_'+f.dataset.cube)});pn.el.hidden=pn.i>=NPN();pn.el.classList.toggle('active',pn.i===ui.ap);renderVCB(pn)});$('#panes').classList.toggle('two',ui.two);$('#panes').classList.toggle('tn',NPN()>2);$('#panes').style.setProperty('--pc',NPN()===4?2:Math.min(3,NPN()));tileLayout();
+  PANES.forEach(pn=>{pn.cube.querySelectorAll('.f').forEach(f=>{const b=f.querySelector('.lb');if(b)b.textContent=t('cube_'+f.dataset.cube)});
+    {const c=pn.cube,h=c.querySelector('.hm'),m=c.querySelector('.cm'),l=c.querySelector('.cl');if(h)h.title=t('a_cubehome');if(m){m.title=t('a_cubemenu');m.setAttribute('aria-label',t('a_cubemenu'))}if(l)l.title=t('vq_lockt')}pn.el.hidden=pn.i>=NPN();pn.el.classList.toggle('active',pn.i===ui.ap);renderVCB(pn)});$('#panes').classList.toggle('two',ui.two);$('#panes').classList.toggle('tn',NPN()>2);$('#panes').style.setProperty('--pc',NPN()===4?2:Math.min(3,NPN()));tileLayout();
   const v=activeView();$('#ttl').innerHTML=`<b>${esc(P.info.name)}</b> — ${esc(v?v.name:'')}`;
   $('#qUndo').disabled=!undoS.length;$('#qRedo').disabled=!redoS.length;$('#qThin').setAttribute('aria-pressed',ui.thin);$('#qTile').setAttribute('aria-pressed',ui.two);$('#qProps').setAttribute('aria-pressed',ui.showProps);$('#qTree').setAttribute('aria-pressed',ui.showTree);$('#langBtn').textContent=ui.lang==='th'?'EN':'ไทย';
   const tips={save:'a_save',undo:'a_undo',redo:'a_redo',v3d:'a_v3d',thin:'a_thin',tile:'a_tile',keys:'a_keys',lang:'a_lang',uiprops:'a_uiprops',uitree:'a_uitree',theme:'a_theme'};$$('.qb[data-act]').forEach(b=>{const k=tips[b.dataset.act];if(k){b.title=t(k);b.setAttribute('aria-label',t(k))}});const qs=$('.qb[data-tool="section"]');qs.title=t('t_section');qs.setAttribute('aria-label',t('t_section'));
@@ -12528,7 +12543,7 @@ function viewRows(v){const U=t('u_mm'),TK=tplKind(v),TP=tplOf(v);let h=PR.grp('g
   else if(v.kind==='plan'){const l=lvl(P,v.level);h+=PR.sel('disc','p_disc',v.disc||'coord',DISCS.map(d=>[d,t('disc_'+d)]))+PR.sel('scale','p_scale',v.scale,scl)+PR.sel('detail','p_detail',v.detail,['coarse','medium','fine'].map(s=>[s,t('det_'+s)]))
       +PR.sel('underlay','p_underlay',v.underlay||0,[[0,t('none')],...lvOpts().filter(x=>x[0]!==v.level)])+PR.chk('tags','p_tags',v.tags!==false)+(v.area!=null?PR.ro('p_ascheme',asName(v.area))+PR.sel('acs','p_acs',v.acs||'',[['',t('none')],...AREA_FILL.map(k=>[k,t('acs_'+k)])])+`<div class="pa"><button class="btn" data-act="areacomp">${t('a_areacomp')}…</button></div>`:PR.sel('cs','p_cscheme',v.cs||'',[['',t('none')],...CS_KEYS.map(k=>[k,t('cs_'+k)])])+`<div class="pa"><button class="btn" data-act="cscheme">${t('a_cscheme')}…</button></div>`)+rcfViewRows(v)
       +PR.grp('g_level')+PR.text('lvname','p_name',l.name)+PR.num('lvelev','p_elev',l.elev,U,'step="50"')+PR.ro('p_cutpl',fmtLen(vrOf(v).cut)+' '+unitName()+(v.rcp?' ↑':''))+`<div class="pa"><button class="btn" data-act="viewrange">${t('a_viewrange')}…</button></div>`+cropRows(v)}
-  else if(v.kind==='3d')h+=PR.sel('disc','p_disc',v.disc||'coord',['coord','mep','mech','plumb','fire','elec'].map(d=>[d,t('disc_'+d)]))+PR.sel('style','p_vstyle',v.style||'shaded',sty)+PR.chk('persp','p_persp',!!navOf(v).persp)+realRows(v)+PR.grp('g_extents')+PR.chk('sbox','p_sbox',!!v.sboxOn);
+  else if(v.kind==='3d')h+=PR.sel('disc','p_disc',v.disc||'coord',['coord','mep','mech','plumb','fire','elec'].map(d=>[d,t('disc_'+d)]))+PR.sel('style','p_vstyle',v.style||'shaded',sty)+PR.chk('persp','p_persp',!!navOf(v).persp)+realRows(v)+PR.grp('g_extents')+PR.chk('sbox','p_sbox',!!v.sboxOn)+(v.sboxOn&&v.sbox?PR.num('sboxA','p_sboxa',+sboxAng(v).toFixed(2),'°','step="1" min="-180" max="180"'):'');
   else if(v.kind==='elev'||v.kind==='section'){h+=PR.sel('scale','p_scale',v.scale,scl)+PR.sel('style','p_vstyle',v.style||'hidden',sty)+realRows(v)+cropRows(v);const s=v.kind==='section'&&sectionOf(v);if(s)h+=secRows(s).replace(PR.grp('g_extents'),'')}
   else if(v.kind==='schedule')h+=(v.sched==='keynote'?PR.grp('g_keynote')+PR.chk('knSheet','p_knsheet',!!v.knSheet)+`<div class="pnote">${t('n_knsheet')}</div><div class="pa"><button class="btn" data-act="knset">${t('a_knset')}…</button></div>`:'')+(v.sched==='pnl'?'':`<div class="pa"><button class="btn" data-act="schedprops">${t('a_schedprops')}…</button></div>`);
   else if(v.kind==='sheet')h+=PR.text('number','p_sheetno',v.number||'')+PR.sel('size','p_paper',v.size||'A3',shSizeOpts())+shSizeRows(v)+PR.ro('p_vpcount',String(v.vps.length))+PR.sel('gg','p_ggrid',v.gg||0,[[0,t('none')],...(P.ggrids||[]).map(g=>[g.id,g.name])])+PR.grp('g_tblock')+PR.sel('tb','p_tblock',tbOf(P,v).key,tbAll())+PR.text('sby','p_sdrawn',v.by||'')+PR.text('schk','p_schecked',v.chk||'')+PR.text('sapp','p_sapproved',v.app||'')+PR.text('sdate','p_sdate',v.date||'')+`<div class="pa"><button class="btn" data-act="tblock">${t('a_tblock')}…</button></div>`+PR.grp('g_revs')+(()=>{const R=sheetRevs(P,v);return PR.ro('p_currev',R.length?revNo(P,R[R.length-1],v)+' · '+R[R.length-1].desc:'—')+`<div class="pa"><button class="btn" data-act="sheetrevs">${t('a_sheetrevs')}…</button><button class="btn" data-act="revs">${t('a_revs')}…</button></div>`})();
@@ -13963,7 +13978,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=145,V1_NAME='V1.134';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=146,V1_NAME='V1.135';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -19693,7 +19708,7 @@ function elBox3(id){const MS=MSm();if(EB3.ms!==MS){const m=new Map();for(const i
 /* an element whose tag shows in v: drawn there (its category, Hide in View, the phase, the discipline, the section box) */
 function tag3Vis(v,d,e){if(!e||!TAG_CATS.includes(e.cat)||catHid(v,e.cat)||catHid(v,'tag')||hidEl(v,e)||(d&&hidDatum(v,d)))return false;const B=elBox3(e.id);if(!B)return false;
   const PQ=PHm(v);if(PQ&&PQ.hid&&PQ.hid.has(e.id))return false;if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;
-  const S=v.sboxOn&&v.sbox;return!(S&&(B[3]<S[0]||B[0]>S[3]||B[4]<S[1]||B[1]>S[4]||B[5]<S[2]||B[2]>S[5]))}
+  return!(v.sboxOn&&v.sbox&&!sboxMeets(v,B))}
 const tag3List=v=>lk3On(v)?P.ann.filter(d=>d.cat==='tag3'&&d.view===v.id):[];
 /* where the leader of a tag points in a frame W x H (px of the screen, mm of paper) that camera matrix M fills; null where its element is not drawn */
 function tag3Geo(v,d,M,W,H){const e=IDX.get(d.el);if(!tag3Vis(v,d,e))return null;const B=elBox3(e.id),f=Array.isArray(d.a)?d.a:A3C,x=B[0]+(B[3]-B[0])*f[0],y=B[1]+(B[4]-B[1])*f[1],z=B[2]+(B[5]-B[2])*f[2];
@@ -22943,8 +22958,8 @@ function ann3Pt(d){if(d.cat==='text3')return Array.isArray(d.p)&&d.p.length===3?
 function ann3Prj(M,q,W,H){const x=q[0],y=q[1],z=q[2],cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15];return cw>1e-6?[(cx/cw+1)/2*W,(1-cy/cw)/2*H]:null}
 /* a spot shows while its element does (its category, Hide in View, the phase, the discipline) and its point is inside the section box */
 function spot3Vis(v,d){const e=IDX.get(d.el);if(!e||!P.els.includes(e)||catHid(v,e.cat)||hidEl(v,e))return false;const PQ=PHm(v);if(PQ&&PQ.hid&&PQ.hid.has(e.id))return false;
-  if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;const q=ann3Pt(d),S=v.sboxOn&&v.sbox;
-  return!!q&&!(S&&(q[0]<S[0]-1||q[0]>S[3]+1||q[1]<S[1]-1||q[1]>S[4]+1||q[2]<S[2]-1||q[2]>S[5]+1))}
+  if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;const q=ann3Pt(d);
+  return!!q&&!(v.sboxOn&&v.sbox&&!sboxHas(v,q[0],q[1],q[2],1))}
 const ann3Shown=(v,d)=>d.cat==='text3'||spot3Vis(v,d);          // a keynote tag (126) as a spot: while its element shows
 
 /* ---- what a spot reads, and how it is drawn ---- */
@@ -23274,7 +23289,7 @@ const d3Label=(d,val,T)=>(d.pre?d.pre+' ':'')+(d.txt||dmFmt(T,val))+(d.suf?' '+d
 
 /* ---- what a view shows of them: by the category Dimensions of its Visibility/Graphics and Hide in View, while the elements they hold on to show ---- */
 function d3ElShows(v,e,q){if(!e||!P.els.includes(e)||catHid(v,e.cat)||hidEl(v,e))return false;const PQ=PHm(v);if(PQ&&PQ.hid&&PQ.hid.has(e.id))return false;
-  if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;const S=v.sboxOn&&v.sbox;return!(S&&(q[0]<S[0]-1||q[0]>S[3]+1||q[1]<S[1]-1||q[1]>S[4]+1||q[2]<S[2]-1||q[2]>S[5]+1))}
+  if(v.disc&&v.disc!=='coord'&&discMode(P,v,e)===0)return false;return!(v.sboxOn&&v.sbox&&!sboxHas(v,q[0],q[1],q[2],1))}
 /* [dimension, its geometry] for each one v shows */
 function d3List(v){if(!lk3Able(v)||catHid(v,'dim'))return[];const out=[];
   for(const d of P.ann){if(d.cat!=='dim3'||d.view!==v.id||hidDatum(v,d))continue;const G=d3Geo(d);if(G&&d3ElShows(v,IDX.get(d.a.el),G.p1)&&d3ElShows(v,IDX.get(d.b.el),G.p2))out.push([d,G])}return out}
@@ -24392,6 +24407,283 @@ Object.assign(STR,{g_stland:['ผิวชานพัก','Landing Finish'],g_s
   f_spDR:['ระยะยื่นใต้ช่วงบันได','Structural Depth On Run'],f_spDL:['ระยะยื่นใต้ชานพัก','Structural Depth On Landing'],f_spOR:['ระยะเยื้องข้างขวา','Right Lateral Offset'],f_spOL:['ระยะเยื้องข้างซ้าย','Left Lateral Offset'],
   f_spmat:['แม่บันได: วัสดุ','Support Material'],p_tfarea1:['ผิวลูกนอน','Tread Finish'],p_lfarea:['ผิวชานพัก','Landing Finish'],p_splen:['ความยาวแม่บันได','Support Length'],p_spkg:['น้ำหนักแม่บันได','Support Weight'],
   sf_lfa:['พื้นที่ผิวชานพัก','Landing Finish Area'],sf_splen:['ความยาวแม่บันได','Support Length'],sf_spkg:['น้ำหนักแม่บันได (กก.)','Support Weight (kg)']});
+/* ===== 135 the ViewCube, Orient to View, a section box that turns (V1.135; Revit: the ViewCube, its faces, edges and corners, dragged to orbit, and its menu
+   (Go Home, Save View, Lock to Selection, Perspective / Orthographic, Set Current View as Home, Set Front to View, Reset Front, Show Compass, Orient to View,
+   Orient to a Direction, Orient to a Plane, Options); Rotate of a section box) =====
+   A face of the cube has eight zones round its middle (data-z "sx,sy"): its edges and corners, which look from n + sx·ax + sy·ay of the face (CUBE_AX, GL axes).
+   v.cubeF: the front of the cube turned about the vertical (degrees; Set Front to View); v.home: the camera Go Home goes to {yaw, pitch, t, hh}.
+   v.sboxA: the section box turned counterclockwise in plan (degrees about its middle), v.sbox then in its own frame (sboxQ, sboxXY of 68).
+   The options of the cube are kept in this browser (penum.bim.cube), as Revit keeps them on the computer: fit, anim, snap, ring, size and lock (Lock to Selection). */
+const CUBO0={fit:1,anim:1,snap:1,ring:1,size:'',lock:0};
+const CUBO=(()=>{const d=Object.assign({},CUBO0);let o=null;try{o=JSON.parse(localStorage.getItem('penum.bim.cube')||'null')}catch(e){}
+  if(o&&typeof o==='object')for(const k in d){if(k==='size'){if(['','s','l'].includes(o.size))d.size=o.size}else if(typeof o[k]==='number')d[k]=o[k]?1:0}return d})();
+const cuboSave=()=>{try{localStorage.setItem('penum.bim.cube',JSON.stringify(CUBO))}catch(e){}};
+const CUBE_Z=['-1,-1','0,-1','1,-1','-1,0','1,0','-1,1','0,1','1,1'];
+{const st=document.createElement('style');st.textContent='.cube .c3{touch-action:none}.cube .c3f{position:absolute;inset:0;transform-style:preserve-3d}.cube .f i{position:absolute;display:block}'
+  +'.cube .f i[data-z^="-1,"]{left:0;width:10px}.cube .f i[data-z^="0,"]{left:10px;right:10px}.cube .f i[data-z^="1,"]{right:0;width:10px}'
+  +'.cube .f i[data-z$=",-1"]{top:0;height:10px}.cube .f i[data-z$=",0"]{top:10px;bottom:10px}.cube .f i[data-z$=",1"]{bottom:0;height:10px}'
+  +'.cube .f i.on{background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand)}.cube .f:has(i:hover){background:var(--raise);color:var(--muted);border-color:var(--muted)}'
+  +'.cube .cm{position:absolute;right:-17px;bottom:-12px;width:18px;height:18px;padding:0;border:0;border-radius:4px;background:none;color:var(--muted);font:12px/18px var(--f-body);cursor:pointer}'
+  +'.cube .cl{position:absolute;left:-15px;top:16px;width:20px;height:20px;padding:2px;border:0;background:none;cursor:pointer}.cube .cl svg{width:15px;height:15px}'
+  +'.cube .cm:hover{color:var(--ink);background:var(--brand-soft)}.cube.nocmp .ring{display:none}'
+  +'.cube.cs-s{transform:scale(.8);transform-origin:top right}.cube.cs-l{transform:scale(1.3);transform-origin:top right}'
+  +'@media (max-width:820px){.cube.cs-s{transform:scale(.66)}.cube.cs-l{transform:scale(1.05)}}';document.head.appendChild(st)}
+
+/* ---- the way a part of the cube looks from ---- */
+const CUBE_AX={front:[[0,0,1],[1,0,0],[0,-1,0]],back:[[0,0,-1],[-1,0,0],[0,-1,0]],right:[[1,0,0],[0,0,-1],[0,-1,0]],left:[[-1,0,0],[0,0,1],[0,-1,0]],
+  top:[[0,1,0],[1,0,0],[0,0,1]],bottom:[[0,-1,0],[1,0,0],[0,0,-1]]};          // [n, the face's right, the face's down], as CSS draws the faces, in GL axes
+const cubeF=v=>{const a=v?+v.cubeF:0;return isFinite(a)?a*Math.PI/180:0};
+const cubeD0=(face,sx,sy)=>{const A=CUBE_AX[face];return A?[0,1,2].map(i=>A[0][i]+sx*A[1][i]+sy*A[2][i]):null};
+/* from a face (and a zone of it), turned with the front of the cube; not of unit length */
+function cubeD(v,face,sx,sy){const d=cubeD0(face,sx,sy);if(!d)return null;const f=cubeF(v),c=Math.cos(f),s=Math.sin(f);return[d[0]*c+d[2]*s,d[1],-d[0]*s+d[2]*c]}
+/* the yaw and pitch of an orbit camera that looks from d; straight down (or up) the front of the cube is at the bottom of the screen (at the top, from below) */
+function dirNav(v,d){const h=Math.hypot(d[0],d[2]);if(h<0.01*Math.hypot(d[0],d[1],d[2]))return{yaw:Math.PI/2-cubeF(v),pitch:d[1]>0?Math.PI/2:-1.45};
+  return{yaw:Math.atan2(d[2],d[0]),pitch:clamp(Math.atan2(d[1],h),-1.45,Math.PI/2)}}
+const normA=a=>{a=(a+Math.PI)%(2*Math.PI);if(a<0)a+=2*Math.PI;return a-Math.PI};
+/* the camera of Go Home a view has, or null */
+function homeOf(v){const H=v&&v.home;if(!H||typeof H!=='object'||!Array.isArray(H.t)||H.t.length!==3)return null;const o={yaw:+H.yaw,pitch:+H.pitch,t:H.t.map(Number),hh:+H.hh};
+  if(![o.yaw,o.pitch,o.hh,...o.t].every(isFinite)||!(o.hh>0))return null;o.pitch=clamp(o.pitch,-1.45,Math.PI/2);return o}
+
+/* ---- the camera moved: in a short animation (the option), Zoom Previous goes back ---- */
+let CUBEA=null;
+const navStop=()=>{if(CUBEA){cancelAnimationFrame(CUBEA.raf);CUBEA=null}};
+/* to: {yaw, pitch, t, hh, auto (fitted: kept fitted as the pane changes size), fw, fh}; jump: no animation (a view not on the screen yet) */
+function navTo(v,to,jump){navStop();const n=navOf(v);n.fit=false;n.auto=false;const T={yaw:to.yaw,pitch:to.pitch,t:to.t.slice(),hh:to.hh};
+  const end=()=>{Object.assign(n,T);n.yaw=normA(n.yaw);if(to.auto){n.auto=true;n.fw=to.fw;n.fh=to.fh}redraw()};
+  if(jump||!CUBO.anim){end();return}
+  const a={yaw:n.yaw,pitch:n.pitch,t:n.t.slice(),hh:n.hh},dy=normA(T.yaw-a.yaw),t0=performance.now(),D=380;CUBEA={v:v.id,raf:0};
+  const step=now=>{if(!CUBEA)return;const k=Math.min(1,(now-t0)/D),e=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    n.yaw=a.yaw+dy*e;n.pitch=a.pitch+(T.pitch-a.pitch)*e;n.t=a.t.map((x,i)=>x+(T.t[i]-x)*e);n.hh=a.hh*Math.pow(T.hh/a.hh,e);
+    if(k<1){CUBEA.raf=requestAnimationFrame(step);redraw()}else{CUBEA=null;end()}};
+  CUBEA.raf=requestAnimationFrame(step)}
+/* where Zoom to Fit would put the camera of v in a frame w × h (the section box, else the model), leaving the view's own as it is */
+function fitNav(v,w,h){const n=navOf(v),K=['t','hh','fit','auto','fw','fh'],s={};for(const k of K)s[k]=n[k];fitView(v,w,h);const o={t:n.t.slice(),hh:n.hh,auto:true,fw:w,fh:h};for(const k of K)n[k]=s[k];return o}
+const paneWH=pn=>[pn&&pn.w>2?pn.w:1600,pn&&pn.h>2?pn.h:900];
+/* to yaw / pitch yp: about what is selected and fitted to it (Lock to Selection), else fitted to the model (the option Fit-to-view), else about where it looks */
+function cubeGo(pn,v,yp,o){o=o||{};const n=navOf(v),[w,h]=paneWH(pn);navPush(v);const to={yaw:yp.yaw,pitch:yp.pitch,t:n.t.slice(),hh:n.hh};
+  const b=!o.home&&CUBO.lock&&ui.sel.size?sboxAround([...expandSel(ui.sel)],0):null;
+  if(b)Object.assign(to,{t:[(b[0]+b[3])/2,(b[2]+b[5])/2,(b[1]+b[4])/2],hh:Math.max(2600,Math.hypot(b[3]-b[0],b[4]-b[1],b[5]-b[2])*0.75)});          // as Zoom to Selection frames it
+  else if(o.fit!=null?o.fit:CUBO.fit)Object.assign(to,fitNav(v,w,h));
+  navTo(v,to)}
+/* a click on the cube: the house, a face, or an edge or a corner of it (z: the zone) */
+function cubeClick(pn,v,key,z){if(key==='home'){cubeHome(pn,v);return}
+  const d=cubeD(v,key,z[0],z[1]);if(!d)return;if(lk3On(v)){toast(t('lk3_held'),4500);return}
+  if(walkOf(v)){const q=dirNav(v,d),n=navOf(v);navPush(v);n.yaw=q.yaw;n.pitch=q.pitch;redraw();return}          // a walkthrough turns where it stands, as before
+  cubeGo(pn,v,dirNav(v,d))}
+function cubeHome(pn,v){const n=navOf(v);if(lk3On(v)){navPush(v);n.fit=true;redraw();return}          // a locked view: the frame it was locked at
+  if(walkOf(v)){navPush(v);n.yaw=Math.PI*0.27;n.pitch=0.5;n.fit=true;redraw();return}
+  const H=homeOf(v);if(H){navPush(v);navTo(v,H);return}cubeGo(pn,v,{yaw:Math.PI*0.27,pitch:0.5},{fit:true,home:true})}
+/* the nearest of the 26 ways the cube looks, where the camera has come within 15° of it (after a drag, with the option Snap to closest view) */
+function cubeSnap(pn,v){const n=navOf(v),cp=Math.cos(n.pitch),c=[cp*Math.cos(n.yaw),Math.sin(n.pitch),cp*Math.sin(n.yaw)];let best=null,bd=-2;
+  for(const k in CUBE_AX)for(const sx of [-1,0,1])for(const sy of [-1,0,1]){const d=cubeD(v,k,sx,sy),q=dot3(d,c)/Math.hypot(d[0],d[1],d[2]);if(q>bd){bd=q;best=d}}
+  if(best&&bd>=Math.cos(Math.PI/12))cubeGo(pn,v,dirNav(v,best),{fit:false})}
+
+/* ---- the cube on the screen: its front turned, the compass, its size, the padlock of Lock to Selection; a drag on it orbits; its menu ---- */
+function cubeDeco(pn){const v=paneView(pn.i),cb=pn.cube;if(!v||!cb)return;const f=pn.c3f||(pn.c3f=cb.querySelector('.c3f')),a=isFinite(+v.cubeF)?+v.cubeF:0;if(f)f.style.transform=a?'rotateY('+a+'deg)':'';
+  cb.classList.toggle('nocmp',!CUBO.ring);cb.classList.toggle('cs-s',CUBO.size==='s');cb.classList.toggle('cs-l',CUBO.size==='l');const cl=cb.querySelector('.cl');if(cl)cl.hidden=!CUBO.lock}
+{const f0=updateCube;updateCube=(pn,nav,asp)=>{f0(pn,nav,asp);cubeDeco(pn)}}
+function cubeBind(pn){const cb=pn.cube;if(!cb)return;
+  cb.querySelectorAll('i[data-z]').forEach(z=>{const f=z.closest('.f'),s=z.dataset.z.split(',').map(Number),d=f&&cubeD0(f.dataset.cube,s[0],s[1]);if(d)z.dataset.d=d.join(',')});          // an edge lights on both its faces, a corner on its three
+  const lit=d=>{cb.querySelectorAll('i.on').forEach(x=>x.classList.remove('on'));if(d)cb.querySelectorAll('i[data-d="'+d+'"]').forEach(x=>x.classList.add('on'))};
+  cb.addEventListener('pointerover',e=>{const z=e.target.closest&&e.target.closest('i[data-z]');lit(z?z.dataset.d:null)});cb.addEventListener('pointerleave',()=>lit(null));
+  cb.addEventListener('contextmenu',e=>{e.preventDefault();XA.cubemenu(String(pn.i),{x:e.clientX,y:e.clientY})});
+  let D=null;
+  cb.addEventListener('pointerdown',e=>{ui.cubeDrag=false;D=null;if(e.button!==0||!e.target.closest('.c3'))return;const v=paneView(pn.i);if(!v||v.kind!=='3d')return;const n=navOf(v);D={id:e.pointerId,x:e.clientX,y:e.clientY,yaw:n.yaw,pitch:n.pitch,v:v.id,on:false}});
+  cb.addEventListener('pointermove',e=>{if(!D||e.pointerId!==D.id)return;const dx=e.clientX-D.x,dy=e.clientY-D.y,v=viewById(D.v);if(!v)return;
+    if(!D.on){if(Math.hypot(dx,dy)<4)return;if(lk3On(v)){toast(t('lk3_held'),4500);D=null;return}if(walkOf(v)){D=null;return}
+      D.on=true;ui.cubeDrag=true;try{cb.setPointerCapture(e.pointerId)}catch(_){}navStop();setActivePane(pn.i);navPush(v)}
+    const n=navOf(v);n.auto=false;n.fit=false;n.yaw=D.yaw+dx*0.015;n.pitch=clamp(D.pitch+dy*0.015,-1.45,Math.PI/2);redraw()});
+  const up=e=>{if(!D||e.pointerId!==D.id)return;const d=D;D=null;if(!d.on)return;const v=viewById(d.v);if(v&&CUBO.snap)cubeSnap(pn,v)};
+  cb.addEventListener('pointerup',up);cb.addEventListener('pointercancel',up);
+  cb.addEventListener('click',e=>{if(ui.cubeDrag){ui.cubeDrag=false;e.stopImmediatePropagation();e.preventDefault()}},true);          // the end of a drag is not a click
+  pn.cv.addEventListener('pointerdown',navStop,true);pn.cv.addEventListener('wheel',navStop,{capture:true,passive:true})}
+{const f0=bindPane;bindPane=pn=>{f0(pn);cubeBind(pn)}}
+
+/* ---- the menu: the pane of a command (its argument 'pane|…', else the active one) and where its submenus open ---- */
+function cubeAt(arg){const s=arg==null?'':String(arg),a=s.split('|'),i=a[0]!==''&&isFinite(+a[0])?+a[0]:ui.ap,pn=PANES[i],v=pn&&!pn.el.hidden?paneView(i):null;return v?{pn,v,i,rest:a.slice(1).join('|')}:null}
+function cubeView(arg){const q=cubeAt(arg);if(!q||q.v.kind!=='3d'){toast(t('vq_na'));return null}return q}
+function cubeFree(q){if(!q)return null;if(lk3On(q.v)){toast(t('lk3_held'),4500);return null}if(walkOf(q.v)){toast(t('vq_walk'));return null}return q}
+function cubeAnc(q,el){if(el&&!el.getBoundingClientRect&&isFinite(el.x))ui.cubeAt={x:el.x,y:el.y};
+  else if(el&&el.getBoundingClientRect&&!(el.closest&&el.closest('#menu'))){const r=el.getBoundingClientRect();ui.cubeAt={x:r.left,y:r.bottom}}
+  else if(!el||!ui.cubeAt){const r=q.pn.cube.getBoundingClientRect();ui.cubeAt={x:r.left,y:r.bottom}}
+  return ui.cubeAt}
+const ck135=(on,s)=>(on?'✓ ':'')+s;
+/* a menu of the cube, where cubeAnc put it, moved left to stay over its view where it fits */
+function cubeMenu(q,items){showMenu(ui.cubeAt||cubeAnc(q),items);const m=$('#menu'),R=q.pn.cv.getBoundingClientRect(),l=parseFloat(m.style.left)||0,w=m.offsetWidth;
+  if(l+w>R.right-4)m.style.left=Math.max(8,Math.min(l,R.right-4-w))+'px'}
+XA.cubemenu=(arg,el)=>{const q=cubeView(arg);if(!q)return;const a=String(q.i),v=q.v;cubeAnc(q,el);
+  cubeMenu(q,[{act:'cubehome',arg:a,label:t('a_cubehome'),icon:'home'},{act:'cubesave',arg:a,label:t('a_cubesave')+'…',icon:'camera'},{act:'cubelock',arg:a,label:ck135(CUBO.lock,t('a_cubelock')),icon:'lock3'},
+    {act:'cubepersp',arg:a,label:t(navOf(v).persp?'vq_ortho':'vq_persp'),icon:'persp'},'-',{act:'cubesethome',arg:a,label:t('a_cubesethome'),icon:'home'},{act:'cubefront',arg:a,label:t('a_cubefront')+' ▸',icon:'elev'},
+    ...(isFinite(+v.cubeF)&&+v.cubeF?[{act:'cubefront0',arg:a,label:t('a_cubefront0'),icon:'reset'}]:[]),{act:'cubering',arg:a,label:ck135(CUBO.ring,t('a_cubering')),icon:'plan'},'-',
+    {act:'orientview',arg:a,label:t('a_orientview')+' ▸',icon:'orientv'},{act:'orientdir',arg:a,label:t('a_orientdir')+' ▸',icon:'v3d'},{act:'orientplane',arg:a,label:t('a_orientplane')+'…',icon:'wpset'},'-',
+    {act:'cubeopts',arg:a,label:t('a_cubeopts')+'…',icon:'uiprops'},{act:'help',arg:'nav',label:t('a_help'),icon:'help'}])};
+XA.cubehome=arg=>{const q=cubeView(arg);if(!q)return;setActivePane(q.i);cubeHome(q.pn,q.v)};
+XA.cubelock=()=>{CUBO.lock=CUBO.lock?0:1;cuboSave();redraw();toast(t(CUBO.lock?'vq_lockon':'vq_lockoff'))};
+XA.cubepersp=arg=>{const q=cubeView(arg);if(q)XA.persp(null,{dataset:{pane:String(q.i)}})};
+XA.cubering=()=>{CUBO.ring=CUBO.ring?0:1;cuboSave();redraw()};
+/* the camera as it is, to keep (a view of its own, Go Home) */
+const camKeep=n=>({yaw:Math.round(n.yaw*1e6)/1e6,pitch:Math.round(n.pitch*1e6)/1e6,t:n.t.map(x=>Math.round(x)),hh:Math.max(50,Math.round(n.hh))});
+XA.cubesethome=arg=>{const q=cubeFree(cubeView(arg));if(!q)return;const n=navOf(q.v);if(n.fit)fitView(q.v,...paneWH(q.pn));edit(()=>{q.v.home=camKeep(n)});toast(t('vq_homeset'))};
+/* Save View: a new 3D view, as this one is, that keeps this camera */
+const vqFree=base=>{let i=1,s;do{s=base+' '+i++}while(P.views.some(x=>x.name===s));return s};
+function vqName(title,def,cb){const go=()=>{const s=String($('#vqN').value||'').trim();if(!s)return;if(P.views.some(x=>x.name===s)){toast(t('vq_dupname'));return}closeDlg();cb(s)};
+  openDlg(title,`<div class="fr"><label for="vqN">${t('vq_name')}</label><input id="vqN" type="text" maxlength="60" value="${esc(def)}"></div>`,
+    `<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-vqn="ok">${t('ok')}</button>`,{click(e){if(e.target.dataset.vqn==='ok')go()},enter:go});
+  const i=$('#vqN');if(i){i.focus();i.select()}}
+XA.cubesave=arg=>{const q=cubeFree(cubeView(arg));if(!q)return;const{v,pn}=q,n=navOf(v);if(n.fit)fitView(v,...paneWH(pn));
+  vqName(t('a_cubesave'),vqFree(t('vq_vname')),nm=>{let id;const cam=camKeep(n);
+    edit(()=>{const c=jclone(v);c.id=id=P.seq++;c.name=nm;delete c.disp;delete c.lk3;delete c.home;c.cam=cam;if(n.persp)c.persp=true;else delete c.persp;P.views.push(c)});
+    ui.nav[id]=Object.assign(jclone(n),{fit:false});showView(id);toast(t('vq_newv',nm))})};
+/* Set Front to View: the FRONT of the cube looks as an elevation or a section does */
+XA.cubefront=(arg,el)=>{const q=cubeFree(cubeView(arg));if(!q)return;const L=P.views.filter(x=>x.kind==='elev'||x.kind==='section');if(!L.length){toast(t('vq_nofront'));return}
+  cubeAnc(q,el);cubeMenu(q,L.map(x=>({act:'cubefrontv',arg:q.i+'|'+x.id,label:x.name,icon:x.kind==='elev'?'elev':'section'})))};
+XA.cubefrontv=arg=>{const q=cubeFree(cubeView(arg)),s=q&&viewById(+q.rest);if(!s||(s.kind!=='elev'&&s.kind!=='section'))return;const f=viewDir(s),A=Math.round(((Math.atan2(-f[0],-f[1])*180/Math.PI)%360+360)%360*1e4)/1e4;
+  edit(()=>{if(A>1e-6&&A<360-1e-6)q.v.cubeF=A;else delete q.v.cubeF});setActivePane(q.i);cubeGo(q.pn,q.v,dirNav(q.v,cubeD(q.v,'front',0,0)));toast(t('vq_front',s.name))};
+XA.cubefront0=arg=>{const q=cubeFree(cubeView(arg));if(!q)return;if(q.v.cubeF!=null)edit(()=>{delete q.v.cubeF});toast(t('vq_front0'))};
+/* ViewCube Options */
+XA.cubeopts=()=>{const o=CUBO,ck=k=>`<label style="display:block;margin:6px 0"><input type="checkbox" id="vqo_${k}"${o[k]?' checked':''}> ${t('vqo_'+k)}</label>`,G=k=>`<div class="pg" style="margin:4px -16px;padding-left:16px">${t(k)}</div>`;
+  const go=()=>{const s=$('#vqo_size').value;CUBO.size=['s','l'].includes(s)?s:'';for(const k of ['snap','fit','anim','ring'])CUBO[k]=$('#vqo_'+k).checked?1:0;cuboSave();closeDlg();redraw()};
+  openDlg(t('a_cubeopts'),G('vqo_look')+`<div class="fr"><label for="vqo_size">${t('vqo_size')}</label><select id="vqo_size">${[['s','vqo_s'],['','vqo_n'],['l','vqo_l']].map(q=>`<option value="${q[0]}"${q[0]===o.size?' selected':''}>${t(q[1])}</option>`).join('')}</select></div>`
+    +G('vqo_click')+ck('snap')+ck('fit')+ck('anim')+G('vqo_cmp')+ck('ring'),
+    `<button class="btn" data-vqo="def">${t('vqo_def')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-vqo="ok">${t('ok')}</button>`,
+    {click(e){const a=e.target.dataset.vqo;if(a==='def'){$('#vqo_size').value=CUBO0.size;for(const k of ['snap','fit','anim','ring'])$('#vqo_'+k).checked=!!CUBO0[k];return}if(a==='ok')go()},enter:go})};
+
+/* ---- Orient to View: a plan, a ceiling plan, an elevation or a section, with a section box of what it shows; another 3D view: its camera and its box ---- */
+const OR_K=[['fp','plan',x=>x.kind==='plan'&&!x.draft&&!x.rcp],['cp','rcp',x=>x.kind==='plan'&&!x.draft&&!!x.rcp],['el','elev',x=>x.kind==='elev'],['se','section',x=>x.kind==='section'],['v3','v3d',x=>x.kind==='3d'&&!walkOf(x)]];
+XA.orientview=(arg,el)=>{const q0=cubeAt(arg),v=q0&&q0.v;
+  if(v&&v.kind==='3d'){const q=cubeFree(q0);if(!q)return;cubeAnc(q,el);
+    cubeMenu(q,OR_K.map(k=>{const n=P.views.filter(x=>x!==q.v&&k[2](x)).length;return{act:'orientk',arg:q.i+'|'+k[0],label:t('otk_'+k[0])+(n?' ▸':' (0)'),icon:k[1]}}));return}
+  if(!v||!['plan','elev','section'].includes(v.kind)||v.draft){toast(t('vq_2d'));return}          // from the ribbon in a plan, an elevation or a section: the first 3D view looks as it does
+  const d=P.views.find(x=>x.kind==='3d'&&!walkOf(x)&&!lk3On(x));if(!d){toast(t('vq_nov3'));return}
+  const was=paneOf(d.id)>=0;showView(d.id);orientTo(PANES[ui.ap],d,v,!was)};
+XA.orientk=arg=>{const q=cubeFree(cubeView(arg));if(!q)return;const K=OR_K.find(k=>k[0]===q.rest);if(!K)return;const L=P.views.filter(x=>x!==q.v&&K[2](x)),a=String(q.i);
+  cubeMenu(q,[{act:'orientview',arg:a,label:'◂ '+t('a_orientview'),icon:'orientv'},'-',
+    ...(L.length?L.map(x=>({act:'orientv',arg:a+'|'+x.id,label:x.name,icon:K[1]})):[{act:'orientview',arg:a,label:t('vq_noview'),icon:K[1]}])])};
+XA.orientv=arg=>{const q=cubeFree(cubeView(arg)),s=q&&viewById(+q.rest);if(!s)return;setActivePane(q.i);orientTo(q.pn,q.v,s)};
+/* a point of a frame turned a degrees, (u, w), in plan, and back */
+const uwA=(a,x,y)=>{const r=a*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return[x*c-y*s,x*s+y*c]},xyA=(a,u,w)=>{const r=a*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return[u*c+w*s,-u*s+w*c]};
+/* the box of what view s shows {b: in its frame, a: the frame's angle, yaw, pitch: the way to look at it}; null where it shows nothing */
+function orBox(s){const bb=MSm().bb,pad=300,r1=x=>Math.round(x*10)/10;if(!bb||!isFinite(bb[0]))return null;          // bb in GL: [x, z, y]
+  if(s.kind==='plan'){const R=vrRaw(P,s,vrOf(s)),cb=cropOn(s)?s.crop.box:null,x0=cb?cb[0]:bb[0]-pad,y0=cb?cb[1]:bb[2]-pad,x1=cb?cb[2]:bb[3]+pad,y1=cb?cb[3]:bb[5]+pad;
+    let z0,z1;if(s.rcp){z0=R.cut;z1=isFinite(R.depth)?R.depth+pad:bb[4]+pad}else{z0=isFinite(R.depth)?R.depth-pad:bb[1]-pad;z1=R.cut}          // a floor plan up to its cut plane; a ceiling plan from it up to its view depth
+    if(!(z1>z0+1))z1=z0+1000;const rt=planRot(s);
+    return{b:[x0,y0,z0,x1,y1,z1].map(r1),a:0,yaw:s.rcp?-Math.PI/2-rt:Math.PI/2-rt,pitch:s.rcp?-1.45:Math.PI/2}}
+  if(s.kind!=='elev'&&s.kind!=='section')return null;
+  const f=viewDir(s),E=elevExtents(s),cr=cropOn(s),a=Math.atan2(-f[0],-f[1])*180/Math.PI;          // u along the view to its right (h), w towards the viewer
+  let m0=Infinity,m1=-Infinity;for(const x of [bb[0],bb[3]])for(const y of [bb[2],bb[5]]){const w=uwA(a,x,y)[1];m0=Math.min(m0,w);m1=Math.max(m1,w)}
+  let clip=null,far=0;if(s.kind==='section'){const S=sectionOf(s);if(S){const Q=secCut(S,f);clip=Q.clip;far=Q.far}}else clip=elevClip(s);
+  const w1=clip?clip[3]:m1+pad,w0=clip&&far>0?clip[3]-far:m0-pad;if(!(w1>w0+1))return null;          // a section from its cut to its far clip
+  const B={b:[cr?E.h0:E.h0-pad,w0,cr?E.z0:E.z0-pad,cr?E.h1:E.h1+pad,w1,cr?E.z1:E.z1+pad].map(r1),a,yaw:Math.atan2(-f[1],-f[0]),pitch:0};
+  /* the frame turned by quarters so that its angle lies within ±45° (the box as it is) */
+  const k=Math.round(B.a/90);if(k){const a1=B.a-k*90,b=B.b,Q=[[b[0],b[1]],[b[3],b[1]],[b[3],b[4]],[b[0],b[4]]].map(q=>{const p=xyA(B.a,q[0],q[1]);return uwA(a1,p[0],p[1])}),X=Q.map(q=>q[0]),Y=Q.map(q=>q[1]);
+    B.b=[Math.min(...X),Math.min(...Y),b[2],Math.max(...X),Math.max(...Y),b[5]].map(r1);B.a=a1}
+  B.a=Math.round(B.a*1e4)/1e4;if(Math.abs(B.a)<1e-6)B.a=0;return B}
+/* the camera that looks at box B the way B says, fitted to it in a frame of width / height asp */
+function orFit(B,asp){const c=orbitCam({yaw:B.yaw,pitch:B.pitch,t:[0,0,0],hh:1},asp),b=B.b;let a0=Infinity,a1=-Infinity,b0=Infinity,b1=-Infinity,fm=0;
+  for(let i=0;i<8;i++){const q=xyA(B.a,b[i&1?3:0],b[i&2?4:1]),p=[q[0],b[i&4?5:2],q[1]],x=dot3(p,c.r),y=dot3(p,c.u);a0=Math.min(a0,x);a1=Math.max(a1,x);b0=Math.min(b0,y);b1=Math.max(b1,y);fm+=dot3(p,c.f)/8}
+  const A=(a0+a1)/2,U=(b0+b1)/2;return{yaw:B.yaw,pitch:B.pitch,t:[0,1,2].map(i=>c.r[i]*A+c.u[i]*U+c.f[i]*fm),hh:Math.max(500,Math.max((b1-b0)/2,(a1-a0)/2/asp)*1.08)}}
+function orientTo(pn,v,s,jump){const n=navOf(v),[w,h]=paneWH(pn);
+  if(s.kind==='3d'){const m=navOf(s);if(m.fit){const o=paneOf(s.id);fitView(s,...paneWH(o>=0?PANES[o]:pn))}          // another 3D view: its camera and its section box
+    edit(()=>{v.sboxOn=!!s.sboxOn;if(Array.isArray(s.sbox))v.sbox=s.sbox.slice();else delete v.sbox;if(isFinite(+s.sboxA)&&+s.sboxA)v.sboxA=+s.sboxA;else delete v.sboxA;if(m.persp)v.persp=true;else delete v.persp});
+    navPush(v);n.persp=!!m.persp;if(m.fov>0)n.fov=m.fov;else delete n.fov;navTo(v,{yaw:m.yaw,pitch:m.pitch,t:m.t.slice(),hh:m.hh},jump);toast(t('vq_done',s.name));return}
+  const B=orBox(s);if(!B){toast(t('vq_none'));return}
+  edit(()=>{v.sbox=B.b;v.sboxOn=true;if(B.a)v.sboxA=B.a;else delete v.sboxA;delete v.persp});navPush(v);n.persp=false;delete n.fov;
+  navTo(v,orFit(B,w/h),jump);toast(t('vq_done',s.name))}
+
+/* ---- Orient to a Direction: from the top or from a point of the compass, as the model is set out (north up the plan) ---- */
+const OR_D=[['top',[0,1,0]],['n',[0,0,-1]],['ne',[1,0,-1]],['e',[1,0,0]],['se',[1,0,1]],['s',[0,0,1]],['sw',[-1,0,1]],['w',[-1,0,0]],['nw',[-1,0,-1]]];
+XA.orientdir=(arg,el)=>{const q=cubeFree(cubeView(arg));if(!q)return;cubeAnc(q,el);cubeMenu(q,OR_D.map(d=>({act:'orientd',arg:q.i+'|'+d[0],label:t('otd_'+d[0]),icon:d[0]==='top'?'plan':'elev'})))};
+XA.orientd=arg=>{const q=cubeFree(cubeView(arg)),D=q&&OR_D.find(d=>d[0]===q.rest);if(!D)return;const d=D[1];setActivePane(q.i);
+  cubeGo(q.pn,q.v,d[1]>0?{yaw:Math.PI/2,pitch:Math.PI/2}:{yaw:Math.atan2(d[2],d[0]),pitch:0})};
+
+/* ---- Orient to a Plane: a level, a grid or a named reference plane, or a face picked in the view; the view looks square at it ---- */
+XA.orientplane=arg=>{const q=cubeFree(cubeView(arg));if(!q)return;const N=wpNames(P),key=o=>o.k+':'+o.id;
+  const go=()=>{if($('#otpPick').checked){closeDlg();setActivePane(q.i);setTool('orpick');return}const a=String($('#otpSel').value||'').split(':'),G=a.length===2?wpGeo(P,{wp:{k:a[0],id:+a[1],off:0}}):null;closeDlg();if(G)orPlane(q.pn,q.v,G)};
+  openDlg(t('a_orientplane'),`<div class="fr"><label for="otpName"><input type="radio" name="otpm" id="otpName" checked> ${t('wp_name')}</label><select id="otpSel">${N.map(o=>`<option value="${key(o)}">${esc(t('wpk_'+o.k)+' : '+o.name)}</option>`).join('')}</select></div>`
+    +`<div class="fr"><label for="otpPick"><input type="radio" name="otpm" id="otpPick"> ${t('otp_pick')}</label><span class="note">${t('otp_pick_note')}</span></div>`,
+    `<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-otp="ok">${t('ok')}</button>`,
+    {click(e){if(e.target.id==='otpSel'){$('#otpName').checked=true;return}if(e.target.dataset.otp==='ok')go()},enter:go})};
+/* G of wpGeo: a level from the top, an upright plane from the side the camera is on, through the middle of the model */
+function orPlane(pn,v,G){const n=navOf(v),bb=MSm().bb,[w,h]=paneWH(pn),mx=(bb[0]+bb[3])/2,my=(bb[2]+bb[5])/2;let yp,t0;
+  if(G.k==='h'){yp={yaw:Math.PI/2,pitch:Math.PI/2};t0=[mx,G.z,my]}
+  else{const c=orbitCam(n,w/h);let nx=G.nx,ny=G.ny;if(nx*-c.f[0]+ny*-c.f[2]<0){nx=-nx;ny=-ny}const d=(mx-G.x1)*nx+(my-G.y1)*ny;yp={yaw:Math.atan2(ny,nx),pitch:0};t0=[mx-nx*d,(bb[1]+bb[4])/2,my-ny*d]}
+  navPush(v);navTo(v,Object.assign({t:t0,hh:CUBO.fit?fitNav(v,w,h).hh:n.hh},yp));toast(t('otp_done'))}
+XT3.orpick={ok:v=>!!v&&v.kind==='3d'&&!walkOf(v)&&!lk3On(v),hint:()=>t('otp_h'),
+  hov(pn,v,p){const pk=dspPick(pn,v,p);return pk&&pk.n?pk.id:null},
+  click(pn,v,p){const pk=dspPick(pn,v,p);if(!pk||!pk.n){toast(t('otp_miss'));return}const n=navOf(v),c=orbitCam(n,pn.w/pn.h),d=dot3(pk.n,c.f)>0?pk.n.map(x=>-x):pk.n.slice();          // the side of the face the camera is on
+    setTool('modify');navPush(v);navTo(v,Object.assign({t:pk.p.slice(),hh:n.hh},dirNav(v,d)));toast(t('otp_done'))}};
+
+/* ---- the section box turned: by the round arrow at its top, or typed in Properties ---- */
+const sboxAng=v=>{const a=v?+v.sboxA:0;return isFinite(a)?a:0};
+const sboxQ=(v,x,y)=>uwA(sboxAng(v),x,y),sboxXY=(v,u,w)=>xyA(sboxAng(v),u,w);
+const sboxHas=(v,x,y,z,e)=>{const S=v.sbox,q=sboxQ(v,x,y);return q[0]>=S[0]-e&&q[0]<=S[3]+e&&q[1]>=S[1]-e&&q[1]<=S[4]+e&&z>=S[2]-e&&z<=S[5]+e};
+/* the box B of an element [x0, y0, z0, x1, y1, z1] meets the section box of v (the box of B's corners in the box's frame) */
+function sboxMeets(v,B){const S=v.sbox,a=sboxAng(v);let u0=Infinity,u1=-Infinity,w0=Infinity,w1=-Infinity;
+  for(const x of [B[0],B[3]])for(const y of [B[1],B[4]]){const q=uwA(a,x,y);u0=Math.min(u0,q[0]);u1=Math.max(u1,q[0]);w0=Math.min(w0,q[1]);w1=Math.max(w1,q[1])}
+  return!(u1<S[0]||u0>S[3]||w1<S[1]||w0>S[4]||B[5]<S[2]||B[2]>S[5])}
+/* the box of v turned to a degrees about its middle in plan (b0 / a0: as it was when the turn began) */
+function sboxSetA(v,a,b0,a0){const b=b0||v.sbox;if(!b)return;const A0=a0!=null?a0:sboxAng(v),c=xyA(A0,(b[0]+b[3])/2,(b[1]+b[4])/2);
+  a=((a%360)+540)%360-180;a=Math.round(a*1e4)/1e4;if(Math.abs(a)<1e-6)a=0;const q=uwA(a,c[0],c[1]),hu=(b[3]-b[0])/2,hw=(b[4]-b[1])/2,r=x=>Math.round(x*10)/10;
+  v.sbox=[r(q[0]-hu),r(q[1]-hw),b[2],r(q[0]+hu),r(q[1]+hw),b[5]];if(a)v.sboxA=a;else delete v.sboxA}
+/* the drag of the round arrow: the angle of the pointer about the middle of the box, on the plane of its top (in steps of 5°, Shift: any) */
+function sboxTurn(v,d,p){const pn=PANES[ui.ap];if(!pn||!v.sbox)return;if(!d.tb){d.tb=v.sbox.slice();d.ta=sboxAng(v)}const b=d.tb,c=xyA(d.ta,(b[0]+b[3])/2,(b[1]+b[4])/2),z=b[5];
+  const ang=q=>{const R=camRay(orbitCam(navOf(v),pn.w/pn.h),MSm().bb,q.x/pn.w*2-1,1-q.y/pn.h*2);
+    if(Math.abs(R.d[1])>0.05){const k=(z-R.o[1])/R.d[1];return Math.atan2(-(R.o[2]+R.d[2]*k-c[1]),R.o[0]+R.d[0]*k-c[0])}
+    const s=proj3(pn,v,c[0],c[1],z);return Math.atan2(-(q.y-s[1]),q.x-s[0])};          // looked at from the side: on the screen
+  if(d.th0==null)d.th0=ang({x:d.sx,y:d.sy});let a=d.ta+normA(ang(p)-d.th0)*180/Math.PI;if(!ui.shift)a=Math.round(a/5)*5;sboxSetA(v,a,b,d.ta)}
+/* the round arrow: past the top corner furthest to the top right of the screen that is on the canvas and clear of the cube, else just inside one */
+function sboxRotGrip(pn,ctx,v,K){const c=[0,1].map(j=>(K[4][j]+K[5][j]+K[6][j]+K[7][j])/4),ks=[4,5,6,7].sort((a,b)=>(K[b][0]-K[b][1])-(K[a][0]-K[a][1]));
+  const cb=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null,R=cb&&pn.cv.getBoundingClientRect(),
+    clear=q=>q[0]>12&&q[1]>12&&q[0]<pn.w-12&&q[1]<pn.h-12&&!(cb&&cb.width>0&&q[0]>cb.left-R.left-30&&q[0]<cb.right-R.left+30&&q[1]>cb.top-R.top-30&&q[1]<cb.bottom-R.top+30),
+    at=(k,s)=>{const dx=K[k][0]-c[0],dy=K[k][1]-c[1],L=Math.hypot(dx,dy)||1;return s<0&&L<40?null:[K[k][0]+dx/L*s,K[k][1]+dy/L*s]};
+  let q=null;for(const s of [18,-18])for(const k of ks){const a=q?null:at(k,s);if(a&&clear(a))q=a}
+  const[x,y]=q||at(ks[0],18);
+  ctx.fillStyle=C.paper;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(x,y,7.5,0,7);ctx.fill();ctx.stroke();
+  ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(x,y,3.8,-0.2,4.0);ctx.stroke();const e=4.0,ax=x+3.8*Math.cos(e),ay=y+3.8*Math.sin(e),tx=-Math.sin(e),ty=Math.cos(e);          // an arrow head on its end, along the arc
+  ctx.fillStyle=C.sel;ctx.beginPath();ctx.moveTo(ax-tx*3.2,ay-ty*3.2);ctx.lineTo(ax+tx*1.2+Math.cos(e)*2.4,ay+ty*1.2+Math.sin(e)*2.4);ctx.lineTo(ax+tx*1.2-Math.cos(e)*2.4,ay+ty*1.2-Math.sin(e)*2.4);ctx.closePath();ctx.fill();
+  ui.sbh.push({x,y,rot:1,pane:pn.i})}
+XVF.push((v,key,raw)=>{if(key!=='sboxA')return false;const a=parseFloat(raw);if(v.kind==='3d'&&Array.isArray(v.sbox)&&isFinite(a))edit(()=>{sboxSetA(v,a)});return true});
+
+/* ---- files: a turned box, the front of the cube and Go Home put right ---- */
+XC.push(()=>{for(const v of P.views){if(v.kind!=='3d'){delete v.sboxA;delete v.cubeF;delete v.home;continue}
+  const b=v.sbox;if(b!=null&&!(Array.isArray(b)&&b.length===6&&b.every(x=>typeof x==='number'&&isFinite(x))&&b[0]<b[3]&&b[1]<b[4]&&b[2]<b[5])){delete v.sbox;delete v.sboxOn}
+  if(v.sboxA!=null){if(!v.sbox||typeof v.sboxA!=='number'||!isFinite(v.sboxA))delete v.sboxA;else{const a=((v.sboxA%360)+540)%360-180;if(Math.abs(a)<1e-6)delete v.sboxA;else v.sboxA=a}}
+  if(v.cubeF!=null){if(typeof v.cubeF!=='number'||!isFinite(v.cubeF))delete v.cubeF;else{const a=((v.cubeF%360)+360)%360;if(a<1e-6||a>360-1e-6)delete v.cubeF;else v.cubeF=a}}
+  if(v.home!=null){const H=homeOf(v);if(H)v.home=H;else delete v.home}}});
+
+/* ---- the ribbon (View › Create › Orient to View, beside Selection Box), the icon ---- */
+{const vw=RIBBON.find(r=>r.id==='view'),pc=vw&&vw.panels.find(p=>p.t==='p_create');if(pc&&!pc.b.includes('@orientview')){const i=pc.b.indexOf('@selbox');pc.b.splice(i<0?pc.b.length:i+1,0,'@orientview')}}
+Object.assign(BTN,{'@orientview':['orientv','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-orientv" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="14.5" cy="21.4" rx="6.6" ry="1.3"/>`
+   +`<path class="i-Bb i-e" fill="#5c9af0" ${E} d="M14.5 21.5 8 18.3 8 11 14.5 14.2z"/><path class="i-Bc i-e" fill="#285eb7" ${E} d="M14.5 21.5 21 18.3 21 11 14.5 14.2z"/><path class="i-Ba i-e" fill="#b9d8ff" ${E} d="M14.5 14.2 21 11 14.5 7.8 8 11z"/>`
+   +`<path fill="none" stroke="#e8890c" stroke-width="2.1" stroke-linecap="round" d="M5 2.6v6.2"/><path fill="#e8890c" d="M2.2 8h5.6L5 11.8z"/><path fill="none" stroke="#e8890c" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="1.6 1.7" d="M7.2 12.8 11.6 11"/></symbol>`)})();
+
+Object.assign(STR,{a_cubehome:['กลับมุมเริ่มต้น (Go Home)','Go Home'],a_cubesave:['บันทึกเป็นมุมมองใหม่ (Save View)','Save View'],a_cubelock:['หมุนรอบสิ่งที่เลือก (Lock to Selection)','Lock to Selection'],
+  a_cubepersp:['สลับภาพทัศนียภาพ / ภาพขนาน','Perspective / Orthographic'],vq_persp:['ภาพทัศนียภาพ (Perspective)','Perspective'],vq_ortho:['ภาพขนาน (Orthographic)','Orthographic'],
+  a_cubesethome:['ตั้งมุมนี้เป็นมุมเริ่มต้น (Set Current View as Home)','Set Current View as Home'],a_cubefront:['ตั้งด้านหน้าตามมุมมอง (Set Front to View)','Set Front to View'],
+  a_cubefront0:['คืนด้านหน้าเดิม (Reset Front)','Reset Front'],a_cubering:['แสดงเข็มทิศ (Show Compass)','Show Compass'],a_orientview:['หันตามมุมมอง (Orient to View)','Orient to View'],
+  a_orientdir:['หันไปทิศ (Orient to a Direction)','Orient to a Direction'],a_orientplane:['หันตั้งฉากกับระนาบ (Orient to a Plane)','Orient to a Plane'],
+  a_cubeopts:['ตัวเลือกลูกบาศก์มุมมอง (ViewCube Options)','ViewCube Options'],a_cubemenu:['เมนูลูกบาศก์มุมมอง (ViewCube)','ViewCube Menu'],t_orpick:['เลือกระนาบที่จะหันไปมอง','Pick a Plane to Orient To'],
+  otk_fp:['แปลนพื้น (Floor Plans)','Floor Plans'],otk_cp:['แปลนฝ้า (Ceiling Plans)','Ceiling Plans'],otk_el:['รูปด้าน (Elevations)','Elevations'],otk_se:['รูปตัด (Sections)','Sections'],otk_v3:['มุมมอง 3 มิติ (3D Views)','3D Views'],
+  otd_top:['ด้านบน (Top)','Top'],otd_n:['จากทิศเหนือ (North)','From the North'],otd_ne:['จากทิศตะวันออกเฉียงเหนือ (Northeast)','From the Northeast'],otd_e:['จากทิศตะวันออก (East)','From the East'],
+  otd_se:['จากทิศตะวันออกเฉียงใต้ (Southeast)','From the Southeast'],otd_s:['จากทิศใต้ (South)','From the South'],otd_sw:['จากทิศตะวันตกเฉียงใต้ (Southwest)','From the Southwest'],
+  otd_w:['จากทิศตะวันตก (West)','From the West'],otd_nw:['จากทิศตะวันตกเฉียงเหนือ (Northwest)','From the Northwest'],
+  vq_na:['คำสั่งนี้ใช้ในมุมมอง 3 มิติ','This works in a 3D view'],vq_walk:['มุมมองเดินชม (Walkthrough) มองตามเส้นทาง ใช้คำสั่งนี้ไม่ได้','A walkthrough looks along its path: this does not work there'],
+  vq_done:['มุมมอง 3 มิติหันตาม "{0}" แล้ว','The 3D view now looks as "{0}" does'],vq_none:['มุมมองนั้นไม่มีอะไรให้หันไปดู','That view shows nothing to orient to'],
+  vq_nov3:['ไม่มีมุมมอง 3 มิติที่ไม่ได้ล็อก','There is no 3D view that is not locked'],vq_2d:['เปิดแปลน รูปด้าน รูปตัด หรือมุมมอง 3 มิติก่อน','Open a plan, an elevation, a section or a 3D view first'],
+  vq_noview:['ไม่มีมุมมองชนิดนี้','There are no views of this kind'],vq_newv:['บันทึกเป็นมุมมองใหม่ "{0}" แล้ว','Saved as the new view "{0}"'],vq_vname:['มุมมอง 3 มิติ','3D View'],vq_name:['ชื่อมุมมอง','View name'],
+  vq_dupname:['มีมุมมองชื่อนี้แล้ว','A view with this name already exists'],vq_homeset:['ตั้งมุมนี้เป็นมุมเริ่มต้นของมุมมองแล้ว','This is now the home of the view'],
+  vq_lockon:['หมุนรอบสิ่งที่เลือก: เปิด','Lock to Selection: on'],vq_lockoff:['หมุนรอบสิ่งที่เลือก: ปิด','Lock to Selection: off'],vq_lockt:['หมุนรอบสิ่งที่เลือกอยู่ (คลิกเพื่อปิด)','Lock to Selection is on (click to turn it off)'],
+  vq_front:['ด้านหน้าของลูกบาศก์มองแบบ "{0}" แล้ว','The FRONT of the cube now looks as "{0}" does'],vq_front0:['ด้านหน้าของลูกบาศก์มองจากทิศใต้ตามเดิม','The FRONT of the cube looks from the south again'],
+  vq_nofront:['ยังไม่มีรูปด้านหรือรูปตัด','There is no elevation or section yet'],
+  otp_pick:['เลือกระนาบ (Pick a plane)','Pick a plane'],otp_pick_note:['แล้วคลิกผิวของชิ้นงานในมุมมอง 3 มิติ','then click a face in the 3D view'],otp_h:['คลิกผิวของชิ้นงานที่จะหันไปมองตั้งฉาก · Esc เลิก','Click a face to look square at · Esc to stop'],
+  otp_miss:['คลิกบนผิวของชิ้นงาน','Click on a face of an element'],otp_done:['มุมมองหันมาตั้งฉากกับระนาบแล้ว','The view now looks square at the plane'],
+  vqo_look:['ลักษณะของลูกบาศก์','ViewCube Appearance'],vqo_size:['ขนาด','Size'],vqo_s:['เล็ก','Small'],vqo_n:['ปกติ','Normal'],vqo_l:['ใหญ่','Large'],vqo_click:['เมื่อคลิกหรือลากลูกบาศก์','When Clicking or Dragging the ViewCube'],
+  vqo_snap:['ลากแล้วจัดเข้ามุมที่ใกล้ที่สุด (Snap to closest view)','Snap to closest view'],vqo_fit:['ซูมให้พอดีเมื่อเปลี่ยนมุม (Fit-to-view on view change)','Fit-to-view on view change'],
+  vqo_anim:['เปลี่ยนมุมแบบเคลื่อนไหว (Use animated transitions)','Use animated transitions when switching views'],vqo_cmp:['เข็มทิศ','Compass'],
+  vqo_ring:['แสดงเข็มทิศใต้ลูกบาศก์ (Show compass below the ViewCube)','Show compass below the ViewCube'],vqo_def:['คืนค่าเริ่มต้น (Restore Defaults)','Restore Defaults'],
+  p_sboxa:['มุมหมุนกล่องตัด','Section Box Rotation'],h_sboxa:['กล่องตัดหมุน {0}° (ทวนเข็มนาฬิกาในแปลน) · Shift หมุนอิสระ','Section box turned {0}° (counterclockwise in plan) · Shift for any angle']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -24751,7 +25043,8 @@ Properties and the Project Browser sit under the drawing, on tabs. One finger pa
 - หมุนล้อ = ซูมเข้าออกตรงตำแหน่งเมาส์
 - กดปุ่มกลางหรือปุ่มขวาค้างแล้วลาก = เลื่อนแบบ
 - ในมุมมอง 3 มิติ ลากปุ่มซ้ายบนที่ว่าง = หมุนมุมมอง · Shift+ปุ่มกลาง ก็หมุนได้เหมือน Revit
-- ลูกบาศก์ที่มุมขวาบนของมุมมอง 3 มิติ: คลิกด้านที่ต้องการดู หรือคลิกรูปบ้านเพื่อกลับมุมเริ่มต้น
+- ลูกบาศก์มุมมอง (ViewCube) ที่มุมขวาบนของมุมมอง 3 มิติ: คลิกหน้า ขอบ หรือมุมของลูกบาศก์ เพื่อมองจาก 26 ทิศ · ลากลูกบาศก์เพื่อหมุน (ปล่อยใกล้ทิศใดจะจัดเข้าทิศนั้น) · คลิกรูปบ้าน = [[a_cubehome]]
+- คลิกขวาที่ลูกบาศก์ หรือปุ่ม ▾ ที่มุมล่าง: [[a_cubehome]] · [[a_cubesave]] · [[a_cubelock]] · [[a_cubepersp]] · [[a_cubesethome]] · [[a_cubefront]] · [[a_cubering]] · [[a_orientview]] · [[a_orientdir]] · [[a_orientplane]] · [[a_cubeopts]]
 
 # คีย์ลัดซูม
 @keys ZF ZA ZR ZO ZP
@@ -24768,6 +25061,11 @@ ZE และ ZX ทำงานเหมือน ZF · ZZ เหมือน ZR
 - ปุ่มกุญแจบนแถบล่างของมุมมอง 3 มิติ: [[a_lk3save]] ล็อกมุมกล้องไว้ ซูมและเลื่อนได้แต่หมุนไม่ได้ · [[a_lk3restore]] กลับไปมุมที่บันทึกไว้แล้วล็อก · [[a_lk3unlock]] ให้หมุนได้อีก (ป้ายกำกับของมุมมองซ่อนไว้จนกว่าจะล็อกอีกครั้ง) · ในมุมมองที่ล็อก เส้นประบอกกรอบที่แผ่นงานแสดง และ ซูมพอดี ((ZF)) กลับไปที่กรอบนั้น
 - มุมมอง 3 มิติที่ล็อกบนแผ่นงาน แสดงตามกรอบที่ล็อกไว้ ในมาตราส่วนของมุมมอง (เลือกที่แถบล่างหรือในคุณสมบัติของมุมมอง) พร้อมป้ายกำกับ ทั้งบนหน้าจอ ใน PDF และ DXF (ภาพทัศนียภาพไม่ตามมาตราส่วน)
 - [[a_selbox]] ((BX)): เลือกชิ้นงานแล้วกด BX จะได้กล่องตัดรอบสิ่งที่เลือก ลากหน้ากล่องเพื่อผ่าดูภายใน เปิดปิดกล่องได้ที่ [[p_sbox]] ในแผงคุณสมบัติของมุมมอง
+- [[a_orientview]] (แท็บ มุมมอง › สร้างมุมมอง หรือเมนูของลูกบาศก์): มุมมอง 3 มิติหันมองแบบเดียวกับแปลนพื้น แปลนฝ้า รูปด้าน หรือรูปตัดที่เลือก พร้อมกล่องตัดเท่าที่มุมมองนั้นเห็น (ตามกรอบครอปถ้าเปิดไว้) หรือเอามุมกล้องและกล่องตัดของมุมมอง 3 มิติอื่นมา · กดจากแปลน รูปด้าน หรือรูปตัด มุมมอง 3 มิติแรกจะหันตามมุมมองนั้นทันที
+- [[a_orientdir]]: มองจากด้านบน หรือจากทิศเหนือ ใต้ ตะวันออก ตะวันตก และทิศเฉียง · [[a_orientplane]]: มองตั้งฉากกับระดับ กริด หรือระนาบอ้างอิงที่มีชื่อ หรือคลิกผิวของชิ้นงาน
+- [[a_cubesave]] ได้มุมมอง 3 มิติใหม่ที่จำมุมกล้องนี้ไว้ · [[a_cubesethome]] ให้รูปบ้านกลับมาที่มุมนี้ · [[a_cubefront]] ให้ด้าน หน้า ของลูกบาศก์มองแบบรูปด้านหรือรูปตัดที่เลือก · [[a_cubelock]] หมุนรอบสิ่งที่เลือกและซูมให้พอดีกับมัน
+- กล่องตัดหมุนได้: ใช้เครื่องมือแก้ไข ลากลูกศรวงกลมที่มุมบนของกล่อง (ทีละ 5° กด Shift หมุนอิสระ) หรือพิมพ์ [[p_sboxa]] ในคุณสมบัติของมุมมอง
+> ต่างจาก Revit: [[a_orientview]] มีปุ่มบนแท็บ มุมมอง ด้วย กดจากแปลน รูปด้าน หรือรูปตัดได้เลย · [[a_cubesave]] สร้างมุมมองใหม่ทุกครั้ง · ตัวเลือกของลูกบาศก์จำไว้ในเบราว์เซอร์ (Revit จำไว้ในเครื่อง)
 - [[a_v3dmep]]: มุมมอง 3 มิติที่ตัวอาคารโปร่ง เห็นงานระบบชัด
 - [[a_disp]] (แผง [[p_dspview]] เมื่อเลือกชิ้นงานในมุมมอง 3 มิติ): ชิ้นที่เลือก และสิ่งที่ติดอยู่กับมัน เช่น ประตู หน้าต่าง ที่แขวนท่อ แสดงห่างออกไปเฉพาะในมุมมองนี้ โมเดลจริงไม่ย้าย · ลากลูกศร X (แดง) Y (เขียว) Z (น้ำเงิน) ทีละ 50 มม. (กด Shift ไม่ปัดเศษ) ลากชิ้นงานเพื่อย้ายตามระนาบ หรือพิมพ์ [[p_dspx]] [[p_dspy]] [[p_dspz]] ใน [[properties]] · เลือกบางชิ้นของชุดแล้วกด [[a_disp]] อีกครั้ง ได้ชุดซ้อนที่ย้ายตามชุดใหญ่
 - แผง [[p_dspset]]: [[a_dspedit]] คลิกชิ้นงานเพื่อเพิ่มหรือเอาออก แล้วกด [[a_dspfin]] · [[a_dspreset]] คืนชิ้นกลับที่เดิม (รวมชุดที่ซ้อนอยู่ในนั้น) · [[a_dsppath]] คลิกจุดบนชิ้นที่แยก (ปลาย กึ่งกลาง มุม หรือผิว) ได้เส้นประกลับไปตำแหน่งจริง แบบ [[dps_line]] หรือ [[dps_jog]] · [[a_dsphi]] ทำให้ชิ้นอื่นโปร่ง · ป้าย ข้อความชี้ ระยะ และ keynote อยู่ที่ชิ้นงานตามที่เห็น ส่วนระดับ ณ จุดอ่านความสูงจริง · แผ่นงาน PDF และ DXF แสดงเหมือนบนจอ · [[a_dupd]] ได้ชุดแยกชิ้นไปด้วย
@@ -24777,7 +25075,8 @@ ZE และ ZX ทำงานเหมือน ZF · ZZ เหมือน ZR
 - The wheel zooms in and out about the pointer
 - Hold the middle or the right button and drag to pan
 - In a 3D view, drag with the left button on empty space to orbit · Shift + middle button orbits too, as in Revit
-- The cube at the top right of a 3D view: click the side to look from, or the house to go back to the home view
+- The ViewCube at the top right of a 3D view: click a face, an edge or a corner of it to look from one of 26 ways · drag it to orbit (let go near one of those ways and it settles there) · the house is [[a_cubehome]]
+- Right-click the cube, or the ▾ at its corner: [[a_cubehome]] · [[a_cubesave]] · [[a_cubelock]] · [[a_cubepersp]] · [[a_cubesethome]] · [[a_cubefront]] · [[a_cubering]] · [[a_orientview]] · [[a_orientdir]] · [[a_orientplane]] · [[a_cubeopts]]
 
 # Zoom shortcuts
 @keys ZF ZA ZR ZO ZP
@@ -24794,6 +25093,11 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - The padlock in the bar at the bottom of a 3D view: [[a_lk3save]] keeps the camera where it is, so the view zooms and pans but does not orbit · [[a_lk3restore]] goes back to the saved orientation and locks it · [[a_lk3unlock]] lets it orbit again (its tags hide until it is locked again) · in a locked view a dashed frame shows what sheets show, and Zoom to Fit ((ZF)) goes back to it
 - A locked 3D view on a sheet shows the frame it was locked at, at the view's scale (chosen in the bar at the bottom or in the view's Properties), with its tags, on the screen, in PDF and in DXF (a perspective view is not to scale)
 - [[a_selbox]] ((BX)): select something and press BX for a section box around it; drag a face of the box to cut into the building. [[p_sbox]] in the view's properties turns the box on and off
+- [[a_orientview]] (View › Create, or the cube's menu): the 3D view looks as the floor plan, ceiling plan, elevation or section picked does, with a section box of what that view shows (its crop region where it is on), or takes the camera and the section box of another 3D view · from a plan, an elevation or a section it turns the first 3D view at once
+- [[a_orientdir]]: from the top, or from the north, south, east, west and the points between · [[a_orientplane]]: square to a level, a grid or a named reference plane, or to a face clicked in the view
+- [[a_cubesave]] makes a new 3D view that keeps this camera · [[a_cubesethome]] makes the house come back here · [[a_cubefront]] makes the FRONT of the cube look as the elevation or section picked does · [[a_cubelock]] orbits about what is selected and frames it
+- Section boxes turn: with Modify, drag the round arrow at a top corner of the box (5° steps, Shift for any angle), or type [[p_sboxa]] in the view's Properties
+> Unlike Revit: [[a_orientview]] also has a button on the View tab and works from a plan, an elevation or a section · [[a_cubesave]] always makes a new view · the cube's options are kept in the browser (Revit keeps them on the computer)
 - [[a_v3dmep]]: a 3D view with the building see-through, so the services stand out
 - [[a_disp]] (the [[p_dspview]] panel, with elements selected in a 3D view): they, and what they host such as doors, windows and hangers, are drawn away from where they are, in this view only; the model does not move · drag the X (red), Y (green) and Z (blue) arrows in steps of 50 mm (Shift: no rounding), drag the elements to move them on their level plane, or type [[p_dspx]], [[p_dspy]] and [[p_dspz]] in [[properties]] · select some of a set and [[a_disp]] again for a set nested in it, which goes with it
 - The [[p_dspset]] panel: [[a_dspedit]], then click elements to add them or take them out, and [[a_dspfin]] · [[a_dspreset]] puts them back where they are, with the sets nested in them · [[a_dsppath]]: click a point of a displaced element (an end, a middle, a corner or a face) for a dashed line back to where it is, [[dps_line]] or [[dps_jog]] · [[a_dsphi]] shows the rest see-through · tags, leaders, dimensions and keynotes stay on the elements where they are drawn, and spot elevations read the true heights · sheets, PDF and DXF show the view as the screen does · [[a_dupd]] keeps the sets
@@ -25712,6 +26016,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.132 · แก้รูปทรงโครงถักแบบ Revit (Edit Profile): ลากคอร์ดบนหรือคอร์ดล่างเป็นรูปที่ต้องการ เช่น โค้ง จั่ว หรือคางหมู เว็บยืดตาม เห็นผลในหน้าต่างทันที · คืนรูปทรงเดิม (Reset Profile) · มีผลใน 3 มิติ รูปด้าน รูปตัด ปริมาณ ตาราง และ IFC · แก้: แยกผนังที่แก้รูปทรงไว้ แต่ละท่อนได้ส่วนของรูปทรงนั้น
 - V1.133 · แยกชิ้นในมุมมอง 3 มิติแบบ Revit (Displace Elements): เลือกชิ้นงานแล้วกด แยกชิ้น ลากลูกศร X Y Z หรือลากชิ้นงาน หรือพิมพ์ระยะ ได้ภาพแยกส่วนโดยโมเดลจริงไม่ย้าย · ชุดซ้อนชุด · แก้ชุด คืนตำแหน่ง เส้นทางกลับตำแหน่งจริง และเน้นชิ้นที่แยก · ป้าย ระยะ และ keynote อยู่ที่ชิ้นงาน · บนแผ่นงาน PDF และ DXF
 - V1.134 · แม่บันไดแบบ Revit (Stair Supports): แม่บันไดข้าง (Stringer) หรือรับใต้ขั้น (Carriage) ซ้าย ขวา และกลาง ตามขอบชานพักด้วย · บันไดที่มีแต่ลูกนอนลูกตั้ง (Non-Monolithic) · ท้องบันไดพับเป็นขั้น (Stepped) · ผิวชานพักแยกจากลูกนอน · ความยาว น้ำหนัก ในตารางและ IFC
+- V1.135 · ลูกบาศก์มุมมองแบบ Revit (ViewCube): คลิกหน้า ขอบ มุม ได้ 26 ทิศ ลากเพื่อหมุน เมนูคลิกขวา (Go Home, Save View, Lock to Selection, Set Front to View ฯลฯ) · หันตามมุมมอง (Orient to View/Direction/Plane): มุมมอง 3 มิติหันตามแปลน รูปด้าน รูปตัด พร้อมกล่องตัด · กล่องตัดหมุนได้
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -25948,6 +26253,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.132 · Edit Profile of a truss, as in Revit: drag its top or bottom chord into the shape wanted, such as an arch, a gable or a trapezoid, and the webs stretch to them, as the window shows while you edit · Reset Profile · in 3D views, elevations, sections, quantities, schedules and IFC · fixed: a wall with an edited profile split in two keeps its part of the outline in each piece
 - V1.133 · Displace Elements in 3D views, as in Revit: select elements, Displace Elements, then drag the X, Y and Z arrows or the elements, or type the distances, for an exploded view while the model stays where it is · sets nested in sets · Edit, Reset, Path back to the model and Highlight Displaced Set · tags, dimensions and keynotes stay on their elements · on sheets, in PDF and DXF
 - V1.134 · Stair supports, as in Revit: stringers (closed) or carriages (open) on the right, the left and in the middle, along the landings too · runs of treads and risers only (Non-Monolithic) · a stepped underside · landings with a finish of their own · length and weight in schedules and IFC
+- V1.135 · The ViewCube, as in Revit: click a face, an edge or a corner (26 ways), drag it to orbit, and its menu (Go Home, Save View, Lock to Selection, Set Front to View and more) · Orient to View, to a Direction and to a Plane: a 3D view looks as a plan, an elevation or a section does, with a section box · section boxes turn
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -26766,7 +27072,7 @@ function dlgHelp(id){let cur=HELP.find(c=>c.id===id)||HELP.find(c=>c.id===ui.hel
    Every command of the ribbon, of the contextual panels and of the File menu can be given keys of two letters, as many as wanted; a key belongs to one command.
    What differs from Revit's defaults is kept with the preferences of this browser (ui.keymap, see applyKeymap in 62-input.js).  The whole set can be written to a file
    and read back, and a KeyboardShortcuts.xml exported by Revit is read as well: its commands are matched by their CommandId (RVT_CMD). */
-const KCTX=['@line','@rect','@arc','@circle','@pickl','@pick','@finish','@cancel','@fliph','@flipf','@openview','@flipsec','secsplit','@ridge','@railhost','@leader','@dimlock','@dimeq','@placeview','@similar','@selsame','@filter','@legendfill','lcomp','@sheetrevs','@warnsel','@insadd','@insedit','@insrem','@linadd','@linedit','@linrem','@footcols','@footgrids','@wfootall','@bsauto','@bsdir','@bsremove','@mtface','@mtplane','@tofront','@toback','@actview','@deactview','@attach','@detach','@editprof','@resetprof','@tattach','@tdetach','@tprof','@tresetprof','@disp','@dspedit','@dspreset','@dsppath','@dsphi','@dspfin','@dspcan','@cvph','@topoedit','@wkedit','@wkopen','@wkplay','@wkframes','@wkexport','@capends','@capdel','@justify'],
+const KCTX=['@line','@rect','@arc','@circle','@pickl','@pick','@finish','@cancel','@fliph','@flipf','@openview','@flipsec','secsplit','@ridge','@railhost','@leader','@dimlock','@dimeq','@placeview','@similar','@selsame','@filter','@legendfill','lcomp','@sheetrevs','@warnsel','@insadd','@insedit','@insrem','@linadd','@linedit','@linrem','@footcols','@footgrids','@wfootall','@bsauto','@bsdir','@bsremove','@mtface','@mtplane','@tofront','@toback','@actview','@deactview','@attach','@detach','@editprof','@resetprof','@tattach','@tdetach','@tprof','@tresetprof','@disp','@dspedit','@dspreset','@dsppath','@dsphi','@dspfin','@dspcan','@cvph','@topoedit','@wkedit','@wkopen','@wkplay','@wkframes','@wkexport','@capends','@capdel','@justify','@cubehome','@cubesave','@cubelock','@cubepersp','@cubesethome','@cubefront','@cubefront0','@cubering','@orientdir','@orientplane','@cubeopts','@cubemenu'],
   KFILE={'@new':'m_new','@sample':'m_sample','@open':'m_open','@save':'m_save','@pdf':'m_pdf','@pdfall':'a_pdfall','@png':'m_png','@dxfout':'m_dxf','@dxfall':'m_dxfall','@ifcout':'m_ifc','@csv':'m_csv','@xlsx':'m_xlsx','@xlsxall':'m_xlsxall'},
   KRES=[['Esc','k_esc'],['Enter','a_repeat'],['Tab','k_tab'],['Space','k_space'],['Shift','k_shift'],['← ↑ → ↓','k_arrows'],['Delete','a_delete'],['F1','a_help'],['Ctrl+Z','a_undo'],['Ctrl+Y','a_redo'],['Ctrl+S','a_save'],['Ctrl+O','m_open'],['Ctrl+P','a_pdf'],
     ['Ctrl+C','a_copyclip'],['Ctrl+X','a_cut'],['Ctrl+V','a_paste'],['Ctrl+A','k_selall'],['Ctrl+←','a_selprev']];
@@ -27777,6 +28083,15 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r49={I:()=>({P,ui,IDX,undoN:undoS.length}),t:(k,...a)=>t(k,...a),CUBO:()=>Object.assign({},CUBO),opt:o=>{Object.assign(CUBO,o||CUBO0);cuboSave();redraw()},
+  cubeD:(vid,f,sx,sy)=>cubeD(viewById(vid),f,sx,sy),dirNav:(vid,d)=>dirNav(viewById(vid),d),orBox:vid=>{const s=viewById(vid);return s?orBox(s):null},
+  orFit:(sid,asp)=>{const B=orBox(viewById(sid));return B?orFit(B,asp):null},nav:vid=>{const n=ui.nav[vid];return n?JSON.parse(JSON.stringify(n)):null},anim:()=>!!CUBEA,stop:()=>navStop(),
+  sq:(vid,x,y)=>sboxQ(viewById(vid),x,y),sxy:(vid,u,w)=>sboxXY(viewById(vid),u,w),has:(vid,x,y,z,e)=>sboxHas(viewById(vid),x,y,z,e||0),meets:(vid,B)=>sboxMeets(viewById(vid),B),
+  gl:vid=>{const b=sboxGL(viewById(vid));return b?{b:b.slice(),r:b.r||null,aabb:boxAABB(b),mid:boxMid(b)}:null},out:(vid,x,y,z,e)=>{const b=sboxGL(viewById(vid));return b?boxOut(b,x,y,z,e||0):null},
+  state:(vid,bb)=>{const b=sboxGL(viewById(vid));return b?boxState({nc:1,bb},b):null},grips:()=>(ui.sbh||[]).map(g=>Object.assign({},g)),
+  fit:(vid,pane)=>fitNav(viewById(vid),...paneWH(PANES[pane||0])),homeOf:vid=>homeOf(viewById(vid)),setA:(vid,a)=>{const v=viewById(vid);edit(()=>{sboxSetA(v,a)})},
+  pick:(pane,x,y)=>{const pn=PANES[pane],v=paneView(pane),pk=v&&pickAt(pn,v,{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n||null}:null},
+  proj:(pane,x,y,z)=>proj3(PANES[pane],paneView(pane),x,y,z),cam:pane=>{const pn=PANES[pane],c=orbitCam(navOf(paneView(pane)),pn.w/pn.h);return{f:c.f,r:c.r,u:c.u,eye:c.eye,ortho:!!c.ortho}}};
 window.PenumBIM.r48={parts:id=>{const e=IDX.get(id),S=e&&stParts(P,e);return S?{F:S.F,hw:S.hw,runs:S.runs.map(X=>({A:X.R.A,B:X.R.B,dx:X.R.dx,dy:X.R.dy,nx:X.R.nx,ny:X.R.ny,z0:X.R.z0,z1:X.R.z1,n:X.R.n,len:X.R.len,pr:X.pr,tf:X.tf,rf:X.rf,top:X.top})),
     lands:S.lands.map(L=>({poly:L.l.poly,z:L.l.z,sp:L.sp,z0:L.z0,z1:L.z1})),sup:S.sup.map(p=>({run:p.run,kind:p.kind,side:p.side,s0:p.s0,s1:p.s1,pr:p.pr,plan:p.plan,len:p.len,f:p.f,px:p.px,arr:p.arr,dep:p.dep}))}:null},
   geo:id=>{const e=IDX.get(id),g=e&&stairGeo(P,e);return g?{polys:g.polys,hull:g.hull,wells:g.wells,path:g.path,W:g.W,r:g.r,g:g.g,N:g.N,z0:g.z0,z1:g.z1,shape:g.shape,runs:g.runs.map(R=>({A:R.A,B:R.B,dx:R.dx,dy:R.dy,n:R.n,len:R.len,z0:R.z0,z1:R.z1,rect:R.rect})),lands:g.lands.map(l=>({z:l.z,poly:l.poly}))}:null},
