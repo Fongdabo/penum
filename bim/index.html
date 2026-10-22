@@ -706,7 +706,7 @@ html.ptb-on:has(#bimStart) #ptbw{position:relative;z-index:61}          /* V1.85
 <div id="toast" hidden></div>
 <input type="file" id="fileIn" accept=".penbim,.json,.penmep,application/json" hidden>
 <input type="file" id="dxfIn" accept=".dxf,.DXF,application/dxf,image/vnd.dxf" hidden>
-<input type="file" id="ifcIn" accept=".ifc,.IFC" hidden><input type="file" id="pcIn" accept=".xyz,.pts,.txt,.csv" hidden><input type="file" id="bgIn" accept="image/*" hidden><input type="file" id="dcIn" accept="image/*" hidden><input type="file" id="mtIn" accept="image/*" hidden>
+<input type="file" id="ifcIn" accept=".ifc,.IFC,.ifczip,.IFCZIP" hidden><input type="file" id="pcIn" accept=".xyz,.pts,.txt,.csv" hidden><input type="file" id="bgIn" accept="image/*" hidden><input type="file" id="dcIn" accept="image/*" hidden><input type="file" id="mtIn" accept="image/*" hidden>
 <input type="file" id="pdfIn" accept=".pdf,.PDF,application/pdf" hidden>
 <input type="file" id="imgIn" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp" hidden>
 <script>
@@ -6616,22 +6616,34 @@ function ifcBlob(R,name){const bb=R.bb,cx=(bb[0]+bb[3])/2,cy=(bb[1]+bb[4])/2,G=n
 const ifcBlobOk=B=>!!B&&B.ifc===1&&Array.isArray(B.L)&&Array.isArray(B.M)&&isFinite(B.w+B.h+B.cx+B.cy)&&B.M.every(m=>m&&Array.isArray(m.p)&&Array.isArray(m.i)&&m.p.length%3===0&&m.i.length%3===0&&(m.j===undefined||(Array.isArray(m.j)&&m.j.length%3===0))&&(m.e===undefined||Array.isArray(m.e)));
 /* the meshes of a blob ready for use: points in millimetres, and their edges — E: creases (where two faces meet at more than 25°, or a face ends),
    S: the edges between faces that meet at less (round things), each with its two triangles, drawn only where they are the outline */
-function ifcGeo(B){const out=[],COS=Math.cos(25*Math.PI/180);
-  for(const m of B.M){const n=m.p.length/3,P=new Float64Array(m.p.length),I=m.j&&m.j.length?m.i.concat(m.j):m.i,nt=m.i.length/3,N=new Float64Array(nt*3),ed=new Map(),E=m.e?m.e.slice():[],S=[];for(let i=0;i<m.p.length;i++)P[i]=m.p[i]/10;          /* the edges of what has been cut come with it */
+function ifcGeo(B){const out=[],COS=Math.cos(25*Math.PI/180),eh=(i,j)=>{let h=Math.imul(i,73856093)^Math.imul(j,19349663);h=Math.imul(h^(h>>>16),0x45d9f3b);return(h^(h>>>16))>>>0};
+  for(const m of B.M){const P=new Float64Array(m.p.length),I=m.j&&m.j.length?m.i.concat(m.j):m.i,nt=m.i.length/3,N=new Float64Array(nt*3),E=m.e?m.e.slice():[],S=[];for(let i=0;i<m.p.length;i++)P[i]=m.p[i]/10;          /* the edges of what has been cut come with it */
+    /* the edges in the order they are met: their points (the lower first), their first triangle and their second (-1: none, -2: more than two), found through a table
+       of open addressing that doubles when half full */
+    let cap=1<<Math.max(4,Math.ceil(Math.log2(nt*3+1))),K=new Int32Array(cap).fill(-1),EA=new Int32Array(cap>>1),EB=new Int32Array(cap>>1),T1=new Int32Array(cap>>1),T2=new Int32Array(cap>>1),ne=0;
     for(let t=0;t<nt;t++){const a=I[t*3]*3,b=I[t*3+1]*3,c=I[t*3+2]*3,ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2],vx=P[c]-P[a],vy=P[c+1]-P[a+1],vz=P[c+2]-P[a+2];let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;const l=Math.hypot(nx,ny,nz)||1;N[t*3]=nx/l;N[t*3+1]=ny/l;N[t*3+2]=nz/l;
-      for(let q=0;q<3;q++){const i=I[t*3+q],j=I[t*3+(q+1)%3],key=i<j?i*n+j:j*n+i,e=ed.get(key);if(e===undefined)ed.set(key,t);else if(e>=0)ed.set(key,-2-e*nt-t);else ed.set(key,-1)}}          /* one triangle: its index; two: both packed in a negative number; more: -1 */
-    for(const [key,e] of ed){const i=Math.floor(key/n),j=key-i*n;if(e>=0||e===-1){E.push(i,j);continue}const q=-2-e,t1=Math.floor(q/nt),t2=q-t1*nt,d=N[t1*3]*N[t2*3]+N[t1*3+1]*N[t2*3+1]+N[t1*3+2]*N[t2*3+2];if(d<COS)E.push(i,j);else if(d<0.9995)S.push(i,j,t1,t2)}
+      for(let q=0;q<3;q++){let i=I[t*3+q],j=I[t*3+(q+1)%3];if(i>j){const x=i;i=j;j=x}let m1=cap-1,s=eh(i,j)&m1,e;
+        for(;;){e=K[s];if(e<0||(EA[e]===i&&EB[e]===j))break;s=(s+1)&m1}
+        if(e>=0){T2[e]=T2[e]===-1?t:-2;continue}
+        if(ne*2>=cap){cap*=2;m1=cap-1;K=new Int32Array(cap).fill(-1);const g=A=>{const X=new Int32Array(cap>>1);X.set(A.subarray(0,ne));return X};EA=g(EA);EB=g(EB);T1=g(T1);T2=g(T2);
+          for(let f=0;f<ne;f++){let u=eh(EA[f],EB[f])&m1;while(K[u]>=0)u=(u+1)&m1;K[u]=f}s=eh(i,j)&m1;while(K[s]>=0)s=(s+1)&m1}
+        K[s]=ne;EA[ne]=i;EB[ne]=j;T1[ne]=t;T2[ne]=-1;ne++}}
+    for(let e=0;e<ne;e++){const i=EA[e],j=EB[e],t1=T1[e],t2=T2[e];if(t2<0){E.push(i,j);continue}const d=N[t1*3]*N[t2*3]+N[t1*3+1]*N[t2*3+1]+N[t1*3+2]*N[t2*3+2];if(d<COS)E.push(i,j);else if(d<0.9995)S.push(i,j,t1,t2)}
     out.push({k:m.k,c:m.c,a:m.a,P,I,E,S})}return out}
 /* what a plan shows of the meshes G: for every class the lines where the cut plane at zc passes through them, and the edges between zlo and zhi seen from above
    (or from below).  off: the classes that are switched off, by index.  → [{k, cut: [x1, y1, x2, y2 …], proj: […]}] in the coordinates of the blob */
-function ifcPlanLines(G,zc,zlo,zhi,off){const by=new Map(),zq=zc+0.0137;
+function ifcPlanLines(G,zc,zlo,zhi,off){const by=new Map(),zq=zc+0.0137,
+    edge=(o,P,a,b)=>{let x1=P[a],y1=P[a+1],z1=P[a+2],x2=P[b],y2=P[b+1],z2=P[b+2];if((z1<zlo&&z2<zlo)||(z1>zhi&&z2>zhi))return;
+      if(z1!==z2){const cl=z=>{const f=(z-z1)/(z2-z1);return[x1+(x2-x1)*f,y1+(y2-y1)*f]};let p1=[x1,y1],p2=[x2,y2];if(z1<zlo)p1=cl(zlo);else if(z1>zhi)p1=cl(zhi);if(z2<zlo)p2=cl(zlo);else if(z2>zhi)p2=cl(zhi);x1=p1[0];y1=p1[1];x2=p2[0];y2=p2[1]}
+      if(Math.abs(x1-x2)+Math.abs(y1-y2)<0.5)return;const r1=Math.round(x1)+','+Math.round(y1),r2=Math.round(x2)+','+Math.round(y2),key=r1<r2?r1+'|'+r2:r2+'|'+r1;if(o.seen.has(key))return;o.seen.add(key);o.proj.push(x1,y1,x2,y2)};
   for(const m of G){if(off&&off.has(m.k))continue;let o=by.get(m.k);if(!o)by.set(m.k,o={k:m.k,cut:[],proj:[],seen:new Set()});const P=m.P,I=m.I,cut=o.cut;
     for(let t=0;t+2<I.length;t+=3){const a=I[t]*3,b=I[t+1]*3,c=I[t+2]*3,za=P[a+2]-zq,zb=P[b+2]-zq,zd=P[c+2]-zq;if((za>0&&zb>0&&zd>0)||(za<0&&zb<0&&zd<0))continue;const q=[];
       if(za*zb<0){const f=za/(za-zb);q.push(P[a]+(P[b]-P[a])*f,P[a+1]+(P[b+1]-P[a+1])*f)}if(zb*zd<0){const f=zb/(zb-zd);q.push(P[b]+(P[c]-P[b])*f,P[b+1]+(P[c+1]-P[b+1])*f)}if(zd*za<0){const f=zd/(zd-za);q.push(P[c]+(P[a]-P[c])*f,P[c+1]+(P[a+1]-P[c+1])*f)}
       if(q.length===4&&Math.abs(q[0]-q[2])+Math.abs(q[1]-q[3])>0.05)cut.push(q[0],q[1],q[2],q[3])}
-    const E=m.E,pr=o.proj,seen=o.seen;for(let e=0;e+1<E.length;e+=2){const a=E[e]*3,b=E[e+1]*3;let x1=P[a],y1=P[a+1],z1=P[a+2],x2=P[b],y2=P[b+1],z2=P[b+2];if((z1<zlo&&z2<zlo)||(z1>zhi&&z2>zhi))continue;
-      if(z1!==z2){const cl=z=>{const f=(z-z1)/(z2-z1);return[x1+(x2-x1)*f,y1+(y2-y1)*f]};let p1=[x1,y1],p2=[x2,y2];if(z1<zlo)p1=cl(zlo);else if(z1>zhi)p1=cl(zhi);if(z2<zlo)p2=cl(zlo);else if(z2>zhi)p2=cl(zhi);x1=p1[0];y1=p1[1];x2=p2[0];y2=p2[1]}
-      if(Math.abs(x1-x2)+Math.abs(y1-y2)<0.5)continue;const r1=Math.round(x1)+','+Math.round(y1),r2=Math.round(x2)+','+Math.round(y2),key=r1<r2?r1+'|'+r2:r2+'|'+r1;if(seen.has(key))continue;seen.add(key);pr.push(x1,y1,x2,y2)}}
+    const E=m.E;for(let e=0;e+1<E.length;e+=2)edge(o,P,E[e]*3,E[e+1]*3)}
+  for(const m of G){const S=m.S,o=by.get(m.k);if(!o||!S||!S.length)continue;const P=m.P,I=m.I,          /* then the outline of what is round (a ball, a pipe lying down): its smooth edges where its faces turn from up to down */
+      up=t=>{const a=I[t*3]*3,b=I[t*3+1]*3,c=I[t*3+2]*3,ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2],vx=P[c]-P[a],vy=P[c+1]-P[a+1],vz=P[c+2]-P[a+2],nz=ux*vy-uy*vx,l=Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,nz);return nz>1e-6*l?1:nz<-1e-6*l?-1:0};
+    for(let e=0;e+3<S.length;e+=4)if(up(S[e+2])!==up(S[e+3]))edge(o,P,S[e]*3,S[e+1]*3)}
   return[...by.values()].filter(o=>o.cut.length||o.proj.length).map(o=>({k:o.k,cut:o.cut,proj:o.proj}))}
 
 /* ===== 28 pdfin: a PDF read into lines (pure) — the drawing a CAD program printed to PDF, as a linked drawing (Revit: Insert > Import PDF / Link PDF) =====
@@ -12439,7 +12451,7 @@ function catRows(cat,els,isNew){
         if(els.length===1)h+=PR.grp('g_dims')+PR.num('imgw','img_width',+fmtLen(B.w*sc),unitName(),'step="any" min="0"')+PR.ro('p_height',fmtLen(B.h*sc)+' '+unitName())+PR.ro('img_px',B.pw+' × '+B.ph+' px')+`<div class="pnote">${t('img_tip')}</div><div class="pa"><button class="btn" data-act="links">${t('a_links')}</button></div>`;break}
       h+=PR.grp('g_link')+PR.text('name','p_name',V(x=>x.name||''))+PR.sel('level','p_level',V(x=>x.level),L)+PR.chk('all','p_alllevels',V(x=>!!x.all)===true)+PR.chk('half','p_half',V(x=>x.half!==false)===true)
         +PR.num('rot','p_rot',V(x=>x.rot||0),'°','step="15"')+PR.num('sc','p_linksc',V(x=>x.sc||1),'×','step="any" min="0.0001"');
-      if(els.length===1)h+=PR.grp('g_dims')+PR.ro('dxf_size',fmtLen(B.w*sc)+' × '+fmtLen(B.h*sc)+' '+unitName())+PR.ro('p_layers_n',shown+' / '+B.L.length)+`<div class="pa"><button class="btn" data-act="linklayers">${t('a_linklayers')}…</button><button class="btn" data-act="links">${t('a_links')}</button></div>`;break}
+      if(els.length===1)h+=PR.grp('g_dims')+(B.m3?PR.ro('lk_size',[B.w,B.h,B.z1-B.z0].map(v=>fmtLen(v*sc)).join(' × ')+' '+unitName()):PR.ro('dxf_size',fmtLen(B.w*sc)+' × '+fmtLen(B.h*sc)+' '+unitName()))+PR.ro(B.m3?(B.m3.by==='obj'?'m3_shown_obj':'m3_shown_mat'):'p_layers_n',shown+' / '+B.L.length)+`<div class="pa"><button class="btn" data-act="linklayers">${t(B.m3?lkLyK(B):'a_linklayers')}…</button><button class="btn" data-act="links">${t('a_links')}</button></div>`;break}
     case'ceiling':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_level',V(x=>x.level),L);h+=PR.num('off','p_ceilh',V(x=>x.off==null?2600:x.off),U,'step="50" min="0"');if(!isNew&&(()=>{const W=typ(P,els[0]);return W&&+W.gx>0})())h+=PR.grp('g_ceilgrid')+PR.num('gox','p_gox',V(x=>x.gox||0),U,'step="50"')+PR.num('goy','p_goy',V(x=>x.goy||0),U,'step="50"')+PR.num('gra','p_gra',V(x=>x.gra||0),'°','step="5"');if(!isNew)h+=slopeRows(els,V);if(!isNew)h+=PR.grp('g_dims')+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit());break;
     case'floor':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_level',V(x=>x.level),L);h+=PR.num('off','p_heightoff',V(x=>x.off||0),U,'step="50"');if(!isNew)h+=slopeRows(els,V);
       if(!isNew)h+=strRows(els)+PR.grp('g_dims')+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit())+PR.ro('p_volume',fmtVol(S('vol'))+' '+volUnit());break;
@@ -13683,7 +13695,7 @@ function cmApply(e,rows){let n=0;for(const r of rows){const mon={l:e.id,n:r.s?r.
   return n}
 const uniqLevelName=n=>{let s=n||t('cm_lv'),i=2;while(P.levels.some(l=>l.name===s))s=(n||t('cm_lv'))+' ('+i++ +')';return s};
 const uniqGridName=n=>{let s=n||'?',i=2;while(P.grids.some(g=>g.name===s))s=(n||'?')+'-'+i++;return s};
-function dlgCopyMon(id){ui.helpAt='sheet';const L=ifcLinks();if(!L.length){toast(t('cm_nolink'),6000);return}const e=L.find(x=>x.id===+id)||L.find(x=>x.id===ui.cmId)||L[0];ui.cmId=e.id;
+function dlgCopyMon(id){ui.helpAt='sheet';const L=ifcLinks().filter(e=>!m3Of(e));if(!L.length){toast(t('cm_nolink'),6000);return}const e=L.find(x=>x.id===+id)||L.find(x=>x.id===ui.cmId)||L[0];ui.cmId=e.id;
   const S=cmSrc(e),R=cmReview(e),stTxt=r=>t('cm_st_'+r.st)+(r.d&&r.st!=='ok'?' · '+fmtLen(r.d):''),def=r=>r.st!=='gone'&&r.st!=='ok',
     nm=r=>r.k==='lv'?(r.s?esc(r.s.n)+' '+fmtElev(r.s.z):''):(r.s?esc(r.s.n):''),
     row=(r,i)=>`<tr${r.st==='moved'||r.st==='gone'?' class="warn"':''}><td>${r.st==='ok'?'':`<input type="checkbox" data-cmi="${i}"${def(r)?' checked':''} aria-label="${t('cm_pick')}">`}</td><td>${t(r.k==='lv'?'cm_lv':'cm_gr')}</td><td>${nm(r)||'—'}</td><td>${r.o?esc(r.o.name)+(r.k==='lv'?' '+fmtElev(r.o.elev):''):'—'}</td><td>${stTxt(r)}</td></tr>`;
@@ -13696,7 +13708,7 @@ function dlgCopyMon(id){ui.helpAt='sheet';const L=ifcLinks();if(!L.length){toast
      click(ev){const b=ev.target.closest('[data-cmx]');if(!b)return;const pick=$$('#dlg [data-cmi]').filter(x=>x.checked).map(x=>R[+x.dataset.cmi]);if(!pick.length)return;let n=0;edit(()=>{n=cmApply(e,pick)});toast(t('cm_done',n));dlgCopyMon(e.id)}},'wide')}
 XA.copymon=arg=>dlgCopyMon(arg);
 /* the link says when what it watches has moved; a monitored level or grid says where it is watched from */
-XP.push((c,els)=>{if(c==='link'&&els.length===1&&ifcOf(els[0])&&!ifcOf(els[0]).pc){const n=cmChanges(els[0]),m=P.levels.concat(P.grids).filter(o=>o.mon&&o.mon.l===els[0].id).length;
+XP.push((c,els)=>{if(c==='link'&&els.length===1&&ifcOf(els[0])&&!ifcOf(els[0]).pc&&!m3Of(els[0])){const n=cmChanges(els[0]),m=P.levels.concat(P.grids).filter(o=>o.mon&&o.mon.l===els[0].id).length;
     return PR.ro('cm_watch',t('cm_count',m)+(n?' · '+t('cm_changes',n):''))+`<div class="pa"><button class="btn${n?' primary':''}" data-act="copymon" data-arg="${els[0].id}">${t(n?'cm_review':'a_copymon')}…</button></div>`}
   if((c==='level'||c==='grid')&&els.length===1&&els[0].mon){const k=IDX.get(els[0].mon.l);return PR.ro('cm_from',(k?k.name||'IFC':'—')+' · '+els[0].mon.n)}return''});
 XC.push(()=>{const ok=new Set(P.els.filter(e=>e.cat==='link').map(e=>e.id));for(const o of P.levels.concat(P.grids)){if(o.mon===undefined)continue;const m=o.mon;
@@ -13985,7 +13997,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=152,V1_NAME='V1.141';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=153,V1_NAME='V1.142';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -18107,7 +18119,7 @@ dlgClash=function(){const o=clSel(),L=ifcLinks().filter(e=>!e.unl);if(o.ls&&!L.s
   const sel=clSelEls();if(ui.clashSelSig!==sel.join(',')){o.onlyOn=false;ui.clashSelSig=sel.join(',')}          // a new selection starts with the whole model; the box keeps to it
   const all=new Set(P.els.map(clCat)),haveL=o.onlyOn&&sel.length&&!o.ls?new Set(sel.map(id=>clCat(IDX.get(id)))):all,
     col=side=>{const src=o[side+'s'],e=src?IDX.get(src):null,B=e&&ifcOf(e),cur=o[side],have=side==='l'?haveL:all,
-      opts=`<option value="0"${src?'':' selected'}>${esc(t('clash_proj'))}</option>`+L.map(x=>`<option value="${x.id}"${x.id===src?' selected':''}>${esc(x.name||'IFC')} (IFC)</option>`).join(''),
+      opts=`<option value="0"${src?'':' selected'}>${esc(t('clash_proj'))}</option>`+L.map(x=>`<option value="${x.id}"${x.id===src?' selected':''}>${esc(x.name||'IFC')} (${esc(lkFmt(x))})</option>`).join(''),
       list=B?(()=>{const pk=new Set(clLkPicks(o,side,e,B));return B.L.map((l,i)=>`<label><input type="checkbox" data-cl="${side}:L:${i}"${pk.has(l.n)?' checked':''}>${esc(l.n)}${l.cnt?' <small>('+l.cnt+')</small>':''}</label>`).join('')})()
         :CLASH_CATS.map(c=>`<label><input type="checkbox" data-cl="${side}:${c}"${cur.includes(c)?' checked':''}${have.has(c)?'':' disabled'}>${esc(t('cat_'+c))}</label>`).join(''),
       old=B&&(!lpPr(B)?t('clash_nopr'):B.M.some(m=>!Array.isArray(m.r))?t('clash_oldlk'):'');
@@ -18141,7 +18153,7 @@ const clWhere=c=>fmtLen(c.x)+', '+fmtLen(c.y)+' '+unitName()+' · '+fmtElev(c.z)
 function clCSV(R){const q=x=>'"'+String(x).replace(/"/g,'""')+'"';return'﻿'+[['#',t('clash_left'),'ID / GlobalId',t('clash_right'),'ID / GlobalId',t('clash_depth'),t('clash_at')].map(q).join(',')]
   .concat(R.map((c,i)=>{const a=clName(c,'a',1),b=clName(c,'b',1);return a&&b?[i+1,a,clRef(c,'a'),b,clRef(c,'b'),Math.round(c.depth),clWhere(c)].map(q).join(','):''}).filter(Boolean)).join('\r\n')}
 /* the report as a page of its own, like the one Revit exports */
-function clHTML(R){const run=ui.clashRun||clSel(),side=s=>{const src=run[s+'s'];if(src){const e=IDX.get(src),B=e&&ifcOf(e);return esc((e&&e.name)||'IFC')+' (IFC): '+esc(B?clLkPicks(run,s,e,B).join(', '):'')}
+function clHTML(R){const run=ui.clashRun||clSel(),side=s=>{const src=run[s+'s'];if(src){const e=IDX.get(src),B=e&&ifcOf(e);return esc((e&&e.name)||'IFC')+' ('+esc(lkFmt(e))+'): '+esc(B?clLkPicks(run,s,e,B).join(', '):'')}
       return esc(t('clash_proj'))+': '+esc((run[s]||[]).map(c=>t('cat_'+c)).join(', '))},d=new Date(),p2=x=>String(x).padStart(2,'0'),when=d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes());
   const rows=R.map((c,i)=>{const a=clName(c,'a',1),b=clName(c,'b',1);return a&&b?`<tr><td class="n">${i+1}</td><td>${esc(a)}<br><small>${esc(clRef(c,'a'))}</small></td><td>${esc(b)}<br><small>${esc(clRef(c,'b'))}</small></td><td class="n">${Math.round(c.depth)}</td><td>${esc(clWhere(c))}</td></tr>`:''}).join('');
   return`<!doctype html><html lang="${ui.lang==='en'?'en':'th'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t('clash_report'))}</title><style>
@@ -22784,9 +22796,9 @@ Object.assign(BTN,{'@shcacq':['shcacq',''],shcacq:['shcacq',''],shcspec:['shcspe
     +`<symbol id="i-shcmove" viewBox="0 0 24 24">${sh}<path class="i-kD" fill="none" stroke="#222937" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.2" d="M12 2.6v18.2M2.8 11.7H21.2M9.8 4.8 12 2.6l2.2 2.2M9.8 18.6l2.2 2.2 2.2-2.2M5 9.5 2.8 11.7 5 13.9M19 9.5l2.2 2.2L19 13.9"/>${tri(12,12.4,1.05)}</symbol>`)})();
 Object.assign(STR,{p_projloc:['ตำแหน่งโครงการ','Project Location'],a_shcacq:['รับพิกัดจากลิงก์','Acquire Coordinates'],t_shcacq:['รับพิกัดจากลิงก์','Acquire Coordinates'],
   t_shcspec:['กำหนดพิกัดที่จุด','Specify Coordinates at Point'],t_shcrep:['อ่านพิกัดร่วม','Report Shared Coordinates'],t_shcmove:['ย้ายโครงการในระบบพิกัด','Relocate Project'],
-  h_shcacq:['คลิกแบบที่ลิงก์ไว้ (DXF, IFC หรือ Point Cloud) เพื่อรับพิกัดของไฟล์นั้นมาเป็นพิกัดร่วมของโครงการ','Click a linked drawing, model or point cloud to take its coordinates as the shared coordinates of the project'],
-  sh_acq_none:['ยังไม่มีแบบที่ลิงก์ไว้: ลิงก์ไฟล์ DXF, IFC หรือ Point Cloud ก่อน','There is no link yet: link a DXF, an IFC or a point cloud first'],
-  sh_acq_img:['รูปภาพและหน้า PDF ไม่มีพิกัด: เลือกแบบ DXF, IFC หรือ Point Cloud','A picture or a PDF page has no coordinates: pick a DXF, an IFC or a point cloud'],
+  h_shcacq:['คลิกแบบที่ลิงก์ไว้ (DXF, IFC, โมเดล 3 มิติ หรือ Point Cloud) เพื่อรับพิกัดของไฟล์นั้นมาเป็นพิกัดร่วมของโครงการ','Click a linked drawing, model or point cloud to take its coordinates as the shared coordinates of the project'],
+  sh_acq_none:['ยังไม่มีแบบที่ลิงก์ไว้: ลิงก์ไฟล์ DXF, IFC, โมเดล 3 มิติ หรือ Point Cloud ก่อน','There is no link yet: link a DXF, an IFC, a 3D model or a point cloud first'],
+  sh_acq_img:['รูปภาพและหน้า PDF ไม่มีพิกัด: เลือกแบบ DXF, IFC, โมเดล 3 มิติ หรือ Point Cloud','A picture or a PDF page has no coordinates: pick a DXF, an IFC, a 3D model or a point cloud'],
   sh_acq_sc:['ลิงก์ที่ย่อ/ขยายหรือกลับด้าน ใช้กับพิกัดร่วมไม่ได้','A link that is scaled or mirrored cannot be used with shared coordinates'],
   sh_acq_nofile:['ไม่พบข้อมูลของไฟล์ที่ลิงก์ไว้','The file of this link is not in the project'],
   sh_acq_done:['รับพิกัดจาก {0} แล้ว: หมุดสำรวจ N {1} · E {2} {3} · ทิศเหนือจริง {4}°','Coordinates acquired from {0}: survey point N {1} · E {2} {3} · true north {4}°'],
@@ -25737,6 +25749,414 @@ Object.assign(STR,{
   ifv2_tr:['ใช้มาตราส่วนและระดับรายละเอียดของมุมมองต้นฉบับ (Transfer view scale and detail level)','Transfer view scale and detail level'],
   ifv2_none:['ไม่มีชิ้นงาน 2 มิติที่แทรกได้','No 2D elements to insert'],ifv2_view:['เปิดแปลน มุมมองร่าง หรือคำอธิบายสัญลักษณ์ก่อน แล้วจึงแทรกชิ้นงาน 2 มิติ','Open a plan, a drafting view or a legend first, then insert the 2D elements'],
   t_ifv2:['แทรกชิ้นงาน 2 มิติจากไฟล์','Insert 2D Elements from File'],h_ifv2:['คลิกเพื่อวางชิ้นงาน 2 มิติจาก “{0}” · Esc ยกเลิก','Click to place the 2D elements of “{0}” · Esc cancels'],ifv2_done:['วางชิ้นงาน 2 มิติแล้ว {0} ชิ้น','2D elements placed: {0}']});
+/* ===== 142 Link 3D Model (V1.142; Revit: Insert › Link CAD and Import CAD take OBJ, STL and SketchUp files) =====
+   A 3D model from another program (SketchUp, Rhino, Blender, 3ds Max, a maker's catalogue) lies in the project as a link.  It is read into the blob of a
+   linked IFC model (82-ifclink.js) with B.m3 = {f: its format, u: mm in a unit of the file, up: 'z' | 'y', by: 'mat' | 'obj'}, and so shows, cuts, snaps,
+   clashes and is picked in plans, sections, elevations and 3D views as a linked IFC model does.  Its classes are its materials (or its objects, by name);
+   its products, which a click in a plan picks and the Link Schedule lists, are its objects.  Formats: .obj with its .mtl, .stl (text or binary), .gltf with
+   its .bin, .glb, .dae (Collada, as SketchUp exports it), and .kmz or .zip holding one of them with its pictures.  A material with a picture takes the
+   average colour of the picture.  Link IFC opens an .ifczip (a zipped .ifc) too. */
+const M3_MAIN=/\.(obj|stl|gltf|glb|dae|kmz|zip)$/i,M3_MAX_TRI=1500000,M3_MB=200,M3_U=[['mm',1],['cm',10],['m',1000],['in',25.4],['ft',304.8]],M3I=[1,0,0,0,0,1,0,0,0,0,1,0];
+const m3Ext=n=>{const m=/\.([a-z0-9]+)$/i.exec(String(n||''));return m?m[1].toLowerCase():''};
+/* a file named in a model (perhaps with folders, perhaps %-escaped) is found among those given by its name alone */
+const m3Base=n=>{let s=String(n||'').trim().replace(/\\/g,'/');try{s=decodeURIComponent(s)}catch(e){}return s.replace(/^file:\/+/i,'').split('/').pop().toLowerCase()};
+const m3Txt=b=>new TextDecoder().decode(b);
+const m3Name=n=>String(n||'').replace(/\\/g,'/').split('/').pop().replace(/\.(obj|stl|gltf|glb|dae|kmz|zip)$/i,'');
+const m3Num=v=>String(Math.round(v*1000)/1000);
+const m3Of=e=>{const B=e&&e.cat==='link'?CADB.get(e.key):null;return B&&B.ifc&&B.m3?B:null};
+/* 3 × 4 matrices by rows: x' = a x + b y + c z + d … ; m3Mul(A, B) applies B, then A */
+const m3Mul=(A,B)=>[A[0]*B[0]+A[1]*B[4]+A[2]*B[8],A[0]*B[1]+A[1]*B[5]+A[2]*B[9],A[0]*B[2]+A[1]*B[6]+A[2]*B[10],A[0]*B[3]+A[1]*B[7]+A[2]*B[11]+A[3],
+  A[4]*B[0]+A[5]*B[4]+A[6]*B[8],A[4]*B[1]+A[5]*B[5]+A[6]*B[9],A[4]*B[2]+A[5]*B[6]+A[6]*B[10],A[4]*B[3]+A[5]*B[7]+A[6]*B[11]+A[7],
+  A[8]*B[0]+A[9]*B[4]+A[10]*B[8],A[8]*B[1]+A[9]*B[5]+A[10]*B[9],A[8]*B[2]+A[9]*B[6]+A[10]*B[10],A[8]*B[3]+A[9]*B[7]+A[10]*B[11]+A[11]];
+const m3Rot=(x,y,z,a)=>{const l=Math.hypot(x,y,z)||1;x/=l;y/=l;z/=l;const c=Math.cos(a),s=Math.sin(a),u=1-c;return[u*x*x+c,u*x*y-s*z,u*x*z+s*y,0,u*x*y+s*z,u*y*y+c,u*y*z-s*x,0,u*x*z-s*y,u*y*z+s*x,u*z*z+c,0]};
+const m3Quat=q=>{const x=+q[0]||0,y=+q[1]||0,z=+q[2]||0,w=q[3]==null?1:+q[3];return[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w),0,2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w),0,2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y),0]};
+const m3Ok16=a=>Array.isArray(a)&&a.length>=12&&a.slice(0,12).every(v=>isFinite(+v));
+
+/* ---- a model as read: S = {f: format, up: '' | 'y' | 'z' (as the file says), unit: metres in a unit of the file (0: it does not say),
+   mats: [{n, c: [r, g, b] 0–1 or null, a: opacity, tex: the file of its picture, img: the bytes of its picture, k: what the picture is multiplied by, lin: k is linear}],
+   objs: [{n: its name, d: the name its class takes by object}], parts: [{o, m, g: {p: points x y z …, i: triangles}, M: null | a matrix}],
+   miss: files the model names that were not given, skip: {lines, draco}, bad: faces that could not be read} ---- */
+function m3New(f){const S={f,up:'',unit:0,mats:[],objs:[],parts:[],miss:new Set(),skip:{},bad:0},mi=new Map(),oi=new Map();
+  S.mat=(n,o,uniq)=>{n=String(n==null?'':n).trim().slice(0,80)||t('m3_nomat');if(!uniq&&mi.has(n))return mi.get(n);let nm=n,j=2;while(mi.has(nm))nm=n+' '+j++;
+    const i=S.mats.length;S.mats.push(Object.assign({n:nm,c:null,a:1,tex:'',img:null,k:null,lin:0},o||{},{n:nm}));mi.set(nm,i);return i};
+  S.obj=(n,d,merge)=>{n=String(n==null?'':n).trim().slice(0,80);if(merge&&oi.has(n))return oi.get(n);const i=S.objs.length;S.objs.push({n,d:String(d==null?'':d).trim().slice(0,80)});if(merge)oi.set(n,i);return i};
+  return S}
+const m3Tri=S=>S.parts.reduce((a,q)=>a+Math.floor(q.g.i.length/3),0);
+function m3Stats(S){const o=new Set(),m=new Set(),d=new Set();let tri=0;for(const q of S.parts){const n=Math.floor(q.g.i.length/3);if(!n)continue;tri+=n;o.add(q.o);m.add(q.m);d.add(S.objs[q.o].d||S.objs[q.o].n)}return{objs:o.size,mats:m.size,defs:d.size,tri}}
+/* a polygon (ix: indices into the points p) as triangles into out: a fan when it is convex, else its ears clipped in the plane it lies in */
+function m3Poly(p,ix,out){const n=ix.length;if(n<3)return;if(n===3){out.push(ix[0],ix[1],ix[2]);return}
+  let nx=0,ny=0,nz=0;for(let i=0;i<n;i++){const a=ix[i]*3,b=ix[(i+1)%n]*3;nx+=(p[a+1]-p[b+1])*(p[a+2]+p[b+2]);ny+=(p[a+2]-p[b+2])*(p[a]+p[b]);nz+=(p[a]-p[b])*(p[a+1]+p[b+1])}
+  const ax=Math.abs(nx),ay=Math.abs(ny),az=Math.abs(nz),d=ax>=ay&&ax>=az?0:ay>=az?1:2,i0=(d+1)%3,i1=(d+2)%3,U=[],V=[];for(const i of ix){U.push(p[i*3+i0]);V.push(p[i*3+i1])}
+  let A=0;for(let i=0;i<n;i++){const j=(i+1)%n;A+=U[i]*V[j]-U[j]*V[i]}const s=A<0?-1:1,cr=(a,b,c)=>((U[b]-U[a])*(V[c]-V[a])-(V[b]-V[a])*(U[c]-U[a]))*s;
+  let convex=!!A;for(let i=0;i<n&&convex;i++)if(cr((i+n-1)%n,i,(i+1)%n)<0)convex=false;
+  if(convex||n>200||!isFinite(A)){for(let i=1;i+1<n;i++)out.push(ix[0],ix[i],ix[i+1]);return}
+  const L=[];for(let i=0;i<n;i++)L.push(i);let guard=0;const same=(i,j)=>U[i]===U[j]&&V[i]===V[j];
+  while(L.length>3&&guard++<n*n){let cut=false;          // an ear: no other corner inside it, nor on its sides (a corner on its new side would make what is left touch itself); failing that, none inside it
+    for(let pass=0;pass<2&&!cut;pass++)for(let k=0;k<L.length;k++){const a=L[(k+L.length-1)%L.length],b=L[k],c=L[(k+1)%L.length];if(cr(a,b,c)<=0)continue;let ok=true;
+      for(const q of L){if(q===a||q===b||q===c||same(q,a)||same(q,b)||same(q,c))continue;const u=cr(a,b,q),v=cr(b,c,q),w=cr(c,a,q);if(pass?u>0&&v>0&&w>0:u>=0&&v>=0&&w>=0){ok=false;break}}
+      if(ok){out.push(ix[a],ix[b],ix[c]);L.splice(k,1);cut=true;break}}
+    if(!cut)break}
+  for(let i=1;i+1<L.length;i++)out.push(ix[L[0]],ix[L[i]],ix[L[i+1]])}
+
+/* ---- OBJ (and its MTL): v, f (n-gons, negative indices), o and g (objects, by name), usemtl, mtllib ---- */
+function m3MapFile(s){const w=s.split(/\s+/),N={'-blendu':1,'-blendv':1,'-bm':1,'-boost':1,'-cc':1,'-clamp':1,'-imfchan':1,'-mm':2,'-o':3,'-s':3,'-t':3,'-texres':1,'-type':1};let i=0;
+  while(i<w.length){const n=N[w[i].toLowerCase()];if(!n)break;i++;for(let j=0;j<n&&i<w.length;j++){if(j>0&&!/^[-+]?(\d|\.\d)/.test(w[i]))break;i++}}
+  return w.slice(i).join(' ')}
+function m3Mtl(txt,MT){let cur=null;
+  for(const ln of txt.split(/\r?\n/)){const s=ln.trim();if(!s||s[0]==='#')continue;const sp=s.search(/\s/),kw=(sp<0?s:s.slice(0,sp)).toLowerCase(),rest=sp<0?'':s.slice(sp+1).trim();
+    if(kw==='newmtl'){cur={};MT.set(rest,cur)}else if(!cur)continue;
+    else if(kw==='kd'){const v=rest.split(/\s+/).slice(0,3).map(Number);if(v.length===3&&v.every(isFinite))cur.kd=v.map(x=>Math.max(0,Math.min(1,x)))}
+    else if(kw==='d'){const v=parseFloat(rest.replace(/^-halo\s+/i,''));if(isFinite(v))cur.d=v}
+    else if(kw==='tr'){const v=parseFloat(rest);if(isFinite(v))cur.tr=v}
+    else if(kw==='map_kd'){const f=m3MapFile(rest);if(f)cur.tex=f}}
+  for(const q of MT.values()){let a=q.d!=null?q.d:q.tr!=null?1-q.tr:1;if(!(a>0.02))a=1;q.a=Math.min(1,a);q.c=q.tex?null:(q.kd||null);q.k=q.tex&&q.kd&&q.kd.some(v=>v>0.02)?q.kd:null}}
+function m3Obj(txt,side){const S=m3New('OBJ'),V=[],MT=new Map(),pk=new Map();let o=-1,m=-1;S.up='';
+  for(const mm of txt.matchAll(/^[ \t]*mtllib[ \t]+(.+?)[ \t]*$/gm)){const raw=mm[1].trim(),all=side.get(m3Base(raw));for(const n of all?[raw]:raw.split(/\s+/)){const b=side.get(m3Base(n));if(b)m3Mtl(m3Txt(b),MT);else S.miss.add(m3Base(n))}}
+  const part=()=>{if(o<0)o=S.obj('','',true);if(m<0)m=S.mat(t('m3_nomat'));const key=o+','+m;let q=pk.get(key);if(!q){q={o,m,g:{p:V,i:[]},M:null};pk.set(key,q);S.parts.push(q)}return q};
+  const L=txt.length;let s0=0;
+  while(s0<L){let e=txt.indexOf('\n',s0);if(e<0)e=L;const s=txt.slice(s0,e).trim();s0=e+1;if(!s||s.charCodeAt(0)===35)continue;
+    const sp=s.search(/\s/),kw=sp<0?s:s.slice(0,sp),rest=sp<0?'':s.slice(sp+1).trim();
+    if(kw==='v'){const w=rest.split(/\s+/);V.push(+w[0],+w[1],+w[2])}
+    else if(kw==='f'){const w=rest.split(/\s+/),nv=V.length/3,ix=[];let ok=true;for(const q of w){let k=parseInt(q,10);if(!isFinite(k)||k===0){ok=false;break}k=k<0?nv+k:k-1;if(k<0||k>=nv){ok=false;break}ix.push(k)}
+      if(!ok||ix.length<3){S.bad++;continue}m3Poly(V,ix,part().g.i)}
+    else if(kw==='o'||kw==='g'){if(rest)o=S.obj(rest,rest.replace(/[._]\d{3,}$/,''),true)}
+    else if(kw==='usemtl'){const q=MT.get(rest);m=S.mat(rest,q?{c:q.c,a:q.a,tex:q.tex||'',k:q.k}:null)}
+    else if(kw==='l'||kw==='p')S.skip.lines=(S.skip.lines||0)+1}
+  return S}
+
+/* ---- STL: binary (with the colours of VisCAM or Magics when it has them) or text (a part for every solid) ---- */
+function m3Stl(buf){const S=m3New('STL'),n=buf.byteLength,dv=new DataView(buf);S.up='z';
+  const head=m3Txt(new Uint8Array(buf,0,Math.min(n,1000))),bin=n>=84&&84+dv.getUint32(80,true)*50===n;
+  if(bin||!/^\s*solid[\s\S]*?(facet|endsolid)/i.test(head)){if(n<134)return{err:'m3_err_stl'};const N=Math.min(dv.getUint32(80,true),Math.floor((n-84)/50));if(!N)return{err:'m3_err_stl'};
+    const hd=new TextDecoder('latin1').decode(new Uint8Array(buf,0,80)),ci=hd.indexOf('COLOR='),mg=ci>=0,dc=mg&&ci+10<=80?[...new Uint8Array(buf,ci+6,3)].map(v=>v/255):null,p=new Float32Array(N*9),cols=new Uint16Array(N);let vis=false;
+    for(let k=0;k<N;k++){const at=84+k*50;for(let j=0;j<9;j++)p[k*9+j]=dv.getFloat32(at+12+j*4,true);cols[k]=dv.getUint16(at+48,true);if(!mg&&cols[k]&0x8000)vis=true}
+    const nm=hd.replace(/[^\x20-\x7e]/g,' ').replace(/^\s*solid\b/i,'').replace(/COLOR=.*$/,'').trim().slice(0,60),o=S.obj(nm,nm);S.f='STL';
+    if(mg||vis){const by=new Map();for(let k=0;k<N;k++){const c=cols[k],rgb=mg?(c&0x8000?null:[c&31,(c>>5)&31,(c>>10)&31]):(c&0x8000?[(c>>10)&31,(c>>5)&31,c&31]:null);
+        const m=rgb?S.mat('#'+rgb.map(v=>Math.round(v*255/31).toString(16).padStart(2,'0')).join(''),{c:rgb.map(v=>v/31)}):dc?S.mat('#'+dc.map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join(''),{c:dc}):S.mat(t('m3_nomat'));let I=by.get(m);if(!I)by.set(m,I=[]);I.push(k*3,k*3+1,k*3+2)}
+      for(const [m,I] of by)S.parts.push({o,m,g:{p,i:I},M:null})}
+    else{const I=new Uint32Array(N*3);for(let k=0;k<N*3;k++)I[k]=k;S.parts.push({o,m:S.mat(t('m3_nomat')),g:{p,i:I},M:null})}
+    return S}
+  const txt=m3Txt(buf);let cur=null,vs=[];
+  for(const ln of txt.split(/\r?\n/)){const s=ln.trim();
+    if(/^solid\b/i.test(s)){const nm=s.slice(5).trim().slice(0,60),o=S.obj(nm,nm);cur={P:[],I:[]};S.parts.push({o,m:S.mat(t('m3_nomat')),g:{p:cur.P,i:cur.I},M:null})}
+    else if(/^vertex\b/i.test(s)){const w=s.split(/\s+/);vs.push(+w[1],+w[2],+w[3])}
+    else if(/^endloop\b/i.test(s)){if(vs.length>=9&&vs.every(isFinite)){if(!cur){cur={P:[],I:[]};S.parts.push({o:S.obj('',''),m:S.mat(t('m3_nomat')),g:{p:cur.P,i:cur.I},M:null})}const b=cur.P.length/3,nn=vs.length/3;for(const v of vs)cur.P.push(v);for(let k=1;k+1<nn;k++)cur.I.push(b,b+k,b+k+1)}else if(vs.length)S.bad++;vs=[]}}
+  if(!m3Tri(S))return{err:'m3_err_stl'};return S}
+
+/* ---- glTF 2.0 (.gltf with its .bin, or with the data in it) and .glb: the meshes of the nodes of the scene, with their materials ---- */
+const m3DataUri=u=>{const i=u.indexOf(','),meta=u.slice(5,i),d=u.slice(i+1);if(/;base64/i.test(meta)){const s=atob(d),b=new Uint8Array(s.length);for(let k=0;k<s.length;k++)b[k]=s.charCodeAt(k);return b.buffer}return new TextEncoder().encode(decodeURIComponent(d)).buffer};
+const m3Lin=v=>v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4),m3Srgb=v=>{v=Math.max(0,Math.min(1,v));return v<=0.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-0.055};
+function m3NodeM(N){if(m3Ok16(N.matrix)){const m=N.matrix.map(Number);return[m[0],m[4],m[8],m[12],m[1],m[5],m[9],m[13],m[2],m[6],m[10],m[14]]}
+  const T=Array.isArray(N.translation)?N.translation.map(Number):[0,0,0],R=Array.isArray(N.rotation)?m3Quat(N.rotation):M3I,Sc=Array.isArray(N.scale)?N.scale.map(Number):[1,1,1];
+  return[R[0]*Sc[0],R[1]*Sc[1],R[2]*Sc[2],T[0]||0,R[4]*Sc[0],R[5]*Sc[1],R[6]*Sc[2],T[1]||0,R[8]*Sc[0],R[9]*Sc[1],R[10]*Sc[2],T[2]||0]}
+function m3Gltf(J,bin,side,fmt){if(!J||typeof J!=='object'||!J.asset||!/^2/.test(String(J.asset.version||'')))return{err:'m3_err_gltf'};
+  if((J.extensionsRequired||[]).some(x=>/draco|meshopt/i.test(x)))return{err:'m3_err_draco'};
+  const S=m3New(fmt||'glTF');S.up='y';S.unit=1;
+  const bufs=(J.buffers||[]).map((b,i)=>{if(!b||b.uri==null)return i===0&&bin?bin:null;const u=String(b.uri);if(/^data:/i.test(u)){try{return m3DataUri(u)}catch(e){return null}}const f=side.get(m3Base(u));if(!f)S.miss.add(m3Base(u));return f||null});
+  const view=i=>{const v=(J.bufferViews||[])[i],b=v&&bufs[v.buffer];if(!b)return null;const o=v.byteOffset||0,l=v.byteLength||0;if(o+l>b.byteLength)return null;return{dv:new DataView(b,o,l),st:v.byteStride||0}};
+  const NC={SCALAR:1,VEC2:2,VEC3:3,VEC4:4,MAT2:4,MAT3:9,MAT4:16},CS={5120:1,5121:1,5122:2,5123:2,5125:4,5126:4};
+  const rd=(dv,o,ct,nz)=>{switch(ct){case 5126:return dv.getFloat32(o,true);case 5125:return dv.getUint32(o,true);case 5123:{const v=dv.getUint16(o,true);return nz?v/65535:v}case 5122:{const v=dv.getInt16(o,true);return nz?Math.max(v/32767,-1):v}case 5121:{const v=dv.getUint8(o);return nz?v/255:v}case 5120:{const v=dv.getInt8(o);return nz?Math.max(v/127,-1):v}}return NaN};
+  const acc=i=>{const A=(J.accessors||[])[i];if(!A||!CS[A.componentType])return null;const nc=NC[A.type]||1,cs=CS[A.componentType],n=Math.max(0,A.count|0),out=new Float64Array(n*nc);
+    if(A.bufferView!=null){const V=view(A.bufferView);if(!V)return null;const st=V.st||cs*nc,o0=A.byteOffset||0;if(n&&o0+st*(n-1)+cs*nc>V.dv.byteLength)return null;for(let k=0;k<n;k++)for(let c=0;c<nc;c++)out[k*nc+c]=rd(V.dv,o0+k*st+c*cs,A.componentType,A.normalized)}
+    const sp=A.sparse;if(sp&&sp.count>0&&sp.indices&&sp.values){const IV=view(sp.indices.bufferView),VV=view(sp.values.bufferView),ics=CS[sp.indices.componentType]||4;if(IV&&VV)for(let k=0;k<sp.count;k++){const ix=rd(IV.dv,(sp.indices.byteOffset||0)+k*ics,sp.indices.componentType,false);if(ix>=0&&ix<n)for(let c=0;c<nc;c++)out[ix*nc+c]=rd(VV.dv,(sp.values.byteOffset||0)+(k*nc+c)*cs,A.componentType,A.normalized)}}
+    return{a:out,nc,n}};
+  const MI=(J.materials||[]).map((q,i)=>{q=q||{};const pb=q.pbrMetallicRoughness||{},sg=(q.extensions||{}).KHR_materials_pbrSpecularGlossiness,f=(sg&&sg.diffuseFactor)||pb.baseColorFactor||[1,1,1,1],tx=(sg&&sg.diffuseTexture)||pb.baseColorTexture,a=q.alphaMode==='BLEND'?(isFinite(+f[3])?+f[3]:1):1;
+    let tex='',img=null;const T=tx&&(J.textures||[])[tx.index],src=T?(T.source!=null?T.source:((T.extensions||{}).EXT_texture_webp||{}).source):null,im=src!=null?(J.images||[])[src]:null;
+    if(im){if(im.uri!=null){const u=String(im.uri);if(/^data:/i.test(u)){try{img=m3DataUri(u)}catch(e){}}else tex=u}else if(im.bufferView!=null){const V=(J.bufferViews||[])[im.bufferView],b=V&&bufs[V.buffer];if(b)img=b.slice(V.byteOffset||0,(V.byteOffset||0)+(V.byteLength||0))}}
+    const k=[0,1,2].map(j=>isFinite(+f[j])?Math.max(0,+f[j]):1);return S.mat(q.name||('Material '+(i+1)),{c:tex||img?null:k.map(m3Srgb),a:Math.max(0,Math.min(1,a)),tex,img,k,lin:1},true)});
+  const meshG=new Map(),prim=mi=>{let L=meshG.get(mi);if(L)return L;L=[];const me=(J.meshes||[])[mi];
+    for(const pr of (me&&me.primitives)||[]){const mode=pr.mode==null?4:pr.mode;if(mode<4){S.skip.lines=(S.skip.lines||0)+1;continue}if(pr.extensions&&(pr.extensions.KHR_draco_mesh_compression||pr.extensions.EXT_meshopt_compression)){S.skip.draco=(S.skip.draco||0)+1;continue}
+      const P=pr.attributes&&pr.attributes.POSITION!=null?acc(pr.attributes.POSITION):null;if(!P||P.nc!==3){S.bad++;continue}let I;if(pr.indices!=null){const q=acc(pr.indices);if(!q){S.bad++;continue}I=q.a}else{I=new Float64Array(P.n);for(let k=0;k<P.n;k++)I[k]=k}
+      const T=[],ok=(a,b,c)=>a<P.n&&b<P.n&&c<P.n&&a>=0&&b>=0&&c>=0;if(mode===4){for(let k=0;k+2<I.length;k+=3)if(ok(I[k],I[k+1],I[k+2]))T.push(I[k],I[k+1],I[k+2])}else if(mode===5){for(let k=0;k+2<I.length;k++)if(ok(I[k],I[k+1],I[k+2]))T.push(I[k],I[k+1],I[k+2])}else for(let k=1;k+1<I.length;k++)if(ok(I[0],I[k],I[k+1]))T.push(I[0],I[k],I[k+1]);
+      if(T.length)L.push({g:{p:P.a,i:T},m:pr.material!=null&&MI[pr.material]!=null?MI[pr.material]:S.mat(t('m3_nomat'))})}
+    meshG.set(mi,L);return L};
+  let cnt=0;const walk=(ni,M,d)=>{const N=(J.nodes||[])[ni];if(!N||d>40||cnt>2e5)return;const W=m3Mul(M,m3NodeM(N));
+    if(N.mesh!=null){const me=(J.meshes||[])[N.mesh],ps=prim(N.mesh);if(ps.length){cnt++;const o=S.obj(N.name||(me&&me.name)||('Node '+ni),(me&&me.name)||N.name||'');for(const q of ps)S.parts.push({o,m:q.m,g:q.g,M:W})}}
+    for(const c of N.children||[])walk(c,W,d+1)};
+  const NS=J.nodes||[],sc=(J.scenes||[])[J.scene||0],kid=new Set();for(const N of NS)for(const c of (N&&N.children)||[])kid.add(c);
+  for(const r of sc&&Array.isArray(sc.nodes)?sc.nodes:NS.map((n,i)=>i).filter(i=>!kid.has(i)))walk(r,M3I,0);
+  return S}
+function m3Glb(buf,side){const dv=new DataView(buf);if(buf.byteLength<20||dv.getUint32(0,true)!==0x46546C67||dv.getUint32(4,true)!==2)return{err:'m3_err_gltf'};let p=12,J=null,bin=null;
+  while(p+8<=buf.byteLength){const n=dv.getUint32(p,true),ty=dv.getUint32(p+4,true),s=p+8;if(s+n>buf.byteLength)break;if(ty===0x4E4F534A&&!J){try{J=JSON.parse(m3Txt(new Uint8Array(buf,s,n)))}catch(e){return{err:'m3_err_gltf'}}}else if(ty===0x004E4942&&!bin)bin=buf.slice(s,s+n);p=s+n}
+  return J?m3Gltf(J,bin,side,'GLB'):{err:'m3_err_gltf'}}
+
+/* ---- Collada (.dae), as SketchUp, 3ds Max and Blender write it: the nodes of the visual scene (with instance_node, as SketchUp's components are), their
+   geometries (triangles, polylist, polygons, tristrips, trifans) and the materials bound to them; unit and up_axis from the asset ---- */
+function m3Dae(txt,side){let D=null;try{D=new DOMParser().parseFromString(txt,'application/xml')}catch(e){}
+  const root=D&&D.documentElement;if(!root||root.localName!=='COLLADA'||D.getElementsByTagName('parsererror').length)return{err:'m3_err_dae'};
+  const S=m3New('DAE'),ids=new Map(),K=(el,n)=>{const o=[];if(el)for(const c of el.children)if(c.localName===n)o.push(c);return o},K1=(el,n)=>{if(el)for(const c of el.children)if(c.localName===n)return c;return null},
+    nums=el=>{const s=el?el.textContent.trim():'';return s?s.split(/\s+/).map(Number):[]},at=(el,a)=>el?el.getAttribute(a)||'':'';
+  for(const el of D.getElementsByTagName('*')){const id=el.getAttribute('id');if(id&&!ids.has(id))ids.set(id,el)}
+  const ref=u=>ids.get(String(u||'').replace(/^#/,''))||null;
+  const as=K1(root,'asset'),un=K1(as,'unit'),ua=K1(as,'up_axis'),mt=+at(un,'meter');S.unit=mt>0?mt:1;S.up=ua&&/^Z/i.test(ua.textContent.trim())?'z':ua&&/^X/i.test(ua.textContent.trim())?'z':'y';
+  const imgFile=im=>{const fr=K1(im,'init_from');if(!fr)return'';const r=K1(fr,'ref');return((r||fr).textContent||'').trim()};
+  const texOf=(pc,sid)=>{let s=sid;for(let k=0;k<4&&pc;k++){let np=null;for(const n of pc.getElementsByTagName('newparam'))if(n.getAttribute('sid')===s){np=n;break}if(!np)break;
+      const sm=K1(np,'sampler2D'),sf=K1(np,'surface');if(sm){const ii=K1(sm,'instance_image');if(ii){const im=ref(at(ii,'url'));return im?imgFile(im):''}const so=K1(sm,'source');if(so){s=so.textContent.trim();continue}break}
+      if(sf){const fr=K1(sf,'init_from');if(fr)s=fr.textContent.trim();break}break}
+    const im=ids.get(s);return im&&im.localName==='image'?imgFile(im):''};
+  const MO=new Map(),daeMat=el=>{if(!el)return S.mat(t('m3_nomat'));let i=MO.get(el);if(i!=null)return i;const ie=K1(el,'instance_effect'),fx=ie?ref(at(ie,'url')):null,pc=K1(fx,'profile_COMMON'),tq=K1(pc,'technique'),
+      sh=K1(tq,'phong')||K1(tq,'lambert')||K1(tq,'blinn')||K1(tq,'constant');let c=null,tex='',a=1;
+    if(sh){const di=K1(sh,'diffuse')||K1(sh,'emission'),col=K1(di,'color'),tx=K1(di,'texture');if(col){const v=nums(col);if(v.length>=3&&v.slice(0,3).every(isFinite))c=v.slice(0,3).map(x=>Math.max(0,Math.min(1,x)))}if(tx)tex=texOf(pc,at(tx,'texture'));
+      const tr=K1(sh,'transparent'),ty=K1(sh,'transparency'),tf=K1(ty,'float'),tv=tf?+tf.textContent:1;
+      if((tr||ty)&&!(tr&&K1(tr,'texture'))&&isFinite(tv)){const op=at(tr,'opaque')||'A_ONE',tc=tr&&K1(tr,'color')?nums(K1(tr,'color')):[1,1,1,1],v=op==='RGB_ZERO'?1-tc[0]*tv:op==='A_ZERO'?1-tc[3]*tv:op==='RGB_ONE'?tc[0]*tv:(tc[3]==null?1:tc[3])*tv;if(isFinite(v)&&v>0.02)a=Math.min(1,v)}}
+    i=S.mat(at(el,'name')||at(el,'id'),{c:tex?null:c,a,tex,k:null},true);MO.set(el,i);return i};
+  const GC=new Map(),geo=el=>{let G=GC.get(el);if(G)return G;G={prims:[]};GC.set(el,G);const me=K1(el,'mesh');if(!me)return G;const src=new Map();
+    for(const s of K(me,'source')){const ac=K1(K1(s,'technique_common'),'accessor');src.set(at(s,'id'),{a:nums(K1(s,'float_array')),st:ac?+at(ac,'stride')||3:3,off:ac?+at(ac,'offset')||0:0})}
+    const vx=K1(me,'vertices'),vin=K(vx,'input').find(i=>at(i,'semantic')==='POSITION'),ps=vin?src.get(at(vin,'source').replace(/^#/,'')):null;if(!ps)return G;
+    let p=ps.a;if(ps.st!==3||ps.off){const q=[];for(let k=ps.off;k+2<p.length;k+=ps.st)q.push(p[k],p[k+1],p[k+2]);p=q}const nv=Math.floor(p.length/3),ok=x=>x>=0&&x<nv&&Number.isInteger(x);
+    for(const pr of me.children){const tg=pr.localName;if(!/^(triangles|polylist|polygons|tristrips|trifans)$/.test(tg)){if(tg==='lines'||tg==='linestrips')S.skip.lines=(S.skip.lines||0)+1;continue}
+      let st=0,vo=-1;for(const i of K(pr,'input')){const o=+at(i,'offset')||0;st=Math.max(st,o+1);if(at(i,'semantic')==='VERTEX')vo=o}if(vo<0)continue;
+      const I=[],idx=a=>{const o=[];for(let k=vo;k<a.length;k+=st)o.push(a[k]);return o};
+      if(tg==='triangles'){const q=idx(nums(K1(pr,'p')));for(let k=0;k+2<q.length;k+=3)if(ok(q[k])&&ok(q[k+1])&&ok(q[k+2]))I.push(q[k],q[k+1],q[k+2]);else S.bad++}
+      else if(tg==='polylist'){const vc=nums(K1(pr,'vcount')),q=idx(nums(K1(pr,'p')));let k0=0;for(const c of vc){const f=q.slice(k0,k0+c);k0+=c;if(f.length>=3&&f.every(ok))m3Poly(p,f,I);else S.bad++}}
+      else if(tg==='polygons'){for(const e2 of pr.children){const pp=e2.localName==='p'?e2:e2.localName==='ph'?K1(e2,'p'):null;if(!pp)continue;const f=idx(nums(pp));if(f.length>=3&&f.every(ok))m3Poly(p,f,I);else S.bad++}}
+      else for(const pp of K(pr,'p')){const f=idx(nums(pp));for(let k=0;k+2<f.length;k++){const q=tg==='tristrips'?[f[k],f[k+1],f[k+2]]:[f[0],f[k+1],f[k+2]];if(q.every(ok))I.push(q[0],q[1],q[2])}}
+      if(I.length)G.prims.push({sym:at(pr,'material'),g:{p,i:I}})}
+    return G};
+  const nodeM=n=>{let M=M3I;for(const c of n.children){const v=nums(c),tg=c.localName;let T=null;
+      if(tg==='matrix'&&v.length>=16&&v.every(isFinite))T=v.slice(0,12);else if(tg==='translate'&&v.length>=3)T=[1,0,0,v[0],0,1,0,v[1],0,0,1,v[2]];else if(tg==='rotate'&&v.length>=4)T=m3Rot(v[0],v[1],v[2],v[3]*Math.PI/180);else if(tg==='scale'&&v.length>=3)T=[v[0],0,0,0,0,v[1],0,0,0,0,v[2],0];
+      if(T&&T.every(isFinite))M=m3Mul(M,T)}return M};
+  let cnt=0;const walk=(n,M,def,d)=>{if(d>32||cnt>2e5)return;const W=m3Mul(M,nodeM(n)),nm=at(n,'name')||at(n,'id');
+    for(const ig of K(n,'instance_geometry').concat(K(n,'instance_controller'))){let ge=ref(at(ig,'url')),W2=W;
+      if(ge&&ge.localName==='controller'){const sk=K1(ge,'skin'),bs=K1(sk,'bind_shape_matrix');ge=sk?ref(at(sk,'source')):null;if(bs){const v=nums(bs);if(v.length>=16&&v.every(isFinite))W2=m3Mul(W,v.slice(0,12))}}
+      if(!ge||ge.localName!=='geometry')continue;const G=geo(ge);if(!G.prims.length)continue;const bm=new Map();for(const im of ig.getElementsByTagName('instance_material'))bm.set(at(im,'symbol'),ref(at(im,'target')));
+      cnt++;const gn=at(ge,'name'),o=S.obj(def||nm||gn||at(ge,'id'),def||gn||nm);
+      for(const q of G.prims){let me=bm.get(q.sym)||ref(q.sym);if(me&&me.localName!=='material')me=null;S.parts.push({o,m:daeMat(me),g:q.g,M:W2})}}
+    for(const inn of K(n,'instance_node')){const tn=ref(at(inn,'url'));if(tn&&tn.localName==='node')walk(tn,W,at(tn,'name')||def,d+1)}
+    for(const c of K(n,'node'))walk(c,W,def,d+1)};
+  const sc=K1(root,'scene'),ivs=K1(sc,'instance_visual_scene'),vs=ivs?ref(at(ivs,'url')):D.getElementsByTagName('visual_scene')[0];if(!vs)return{err:'m3_err_dae'};
+  for(const n of K(vs,'node'))walk(n,M3I,'',0);
+  return S}
+
+/* ---- zip (.kmz, .zip, .ifczip): its files by name; stored or deflated (DecompressionStream, else the inflate of the PDF reader behind a zlib header) ---- */
+async function m3Inflate(d){if(typeof DecompressionStream==='function'){try{return await new Response(new Blob([d]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()}catch(e){}}
+  const z=new Uint8Array(d.length+2);z[0]=0x78;z[1]=0x9c;z.set(d,2);return pdfInflate(z).slice().buffer}
+async function zipRead(buf){const u8=new Uint8Array(buf),dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength),out=new Map();let e=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-65557);i--)if(dv.getUint32(i,true)===0x06054b50){e=i;break}
+  if(e<0)throw new Error('zip');const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);
+  for(let k=0;k<n&&p+46<=u8.length;k++){if(dv.getUint32(p,true)!==0x02014b50)break;const fl=dv.getUint16(p+8,true),me=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),xl=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true),
+      nm=new TextDecoder(fl&0x800?'utf-8':'latin1').decode(u8.subarray(p+46,p+46+nl));p+=46+nl+xl+cl;
+    if(/\/$/.test(nm)||fl&1||cs===0xFFFFFFFF||lo+30>u8.length||dv.getUint32(lo,true)!==0x04034b50)continue;
+    const s=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true),d=u8.subarray(s,s+cs);if(me===0)out.set(nm,d.slice().buffer);else if(me===8)out.set(nm,await m3Inflate(d))}
+  return out}
+/* Link IFC: an .ifczip is the .ifc in it */
+async function ifzFile(f,reload){if(!f)return;if(f.size>120e6){toast(t('ifc_err_big'),8000);return}toast(t('ifc_reading',f.name),60000);
+  try{const Z=await zipRead(await f.arrayBuffer()),k=[...Z.keys()].find(n=>/\.ifc$/i.test(n)&&!/(^|\/)__MACOSX\//.test(n));if(!k){toast(t('ifz_none'),8000);return}const b=Z.get(k);if(b.byteLength>300e6){toast(t('ifc_err_big'),8000);return}
+    const txt=m3Txt(b);setTimeout(()=>ifcOpen(txt,f.name.replace(/\.ifczip$/i,'.ifc'),reload),30)}catch(e){toast(t('m3_err_zip'),8000)}}
+
+/* ---- reading the files picked (the model and what it names: .mtl, .bin, pictures) ---- */
+async function m3Avg(b){try{if(typeof createImageBitmap!=='function')return null;const im=await createImageBitmap(new Blob([b])),w=Math.max(1,Math.min(64,im.width)),h=Math.max(1,Math.min(64,im.height)),cv=document.createElement('canvas');cv.width=w;cv.height=h;          // never larger than the picture
+    const x=cv.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(im,0,0,w,h);if(im.close)im.close();const d=x.getImageData(0,0,w,h).data;let r=0,g=0,bl=0,n=0;for(let i=0;i<d.length;i+=4){if(d[i+3]<16)continue;r+=m3Lin(d[i]/255);g+=m3Lin(d[i+1]/255);bl+=m3Lin(d[i+2]/255);n++}return n?[m3Srgb(r/n),m3Srgb(g/n),m3Srgb(bl/n)]:null}catch(e){return null}}
+/* the colour of a material with a picture: the average of the picture times its factor */
+async function m3Tex(S,side){const C=new Map();for(const m of S.mats){if(!m.tex&&!m.img)continue;let b=m.img;if(!b){b=side.get(m3Base(m.tex))||null;if(!b){S.miss.add(m3Base(m.tex));continue}}
+    let avg=C.get(b);if(avg===undefined){avg=await m3Avg(b);C.set(b,avg)}if(!avg)continue;const k=m.k||[1,1,1];m.c=m.lin?[0,1,2].map(i=>m3Srgb(m3Lin(avg[i])*k[i])):[0,1,2].map(i=>Math.min(1,avg[i]*k[i]))}}
+async function m3Parse(name,buf,side){const x=m3Ext(name);let S;
+  if(x==='kmz'||x==='zip'){let Z;try{Z=await zipRead(buf)}catch(e){return{err:'m3_err_zip'}}
+    const ks=[...Z.keys()].filter(k=>!/(^|\/)__MACOSX\//.test(k)),pick=['dae','gltf','glb','obj','stl'].map(e=>ks.find(k=>m3Ext(k)===e)).find(Boolean);if(!pick){const fi=ks.find(k=>m3Ext(k)==='ifc');return fi?{ifc:m3Txt(Z.get(fi)),inner:m3Base(fi)}:{err:'m3_err_zipnone'}}          // a zipped IFC goes to Link IFC
+    for(const k of ks)if(k!==pick){const b=m3Base(k);if(!side.has(b))side.set(b,Z.get(k))}
+    S=await m3Parse(pick,Z.get(pick),side);if(!S.err){S.f=x==='kmz'?'KMZ':S.f+' (zip)';S.inner=m3Base(pick)}return S}
+  try{if(x==='obj')S=m3Obj(m3Txt(buf),side);else if(x==='stl')S=m3Stl(buf);else if(x==='glb')S=m3Glb(buf,side);else if(x==='dae')S=m3Dae(m3Txt(buf),side);
+    else if(x==='gltf'){let J=null;try{J=JSON.parse(m3Txt(buf))}catch(e){}S=J?m3Gltf(J,null,side,'glTF'):{err:'m3_err_gltf'}}else return{err:'m3_err_ext'}}catch(e){return{err:'m3_err_read'}}
+  if(S.err)return S;await m3Tex(S,side);const bn=m3Name(name);for(const o of S.objs){if(!o.n)o.n=bn;if(!o.d)o.d=o.n}for(const m of S.mats)if(!m.c)m.c=[0.8,0.8,0.8];return S}
+async function m3Files(files,reload){const L=[...(files||[])],main=L.find(f=>M3_MAIN.test(f.name));
+  if(!main){const x=L.map(f=>m3Ext(f.name)).find(e=>/^(skp|fbx|3ds|3dm|max|blend|c4d|rvt|rfa|dwg|step|stp|igs|iges|sat|usdz?)$/.test(e));toast(x?t('m3_err_fmt','.'+x):t('m3_err_ext'),9000);return}
+  if(L.reduce((a,f)=>a+f.size,0)>M3_MB*1e6){toast(t('m3_err_big'),8000);return}
+  toast(t('ifc_reading',main.name),60000);await new Promise(r=>setTimeout(r,30));let S;
+  try{const side=new Map();for(const f of L)if(f!==main)side.set(m3Base(f.name),await f.arrayBuffer());S=await m3Parse(main.name,await main.arrayBuffer(),side)}catch(e){S={err:'m3_err_read'}}
+  $('#toast').hidden=true;if(S.ifc){setTimeout(()=>ifcOpen(S.ifc,S.inner,0),30);return}if(S.err){toast(t(S.err),9000);return}
+  if(!m3Tri(S)){toast(S.miss.size?t('m3_err_miss',[...S.miss].slice(0,8).join(', ')):t('m3_err_none'),9000);return}
+  if(reload){const e=IDX.get(reload);if(e&&m3Of(e)){m3Reload(e,S,main.name);return}}
+  dlgM3In(S,main.name)}
+
+/* ---- the model in the coordinates of the file, turned so that z is up: for every part its points W (the matrix of its node applied) ---- */
+function m3World(S,up){const out=[],C=new Map(),Y=up==='y';
+  for(const q of S.parts){const p=q.g.p,M=q.M;let W=M?null:C.get(p);
+    if(!W){const n=Math.floor(p.length/3);W=new Float64Array(n*3);for(let i=0;i<n;i++){let x=+p[i*3],y=+p[i*3+1],z=+p[i*3+2];if(M){const a=M[0]*x+M[1]*y+M[2]*z+M[3],b=M[4]*x+M[5]*y+M[6]*z+M[7],c=M[8]*x+M[9]*y+M[10]*z+M[11];x=a;y=b;z=c}if(Y){const s=y;y=-z;z=s}W[i*3]=x;W[i*3+1]=y;W[i*3+2]=z}if(!M)C.set(p,W)}
+    out.push({q,W,I:q.g.i})}
+  return out}
+function m3BB(W){const b=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];for(const w of W){const P=w.W,I=w.I;for(let j=0;j<I.length;j++){const o=I[j]*3,x=P[o],y=P[o+1],z=P[o+2];if(!(isFinite(x)&&isFinite(y)&&isFinite(z)))continue;
+    if(x<b[0])b[0]=x;if(x>b[3])b[3]=x;if(y<b[1])b[1]=y;if(y>b[4])b[4]=y;if(z<b[2])b[2]=z;if(z>b[5])b[5]=z}}return b}
+/* ---- the blob of a linked model (as ifcBlob makes for an IFC file): o = {u: mm in a unit, up, by: 'mat' | 'obj', name}.  Points within 0.1 mm are one, and a
+   triangle of an object on the same points as one before it (the back of a two-sided face) is left out.  Its products are the objects: [class, name, '', -1,
+   box, m³ (when the object is closed, else 0), materials] ---- */
+function m3Blob(S,o,W){W=W||m3World(S,o.up);const k=+o.u>0?+o.u:1,bb=m3BB(W);if(!isFinite(bb[0]))return null;
+  const cx=(bb[0]+bb[3])/2*k,cy=(bb[1]+bb[4])/2*k,byO=o.by==='obj',lk=q=>byO?(S.objs[q.o].d||S.objs[q.o].n||'?'):S.mats[q.m].n,used=new Set();for(const w of W)if(w.I.length>=3)used.add(lk(w.q));
+  const names=[...used].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),li=new Map(names.map((n,i)=>[n,i])),G=new Map(),PS=new Map(),
+    hx=v=>Math.round(Math.max(0,Math.min(1,v))*255).toString(16).padStart(2,'0'),
+    mix=h=>{h=Math.imul(h^(h>>>16),0x45d9f3b);return(h^(h>>>16))>>>0},vh=(x,y,z)=>mix(Math.imul(x|0,73856093)^Math.imul(y|0,19349663)^Math.imul(z|0,83492791)),
+    th=(o,a,b,c)=>mix(Math.imul(o,0x2c1b3c6d)^Math.imul(a,73856093)^Math.imul(b,19349663)^Math.imul(c,83492791));
+  // the points (0.1 mm) and the triangles of each object met so far, in tables of open addressing that double when half full
+  let VC=1<<14,VK=new Int32Array(VC).fill(-1),XYZ=new Float64Array(VC*3/2),FG=new Int32Array(VC>>1).fill(-1),FI=new Int32Array(VC>>1),nv=0,TC=1<<14,TK=new Int32Array(TC).fill(-1),TR=new Int32Array(TC*2),nt=0;
+  const vid=(x,y,z)=>{let m=VC-1,s=vh(x,y,z)&m;for(;;){const n=VK[s];if(n<0)break;const o=n*3;if(XYZ[o]===x&&XYZ[o+1]===y&&XYZ[o+2]===z)return n;s=(s+1)&m}
+      if(nv*2>=VC){VC*=2;m=VC-1;const K2=new Int32Array(VC).fill(-1),X2=new Float64Array(VC*3/2);X2.set(XYZ.subarray(0,nv*3));const G2=new Int32Array(VC>>1).fill(-1),I2=new Int32Array(VC>>1);G2.set(FG.subarray(0,nv));I2.set(FI.subarray(0,nv));FG=G2;FI=I2;for(let i=0;i<nv;i++){let u=vh(X2[i*3],X2[i*3+1],X2[i*3+2])&m;while(K2[u]>=0)u=(u+1)&m;K2[u]=i}VK=K2;XYZ=X2;s=vh(x,y,z)&m;while(VK[s]>=0)s=(s+1)&m}
+      VK[s]=nv;const o=nv*3;XYZ[o]=x;XYZ[o+1]=y;XYZ[o+2]=z;return nv++},
+    tnew=(o,a,b,c)=>{let x;if(a>b){x=a;a=b;b=x}if(b>c){x=b;b=c;c=x}if(a>b){x=a;a=b;b=x}
+      let m=TC-1,s=th(o,a,b,c)&m;for(;;){const n=TK[s];if(n<0)break;const r=n*4;if(TR[r]===o&&TR[r+1]===a&&TR[r+2]===b&&TR[r+3]===c)return false;s=(s+1)&m}
+      if(nt*2>=TC){TC*=2;m=TC-1;const K2=new Int32Array(TC).fill(-1),R2=new Int32Array(TC*2);R2.set(TR.subarray(0,nt*4));for(let i=0;i<nt;i++){const r=i*4;let u=th(R2[r],R2[r+1],R2[r+2],R2[r+3])&m;while(K2[u]>=0)u=(u+1)&m;K2[u]=i}TK=K2;TR=R2;s=th(o,a,b,c)&m;while(TK[s]>=0)s=(s+1)&m}
+      TK[s]=nt;const r=nt*4;TR[r]=o;TR[r+1]=a;TR[r+2]=b;TR[r+3]=c;nt++;return true};
+  let tri=0,over=false;
+  for(const w of W){if(over)break;const q=w.q,mt=S.mats[q.m],c=mt.c||[0.8,0.8,0.8],col='#'+hx(c[0])+hx(c[1])+hx(c[2]),a=Math.round(Math.max(0.1,Math.min(1,mt.a==null?1:+mt.a||0))*100)/100,L=li.get(lk(q));if(L==null)continue;
+    const key=L+'|'+col+'|'+a;let g=G.get(key);if(!g)G.set(key,g={gi:G.size,k:L,c:col,a,ix:new Map(),p:[],i:[],r:[]});
+    const P=w.W,I=w.I,gid=j=>vid(Math.round((P[j*3]*k-cx)*10),Math.round((cy-P[j*3+1]*k)*10),Math.round(P[j*3+2]*k*10)),
+      loc=n=>{const f=FG[n];if(f===g.gi)return FI[n];let m=f<0?undefined:g.ix.get(n);if(m===undefined){m=g.p.length/3;g.p.push(XYZ[n*3],XYZ[n*3+1],XYZ[n*3+2]);if(f<0){FG[n]=g.gi;FI[n]=m}else g.ix.set(n,m)}return m};
+    let ps=PS.get(q.o);if(!ps)PS.set(q.o,ps={b:[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity],v:0,s:[0,0,0],sa:0,m:new Map()});const b=ps.b,s=ps.s,n0=g.i.length,
+      ex=(x,y,z)=>{if(x<b[0])b[0]=x;if(y<b[1])b[1]=y;if(z<b[2])b[2]=z;if(x>b[3])b[3]=x;if(y>b[4])b[4]=y;if(z>b[5])b[5]=z};
+    for(let j=0;j+2<I.length;j+=3){const i1=I[j]*3,i2=I[j+1]*3,i3=I[j+2]*3;if(!isFinite(P[i1]+P[i1+1]+P[i1+2]+P[i2]+P[i2+1]+P[i2+2]+P[i3]+P[i3+1]+P[i3+2]))continue;if(tri>=M3_MAX_TRI){over=true;break}
+      const A=gid(I[j]),B2=gid(I[j+1]),C2=gid(I[j+2]);if(A===B2||B2===C2||A===C2||!tnew(q.o,A,B2,C2))continue;g.i.push(loc(A),loc(B2),loc(C2));tri++;
+      const x1=XYZ[A*3]/10,y1=XYZ[A*3+1]/10,z1=XYZ[A*3+2]/10,x2=XYZ[B2*3]/10,y2=XYZ[B2*3+1]/10,z2=XYZ[B2*3+2]/10,x3=XYZ[C2*3]/10,y3=XYZ[C2*3+1]/10,z3=XYZ[C2*3+2]/10;ex(x1,y1,z1);ex(x2,y2,z2);ex(x3,y3,z3);
+      ps.v+=(x1*(y2*z3-z2*y3)-y1*(x2*z3-z2*x3)+z1*(x2*y3-y2*x3))/6;const ux=x2-x1,uy=y2-y1,uz=z2-z1,vx=x3-x1,vy=y3-y1,vz=z3-z1,nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;s[0]+=nx;s[1]+=ny;s[2]+=nz;ps.sa+=Math.hypot(nx,ny,nz)}
+    const nt=(g.i.length-n0)/3;if(nt){g.r.push(q.o,n0/3,nt);ps.m.set(q.m,(ps.m.get(q.m)||0)+nt)}}
+  const ob=[...PS.keys()].filter(i=>PS.get(i).m.size).sort((a,b)=>a-b),pm=new Map(ob.map((oi,i)=>[oi,i])),cnt=names.map(()=>0);
+  const pr=ob.map(oi=>{const q=PS.get(oi),ms=[...q.m.entries()].sort((a,b)=>b[1]-a[1]),ob1=S.objs[oi],cl=byO?li.get(ob1.d||ob1.n||'?'):li.get(S.mats[ms[0][0]].n),ty=byO||ms.length>1?ms.slice(0,4).map(e=>S.mats[e[0]].n).join(', ')+(ms.length>4?', …':''):'';cnt[cl]++;
+    const shut=Math.hypot(q.s[0],q.s[1],q.s[2])<=1e-3*q.sa;          // a closed surface: its faces, each as an area along its normal, add up to nothing
+    return[cl,ob1.n||'','',-1,...q.b.map(Math.round),shut?Math.round(Math.abs(q.v)/1e6)/1000:0,ty]});
+  const mc=new Map();if(!byO)for(const m of S.mats){const c=m.c||[0.8,0.8,0.8];mc.set(m.n,'#'+hx(c[0])+hx(c[1])+hx(c[2]))}          // the swatch of a class that is a material
+  const M=[];for(const g of G.values()){if(!g.i.length)continue;const r=[];for(let j=0;j<g.r.length;j+=3)if(pm.has(g.r[j]))r.push(pm.get(g.r[j]),g.r[j+1],g.r[j+2]);M.push({k:g.k,c:g.c,a:g.a,p:g.p,i:g.i,r})}
+  const B={ifc:1,m3:{f:S.f,u:k,up:o.up==='y'?'y':'z',by:byO?'obj':'mat'},pr,name:String(o.name||''),schema:S.f,L:names.map((n,i)=>Object.assign({n,c:7,cnt:cnt[i],s:[],a:[],t:[]},mc.has(n)?{rgb:mc.get(n)}:{})),M,w:(bb[3]-bb[0])*k,h:(bb[4]-bb[1])*k,k:1,cx,cy,z0:bb[2]*k,z1:bb[5]*k,st:[],gr:[],n:{seg:tri,arc:0,txt:0,prod:pr.length,tri}};
+  if(over)B.over=1;return B}
+
+/* ---- the picture in the dialog: the model seen from the south-east, 30° above, its faces shaded (the 60,000 largest), drawn through a depth buffer (twice as
+   fine and averaged on a screen that is not), see-through faces after the others, the farthest first ---- */
+function m3Prev(cv,S,W){if(!cv||!cv.getContext)return;const ctx=cv.getContext('2d');if(!ctx)return;const dpr=window.devicePixelRatio||1,w=cv.clientWidth||360,h=cv.clientHeight||260,CW=Math.max(1,Math.round(w*dpr)),CH=Math.max(1,Math.round(h*dpr));cv.width=CW;cv.height=CH;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+  const ar=(P,a,b,c)=>{a*=3;b*=3;c*=3;const ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2],vx=P[c]-P[a],vy=P[c+1]-P[a+1],vz=P[c+2]-P[a+2];return Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)};
+  let n=0;for(const q of W)n+=Math.floor(q.I.length/3);if(!n)return;const cap=60000;let thr=-1,eq=0;
+  if(n>cap){const A=new Float32Array(n);let j=0;for(const q of W)for(let k=0;k+2<q.I.length;k+=3)A[j++]=ar(q.W,q.I[k],q.I[k+1],q.I[k+2])||0;A.sort();thr=A[n-cap];eq=cap;for(let i=n-cap;i<n;i++)if(A[i]>thr)eq--}
+  const e=Math.PI/6,ce=Math.cos(e),se=Math.sin(e),r=Math.SQRT1_2,Ln=[0.35,-0.55,0.76],ll=Math.hypot(...Ln),T=[],Z=[],F=[],A=[];let u0=Infinity,u1=-Infinity,v0=Infinity,v1=-Infinity;
+  for(const q of W){const P=q.W,I=q.I,mt=S.mats[q.q.m],c=mt.c||[0.8,0.8,0.8],al=Math.max(0.15,Math.min(1,mt.a==null?1:+mt.a||0));
+    for(let k=0;k+2<I.length;k+=3){const a=I[k]*3,b=I[k+1]*3,d=I[k+2]*3;if(!isFinite(P[a]+P[a+1]+P[a+2]+P[b]+P[b+1]+P[b+2]+P[d]+P[d+1]+P[d+2]))continue;if(thr>=0){const z=Math.fround(ar(P,I[k],I[k+1],I[k+2])||0);if(z<thr||z===thr&&eq--<=0)continue}
+      const ux=P[b]-P[a],uy=P[b+1]-P[a+1],uz=P[b+2]-P[a+2],vx=P[d]-P[a],vy=P[d+1]-P[a+1],vz=P[d+2]-P[a+2],nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,nl=Math.hypot(nx,ny,nz);if(!nl)continue;
+      const sh=0.5+0.5*Math.abs((nx*Ln[0]+ny*Ln[1]+nz*Ln[2])/nl/ll);
+      for(const o of [a,b,d]){const x=P[o],y=P[o+1],z=P[o+2],fh=(y-x)*r,u=(x+y)*r,v=z*ce+fh*se;T.push(u,v);Z.push(fh*ce-z*se);if(u<u0)u0=u;if(u>u1)u1=u;if(v<v0)v0=v;if(v>v1)v1=v}
+      F.push(c.map(x=>Math.round(Math.min(1,x*sh)*255)));A.push(al)}}
+  if(!A.length)return;
+  const s=Math.min((w-24)/Math.max(1e-9,u1-u0),(h-24)/Math.max(1e-9,v1-v0)),ox=(w-(u1-u0)*s)/2-u0*s,oy=(h+(v1-v0)*s)/2+v0*s,q=dpr<2?2:1,BW=CW*q,BH=CH*q,kx=BW/w,ky=BH/h,
+    C=new Float32Array(BW*BH*3).fill(255),Zb=new Float32Array(BW*BH).fill(Infinity),
+    tri=(i,see)=>{const o=i*6,x0=(ox+T[o]*s)*kx,y0=(oy-T[o+1]*s)*ky,x1=(ox+T[o+2]*s)*kx,y1=(oy-T[o+3]*s)*ky,x2=(ox+T[o+4]*s)*kx,y2=(oy-T[o+5]*s)*ky,z0=Z[i*3],z1=Z[i*3+1],z2=Z[i*3+2],
+        d=(x1-x0)*(y2-y0)-(y1-y0)*(x2-x0);if(!d)return;const c=F[i],al=A[i],xa=Math.max(0,Math.floor(Math.min(x0,x1,x2))),xb=Math.min(BW-1,Math.ceil(Math.max(x0,x1,x2))),ya=Math.max(0,Math.floor(Math.min(y0,y1,y2))),yb=Math.min(BH-1,Math.ceil(Math.max(y0,y1,y2)));
+      for(let y=ya;y<=yb;y++){const py=y+0.5;for(let x=xa;x<=xb;x++){const px=x+0.5,b0=((x2-x1)*(py-y1)-(y2-y1)*(px-x1))/d,b1=((x0-x2)*(py-y2)-(y0-y2)*(px-x2))/d,b2=1-b0-b1;if(b0<-1e-7||b1<-1e-7||b2<-1e-7)continue;
+        const z=b0*z0+b1*z1+b2*z2,j=y*BW+x;if(z>=Zb[j])continue;const k3=j*3;
+        if(see){C[k3]+=(c[0]-C[k3])*al;C[k3+1]+=(c[1]-C[k3+1])*al;C[k3+2]+=(c[2]-C[k3+2])*al}else{Zb[j]=z;C[k3]=c[0];C[k3+1]=c[1];C[k3+2]=c[2]}}}};
+  const glass=[];for(let i=0;i<A.length;i++)if(A[i]>=1)tri(i,false);else glass.push(i);
+  glass.sort((a,b)=>(Z[b*3]+Z[b*3+1]+Z[b*3+2])-(Z[a*3]+Z[a*3+1]+Z[a*3+2]));for(const i of glass)tri(i,true);
+  const img=ctx.createImageData(CW,CH),D=img.data,qq=q*q;
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){let R=0,G=0,B=0;for(let j=0;j<q;j++)for(let i=0;i<q;i++){const k3=((y*q+j)*BW+x*q+i)*3;R+=C[k3];G+=C[k3+1];B+=C[k3+2]}const o=(y*CW+x)*4;D[o]=R/qq;D[o+1]=G/qq;D[o+2]=B/qq;D[o+3]=255}
+  ctx.putImageData(img,0,0)}
+
+/* ---- Link 3D Model: what the files hold, a picture of it, its units, which way is up, how it is classed, where it goes ---- */
+function m3Units(S){const L=M3_U.map(x=>x.slice());if(S.unit>0){const k=S.unit*1000;if(!L.some(x=>Math.abs(x[1]-k)/x[1]<5e-3))L.push(['file',k])}return L}
+function m3UGuess(S,bb){if(S.unit>0){const k=S.unit*1000,q=M3_U.find(x=>Math.abs(x[1]-k)/x[1]<5e-3);return q?q[0]:'file'}const sp=Math.max(bb[3]-bb[0],bb[4]-bb[1],bb[5]-bb[2]);return sp>=(/^STL/.test(S.f)?2:500)?'mm':'m'}
+const m3UpGuess=S=>S.up==='y'||S.up==='z'?S.up:/^OBJ/.test(S.f)?'y':'z';
+function dlgM3In(S,name){const Wc={},Wof=up=>Wc[up]||(Wc[up]=m3World(S,up)),bbF=m3BB(Wof('z')),U=m3Units(S),uG=m3UGuess(S,bbF),upG=m3UpGuess(S),st=m3Stats(S),
+    bbU=up=>up==='y'?[bbF[0],-bbF[5],bbF[1],bbF[3],-bbF[2],bbF[4]]:bbF,kOf=u=>(U.find(x=>x[0]===u)||U[0])[1],
+    mid=(up,k)=>{const b=bbU(up);return[(b[0]+b[3])/2*k,(b[1]+b[4])/2*k]},svn=(up,k)=>{const m=mid(up,k);return shcNear(m[0],m[1])},far=(up,k)=>{const m=mid(up,k);return Math.max(Math.abs(m[0]),Math.abs(m[1]))>2e6},
+    size=(up,k)=>{const b=bbU(up);return[b[3]-b[0],b[4]-b[1],b[5]-b[2]].map(v=>fmtLen(v*k)).join(' × ')+' '+unitName()},
+    lv0=lvOpts().some(l=>l[0]===ui.level)?ui.level:sortedLevels(P)[0].id,k0=kOf(uG),pos0=svn(upG,k0)?'survey':far(upG,k0)?'center':'origin',bot0=Math.abs(bbU(upG)[2]*k0)>1e5,by0=st.mats>1||st.defs<2?'mat':'obj',
+    opt=(v,l,sel)=>`<option value="${v}"${sel?' selected':''}>${l}</option>`,note=[t('m3_note')];
+  if(S.miss.size)note.push(t('m3_miss',esc([...S.miss].slice(0,8).join(', ')+(S.miss.size>8?' …':''))));if(S.skip.lines)note.push(t('m3_skip',S.skip.lines));if(S.skip.draco)note.push(t('m3_draco_n',S.skip.draco));if(S.bad)note.push(t('m3_bad',S.bad));if(st.tri>M3_MAX_TRI)note.push(t('m3_over'));
+  const body=`<div class="m3x"><div>
+    <div class="fr"><label>${t('dxf_file')}</label><b>${esc(name)} · ${esc(S.f)}</b></div>
+    <div class="fr"><label>${t('dxf_content')}</label><span id="m3Cnt">${t('m3_counts',st.objs.toLocaleString('en-US'),st.mats.toLocaleString('en-US'),st.tri.toLocaleString('en-US'))}</span></div>
+    <div class="fr"><label for="m3U">${t('dxf_unit')}</label><select id="m3U">${U.map(x=>opt(x[0],(x[0]==='file'?t('m3_u_file',m3Num(x[1])):t('dxu_'+x[0]))+(S.unit>0&&x[0]===uG&&x[0]!=='file'?' · '+t('dxf_fromfile'):''),x[0]===uG)).join('')}</select></div>
+    <div class="fr"><label for="m3Up">${t('m3_up')}</label><select id="m3Up">${['z','y'].map(u=>opt(u,t('m3_up'+u)+(S.up===u?' · '+t('dxf_fromfile'):''),u===upG)).join('')}</select></div>
+    <div class="fr"><label>${t('lk_size')}</label><b id="m3Size">${size(upG,k0)}</b></div>
+    <div class="fr"><label for="m3By">${t('m3_by')}</label><select id="m3By">${opt('mat',t('m3_by_mat',st.mats),by0==='mat')}${opt('obj',t('m3_by_obj',st.defs),by0==='obj')}</select></div>
+    <div class="fr"><label for="m3Pos">${t('dxf_pos')}</label><select id="m3Pos">${opt('origin',t('ifc_pos_origin'),pos0==='origin')}${opt('center',t('dxf_pos_center'),pos0==='center')}${opt('survey',t('tdx_pos_sv'),pos0==='survey')}${opt('pick',t('m3_pos_pick'),false)}</select></div>
+    <div class="fr"><label for="m3Lv">${t('p_level')}</label><select id="m3Lv"${pos0==='survey'?' disabled':''}>${lvOpts().map(l=>opt(l[0],esc(l[1]),l[0]===lv0)).join('')}</select></div>
+    <div class="fr"><label for="m3Z">${t('m3_off')} (${t('u_mm')})</label><input type="number" id="m3Z" value="0" step="50"></div>
+    <div class="chks" style="padding:6px 0 0;grid-template-columns:1fr"><label><input type="checkbox" id="m3Bot"${bot0?' checked':''}> ${t('m3_bot')}</label><label><input type="checkbox" id="m3Half"> ${t('p_half')}</label></div>
+  </div><div><canvas id="m3Cv"></canvas><p class="note" style="margin:4px 0 0">${t('m3_prev')}</p></div></div><p class="note">${note.join('<br>')}</p>`;
+  const upd=()=>{const up=$('#m3Up').value,k=kOf($('#m3U').value),ps=$('#m3Pos');$('#m3Size').textContent=size(up,k);if(ps.value!=='pick'){if(svn(up,k))ps.value='survey';else if(ps.value==='survey')ps.value=far(up,k)?'center':'origin'}$('#m3Lv').disabled=ps.value==='survey'};
+  openDlg(t('m3_title'),body,`<button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-m3="go">${t('ifc_go')}</button>`,{
+    change(ev){const id=ev.target.id;if(id==='m3U')upd();else if(id==='m3Up'){upd();m3Prev($('#m3Cv'),S,Wof(ev.target.value))}else if(id==='m3Pos')$('#m3Lv').disabled=ev.target.value==='survey'},
+    click(ev){if(!ev.target.closest('[data-m3="go"]'))return;const up=$('#m3Up').value==='y'?'y':'z',o={u:kOf($('#m3U').value),up,by:$('#m3By').value==='obj'?'obj':'mat',pos:$('#m3Pos').value,lv:+$('#m3Lv').value||lv0,off:parseFloat($('#m3Z').value)||0,bot:$('#m3Bot').checked,half:$('#m3Half').checked};
+      closeDlg();m3Go(S,name,o,Wof(up))}},'m3');
+  requestAnimationFrame(()=>m3Prev($('#m3Cv'),S,Wof(upG)))}
+function m3Go(S,name,o,W){toast(t('m3_working'),60000);setTimeout(()=>{let r=0;try{r=m3Link(S,name,o,W)}catch(e){toast(t('m3_err_read'),8000);return}if(r<0)$('#toast').hidden=true},40)}
+/* the link made with the options of the dialog: its id, -1 while it waits to be placed by a click, 0 when nothing came */
+function m3Link(S,name,o,W){const B=m3Blob(S,{u:o.u,up:o.up,by:o.by,name},W);if(!B||!B.n.tri){toast(t('m3_err_none'),8000);return 0}
+  const lv=lvl(P,o.lv)?o.lv:sortedLevels(P)[0].id,z=(o.pos==='survey'?shcZ():elev(P,lv))+(+o.off||0)-(o.bot?B.z0:0);
+  if(o.pos==='pick'){const av=activeView();if(!av||!m3PlOk(av)||av.level!==lv){const pv=planOf(lv);if(pv)showView(pv.id)}ui.m3pl={B,name,o:{z,lv,half:!!o.half},rot:0,segs:m3Segs(B)};setTool('m3pl',true);refresh();return ui.tool==='m3pl'?-1:0}
+  let x=B.cx,y=-B.cy,rot=0;
+  if(o.pos==='survey'){const L=shcLinkOf(B);if(L){x=L.x;y=L.y;rot=L.rot}}
+  else if(o.pos==='center'){const pv=planOf(lv)||activeView(),E=pv&&(P.els.some(q=>q.cat!=='link')||P.grids.length)?planExtents(pv):{x0:0,y0:0,x1:0,y1:0};x=Math.round((E.x0+E.x1)/2);y=Math.round((E.y0+E.y1)/2)}
+  return m3Put(B,name,{x,y,rot,z,lv,half:o.half})}
+function m3Put(B,name,o){const key='i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);CADB.set(key,B);let id=0;
+  edit(()=>{id=P.seq++;P.els.push({id,cat:'link',level:o.lv,all:true,x:o.x,y:o.y,rot:o.rot||0,sc:1,z:Math.round(o.z),key,name:m3Name(name),half:!!o.half,pin:true,loff:[]})});
+  if(!o.here){const av=activeView();if(av&&av.kind!=='schedule'&&av.kind!=='sheet')navOf(av).fit=true}setTool('modify');ui.sel=new Set([id]);refresh();
+  toast(t('m3_done',B.n.prod.toLocaleString('en-US'),B.n.tri.toLocaleString('en-US'))+(B.over?' · '+t('m3_over'):''),8000);return id}
+/* Manual – Center: the outline of the model (its edges seen from above, the 5,000 longest) follows the pointer; Space turns it 90°; a click places it */
+function m3Segs(B){const out=[];for(const o of ifcPlanLines(ifcGeoOf(B),B.z1+1e4,-1e12,1e12,null))for(let i=0;i+3<o.proj.length;i+=4)out.push([o.proj[i],o.proj[i+1],o.proj[i+2],o.proj[i+3]]);
+  if(out.length>5000){out.sort((a,b)=>Math.hypot(b[2]-b[0],b[3]-b[1])-Math.hypot(a[2]-a[0],a[3]-a[1]));out.length=5000}return out}
+const m3PlOk=v=>!!v&&v.kind==='plan'&&!v.draft;
+XT.m3pl={ok:m3PlOk,on(){if(!ui.m3pl){toast(t('m3_err_none'));return false}},off(to){if(to!=='m3pl')ui.m3pl=null},hint:()=>ui.m3pl?t('h_m3pl',m3Name(ui.m3pl.name)):'',
+  draw(pn,ctx,v,nav,g){const L=ui.m3pl,c=gtCur(pn,nav);if(!L||!c||!m3PlOk(v))return;const a=L.rot*Math.PI/180,co=Math.cos(a),si=Math.sin(a),T=(u,w)=>[c[0]+u*co-w*si,c[1]+u*si+w*co],sc=v.scale||100,hw=L.B.w/2,hh=L.B.h/2,Q=[T(-hw,-hh),T(hw,-hh),T(hw,hh),T(-hw,hh)];
+    ctx.save();ctx.strokeStyle=C.accent;ctx.lineWidth=1;ctx.globalAlpha=0.85;for(const s of L.segs)g.seg(T(s[0],s[1]),T(s[2],s[3]));g.dash([3,1.5]);for(let i=0;i<4;i++)g.seg(Q[i],Q[(i+1)%4]);g.dash(null);
+    const tl=Q.reduce((m,q)=>q[1]<m[1]-1e-6||(Math.abs(q[1]-m[1])<=1e-6&&q[0]<m[0])?q:m,Q[0]);g.text(m3Name(L.name),[tl[0],tl[1]-1.5*sc],2.4,{align:'left',color:C.accent,halo:true});ctx.restore()},
+  click(pn,v,p,w,pt){const L=ui.m3pl;if(!L)return;const o=L.o,r=L.rot;setTool('modify');m3Put(L.B,L.name,{x:pt.x,y:pt.y,rot:r,z:o.z,lv:o.lv,half:o.half,here:1})}};
+document.addEventListener('keydown',e=>{if(e.key!==' '||ui.tool!=='m3pl'||!ui.m3pl||$('#dlg').open)return;if(/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test((e.target&&e.target.tagName)||''))return;e.preventDefault();e.stopPropagation();ui.m3pl.rot=(ui.m3pl.rot+90)%360;redraw()},true);
+/* Reload From: the new file in the same place (the origin of the file stays where it was), with the units, the up axis and the classes of the link, unless the file says */
+function m3Reload(e,S,name){const B0=CADB.get(e.key),o0=(B0&&B0.m3)||{},u=S.unit>0?S.unit*1000:(+o0.u>0?+o0.u:1),up=S.up==='y'||S.up==='z'?S.up:(o0.up==='y'?'y':'z'),B=m3Blob(S,{u,up,by:o0.by==='obj'?'obj':'mat',name});
+  if(!B||!B.n.tri){toast(t('m3_err_none'),8000);return}const key='i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);CADB.set(key,B);
+  edit(()=>{for(const q of P.els)if(q.cat==='link'&&q.key===e.key){if(B0&&B0.ifc){const o=linkF(q).to(-B0.cx,B0.cy);q.x=o[0];q.y=o[1];const d=linkF(Object.assign({},q,{x:0,y:0})).to(B.cx,-B.cy);q.x+=d[0];q.y+=d[1]}q.key=key;q.loff=(q.loff||[]).filter(n=>B.L.some(l=>l.n===n))}});
+  toast(t('m3_reloaded',name,B.n.prod),7000);if($('#dlg').open)dlgLinks()}
+function m3Pick(id){ui.m3Reload=id||0;$('#m3In').click()}
+XA.m3in=()=>m3Pick(0);
+document.body.insertAdjacentHTML('beforeend','<input type="file" id="m3In" multiple accept=".obj,.mtl,.stl,.gltf,.glb,.bin,.dae,.kmz,.zip,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tga" hidden>');
+document.addEventListener('change',ev=>{const el=ev.target;if(!el||el.id!=='m3In')return;const L=[...el.files],re=ui.m3Reload;ui.m3Reload=0;el.value='';if(L.length)m3Files(L,re)});
+/* a model dropped on the drawing area (with its .mtl, .bin and pictures, if they come with it) */
+{const pn=$('#panes');if(pn)pn.addEventListener('drop',e=>{const L=e.dataTransfer&&e.dataTransfer.files?[...e.dataTransfer.files]:[];if(!L.some(f=>M3_MAIN.test(f.name)))return;e.preventDefault();e.stopImmediatePropagation();m3Files(L,0)},true)}
+/* ---- Properties of a linked model, the label of its classes ---- */
+function m3Props(B){const o=B.m3,uk=(M3_U.find(x=>Math.abs(x[1]-o.u)/x[1]<5e-3)||[])[0];
+  return PR.ro('m3_fmt',B.schema||o.f||'—')+PR.ro('dxf_unit',uk?t('dxu_'+uk):t('m3_u_file',m3Num(o.u)))+PR.ro('m3_up',t(o.up==='y'?'m3_upy':'m3_upz'))+PR.ro('m3_by',t(o.by==='obj'?'m3_by_obj':'m3_by_mat',B.L.length))+PR.ro('m3_objs',String(B.n.prod))}
+function lkCK(e){const B=e&&ifcOf(e);return B&&B.m3?(B.m3.by==='obj'?'m3_cls_obj':'m3_cls_mat'):'lk_cls'}
+/* what a linked model is called beside its name (Clash Detection): IFC, or the format of a 3D model */
+const lkFmt=e=>{const B=e&&ifcOf(e);return B&&B.m3?String(B.schema||B.m3.f||'3D'):'IFC'};
+/* what the classes of a link are called: the layers of a drawing, the classes of an IFC model, the materials or the objects of a 3D model */
+const lkLyK=B=>B&&B.m3?(B.m3.by==='obj'?'m3_objs':'m3_mats'):B&&B.ifc?'ifc_classes':'a_linklayers';
+
+/* ---- the look of the dialog, the ribbon (Insert › Link, after Link IFC), the icon ---- */
+{const st=document.createElement('style');st.textContent='dialog.m3{width:min(900px,calc(100% - 32px))}dialog .m3x{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}@media (max-width:760px){dialog .m3x{grid-template-columns:minmax(0,1fr)}}'
+  +'dialog #m3Cv{display:block;width:100%;height:280px;border:1px solid var(--line);border-radius:6px;background:#fff}';document.head.appendChild(st)}
+Object.assign(BTN,{'@m3in':['m3in','']});
+{const m=(RIBBON.find(r=>r.id==='insert')||{panels:[]}).panels.find(p=>p.t==='p_link');if(m&&!m.b.includes('@m3in')){const i=m.b.indexOf('@ifcin');m.b.splice(i<0?m.b.length:i+1,0,'@m3in')}}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-m3in" viewBox="0 0 24 24"><path class="i-Pa i-e" fill="#f6f8fb" ${E} d="M2.2 12.4 7.6 15.2 7.6 10.8 2.2 8z"/><path class="i-Pc i-e" fill="#9fadc0" ${E} d="M7.6 15.2 13 12.4 13 8 7.6 10.8z"/>`
+    +`<path class="i-Mb i-e" fill="#e07853" ${E} d="M2.2 8 7.6 10.8 7.6 3z"/><path class="i-Mc i-e" fill="#a5472a" ${E} d="M7.6 10.8 13 8 7.6 3z"/><path class="i-Gb i-e" fill="#77c6f2" ${E} d="M3.6 10.2 5.6 11.2 5.6 13 3.6 12z"/>`
+    +`<path class="i-Tb i-e" fill="#38bc9c" ${E} d="M13 12.6h7.2a1.4 1.4 0 0 1 1.4 1.4v5.6a1.4 1.4 0 0 1-1.4 1.4h-7.2a1.4 1.4 0 0 1-1.4-1.4v-5.6a1.4 1.4 0 0 1 1.4-1.4z"/><path class="i-lw" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" style="stroke-width:1.2" d="M14 16.8h5.2M17 14.6l2.4 2.2-2.4 2.2"/></symbol>`)})();
+Object.assign(STR,{
+  a_m3in:['ลิงก์โมเดล 3 มิติ','Link 3D Model'],m3_title:['ลิงก์โมเดล 3 มิติ (Link 3D Model)','Link 3D Model'],g_m3link:['โมเดล 3 มิติที่ลิงก์ (Linked 3D Model)','Linked 3D Model'],
+  m3_fmt:['รูปแบบไฟล์','Format'],m3_up:['แกนที่ชี้ขึ้น','Up axis'],m3_upz:['แกน Z ชี้ขึ้น','Z up'],m3_upy:['แกน Y ชี้ขึ้น','Y up'],
+  m3_by:['แบ่งประเภท','Classes'],m3_by_mat:['ตามวัสดุ ({0})','By material ({0})'],m3_by_obj:['ตามชื่อชิ้นงาน ({0})','By object ({0})'],
+  m3_shown_mat:['วัสดุที่แสดง','Materials shown'],m3_shown_obj:['ประเภทชิ้นงานที่แสดง','Objects shown'],
+  m3_cls_mat:['วัสดุหลัก','Main material'],m3_omats:['วัสดุที่ใช้','Materials used'],m3_cls_obj:['ประเภทชิ้นงาน','Object'],m3_mats:['วัสดุ','Materials'],m3_objs:['ชิ้นงาน','Objects'],
+  m3_counts:['ชิ้นงาน {0} · วัสดุ {1} · สามเหลี่ยม {2}','Objects {0} · Materials {1} · Triangles {2}'],
+  m3_u_file:['ตามไฟล์ (1 หน่วย = {0} มม.)','As the file says (1 unit = {0} mm)'],
+  m3_pos_pick:['คลิกวางในแปลน (Manual – Center)','Manual – Center (click in a plan)'],m3_off:['ระยะจากระดับชั้น','Offset from the level'],m3_bot:['วางฐานของโมเดลบนระดับชั้น','Base of the model on the level'],
+  m3_prev:['ภาพตัวอย่าง มองจากมุมตะวันออกเฉียงใต้','Preview, seen from the south-east'],
+  m3_note:['โมเดลเป็นแบบอ้างอิง: แก้ไขไม่ได้ แสดงในแปลน รูปตัด รูปด้าน และ 3 มิติ จับจุดบนเส้นของมันได้ · วัสดุที่มีรูปพื้นผิวใช้สีเฉลี่ยของรูป · ไฟล์ .skp ของ SketchUp ให้ส่งออก (File › Export › 3D Model) เป็น .dae, .obj หรือ .stl ก่อน',
+    'The model is a reference: it cannot be edited, it shows in plans, sections, elevations and 3D views, and its lines can be snapped to · a material with a picture takes the average colour of the picture · a SketchUp .skp has to be exported (File › Export › 3D Model) as .dae, .obj or .stl first'],
+  m3_miss:['ไม่พบไฟล์ที่โมเดลอ้างถึง: {0} — เลือกไฟล์เหล่านี้มาพร้อมกับโมเดลเพื่อให้ได้สีของวัสดุ','Files the model names were not given: {0} — pick them with the model to get the colours of its materials'],
+  m3_skip:['เส้นและจุด {0} ชุดไม่ได้นำมา (ขอบของโมเดลวาดจากผิวของมัน)','{0} set(s) of lines or points left out (the edges are drawn from the faces)'],
+  m3_draco_n:['รูปทรง {0} ชุดบีบอัดแบบ Draco จึงไม่ได้นำมา','{0} compressed (Draco) mesh(es) left out'],m3_bad:['ผิว {0} ชิ้นอ่านไม่ได้','{0} face(s) could not be read'],
+  m3_over:['โมเดลมีสามเหลี่ยมเกิน 1,500,000 รูป จึงเก็บไว้เพียง 1,500,000 รูปแรก','The model has more than 1,500,000 triangles: only the first 1,500,000 are kept'],
+  m3_working:['กำลังลิงก์โมเดล…','Linking the model…'],
+  m3_done:['ลิงก์โมเดล 3 มิติแล้ว: {0} ชิ้นงาน {1} สามเหลี่ยม · ดูได้ในแปลน รูปตัด รูปด้าน และ 3 มิติ','3D model linked: {0} object(s), {1} triangles · it shows in plans, sections, elevations and 3D views'],
+  m3_reloaded:['อ่าน {0} ใหม่แล้ว: {1} ชิ้นงาน','{0} reloaded: {1} object(s)'],
+  m3_layers_note:['ติ๊กสิ่งที่ต้องการให้แสดง ทั้งในแปลนและมุมมอง 3 มิติ','Tick what to show, in plans and in 3D views'],
+  h_m3pl:['คลิกเพื่อวาง {0} (กึ่งกลางโมเดลที่ตัวชี้) · Space หมุน 90° · Esc ยกเลิก','Click to place {0} (its middle at the pointer) · Space turns it 90° · Esc cancels'],
+  m3_err_ext:['เลือกไฟล์ .obj .stl .gltf .glb .dae .kmz หรือ .zip','Choose an .obj, .stl, .gltf, .glb, .dae, .kmz or .zip file'],
+  m3_err_fmt:['ไฟล์ {0} ยังอ่านไม่ได้: ส่งออก (Export) เป็น .dae, .obj, .stl หรือ .gltf ก่อน (SketchUp: File › Export › 3D Model)','{0} files cannot be read: export the model as .dae, .obj, .stl or .gltf first (SketchUp: File › Export › 3D Model)'],
+  m3_err_big:['ไฟล์ใหญ่เกินไป (รวมเกิน 200 MB)','The files are too large (over 200 MB together)'],m3_err_read:['อ่านไฟล์ไม่ได้','The file could not be read'],m3_err_none:['ไม่พบรูปทรง 3 มิติในไฟล์','The file holds no 3D shapes'],
+  m3_err_miss:['ไม่พบไฟล์ที่โมเดลอ้างถึง: {0} — เลือกไฟล์เหล่านี้มาพร้อมกับโมเดล','Files the model names were not given: {0} — pick them together with the model'],
+  m3_err_stl:['ไฟล์ STL ไม่ถูกต้อง','This is not a valid STL file'],m3_err_gltf:['ไฟล์ glTF ไม่ถูกต้อง (อ่านได้เฉพาะ glTF 2.0)','This is not a valid glTF 2.0 file'],
+  m3_err_draco:['ไฟล์ glTF นี้บีบอัดแบบ Draco หรือ meshopt ซึ่งยังอ่านไม่ได้: ส่งออกใหม่โดยไม่บีบอัด','This glTF is compressed with Draco or meshopt, which cannot be read yet: export it again without compression'],
+  m3_err_dae:['ไฟล์ Collada (.dae) ไม่ถูกต้อง','This is not a valid Collada (.dae) file'],m3_err_zip:['เปิดไฟล์ zip นี้ไม่ได้','The zip file could not be opened'],
+  m3_err_zipnone:['ในไฟล์ zip ไม่มี .dae .obj .stl .gltf .glb หรือ .ifc','The zip holds no .dae, .obj, .stl, .gltf, .glb or .ifc file'],
+  m3_allmat:['ทุกวัสดุ','All materials'],m3_allobj:['ทุกประเภทชิ้นงาน','All objects'],
+  m3_lk_note:['ปริมาตรคิดเฉพาะชิ้นงานที่ปิดสนิท ชิ้นที่เป็นผิวเปิดได้ 0 · คลิกแถว (แบบทุกชิ้น) เพื่อเลือกชิ้นนั้นในแปลน','Volumes are of closed objects only; an open surface counts 0 · click a row (every element) to pick it in the plan'],
+  m3_nomat:['ไม่มีวัสดุ','No material'],
+  ifc_err_zip:['ไฟล์ .ifcxml ยังอ่านไม่ได้ — บันทึกจากโปรแกรมต้นทางเป็น .ifc','.ifcxml cannot be read — save the model as .ifc from the program it came from'],
+  ifc_err_ext:['เลือกไฟล์ .ifc หรือ .ifczip','Choose an .ifc or .ifczip file'],ifz_none:['ในไฟล์ .ifczip ไม่มีไฟล์ .ifc','The .ifczip holds no .ifc file']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -27098,6 +27518,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.139 · ชุดปั๊มทำงาน/สำรองแบบ Revit ([[a_mesnew]]): รวมปั๊มที่ต่อขนานเป็นชุด ตั้งจำนวนปั๊มทำงานและสำรอง อัตราไหลของระบบแบ่งให้ปั๊มที่ทำงาน ท่อของปั๊มแต่ละตัว ท่อร่วม และด้านดูดได้อัตราไหลและขนาดตามนั้น
 - V1.140 · ลายเส้นแบบ Revit ([[a_lpats]]): สร้างลายของโครงการจากประ จุด และช่องว่าง ทำสำเนาลายที่มีมาให้ หรือนำเข้าจากไฟล์ .lin ของ AutoCAD แล้วใช้ในรูปแบบเส้น Object Styles การแสดงผลของมุมมอง ตัวกรอง และเฟส · ไฟล์ DXF ที่ส่งออกมีชนิดเส้นของแต่ละลาย
 - V1.141 · แทรกมุมมองจากไฟล์แบบ Revit ([[a_insviews]]): คัดลอกมุมมองร่าง คำอธิบายสัญลักษณ์ ตารางปริมาณ และชีตจากไฟล์งานอื่น พร้อมชนิด รูปแบบเส้น และกลุ่มที่ใช้ ดูตัวอย่างก่อนแทรก · [[a_ins2d]] วางเส้น ข้อความ และรายละเอียดจากมุมมองของไฟล์อื่นลงในมุมมองที่เปิดอยู่
+- V1.142 · ลิงก์โมเดล 3 มิติแบบ Revit ([[a_m3in]]): ไฟล์ .obj .stl .gltf .glb .dae และ .kmz จาก SketchUp, Rhino, Blender และแคตตาล็อกผู้ผลิต แสดงในแปลน รูปตัด รูปด้าน และ 3 มิติพร้อมสีของวัสดุ ดูภาพตัวอย่างก่อนลิงก์ และคลิกวางในแปลนได้ · [[a_ifcin]] เปิดไฟล์ .ifczip ได้
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -27342,6 +27763,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.139 · Mechanical Equipment Sets, as in Revit ([[a_mesnew]]): pumps in parallel as one set, with the pumps on duty and on standby; the flow of the system is shared by the pumps on duty, and the pipes of each pump, the headers and the suction side carry it and are sized for it
 - V1.140 · Line Patterns, as in Revit ([[a_lpats]]): patterns of the project's own made of dashes, dots and spaces, a copy of a stock one, or line types read from an AutoCAD .lin file, for line styles, Object Styles, Visibility/Graphics, filters and phases · an exported DXF keeps each as a linetype of its own
 - V1.141 · Insert Views from File, as in Revit ([[a_insviews]]): drafting views, legends, schedules and sheets from another project file, with the types, line styles and groups they use, previewed before they come · [[a_ins2d]] places the lines, text and details of a view of another file in the view in front
+- V1.142 · Link 3D Model, as in Revit ([[a_m3in]]): .obj, .stl, .gltf, .glb, .dae and .kmz files from SketchUp, Rhino, Blender and makers' catalogues show in plans, sections, elevations and 3D views in the colours of their materials, previewed before they come, and can be placed with a click in a plan · [[a_ifcin]] opens an .ifczip too
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -27854,6 +28276,7 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 - [[a_links]]: [[ifc_reload]] ใช้ได้กับแบบ CAD และ PDF ด้วย: เลือกไฟล์รุ่นใหม่ แบบจะมาแทนที่ตำแหน่งเดิม หน่วย/มาตราส่วนและเลเยอร์ที่ปิดไว้คงเดิม · [[lk_unload]] ซ่อนแบบไว้ชั่วคราวโดยไม่ลบ กด [[lk_load]] เพื่อแสดงอีกครั้ง · ปุ่ม [[ifc_classes]] เปิดปิดประเภทของชิ้นงาน เช่น IfcFurnishingElement · [[ifc_reload]] อ่านไฟล์รุ่นใหม่เข้ามาแทนที่ตำแหน่งเดิม · [[delete]] เอาลิงก์ออก
 - [[a_copymon]] (แท็บ [[tab_insert]] หรือปุ่มใน [[properties]] ของลิงก์): ชั้นและกริดของโมเดลที่ลิงก์เข้ามาเป็นระดับชั้นและกริดของโครงการ หรือติดตามของที่มีอยู่แล้วที่ชื่อหรือตำแหน่งตรงกัน · หลัง [[ifc_reload]] หรือเมื่อย้ายลิงก์ คุณสมบัติของลิงก์จะบอกว่าเปลี่ยนกี่รายการ และ [[cm_review]] แสดงรายการ ติ๊กแล้วกดตกลงเพื่อย้ายตาม (กริดคงความยาวเดิม) · ไฟล์ IFC ที่ส่งออกจากโปรแกรมนี้มีกริดด้วย
 - [[a_pcin]] (แท็บ [[tab_insert]]): ไฟล์สแกนแบบตัวอักษร .xyz .pts .txt หรือ .csv (บรรทัดละ x y z อาจตามด้วยความเข้มและ r g b) เลือกหน่วยและจำนวนจุดที่เก็บ · จุดแสดงเป็นสามเหลี่ยมเล็ก ๆ ในแปลน รูปตัด รูปด้าน และ 3 มิติ ด้วยสีของมันเองหรือสีตามความสูง ย้าย หมุน และยกระดับได้เหมือนโมเดล IFC ที่ลิงก์ · ไฟล์ .rcp และ .e57 ต้องส่งออกเป็น .pts หรือ .xyz ก่อน
+- [[a_m3in]] (แท็บ [[tab_insert]]): โมเดล 3 มิติจากโปรแกรมอื่น เช่น SketchUp, Rhino, Blender, 3ds Max หรือแคตตาล็อกของผู้ผลิต: .obj (เลือก .mtl และรูปพื้นผิวมาพร้อมกัน), .stl, .gltf (กับ .bin), .glb, .dae (Collada ที่ SketchUp ส่งออก) หรือ .kmz/.zip ที่มีไฟล์เหล่านี้ · เลือกหน่วย แกนที่ชี้ขึ้น และแบ่งประเภทตามวัสดุหรือตามชื่อชิ้นงาน ดูภาพตัวอย่างก่อนลิงก์ · วางได้ 4 แบบ: จุดกำเนิดตรงกัน กึ่งกลางตรงกัน ตามหมุดสำรวจ หรือคลิกวางในแปลน (Space หมุน 90°) · แสดงในแปลน รูปตัด รูปด้าน และ 3 มิติเหมือนโมเดล IFC ที่ลิงก์: เปิดปิดวัสดุได้ คลิกเลือกชิ้นงาน ดู[[a_lksched]] ตรวจการชน และ[[ifc_reload]] · ไฟล์ .skp ต้องส่งออกจาก SketchUp เป็น .dae ก่อน · [[a_ifcin]] เปิดไฟล์ .ifczip ได้ด้วย
 - [[a_decal]] (แท็บ [[tab_insert]]): เลือกรูป (PNG ที่มีพื้นโปร่งใสก็ได้) แล้วคลิกที่ผนังในแปลน มุมมอง 3 มิติ รูปด้าน หรือรูปตัด ภาพจะติดที่ผิวด้านที่คลิก · ขนาด ความสูงขอบล่าง และด้านของผนังปรับได้ใน [[properties]] · ในแปลนเห็นเป็นเส้นบางหน้าผนัง ลากเลื่อนไปตามผนังได้ · ภาพไปกับผนังเมื่อย้ายผนัง
 - โมเดลที่ลิงก์ถูกเก็บไว้ในไฟล์โครงการด้วย เปิดครั้งต่อไปไม่ต้องมีไฟล์ .ifc · [[m_ifc]] ของโครงการนี้ไม่เขียนโมเดลที่ลิงก์ออกไปซ้ำ
 > อ่านได้: IFC2x3, IFC4 และ IFC4x3 แบบ .ifc — รูปทรงแบบ extrude, B-rep, tessellation, mapped item, clipping และช่องเปิดของผนังและพื้น · ยังอ่านไม่ได้: .ifczip, .ifcxml และผิวโค้งแบบ NURBS · ห้อง (IfcSpace) ไม่แสดง
@@ -27903,6 +28326,7 @@ A model from another program — Revit, ArchiCAD, Tekla — lies in the project 
 - [[a_links]]: [[ifc_reload]] works for CAD drawings and PDFs as well: pick the newer file and it takes the place of the old one, with the same unit or scale and the same layers switched off · [[lk_unload]] hides a link without removing it, [[lk_load]] shows it again · [[ifc_classes]] switches classes of elements on and off, IfcFurnishingElement for one · [[ifc_reload]] reads a newer file into the same place · [[delete]] takes the link out
 - [[a_copymon]] (the [[tab_insert]] tab, or the button in the [[properties]] of the link): the storeys and grids of the linked model come into the project as levels and grids, or the ones already here of the same name or place are monitored · after [[ifc_reload]], or when the link is moved, its Properties say how many have changed and [[cm_review]] lists them: tick and apply to follow (a grid keeps its own length) · our IFC export writes the grids too
 - [[a_pcin]] (the [[tab_insert]] tab): a scan as a text file, .xyz, .pts, .txt or .csv (x y z on each line, then maybe the intensity and r g b); choose its unit and how many points to keep · the points show as small triangles in plans, sections, elevations and 3D, in their own colours or coloured by height, and can be moved, turned and raised like a linked IFC model · .rcp and .e57 have to be exported as .pts or .xyz first
+- [[a_m3in]] (the [[tab_insert]] tab): a 3D model from another program, such as SketchUp, Rhino, Blender, 3ds Max or a maker's catalogue: .obj (pick its .mtl and pictures with it), .stl, .gltf (with its .bin), .glb, .dae (Collada, as SketchUp exports it), or a .kmz or .zip holding one · choose its unit, which axis is up and whether its classes are its materials or its objects, with a preview · four ways to place it: origin to origin, center to center, by the survey point, or a click in a plan (Space turns it 90°) · it shows in plans, sections, elevations and 3D views as a linked IFC model does: its classes switch on and off, a click picks an object, the [[a_lksched]] lists them, Clash Detection checks them, and [[ifc_reload]] reads a newer file · a SketchUp .skp has to be exported as .dae first · [[a_ifcin]] opens an .ifczip too
 - [[a_decal]] (the [[tab_insert]] tab): choose a picture (a PNG with a clear background works too), then click a wall in a plan, a 3D view, an elevation or a section; the picture goes on the face you clicked · its size, bottom offset and face are in [[properties]] · a plan shows it as a thin line before the wall face, which slides along the wall · it moves with its wall
 - The linked model is kept in the project file, so the .ifc is not needed next time · [[m_ifc]] of this project does not write the linked model out again
 > Read: IFC2x3, IFC4 and IFC4x3 as .ifc — extrusions, B-reps, tessellations, mapped items, clippings, and the openings of walls and slabs · not read yet: .ifczip, .ifcxml and curved NURBS faces · rooms (IfcSpace) are not shown
@@ -28721,14 +29145,14 @@ function dlgDxfIn(res,name){const U=['mm','cm','m','in','ft'],u0=dxfGuessUnit(re
 /* Manage Links: every linked drawing, where it lies, show / hide, layers, remove */
 function dlgLinks(){const ls=P.els.filter(e=>e.cat==='link');
   const body=ls.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('p_name')}</th><th>${t('p_level')}</th><th>${t('dxf_size')}</th><th></th></tr></thead><tbody>${ls.map(e=>{const B=CADB.get(e.key)||{w:0,h:0},l=lvl(P,e.level);
-      return`<tr><td>${esc(e.name||'')}${e.unl?' <small class="lkunl">('+t('lk_unl_tag')+')</small>':''}${B.img?' <small>('+t('img_kind')+')</small>':B.pdf?' <small>(PDF · 1:'+(+B.scale||100)+')</small>':B.ifc?' <small>(IFC'+(B.schema?' · '+esc(B.schema):'')+')</small>':''}</td><td>${esc(e.all?t('p_alllevels'):l?l.name:'')}</td><td class="n">${fmtLen(B.w*(e.sc||1))} × ${fmtLen(B.h*(e.sc||1))}</td><td class="lkb"><button class="btn" data-lk="go" data-id="${e.id}">${t('lk_show')}</button>${B.img?'':`<button class="btn" data-lk="ly" data-id="${e.id}">${t(B.ifc?'ifc_classes':'a_linklayers')}</button>`}${B.img||B.ifc||!B.L||!B.L.length?'':`<button class="btn" data-lk="am" data-id="${e.id}">${t('a_automodel')}…</button>`}${B.ifc?`<button class="btn" data-lk="re" data-id="${e.id}">${t('ifc_reload')}…</button>`:B.img?'':`<button class="btn" data-lk="rl" data-id="${e.id}">${t('ifc_reload')}…</button>`}<button class="btn" data-lk="ul" data-id="${e.id}">${t(e.unl?'lk_load':'lk_unload')}</button><button class="btn" data-lk="del" data-id="${e.id}">${t('delete')}</button></td></tr>`}).join('')}</tbody></table></div>`:`<p class="note">${t('lk_none')}</p>`;
-  openDlg(t('a_links'),body,`<button class="btn" data-lk="add">${t('a_dxfin')}…</button><button class="btn" data-lk="pdf">${t('a_pdfin')}…</button><button class="btn" data-lk="ifc">${t('a_ifcin')}…</button><button class="btn" data-lk="img">${t('a_imgin')}…</button><button class="btn primary" data-close="1">${t('close')}</button>`,{click(ev){const k=ev.target.dataset.lk,id=+ev.target.dataset.id,e=IDX.get(id);
-    if(k==='add'){closeDlg();act('dxfin')}else if(k==='pdf'){closeDlg();act('pdfin')}else if(k==='am'&&e){closeDlg();act('automodel',e.id)}else if(k==='ifc'){closeDlg();act('ifcin')}else if(k==='re'&&e){act('ifcreload',e.id)}else if(k==='rl'&&e){act('linkreload',e.id)}else if(k==='ul'&&e){edit(()=>{const x=IDX.get(id);if(x){if(x.unl)delete x.unl;else x.unl=1}});dlgLinks()}else if(k==='img'){closeDlg();act('imgin')}else if(k==='del'&&e){edit(()=>{P.els=P.els.filter(x=>x.id!==id)});dlgLinks()}else if(k==='ly'&&e)dlgLinkLayers(e)
+      return`<tr><td>${esc(e.name||'')}${e.unl?' <small class="lkunl">('+t('lk_unl_tag')+')</small>':''}${B.img?' <small>('+t('img_kind')+')</small>':B.pdf?' <small>(PDF · 1:'+(+B.scale||100)+')</small>':B.m3?' <small>('+esc(B.schema||B.m3.f||'3D')+')</small>':B.ifc?' <small>(IFC'+(B.schema?' · '+esc(B.schema):'')+')</small>':''}</td><td>${esc(e.all?t('p_alllevels'):l?l.name:'')}</td><td class="n">${fmtLen(B.w*(e.sc||1))} × ${fmtLen(B.h*(e.sc||1))}</td><td class="lkb"><button class="btn" data-lk="go" data-id="${e.id}">${t('lk_show')}</button>${B.img?'':`<button class="btn" data-lk="ly" data-id="${e.id}">${t(lkLyK(B))}</button>`}${B.img||B.ifc||!B.L||!B.L.length?'':`<button class="btn" data-lk="am" data-id="${e.id}">${t('a_automodel')}…</button>`}${B.ifc?`<button class="btn" data-lk="re" data-id="${e.id}">${t('ifc_reload')}…</button>`:B.img?'':`<button class="btn" data-lk="rl" data-id="${e.id}">${t('ifc_reload')}…</button>`}<button class="btn" data-lk="ul" data-id="${e.id}">${t(e.unl?'lk_load':'lk_unload')}</button><button class="btn" data-lk="del" data-id="${e.id}">${t('delete')}</button></td></tr>`}).join('')}</tbody></table></div>`:`<p class="note">${t('lk_none')}</p>`;
+  openDlg(t('a_links'),body,`<button class="btn" data-lk="add">${t('a_dxfin')}…</button><button class="btn" data-lk="pdf">${t('a_pdfin')}…</button><button class="btn" data-lk="ifc">${t('a_ifcin')}…</button><button class="btn" data-lk="m3">${t('a_m3in')}…</button><button class="btn" data-lk="img">${t('a_imgin')}…</button><button class="btn primary" data-close="1">${t('close')}</button>`,{click(ev){const k=ev.target.dataset.lk,id=+ev.target.dataset.id,e=IDX.get(id);
+    if(k==='add'){closeDlg();act('dxfin')}else if(k==='pdf'){closeDlg();act('pdfin')}else if(k==='am'&&e){closeDlg();act('automodel',e.id)}else if(k==='ifc'){closeDlg();act('ifcin')}else if(k==='m3'){closeDlg();act('m3in')}else if(k==='re'&&e){act('ifcreload',e.id)}else if(k==='rl'&&e){act('linkreload',e.id)}else if(k==='ul'&&e){edit(()=>{const x=IDX.get(id);if(x){if(x.unl)delete x.unl;else x.unl=1}});dlgLinks()}else if(k==='img'){closeDlg();act('imgin')}else if(k==='del'&&e){edit(()=>{P.els=P.els.filter(x=>x.id!==id)});dlgLinks()}else if(k==='ly'&&e)dlgLinkLayers(e)
     else if(k==='go'&&e){closeDlg();linkShow(e)}}},'wn')}
 function linkShow(e){const av=activeView();if(!av||av.kind!=='plan'||!planShow(av,e)){const pv=planOf(e.level);if(pv)showView(pv.id)}setTool('modify');ui.sel=new Set([e.id]);const v=activeView(),pn=PANES[ui.ap],lp=linkLoop(e),b=dxBox(lp);navPush(v);const n=navOf(v);fit2D(n,b[0],b[1],b[2],b[3],pn.w||800,pn.h||600,30);n.auto=false;n.fit=false;refresh()}
 /* the layers of one linked drawing: tick what is shown */
 function dlgLinkLayers(e){const B=CADB.get(e.key);if(!B)return;const off=new Set(e.loff||[]);
-  openDlg(t(B.ifc?'ifc_classes':'a_linklayers')+' — '+(e.name||''),`<p class="note">${t(B.ifc?'ifc_classes_note':'lk_layers_note')}</p><p><button class="btn" data-ll="all">${t('all_on')}</button> <button class="btn" data-ll="none">${t('all_off')}</button></p><div class="chks">${B.L.map((l,i)=>`<label><input type="checkbox" data-ll="${i}"${off.has(l.n)?'':' checked'}><i class="sw" style="background:${l.rgb||aciCss(l.c,C)}"></i>${esc(l.n)} <small>(${l.cnt!=null?l.cnt:l.s.length/4+l.a.length/5+l.t.length})</small></label>`).join('')}</div>`,null,{
+  openDlg(t(lkLyK(B))+' — '+(e.name||''),`<p class="note">${t(B.m3?'m3_layers_note':B.ifc?'ifc_classes_note':'lk_layers_note')}</p><p><button class="btn" data-ll="all">${t('all_on')}</button> <button class="btn" data-ll="none">${t('all_off')}</button></p><div class="chks">${B.L.map((l,i)=>`<label><input type="checkbox" data-ll="${i}"${off.has(l.n)?'':' checked'}><i class="sw" style="background:${l.rgb||aciCss(l.c,C)}"></i>${esc(l.n)} <small>(${l.cnt!=null?l.cnt:l.s.length/4+l.a.length/5+l.t.length})</small></label>`).join('')}</div>`,null,{
     change(ev){const i=ev.target.dataset.ll;if(i==null||isNaN(+i))return;const n=B.L[+i].n,on=ev.target.checked;edit(()=>{const x=IDX.get(e.id);if(!x)return;const s=new Set(x.loff||[]);if(on)s.delete(n);else s.add(n);x.loff=[...s]})},
     click(ev){const k=ev.target.dataset.ll;if(k!=='all'&&k!=='none')return;edit(()=>{const x=IDX.get(e.id);if(x)x.loff=k==='all'?[]:B.L.map(l=>l.n)});const x=IDX.get(e.id);if(x)dlgLinkLayers(x)}})}
 /* linked drawings travel with the project file, each stored once however many times it is placed */
@@ -28771,7 +29195,7 @@ function ifcLinkLayers(e,B,v){const R=VRm(v),k=e.sc>0?e.sc:1,z0=+e.z||0,loc=z=>(
   if(!L){L=[];for(const o of ifcPlanLines(ifcGeoOf(B),zc,zlo,zhi,null)){const n=B.L[o.k].n;if(o.proj.length)L.push({n,c:7,s:o.proj,a:[],t:[]});if(o.cut.length)L.push({n,c:7,w:2,s:o.cut,a:[],t:[]})}M.set(key,L);if(M.size>8)M.delete(M.keys().next().value)}
   return L}
 /* ---- reading a file ---- */
-function ifcFile(f,reload){if(!f)return;if(!/\.ifc$/i.test(f.name)){toast(t(/\.(ifczip|ifcxml)$/i.test(f.name)?'ifc_err_zip':'ifc_err_ext'),8000);return}if(f.size>120e6){toast(t('ifc_err_big'),8000);return}
+function ifcFile(f,reload){if(!f)return;if(/\.ifczip$/i.test(f.name)){ifzFile(f,reload);return}if(!/\.ifc$/i.test(f.name)){toast(t(/\.ifcxml$/i.test(f.name)?'ifc_err_zip':'ifc_err_ext'),8000);return}if(f.size>120e6){toast(t('ifc_err_big'),8000);return}
   toast(t('ifc_reading',f.name),60000);const r=new FileReader();r.onload=()=>setTimeout(()=>ifcOpen(String(r.result||''),f.name,reload),30);r.onerror=()=>toast(t('ifc_notstep'));r.readAsText(f)}
 function ifcOpen(text,name,reload){let R;try{R=ifcRead(text)}catch(e){R={err:'ifc_notstep'}}if(R.err){toast(t(R.err),8000);return}$('#toast').hidden=true;
   if(reload){const e=IDX.get(reload);if(e&&ifcOf(e)){ifcReload(e,R,name);return}}dlgIfcIn(R,name)}
@@ -28798,11 +29222,11 @@ function ifcReload(e,R,name){const B=ifcBlob(R,name),B0=CADB.get(e.key),key='i'+
   edit(()=>{for(const q of P.els)if(q.cat==='link'&&q.key===e.key){if(B0&&B0.ifc){const F=linkF(q),o=F.to(-B0.cx,B0.cy);q.x+=o[0]-q.x;q.y+=o[1]-q.y;const F2=linkF(Object.assign({},q,{x:0,y:0})),d=F2.to(B.cx,-B.cy);q.x+=d[0];q.y+=d[1]}q.key=key;q.loff=(q.loff||[]).filter(n=>B.L.some(l=>l.n===n))}});          /* the origin of the file stays where it was, though its middle may have moved */
   toast(t('ifc_reloaded',name,R.n.shown),7000);if($('#dlg').open)dlgLinks()}
 XA.ifcin=()=>{ui.ifcReload=0;$('#ifcIn').click()};
-XA.ifcreload=arg=>{const e=IDX.get(+arg);if(!e||!ifcOf(e))return;ui.ifcReload=e.id;$('#ifcIn').click()};
+XA.ifcreload=arg=>{const e=IDX.get(+arg);if(!e||!ifcOf(e))return;if(m3Of(e)){m3Pick(e.id);return}ui.ifcReload=e.id;$('#ifcIn').click()};
 document.addEventListener('change',ev=>{const el=ev.target;if(!el||el.id!=='ifcIn')return;const f=el.files[0],re=ui.ifcReload;ui.ifcReload=0;el.value='';ifcFile(f,re)});
 /* ---- Properties: where a linked model stands in height, and what it holds ---- */
 XP.push((c,els)=>{if(c!=='link'||!els.every(ifcOf))return'';const e=els[0],B=ifcOf(e),same=els.every(x=>(+x.z||0)===(+e.z||0));
-  return PR.grp('g_ifclink')+PR.num('lkz','p_lkz',same?(+e.z||0):'',t('u_mm'),'step="50"')+(els.length===1?PR.ro('ifc_schema',B.schema||'—')+PR.ro('ifc_products',String(B.n.prod))+PR.ro('ifc_tris',B.n.tri.toLocaleString('en-US'))+PR.ro('ifc_storeys',B.st.length?B.st.map(s=>s.n).join(', '):'—')+(B.pc?'':`<div class="pa"><button class="btn" data-act="ifcreload" data-arg="${e.id}">${t('ifc_reload')}…</button></div>`):'')});
+  return PR.grp(els.every(m3Of)?'g_m3link':'g_ifclink')+PR.num('lkz','p_lkz',same?(+e.z||0):'',t('u_mm'),'step="50"')+(els.length===1?(B.m3?m3Props(B):PR.ro('ifc_schema',B.schema||'—')+PR.ro('ifc_products',String(B.n.prod)))+PR.ro('ifc_tris',B.n.tri.toLocaleString('en-US'))+(B.m3?'':PR.ro('ifc_storeys',B.st.length?B.st.map(s=>s.n).join(', '):'—'))+(B.pc?'':`<div class="pa"><button class="btn" data-act="ifcreload" data-arg="${e.id}">${t('ifc_reload')}…</button></div>`):'')});
 /* ===== V1.59 the products inside a linked IFC model (Revit: Tab to a linked element, and a schedule of a link's elements).
    B.pr: [class index in B.L, name, GlobalId, storey index, x0 y0 z0 x1 y1 z1 in the blob's millimetres, volume m³, object type]; links read before V1.59 have none (Reload the link).
    ui.lpk {id, p}: the product picked in the selected link: a click on the selected link in a plan picks the smallest product there within the range of the view */
@@ -28816,17 +29240,19 @@ XPL1.push((ctx,g,v,T,col,o)=>{const q=o&&o.screen!==false?lpkOf():null;if(!q||v.
   ctx.save();ctx.strokeStyle=col.hot||'#f5a524';ctx.lineWidth=3;ctx.setLineDash([6,3]);g.path(C4.concat([C4[0]]));ctx.stroke();ctx.restore()});
 XP.push((c,els)=>{if(c!=='link'||els.length!==1)return'';const e=els[0],B=ifcOf(e);if(!B||B.pc)return'';const q=lpkOf(),PR0=lpPr(B);let h=PR.grp('g_lkprod');
   if(!PR0)return h+`<p class="note">${t('lk_old')}</p>`;if(!q||!PR0[q.p])h+=`<p class="note">${t('lk_pickhint')}</p>`;
-  else{const p=PR0[q.p],k=e.sc>0?e.sc:1;h+=PR.ro('lk_cls',B.L[p[0]]?B.L[p[0]].n:'—')+PR.ro('lk_name',p[1]||'—')+(p[11]?PR.ro('lk_type',p[11]):'')+PR.ro('lk_storey',p[3]>=0&&B.st[p[3]]?B.st[p[3]].n:'—')+PR.ro('lk_size',[p[7]-p[4],p[8]-p[5],p[9]-p[6]].map(x=>fmtLen(x*k)).join(' × ')+' '+unitName())+PR.ro('lk_vol',(p[10]*k*k*k).toFixed(3)+' m³')+PR.ro('lk_gid',p[2]||'—')}
+  else{const p=PR0[q.p],k=e.sc>0?e.sc:1;h+=PR.ro(lkCK(e),B.L[p[0]]?B.L[p[0]].n:'—')+PR.ro('lk_name',p[1]||'—')+(p[11]?PR.ro(B.m3?'m3_omats':'lk_type',p[11]):'')+(B.m3?'':PR.ro('lk_storey',p[3]>=0&&B.st[p[3]]?B.st[p[3]].n:'—'))+PR.ro('lk_size',[p[7]-p[4],p[8]-p[5],p[9]-p[6]].map(x=>fmtLen(x*k)).join(' × ')+' '+unitName())+PR.ro('lk_vol',B.m3&&!p[10]?'—':(p[10]*k*k*k).toFixed(3)+' m³')+(B.m3?'':PR.ro('lk_gid',p[2]||'—'))}
   return h+`<div class="pa"><button class="btn" data-act="lksched" data-arg="${e.id}">${t('a_lksched')}…</button></div>`});
 /* the schedule of a link's products: by class and storey (count, volume), or every product; CSV; a row of products picks it */
 function lkRows(e,all,cls){const B=ifcOf(e),PR0=lpPr(B)||[],k=e.sc>0?e.sc:1,k3=k*k*k,stn=i=>i>=0&&B.st[i]?B.st[i].n:'—',cn=i=>B.L[i]?B.L[i].n:'?';
   if(all)return PR0.map((p,i)=>({i,c:cn(p[0]),n:p[1],ty:p[11]||'',st:stn(p[3]),v:p[10]*k3,g:p[2]})).filter(r=>!cls||r.c===cls).sort((a,b)=>a.c.localeCompare(b.c)||a.st.localeCompare(b.st)||String(a.n).localeCompare(String(b.n)));
   const G=new Map();for(const p of PR0){const key=cn(p[0])+'|'+stn(p[3]);let r=G.get(key);if(!r)G.set(key,r={c:cn(p[0]),st:stn(p[3]),q:0,v:0});r.q++;r.v+=p[10]*k3}return[...G.values()].filter(r=>!cls||r.c===cls).sort((a,b)=>a.c.localeCompare(b.c)||a.st.localeCompare(b.st))}
-function lkCSV(e,all,cls){const q=x=>'"'+String(x).replace(/"/g,'""')+'"',R=lkRows(e,all,cls);return'\ufeff'+(all?[[t('lk_cls'),t('lk_name'),t('lk_type'),t('lk_storey'),t('lk_vol')+' (m³)','GlobalId']].concat(R.map(r=>[r.c,r.n,r.ty,r.st,r.v.toFixed(3),r.g])):[[t('lk_cls'),t('lk_storey'),t('lk_count'),t('lk_vol')+' (m³)']].concat(R.map(r=>[r.c,r.st,r.q,r.v.toFixed(3)]))).map(a=>a.map(q).join(',')).join('\r\n')}
-function dlgLkSched(e,all,cls){const B=ifcOf(e);if(!B||!lpPr(B)){toast(t('lk_old'));return}const R=lkRows(e,all,cls),C=[...new Set(B.pr.map(p=>B.L[p[0]]?B.L[p[0]].n:'?'))].sort(),tot=R.reduce((a,r)=>a+r.v,0),cnt=all?R.length:R.reduce((a,r)=>a+r.q,0);
-  const head=all?`<th>${t('lk_cls')}</th><th>${t('lk_name')}</th><th>${t('lk_type')}</th><th>${t('lk_storey')}</th><th>${t('lk_vol')} (m³)</th>`:`<th>${t('lk_cls')}</th><th>${t('lk_storey')}</th><th>${t('lk_count')}</th><th>${t('lk_vol')} (m³)</th>`,
-    rows=R.slice(0,2000).map(r=>all?`<tr data-lkp="${r.i}" style="cursor:pointer"><td>${esc(r.c)}</td><td>${esc(r.n)}</td><td>${esc(r.ty)}</td><td>${esc(r.st)}</td><td>${r.v.toFixed(3)}</td></tr>`:`<tr><td>${esc(r.c)}</td><td>${esc(r.st)}</td><td>${r.q}</td><td>${r.v.toFixed(3)}</td></tr>`).join('');
-  const body=`<div class="pa"><label><input type="checkbox" id="lkAll"${all?' checked':''}> ${t('lk_all')}</label> <select id="lkCls"><option value="">${t('lk_allcls')}</option>${C.map(c=>`<option${c===cls?' selected':''}>${esc(c)}</option>`).join('')}</select></div><p class="note">${t('lk_note')}</p><div class="tblw"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${all?4:2}">${t('lk_tot')} ${cnt}</td>${all?'':'<td></td>'}<td>${tot.toFixed(3)}</td></tr></tfoot></table></div>`;
+function lkCSV(e,all,cls){const q=x=>'"'+String(x).replace(/"/g,'""')+'"',R=lkRows(e,all,cls),B=ifcOf(e),m3=!!(B&&B.m3),ck=t(lkCK(e)),ty=t(m3?'m3_omats':'lk_type');
+  return'\ufeff'+(all?(m3?[[ck,t('lk_name'),ty,t('lk_vol')+' (m³)']].concat(R.map(r=>[r.c,r.n,r.ty,r.v.toFixed(3)])):[[ck,t('lk_name'),ty,t('lk_storey'),t('lk_vol')+' (m³)','GlobalId']].concat(R.map(r=>[r.c,r.n,r.ty,r.st,r.v.toFixed(3),r.g])))
+    :(m3?[[ck,t('lk_count'),t('lk_vol')+' (m³)']].concat(R.map(r=>[r.c,r.q,r.v.toFixed(3)])):[[ck,t('lk_storey'),t('lk_count'),t('lk_vol')+' (m³)']].concat(R.map(r=>[r.c,r.st,r.q,r.v.toFixed(3)])))).map(a=>a.map(q).join(',')).join('\r\n')}
+function dlgLkSched(e,all,cls){const B=ifcOf(e);if(!B||!lpPr(B)){toast(t('lk_old'));return}const m3=!!B.m3,ck=t(lkCK(e)),R=lkRows(e,all,cls),C=[...new Set(B.pr.map(p=>B.L[p[0]]?B.L[p[0]].n:'?'))].sort(),tot=R.reduce((a,r)=>a+r.v,0),cnt=all?R.length:R.reduce((a,r)=>a+r.q,0);
+  const sth=m3?'':`<th>${t('lk_storey')}</th>`,head=all?`<th>${ck}</th><th>${t('lk_name')}</th><th>${t(m3?'m3_omats':'lk_type')}</th>${sth}<th>${t('lk_vol')} (m³)</th>`:`<th>${ck}</th>${sth}<th>${t('lk_count')}</th><th>${t('lk_vol')} (m³)</th>`,
+    rows=R.slice(0,2000).map(r=>{const st=m3?'':`<td>${esc(r.st)}</td>`;return all?`<tr data-lkp="${r.i}" style="cursor:pointer"><td>${esc(r.c)}</td><td>${esc(r.n)}</td><td>${esc(r.ty)}</td>${st}<td>${r.v.toFixed(3)}</td></tr>`:`<tr><td>${esc(r.c)}</td>${st}<td>${r.q}</td><td>${r.v.toFixed(3)}</td></tr>`}).join('');
+  const body=`<div class="pa"><label><input type="checkbox" id="lkAll"${all?' checked':''}> ${t('lk_all')}</label> <select id="lkCls"><option value="">${t(m3?(B.m3.by==='obj'?'m3_allobj':'m3_allmat'):'lk_allcls')}</option>${C.map(c=>`<option${c===cls?' selected':''}>${esc(c)}</option>`).join('')}</select></div><p class="note">${t(m3?'m3_lk_note':'lk_note')}</p><div class="tblw"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${(all?4:2)-(m3?1:0)}">${t('lk_tot')} ${cnt}</td>${all?'':'<td></td>'}<td>${tot.toFixed(3)}</td></tr></tfoot></table></div>`;
   openDlg(t('a_lksched')+' — '+esc(e.name||B.name||''),body,`<button class="btn" data-lk="csv">CSV</button><button class="btn" data-close="1">${t('close')}</button>`,{
     change(ev){const a=$('#lkAll'),c=$('#lkCls');dlgLkSched(e,a&&a.checked,c?c.value:'')},
     click(ev){const tr=ev.target.closest('[data-lkp]');if(tr){ui.sel=new Set([e.id]);ui.lpk={id:e.id,p:+tr.dataset.lkp};closeDlg();refresh();return}
@@ -29188,6 +29614,14 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r56={I:()=>({P,ui,IDX,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),
+  parse:(name,buf,side)=>m3Parse(name,buf,new Map(Object.entries(side||{}).map(([k,v])=>[m3Base(k),v]))),stats:S=>m3Stats(S),tri:S=>m3Tri(S),world:(S,up)=>m3World(S,up),bb:(S,up)=>m3BB(m3World(S,up)),
+  blob:(S,o)=>m3Blob(S,o),units:S=>m3Units(S),ug:S=>m3UGuess(S,m3BB(m3World(S,'z'))),upg:S=>m3UpGuess(S),poly:(p,ix)=>{const o=[];m3Poly(p,ix,o);return o},base:n=>m3Base(n),
+  files:(L,re)=>m3Files(L,re),dlg:(S,n)=>dlgM3In(S,n||'test.obj'),link:(S,name,o)=>m3Link(S,name,o,m3World(S,o.up)),zip:b=>zipRead(b),ifz:(f,re)=>ifzFile(f,re),inflate:d=>m3Inflate(d),
+  props:B=>m3Props(B),ck:id=>lkCK(IDX.get(id)),fmt:id=>lkFmt(IDX.get(id)),lyk:id=>lkLyK(CADB.get(IDX.get(id).key)),of:id=>!!m3Of(IDX.get(id)),csv:(id,all,cls)=>lkCSV(IDX.get(id),all,cls||''),rows:(id,all)=>lkRows(IDX.get(id),all,''),
+  pl:()=>ui.m3pl?{name:ui.m3pl.name,rot:ui.m3pl.rot,o:ui.m3pl.o,n:ui.m3pl.segs.length,w:ui.m3pl.B.w,h:ui.m3pl.B.h}:null,geo:id=>ifcGeoOf(CADB.get(IDX.get(id).key)).length,
+  planL:(id,vid)=>{const e=IDX.get(id);return linkL(e,CADB.get(e.key),viewById(vid)).reduce((a,l)=>a+l.s.length/4,0)},ll:(id,vid)=>{const e=IDX.get(id),B=ifcOf(e),v=viewById(vid);return B&&v?ifcLinkLayers(e,B,v).map(l=>({n:l.n,w:l.w||1,s:Array.from(l.s)})):[]},segs:k=>{const B=CADB.get(k);return B?m3Segs(B):null},links:()=>ifcLinks().map(e=>e.id),
+  fl:v=>fmtLen(v),un:()=>unitName(),pe:vid=>planExtents(viewById(vid)),shc:(E,N)=>shcPlace(E,N),lpk:()=>ui.lpk||null,cad:k=>CADB.get(k)||null,str:()=>projStr(),loadText:s=>loadText(s),undo:()=>undo(),redo:()=>redo(),av:()=>{const v=activeView();return v?v.id:null},tool:()=>ui.tool,act:(k,a)=>act(k,a)};
 window.PenumBIM.r55={I:()=>({P,ui,IDX,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),list:S=>ifvList(S).map(x=>({id:x.v.id,k:x.k,name:ifvLabel(x.v)})),kind:v=>ifvKind(v),
   ann:(S,ids,ok)=>ifvAnn(S,new Set(ids),new Set(ok||ids),{drop:0}).map(d=>d.id),take:(s,f)=>ifvTake(s,f),dlg:(S,f)=>dlgIfv(S,f||'test.penbim'),dlg2:(S,f)=>dlgIfv2(S,f||'test.penbim'),run:(S,ids)=>{const r=ifvRun(S,ids);return r?{R:r.R,V:r.X.V.map(c=>c.id),vm:[...r.X.vm]}:null},
   list2:S=>ifv2List(S).map(x=>({id:x.v.id,k:x.k,n:x.n})),start2:(S,id,tr)=>ifv2Start(S,(S.views||[]).find(v=>v.id===id),tr,'test.penbim'),
