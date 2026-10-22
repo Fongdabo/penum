@@ -12869,10 +12869,10 @@ function dlgSysReport(){
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`;
   const cards=A.comps.map((c,i)=>{const w=c.worst,src=c.root?esc(c.root.mark||t('cat_equip')):c.riser?t('cat_riser'):t('sr_openend');
     return`<div class="card"><div class="ch"><i style="background:${SYS[c.sys]||SYS.SA}"></i>${esc(t('sys_'+(SYS[c.sys]?c.sys:'SA')))}<button class="btn" data-sr="${i}">${t('sr_select')}</button></div>`+
-      row(t('sr_source'),src)+row(t('sr_flow'),money(c.total*flowK(P))+' '+airUnit())+row(t('sr_terms'),c.terms)+row(t('sr_vmax'),c.vmax.toFixed(1)+' m/s')+
+      row(t('sr_source'),src)+scCardRows(c,row)+row(t('sr_flow'),money(c.total*flowK(P))+' '+airUnit())+row(t('sr_terms'),c.terms)+row(t('sr_vmax'),c.vmax.toFixed(1)+' m/s')+
       (w.term?row(t('sr_path'),fmtLen(w.len)+' '+unitName())+row(t('sr_dp'),Math.round(w.dp)+' Pa')+`<div class="kv sub"><span>${t('sr_dp_parts',w.fr.toFixed(1),(w.fit-LOSS.terminal).toFixed(1),LOSS.terminal)}</span></div>`:'')+
       (c.loop?`<p class="note warn">${t('sr_loop')}</p>`:'')+'</div>'}).join('');
-  const body=(A.comps.length?cards:`<p class="note">${t('sr_none')}</p>`)+(A.loose.length?`<p class="note">${t('sr_loose',A.loose.length)} <button class="btn" data-sr="loose">${t('sr_select')}</button></p>`:'')+
+  const body=scBlock('duct')+(A.comps.length?cards:`<p class="note">${t('sr_none')}</p>`)+(A.loose.length?`<p class="note">${t('sr_loose',A.loose.length)} <button class="btn" data-sr="loose">${t('sr_select')}</button></p>`:'')+
     (stale?`<p class="note warn">${t('sr_stale',stale)}</p>`:'')+`<p class="note">${t('sr_note',t('k_byshape'),LOSS.branch,LOSS.thru,LOSS.vd,LOSS.fd,LOSS.att,LOSS.terminal)}</p>`;
   openDlg(t('a_sysreport'),body,`<button class="btn${stale?' primary':''}" data-sr="flow">${t('a_airflow')}</button><button class="btn" data-sr="size">${t('a_ductsize')}…</button><button class="btn" data-close="1">${t('close')}</button>`,
     {click(e){const k=e.target.dataset.sr;if(k==null)return;if(k==='flow'){toast(t('airflow_done',applyAirflow(A)));dlgSysReport()}else if(k==='size')dlgDuctSize();
@@ -14011,7 +14011,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=158,V1_NAME='V1.147';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=159,V1_NAME='V1.148';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -27697,6 +27697,131 @@ Object.assign(STR,{
   bo_dep_ind:['อิสระ (Independent)','Independent'],bo_dep_pri:['มุมมองหลัก (Primary)','Primary'],bo_dep_dep:['มุมมองย่อย (Dependent)','Dependent'],
   cat_view:['มุมมอง (Views)','Views'],cat_sheet:['ชีต (Sheets)','Sheets'],pp_vinst:['มุมมองและชีตใช้ได้กับพารามิเตอร์ของชิ้น (Instance) เท่านั้น','Views and sheets take instance parameters only']});
 
+/* ===== 148 Check Systems, the rated airflow and external static pressure of equipment, the rated flow of pumps (V1.148; Revit: Analyze › Check Systems ›
+   Check Duct Systems and Check Pipe Systems; the Airflow and External Static Pressure of an air handling unit, a fan coil unit or a fan; the Flow of a pump).
+   A type of equipment that moves air may say the airflow it is rated for (T.af, L/s) and its external static pressure (T.esp, Pa); a pump type its rated flow (T.wf, L/s).
+   A cooling unit with no T.af is taken at 400 CFM a ton of refrigeration (53.7 L/s a kW) and says that it is an estimate.  What a unit is asked for comes from the duct
+   systems it is the source of (airflow() in 27-mepcalc.js): the airflow of its supply systems, and as its external static pressure the critical path of its supply system
+   with that of its return (or exhaust) system added.
+   ui.sysck: Check Systems is on — the problems are marked on the plans and listed in Review Warnings, as Revit's Check Duct Systems and Check Pipe Systems do: a duct or
+   chilled/condenser water system with no source, a terminal with no airflow, a ducted unit no duct reaches, more air than a unit is rated for, a critical path longer than
+   its external static pressure, a loop, a run that ends on a run of another system, more flow than a pump is rated for.  Open ends stay with Show Disconnects. ===== */
+const SC_AIR=['ahu','fcu','cassette','wall','fan'],SC_DUCTED=['ahu','fcu','fan'],SC_COOL=['ahu','fcu','cassette','wall'],SC_PUMP=['pump','fpump','jpump'],SC_LSKW=400*0.471947/3.51685,SC_DRAIN=['S','W','V','RL'];
+{const F=TYPE_FIELDS.equip;F.splice(F.findIndex(f=>f[0]==='kw')+1,0,['af','num','L/s',10],['esp','num','Pa',10],['wf','num','L/s',0.1])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='equip'||!F||!T)return F;const k=T.kind;return F.filter(f=>f[0]==='af'||f[0]==='esp'?SC_AIR.includes(k):f[0]==='wf'?SC_PUMP.includes(k):true)}}
+const scKind=(Q,e)=>((typ(Q,e)||{}).kind)||'';
+/* the airflow a unit is rated for: {v L/s, est: 1 when it is worked out from its cooling capacity}, or null */
+function scRated(T){if(!T)return null;if(+T.af>0)return{v:+T.af,est:0};if(SC_COOL.includes(T.kind)&&+T.cap>0)return{v:+T.cap*SC_LSKW,est:1};return null}
+const scFan=k=>k==='fan';
+/* every unit that is the source of a duct system: {sup, ret: L/s; dpS, dpR: the critical path of its supply and of its return/exhaust systems, Pa; req: the external
+   static pressure it needs; comps}; att: the units some duct reaches */
+let SCA=null;
+function scAir(){if(SCA&&SCA.ver===VER&&SCA.P===P)return SCA;const A=airflow(P),M=new Map(),att=new Set();
+  for(const n of A.G.nodes)for(const q of n.equips)att.add(q.id);
+  for(const c of A.comps){const q=c.root;if(!q)continue;let m=M.get(q.id);if(!m)M.set(q.id,m={sup:0,ret:0,dpS:0,dpR:0,comps:[]});m.comps.push(c);
+    const dp=c.worst&&c.worst.term!=null?c.worst.dp:0,s=scFan(scKind(P,q))||SCL(c.sys)==='SA';if(s){m.sup+=c.total;m.dpS=Math.max(m.dpS,dp)}else{m.ret+=c.total;m.dpR=Math.max(m.dpR,dp)}}
+  for(const m of M.values())m.req=m.dpS+m.dpR;
+  SCA={ver:VER,P,A,M,att};return SCA}
+/* a unit: what it is asked for and what it is rated for */
+function scUnit(e){const T=typ(P,e)||{},S=scAir(),m=S.M.get(e.id)||null,R=scRated(T),esp=+T.esp>0?+T.esp:0;
+  return{T,m,R,esp,att:S.att.has(e.id),over:!!(m&&R&&m.sup>R.v*1.05),low:!!(m&&esp&&m.req>esp+0.5)}}
+/* a pump: the flow it is asked for (a pump of a set: what each pump on duty gives) and what it is rated for */
+function scPump(e){const T=typ(P,e)||{},W=waterNow(),S=mesOf(e);let q=0;
+  if(S)q=mesInfo(S).q;else for(const n of W.nets)if(n.root===e&&n.flow>q)q=n.flow;
+  const wf=+T.wf>0?+T.wf:0;return{T,q,wf,over:!!(wf&&q>wf*1.05)}}
+/* the end of a run that stops on a run of another system: [own run, the other run] */
+function scMix(G,wet){const out=[],seen=new Set();
+  for(const n of G.nodes){if(n.arms.length!==1||n.terms.length||n.equips.length||n.risers.length||(n.fix&&n.fix.length)||n.arms[0].ed.riser)continue;const e=n.arms[0].ed.r.e;
+    for(const r of G.R){const o=r.e;if(o===e||(o.sys||'')===(e.sys||''))continue;if(wet&&SC_DRAIN.includes(o.sys)&&SC_DRAIN.includes(e.sys))continue;
+      const t=(n.x-o.x1)*r.ux+(n.y-o.y1)*r.uy,d=Math.abs((n.x-o.x1)*-r.uy+(n.y-o.y1)*r.ux);if(t<-30||t>r.L+30||d>r.hw+30)continue;
+      const z=r.z[0]+(r.z[1]-r.z[0])*clamp01(t/r.L);if(Math.abs(z-n.z)>r.hh+runH(P,e)/2+30)continue;
+      const k=Math.min(e.id,o.id)+'|'+Math.max(e.id,o.id);if(seen.has(k))continue;seen.add(k);out.push({n,e,o})}}
+  return out}
+/* the problems: {k, d: 'duct' or 'pipe', ids, x, y, level, a: the text the message takes} */
+let SCK=null;
+function scChecks(){if(SCK&&SCK.ver===VER&&SCK.P===P)return SCK.L;const L=[],S=scAir(),A=S.A,N=A.G.nodes,add=(k,d,ids,x,y,level,a)=>L.push({k,d,ids,x,y,level,a:a==null?'':a});
+  const sysN=s=>SYS[s]?t('sys_'+s):s,lvAt=ids=>{for(const id of ids){const e=IDX.get(id);if(e&&e.level!=null)return e.level}return null};
+  A.comps.forEach(c=>{const n=N[c.ri],terms=[];for(const i of c.ns)for(const tm of N[i].terms)terms.push(tm);const all=c.ids.concat(terms.map(x=>x.id)),lv=lvAt(c.ids);
+    if(terms.length&&!c.root&&!c.riser)add('sc_nosrc','duct',all,n.x,n.y,lv,sysN(c.sys));
+    if(c.loop)add('sc_loop','duct',all,n.x,n.y,lv,sysN(c.sys));
+    for(const tm of terms)if(!(+tm.flow>0))add('sc_noflow','duct',[tm.id],tm.x,tm.y,tm.level)});
+  for(const q of P.els){if(q.cat!=='equip')continue;const k=scKind(P,q);
+    if(SC_DUCTED.includes(k)&&!S.att.has(q.id)){add('sc_eqfree','duct',[q.id],q.x,q.y,q.level,q.mark||((typ(P,q)||{}).mark)||t('cat_equip'));continue}
+    if(SC_AIR.includes(k)){const U=scUnit(q),ids=U.m?[q.id,...new Set(U.m.comps.flatMap(c=>c.ids))]:[q.id];
+      if(U.over)add('sc_over','duct',ids,q.x,q.y,q.level,(q.mark||'')+' '+fmtAir(U.m.sup)+' > '+fmtAir(U.R.v)+' '+airUnit());
+      if(U.low)add('sc_esp','duct',ids,q.x,q.y,q.level,(q.mark||'')+' '+Math.round(U.m.req)+' > '+Math.round(U.esp)+' Pa')}
+    else if(SC_PUMP.includes(k)&&+(typ(P,q)||{}).wf>0){const U=scPump(q);if(U.over)add('sc_pover','pipe',[q.id],q.x,q.y,q.level,(q.mark||'')+' '+fmtWater(U.q)+' > '+fmtWater(U.wf)+' '+waterUnit())}}
+  for(const m of scMix(A.G,false))add('sc_mix','duct',[m.e.id,m.o.id],m.n.x,m.n.y,m.e.level,m.e.sys+' / '+m.o.sys);
+  if(P.els.some(e=>e.cat==='pipe')){const W=waterNow(),H=W.G;
+    for(const n of W.nets){if((n.kind!=='chw'&&n.kind!=='cdw')||n.from!=='open'||!(n.n>0||n.flow>0))continue;const x=H.nodes[n.ri];add('sc_pnosrc','pipe',n.ids.slice(),x.x,x.y,lvAt(n.ids),n.sys+' · '+t('ps_'+n.sys))}
+    for(const m of scMix(H,true))add('sc_pmix','pipe',[m.e.id,m.o.id],m.n.x,m.n.y,m.e.level,m.e.sys+' / '+m.o.sys)}
+  SCK={ver:VER,P,L};return L}
+/* Review Warnings: the problems join the list while Check Systems is on */
+WARN_K.push('sc_nosrc','sc_eqfree','sc_noflow','sc_over','sc_esp','sc_loop','sc_mix','sc_pnosrc','sc_pover','sc_pmix');
+let SCW=null;
+{const f0=warnAll;warnAll=()=>{const W=f0();if(!ui.sysck)return W;const S=scChecks();if(SCW&&SCW.base===W&&SCW.ck===S)return SCW.out;
+  const list=W.list.concat(S.map(c=>({k:c.k,ids:c.ids.slice(),a:c.a}))).sort((a,b)=>WARN_K.indexOf(a.k)-WARN_K.indexOf(b.k)),ids=new Set(W.ids);for(const c of S)for(const id of c.ids)ids.add(id);
+  SCW={base:W,ck:S,out:{ver:W.ver,list,ids}};return SCW.out}}
+/* the command: a button that stays pressed, as Revit's Check Duct Systems */
+XA.sysck=()=>{ui.sysck=!ui.sysck;refresh();if(!ui.sysck){toast(t('sc_off'));return}const n=scChecks().length;toast(n?t('sc_on',n):t('sc_none'),5000)};
+{const f0=pressed;pressed=id=>id==='@sysck'?!!ui.sysck:f0(id)}
+for(const [tab,pn] of [['analyze','p_check'],['sys','p_analyze']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@sysck'))p.b.splice(Math.max(0,p.b.indexOf('@disc')+1),0,'@sysck')}
+BTN['@sysck']=['warn',''];
+/* the markers on the plans: a red-orange disc with an exclamation mark where each problem is */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.sysck||v.kind!=='plan'||v.draft)return;const sc=v.scale||100,r=2.2*sc;
+  for(const c of scChecks()){if(c.level!==v.level)continue;const e=IDX.get(c.ids[0]);if(e&&!planShow(v,e))continue;
+    g.path([...Array(20).keys()].map(i=>[c.x+r*Math.cos(i*Math.PI/10),c.y+r*Math.sin(i*Math.PI/10)]));ctx.fillStyle='#e8590c';ctx.fill();ctx.strokeStyle='#5a1e00';ctx.lineWidth=g.lw(0.25);ctx.stroke();g.text('!',[c.x,c.y+0.1*r],2.6,{color:'#fff',bold:true})}});
+/* the Properties of a unit that moves air, and of a pump */
+XP.push((c,els)=>{if(c!=='equip'||els.length!==1)return'';const e=els[0],k=scKind(P,e);
+  if(SC_AIR.includes(k)){const U=scUnit(e),m=U.m,au=' '+airUnit();let h=PR.grp('g_scair');
+    h+=PR.ro(scFan(k)?'p_scfan':'p_scsup',m?fmtAir(m.sup)+au:'—');if(!scFan(k))h+=PR.ro('p_scret',m&&m.ret>0?fmtAir(m.ret)+au:'—');
+    h+=PR.ro('p_scaf',U.R?fmtAir(U.R.v)+au+(U.R.est?' *':''):'—')+PR.ro('p_scespq',m&&m.req>0?Math.round(m.req)+' Pa':'—')+PR.ro('p_scesp',U.esp?Math.round(U.esp)+' Pa':t('sc_noesp'));
+    const st=!m?t(SC_DUCTED.includes(k)&&!U.att?'sc_st_free':'sc_st_none'):[U.over?t('sc_st_over'):'',U.low?t('sc_st_esp'):''].filter(Boolean).join(' · ')||t('sc_st_ok');
+    return h+PR.ro('p_scok',st)+(U.R&&U.R.est?`<div class="pnote">* ${t('sc_est',+U.T.cap||0)}</div>`:'')}
+  if(SC_PUMP.includes(k)){const U=scPump(e),wu=' '+waterUnit();return PR.grp('g_scpump')+PR.ro('p_scwq',U.q>0?fmtWater(U.q)+wu:'—')+PR.ro('p_scwf',U.wf?fmtWater(U.wf)+wu:t('sc_nowf'))+PR.ro('p_scok',U.wf&&U.q>0?t(U.over?'sc_st_pover':'sc_st_ok'):'—')}
+  return''});
+/* the Duct System Report (DC) and the Pipe System Report (PC): the unit of each system against what it is rated for, and the problems of the discipline */
+function scCardRows(c,row){const q=c.root;if(!q||!SC_AIR.includes(scKind(P,q)))return'';const U=scUnit(q),m=U.m;if(!m)return'';const au=' '+airUnit();
+  const bad=s=>`<span style="color:var(--warn);font-weight:600">${s}</span>`,af=U.R?fmtAir(U.R.v)+au+(U.R.est?' *':''):'—',esp=U.esp?Math.round(U.esp)+' Pa':'—';
+  return row(t('sr_rated'),(U.over?bad(af):af)+' · '+(U.low?bad(esp):esp))+row(t('sr_espq'),m.req>0?(m.dpR>0?Math.round(m.dpS)+' + '+Math.round(m.dpR)+' = ':'')+Math.round(m.req)+' Pa':'—')+(U.R&&U.R.est?`<div class="kv sub"><span>* ${t('sc_est',+U.T.cap||0)}</span></div>`:'')}
+function scPipeRows(n,row){const q=n.root;if(!q||!SC_PUMP.includes(scKind(P,q)))return'';const U=scPump(q);if(!U.wf)return'';const s=fmtWater(U.wf)+' '+waterUnit();return row(t('pr_rated'),U.over?`<span style="color:var(--warn);font-weight:600">${s}</span>`:s)}
+function scBlock(d){const L=scChecks().filter(c=>c.d===d);
+  return`<div class="card"><div class="ch">${t('sc_block',L.length)}<label style="margin-left:auto;font-weight:400"><input type="checkbox" data-act="sysck"${ui.sysck?' checked':''}> ${t('sc_mark')}</label></div>`+
+    (L.length?`<div style="max-height:24vh;overflow:auto">`+L.map(c=>`<div class="kv" style="align-items:center"><span style="color:var(--ink)">${esc(t('wn_'+c.k,c.a))}</span><button class="btn" data-act="scshow" data-arg="${c.ids.join(',')}">${t('sr_select')}</button></div>`).join('')+'</div>':`<p class="note">${t('sc_noprob')}</p>`)+'</div>'}
+XA.scshow=arg=>showEls(String(arg||'').split(',').map(Number).filter(x=>x>0));
+/* schedules of mechanical equipment */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='equip')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),air=e=>Q===P&&SC_AIR.includes(scKind(Q,e)),au=' ('+flowSym(Q)+')',k1=flowK(Q);
+  add('scsup',tr('p_scsup')+au,e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m?Math.round(m.sup*k1*100)/100:''},{num:1,dec:0});
+  add('scret',tr('p_scret')+au,e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m&&m.ret>0?Math.round(m.ret*k1*100)/100:''},{num:1,dec:0});
+  add('scaf',tr('p_scaf')+au,e=>{if(!air(e))return'';const R=scRated(typ(Q,e));return R?Math.round(R.v*k1*100)/100:''},{num:1,dec:0});
+  add('scespq',tr('p_scespq')+' (Pa)',e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m&&m.req>0?Math.round(m.req):''},{num:1,dec:0});
+  add('scok',tr('p_scok'),e=>{if(Q!==P)return'';const k=scKind(Q,e);if(SC_PUMP.includes(k)){const U=scPump(e);return U.wf&&U.q>0?tr(U.over?'sc_st_pover':'sc_st_ok'):''}
+    if(!SC_AIR.includes(k))return'';const U=scUnit(e);if(!U.m)return'';return[U.over?tr('sc_st_over'):'',U.low?tr('sc_st_esp'):''].filter(Boolean).join(' · ')||tr('sc_st_ok')});
+  return F}}
+/* IFC: what the unit and the pump are rated for */
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='equip'||!T)return r;
+  if(+T.af>0)r.push(prop('RatedAirflow',fx2(+T.af)+' L/s'));if(+T.esp>0)r.push(prop('ExternalStaticPressure',Math.round(+T.esp)+' Pa'));if(+T.wf>0)r.push(prop('RatedFlow',fx2(+T.wf)+' L/s'));return r}}
+Object.assign(STR,{
+  a_sysck:['ตรวจปัญหาระบบ','Check Systems'],f_af:['พิกัดลม (Airflow)','Rated Airflow'],f_esp:['ความดันสถิตภายนอก (ESP)','External Static Pressure'],f_wf:['พิกัดอัตราไหล (Flow)','Rated Flow'],
+  sc_on:['ตรวจปัญหาระบบ: พบ {0} รายการ ดูเครื่องหมายบนแปลน หรือใน Review Warnings','Check Systems: {0} problems, marked on the plans and listed in Review Warnings'],
+  sc_none:['ตรวจปัญหาระบบ: ไม่พบปัญหา','Check Systems: no problems found'],sc_off:['ปิดการตรวจปัญหาระบบแล้ว','Check Systems is off'],
+  wn_sc_nosrc:['ระบบ {0} มีหัวจ่ายแต่ไม่มีเครื่องเป็นต้นทาง (AHU, FCU หรือพัดลม) จึงคิดความดันของพัดลมไม่ได้','System {0} has air terminals but no equipment as its source (an AHU, an FCU or a fan), so the fan pressure cannot be worked out'],
+  wn_sc_eqfree:['เครื่อง {0} ยังไม่มีท่อลมต่อ','Equipment {0} is not connected to any duct'],
+  wn_sc_noflow:['หัวจ่ายต่อท่อแล้วแต่ยังไม่ได้ใส่ปริมาณลม','Air terminal is connected but has no airflow'],
+  wn_sc_over:['ลมที่ต่ออยู่มากกว่าพิกัดลมของเครื่อง: {0}','More air is connected than the equipment is rated for: {0}'],
+  wn_sc_esp:['ความดันสูญเสียตามเส้นทางวิกฤตมากกว่า ESP ของเครื่อง: {0}','The critical path loses more pressure than the external static pressure of the equipment: {0}'],
+  wn_sc_loop:['ระบบ {0} มีท่อต่อกันเป็นวง ปริมาณลมอาจคิดผิด','System {0} forms a loop: its airflow may be wrong'],
+  wn_sc_mix:['ปลายท่อลมของระบบหนึ่งชนท่อของอีกระบบ ({0})','A duct of one system ends on a duct of another system ({0})'],
+  wn_sc_pnosrc:['ระบบท่อ {0} มีเครื่องรับน้ำแต่ไม่มีต้นทาง (เครื่องทำน้ำเย็น ปั๊ม หรือคูลลิ่งทาวเวอร์)','Pipe system {0} serves equipment but has no source (a chiller, a pump or a cooling tower)'],
+  wn_sc_pover:['อัตราไหลที่ระบบต้องการมากกว่าพิกัดของปั๊ม: {0}','The system asks for more flow than the pump is rated for: {0}'],
+  wn_sc_pmix:['ปลายท่อน้ำของระบบหนึ่งชนท่อของอีกระบบ ({0})','A pipe of one system ends on a pipe of another system ({0})'],
+  g_scair:['ระบบลมของเครื่อง','Air System'],p_scsup:['ลมจ่ายที่ต่ออยู่','Connected Supply Airflow'],p_scret:['ลมกลับ/ลมระบายที่ต่ออยู่','Connected Return Airflow'],p_scfan:['ลมที่ต่ออยู่','Connected Airflow'],
+  p_scaf:['พิกัดลมของเครื่อง','Rated Airflow'],p_scespq:['ESP ที่ต้องการ (เส้นทางวิกฤต)','Required ESP (critical path)'],p_scesp:['ESP ของเครื่อง','External Static Pressure'],p_scok:['ผลตรวจ','Check'],
+  sc_est:['ประมาณจาก {0} kW ที่ 400 CFM ต่อตัน','estimated from {0} kW at 400 CFM a ton'],sc_noesp:['— (ใส่ใน แก้ชนิด)','— (set it in Edit Type)'],sc_nowf:['— (ใส่ใน แก้ชนิด)','— (set it in Edit Type)'],
+  sc_st_ok:['ผ่าน','OK'],sc_st_over:['ลมเกินพิกัด','Airflow over rating'],sc_st_esp:['ESP ไม่พอ','ESP too low'],sc_st_free:['ยังไม่มีท่อลมต่อ','No duct connected'],sc_st_none:['ไม่ได้เป็นต้นทางของระบบท่อลม','Not the source of a duct system'],sc_st_pover:['อัตราไหลเกินพิกัด','Flow over rating'],
+  g_scpump:['อัตราไหลของปั๊ม','Pump Flow'],p_scwq:['อัตราไหลที่ต้องการ (ต่อปั๊มที่ทำงาน)','Required Flow (each pump on duty)'],p_scwf:['พิกัดอัตราไหลของปั๊ม','Rated Flow'],
+  sr_rated:['พิกัดลม · ESP ของเครื่อง','Rated airflow · ESP of the unit'],sr_espq:['ESP ที่ต้องการ (จ่าย + กลับ)','Required ESP (supply + return)'],pr_rated:['พิกัดอัตราไหลของปั๊ม','Rated flow of the pump'],
+  sc_block:['ปัญหาของระบบ ({0})','System problems ({0})'],sc_mark:['แสดงบนแปลนและใน Review Warnings','Mark them on the plans and in Review Warnings'],sc_noprob:['ไม่พบปัญหาของระบบ','No system problems found']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -27853,7 +27978,7 @@ function dlgPipeReport(){
   const was=$('#dlg').open&&ui.dlg&&ui.dlg.pr,k0=was&&$('#dlg .dc')?$('#dlg .dc').scrollTop:0,opened=was?new Set($$('#dlg details[open]').map(d=>d.dataset.net)):new Set();
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`,kinds=new Set(nets.map(x=>x.n.kind)),wq=q=>fmtWater(q)+' '+waterUnit()+(ufOf().fw==='ls'?' · '+Math.round(q*60)+' L/min':'');          // litres a second read better with litres a minute beside them
   const cards=nets.map(({n,i})=>{const w=n.worst,pr=PRESS[n.kind]&&n.flow>0,src=n.root?esc(n.root.mark||t('cat_equip')):n.riser?t('cat_riser'):n.from==='open'?t('sr_openend'):'—';
-    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src)+mesPR(n,row);
+    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src)+mesPR(n,row)+scPipeRows(n,row);
     if(n.kind==='sup')h+=row(t('pr_fixtures'),n.n)+row(t('pr_wsfu'),n.fu.toFixed(1))+row(t('pr_flow'),wq(n.flow));
     else if(n.kind==='drain')h+=row(t('pr_fixtures'),n.n)+row(t('pr_dfu'),n.fu);
     else if(n.kind==='fire')h+=row(t('pr_heads'),n.heads)+row(t('pr_fpflow',Math.min(n.heads,des.n)),wq(n.flow));
@@ -27870,7 +27995,7 @@ function dlgPipeReport(){
   const num=(k,u,st,min)=>`<label><span>${t('pz_'+k)}</span><span><input type="number" data-po="${k}" value="${o[k]}" step="${st}" min="${min}"><small>${u}</small></span></label>`;
   const opts=(kinds.has('sup')?num('resid','kPa',10,0):'')+(kinds.has('chw')||kinds.has('cdw')?num('dT','K',0.5,1):'')+(kinds.has('fire')?`<label><span>${t('pz_haz')}</span><span><select data-po="haz"><option value="light"${o.haz==='light'?' selected':''}>${t('pz_h_light')}</option><option value="ord"${o.haz==='ord'?' selected':''}>${t('pz_h_ord')}</option></select></span></label>`:'');
   const chk=issues.length?issues.map(([k,ids])=>`<p class="note warn" data-issue="${k}">${t('pr_i_'+k,ids.length)} <button class="btn" data-pr="${k==='small'?'size':'i'+k}">${k==='small'?t('a_pipesize')+'…':t('sr_select')}</button></p>`).join(''):`<p class="note ok" data-issue="none">${t('pr_ok')}</p>`;
-  const body=nets.length?(opts?`<div class="ldg pz">${opts}</div>`:'')+`<h4>${t('pr_checks')}</h4>${chk}<h4>${t('pr_systems')}</h4><div class="cards">${cards}</div>`+(stale?`<p class="note warn">${t('pr_stale',stale)}</p>`:'')+`<p class="note">${t('pr_wnote',WLOSS.elbow,WLOSS.branch,WLOSS.thru)}</p>`:`<p class="note">${t('pr_none')}</p>`;
+  const body=nets.length?(opts?`<div class="ldg pz">${opts}</div>`:'')+`<h4>${t('pr_checks')}</h4>${chk}${scBlock('pipe')}<h4>${t('pr_systems')}</h4><div class="cards">${cards}</div>`+(stale?`<p class="note warn">${t('pr_stale',stale)}</p>`:'')+`<p class="note">${t('pr_wnote',WLOSS.elbow,WLOSS.branch,WLOSS.thru)}</p>`:`<p class="note">${t('pr_none')}</p>`;
   openDlg(t('a_pipereport')+' (PC)',body,`<button class="btn${stale?' primary':''}" data-pr="flow"${nets.length?'':' disabled'}>${t('a_waterflow')}</button><button class="btn" data-pr="size"${nets.length?'':' disabled'}>${t('a_pipesize')}…</button><button class="btn" data-pr="csv"${nets.length?'':' disabled'}>${t('a_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
     {pr:1,change(ev){const el=ev.target,k=el.dataset.po;if(!k)return;if(k==='haz')o.haz=el.value;else{const v=parseFloat(el.value);if(isFinite(v)&&v>=(k==='dT'?0.5:0))o[k]=v}if(k!=='resid')szKeep();dlgPipeReport()},
      click(ev){const k=ev.target.dataset.pr;
@@ -29106,6 +29231,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.145 · ชุดงานแบบ Revit ([[a_worksets]]) ในแท็บใหม่ [[tab_collab]]: [[a_wsact]] · เปิดปิดชุดงาน · ซ่อนชุดงานในมุมมอง ([[vg_tab_ws]] ใน [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] ในคุณสมบัติ ตัวกรอง และตาราง
 - V1.146 · Path of Travel แบบ Revit ([[t_pot]]) ในแท็บ [[tab_analyze]]: ทางที่สั้นที่สุดอ้อมสิ่งกีดขวางและผ่านประตู · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · ตารางเส้นทางเดิน
 - V1.147 · จัดกลุ่ม Project Browser แบบ Revit ([[a_borg]]): มุมมอง [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · ชีต [[bo_pfx]] · ตั้งตัวกรอง โฟลเดอร์ 6 ชั้น และการเรียงเอง · พารามิเตอร์ของโครงการให้มุมมองและชีต
+- V1.148 · ตรวจปัญหาระบบแบบ Revit Check Duct/Pipe Systems ([[a_sysck]]): ระบบที่ไม่มีเครื่องต้นทาง หัวจ่ายที่ยังไม่มีปริมาณลม เครื่องที่ไม่มีท่อต่อ ลมเกินพิกัด ESP ไม่พอ ท่อต่อเป็นวง ท่อต่อชนท่อต่างระบบ ปั๊มอัตราไหลเกินพิกัด · ชนิดของเครื่องมี [[f_af]] [[f_esp]] และ [[f_wf]] ของปั๊ม · แผงคุณสมบัติ ตาราง และ [[a_sysreport]] เทียบสิ่งที่ระบบต้องการกับพิกัดของเครื่อง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -29131,11 +29257,15 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 2. เปิด [[a_ductsize]] (แท็บ [[tab_sys]]) แล้วกดปุ่ม [[a_airflow]] ในหน้าต่างนั้น: โปรแกรมรวมปริมาณลมจากหัวจ่ายย้อนไปตามท่อจนถึงเครื่อง
 3. ในหน้าต่างเดียวกัน ตั้ง [[ds_fric]] และ [[ds_vmax]] โปรแกรมเสนอขนาดมาตรฐานเล็กที่สุดที่ไม่เกินเกณฑ์ แล้วกดปุ่มใช้ขนาดใหม่เพื่อปรับจริง
 4. [[a_sysreport]] ((DC)): สรุปแต่ละระบบ — ต้นทาง ปริมาณลมรวม ความเร็วสูงสุด เส้นทางวิกฤต และความดันสูญเสียโดยประมาณ สำหรับตรวจขนาดพัดลม
+5. พิกัดของเครื่อง: ใน [[type_props]] ของ AHU, FCU, แอร์ฝังฝ้า, แอร์ติดผนัง และพัดลม ใส่ [[f_af]] และ [[f_esp]] (ถ้าไม่ใส่พิกัดลม เครื่องทำความเย็นจะประมาณจากขนาดทำความเย็นที่ 400 CFM ต่อตัน) · เลือกเครื่องแล้วแผงคุณสมบัติบอก [[p_scsup]] [[p_scret]] [[p_scespq]] (เส้นทางวิกฤตของลมจ่ายบวกลมกลับ) และ [[p_scok]] · การ์ดของแต่ละระบบใน [[a_sysreport]] และตารางเครื่องจักรก็แสดงเช่นกัน
+6. [[a_sysck]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): ปุ่มเปิดปิดแบบ Check Duct Systems / Check Pipe Systems ของ Revit · เมื่อเปิด ปัญหาของระบบขึ้นเป็นวงกลมสีส้มมี ! บนแปลน และอยู่ในรายการ Review Warnings: ระบบที่มีหัวจ่ายแต่ไม่มีเครื่องต้นทาง · หัวจ่ายที่ยังไม่มีปริมาณลม · AHU, FCU หรือพัดลมที่ไม่มีท่อต่อ · ลมเกินพิกัด · ESP ไม่พอ · ท่อต่อเป็นวง · ปลายท่อชนท่อของอีกระบบ · ระบบน้ำเย็นหรือน้ำระบายความร้อนที่ไม่มีต้นทาง · ปั๊มที่ระบบต้องการอัตราไหลเกินพิกัด · ปลายท่อที่เปิดค้างยังดูได้ด้วย [[a_disc]]
+> ต่างจาก Revit: ESP ที่ต้องการคิดจากเส้นทางวิกฤตของท่อ ข้อต่อ อุปกรณ์ และหัวจ่าย ไม่รวมความดันภายในเครื่อง (คอยล์ ฟิลเตอร์) · ลมกลับผ่านฝ้า (ไม่มีท่อ) ไม่ถูกนับ
 
 # ท่อน้ำ
 1. [[a_pipesize]]: คิดจากสุขภัณฑ์ที่ต่ออยู่ (หน่วยสุขภัณฑ์ WSFU และ DFU) จำนวนหัวสปริงเกลอร์ และเครื่องน้ำเย็น แล้วเสนอขนาดท่อ
 2. [[a_pipereport]] ((PC)): ตรวจว่าสุขภัณฑ์ทุกชิ้นมีท่อน้ำและท่อระบาย ท่อระบายลาดเอียงพอ และขนาดไม่เล็กกว่าที่คำนวณได้ พร้อมแรงดันสูญเสียและแรงดันที่ต้องการที่ต้นทาง ส่งออกเป็น CSV ได้
 3. ปั๊มที่ต่อขนานเป็นชุด ([[a_mesnew]]): อัตราไหลของระบบแบ่งเท่ากันให้ปั๊มที่ทำงาน ท่อแต่ละช่วงคิดอัตราไหลมากที่สุดที่ผ่านได้ ไม่ว่าปั๊มตัวไหนทำงานหรือสำรอง ด้านดูดของปั๊ม (ระบบที่ไม่มีภาระต่อ) ใช้อัตราไหลของชุดจากด้านที่ปั๊มจ่าย
+4. [[f_wf]] ใน [[type_props]] ของปั๊ม: [[a_pipereport]] และแผงคุณสมบัติเทียบกับอัตราไหลที่ระบบต้องการ (ปั๊มในชุด: ต่อปั๊มที่ทำงาน)
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -29367,6 +29497,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.145 · Worksets, as in Revit ([[a_worksets]]) on a new [[tab_collab]] tab: [[a_wsact]] · open and close worksets · hide them in a view ([[vg_tab_ws]] in [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] in Properties, filters and schedules
 - V1.146 · Path of Travel, as in Revit ([[t_pot]]) on the [[tab_analyze]] tab: the shortest way round obstacles and through doors · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · schedules of paths
 - V1.147 · Browser Organization, as in Revit ([[a_borg]]): views by [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · sheets by [[bo_pfx]] · schemes of your own with filters, 6 levels of folders and sorting · project parameters of views and sheets
+- V1.148 · Check Systems, as Revit's Check Duct Systems and Check Pipe Systems ([[a_sysck]]): systems with no source, terminals with no airflow, units no duct reaches, more air than a unit is rated for, too little external static pressure, loops, runs that end on another system, pumps asked for more than their rated flow · equipment types take [[f_af]], [[f_esp]] and, for pumps, [[f_wf]] · Properties, schedules and [[a_sysreport]] compare what the systems ask with what the units are rated for
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -29392,11 +29523,15 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 2. Open [[a_ductsize]] (the [[tab_sys]] tab) and press [[a_airflow]] in that window: the program adds the airflow up from the terminals back along the ducts to the machine
 3. In the same window set the [[ds_fric]] and the [[ds_vmax]]; the smallest standard size within both is proposed, and the apply button makes the change
 4. [[a_sysreport]] ((DC)): each system in brief — its source, total airflow, highest velocity, critical path and estimated pressure drop, for checking the fan
+5. What a unit is rated for: in the [[type_props]] of an AHU, a fan coil unit, a cassette, a wall-mounted unit or a fan, set [[f_af]] and [[f_esp]] (with no rated airflow, a cooling unit is taken at 400 CFM a ton of its cooling capacity) · select a unit and Properties give [[p_scsup]], [[p_scret]], [[p_scespq]] (the critical path of the supply air plus that of the return air) and [[p_scok]] · the card of each system in [[a_sysreport]] and the equipment schedules show them too
+6. [[a_sysck]] (the [[tab_analyze]] and [[tab_sys]] tabs): a button that stays on, as Revit's Check Duct Systems and Check Pipe Systems · while it is on, the problems of the systems show as orange discs with ! on the plans and in Review Warnings: a system with terminals and no source unit · a terminal with no airflow · an AHU, fan coil unit or fan no duct reaches · more air than a unit is rated for · too little external static pressure · a loop · a run that ends on a run of another system · a chilled or condenser water system with no source · a pump asked for more than its rated flow · open ends stay with [[a_disc]]
+> Unlike Revit: the required external static pressure is the critical path of the ducts, fittings, accessories and terminals, without the losses inside the unit (coil, filters) · return air through a ceiling plenum (no duct) is not counted
 
 # Pipes
 1. [[a_pipesize]]: worked out from the fixtures connected (fixture units, WSFU and DFU), the number of sprinkler heads and the chilled water machines; sizes are proposed
 2. [[a_pipereport]] ((PC)): checks that every fixture has its water and its drain, that drains fall enough and that no pipe is smaller than worked out, with the pressure loss and the pressure needed at the source. It exports to CSV
 3. Pumps in a set ([[a_mesnew]]): the flow of the system is shared equally by the pumps on duty, and each pipe carries the most that can pass through it whichever pumps are on duty or on standby; the suction side of the pumps (a network with no loads) takes the flow of the set from the side the pumps supply
+4. [[f_wf]] in the [[type_props]] of a pump: [[a_pipereport]] and Properties compare it with the flow the system asks for (a pump of a set: for each pump on duty)
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -31260,6 +31395,9 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r62={air:()=>{const S=scAir(),o={};for(const [id,m] of S.M)o[id]={sup:m.sup,ret:m.ret,dpS:m.dpS,dpR:m.dpR,req:m.req,n:m.comps.length};return{units:o,att:[...S.att]}},
+  unit:id=>{const U=scUnit(IDX.get(id));return{R:U.R,esp:U.esp,att:U.att,over:U.over,low:U.low,m:U.m?{sup:U.m.sup,ret:U.m.ret,req:U.m.req}:null}},pump:id=>{const U=scPump(IDX.get(id));return{q:U.q,wf:U.wf,over:U.over}},
+  checks:()=>scChecks().map(c=>({k:c.k,d:c.d,ids:c.ids.slice(),x:c.x,y:c.y,level:c.level,a:c.a,msg:t('wn_'+c.k,c.a)})),rated:T=>scRated(T),fields:(cat,T)=>(tdFields(cat,T)||[]).map(f=>f[0]),lskw:SC_LSKW};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
