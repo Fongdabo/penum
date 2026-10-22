@@ -6354,7 +6354,7 @@ function ifcWrite(P,items,o){o=o||{};const X3=o.schema==='IFC2X3',PIDS=new Map()
       for(let k=0;k+2<tr3.length;k+=3){tri(P3(tr3[k],h+l.elev),P3(tr3[k+1],h+l.elev),P3(tr3[k+2],h+l.elev));tri(P3(tr3[k],l.elev),P3(tr3[k+2],l.elev),P3(tr3[k+1],l.elev))}
       for(let k=0;k<m;k++){const j=(k+1)%m;tri(P3(k,l.elev),P3(j,l.elev),P3(j,l.elev+h));tri(P3(k,l.elev),P3(j,l.elev+h),P3(k,l.elev+h))}
       const f=faceSet(t,l.elev,[0.55,0.75,0.95],0.25);if(!f)continue;const pl=E('IFCLOCALPLACEMENT('+st.pl+','+AX+')'),sid=E('IFCSPACE('+G('el:'+e.id)+','+oh+','+S(e.number||String(e.id))+','+(e.comment?S(e.comment):'$')+',$,'+pl+','+shape([f])+','+S(e.name||'')+',.ELEMENT.,.INTERNAL.,$)');st.sp.push(sid);n.spaces++;
-      pset(e.id,'Pset_SpaceCommon',[prop('Reference',e.number||String(e.id),'IFCIDENTIFIER')],sid);qto(e.id,'Qto_SpaceBaseQuantities',[['Height','L',h],['NetPerimeter','L',RG[i].perim],['NetFloorArea','A',RG[i].area],['NetVolume','V',RG[i].area*h]],sid)}}
+      pset(e.id,'Pset_SpaceCommon',[prop('Reference',e.number||String(e.id),'IFCIDENTIFIER')],sid);pset(e.id,'PENUM_BIM',raIfc(P,e,prop),sid);qto(e.id,'Qto_SpaceBaseQuantities',[['Height','L',h],['NetPerimeter','L',RG[i].perim],['NetFloorArea','A',RG[i].area],['NetVolume','V',RG[i].area*h]],sid)}}
   /* the grids: one IfcGrid on the lowest storey, the axes that run more across than up as U, the others as V */
   if(levels.length&&(P.grids||[]).length){const st=ST.get(levels[0].id),U=[],V=[];for(const g of P.grids){if(!isFinite(g.x1+g.y1+g.x2+g.y2))continue;
       const pl=E('IFCPOLYLINE(('+gridPath(g).map(p=>E('IFCCARTESIANPOINT(('+R(p[0])+','+R(-p[1])+'))')).join(',')+'))'),ax=E('IFCGRIDAXIS('+S(String(g.name||''))+','+pl+',.T.)');(Math.abs(g.x2-g.x1)>=Math.abs(g.y2-g.y1)?U:V).push(ax)}
@@ -14012,7 +14012,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=160,V1_NAME='V1.149';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=161,V1_NAME='V1.150';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -27902,6 +27902,118 @@ Object.assign(STR,{
   vav_nohost:['วางบนท่อลมเพื่อให้รู้ปริมาณลม','Put it on a duct to know its airflow'],
   wn_sc_vavnf:['กล่อง VAV {0} ไม่มีลมผ่าน (ไม่ได้อยู่บนท่อที่มีปริมาณลม)','Terminal unit {0} has no air through it (it is not on a duct that carries airflow)'],
   wn_sc_vavv:['ความเร็วลมขาเข้ากล่อง VAV สูงเกินไป: {0}','The inlet velocity of a terminal unit is too high: {0}']});
+/* ===== 150 the airflow of rooms (V1.150; Revit: a Space's Specified, Calculated and Actual Supply Airflow, its Return Airflow, Specified and Actual Exhaust
+   Airflow, a color scheme of spaces by airflow and a schedule of spaces).  A room needs the supply its cooling load asks for (26 loads) unless it is given one
+   (r.saf, L/s); exhaust is given in L/s (r.eaf) or in air changes an hour (r.ach); return is given (r.raf) or is the supply less the exhaust.  What the air
+   terminals inside the room carry is its actual airflow.  Distribute Airflow sets the terminals of rooms to what their rooms need, shared equally. ===== */
+const RA_TOL=0.1,RA_COL={l:'#ff8f78',z:'#ffb35c',h:'#ffd866',o:'#6fd6a0',u:'#7fdbe2',n:'#d8cfbd'},RA_ORD=['l','z','h','o','u','n','x'];
+const raNum=v=>v!=null&&v!==''&&isFinite(+v)&&+v>=0?+v:null;
+/* one row per room: {id, number, name, level, open, cond, area (mm²), h (mm), vol (m³), calc (supply from the load), saf / raf / eaf / ach (given, or null),
+   sreq / rreq / ereq (what it needs), sa / ra / ea (what its terminals carry), T: {SA, RA, EA} (the terminals' ids), cap (W of cooling units in it),
+   ss / rs / es (each 'l' low, 'h' high, 'o' within ±10 %, 'z' none placed, 'u' a unit in the room, '' not asked), st (the worst of them; 'x' not enclosed)} */
+function airRooms(P0){const out=[],LD=new Map((P0===P?LDm():roomLoads(P0)).map(r=>[r.id,r])),R=new Map(),byLv=new Map();
+  const reg=r=>{if(P0===P)return REG(r.level,r.ph||'new',dsE(P,r));const k=r.level+'|'+(r.ph||'')+'|'+(r.dop||'');let g=R.get(k);if(!g){g=regions(P0,r.level,r.ph||'new',dsE(P0,r));R.set(k,g)}return g};
+  for(const e of P0.els)if(e.cat==='terminal')(byLv.get(e.level)||byLv.set(e.level,[]).get(e.level)).push(e);
+  const cmp=(a,q)=>a<q*(1-RA_TOL)?'l':a>q*(1+RA_TOL)?'h':'o';
+  for(const r of P0.els){if(r.cat!=='room')continue;const g=reg(r),i=regionAt(g,r.x,r.y),G=i>=0?g[i]:null,ld=LD.get(r.id)||{};
+    const row={id:r.id,number:r.number||'',name:r.name||'',level:r.level,open:!G,cond:roomCooled(r),area:G?G.area:0,h:0,vol:0,calc:0,saf:raNum(r.saf),raf:raNum(r.raf),eaf:raNum(r.eaf),ach:raNum(r.ach),
+      sreq:0,rreq:0,ereq:0,sa:0,ra:0,ea:0,T:{SA:[],RA:[],EA:[]},cap:ld.cap||0,ss:'',rs:'',es:'',st:'x'};out.push(row);if(!G)continue;
+    const lv=lvl(P0,r.level),up=levelAbove(P0,r.level),ce=ceilingAt(P0,r.level,r.x,r.y);row.h=ce?ce.off:up&&lv?up.elev-lv.elev:3000;row.vol=G.area/1e6*row.h/1000;
+    for(const e of byLv.get(r.level)||[]){if(regionAt(g,e.x,e.y)!==i)continue;const c=SCL(e.sys||'SA');if(!row.T[c])continue;row.T[c].push(e.id);row[c.toLowerCase()]+=+e.flow||0}
+    row.calc=row.cond&&ld.supply>0?ld.supply:0;row.sreq=row.saf!=null?row.saf:row.calc;row.ereq=row.eaf!=null?row.eaf:row.ach!=null?row.ach*row.vol/3.6:0;row.rreq=row.raf!=null?row.raf:Math.max(0,row.sreq-row.ereq);
+    row.ss=row.sreq>0?(row.sa>0?cmp(row.sa,row.sreq):row.cap>0&&row.saf==null?'u':'z'):row.sa>0&&row.saf!=null?'h':'';
+    row.rs=(row.T.RA.length||row.raf!=null)&&row.rreq>0?(row.ra>0?cmp(row.ra,row.rreq):'z'):'';
+    row.es=row.ereq>0?(row.ea>0?cmp(row.ea,row.ereq):'z'):'';
+    const S=[row.ss,row.rs,row.es];row.st=['l','z','h','o','u'].find(k=>S.includes(k))||'n'}
+  return out}
+let RAFC=null;
+const RAm=()=>{if(!RAFC||RAFC.v!==VER||RAFC.P!==P){const r=airRooms(P);RAFC={v:VER,P,r,m:new Map(r.map(x=>[x.id,x]))}}return RAFC.r},raRow=id=>{RAm();return RAFC.m.get(id)||null};
+const raName=r=>[r.number,r.name].filter(Boolean).join(' ')||'#'+r.id;
+/* Distribute Airflow: the supply, return and exhaust terminals of each room share what the room needs, rounded up to a whole unit of airflow */
+function airDist(ids){const k=flowK(P),per=(q,n)=>Math.round(Math.ceil(q*k/n-1e-9)/k*1e4)/1e4,ch=[];let nr=0;
+  for(const id of ids){const r=raRow(id);if(!r||r.open)continue;let did=false;
+    for(const [c,q] of [['SA',r.sreq],['RA',r.T.RA.length?r.rreq:0],['EA',r.ereq]]){const L=r.T[c];if(!L.length||!(q>0))continue;const f=per(q,L.length);did=true;
+      for(const tid of L){const e=IDX.get(tid);if(e&&Math.abs((+e.flow||0)-f)>1e-6)ch.push([e,f])}}
+    if(did)nr++}
+  if(ch.length)edit(()=>{for(const [e,f] of ch)e.flow=f});return{n:ch.length,rooms:nr}}
+/* which rooms: those selected, else those of the selected terminals, else those of the plan that is open (or of every level) */
+XA.airdist=()=>{const sel=[...ui.sel].map(id=>IDX.get(id)).filter(Boolean);let ids=sel.filter(e=>e.cat==='room').map(e=>e.id);
+  if(!ids.length&&sel.some(e=>e.cat==='terminal')){const want=new Set(sel.filter(e=>e.cat==='terminal').map(e=>e.id));ids=RAm().filter(r=>[...r.T.SA,...r.T.RA,...r.T.EA].some(i=>want.has(i))).map(r=>r.id)}
+  if(!ids.length){const v=activeView(),lv=v&&v.kind==='plan'&&!v.draft&&!v.legend?v.level:null;ids=RAm().filter(r=>lv==null||r.level===lv).map(r=>r.id)}
+  const R=airDist(ids);toast(R.n?t('ra_done',R.n,R.rooms):t('ra_none'),5000)};
+/* the room's own numbers are kept only where they are numbers */
+XC.push(()=>{for(const e of P.els)for(const k of ['saf','raf','eaf','ach'])if(e[k]!==undefined&&(e.cat!=='room'||raNum(e[k])==null))delete e[k]});
+/* Properties of a room: what it is given, what it needs and what its terminals carry */
+XP.push((c,els)=>{if(c!=='room')return'';const one=els.length===1?raRow(els[0].id):null,au=airUnit(),V=f=>{const a=els.map(f);return a.every(x=>x===a[0])?a[0]:''},fi=x=>x==null?'':flowIn(x);
+  const inp=(k,l,v,u,ph)=>`<div class="pr"><label for="p_${k}">${t(l)}</label><div><input type="number" id="p_${k}" data-p="${k}" min="0" step="any" value="${v}" placeholder="${esc(ph)}">${u?`<span class="u">${u}</span>`:''}</div></div>`;
+  const A=x=>fmtAir(x)+' '+au,pct=(a,q)=>q>0?' · '+Math.round(a/q*100)+' %':'',ro=(l,s,v)=>`<div class="pr"><label>${t(l)}</label><div><span class="ro"${s==='l'||s==='h'||s==='z'?' style="color:var(--warn);font-weight:600"':''}>${esc(v)}</span></div></div>`;
+  let h=PR.grp('g_rair')+inp('saf','p_saf',V(e=>fi(raNum(e.saf))),au,one&&one.calc>0?fmtAir(one.calc)+' ('+t('auto')+')':t('auto'));
+  if(one&&!one.open)h+=PR.ro('p_racalc',one.cond?A(one.calc):t('ld_off'))+ro('p_rasa',one.ss,A(one.sa)+' · '+t('ra_nt',one.T.SA.length)+pct(one.sa,one.sreq));
+  h+=inp('raf','p_raf',V(e=>fi(raNum(e.raf))),au,one&&!one.open&&one.T.RA.length?fmtAir(Math.max(0,one.sreq-one.ereq))+' ('+t('auto')+')':t('auto'));
+  if(one&&!one.open&&(one.T.RA.length||one.raf!=null))h+=ro('p_rara',one.rs,A(one.ra)+' · '+t('ra_nt',one.T.RA.length)+pct(one.ra,one.rreq));
+  h+=inp('eaf','p_eaf',V(e=>fi(raNum(e.eaf))),au,'')+inp('ach','p_ach',V(e=>raNum(e.ach)==null?'':raNum(e.ach)),t('u_ach'),'');
+  if(one&&!one.open){if(one.ereq>0||one.ea>0)h+=PR.ro('p_raereq',A(one.ereq))+ro('p_raea',one.es,A(one.ea)+' · '+t('ra_nt',one.T.EA.length)+pct(one.ea,one.ereq));
+    h+=PR.ro('p_rvol',ntrim(one.vol,1)+' m³')+ro('p_rast',one.st,t('ra_st_'+one.st))}
+  return h+`<div class="pa"><button class="btn" data-act="airdist">${t('a_airdist')}</button></div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||!['saf','raf','eaf','ach'].includes(key))return false;const n=parseFloat(raw);if(String(raw).trim()===''||!isFinite(n)||n<0){delete o[key];return true}
+  o[key]=key==='ach'?Math.round(n*100)/100:Math.round(flowOut(n)*1e4)/1e4;return true});
+/* Check Systems: a room that gets less air than it needs, or more than 10 % over it */
+SCX.push(add=>{const au=' '+airUnit();for(const r of RAm()){if(r.open)continue;const rm=IDX.get(r.id);if(!rm)continue;const lo=[],hi=[];
+  for(const [s,a,q,c,given] of [[r.ss,r.sa,r.sreq,'SA',r.saf!=null],[r.rs,r.ra,r.rreq,'RA',r.raf!=null],[r.es,r.ea,r.ereq,'EA',r.eaf!=null||r.ach!=null]]){
+    const txt=c+' '+fmtAir(a)+' / '+fmtAir(q)+au;if(s==='l'||(s==='z'&&given))lo.push(txt);else if(s==='h')hi.push(txt)}
+  if(lo.length)add('sc_rmlo','duct',[r.id],rm.x,rm.y,r.level,raName(r)+' · '+lo.join(' · '));if(hi.length)add('sc_rmhi','duct',[r.id],rm.x,rm.y,r.level,raName(r)+' · '+hi.join(' · '))}});
+WARN_K.push('sc_rmlo','sc_rmhi');
+/* the schedule Airflow by Room (made on demand) */
+{const f0=scheduleTable;scheduleTable=(P0,kind,tr,o)=>kind==='rair'?raTable(P0,tr):f0(P0,kind,tr,o)}
+function raTable(P0,tr){const ln=id=>{const l=lvl(P0,id);return l?l.name:''},rows=[],A=(k,l)=>({k,label:tr(l),num:1,dec:0,u:'air'});
+  const cols=[{k:'number',label:tr('c_number')},{k:'name',label:tr('c_name')},{k:'level',label:tr('c_level')},{k:'area',label:tr('c_area'),num:1,u:'m2',fix:1},{k:'vol',label:tr('c_vol'),num:1,u:'m3'},
+    A('calc','p_racalc'),A('sreq','p_rasreq'),A('sa','p_rasa'),{k:'pct',label:tr('c_rapct'),num:1,dec:0},A('rreq','p_rarreq'),A('ra','p_rara'),A('ereq','p_raereq'),A('ea','p_raea'),{k:'nt',label:tr('c_rant'),num:1,dec:0},{k:'st',label:tr('p_rast')}];
+  for(const r of P0===P?RAm():airRooms(P0)){const c=!r.open,ret=c&&(r.T.RA.length||r.raf!=null),ex=c&&(r.ereq>0||r.ea>0);
+    rows.push({_ids:[r.id,...r.T.SA,...r.T.RA,...r.T.EA],number:r.number,name:r.name,level:ln(r.level),_o:elev(P0,r.level),area:r.area||0,vol:c?r.area*r.h:'',calc:c&&r.cond?r.calc:'',sreq:c?r.sreq:'',sa:c?r.sa:'',
+      pct:c&&r.sreq>0?Math.round(r.sa/r.sreq*100):'',rreq:ret?r.rreq:'',ra:ret?r.ra:'',ereq:ex?r.ereq:'',ea:ex?r.ea:'',nt:c?r.T.SA.length+r.T.RA.length+r.T.EA.length:'',st:r.open?tr('not_enclosed'):tr('ra_st_'+r.st)})}
+  rows.sort((a,b)=>a._o-b._o||String(a.number).localeCompare(String(b.number),undefined,{numeric:true})||a._ids[0]-b._ids[0]);          // a row picks its room and the terminals in it
+  const sum=k=>rows.reduce((s,r)=>s+(typeof r[k]==='number'?r[k]:0),0),S=sum('sreq'),SA=sum('sa');
+  return{cols,rows,foot:{number:tr('c_total'),area:sum('area'),vol:sum('vol'),calc:sum('calc'),sreq:S,sa:SA,pct:S>0?Math.round(SA/S*100):'',rreq:sum('rreq'),ra:sum('ra'),ereq:sum('ereq'),ea:sum('ea'),nt:sum('nt')}}}
+XA.airsched=()=>{let v=P.views.find(x=>x.kind==='schedule'&&x.sched==='rair');if(!v)edit(()=>{v={id:P.seq++,kind:'schedule',sched:'rair',name:t('ra_sched'),scale:100,detail:'coarse',hidden:[],hiddenCats:[]};P.views.push(v)});closeDlg();showView(v.id)};
+/* the color scheme of rooms by their airflow: under, none placed, over, within ±10 %, a unit in the room, nothing needed */
+CS_KEYS.push('rair');
+{const f0=colorScheme;colorScheme=(P0,key,areaOf)=>key==='rair'?raScheme(P0):f0(P0,key,areaOf)}
+function raScheme(P0){const own=P0.cfs&&P0.cfs.rair&&typeof P0.cfs.rair==='object'?P0.cfs.rair:{},M=new Map(),of=new Map(),rows=(P0===P?RAm():airRooms(P0)).slice().sort((a,b)=>a.id-b.id);
+  for(const r of rows){const v=r.st;let it=M.get(v);if(!it){const def=v==='x'?CS_OPEN:RA_COL[v];it={v,def,color:csHex(own[v])||def,n:0};M.set(v,it)}it.n++;of.set(r.id,it)}
+  return{key:'rair',items:[...M.values()].sort((a,b)=>RA_ORD.indexOf(a.v)-RA_ORD.indexOf(b.v)),of,lim:csLimits(P0)}}
+{const f0=csLabel;csLabel=(S,it,tr)=>S.key==='rair'&&!S.akey?(it.v==='x'?tr('not_enclosed'):tr('ra_st_'+it.v)):f0(S,it,tr)}
+XA.airfill=()=>{let v=activeView();if(!(v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.area==null))v=planOf(ui.level,'mech')||planOf(ui.level)||P.views.find(x=>x.kind==='plan'&&!x.draft&&x.area==null);if(!v){toast(t('cfleg_na'));return}
+  edit(()=>{v.cs='rair'});closeDlg();showView(v.id);toast(t('ra_filled',v.name))};
+/* schedules of rooms: the airflow fields */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='room')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),R=e=>Q===P?raRow(e.id):null,au=' ('+flowSym(Q)+')',k1=flowK(Q),q=x=>Math.round(x*k1*100)/100;
+  add('rasreq',tr('p_rasreq')+au,e=>{const r=R(e);return r&&!r.open?q(r.sreq):''},{num:1,dec:0,sum:1});
+  add('rasa',tr('p_rasa')+au,e=>{const r=R(e);return r&&!r.open?q(r.sa):''},{num:1,dec:0,sum:1});
+  add('rapct',tr('c_rapct'),e=>{const r=R(e);return r&&r.sreq>0?Math.round(r.sa/r.sreq*100):''},{num:1,dec:0});
+  add('rarreq',tr('p_rarreq')+au,e=>{const r=R(e);return r&&!r.open&&(r.T.RA.length||r.raf!=null)?q(r.rreq):''},{num:1,dec:0,sum:1});
+  add('rara',tr('p_rara')+au,e=>{const r=R(e);return r&&!r.open?q(r.ra):''},{num:1,dec:0,sum:1});
+  add('raereq',tr('p_raereq')+au,e=>{const r=R(e);return r&&!r.open&&r.ereq>0?q(r.ereq):''},{num:1,dec:0,sum:1});
+  add('raea',tr('p_raea')+au,e=>{const r=R(e);return r&&!r.open?q(r.ea):''},{num:1,dec:0,sum:1});
+  add('rast',tr('p_rast'),e=>{const r=R(e);return r?(r.open?tr('not_enclosed'):tr('ra_st_'+r.st)):''});
+  return F}}
+/* IFC: the airflow of a space */
+function raIfc(P0,e,prop){if(P0!==P)return[];const r=raRow(e.id);if(!r||r.open)return[];const L=x=>fx2(x)+' L/s',o=[];
+  if(r.sreq>0)o.push(prop('CoolingDesignAirflow',L(r.sreq)));if(r.sa>0)o.push(prop('ActualSupplyAirflow',L(r.sa)));if(r.T.RA.length||r.raf!=null)o.push(prop('ReturnAirflow',L(r.rreq)),prop('ActualReturnAirflow',L(r.ra)));
+  if(r.ereq>0)o.push(prop('ExhaustAirflow',L(r.ereq)));if(r.ea>0)o.push(prop('ActualExhaustAirflow',L(r.ea)));if(r.ach!=null)o.push(prop('ExhaustAirChanges',String(r.ach)));return o}
+/* the ribbon: Analyze › Space Airflow, and Distribute Airflow in Systems › Analyze */
+{const A=RIBBON.find(r=>r.id==='analyze'),i=A?A.panels.findIndex(p=>p.t==='p_loads'):-1;if(A)A.panels.splice(i<0?A.panels.length:i+1,0,{t:'p_rair',b:['@airdist','@airsched','@airfill']});
+  const S=RIBBON.find(r=>r.id==='sys'),p=S&&S.panels.find(q=>q.t==='p_analyze');if(p&&!p.b.includes('@airdist'))p.b.push('@airdist')}
+Object.assign(BTN,{'@airdist':['airflow',''],'@airsched':['sched',''],'@airfill':['cscheme','']});
+Object.assign(STR,{
+  a_airdist:['แบ่งลมให้หัวจ่าย','Distribute Airflow'],a_airsched:['ตารางลมของห้อง','Airflow by Room'],a_airfill:['ระบายสีห้องตามลม','Color Rooms by Airflow'],p_rair:['ลมของห้อง','Space Airflow'],
+  g_rair:['ลมของห้อง (Airflow)','Airflow'],p_saf:['ลมจ่ายที่กำหนด','Specified Supply Airflow'],p_racalc:['ลมจ่ายจากภาระความเย็น','Calculated Supply Airflow'],p_rasreq:['ลมจ่ายที่ต้องการ','Required Supply Airflow'],
+  p_rasa:['ลมจ่ายจริง (หัวจ่าย)','Actual Supply Airflow'],p_raf:['ลมกลับที่กำหนด','Specified Return Airflow'],p_rarreq:['ลมกลับที่ต้องการ','Required Return Airflow'],p_rara:['ลมกลับจริง','Actual Return Airflow'],
+  p_eaf:['ลมระบายที่กำหนด','Specified Exhaust Airflow'],p_ach:['ลมระบาย (ACH)','Exhaust Air Changes'],u_ach:['เท่า/ชม.','ACH'],p_raereq:['ลมระบายที่ต้องการ','Required Exhaust Airflow'],
+  p_raea:['ลมระบายจริง','Actual Exhaust Airflow'],p_rvol:['ปริมาตรห้อง','Volume'],p_rast:['ผลตรวจลม','Airflow Check'],c_rapct:['ลมจ่ายจริง/ที่ต้องการ (%)','Actual / Required Supply (%)'],c_rant:['หัวจ่าย','Terminals'],ra_nt:['{0} หัว','{0} terminals'],
+  ra_st_l:['ลมไม่พอ','Under-supplied'],ra_st_z:['ยังไม่มีหัวจ่าย','No air terminals'],ra_st_h:['ลมเกิน','Over-supplied'],ra_st_o:['ลมพอดี (±10 %)','Within ±10 %'],ra_st_u:['ใช้เครื่องในห้อง','Unit in the room'],
+  ra_st_n:['ไม่ต้องใช้ลม','No airflow needed'],ra_sched:['ตารางลมของห้อง','Space Airflow Schedule'],cs_rair:['ลมของห้อง (ลมจริงเทียบที่ต้องการ)','Airflow (actual vs required)'],
+  ra_done:['ตั้งลมแล้ว {0} หัวจ่าย ใน {1} ห้อง','Airflow set on {0} terminals in {1} rooms'],ra_none:['ไม่มีหัวจ่ายที่ต้องเปลี่ยน: เลือกห้อง หรือเปิดแปลนของชั้นที่มีห้องและหัวจ่าย','No terminal to change: select rooms, or open the plan of a level with rooms and terminals'],
+  ra_filled:['ระบายสีห้องตามลมใน {0} แล้ว','Rooms in {0} colored by airflow'],
+  wn_sc_rmlo:['ห้องได้ลมน้อยกว่าที่ต้องการ: {0}','A room gets less air than it needs: {0}'],wn_sc_rmhi:['ห้องได้ลมมากกว่าที่ต้องการเกิน 10 %: {0}','A room gets more than 10 % over the air it needs: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -29313,6 +29425,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.147 · จัดกลุ่ม Project Browser แบบ Revit ([[a_borg]]): มุมมอง [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · ชีต [[bo_pfx]] · ตั้งตัวกรอง โฟลเดอร์ 6 ชั้น และการเรียงเอง · พารามิเตอร์ของโครงการให้มุมมองและชีต
 - V1.148 · ตรวจปัญหาระบบแบบ Revit Check Duct/Pipe Systems ([[a_sysck]]): ระบบที่ไม่มีเครื่องต้นทาง หัวจ่ายที่ยังไม่มีปริมาณลม เครื่องที่ไม่มีท่อต่อ ลมเกินพิกัด ESP ไม่พอ ท่อต่อเป็นวง ท่อต่อชนท่อต่างระบบ ปั๊มอัตราไหลเกินพิกัด · ชนิดของเครื่องมี [[f_af]] [[f_esp]] และ [[f_wf]] ของปั๊ม · แผงคุณสมบัติ ตาราง และ [[a_sysreport]] เทียบสิ่งที่ระบบต้องการกับพิกัดของเครื่อง
 - V1.149 · กล่อง VAV, CAV และ VAV มีพัดลมแบบ Revit ([[t_ductacc]] ชนิด [[o_vav]] · [[o_cav]] · [[o_fpb]]): วางบนท่อลม ลมออกแบบเท่ากับลมของท่อ ตั้ง [[p_vmin]] เป็น % · บอก [[p_vin]] [[p_vvel]] [[p_vdp]] [[p_vrooms]] และโซน · ความดันตกของกล่องคิดในเส้นทางวิกฤต · ตาราง VAV จากตารางอุปกรณ์ท่อลม · สัญลักษณ์บนแปลนและรูป 3 มิติ · [[a_sysck]] เตือนกล่องที่ไม่มีลมผ่านหรือลมเข้าเร็วเกิน
+- V1.150 · ลมของห้องแบบ Space ของ Revit: [[p_saf]] หรือคิดจากภาระความเย็น ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] หรือ [[p_ach]] · เทียบกับ [[p_rasa]] [[p_rara]] [[p_raea]] ของหัวจ่ายในห้อง · [[a_airdist]] ตั้งลมหัวจ่ายตามที่ห้องต้องการ · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] เตือนห้องที่ลมไม่พอหรือเกิน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -29341,6 +29454,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 5. พิกัดของเครื่อง: ใน [[type_props]] ของ AHU, FCU, แอร์ฝังฝ้า, แอร์ติดผนัง และพัดลม ใส่ [[f_af]] และ [[f_esp]] (ถ้าไม่ใส่พิกัดลม เครื่องทำความเย็นจะประมาณจากขนาดทำความเย็นที่ 400 CFM ต่อตัน) · เลือกเครื่องแล้วแผงคุณสมบัติบอก [[p_scsup]] [[p_scret]] [[p_scespq]] (เส้นทางวิกฤตของลมจ่ายบวกลมกลับ) และ [[p_scok]] · การ์ดของแต่ละระบบใน [[a_sysreport]] และตารางเครื่องจักรก็แสดงเช่นกัน
 6. [[a_sysck]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): ปุ่มเปิดปิดแบบ Check Duct Systems / Check Pipe Systems ของ Revit · เมื่อเปิด ปัญหาของระบบขึ้นเป็นวงกลมสีส้มมี ! บนแปลน และอยู่ในรายการ Review Warnings: ระบบที่มีหัวจ่ายแต่ไม่มีเครื่องต้นทาง · หัวจ่ายที่ยังไม่มีปริมาณลม · AHU, FCU หรือพัดลมที่ไม่มีท่อต่อ · ลมเกินพิกัด · ESP ไม่พอ · ท่อต่อเป็นวง · ปลายท่อชนท่อของอีกระบบ · ระบบน้ำเย็นหรือน้ำระบายความร้อนที่ไม่มีต้นทาง · ปั๊มที่ระบบต้องการอัตราไหลเกินพิกัด · ปลายท่อที่เปิดค้างยังดูได้ด้วย [[a_disc]]
 7. กล่อง VAV / CAV / VAV มีพัดลม: เลือก [[t_ductacc]] ชนิด [[o_vav]] [[o_cav]] หรือ [[o_fpb]] แล้วคลิกบนท่อลมก่อนถึงหัวจ่ายของโซนนั้น · แผงคุณสมบัติบอก [[p_vmax]] (ลมของท่อที่กล่องอยู่ หลังกด [[a_airflow]]) · ตั้ง [[p_vmin]] เป็น % (ค่าเริ่มต้น 30 %) · [[p_vin]] [[p_vvel]] (เกิน 10 m/s ขึ้นเตือน) · [[p_vdp]] (ตั้งใน [[type_props]]: [[f_vpd]] [[f_bw]] [[f_bh]]) · [[p_vterms]] [[p_vrooms]] และโซน · ทำตาราง VAV: [[a_mepsched]] หรือตารางใหม่หมวด [[cat_ductacc]] แล้วเลือกคอลัมน์ [[p_vmax]] [[p_vminf]] [[p_vin]] [[p_vdp]] [[p_vrooms]]
+8. ลมของห้อง: เลือกห้องแล้วดูกลุ่ม [[g_rair]] ในแผงคุณสมบัติ · [[p_racalc]] มาจาก [[a_loads]] (ห้องที่ปรับอากาศ) ใส่ [[p_saf]] เพื่อใช้ค่าของตัวเอง · ลมระบายใส่เป็น [[p_eaf]] หรือ [[p_ach]] (คูณปริมาตรห้องถึงฝ้า) · [[p_raf]] ถ้าไม่ใส่ = ลมจ่าย − ลมระบาย · [[a_airdist]] (แท็บ [[tab_analyze]]): แบ่งลมที่ห้องต้องการให้หัวจ่ายในห้องเท่า ๆ กัน (ห้องที่เลือก หรือทุกห้องของแปลนที่เปิดอยู่) แล้วกด [[a_airflow]] เพื่อให้ท่อรับลมใหม่ · [[a_airsched]] และ [[a_airfill]]: แดง [[ra_st_l]] · ส้ม [[ra_st_z]] · เหลือง [[ra_st_h]] · เขียว [[ra_st_o]] · ฟ้า [[ra_st_u]]
 > ต่างจาก Revit: กล่องเป็นอุปกรณ์ท่อลม (ไม่ใช่เครื่องจักร) ท่อเข้าและออกจึงเป็นท่อเส้นเดียวกัน · กำลังไฟของพัดลมในกล่อง ([[f_kw]]) ยังไม่เข้าวงจรไฟฟ้า
 > ต่างจาก Revit: ESP ที่ต้องการคิดจากเส้นทางวิกฤตของท่อ ข้อต่อ อุปกรณ์ และหัวจ่าย ไม่รวมความดันภายในเครื่อง (คอยล์ ฟิลเตอร์) · ลมกลับผ่านฝ้า (ไม่มีท่อ) ไม่ถูกนับ
 
@@ -29582,6 +29696,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.147 · Browser Organization, as in Revit ([[a_borg]]): views by [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · sheets by [[bo_pfx]] · schemes of your own with filters, 6 levels of folders and sorting · project parameters of views and sheets
 - V1.148 · Check Systems, as Revit's Check Duct Systems and Check Pipe Systems ([[a_sysck]]): systems with no source, terminals with no airflow, units no duct reaches, more air than a unit is rated for, too little external static pressure, loops, runs that end on another system, pumps asked for more than their rated flow · equipment types take [[f_af]], [[f_esp]] and, for pumps, [[f_wf]] · Properties, schedules and [[a_sysreport]] compare what the systems ask with what the units are rated for
 - V1.149 · VAV, CAV and fan-powered boxes, as in Revit ([[t_ductacc]] of the kinds [[o_vav]], [[o_cav]] and [[o_fpb]]): placed on a duct, their design airflow is the air of that duct, [[p_vmin]] is set in % · they give [[p_vin]], [[p_vvel]], [[p_vdp]], [[p_vrooms]] and the zones · the drop of the box counts on the critical path · a VAV schedule from a schedule of duct accessories · a plan symbol and a 3D model · [[a_sysck]] warns of a box no air goes through or with too fast an inlet
+- V1.150 · The airflow of rooms, as of a Revit Space: [[p_saf]] or one from the cooling load ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] or [[p_ach]] · against [[p_rasa]], [[p_rara]] and [[p_raea]] of the terminals in the room · [[a_airdist]] sets the terminals to what their rooms need · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] warns of rooms with too little or too much air
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -29610,6 +29725,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 5. What a unit is rated for: in the [[type_props]] of an AHU, a fan coil unit, a cassette, a wall-mounted unit or a fan, set [[f_af]] and [[f_esp]] (with no rated airflow, a cooling unit is taken at 400 CFM a ton of its cooling capacity) · select a unit and Properties give [[p_scsup]], [[p_scret]], [[p_scespq]] (the critical path of the supply air plus that of the return air) and [[p_scok]] · the card of each system in [[a_sysreport]] and the equipment schedules show them too
 6. [[a_sysck]] (the [[tab_analyze]] and [[tab_sys]] tabs): a button that stays on, as Revit's Check Duct Systems and Check Pipe Systems · while it is on, the problems of the systems show as orange discs with ! on the plans and in Review Warnings: a system with terminals and no source unit · a terminal with no airflow · an AHU, fan coil unit or fan no duct reaches · more air than a unit is rated for · too little external static pressure · a loop · a run that ends on a run of another system · a chilled or condenser water system with no source · a pump asked for more than its rated flow · open ends stay with [[a_disc]]
 7. VAV, CAV and fan-powered boxes: take [[t_ductacc]] of the kind [[o_vav]], [[o_cav]] or [[o_fpb]] and click on the duct before the terminals of its zone · Properties give [[p_vmax]] (the air of the duct it is on, after [[a_airflow]]) · set [[p_vmin]] in % (30 % unless set) · [[p_vin]], [[p_vvel]] (a warning above 10 m/s) · [[p_vdp]] (in [[type_props]]: [[f_vpd]], [[f_bw]], [[f_bh]]) · [[p_vterms]], [[p_vrooms]] and the zones · for a VAV schedule: [[a_mepsched]] or a new schedule of [[cat_ductacc]] with the fields [[p_vmax]], [[p_vminf]], [[p_vin]], [[p_vdp]], [[p_vrooms]]
+8. The airflow of rooms: select a room and see [[g_rair]] in Properties · [[p_racalc]] comes from [[a_loads]] (cooled rooms); type [[p_saf]] to use your own · exhaust is given as [[p_eaf]] or as [[p_ach]] (times the volume of the room up to its ceiling) · [[p_raf]] is the supply less the exhaust unless given · [[a_airdist]] (the [[tab_analyze]] tab): the terminals of a room share what it needs equally (the rooms selected, or every room of the plan that is open); then press [[a_airflow]] so the ducts take the new air · [[a_airsched]] and [[a_airfill]]: red [[ra_st_l]] · orange [[ra_st_z]] · yellow [[ra_st_h]] · green [[ra_st_o]] · blue [[ra_st_u]]
 > Unlike Revit: a box is a duct accessory (not mechanical equipment), so its inlet and outlet are one duct · the motor of a fan-powered box ([[f_kw]]) is not yet on an electrical circuit
 > Unlike Revit: the required external static pressure is the critical path of the ducts, fittings, accessories and terminals, without the losses inside the unit (coil, filters) · return air through a ceiling plenum (no duct) is not counted
 
@@ -31486,6 +31602,7 @@ window.PenumBIM.r62={air:()=>{const S=scAir(),o={};for(const [id,m] of S.M)o[id]
   checks:()=>scChecks().map(c=>({k:c.k,d:c.d,ids:c.ids.slice(),x:c.x,y:c.y,level:c.level,a:c.a,msg:t('wn_'+c.k,c.a)})),rated:T=>scRated(T),fields:(cat,T)=>(tdFields(cat,T)||[]).map(f=>f[0]),lskw:SC_LSKW};
 window.PenumBIM.r63={info:id=>{const I=vavInfo(IDX.get(id));return{flow:I.flow,min:I.min,mn:I.mn,v:I.v,size:I.size,dp:I.dp,terms:I.terms.length,rooms:I.rooms.map(r=>r.name),zones:I.zones,host:I.host?I.host.id:null,fast:I.fast}},
   accDp:(id,pv)=>{const e=IDX.get(id),T=typ(P,e)||{};return accDp(T,T.kind,pv||0)},size:id=>compSize(P,IDX.get(id))};
+window.PenumBIM.r64={rows:()=>RAm().map(r=>Object.assign({},r,{T:{SA:r.T.SA.slice(),RA:r.T.RA.slice(),EA:r.T.EA.slice()}})),row:id=>{const r=raRow(id);return r?JSON.parse(JSON.stringify(r)):null},dist:ids=>airDist(ids),scheme:()=>{const S=CSm('rair');return S?S.items.map(it=>({v:it.v,n:it.n,label:csLabel(S,it,t)})):null}};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
