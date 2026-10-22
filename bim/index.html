@@ -14011,7 +14011,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=156,V1_NAME='V1.145';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=157,V1_NAME='V1.146';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -27062,6 +27062,423 @@ Object.assign(STR,{
   wsd_label:['สีตามชุดงาน','Worksharing Display: Worksets'],wsd_title:['ชุดงาน','Worksets'],
   ws_none:['ยังไม่ได้เปิดใช้ชุดงาน: กดชุดงาน (Worksets) ในแท็บทำงานร่วมก่อน','Worksharing is not on: click Worksets on the Collaborate tab first'],ws_ond:['เปิดใช้ชุดงานแล้ว','Worksharing is on'],
   ws_moved:['ย้าย {0} ชิ้นไปชุดงาน {1}','{0} moved to workset {1}'],ws_dispna:['มุมมองนี้แสดงสีตามชุดงานไม่ได้','This view has no Worksharing Display'],ws_offopt:['(ยังไม่เปิดใช้)','(not workshared)']});
+/* ===== 146 route analysis: Path of Travel, as in Revit (Analyze › Route Analysis).  The shortest way between two points of a floor plan round what the view
+   shows within the analysis zone, through doors; Paths from Rooms, Reveal Obstacles, waypoints, Update, Route Analysis Settings, a schedule of paths.
+   A path is an annotation of its view: {cat:'pot', view, pts: [start, …waypoints, end], ln: its line, len (mm), st: 0 found, 1 no way, 2 a point in an obstacle,
+   ck: the view and points it was worked out for, lab: 0 none, 1 length, 2 length and time, sp: its speed (m/s) when not that of the settings, mark, comment} ===== */
+/* ---- the grid of route analysis: G = {x0, y0, cs (mm a cell), W, H, raw (what stands in the analysis zone), open (not raw), pass (as far from it as half the
+   narrowest passage: one walks there), free (as far from it as the clearance), D (the square of the distance from each cell to the nearest raw one, in cells),
+   r (the clearance, in cells), rp (half the narrowest passage, in cells; r when left out)}.  A way keeps the clearance where there is room for it, and
+   down the middle of a passage narrower than that ---- */
+/* a line in cells, from (ax, ay) to (bx, by): every cell it passes through stands in the way (both cells beside a corner it passes) */
+function raLine(G,ax,ay,bx,by){const W=G.W,H=G.H,R=G.raw,set=(a,b)=>{if(a>=0&&b>=0&&a<W&&b<H)R[b*W+a]=1};
+  let i=Math.floor(ax),j=Math.floor(ay);const i1=Math.floor(bx),j1=Math.floor(by),dx=bx-ax,dy=by-ay,si=dx>0?1:dx<0?-1:0,sj=dy>0?1:dy<0?-1:0;
+  const tdx=si?1/Math.abs(dx):Infinity,tdy=sj?1/Math.abs(dy):Infinity;let tx=si>0?(i+1-ax)*tdx:si<0?(ax-i)*tdx:Infinity,ty=sj>0?(j+1-ay)*tdy:sj<0?(ay-j)*tdy:Infinity;
+  set(i,j);for(let n=Math.abs(i1-i)+Math.abs(j1-j);n>0&&(i!==i1||j!==j1);n--){
+    if(Math.abs(tx-ty)<1e-12){set(i+si,j);set(i,j+sj);tx+=tdx;ty+=tdy;i+=si;j+=sj;n--}else if(tx<ty){tx+=tdx;i+=si}else{ty+=tdy;j+=sj}set(i,j)}}
+/* a polygon ([x0, y0, x1, y1, …] in cells, n corners) on the grid: its edges always, so that a face seen edge-on still stands in the way, and its inside when it has one */
+function raMark(G,q,n){const W=G.W,H=G.H,R=G.raw;for(let k=0;k<n;k++){const a=k*2,b=(k+1)%n*2;raLine(G,q[a],q[a+1],q[b],q[b+1])}if(n<3)return;
+  let A=0,y0=Infinity,y1=-Infinity;for(let k=0;k<n;k++){const a=k*2,b=(k+1)%n*2;A+=q[a]*q[b+1]-q[b]*q[a+1];if(q[a+1]<y0)y0=q[a+1];if(q[a+1]>y1)y1=q[a+1]}if(Math.abs(A)<0.5)return;
+  const xs=[];for(let j=Math.max(0,Math.ceil(y0-0.5)),j1=Math.min(H-1,Math.floor(y1-0.5));j<=j1;j++){const yc=j+0.5;xs.length=0;
+    for(let k=0;k<n;k++){const a=k*2,b=(k+1)%n*2,ya=q[a+1],yb=q[b+1];if((ya<=yc)!==(yb<=yc))xs.push(q[a]+(yc-ya)/(yb-ya)*(q[b]-q[a]))}xs.sort((u,v)=>u-v);
+    for(let m=0;m+1<xs.length;m+=2)for(let i=Math.max(0,Math.ceil(xs[m]-0.5)),i1=Math.min(W-1,Math.floor(xs[m+1]-0.5));i<=i1;i++)R[j*W+i]=1}}
+/* the squares of the distances to the nearest raw cell (Felzenszwalb and Huttenlocher), then what is open, passable and free */
+function raFree(G){const W=G.W,H=G.H,R=G.raw,N=W*H,INF=1e20,D=new Float32Array(N),n=Math.max(W,H),f=new Float64Array(n),d=new Float64Array(n),v=new Int32Array(n),z=new Float64Array(n+1);
+  const dt=len=>{let k=0;v[0]=0;z[0]=-INF;z[1]=INF;for(let q=1;q<len;q++){let r=v[k],s=(f[q]+q*q-(f[r]+r*r))/(2*q-2*r);while(s<=z[k]){k--;r=v[k];s=(f[q]+q*q-(f[r]+r*r))/(2*q-2*r)}k++;v[k]=q;z[k]=s;z[k+1]=INF}
+    k=0;for(let q=0;q<len;q++){while(z[k+1]<q)k++;const r=v[k];d[q]=(q-r)*(q-r)+f[r]}};
+  for(let i=0;i<W;i++){for(let j=0;j<H;j++)f[j]=R[j*W+i]?0:INF;dt(H);for(let j=0;j<H;j++)D[j*W+i]=d[j]}
+  for(let j=0;j<H;j++){const o=j*W;for(let i=0;i<W;i++)f[i]=D[o+i];dt(W);for(let i=0;i<W;i++)D[o+i]=d[i]}
+  const rp=G.rp!=null?Math.min(G.rp,G.r):G.r,f2=(G.r+0.5)*(G.r+0.5),p2=Math.min(rp*rp,f2),F=new Uint8Array(N),O=new Uint8Array(N),S=new Uint8Array(N);
+  for(let c=0;c<N;c++){if(!R[c]){O[c]=1;if(D[c]>=p2){S[c]=1;if(D[c]>=f2)F[c]=1}}}Object.assign(G,{D,free:F,open:O,pass:S,f2,p2,fr:G.r+0.5,pr:Math.sqrt(p2)});return G}
+/* a heap of cells by their cost */
+function raHeap(){let k=new Float64Array(4096),v=new Int32Array(4096),n=0;
+  return{size:()=>n,push(key,val){if(n===k.length){const k2=new Float64Array(n*2),v2=new Int32Array(n*2);k2.set(k);v2.set(v);k=k2;v=v2}let i=n++;while(i>0){const p=(i-1)>>1;if(k[p]<=key)break;k[i]=k[p];v[i]=v[p];i=p}k[i]=key;v[i]=val},
+    pop(){const top=v[0];n--;if(n>0){const kk=k[n],vv=v[n];let i=0;for(;;){let c=2*i+1;if(c>=n)break;if(c+1<n&&k[c+1]<k[c])c++;if(k[c]>=kk)break;k[i]=k[c];v[i]=v[c];i=c}k[i]=kk;v[i]=vv}return top}}}
+/* the steps from a cell: 8 neighbours and the 8 a knight's move away (so that a way runs within 3 % of its straight length before it is pulled tight) */
+const RA_NB=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1],[1,2],[1,-2],[-1,2],[-1,-2],[2,1],[2,-1],[-2,1],[-2,-1]].map(q=>[q[0],q[1],Math.hypot(q[0],q[1])]);
+/* the cheapest ways over the cells one walks on from the cells S ([cell, cost]), toward cell t when t >= 0 (A*), else everywhere (Dijkstra).  A step into the
+   clearance costs more the closer it comes, up to RA_K more: the way keeps out of it where there is room and takes the middle of a narrow passage.
+   G.gs: the costs (in cells), G.par: where each cell is reached from (-1 at a source), G.cl[c] === G.sid: its cost is final.  False when t is not reached
+   within maxN cells */
+const RA_K=0.5;
+function raSearch(G,S,t,maxN){const W=G.W,H=G.H,F=G.pass||G.free,D=G.D,f2=G.f2||0,fr=G.fr||0,dk=G.fr>G.pr?RA_K/(G.fr-G.pr):0,N=W*H;if(!G.gs||G.gs.length!==N){G.gs=new Float32Array(N);G.par=new Int32Array(N);G.seen=new Uint32Array(N);G.cl=new Uint32Array(N);G.sid=0}
+  const sid=++G.sid,gs=G.gs,par=G.par,seen=G.seen,cl=G.cl,hp=raHeap(),tx=t>=0?t%W:0,ty=t>=0?(t/W|0):0,h=c=>t>=0?Math.hypot(c%W-tx,(c/W|0)-ty):0;
+  for(const [c,g0] of S)if(seen[c]!==sid||g0<gs[c]){seen[c]=sid;gs[c]=g0;par[c]=-1;hp.push(g0+h(c),c)}
+  let n=0;while(hp.size()){const c=hp.pop();if(cl[c]===sid)continue;cl[c]=sid;if(c===t)return true;if(++n>maxN)return false;const x=c%W,y=(c/W)|0,gc=gs[c];
+    for(const [dx,dy,w] of RA_NB){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=W||ny>=H)continue;const nc=ny*W+nx;if(!F[nc]||cl[nc]===sid)continue;
+      if(dx&&dy){const ax=dx<0?-dx:dx,ay=dy<0?-dy:dy;          // what a step across passes through must be free too
+        if(ax===1&&ay===1){if(!F[y*W+nx]||!F[ny*W+x])continue}else if(ay===2){const r=(y+(dy>0?1:-1))*W;if(!F[r+x]||!F[r+nx])continue}else{const k=x+(dx>0?1:-1);if(!F[y*W+k]||!F[ny*W+k])continue}}
+      const dd=D[nc],g=gc+(dk&&dd<f2?w*(1+dk*Math.min(fr-G.pr,fr-Math.sqrt(dd))):w);if(seen[nc]!==sid||g<gs[nc]){seen[nc]=sid;gs[nc]=g;par[nc]=c;hp.push(g+h(nc),nc)}}}
+  return t<0}
+/* can one go straight from the middle of cell a to the middle of cell b over the cells ok(cell, how far along 0..1) lets through (both cells beside a corner it passes) */
+function raLos(G,a,b,ok){const W=G.W;let i=a%W,j=(a/W)|0;const i1=b%W,j1=(b/W)|0,dx=i1-i,dy=j1-j,si=dx>0?1:dx<0?-1:0,sj=dy>0?1:dy<0?-1:0,adx=dx*si,ady=dy*sj,tot=adx+ady||1;
+  const tdx=adx?1/adx:Infinity,tdy=ady?1/ady:Infinity;let tx=adx?0.5*tdx:Infinity,ty=ady?0.5*tdy:Infinity;
+  for(let n=tot;n>0&&(i!==i1||j!==j1);n--){const s=(tot-n+1)/tot;if(Math.abs(tx-ty)<1e-12){if(!ok(j*W+i+si,s)||!ok((j+sj)*W+i,s))return false;i+=si;j+=sj;tx+=tdx;ty+=tdy;n--}else if(tx<ty){i+=si;tx+=tdx}else{j+=sj;ty+=tdy}if(!ok(j*W+i,s))return false}
+  return true}
+/* the cells of a way pulled tight: only the corners it has to turn round are kept.  A straight piece comes no closer to what stands in the way than the way
+   it replaces did about there (or than the clearance, where that kept it): it leaves a tight corner as the way did, and does not graze what it passes later */
+function raPull(G,cells){const n=cells.length;if(n<3)return cells.slice();const D=G.D,f2=G.f2!=null?G.f2:(G.r+0.5)*(G.r+0.5),w=Math.ceil(G.r)+2,Dp=new Float64Array(n),WM=new Float64Array(n);
+  for(let k=0;k<n;k++){const x=D[cells[k]];Dp[k]=x<f2?x:f2}for(let k=0;k<n;k++){let m=Infinity;for(let q=Math.max(0,k-w),q1=Math.min(n-1,k+w);q<=q1;q++)if(Dp[q]<m)m=Dp[q];WM[k]=m}
+  const los=(i,j)=>raLos(G,cells[i],cells[j],(c,s)=>D[c]>=WM[Math.round(i+s*(j-i))]),idx=[0];let a=0;
+  for(let k=2;k<n;k++)if(!los(a,k)){a=k-1;idx.push(a)}idx.push(n-1);
+  for(let ch=true;ch&&idx.length>2;){ch=false;for(let k=1;k+1<idx.length;k++)if(los(idx[k-1],idx[k+1])){idx.splice(k,1);ch=true;k--}}
+  return idx.map(i=>cells[i])}
+const raXY=(G,c)=>[G.x0+(c%G.W+0.5)*G.cs,G.y0+(((c/G.W)|0)+0.5)*G.cs];
+/* the cell a point starts from: its own when one walks there, or the nearest such: one it can reach straight without going through anything (a point close to
+   a wall), or for a point on the face of a wall or a column (where a snap puts it) the nearest there is; null deep in an obstacle or outside the grid */
+function raSnap(G,x,y){const W=G.W,H=G.H,gx=(x-G.x0)/G.cs,gy=(y-G.y0)/G.cs,i=Math.floor(gx),j=Math.floor(gy);if(!(i>=0&&j>=0&&i<W&&j<H))return null;const c=j*W+i,S=G.pass||G.free,O=G.open;
+  if(S[c])return{c,sn:0};const op=O[c],R=Math.ceil(G.r)+3;let best=-1,bd=Infinity;
+  for(let b=Math.max(0,j-R);b<=Math.min(H-1,j+R);b++)for(let a=Math.max(0,i-R);a<=Math.min(W-1,i+R);a++){const k=b*W+a;if(!S[k])continue;const d=(a+0.5-gx)**2+(b+0.5-gy)**2;if(d<bd&&(!op||raLos(G,c,k,q=>O[q]))){bd=d;best=k}}
+  return best<0?null:{c:best,sn:1}}
+/* every cell whose middle lies in a polygon (in mm), to f(cell) */
+function raScan(G,poly,f){const W=G.W,H=G.H,n=poly.length,q=poly.map(p=>[(p[0]-G.x0)/G.cs,(p[1]-G.y0)/G.cs]);let y0=Infinity,y1=-Infinity;for(const p of q){if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}
+  const xs=[];for(let j=Math.max(0,Math.ceil(y0-0.5)),j1=Math.min(H-1,Math.floor(y1-0.5));j<=j1;j++){const yc=j+0.5;xs.length=0;
+    for(let k=0;k<n;k++){const a=q[k],b=q[(k+1)%n];if((a[1]<=yc)!==(b[1]<=yc))xs.push(a[0]+(yc-a[1])/(b[1]-a[1])*(b[0]-a[0]))}xs.sort((u,v)=>u-v);
+    for(let m=0;m+1<xs.length;m+=2)for(let i=Math.max(0,Math.ceil(xs[m]-0.5)),i1=Math.min(W-1,Math.floor(xs[m+1]-0.5));i<=i1;i++)f(j*W+i)}}
+const RA_MAXN=6e6;
+const raLen=L=>{let s=0;for(let k=1;k<L.length;k++)s+=Math.hypot(L[k][0]-L[k-1][0],L[k][1]-L[k-1][1]);return s};
+/* the way from cell s back along the parents of the last search, pulled tight, as points: from point a (where it was asked to start) to point b */
+function raTrace(G,s,a,b,sa,sb){const cells=[];for(let c=s,n=G.W*G.H;c!==-1&&n>0;c=G.par[c],n--)cells.push(c);
+  const L=cells.length>1?raPull(G,cells).map(c=>raXY(G,c)):[];
+  if(L.length<2)return[[a[0],a[1]],[b[0],b[1]]];
+  if(sa)L.unshift([a[0],a[1]]);else L[0]=[a[0],a[1]];if(sb)L.push([b[0],b[1]]);else L[L.length-1]=[b[0],b[1]];
+  const out=[L[0]];for(let k=1;k<L.length;k++){const p=L[k],q=out[out.length-1];if(Math.hypot(p[0]-q[0],p[1]-q[1])>0.5)out.push(p)}if(out.length<2)out.push([b[0],b[1]]);return out}
+/* the shortest way from point a to point b: {L (the points), st: 0} or {st: 1 (no way between them), 2 (a point in an obstacle, k: which one)} */
+function raWay(G,a,b){const A=raSnap(G,a[0],a[1]);if(!A)return{st:2,k:0};const B=raSnap(G,b[0],b[1]);if(!B)return{st:2,k:1};
+  if(A.c===B.c)return{st:0,L:[[a[0],a[1]],[b[0],b[1]]]};
+  if(!raSearch(G,[[B.c,0]],A.c,RA_MAXN))return{st:1};          // searched from b, so that the parents run from a to b
+  return{st:0,L:raTrace(G,A.c,a,b,A.sn,B.sn)}}
+/* ---- the settings (P.ra; Revit keeps them in the project): the analysis zone zb..zt above the level of the view, the clearance a path keeps from what stands
+   in it where there is room, the narrowest passage one walks through (mm), the walking speed (m/s) of a new path and the model categories that are no
+   obstacles even when the view shows them (doors, as in Revit, and masses, which PENUM shows in plans) ---- */
+const RA_DEF={zb:200,zt:2030,cl:300,wm:500,sp:1.3,ign:['door','mass']},RA_NEVER=new Set(['room','area','aline','rsep','mline','rplane','grid','level','section','opening','shaft','sbox','decal','vp']);
+const raOf=()=>P.ra||RA_DEF,RVO_C='#e8590c',POT_C='#16a34a';
+const potViewOk=v=>!!v&&v.kind==='plan'&&!v.draft&&!v.rcp&&!v.legend&&v.area==null&&!!lvl(P,v.level);
+/* what the analysis takes from view v: what it shows (not what it hides for a while, nor what Reveal Hidden Elements brings back), not demolished, not ignored */
+function raKeep(v,S){const ign=new Set(S.ign),I=phUsed(P)?phIndex(P):null,iv=I?phAt(I,v.phase):0,tp=ui.temp[v.id],rv=ui.reveal[v.id],m=new Map();
+  return e=>{if(!e)return false;let k=m.get(e.id);if(k!==undefined)return k;let c=e.cat;if(c==='part'){const o=IDX.get(e.org);if(o)c=o.cat}
+    k=!ANN.includes(c)&&!RA_NEVER.has(c)&&!ign.has(c)&&!(I&&phased(e)&&phStatus(I,e,iv)==='d');
+    if(k){delete ui.temp[v.id];delete ui.reveal[v.id];try{k=!!planShow(v,e)}finally{if(tp)ui.temp[v.id]=tp;if(rv)ui.reveal[v.id]=rv}}m.set(e.id,k);return k}}
+/* the doors (while doors are no obstacles) and the wall openings one walks through, whatever their height: what their wall has over them in the zone stands
+   in no one's way.  Each as its centre, the way along its wall, half its width and half the thickness of the wall */
+function raGaps(S,z0,keep){const D=S.ign.includes('door'),out=[];
+  for(const o of P.els){if(o.cat!=='opening'&&(o.cat!=='door'||!D))continue;const w=IDX.get(o.host);if(!w||w.cat!=='wall'||!keep(w)||!isFinite(+o.pos))continue;
+    const T=typ(P,o)||{},wd=+T.width,ht=+T.height,s=zRange(P,w)[0]+(+o.sill||0);if(!(wd>0&&ht>0)||s>z0+1||s+ht<=z0)continue;
+    const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L<1)continue;const ux=(w.x2-w.x1)/L,uy=(w.y2-w.y1)/L;
+    out.push({x:w.x1+ux*o.pos,y:w.y1+uy*o.pos,ux,uy,a:wd/2,b:((typ(P,w)||{}).thickness||150)/2})}return out}
+/* the grid of view v, with every point of need on it: what the view shows of the model within the zone, seen from above (each triangle cut to the zone),
+   walls first so that their doors can be opened through them.  With its crop region on, the view's crop region is all there is.
+   Kept until the model or the settings change */
+let RAC=new Map();
+function raGrid(v,need){const S=raOf(),L=lvl(P,v.level);if(!L)return null;need=need||[];const key=VER+'|'+JSON.stringify(S),c0=RAC.get(v.id),CB=cropOn(v)?v.crop.box:null;
+  const inG=(G,q)=>q[0]>=G.x0+2*G.cs&&q[1]>=G.y0+2*G.cs&&q[0]<=G.x0+(G.W-2)*G.cs&&q[1]<=G.y0+(G.H-2)*G.cs;
+  if(c0&&c0.key===key&&(CB||!c0.G||need.every(q=>inG(c0.G,q))))return c0.G;
+  const z0=L.elev+S.zb,z1=L.elev+S.zt,keep=raKeep(v,S),PV=[],PN=[],PW=[];let bx0=Infinity,by0=Infinity,bx1=-Infinity,by1=-Infinity;
+  const A=new Float64Array(30),B=new Float64Array(30);
+  for(const it of MSm().items){if(it.id==null||!it.t||it.t.length<9)continue;const e=IDX.get(it.id);if(!keep(e))continue;const T=it.t,wl=e.cat==='wall'?1:0;
+    for(let i=0;i+8<T.length;i+=9){const h0=T[i+1],h1=T[i+4],h2=T[i+7];if(Math.max(h0,h1,h2)<=z0+1||Math.min(h0,h1,h2)>=z1-1)continue;          // a face that only touches the zone (a floor under it, a ceiling over it) is not in it
+      let n=3;for(let k=0;k<9;k++)A[k]=T[i+k];
+      for(const [lim,up] of [[z0,1],[z1,0]]){let m=0;for(let k=0;k<n;k++){const a=k*3,b=(k+1)%n*3,ha=A[a+1],hb=A[b+1],ia=up?ha>=lim:ha<=lim,ib=up?hb>=lim:hb<=lim;          // Sutherland and Hodgman, by height
+          if(ia){B[m*3]=A[a];B[m*3+1]=ha;B[m*3+2]=A[a+2];m++}if(ia!==ib){const f=(lim-ha)/(hb-ha);B[m*3]=A[a]+(A[b]-A[a])*f;B[m*3+1]=lim;B[m*3+2]=A[a+2]+(A[b+2]-A[a+2])*f;m++}}
+        n=m;for(let k=0;k<n*3;k++)A[k]=B[k];if(!n)break}
+      if(!n)continue;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(let k=0;k<n;k++){const x=A[k*3],y=A[k*3+2];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+      if(CB&&(x1<CB[0]||x0>CB[2]||y1<CB[1]||y0>CB[3]))continue;for(let k=0;k<n;k++)PV.push(A[k*3],A[k*3+2]);PN.push(n);PW.push(wl);
+      if(x0<bx0)bx0=x0;if(y0<by0)by0=y0;if(x1>bx1)bx1=x1;if(y1>by1)by1=y1}}
+  if(CB){bx0=CB[0];by0=CB[1];bx1=CB[2];by1=CB[3]}
+  else{for(const q of need){if(q[0]<bx0)bx0=q[0];if(q[1]<by0)by0=q[1];if(q[0]>bx1)bx1=q[0];if(q[1]>by1)by1=q[1]}
+    if(c0&&c0.key===key&&c0.G){const o=c0.G;bx0=Math.min(bx0,o.x0+2000);by0=Math.min(by0,o.y0+2000);bx1=Math.max(bx1,o.x0+o.W*o.cs-2000);by1=Math.max(by1,o.y0+o.H*o.cs-2000)}          // a grid made larger for a point of need keeps what it had
+    if(!isFinite(bx0)){RAC.set(v.id,{key,G:null});return null}const M=2000+S.cl;bx0-=M;by0-=M;bx1+=M;by1+=M}
+  if(!(bx1-bx0>=100&&by1-by0>=100)){RAC.set(v.id,{key,G:null});return null}
+  let cs=50;while((bx1-bx0)*(by1-by0)/(cs*cs)>3e6)cs*=1.25;cs=Math.round(cs);
+  const W=Math.ceil((bx1-bx0)/cs),H=Math.ceil((by1-by0)/cs),G={x0:bx0,y0:by0,cs,W,H,raw:new Uint8Array(W*H),r:Math.max(1,S.cl/cs),rp:Math.max(1,Math.min(S.cl,S.wm/2)/cs),key,vid:v.id},q=new Float64Array(12);
+  const mark=w=>{for(let p=0,o=0;p<PN.length;p++){const n=PN[p];if(PW[p]===w){for(let k=0;k<n;k++){q[k*2]=(PV[o+k*2]-bx0)/cs;q[k*2+1]=(PV[o+k*2+1]-by0)/cs}raMark(G,q,n)}o+=n*2}};
+  mark(1);for(const d of raGaps(S,z0,keep)){const nx=-d.uy,ny=d.ux,b=d.b+cs;raScan(G,[[d.x-d.ux*d.a-nx*b,d.y-d.uy*d.a-ny*b],[d.x+d.ux*d.a-nx*b,d.y+d.uy*d.a-ny*b],[d.x+d.ux*d.a+nx*b,d.y+d.uy*d.a+ny*b],[d.x-d.ux*d.a+nx*b,d.y-d.uy*d.a+ny*b]],c=>{G.raw[c]=0})}
+  mark(0);raFree(G);for(const k of [...RAC.keys()])if(k!==v.id&&RAC.size>2)RAC.delete(k);RAC.set(v.id,{key,G});return G}
+XS.push(()=>{RAC=new Map();ui.potA=null;ui.potPv=null;ui.potX=null;ui.potW=null;ui.rvo={}});
+
+/* ---- a path of travel worked out: its line, its length and how it went ---- */
+const potKey=d=>d.view+':'+d.pts.map(q=>Math.round(q[0])+','+Math.round(q[1])).join(';');
+function potCompute(d){const v=viewById(d.view);d.ck=potKey(d);let st=1,L=null;
+  if(potViewOk(v)){const G=raGrid(v,d.pts);if(G){L=[];st=0;for(let k=0;k+1<d.pts.length;k++){const r=raWay(G,d.pts[k],d.pts[k+1]);if(r.st){st=r.st;break}if(L.length)L.pop();for(const p of r.L)L.push(p)}}}
+  if(st){d.st=st;d.ln=d.pts.map(q=>[q[0],q[1]]);delete d.len;return d}
+  d.st=0;d.ln=L.map(q=>[Math.round(q[0]),Math.round(q[1])]);d.ln[0]=d.pts[0].slice();d.ln[d.ln.length-1]=d.pts[d.pts.length-1].slice();d.len=Math.round(raLen(d.ln));return d}
+const potSpeed=()=>raOf().sp||1.3,potSp=d=>d&&+d.sp>0?+d.sp:potSpeed(),potLenS=mm=>t('pot_m',(mm/1000).toFixed(2)),potTimeS=(mm,sp)=>t('pot_s',(mm/1000/(sp||potSpeed())).toFixed(1));
+const potRoomS=r=>r?(((r.number?r.number+' ':'')+(r.name||'')).trim()||t('cat_'+r.cat)):'—';
+function potRoom(d,k){const v=viewById(d.view),q=k?d.pts[d.pts.length-1]:d.pts[0];if(!v||!q)return null;try{return roomAt(v,{x:q[0],y:q[1]})}catch(e){return null}}
+const potLine=d=>d.ck===potKey(d)?d.ln:d.pts,potOld=d=>d.ck!==potKey(d),potOk=d=>!d.st&&!potOld(d),POT_ST=d=>potOld(d)?'potst_old':'potst_'+(d.st||0);
+const potLab=d=>potLenS(d.len)+(d.lab===2?' · '+potTimeS(d.len,potSp(d)):'');
+/* worked out again when its points were moved (a grip, Move, Copy, Rotate, Mirror, Paste, a waypoint); not when the model changes: that is Update, as in Revit */
+XD.push(()=>{if(ui.dragging)return false;for(const d of P.ann)if(d.cat==='pot'&&potOld(d))potCompute(d);return false});
+function potTidy(d){const v=viewById(d.view);if(!v||v.kind!=='plan'||v.draft||!lvl(P,v.level)||!Array.isArray(d.pts))return false;const ok=q=>Array.isArray(q)&&q.length>=2&&isFinite(+q[0])&&isFinite(+q[1]);
+  d.pts=d.pts.filter(ok).slice(0,52).map(q=>[+q[0],+q[1]]);if(d.pts.length<2)return false;
+  if(!Array.isArray(d.ln)||d.ln.length<2||!d.ln.every(ok)){d.ln=d.pts.map(q=>q.slice());d.ck=''}else d.ln=d.ln.map(q=>[+q[0],+q[1]]);
+  d.st=d.st===1||d.st===2?d.st:0;if(d.st)delete d.len;else{const n=+d.len;d.len=isFinite(n)&&n>=0?Math.round(n):Math.round(raLen(d.ln))}if(typeof d.ck!=='string')d.ck='';
+  if(d.sp!=null){const s=+d.sp;if(isFinite(s)&&s>0)d.sp=Math.round(clamp(s,0.1,10)*100)/100;else delete d.sp}
+  if(d.lab!==0&&d.lab!==2)d.lab=1;for(const k of ['mark','comment'])if(d[k]!=null){const s=String(d[k]).trim().slice(0,80);if(s)d[k]=s;else delete d[k]}return true}
+const raClean=r=>{const n=(k,lo,hi)=>{const x=+r[k];return isFinite(x)?clamp(x,lo,hi):RA_DEF[k]};
+  const o={zb:Math.round(n('zb',0,5000)),zt:Math.round(n('zt',1,10000)),cl:Math.round(n('cl',0,1500)),wm:Math.round(n('wm',0,3000)),sp:Math.round(n('sp',0.1,10)*100)/100,ign:Array.isArray(r.ign)?[...new Set(r.ign.filter(c=>typeof c==='string'&&/^[a-z0-9]{1,16}$/.test(c)))].slice(0,80):RA_DEF.ign.slice()};
+  if(o.zt<=o.zb)o.zt=o.zb+1;return o};
+XC.push(()=>{const r=P.ra;if(r!==undefined){if(!r||typeof r!=='object')delete P.ra;else P.ra=raClean(r)}
+  if(P.ann.some(d=>d.cat==='pot'))P.ann=P.ann.filter(d=>d.cat!=='pot'||potTidy(d))});
+
+/* ---- how a path is drawn and picked: its line (dashed in the colour of warnings when no way was found, dashed in its own while its points are being moved),
+   a dot where it starts, an arrow where it ends, its waypoints, and its length (and time) along the middle of its longest stretch.  Where the label of a path
+   drawn before it is already there (paths from rooms that meet at a doorway), the label moves along that stretch, to another stretch or to the other side of
+   the line, and keeps off room tags, tags, text notes and the lines of the paths where it can ---- */
+const POTMC=document.createElement('canvas').getContext('2d'),POTL=new Map();
+function potBox(c,a,w,h){return{c,ux:Math.cos(a),uy:Math.sin(a),w:w/2,h:h/2}}
+function potHit(A,B){for(const [x,y] of [[A.ux,A.uy],[-A.uy,A.ux],[B.ux,B.uy],[-B.uy,B.ux]]){const r=R=>Math.abs(R.ux*x+R.uy*y)*R.w+Math.abs(R.ux*y-R.uy*x)*R.h;
+  if(Math.abs((B.c[0]-A.c[0])*x+(B.c[1]-A.c[1])*y)>r(A)+r(B))return false}return true}
+const potIn=(R,q)=>{const dx=q[0]-R.c[0],dy=q[1]-R.c[1];return[dx*R.ux+dy*R.uy,dy*R.ux-dx*R.uy]};
+function potCross(R,a,b){const p=potIn(R,a),q=potIn(R,b),dx=q[0]-p[0],dy=q[1]-p[1];let t0=0,t1=1;
+  for(const [u,r] of [[-dx,p[0]+R.w],[dx,R.w-p[0]],[-dy,p[1]+R.h],[dy,R.h-p[1]]]){if(!u){if(r<0)return false;continue}const f=r/u;if(u<0){if(f>t1)return false;if(f>t0)t0=f}else{if(f<t0)return false;if(f<t1)t1=f}}return true}
+/* an open line without the points that lie within e of the straight between the points kept (Douglas-Peucker): the stretches a label can lie along */
+function potDP(L,e){const n=L.length,keep=new Uint8Array(n),st=[[0,n-1]];keep[0]=keep[n-1]=1;
+  while(st.length){const [i,j]=st.pop();if(j-i<2)continue;const a=L[i],b=L[j],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;let m=e,k0=-1;
+    for(let k=i+1;k<j;k++){const d=Math.abs((L[k][0]-a[0])*dy-(L[k][1]-a[1])*dx)/l;if(d>m){m=d;k0=k}}if(k0>=0){keep[k0]=1;st.push([i,k0],[k0,j])}}
+  return L.filter((q,k)=>keep[k])}
+/* how much of label R lies on the room tags, tags and text notes T: 0 when nothing, else 1 and the points of a 9 × 3 grid over it that do */
+function potTagN(R,T){if(!T.some(t=>potHit(t.R,R)))return 0;let n=1;for(let i=-4;i<=4;i++)for(const j of [-1,0,1]){const x=R.c[0]+R.ux*R.w*i/4-R.uy*R.h*j,y=R.c[1]+R.uy*R.w*i/4+R.ux*R.h*j;
+  if(T.some(t=>x>=t.b[0]&&x<=t.b[2]&&y>=t.b[1]&&y<=t.b[3]))n++}return n}
+function potLabs(v,sc){const vid=avid(v),A=P.ann.filter(d=>d.cat==='pot'&&d.view===vid&&!hidDatum(v,d)),L=A.filter(d=>d.lab!==0&&potOk(d)&&Array.isArray(d.ln)&&d.ln.length>1);
+  const k=VER+'|'+vid+'|'+sc+'|'+ui.lang+'|'+FONT+'|'+document.fonts.status+'|'+A.map(d=>d.id+(potOk(d)?'':'x')).join(',')+'|'+L.map(d=>d.id).join(',');let m=POTL.get(k);if(m)return m;
+  if(POTL.size>7)POTL.clear();m=new Map();POTL.set(k,m);const G=[],H=2.2*sc*1.3+0.6*sc;POTMC.font='100px '+FONT;
+  for(const d of A){const ln=potLine(d);if(Array.isArray(ln))for(let i=1;i<ln.length;i++){const a=ln[i-1],b=ln[i];G.push({id:d.id,a,b,x0:Math.min(a[0],b[0]),y0:Math.min(a[1],b[1]),x1:Math.max(a[0],b[0]),y1:Math.max(a[1],b[1])})}}
+  const lines=R=>{const ex=Math.abs(R.ux)*R.w+Math.abs(R.uy)*R.h,ey=Math.abs(R.uy)*R.w+Math.abs(R.ux)*R.h;
+    return G.some(g=>g.x1>=R.c[0]-ex&&g.x0<=R.c[0]+ex&&g.y1>=R.c[1]-ey&&g.y0<=R.c[1]+ey&&potCross(R,g.a,g.b))};
+  const tl=0.6*2.2*sc,near=(x,y,id)=>G.some(g=>g.id!==id&&g.x1>=x-tl&&g.x0<=x+tl&&g.y1>=y-tl&&g.y0<=y+tl&&segDist(x,y,g.a[0],g.a[1],g.b[0],g.b[1])<=tl),
+    shared=(c,id)=>[-0.4,0,0.4].filter(f=>near(c.x+c.ux*c.w*f,c.y+c.uy*c.w*f,id)).length>1;          // where the paths from rooms run together, a label would not say whose it is
+  const T=[],box=b=>T.push({b,R:potBox([(b[0]+b[2])/2,(b[1]+b[3])/2],0,b[2]-b[0],b[3]-b[1])});          // the room tags (a box a line, as drawRTag sets them), tags and text notes it keeps off too
+  for(const e of P.ann){if(e.view!==vid||catHid(v,e.cat)||hidDatum(v,e))continue;
+    if(e.cat==='rtag'){const g=tagShown(v,e)&&tagGeo(e,v);if(!g)continue;const half=discMode(P,v,g.e)===1,R=rtagLines(e,g.e),x=g.p[0],y=g.p[1],
+        row=(s,mm,bold,dy)=>{if(!s)return;const w=twmm(s,bold)*mm/4.4*sc+0.5*sc,h=mm*0.7*sc;box([x-w,y+dy-h,x+w,y+dy+h])};
+      if(R[1]){row(R[0],3,true,-2.4*sc);row(R[1],2.2,false,2.2*sc)}else row(R[0],half?2.6:3,!half,0)}
+    else if(e.cat==='text')box(textBox(e,sc));
+    else if(e.cat==='tag'&&tagShown(v,e)){const g=tagGeo(e,v),o=g&&tagOutline(g.p,tagShape(g.e,tagLabel(P,g.e,e)||'?'),sc);if(o)box([Math.min(...o.map(q=>q[0])),Math.min(...o.map(q=>q[1])),Math.max(...o.map(q=>q[0])),Math.max(...o.map(q=>q[1]))])}}
+  m.T=T;const X=[];
+  for(const d of L){const w=POTMC.measureText(potLab(d)).width/100*2.2*sc+0.8*sc,D=potDP(d.ln,0.25*2.2*sc),S=[];          // + the halo; the line as straight stretches, near enough
+    for(let i=1;i<D.length;i++){const a=D[i-1],b=D[i],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l>0)S.push({a,b,l})}if(!S.length)continue;S.sort((x,y)=>y.l-x.l);
+    const C=[];S.slice(0,8).forEach((s,k)=>{const r=s.l/2-w/2;if(r<-0.15*w&&k)return;          // a label lies along its stretch: from its middle, further and further towards either end; past its ends a little only when it has to
+      let an=Math.atan2(s.b[1]-s.a[1],s.b[0]-s.a[0]);while(an>=Math.PI/2-0.01)an-=Math.PI;while(an<-Math.PI/2-0.01)an+=Math.PI;const nx=Math.sin(an),ny=-Math.cos(an),O=[0];
+      if(r>0)for(let j=1;j<=5;j++)O.push(-j*r/5,j*r/5);
+      for(const o of O){const f=0.5+o/s.l,x=s.a[0]+(s.b[0]-s.a[0])*f,y=s.a[1]+(s.b[1]-s.a[1])*f;
+        for(const sd of [1,-1]){const c=[x+nx*2.2*sc*sd,y+ny*2.2*sc*sd],q={p:c,rot:an,s:k,R:potBox(c,an,w,H),o:r<0?4:0,x,y,ux:Math.cos(an),uy:Math.sin(an),w};
+          q.n=2*potTagN(q.R,T)+(lines(q.R)?1:0)+q.o+(shared(q,d.id)?8:0);C.push(q)}}});
+    X.push({d,C,S:C.map((c,i)=>i).sort((i,j)=>C[i].n-C[j].n||i-j).map(i=>C[i])})}
+  /* label by label, each in its cheapest place free of the labels before; then the least cost of them all together, looked for within a budget, so that a label
+     gives way to one that has nowhere else to go */
+  const free=(c,Q)=>!Q.some(q=>potHit(q.R,c.R));let bp=[],best=0,nodes=0;
+  for(const x of X){const q=x.S.find(c=>free(c,bp));bp.push(q||x.C[0]);best+=q?q.n:1e4}
+  const lb=[],cur=[];for(let k=X.length,s=0;k>=0;k--){lb[k]=s;if(k)s+=X[k-1].S[0].n}
+  const go=(k,sum)=>{if(k===X.length){best=sum;bp=cur.slice();return}
+    for(const c of X[k].S){if(++nodes>2e4||sum+c.n+lb[k+1]>=best)return;if(!free(c,cur))continue;cur.push(c);go(k+1,sum+c.n);cur.pop()}};
+  if(best>0)go(0,0);X.forEach((x,k)=>m.set(x.d.id,bp[k]));
+  return m}
+const potLabAt=(d,sc,v)=>potLabs(v,sc).get(d.id)||null;
+function potLabD(R,x,y){const q=potIn(R,[x,y]);return Math.hypot(Math.max(Math.abs(q[0])-R.w,0),Math.max(Math.abs(q[1])-R.h,0))}
+XAD.pot=(g,d,col,h,v)=>{const ctx=g.ctx,L=potLine(d),sc=g.scale;if(!L||L.length<2)return;const old=potOld(d),c=h||(d.st&&!old?col.warn:POT_C);
+  ctx.save();ctx.strokeStyle=c;ctx.fillStyle=c;ctx.lineWidth=g.lw(0.35);ctx.lineJoin='round';ctx.lineCap='round';g.dash(d.st||old?[2,1.2]:null);g.path(L,true);ctx.stroke();g.dash(null);
+  g.circle(L[0],0.8);ctx.fill();const b=L[L.length-1],p=L[L.length-2],l=Math.hypot(b[0]-p[0],b[1]-p[1])||1,ux=(b[0]-p[0])/l,uy=(b[1]-p[1])/l,s=2.4*sc,w=0.9*sc;
+  ctx.beginPath();ctx.moveTo(g.X(b[0]),g.Y(b[1]));ctx.lineTo(g.X(b[0]-ux*s-uy*w),g.Y(b[1]-uy*s+ux*w));ctx.lineTo(g.X(b[0]-ux*s+uy*w),g.Y(b[1]-uy*s-ux*w));ctx.closePath();ctx.fill();
+  ctx.lineWidth=g.lw(0.25);for(let k=1;k+1<d.pts.length;k++){const q=d.pts[k],r=0.9*sc;ctx.beginPath();ctx.moveTo(g.X(q[0]),g.Y(q[1]-r));ctx.lineTo(g.X(q[0]+r),g.Y(q[1]));ctx.lineTo(g.X(q[0]),g.Y(q[1]+r));ctx.lineTo(g.X(q[0]-r),g.Y(q[1]));ctx.closePath();ctx.fillStyle=col.paper;ctx.fill();ctx.stroke()}
+  if(d.lab!==0&&potOk(d)){const q=potLabAt(d,sc,v);if(q)g.text(potLab(d),q.p,2.2,{rot:q.rot,color:c,halo:true})}ctx.restore()};
+XHA.pot=(v,d,w,sc)=>{const L=potLine(d);let m=Infinity;if(!L)return m;for(let k=1;k<L.length;k++)m=Math.min(m,segDist(w.x,w.y,L[k-1][0],L[k-1][1],L[k][0],L[k][1]));m-=0.6*sc;
+  if(d.lab!==0&&potOk(d)){const q=potLabAt(d,sc,v);if(q)m=Math.min(m,potLabD(q.R,w.x,w.y))}return m};
+{const f0=elBox;elBox=(v,e)=>{const B=f0(v,e);if(!B||!e||e.cat!=='pot'||!Array.isArray(e.ln))return B;for(const q of e.ln){B[0]=Math.min(B[0],q[0]);B[1]=Math.min(B[1],q[1]);B[2]=Math.max(B[2],q[0]);B[3]=Math.max(B[3],q[1])}return B}}
+{const f0=gtSegs;gtSegs=(L,v)=>f0(L.map(e=>e&&e.cat==='pot'&&Array.isArray(e.ln)&&e.ln.length>1?{cat:'pot',pts:potLine(e)}:e),v)}          // what Move and Copy show under the cursor: the way, not its points
+GEOM.pot='path';ANN.push('pot');DXF_LAYER.pot=['A-ANNO-PATH',3];{const i=VG_CATS.indexOf('spot');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'pot')}
+
+/* ---- Path of Travel: the first click is where it starts, the second where it ends; the way is shown while the pointer moves.  The tool stays for the next path ---- */
+function potPreview(v,a,c){const k=Math.round(c.x/20)+','+Math.round(c.y/20);if(ui.potPv&&ui.potPv.a===a&&ui.potPv.k===k)return ui.potPv;clearTimeout(ui.potPvT);
+  ui.potPvT=setTimeout(()=>{if(ui.tool!=='pot'||ui.potA!==a)return;const G=raGrid(v,[[a.x,a.y],[c.x,c.y]]),r=G?raWay(G,[a.x,a.y],[c.x,c.y]):{st:1};ui.potPv=Object.assign({k,a},r);redraw()},30);return ui.potPv&&ui.potPv.a===a?ui.potPv:null}
+XT.pot={ok:potViewOk,on(){ui.potA=null;ui.potPv=null;ui.sel.clear();ui.hov=null},off(){ui.potA=null;ui.potPv=null;clearTimeout(ui.potPvT)},
+  hint(){return t(ui.potA?'h_pot2':'h_pot1')},esc(){if(ui.potA){ui.potA=null;ui.potPv=null;return true}return false},hov:()=>null,
+  opt(who){const S=raOf();return who+`<span class="potopt">${esc(t('rvo_note',S.zb,S.zt,S.cl))}</span><button type="button" class="btn" data-act="potset">${esc(t('a_potset'))}…</button>`},
+  click(pn,v,p,w,pt){const q=pt||w;if(!q)return;if(!ui.potA){ui.potA={x:q.x,y:q.y};ui.potPv=null;refresh();return}const a=ui.potA;if(Math.hypot(q.x-a.x,q.y-a.y)<50){toast(t('pot_short'));return}
+    const d=potCompute({id:0,cat:'pot',view:avid(v),pts:[[Math.round(a.x),Math.round(a.y)],[Math.round(q.x),Math.round(q.y)]],lab:1});if(d.st){toast(t(d.st===2?'pot_in':'pot_none'),6000);return}
+    edit(()=>{d.id=P.seq++;P.ann.push(d)});ui.potA=null;ui.potPv=null;toast(t('pot_made',potLenS(d.len),potTimeS(d.len)),5000);refresh()},
+  draw(pn,ctx,v,nav,g){const a=ui.potA;if(!a||pn.i!==ui.ap)return;ctx.save();ctx.strokeStyle=POT_C;ctx.fillStyle=POT_C;ctx.lineWidth=1.6;g.circle([a.x,a.y],0.8);ctx.fill();
+    const c=ui.cur&&ui.curPane===pn.i?{x:(ui.cur.x-nav.ox)/nav.s,y:(ui.cur.y-nav.oy)/nav.s}:null;if(!c){ctx.restore();return}
+    const r=potPreview(v,a,c);ctx.lineJoin='round';
+    if(r&&!r.st&&r.L){g.path(r.L,true);ctx.stroke();const L=r.L,m=L[L.length-1];ctx.font='600 12px '+FONT;ctx.textAlign='left';ctx.textBaseline='bottom';const s=potLenS(raLen(L));ctx.lineWidth=3;ctx.strokeStyle=C.paper;
+      ctx.strokeText(s,g.X(m[0])+10,g.Y(m[1])-8);ctx.fillText(s,g.X(m[0])+10,g.Y(m[1])-8)}
+    else{ctx.strokeStyle=r&&r.st?C.warn:POT_C;g.dash([2,1.2]);g.seg([a.x,a.y],[c.x,c.y]);g.dash(null)}ctx.restore()}};
+
+/* ---- Properties (Revit: Identity Data, and the Length, Time, Speed, From Room and To Room of the path) ---- */
+XP.push((c,els)=>{if(c!=='pot')return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},one=els.length===1?els[0]:null;
+  let h=PR.grp('g_identity')+PR.text('mark','p_mark',V(x=>x.mark||''))+PR.text('comment','p_comments',V(x=>x.comment||''))+PR.grp('g_pot');
+  if(one)h+=PR.ro('p_potfrom',potRoomS(potRoom(one,0)))+PR.ro('p_potto',potRoomS(potRoom(one,1)))+PR.ro('p_potlen',potOk(one)?potLenS(one.len):'—')+PR.ro('p_pottime',potOk(one)?potTimeS(one.len,potSp(one)):'—');
+  else{const ok=els.filter(potOk);h+=PR.ro('p_potlen',ok.length?t('pot_lenmax',potLenS(Math.max(...ok.map(d=>d.len)))):'—')}
+  h+=PR.num('sp','p_potsp',V(x=>potSp(x)),esc(t('u_mps')),'step="0.1" min="0.1" max="10"')+PR.sel('lab','p_potlab',V(x=>x.lab),[[0,t('potl_0')],[1,t('potl_1')],[2,t('potl_2')]]);
+  if(one)h+=PR.ro('p_potwp',String(Math.max(0,one.pts.length-2)))+PR.ro('p_potst',t(POT_ST(one)));
+  return h+`<div class="pnote">${t('n_pot')}</div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='pot')return false;
+  if(key==='lab'){const n=+raw;if(n===0||n===1||n===2)o.lab=n;return true}
+  if(key==='sp'){const n=parseFloat(raw);if(isFinite(n)&&n>0){const s=Math.round(clamp(n,0.1,10)*100)/100;if(s===potSpeed())delete o.sp;else o.sp=s}return true}
+  return false});
+
+/* ---- Update (the paths selected) and Update All (every path of the project): worked out again on the model as it is now, as in Revit ---- */
+const potSel=()=>[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='pot');
+function potUpdate(L){const r={ok:0,bad:0};for(const d of L.slice().sort((a,b)=>a.view-b.view)){potCompute(d);if(d.st)r.bad++;else r.ok++}return r}
+const potUpdToast=r=>toast(r.bad?t('pot_upd_bad',r.ok,r.bad):t('pot_upd',r.ok),r.bad?6000:4000);
+XA.potupd=()=>{const L=potSel();if(!L.length){toast(t('pot_selneed'));return}let r;edit(()=>{r=potUpdate(L)});potUpdToast(r)};
+XA.potupdall=()=>{const L=P.ann.filter(d=>d.cat==='pot');if(!L.length){toast(t('pot_nonep'));return}let r;edit(()=>{r=potUpdate(L)});potUpdToast(r)};
+
+/* ---- waypoints (Revit: Add Waypoint, Remove Waypoints): a click puts one in the leg it takes the least way round, the path then goes through it;
+   its grip moves it.  Reverse turns the path round ---- */
+function potWpAt(d,q){let k=1,best=Infinity;for(let i=0;i+1<d.pts.length;i++){const a=d.pts[i],b=d.pts[i+1],x=Math.hypot(q[0]-a[0],q[1]-a[1])+Math.hypot(b[0]-q[0],b[1]-q[1])-Math.hypot(b[0]-a[0],b[1]-a[1]);if(x<best){best=x;k=i+1}}return k}
+XT.potwp={ok:potViewOk,on(){const d=potSel()[0];if(!d){toast(t('pot_wp1'));return false}ui.potW=d.id;ui.sel=new Set([d.id]);ui.hov=null},off(){ui.potW=null},
+  hint(){return t('h_potwp')},hov:()=>null,
+  click(pn,v,p,w,pt){const d=IDX.get(ui.potW),q=pt||w;if(!d||d.cat!=='pot'||d.view!==avid(v)||!q){setTool('modify');return}if(d.pts.length>=52){toast(t('pot_wpmax'));return}
+    const k=potWpAt(d,[q.x,q.y]);edit(()=>{d.pts.splice(k,0,[Math.round(q.x),Math.round(q.y)])});const e=IDX.get(d.id);ui.sel=new Set([d.id]);
+    if(e&&e.st)toast(t(e.st===2?'pot_wpin':'pot_wpno'),6000);refresh()},
+  fin(){const id=ui.potW;setTool('modify');if(IDX.has(id)){ui.sel=new Set([id]);refresh()}}};
+XA.potwp=()=>setTool('potwp');
+XA.potwpx=()=>{const L=potSel().filter(d=>d.pts.length>2);if(!L.length){toast(t('pot_wpx0'));return}const n=L.reduce((s,d)=>s+d.pts.length-2,0);edit(()=>{for(const d of L)d.pts=[d.pts[0],d.pts[d.pts.length-1]]});toast(t('pot_wpx',n))};
+XA.potrev=()=>{const L=potSel();if(!L.length){toast(t('pot_selneed'));return}edit(()=>{for(const d of L){const ok=!potOld(d);d.pts.reverse();if(Array.isArray(d.ln))d.ln.reverse();if(ok)d.ck=potKey(d)}});toast(t('pot_revd',L.length))};
+
+/* ---- Paths from Rooms (PENUM; Revit has it in its API only, as FindStartsOfLongestPathsFromRooms): from the point of every room of the view that is the
+   farthest from the exits picked (doors or points) to the nearest of them; one path a room.  The doors selected are the exits, else they are picked ---- */
+function potDoorX(e){const w=e&&IDX.get(e.host);if(!w||w.cat!=='wall'||!isFinite(+e.pos))return null;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1)||1;return{id:e.id,p:[Math.round(w.x1+(w.x2-w.x1)/L*e.pos),Math.round(w.y1+(w.y2-w.y1)/L*e.pos)]}}
+function potRooms(v,X){const R=REG(v.level,viewPhase(v),dopShown(P,v)),RM=[],seen=new Set();
+  for(const e of P.els)if(e.cat==='room'&&e.level===v.level&&planShow(v,e)){const i=regionAt(R,e.x,e.y);if(i>=0&&!seen.has(i)){seen.add(i);RM.push({e,g:R[i]})}}
+  if(!RM.length)return{err:'pot_rooms_none'};const G=raGrid(v,X.map(x=>x.p));if(!G)return{err:'pot_none'};
+  const S=[],SRC=new Map();for(const x of X){const s=raSnap(G,x.p[0],x.p[1]);if(s&&!SRC.has(s.c)){S.push([s.c,0]);SRC.set(s.c,{p:x.p,sn:s.sn})}}
+  if(!S.length)return{err:'pot_xin'};raSearch(G,S,-1,Infinity);
+  const W=G.W,gs=G.gs,cl=G.cl,sid=G.sid,par=G.par,sp=1000/G.cs,out=[];let no=0;
+  for(const r of RM){const C=[],poly=r.g.net&&r.g.net.length>2?r.g.net:r.g.poly;raScan(G,poly,c=>{if(cl[c]===sid)C.push(c)});if(!C.length){no++;continue}
+    C.sort((a,b)=>gs[b]-gs[a]);const lim=gs[C[0]]*0.9,top=[];          // the farthest few, a metre apart at least: the one whose way pulled tight is the longest
+    for(const c of C){if(gs[c]<lim||top.length>=4)break;const x=c%W,y=(c/W)|0;if(top.every(k=>Math.hypot(k%W-x,((k/W)|0)-y)>=sp))top.push(c)}
+    let best=null;for(const c of top){let s=c;for(let n=W*G.H;par[s]!==-1&&n>0;n--)s=par[s];const src=SRC.get(s);if(!src)continue;const a=raXY(G,c),L=raTrace(G,c,a,src.p,0,src.sn),l=raLen(L);
+      if(!best||l>best.len)best={room:r.e,a,b:src.p,L,len:l}}
+    if(best)out.push(best);else no++}
+  return{out,no}}
+function potRoomsRun(v,X){toast(t('pot_rooms_wait'));setTimeout(()=>{const r=potRooms(v,X);if(r.err){toast(t(r.err),6000);return}if(!r.out.length){toast(t('pot_rooms_no',0,r.no),6000);return}
+  const ids=[];edit(()=>{for(const o of r.out){const d={id:P.seq++,cat:'pot',view:avid(v),pts:[[Math.round(o.a[0]),Math.round(o.a[1])],[Math.round(o.b[0]),Math.round(o.b[1])]],lab:1,st:0};
+      d.ln=o.L.map(q=>[Math.round(q[0]),Math.round(q[1])]);d.ln[0]=d.pts[0].slice();d.ln[d.ln.length-1]=d.pts[1].slice();d.len=Math.round(raLen(d.ln));d.ck=potKey(d);P.ann.push(d);ids.push(d.id)}});
+  setTool('modify',true);ui.sel=new Set(ids);refresh();toast(r.no?t('pot_rooms_no',ids.length,r.no):t('pot_rooms',ids.length,potLenS(Math.max(...r.out.map(o=>raLen(o.L))))),7000)},30)}
+XA.potrooms=()=>{const v=activeView(),D=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='door').map(potDoorX).filter(Boolean);
+  if(D.length&&potViewOk(v)&&D.length===ui.sel.size){potRoomsRun(v,D);return}setTool('potx')};
+XT.potx={ok:potViewOk,on(){ui.potX=[];ui.sel.clear();ui.hov=null},off(){ui.potX=null},
+  hint(){return t('h_potx')},esc(){if(ui.potX&&ui.potX.length){ui.potX.pop();return true}return false},
+  hov(pn,v,p){const h=hitPlan(v,p),e=h&&IDX.get(h.id);return e&&e.cat==='door'?e.id:null},
+  opt(who){return who+`<span class="potopt">${esc(t('o_potx',(ui.potX||[]).length))}</span>`},
+  click(pn,v,p,w,pt){const X=ui.potX||(ui.potX=[]),h=hitPlan(v,p),e=h&&IDX.get(h.id);
+    if(e&&e.cat==='door'){const i=X.findIndex(x=>x.id===e.id);if(i>=0)X.splice(i,1);else{const x=potDoorX(e);if(x)X.push(x)}refresh();return}
+    const q=pt||w;if(!q)return;const tol=10/navOf(v).s,i=X.findIndex(x=>x.id==null&&Math.hypot(x.p[0]-q.x,x.p[1]-q.y)<tol);if(i>=0)X.splice(i,1);else X.push({p:[Math.round(q.x),Math.round(q.y)]});refresh()},
+  fin(){const v=activeView(),X=ui.potX||[];if(!X.length){toast(t('pot_xneed'));return}if(potViewOk(v))potRoomsRun(v,X.slice())},
+  draw(pn,ctx,v,nav,g){const X=ui.potX||[];if(!X.length)return;ctx.save();const r=Math.max(7,1.6*g.pm);
+    X.forEach((x,i)=>{const cx=g.X(x.p[0]),cy=g.Y(x.p[1]);ctx.fillStyle=POT_C;ctx.strokeStyle=C.paper;ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(1.5,r*0.22);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-r*0.45,cy+r*0.45);ctx.lineTo(cx+r*0.4,cy-r*0.4);ctx.moveTo(cx-r*0.05,cy-r*0.45);ctx.lineTo(cx+r*0.45,cy-r*0.45);ctx.lineTo(cx+r*0.45,cy+r*0.05);ctx.stroke();
+      ctx.font='600 12px '+FONT;ctx.textAlign='left';ctx.textBaseline='middle';const s=t('pot_exit',i+1);ctx.lineWidth=3;ctx.strokeStyle=C.paper;ctx.strokeText(s,cx+r+4,cy);ctx.fillStyle=POT_C;ctx.fillText(s,cx+r+4,cy)});
+    ctx.restore()}};
+
+/* ---- Reveal Obstacles (a mode of the view, as in Revit): what the analysis sees as obstacles in this view, and the clearance kept from them; on screen only ---- */
+function rvoImg(G){if(G.img)return G.img;const c=document.createElement('canvas');c.width=G.W;c.height=G.H;const x=c.getContext('2d'),D=x.createImageData(G.W,G.H),d=D.data;
+  for(let k=0,n=G.W*G.H;k<n;k++){if(G.free[k])continue;const o=k*4;d[o]=232;d[o+1]=89;d[o+2]=12;d[o+3]=G.raw[k]?150:G.pass[k]?30:72}x.putImageData(D,0,0);G.img=c;return c}
+const rvoOn=v=>!!(v&&ui.rvo&&ui.rvo[v.id]);
+XA.potrvo=arg=>{const v=arg!=null&&arg!==''?viewById(+arg):activeView();if(!potViewOk(v)){toast(t('pot_plan'));return}ui.rvo=ui.rvo||{};if(ui.rvo[v.id])delete ui.rvo[v.id];else ui.rvo[v.id]=1;
+  refresh();if(rvoOn(v)){const S=raOf();toast(t('rvo_on',S.zb,S.zt,S.cl),6000)}};
+{const f0=pressed;pressed=id=>id==='@potrvo'?rvoOn(activeView()):id==='@potwp'?ui.tool==='potwp':f0(id)}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(!rvoOn(v)||!potViewOk(v)||actOf(pn.i))return;const G=raGrid(v);ctx.save();
+  if(G){ctx.imageSmoothingEnabled=false;ctx.drawImage(rvoImg(G),G.x0*nav.s+nav.ox,G.y0*nav.s+nav.oy,G.W*G.cs*nav.s,G.H*G.cs*nav.s)}
+  const rv=revealOn(v),o=rv?6:1.5;ctx.strokeStyle=RVO_C;ctx.lineWidth=2;ctx.strokeRect(o,o,pn.w-2*o,pn.h-2*o);ctx.font='600 12px '+FONT;ctx.fillStyle=RVO_C;ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText(t('rvo_label')+(G?'':' · '+t('rvo_nothing')),10,rv?48:30);ctx.restore()}}
+XVB.push((pn,v)=>v.kind==='plan'&&rvoOn(v)?`<button class="vb" data-act="potrvo" data-arg="${v.id}" aria-pressed="true" title="${esc(t('a_potrvo'))}" aria-label="${esc(t('a_potrvo'))}">${icon('potrvo')}</button><span class="tmp" style="color:${RVO_C}">${esc(t('rvo_label'))}</span>`:'');
+
+/* ---- Route Analysis Settings ---- */
+XA.potset=()=>dlgRA();
+function dlgRA(){const S0=raOf(),cs=new Set(['door','furn','mass']),n=P.ann.filter(d=>d.cat==='pot').length;
+  for(const it of MSm().items){const e=IDX.get(it.id);if(!e)continue;let c=e.cat;if(c==='part'){const o=IDX.get(e.org);if(o)c=o.cat}if(!ANN.includes(c)&&!RA_NEVER.has(c))cs.add(c)}for(const c of S0.ign)cs.add(c);
+  const L=[...cs].sort((a,b)=>{const i=VG_CATS.indexOf(a),j=VG_CATS.indexOf(b);return(i<0?999:i)-(j<0?999:j)||(a<b?-1:1)});
+  const num=(k,l,u,a)=>`<div class="fr"><label for="ra_${k}">${t(l)}</label><span class="raf"><input type="number" id="ra_${k}" value="${S0[k]}" ${a}><span class="u">${esc(u)}</span></span></div>`;
+  const body=`<p class="note">${t('ra_note')}</p><div class="rah">${t('ra_zone')}</div>`+num('zb','ra_zb',t('u_mm'),'step="10" min="0" max="5000"')+num('zt','ra_zt',t('u_mm'),'step="10" min="1" max="10000"')
+    +`<div class="rah">${t('ra_path')}</div>`+num('cl','ra_cl',t('u_mm'),'step="10" min="0" max="1500"')+num('wm','ra_wm',t('u_mm'),'step="10" min="0" max="3000"')+num('sp','ra_sp',t('u_mps'),'step="0.1" min="0.1" max="10"')+`<p class="note">${t('ra_clnote')}</p>`
+    +`<div class="rah">${t('ra_ign')}</div><div class="rac">${L.map(c=>`<label><input type="checkbox" data-raign="${c}"${S0.ign.includes(c)?' checked':''}> ${esc(t('cat_'+c))}</label>`).join('')}</div><p class="note">${t('ra_never')}</p>`
+    +(n?`<label class="raupd"><input type="checkbox" id="ra_upd" checked> ${esc(t('ra_upd',n))}</label>`:'');
+  const go=()=>{const g=k=>{const el=$('#ra_'+k),x=el?parseFloat(el.value):NaN;return isFinite(x)?x:S0[k]},o=raClean({zb:g('zb'),zt:g('zt'),cl:g('cl'),wm:g('wm'),sp:g('sp'),ign:[...document.querySelectorAll('#dlg [data-raign]')].filter(x=>x.checked).map(x=>x.dataset.raign)});
+    if(!(g('zt')>g('zb'))){toast(t('ra_bad'));const f=$('#ra_zt');if(f)f.focus();return}const up=$('#ra_upd'),U=!!(up&&up.checked);closeDlg();let r=null;
+    edit(()=>{P.ra=o;if(U)r=potUpdate(P.ann.filter(d=>d.cat==='pot'))});if(r)potUpdToast(r);else toast(t(n?'ra_saved_old':'ra_saved'),5000)};
+  openDlg(t('a_potset'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-raok="1">${t('ok')}</button>`,{click(e){if(e.target.closest('[data-raok]'))go()},enter:go},'ra');
+  const f=$('#ra_zb');if(f)f.focus()}
+
+/* ---- schedules: a Path of Travel schedule (Revit: a schedule of the category Path of Travel Lines) ---- */
+SF_CATS.push('pot');SF_DISC.arch.push('pot');SF_DEF.pot=['mark','from','to','len','time','comment'];
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='pot')return F;const own=new Set(['mark','comment','count']),G=F.filter(f=>own.has(f.k)||f.grp==='p'||f.grp==='k'),i=G.findIndex(f=>f.k==='comment'),A=[];
+  const add=(k,l,g,o)=>A.push(Object.assign({k,l,g,grp:'i'},o||{})),V=d=>viewById(d.view);
+  add('from',tr('p_potfrom'),d=>potRoomS(potRoom(d,0)),{grp:'r'});add('to',tr('p_potto'),d=>potRoomS(potRoom(d,1)),{grp:'r'});
+  add('len',tr('c_len'),d=>potOk(d)?d.len:'',{num:1,u:'m',sum:1,grp:'q'});add('time',tr('p_pottime')+' ('+tr('u_s')+')',d=>potOk(d)?Math.round(d.len/potSp(d)/100)/10:'',{num:1,dec:1,grp:'q'});
+  add('sp',tr('p_potsp')+' ('+tr('u_mps')+')',d=>potSp(d),{num:1,dec:2});add('wp',tr('p_potwp'),d=>Math.max(0,d.pts.length-2),{num:1,dec:0});
+  add('level',tr('c_level'),(d,X)=>{const v=V(d);return v?X.ln(v.level):''});add('view',tr('c_view'),d=>{const v=V(d);return v?v.name:''});add('status',tr('p_potst'),(d,X)=>X.tr(POT_ST(d)));
+  G.splice(i<0?G.length:i,0,...A);return G}}
+{const f0=sfTable;sfTable=(Q,o,tr,X)=>{const c=o&&o.v?o.v.scat:null;if(c!=='pot'||!Q||!Array.isArray(Q.ann))return f0(Q,o,tr,X);return f0(Object.assign({},Q,{els:Q.ann.filter(d=>d.cat==='pot')}),o,tr,X)}}
+
+/* ---- the ribbon: Analyze › Route Analysis (as in Revit), and Modify | Path of Travel ---- */
+{const A=RIBBON.find(r=>r.id==='analyze');if(A&&!A.panels.some(p=>p.t==='p_route'))A.panels.push({t:'p_route',b:['pot','@potrooms','@potrvo','@potupdall','@potset']})}
+XR.push((tl,v)=>{if(tl==='potx')return[{t:'p_potx',b:['@finish','@potcancel']}];if(tl==='potwp')return[{t:'p_mode',b:['@finish']}];
+  if(tl==='modify'&&ui.sel.size&&potSel().length===ui.sel.size)return[{t:'p_potm',b:['@potupd','@potwp','@potwpx','@potrev','@potrvo']}];return[]});
+XA.potcancel=()=>{ui.potX=null;setTool('modify')};
+Object.assign(BTN,{pot:['pot',''],potx:['potrooms',''],potwp:['potwp',''],'@potrooms':['potrooms',''],'@potrvo':['potrvo',''],'@potupd':['potupd',''],'@potupdall':['potupd',''],'@potset':['potset',''],
+  '@potwp':['potwp',''],'@potwpx':['potwpx',''],'@potrev':['potrev',''],'@potcancel':['cancel','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"',S='class="i-sh" fill="#000" opacity=".25"';
+  const slab=`<ellipse ${S} cx="12" cy="20.9" rx="9.8" ry="1.4"/><path class="i-Sb i-e" fill="#acbbd2" ${E} d="M1.8 13.6 12 18.6 12 20.1 1.8 15.1z"/><path class="i-Sc i-e" fill="#7184a2" ${E} d="M12 18.6 22.2 13.6 22.2 15.1 12 20.1z"/><path class="i-Sa i-e" fill="#e9edf4" ${E} d="M12 8.6 22.2 13.6 12 18.6 1.8 13.6z"/>`;
+  const box=(a,b,c)=>`<path class="i-e" fill="${b}" ${E} d="M9.8 10.6 12.4 11.9 12.4 14.7 9.8 13.4z"/><path class="i-e" fill="${c}" ${E} d="M12.4 11.9 15 10.6 15 13.4 12.4 14.7z"/><path class="i-e" fill="${a}" ${E} d="M12.4 9.3 15 10.6 12.4 11.9 9.8 10.6z"/>`;
+  const way=(d,tip,base)=>`<path fill="none" stroke="#fff" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" d="${d}"/><path fill="none" stroke="${POT_C}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="${d}"/><path fill="${POT_C}" ${E} d="${tip}"/>`;
+  const W1=way('M5.2 13.8 9.4 15.9 13.8 16.4 18.2 14','M20.3 13 18.8 15.1 17.6 13z')+`<circle cx="5.2" cy="13.8" r="1.25" fill="${POT_C}" ${E}/>`;
+  const G=['#ffd9b8','#e8833a','#b35d1f'],O=['#ffc9a8','#e8590c','#a63d05'];
+  const gear=(x,y,r)=>{let d='';for(let k=0;k<8;k++){const a=k*Math.PI/4,b=a+0.22,c=a-0.22,R=r*1.35;d+=(k?'L':'M')+(x+Math.cos(c)*r).toFixed(2)+' '+(y+Math.sin(c)*r).toFixed(2)+'L'+(x+Math.cos(c+0.05)*R).toFixed(2)+' '+(y+Math.sin(c+0.05)*R).toFixed(2)+'L'+(x+Math.cos(b-0.05)*R).toFixed(2)+' '+(y+Math.sin(b-0.05)*R).toFixed(2)+'L'+(x+Math.cos(b)*r).toFixed(2)+' '+(y+Math.sin(b)*r).toFixed(2)}
+    return`<path class="i-e" fill="#acbbd2" ${E} d="${d}z"/><circle cx="${x}" cy="${y}" r="${(r*0.45).toFixed(2)}" fill="#e9edf4" ${E}/>`};
+  const dia=(x,y)=>`<path fill="#fff" ${E} d="M${x} ${y-1.7}L${x+1.7} ${y}L${x} ${y+1.7}L${x-1.7} ${y}z"/>`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-pot" viewBox="0 0 24 24">${slab}${box(...G)}${W1}</symbol>`
+    +`<symbol id="i-potrooms" viewBox="0 0 24 24">${slab}${way('M4.6 13.6 8.6 12.2 13.6 12.6 17.8 14.2','M19.9 15 17.5 15.3 18.2 13.1z')}${way('M7.6 16.6 12.4 17.1 17.6 15','M19.6 14.2 18.1 16 17.1 14z')}<circle cx="4.6" cy="13.6" r="1.15" fill="${POT_C}" ${E}/><circle cx="7.6" cy="16.6" r="1.15" fill="${POT_C}" ${E}/><path fill="#b07a45" ${E} d="M20.2 9.6 22 10.5 22 14.6 20.2 13.7z"/></symbol>`
+    +`<symbol id="i-potrvo" viewBox="0 0 24 24">${slab}<path fill="${RVO_C}" fill-opacity=".28" stroke="${RVO_C}" stroke-width=".7" stroke-dasharray="1.2 .8" d="M12.4 7.9 17.6 10.6 12.4 16.2 7.2 10.6z"/>${box(...O)}<path fill="none" stroke="#fab034" stroke-width="1.3" stroke-linecap="round" d="M12.4 2.2v2M6.6 4.4l1.3 1.3M18.2 4.4l-1.3 1.3"/></symbol>`
+    +`<symbol id="i-potupd" viewBox="0 0 24 24">${slab}${W1}<path fill="none" stroke="#285eb7" stroke-width="1.6" stroke-linecap="round" d="M19.7 6.2a3.6 3.6 0 1 1-1.3-2.5"/><path fill="#285eb7" ${E} d="M20.6 1.6 20.6 5.2 17 5.2z"/></symbol>`
+    +`<symbol id="i-potset" viewBox="0 0 24 24">${slab}${W1}${gear(18.2,5.4,2.6)}</symbol>`
+    +`<symbol id="i-potwp" viewBox="0 0 24 24">${slab}${way('M4.6 15 12 11.6 19 15.4','M20.9 16.4 18.5 16.6 19.1 14.4z')}<circle cx="4.6" cy="15" r="1.15" fill="${POT_C}" ${E}/>${dia(12,11.6)}<path fill="none" stroke="#285eb7" stroke-width="1.6" stroke-linecap="round" d="M18.6 3.2v5M16.1 5.7h5"/></symbol>`
+    +`<symbol id="i-potwpx" viewBox="0 0 24 24">${slab}${way('M4.6 15 12 11.6 19 15.4','M20.9 16.4 18.5 16.6 19.1 14.4z')}<circle cx="4.6" cy="15" r="1.15" fill="${POT_C}" ${E}/>${dia(12,11.6)}<path fill="none" stroke="#e5484d" stroke-width="1.6" stroke-linecap="round" d="M16.6 3.6l3.8 3.8M20.4 3.6l-3.8 3.8"/></symbol>`
+    +`<symbol id="i-potrev" viewBox="0 0 24 24">${slab}${way('M6 13.2 18.6 13.2','M20.6 13.2 18.4 14.5 18.4 11.9z')}${way('M18 16.2 5.4 16.2','M3.4 16.2 5.6 14.9 5.6 17.5z')}</symbol>`)})();
+{const st=document.createElement('style');st.textContent='#optbar .potopt{color:var(--muted)}#dlg.ra .dbody{max-width:620px}#dlg .rah{font-weight:600;margin:12px 0 4px}#dlg .raf{display:inline-flex;align-items:center;gap:6px}#dlg .raf input{width:110px}'
+  +'#dlg .rac{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:2px 12px;margin:4px 0;max-height:220px;overflow:auto;padding:4px 6px;border:1px solid var(--line);border-radius:6px}#dlg .rac label{display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap}'
+  +'#dlg .raupd{display:flex;align-items:center;gap:6px;margin:8px 0 2px}.rb[data-act="potset"]{max-width:92px}';document.head.appendChild(st)}
+
+Object.assign(STR,{
+  cat_pot:['เส้นทางเดิน (Path of Travel)','Path of Travel Lines'],t_pot:['เส้นทางเดิน','Path of Travel'],t_potx:['เลือกทางออก','Pick Exits'],t_potwp:['เพิ่มจุดผ่าน','Add Waypoint'],
+  p_route:['วิเคราะห์เส้นทาง','Route Analysis'],p_potm:['เส้นทางเดิน','Path of Travel'],p_potx:['ทางออก','Exits'],
+  a_potrooms:['เส้นทางจากทุกห้อง','Paths from Rooms'],a_potrvo:['แสดงสิ่งกีดขวาง','Reveal Obstacles'],a_potupd:['อัปเดต','Update'],a_potupdall:['อัปเดตทุกเส้นทาง','Update All'],
+  a_potset:['ตั้งค่าวิเคราะห์เส้นทาง','Route Analysis Settings'],a_potwp:['เพิ่มจุดผ่าน','Add Waypoint'],a_potwpx:['ลบจุดผ่าน','Remove Waypoints'],a_potrev:['กลับทิศ','Reverse'],a_potcancel:['ยกเลิก','Cancel'],
+  h_pot1:['คลิกจุดเริ่มต้นของเส้นทาง','Click where the path starts'],h_pot2:['คลิกจุดปลายทาง · เส้นประคือทางที่จะได้ · Esc เริ่มใหม่','Click where it ends · the dashed line shows the way it will take · Esc starts again'],
+  h_potx:['คลิกประตูหรือจุดที่เป็นทางออก (คลิกซ้ำเพื่อเอาออก) แล้วกด เสร็จสิ้น หรือ Enter','Click the doors or the points that are exits (click again to take one out), then Finish or Enter'],
+  h_potwp:['คลิกจุดที่ต้องการให้เส้นทางผ่าน · กด เสร็จสิ้น หรือ Enter เมื่อพอ','Click where the path is to pass · Finish or Enter when done'],
+  o_potx:['ทางออกที่เลือก: {0}','Exits picked: {0}'],pot_exit:['ทางออก {0}','Exit {0}'],
+  rvo_note:['ตรวจสิ่งกีดขวางที่สูง {0}–{1} มม. จากพื้นชั้น เว้นระยะห่าง {2} มม.','Obstacles from {0} to {1} mm above the level, {2} mm clearance'],
+  rvo_label:['แสดงสิ่งกีดขวาง','Reveal Obstacles'],rvo_nothing:['ไม่มีสิ่งกีดขวาง','no obstacles'],
+  rvo_on:['สีส้มเข้มคือสิ่งกีดขวางที่สูง {0}–{1} มม. จากพื้นชั้น · สีส้มกลางคือช่องที่แคบเกินจะเดินผ่าน · สีอ่อนคือระยะห่าง {2} มม. ที่เส้นทางเว้นไว้เมื่อมีที่พอ · สิ่งที่ซ่อนในมุมมองนี้ไม่นับ','Dark orange: the obstacles from {0} to {1} mm above the level · mid orange: too narrow to walk through · light: the {2} mm clearance paths keep where there is room · what this view hides does not count'],
+  pot_m:['{0} ม.','{0} m'],pot_s:['{0} วินาที','{0} s'],u_mps:['ม./วินาที','m/s'],u_s:['วินาที','s'],c_view:['มุมมอง','View'],
+  pot_short:['จุดปลายใกล้จุดเริ่มเกินไป','The end is too close to the start'],pot_in:['จุดเริ่มหรือจุดปลายอยู่ในสิ่งกีดขวาง หรือนอกพื้นที่ที่ตัดมุมมองไว้','The start or the end is in an obstacle, or outside the crop region'],
+  pot_none:['ไม่มีทางเดินไปถึง: ทางถูกปิดหรือแคบกว่าระยะห่างที่ตั้งไว้ (ดู แสดงสิ่งกีดขวาง)','No way there: it is closed or narrower than the clearance (see Reveal Obstacles)'],
+  pot_made:['เส้นทางเดิน {0} · {1}','Path of travel {0} · {1}'],pot_lenmax:['ยาวสุด {0}','longest {0}'],
+  g_pot:['เส้นทางเดิน','Path of Travel'],p_potfrom:['จากห้อง','From Room'],p_potto:['ถึงห้อง','To Room'],p_potlen:['ความยาว','Length'],p_pottime:['เวลา','Time'],p_potsp:['ความเร็วเดิน','Speed'],
+  p_potwp:['จุดผ่าน','Waypoints'],p_potst:['สถานะ','Status'],p_potlab:['ป้ายบนแบบ','Label'],potl_0:['ไม่แสดง','None'],potl_1:['ความยาว','Length'],potl_2:['ความยาว+เวลา','Length + time'],
+  potst_0:['หาทางได้','Path found'],potst_1:['ไม่มีทางไปถึง','No path found'],potst_2:['จุดอยู่ในสิ่งกีดขวาง','A point is in an obstacle'],potst_old:['กำลังเลื่อน','Being moved'],
+  n_pot:['เส้นทางคิดจากสิ่งที่มุมมองนี้แสดง ถ้าแก้โมเดลแล้วให้กด อัปเดต (เหมือน Revit) · ลากจุดปลายหรือจุดผ่านเพื่อเปลี่ยนทาง · เวลา = ความยาว ÷ ความเร็วเดิน','A path is worked out from what this view shows: after changing the model, click Update (as in Revit) · drag its ends or waypoints to change it · time = length ÷ speed'],
+  pot_selneed:['เลือกเส้นทางเดินก่อน','Select a path of travel first'],pot_nonep:['ยังไม่มีเส้นทางเดินในโครงการ','There is no path of travel in the project'],
+  pot_upd:['อัปเดตเส้นทางเดิน {0} เส้น','{0} paths of travel updated'],pot_upd_bad:['อัปเดตแล้ว {0} เส้น · {1} เส้นหาทางไม่ได้ (แสดงเป็นเส้นประสีแดง)','{0} updated · {1} found no way (dashed in red)'],
+  pot_plan:['เปิดแปลนพื้นก่อน (เส้นทางเดินใช้ในแปลนพื้น)','Open a floor plan first (paths of travel are made in floor plans)'],
+  pot_wp1:['เลือกเส้นทางเดิน 1 เส้นก่อน','Select one path of travel first'],pot_wpmax:['จุดผ่านครบ 50 จุดแล้ว','There are 50 waypoints already'],
+  pot_wpin:['จุดผ่านอยู่ในสิ่งกีดขวาง ลากออกมาหรือกดย้อนกลับ','The waypoint is in an obstacle: drag it out or undo'],pot_wpno:['ผ่านจุดนี้ไม่ได้ ลากไปที่อื่นหรือกดย้อนกลับ','No way through that point: drag it elsewhere or undo'],
+  pot_wpx0:['เส้นทางที่เลือกไม่มีจุดผ่าน','The paths selected have no waypoints'],pot_wpx:['ลบจุดผ่าน {0} จุด','{0} waypoints removed'],pot_revd:['กลับทิศ {0} เส้น','{0} reversed'],
+  pot_xneed:['คลิกเลือกทางออกก่อน อย่างน้อย 1 ทาง','Pick one exit at least'],pot_xin:['ทางออกที่เลือกอยู่ในสิ่งกีดขวางทั้งหมด','Every exit picked is in an obstacle'],
+  pot_rooms_wait:['กำลังหาเส้นทางจากทุกห้อง…','Working out the paths from the rooms…'],pot_rooms_none:['มุมมองนี้ไม่มีห้อง (Room) ที่ปิดล้อมแล้ว','This view has no enclosed rooms'],
+  pot_rooms:['สร้างเส้นทางเดิน {0} เส้น จากจุดไกลสุดของแต่ละห้องไปทางออกที่ใกล้ที่สุด · ไกลสุด {1}','{0} paths of travel made, from the farthest point of each room to its nearest exit · the longest {1}'],
+  pot_rooms_no:['สร้างเส้นทางเดิน {0} เส้น · {1} ห้องไปถึงทางออกไม่ได้','{0} paths of travel made · {1} rooms cannot reach an exit'],
+  ra_note:['ใช้กับทุกเส้นทางเดินในโครงการ: สิ่งที่มุมมองแสดงและอยู่ในช่วงความสูงนี้คือสิ่งกีดขวาง · สิ่งที่ซ่อน สิ่งที่รื้อถอน และสิ่งที่แสดงเป็นแบบรอง (underlay) ไม่นับ','For every path of travel in the project: what a view shows within this height is an obstacle · what is hidden, demolished or shown as underlay is not'],
+  ra_zone:['ช่วงความสูงที่ตรวจ (จากพื้นชั้นของมุมมอง)','Analysis zone (above the level of the view)'],ra_zb:['ขอบล่าง','Bottom offset'],ra_zt:['ขอบบน','Top offset'],
+  ra_path:['เส้นทาง','Path'],ra_cl:['ระยะห่างจากสิ่งกีดขวาง','Clearance from obstacles'],ra_wm:['ช่องแคบสุดที่เดินผ่านได้','Narrowest passage'],
+  ra_clnote:['เส้นทางเว้นระยะห่างจากสิ่งกีดขวางเมื่อมีที่พอ และเดินกลางช่องที่แคบกว่านั้น · ช่องที่แคบกว่าทั้งช่องแคบสุดและ 2 เท่าของระยะห่าง เดินผ่านไม่ได้','A path keeps the clearance where there is room, and goes down the middle of a passage narrower than that · it cannot go through a passage narrower than both the narrowest passage and twice the clearance'],ra_sp:['ความเร็วเดินของเส้นทางใหม่','Speed of a new path'],
+  ra_ign:['หมวดที่ไม่นับเป็นสิ่งกีดขวาง','Ignored categories'],ra_never:['ประตูที่ไม่นับเป็นสิ่งกีดขวางเดินผ่านได้เสมอแม้วงกบจะต่ำกว่าขอบบน · ห้อง พื้นที่ ช่องเปิด เส้นอ้างอิง และคำอธิบายแบบไม่นับเสมอ','Doors that are ignored always let a path through, even when lower than the top offset · rooms, areas, openings, reference lines and annotations never count'],
+  ra_upd:['อัปเดตเส้นทางเดินทั้ง {0} เส้นตามค่าใหม่','Update the {0} paths of travel with these settings'],ra_bad:['ขอบบนต้องสูงกว่าขอบล่าง','The top offset must be above the bottom offset'],
+  ra_saved:['บันทึกค่าวิเคราะห์เส้นทางแล้ว','Route analysis settings saved'],ra_saved_old:['บันทึกค่าแล้ว เส้นทางเดิมยังเป็นค่าเก่าจนกว่าจะกด อัปเดตทุกเส้นทาง','Settings saved: the paths keep the old ones until Update All']});
+
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -28469,6 +28886,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.143 · นำเข้า CAD แบบ Revit ([[a_cadimp]]): แบบอยู่ในมุมมองเดียว ใช้ในมุมมองร่างได้ คลิกวางเองได้ (Manual – Origin / Center) และเลือกสีขาวดำได้ · [[a_cadpexp]] และ [[a_cadfexp]]: แยกแบบ DXF/PDF เป็นเส้น เส้นโค้ง ข้อความ และพื้นที่แรเงาพร้อมลายจากไฟล์ บล็อกเป็นกลุ่ม · ทำสำเนาพร้อมรายละเอียดได้กลุ่มใหม่ของตัวเอง
 - V1.144 · ชิ้นส่วนย่อยแบบ Revit ([[a_prtmake]]): ผนัง พื้น หลังคา และฝ้าแยกเป็นชิ้นตามชั้นวัสดุ · [[a_prtdiv]] ด้วยเส้นที่วาด ระดับชั้น เส้นกริด ระนาบอ้างอิง หรือความสูง เว้นช่องว่างได้ · [[a_prtmerge]] [[a_prtex]] [[a_prtres]] · วัสดุของชิ้นเอง · [[p_ptv]] ในมุมมอง · ตารางชิ้นส่วนย่อย
 - V1.145 · ชุดงานแบบ Revit ([[a_worksets]]) ในแท็บใหม่ [[tab_collab]]: [[a_wsact]] · เปิดปิดชุดงาน · ซ่อนชุดงานในมุมมอง ([[vg_tab_ws]] ใน [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] ในคุณสมบัติ ตัวกรอง และตาราง
+- V1.146 · Path of Travel แบบ Revit ([[t_pot]]) ในแท็บ [[tab_analyze]]: ทางที่สั้นที่สุดอ้อมสิ่งกีดขวางและผ่านประตู · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · ตารางเส้นทางเดิน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -28523,6 +28941,17 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 # ตรวจการชน
 [[a_clash]]: เลือกหมวดสองชุด เช่น ท่อลมกับคาน โปรแกรมหาคู่ที่กินพื้นที่ซ้อนกัน คลิกแถวในรายงานเพื่อไปดูคู่นั้นในแบบ (มีกรอบส้มบอกจุดที่ชนในแปลนและ 3D) ท่อที่ต่อถึงกันหรือเข้าเครื่องไม่นับเป็นการชน · [[clash_from]] แต่ละชุดเลือกได้ว่าหมวดมาจากโครงการนี้หรือจากโมเดล IFC ที่ลิงก์ไว้ (เช่น งานระบบของเรากับโครงสร้างของผู้ออกแบบ) · ตรวจด้วยรูปทรงจริงใน 3 มิติ ท่อที่ลอดช่องเปิดไม่นับ · เลือกชิ้นไว้ก่อนแล้วติ๊ก ชุดที่ 1 เฉพาะชิ้นที่เลือกไว้ เพื่อตรวจแค่ชิ้นเหล่านั้นกับชุดที่ 2 · ส่งออกรายงานเป็น CSV หรือ HTML · [[a_clashlast]] เปิดผลการตรวจครั้งก่อนขึ้นมาดูอีกครั้ง
+
+# เส้นทางเดิน (Path of Travel)
+- แท็บ [[tab_analyze]] › [[p_route]] › [[t_pot]]: ในแปลนพื้น คลิกจุดเริ่มแล้วคลิกจุดปลาย โปรแกรมหาทางที่สั้นที่สุดที่อ้อมผนัง เฟอร์นิเจอร์ เสา และสิ่งอื่นที่มุมมองแสดง และเดินผ่านประตูได้ (เหมือน Revit) ระหว่างเลื่อนเมาส์จะเห็นทางที่จะได้ก่อน · เครื่องมือค้างไว้ให้วาดเส้นต่อไปได้
+- เส้นทางแสดงความยาว (หรือความยาวและเวลา) กลางช่วงที่ยาวที่สุดของเส้น เลือกได้ที่ [[p_potlab]] · ถ้าตรงนั้นทับป้ายของเส้นทางอื่น ป้ายห้อง ป้ายกำกับ หรือช่วงที่หลายเส้นทางใช้ร่วมกัน ป้ายจะเลื่อนไปตามเส้น ไปช่วงอื่น หรือไปอีกฝั่งของเส้น · คุณสมบัติ: [[p_potfrom]] · [[p_potto]] · [[p_potlen]] · [[p_pottime]] · [[p_potsp]] (เวลา = ความยาว ÷ ความเร็ว) · [[p_potwp]] · [[p_potst]]
+- เลือกเส้นทางแล้ว: [[a_potupd]] (คิดใหม่ตามโมเดลตอนนี้ — แก้โมเดลแล้วเส้นทางไม่เปลี่ยนเอง เหมือน Revit) · [[a_potwp]] (คลิกจุดที่ต้องให้ผ่าน) · [[a_potwpx]] · [[a_potrev]] · ลากจุดปลายหรือจุดผ่าน (รูปข้าวหลามตัด) เพื่อเปลี่ยนทาง
+- [[a_potupdall]]: อัปเดตทุกเส้นทางในโครงการ · [[a_potrvo]]: สีส้มคือสิ่งที่การวิเคราะห์เห็นเป็นสิ่งกีดขวางในมุมมองนี้ แถบสีอ่อนคือระยะห่างที่เส้นทางเว้นไว้ (บนจอเท่านั้น)
+- [[a_potset]]: ช่วงความสูงที่ตรวจ (ตั้งต้น 200–2030 มม. จากพื้นชั้น เหมือน Revit) · ระยะห่างจากสิ่งกีดขวางที่เส้นทางเว้นไว้เมื่อมีที่พอ (ตั้งต้น 300 มม. ตาม NFPA 101) · ช่องแคบสุดที่เดินผ่านได้ (ตั้งต้น 500 มม.) · ความเร็วเดิน (1.3 ม./วินาที) · หมวดที่ไม่นับเป็นสิ่งกีดขวาง (ตั้งต้น ประตูและมวลอาคาร) · ประตูที่ไม่นับเดินผ่านได้เสมอแม้วงกบจะต่ำกว่าขอบบน
+- สิ่งที่มุมมองซ่อน (การแสดงผล/กราฟิก ซ่อนในมุมมอง ตัวกรอง หรือชุดงาน) สิ่งที่รื้อถอนในเฟสของมุมมอง และสิ่งนอกกรอบตัดมุมมอง ไม่นับเป็นสิ่งกีดขวาง · การซ่อนชั่วคราวไม่มีผล
+- [[a_potrooms]]: เลือกประตูทางออกแล้วกด หรือกดแล้วคลิกประตูหรือจุดที่เป็นทางออกทีละจุด แล้วกด [[a_finish]] โปรแกรมสร้างเส้นทางจากจุดที่ไกลที่สุดของทุกห้องไปทางออกที่ใกล้ที่สุด ห้องละ 1 เส้น ใช้ตรวจระยะทางหนีไฟ
+- ตารางเส้นทางเดิน: [[a_newsched]] หมวด [[cat_pot]] · ช่อง [[p_potfrom]] · [[p_potto]] · [[c_len]] · [[p_pottime]] และอื่น ๆ
+> เส้นทางคิดบนตารางละเอียด 5 ซม. ความยาวอาจมากกว่าเส้นตึงจริงเล็กน้อย (ราว 2% อย่างมาก) · ไม่คิดบันได ทางลาด และการเดินข้ามชั้น · ไม่มีป้ายทางเดียว (one-way) และคนจำลองแบบ Revit 2021
 
 # คำเตือนของโมเดล
 [[a_warn]] (แท็บ [[tab_manage]]): รายการสิ่งที่น่าจะไม่ได้ตั้งใจ — ชิ้นเหมือนกันซ้อนอยู่ที่เดียวกัน ผนังซ้อนทับ ประตูหน้าต่างชนกันบนผนังเดียว ห้องที่ผนังปิดไม่ครบ หลายห้องในพื้นที่เดียว Mark หรือเลขห้องซ้ำ ชื่อกริดซ้ำ ผนังที่เอียงจากแกนเล็กน้อย และเส้นบอกระยะที่ล็อกไว้แต่เป็นจริงไม่ได้ · คลิกแถวเพื่อเลือกและไปที่ชิ้นนั้น · [[wn_deldup]] ลบชิ้นที่ซ้ำ · เมื่อเลือกชิ้นที่มีคำเตือน แถบแก้ไขจะมีปุ่ม [[a_warnsel]] · ตัวเลขหลังเครื่องหมาย ⚠ ที่แถบสถานะด้านล่างคือจำนวนคำเตือนในตอนนั้น คลิกเพื่อเปิดรายการ
@@ -28717,6 +29146,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.143 · Import CAD, as in Revit ([[a_cadimp]]): a drawing of one view, drafting views included, placed by a click (Manual – Origin / Center) if you like, in black and white if you like · [[a_cadpexp]] and [[a_cadfexp]]: a DXF or PDF drawing becomes lines, arcs, text notes and filled regions with the patterns of the file, its blocks groups · Duplicate with Detailing gives the copied groups groups of their own
 - V1.144 · Parts, as in Revit ([[a_prtmake]]): walls, floors, roofs and ceilings become a part for each layer · [[a_prtdiv]] by sketched lines, levels, grids, reference planes or heights, with a gap if you like · [[a_prtmerge]], [[a_prtex]], [[a_prtres]] · a material of their own · [[p_ptv]] of a view · a Parts schedule
 - V1.145 · Worksets, as in Revit ([[a_worksets]]) on a new [[tab_collab]] tab: [[a_wsact]] · open and close worksets · hide them in a view ([[vg_tab_ws]] in [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] in Properties, filters and schedules
+- V1.146 · Path of Travel, as in Revit ([[t_pot]]) on the [[tab_analyze]] tab: the shortest way round obstacles and through doors · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · schedules of paths
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -28771,6 +29201,17 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 
 # Interference check
 [[a_clash]]: pick two sets of categories, ducts against beams for one. Pairs that occupy the same space are listed; click a row to go to that pair (an orange box marks where they clash in plans and 3D). Runs that join each other or enter a machine are not clashes · [[clash_from]]: each side takes its categories from the current project or from a linked IFC model (our services against the designer's structure, say) · the check goes by the true 3D shapes, so a run through an opening does not clash · with elements selected, tick Categories 1: only the selected elements to check just those against Categories 2 · the report exports as CSV or HTML · [[a_clashlast]] brings the result of the last check back
+
+# Path of Travel
+- The [[tab_analyze]] tab › [[p_route]] › [[t_pot]]: in a floor plan, click where it starts and where it ends: the shortest way round the walls, furniture, columns and whatever else the view shows is found, through doors (as in Revit), and shown while the pointer moves · the tool stays for the next path
+- A path shows its length (or its length and time) along its longest stretch, as [[p_potlab]] says · where that would lie on the label of another path, a room tag, a tag or a stretch that several paths share, it moves along the line, to another stretch or to the other side of the line · its properties: [[p_potfrom]] · [[p_potto]] · [[p_potlen]] · [[p_pottime]] · [[p_potsp]] (time = length ÷ speed) · [[p_potwp]] · [[p_potst]]
+- With paths selected: [[a_potupd]] (worked out again on the model as it is now: as in Revit, a path does not follow changes of the model by itself) · [[a_potwp]] (click where it is to pass) · [[a_potwpx]] · [[a_potrev]] · drag its ends or its waypoints (the diamonds) to change its way
+- [[a_potupdall]]: updates every path of the project · [[a_potrvo]]: what the analysis sees as obstacles in this view, in orange, and the clearance paths keep from them, lighter (on screen only)
+- [[a_potset]]: the analysis zone (200 to 2030 mm above the level, as in Revit) · the clearance a path keeps from obstacles where there is room (300 mm, NFPA 101's 12 in) · the narrowest passage it walks through (500 mm) · the speed (1.3 m/s) · the ignored categories (doors and masses) · an ignored door always lets a path through, even when it is lower than the top of the zone
+- What a view hides (Visibility/Graphics, Hide in View, filters or worksets), what is demolished in its phase and what lies outside its crop region are no obstacles · temporary hiding does not count
+- [[a_potrooms]]: select the exit doors and click it, or click it, click the doors or points that are exits, then [[a_finish]]: a path from the farthest point of every room to its nearest exit, one a room, for checking egress distances
+- A schedule of paths: [[a_newsched]], the category [[cat_pot]]: [[p_potfrom]] · [[p_potto]] · [[c_len]] · [[p_pottime]] and more
+> Paths are worked out on a grid of 5 cm: a length can be slightly longer than the taut line (about 2 % at most) · stairs, ramps and paths between levels are not analysed · no one-way indicators or people content (Revit 2021)
 
 # Warnings of the model
 [[a_warn]] (the [[tab_manage]] tab): a list of what was probably not meant — identical elements in the same place, overlapping walls, doors and windows of one wall that overlap, rooms that are not enclosed, several rooms in one region, a Mark or a room number used twice, grids of the same name, walls slightly off axis, and locked dimensions that cannot be kept · click a row to select its elements and go to them · [[wn_deldup]] removes the copies · when an element with a warning is selected, the modify tab offers [[a_warnsel]] · the number after the ⚠ in the status bar is how many warnings there are just now; a click opens the list
@@ -30579,6 +31020,20 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r60={I:()=>({P,ui,IDX,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),
+  grid:(vid,need)=>{const G=raGrid(viewById(vid),need||[]);if(!G)return null;let raw=0,free=0;for(let k=0;k<G.W*G.H;k++){raw+=G.raw[k];free+=G.free[k]}return{x0:G.x0,y0:G.y0,cs:G.cs,W:G.W,H:G.H,r:G.r,raw,free}},
+  cell:(vid,x,y)=>{const G=raGrid(viewById(vid),[[x,y]]);if(!G)return null;const c=Math.floor((y-G.y0)/G.cs)*G.W+Math.floor((x-G.x0)/G.cs);return{raw:G.raw[c],free:G.free[c],open:G.open[c]}},
+  way:(vid,a,b)=>{const G=raGrid(viewById(vid),[a,b]);return G?raWay(G,a,b):null},comp:(vid,pts)=>{const d=potCompute({id:0,cat:'pot',view:vid,pts,lab:1});return{st:d.st,len:d.len,ln:d.ln}},
+  rooms:(vid,X)=>{const r=potRooms(viewById(vid),X);return r.err?r:{no:r.no,out:r.out.map(o=>({room:o.room.id,a:o.a,b:o.b,len:Math.round(o.len),n:o.L.length}))}},
+  doorX:id=>potDoorX(IDX.get(id)),gaps:vid=>{const v=viewById(vid),S=raOf(),L=lvl(P,v.level);return raGaps(S,L.elev+S.zb,raKeep(v,S))},
+  pots:()=>P.ann.filter(d=>d.cat==='pot').map(d=>JSON.parse(JSON.stringify(d))),old:id=>potOld(IDX.get(id)),room:(id,k)=>{const r=potRoom(IDX.get(id),k);return r?r.id:null},
+  ra:()=>JSON.parse(JSON.stringify(raOf())),fields:cat=>sfAll(P,cat,t).map(f=>f.k),
+  tbl:vid=>{const v=viewById(vid),S=scheduleTable(P,v.sched,t,schedOpt(v,null)),ks=S.cols.map(c=>c.k);return{cols:ks,rows:S.rows.map(r=>{const o={};for(const k of ks)o[k]=r[k];return o}),foot:S.foot}},
+  ribbon:()=>RIBBON.map(r=>({id:r.id,p:r.panels.map(p=>p.t||p.title)})),ctx:()=>ctxPanels().map(p=>({t:p.t||p.title,b:p.b})),pressed:id=>pressed(id),rvo:vid=>rvoOn(viewById(vid)),
+  str:()=>projStr(),loadText:s=>loadText(s),undo:()=>undo(),redo:()=>redo(),av:()=>{const v=activeView();return v?v.id:null},tool:()=>ui.tool,act:(k,a)=>act(k,a),sel:ids=>{ui.sel=new Set(ids);refresh()},
+  setTool:k=>setTool(k),potX:()=>ui.potX?JSON.parse(JSON.stringify(ui.potX)):null,potA:()=>ui.potA,pv:()=>ui.potPv?{st:ui.potPv.st,n:ui.potPv.L?ui.potPv.L.length:0}:null,rac:()=>RAC.size,
+  labs:vid=>{const v=viewById(vid),M=potLabs(v,v.scale),m=[...M];let hit=0;for(let i=0;i<m.length;i++)for(let j=i+1;j<m.length;j++)if(potHit(m[i][1].R,m[j][1].R))hit++;
+  return{n:m.length,hit,tags:M.T.length,onTag:m.filter(([id,q])=>potTagN(q.R,M.T)).map(([id,q])=>[id,potTagN(q.R,M.T)]),at:m.map(([id,q])=>({id,p:q.p.map(Math.round),rot:+q.rot.toFixed(3),s:q.s,n:q.n}))}}};
 window.PenumBIM.r59={I:()=>({P,ui,IDX,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),
   ws:()=>P.ws?JSON.parse(JSON.stringify(P.ws)):null,of:id=>{const e=IDX.get(id);return e?wsOf(e):null},el:id=>wsEl(IDX.get(id)),cnt:()=>Object.fromEntries(wsCount()),
   hidW:vid=>{const s=wsHidW(viewById(vid));return s?[...s]:[]},hid:vid=>{const s=wsHidIds(viewById(vid));return s?[...s]:[]},hs:(vid,id)=>{const s=hidSet(viewById(vid));return!!(s&&s.has(id))},
