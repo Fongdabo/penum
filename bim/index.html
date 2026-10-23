@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=163,V1_NAME='V1.152';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=164,V1_NAME='V1.153';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -28180,6 +28180,161 @@ Object.assign(STR,{
   wn_sc_rfhdn:['เครื่องภายนอกอยู่ต่ำกว่าเครื่องภายในเกินขีดจำกัด: {0}','The outdoor unit is too far below the indoor units: {0}'],wn_sc_rfhid:['ความสูงต่างระหว่างเครื่องภายในเกินขีดจำกัด: {0}','The height between indoor units is over the limit: {0}'],
   wn_sc_rfratio:['สัดส่วนเครื่องภายใน/ภายนอกอยู่นอกช่วง 50–130 %: {0}','The combination ratio is outside 50–130 %: {0}'],wn_sc_rfhp:['เครื่องภายนอกใหญ่เกินขนาดของระบบเดียว: {0}','The outdoor unit is larger than one system takes: {0}'],
   wn_sc_rfsmall:['ท่อน้ำยาเล็กกว่าตาราง: {0} ท่อน','Refrigerant pipes smaller than the table: {0}'],wn_sc_rfrcl:['ความเข้มข้นน้ำยาในห้องเกินค่า RCL: {0}','Refrigerant concentration in a room is over the RCL: {0}']});
+/* ===== 153 hourly cooling loads and the Loads Report (V1.153; Revit: Analyze › Heating and Cooling Loads — the peak month and hour of each space, zone, level and
+   the building, and the report with its Building, Level, Zone and Space summaries, check sums and the load components of each space).
+   P.load.meth = 'hr': each room is worked out for every hour of the 21st of each month — the outdoor temperature by the daily range (P.load.dr, K) below the design
+   temperature of the hottest month, the sun from the latitude and longitude of the project (clear sky), walls and roof by their sol-air temperature with a lag and a
+   decrement, glass by its conduction and the sun it lets in, people, lights and equipment by the hours the room is used (P.load.hrs {use: [from, to]}), the radiant part
+   of each gain spread over the next hours (radiant time series) — and takes its peak hour among the hours it is used; zones, levels and the building take the hour when their
+   rooms together peak (block load).  P.load.inf: infiltration, air changes an hour (both methods).  Without meth the loads stay as they were (each wall at its own worst). ===== */
+const LH_DR=[0.87,0.92,0.96,0.99,1,0.98,0.93,0.84,0.71,0.56,0.39,0.23,0.11,0.03,0,0.03,0.10,0.21,0.34,0.47,0.58,0.68,0.76,0.82];          // ASHRAE: share of the daily range below the peak, hours 1 … 24
+const LH_MO=[3.5,2.5,1,0,0.5,1,1.5,1.5,1.5,1.5,2.5,3.5];          // how much cooler the design day of each month is than that of the hottest (Thailand: April)
+const LH_DEC=[-20.1,-10.8,0,11.6,20,23.45,20.4,11.8,0,-11.8,-20.4,-23.45];          // declination of the sun on the 21st
+const LH_A=[1230,1215,1186,1136,1104,1088,1085,1107,1151,1192,1221,1233],LH_B=[.142,.144,.156,.180,.196,.205,.207,.201,.177,.160,.149,.142],LH_C=[.058,.060,.071,.097,.121,.134,.136,.122,.092,.073,.063,.057];          // ASHRAE clear sky
+const LH_RN=[49,17,9,5,4,3,2,2,2,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0].map(x=>x/100),LH_RS=[54,16,8,5,4,3,2,2,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0].map(x=>x/100);          // radiant time series, medium construction: non-solar, solar
+const LH_HRS={bed:[20,8],living:[16,23],dining:[11,22],kitchen:[6,21],office:[8,18],meeting:[8,18],class:[8,17],retail:[10,21],lobby:[8,18],toilet:[0,0],none:[0,0],other:[8,18]};          // from, to (to = from: all day)
+const LH_COMP=['wall','glassC','glassS','roof','part','inf','vent','lights','equip','people'];
+const lhOcc=(H,h)=>H[0]===H[1]?1:H[0]<H[1]?(h>=H[0]&&h<H[1]?1:0):(h>=H[0]||h<H[1]?1:0);
+const lhIam=c=>c<=0?0:1-Math.pow(1-c,3);          // glass lets in less of the sun as it strikes at a flatter angle
+const lhMon=m=>new Date(2026,m,21).toLocaleDateString(LANG==='en'?'en-GB':'th-TH',{month:'short'});
+const lhAt=pk=>pk?lhMon(pk.m)+' '+String(pk.h).padStart(2,'0')+':00':'—';
+{const f0=loadSet;loadSet=P0=>{const S=f0(P0),L=P0&&P0.load&&typeof P0.load==='object'?P0.load:{},n=(v,a,b,d)=>v!=null&&v!==''&&isFinite(+v)?clamp(+v,a,b):d;
+  S.meth=L.meth==='hr'?'hr':'pk';S.dr=n(L.dr,0,20,8);S.inf=n(L.inf,0,5,0);S.hrs={};
+  for(const k in LH_HRS){const v=L.hrs&&L.hrs[k];S.hrs[k]=Array.isArray(v)&&v.length===2&&v.every(x=>x!==''&&x!=null&&isFinite(+x))?v.map(x=>clamp(Math.round(+x),0,24)%24):LH_HRS[k].slice()}return S}}
+XC.push(()=>{const L=P.load;if(!L||typeof L!=='object')return;if(L.meth!==undefined&&L.meth!=='hr')delete L.meth;
+  if(L.hrs!==undefined){const o={};if(L.hrs&&typeof L.hrs==='object')for(const k in LH_HRS){const v=L.hrs[k];if(Array.isArray(v)&&v.length===2&&v.every(x=>isFinite(+x)&&x!==''&&x!=null))o[k]=v.map(x=>clamp(Math.round(+x),0,24)%24)}
+    if(Object.keys(o).length)L.hrs=o;else delete L.hrs}});
+/* the weather of the design days: per month the outdoor temperature of each hour, the sun on each way a wall faces and on the roof (W/m²), and what of it glass lets in */
+function lhSky(S){const pl=sunPlace(),L=pl.lat*Math.PI/180,dS=(pl.lon-15*pl.tz)/15,M=[];
+  for(let m=0;m<12;m++){const de=LH_DEC[m]*Math.PI/180,to=[],I={R:[]},G={};for(const o of LOAD_DIRS){I[o]=[];G[o]=[]}
+    for(let h=0;h<24;h++){to.push(S.to-LH_MO[m]-S.dr*LH_DR[(h+23)%24]);
+      const H=(h-12+dS)*Math.PI/12,sb=Math.cos(L)*Math.cos(de)*Math.cos(H)+Math.sin(L)*Math.sin(de),sE=-Math.cos(de)*Math.sin(H),sN=Math.sin(de)*Math.cos(L)-Math.cos(de)*Math.cos(H)*Math.sin(L);
+      const dn=sb>0.02?LH_A[m]*Math.exp(-LH_B[m]/sb):0,dif=LH_C[m]*dn;I.R.push(dn*Math.max(0,sb)+dif);
+      for(let i=0;i<8;i++){const a=i*Math.PI/4,c=dn>0?Math.max(0,sE*Math.sin(a)+sN*Math.cos(a)):0,Y=Math.max(0.45,0.55+0.437*c+0.313*c*c),df=dif*Y+dn*(LH_C[m]+Math.max(0,sb))*0.1;          // 0.1: half the sky sees the ground, which reflects a fifth
+        I[LOAD_DIRS[i]].push(dn*c+df);G[LOAD_DIRS[i]].push(dn*c*lhIam(c)+df*0.9)}}
+    M.push({to,I,G})}return M}
+/* a gain over the day as the room feels it: the convective part at once, the radiant part spread by the series */
+const lhRts=(g,rf,R)=>g.map((x,h)=>{let s=(1-rf)*x;for(let j=0;j<24;j++)if(R[j])s+=rf*R[j]*g[(h-j+24)%24];return s});
+/* conduction through a wall or the roof: the sol-air temperature reaches the room late and damped */
+function lhCond(to,I,UA,ti,abs,lw,lag,f){if(!(UA>0))return null;const sa=to.map((x,h)=>x+abs*I[h]/17-lw),mean=sa.reduce((a,b)=>a+b,0)/24;return sa.map((x,h)=>UA*(mean+f*(sa[(h-lag+24)%24]-mean)-ti))}
+/* the rooms of roomLoads with their hours: per room 12 × 24 totals (W, safety factor in, 0 when the room is not used), the components and the peak */
+function lhApply(P0,rows,S){const k=1+S.sf/100,sky=S.meth==='hr'?lhSky(S):null,byId=new Map();for(const e of P0.els)if(e.cat==='room')byId.set(e.id,e);
+  for(const row of rows){if(!row.q)continue;const r=byId.get(row.id),Z=zoneOf(P0,r),ti=Z&&Z.ti!=null?Z.ti:S.ti,dW=Math.max(0,(wFromWb(S.to,S.twb)-wFromRh(ti,S.rh))*1000),area=row.area/1e6,U=LOAD_USE[row.use];
+    const lv=lvl(P0,r.level),up=levelAbove(P0,r.level),ce=ceilingAt(P0,r.level,r.x,r.y),hgt=ce?ce.off:up&&lv?up.elev-lv.elev:3000,vol=area*hgt/1000,ai=S.inf*vol/3.6;row.vol=vol;row.inf=ai;
+    if(S.meth!=='hr'){if(!(ai>0))continue;const dT=S.to-ti,q=row.q;q.infS=1.21*ai*dT;q.infL=3.0*ai*dW;row.sens+=q.infS;row.lat+=q.infL;lhTotals(row,S,k);
+      const dTh=Math.max(0,(Z&&Z.th!=null?Z.th:S.th)-S.toh);row.heat=(row.heat||0)+1.21*ai*dTh*k;row.heatBtu=row.heat*3.412;continue}
+    const H=S.hrs[row.use]||[0,0],occ=[...Array(24)].map((x,h)=>lhOcc(H,h)),ppl=row.people,lw=+row.lightsW>0?row.lightsW:U.lp*area,air=row.air||0,tot=new Float64Array(288),sen=new Float64Array(288);let best=null;
+    for(let m=0;m<12;m++){const W=sky[m],c={},add=(key,g)=>{if(!g)return;c[key]=c[key]?c[key].map((x,h)=>x+g[h]):g};
+      for(const o of LOAD_DIRS){const wA=row.wallA[o]||0,gA=row.glassA[o]||0;
+        if(wA>0)add('wall',lhRts(lhCond(W.to,W.I[o],wA*S.uw,ti,0.7,0,6,0.45),0.46,LH_RN));
+        if(gA>0){add('glassC',lhRts(W.to.map(x=>gA*S.ug*(x-ti)),0.46,LH_RN));add('glassS',lhRts(W.G[o].map(x=>gA*S.shgc*S.fsh*x),1,LH_RS))}}
+      if(row.roofA>0)add('roof',lhRts(lhCond(W.to,W.I.R,row.roofA*S.ur,ti,0.7,3.9,3,0.7),0.6,LH_RN));
+      if(row.partA>0)add('part',W.to.map(x=>row.partA*S.up*(x-ti)*0.5));
+      add('people',lhRts(occ.map(o=>o*ppl*S.ps),0.6,LH_RN));add('lights',lhRts(occ.map(o=>o*lw),0.67,LH_RN));add('equip',lhRts(occ.map(o=>o*U.ep*area),0.2,LH_RN));
+      if(ai>0)add('inf',W.to.map(x=>1.21*ai*(x-ti)));if(S.oa&&air>0)add('vent',W.to.map((x,h)=>occ[h]*1.21*air*(x-ti)));
+      for(let h=0;h<24;h++){if(!occ[h])continue;let s=0;for(const key in c)s+=c[key][h];const lat=occ[h]*(ppl*S.pl+(S.oa?3.0*air*dW:0))+3.0*ai*dW,T=(s+lat)*k;
+        tot[m*24+h]=T;sen[m*24+h]=(s-(c.vent?c.vent[h]:0))*k;if(!best||T>best.T)best={T,m,h,c:Object.fromEntries(Object.keys(c).map(key=>[key,c[key][h]])),pl:occ[h]*ppl*S.pl,vl:occ[h]*(S.oa?3.0*air*dW:0),il:3.0*ai*dW}}}
+    row.H=tot;row.HS=sen;if(!best)continue;const b=best.c,q=row.q;
+    for(const key of ['wall','glassC','glassS','roof','part','people','lights','equip'])q[key]=b[key]||0;q.infS=b.inf||0;q.infL=best.il;q.oaS=b.vent||0;q.oaL=best.vl;q.peopleL=best.pl;
+    row.sens=q.wall+q.glassC+q.glassS+q.roof+q.part+q.people+q.lights+q.equip+q.infS;row.lat=q.peopleL+q.infL;row.oa=q.oaS+q.oaL;row.pk={m:best.m,h:best.h};lhTotals(row,S,k);
+    if(ai>0){const dTh=Math.max(0,(Z&&Z.th!=null?Z.th:S.th)-S.toh);row.heat=(row.heat||0)+1.21*ai*dTh*k;row.heatBtu=row.heat*3.412}}}
+function lhTotals(row,S,k){const area=row.area/1e6;row.total=(row.sens+row.lat+row.oa)*k;row.btu=row.total*3.412;row.tr=row.total/3517;row.btum2=area>0?row.btu/area:0;row.supply=S.dts>0?row.sens*k/(1.21*S.dts):0;row.size=AC_SIZES.find(s=>s>=row.btu-1)||0}
+{const f0=roomLoads;roomLoads=P0=>{const rows=f0(P0),S=loadSet(P0);if(S.meth==='hr'||S.inf>0)lhApply(P0,rows,S);return rows}}
+/* the block load of rooms taken together: the hour when their sum peaks (hourly), or the sum of their peaks */
+function lhBlock(rows,S){const C=rows.filter(r=>r.total!=null),o={n:C.length,area:0,vol:0,people:0,sum:0,supply:0,heat:0,tot:0,sens:0,lat:0,pk:null,prof:null,mon:null};
+  for(const r of C){o.area+=r.area/1e6;o.vol+=r.vol||r.area/1e6*3;o.people+=r.people||0;o.sum+=r.total;o.supply+=r.supply;o.heat+=r.heat||0}
+  if(S.meth==='hr'&&C.length&&C.every(r=>r.H)){const T=new Float64Array(288),SS=new Float64Array(288);for(const r of C)for(let i=0;i<288;i++){T[i]+=r.H[i];SS[i]+=r.HS[i]}let bi=0;for(let i=1;i<288;i++)if(T[i]>T[bi])bi=i;
+    o.tot=T[bi];o.sens=SS[bi];o.lat=Math.max(0,o.tot-o.sens);o.pk={m:Math.floor(bi/24),h:bi%24};o.prof=[...T.slice(o.pk.m*24,o.pk.m*24+24)];o.mon=[...Array(12)].map((x,m)=>Math.max(...T.slice(m*24,m*24+24)))}
+  else{o.tot=o.sum;o.sens=C.reduce((a,r)=>a+(r.sens+(r.q?r.q.oaS:0))*(1+S.sf/100),0);o.lat=Math.max(0,o.tot-o.sens)}
+  o.div=o.sum>0?o.tot/o.sum:1;return o}
+/* the report: building, levels, zones, spaces */
+function lhReport(P0){const S=loadSet(P0),rows=P0===P?LDm():roomLoads(P0),C=rows.filter(r=>r.total!=null),by=(f)=>{const m=new Map();for(const r of C){const k=f(r);(m.get(k)||m.set(k,[]).get(k)).push(r)}return m};
+  const lv=[...by(r=>r.level)].sort((a,b)=>elev(P0,a[0])-elev(P0,b[0])).map(([id,rs])=>Object.assign(lhBlock(rs,S),{name:(lvl(P0,id)||{}).name||'',ids:rs.map(r=>r.id)}));
+  const ZL=zoneList(P0),zn=[...by(r=>r.zone||0)].sort((a,b)=>(a[0]?ZL.findIndex(z=>z.id===a[0]):1e9)-(b[0]?ZL.findIndex(z=>z.id===b[0]):1e9)).map(([id,rs])=>Object.assign(lhBlock(rs,S),{id,name:id?((ZL.find(z=>z.id===id)||{}).name||''):t('lh_nozone'),ids:rs.map(r=>r.id)}));
+  return{S,rows:C,all:rows,b:lhBlock(C,S),lv,zn}}
+const lhKw=w=>(w/1000).toFixed(2),lhPct=(a,b)=>b>0?Math.round(a/b*100)+' %':'';
+/* the components of a space at its peak, and of its heating */
+function lhComps(r,S){const q=r.q,k=1+S.sf/100,c={wall:q.wall,glassC:q.glassC,glassS:q.glassS,roof:q.roof,part:q.part,inf:(q.infS||0)+(q.infL||0),vent:q.oaS+q.oaL,lights:q.lights,equip:q.equip,people:q.people+q.peopleL};for(const key in c)c[key]*=k;return c}
+/* a chart of the block load over the hours of its peak day, and of the peak of each month */
+function lhChart(b){if(!b.prof)return'';const w=520,h=150,mx=Math.max(...b.prof,...b.mon)||1,bw=w/24,y=v=>h-18-(h-30)*v/mx;
+  const bars=b.prof.map((v,i)=>`<rect x="${(i*bw+2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${Math.max(0,h-18-y(v)).toFixed(1)}" fill="${i===b.pk.h?'var(--lh-pk,#e8702a)':'var(--lh-bar,#4a90d9)'}"><title>${String(i).padStart(2,'0')}:00 · ${lhKw(v)} kW</title></rect>`).join('');
+  const ax=[0,6,12,18].map(i=>`<text x="${(i*bw+2).toFixed(1)}" y="${h-4}" font-size="10" fill="currentColor">${String(i).padStart(2,'0')}:00</text>`).join('');
+  const mw=w/12,mon=b.mon.map((v,i)=>`<rect x="${(i*mw+3).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(mw-6).toFixed(1)}" height="${Math.max(0,h-18-y(v)).toFixed(1)}" fill="${i===b.pk.m?'var(--lh-pk,#e8702a)':'var(--lh-bar2,#7fb3e6)'}"><title>${lhMon(i)} · ${lhKw(v)} kW</title></rect><text x="${(i*mw+mw/2).toFixed(1)}" y="${h-4}" font-size="10" text-anchor="middle" fill="currentColor">${lhMon(i)}</text>`).join('');
+  return`<div class="lhc"><div><b>${t('lh_day',lhMon(b.pk.m))}</b><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${t('lh_day',lhMon(b.pk.m))}">${bars}${ax}</svg></div><div><b>${t('lh_months')}</b><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${t('lh_months')}">${mon}</svg></div></div>`}
+function lhHtml(R){const S=R.S,b=R.b,au=airUnit(),air=ls=>money(ls*flowK(P)),row=(l,v)=>`<tr><th>${l}</th><td>${v}</td></tr>`,hr=S.meth==='hr',pl=sunPlace();
+  const tbl=(head,body)=>`<div class="tblw"><table class="tbl"><thead><tr>${head.map(x=>`<th${x[1]?' class="n"':''}>${x[0]}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const sumHead=[[t('c_name')],[t('c_area')+' (m²)',1],[t('lh_peak')+' (kW)',1],[t('lh_sens')+' (kW)',1],[t('lh_lat')+' (kW)',1],[t('lh_at')],[t('lh_sumpk')+' (kW)',1],[t('lh_div'),1],[t('lh_air')+' ('+au+')',1],[t('lh_wm2'),1],[t('lh_m2tr'),1],[t('lh_heat')+' (kW)',1]];
+  const sumRow=(x,ids)=>`<tr${ids?` data-lh="${ids.join(',')}"`:''}><td>${esc(x.name)}</td><td class="n">${x.area.toFixed(1)}</td><td class="n"><b>${lhKw(x.tot)}</b></td><td class="n">${lhKw(x.sens)}</td><td class="n">${lhKw(x.lat)}</td><td>${lhAt(x.pk)}</td><td class="n">${lhKw(x.sum)}</td><td class="n">${Math.round(x.div*100)} %</td><td class="n">${air(x.supply)}</td><td class="n">${x.area>0?Math.round(x.tot/x.area):''}</td><td class="n">${x.tot>0?(x.area/(x.tot/3517)).toFixed(1):''}</td><td class="n">${lhKw(x.heat)}</td></tr>`;
+  let h=`<h4>${t('lh_bsum')}</h4><div class="lhg"><table class="tbl kv">${row(t('lh_meth'),t(hr?'lh_m_hr':'lh_m_pk'))+row(t('lh_place'),pl.lat.toFixed(2)+'°, '+pl.lon.toFixed(2)+'° · UTC'+(pl.tz>=0?'+':'')+pl.tz)+row(t('lh_out'),S.to+' / '+S.twb+' °C'+(hr?' · '+t('lh_dr',S.dr):''))+row(t('lh_in'),S.ti+' °C · '+S.rh+' %')+
+    row(t('lh_rooms'),b.n)+row(t('c_area'),b.area.toFixed(1)+' m²')+row(t('c_vol'),b.vol.toFixed(0)+' m³')+row(t('p_people'),b.people)+(S.inf>0?row(t('ld_inf'),S.inf+' ACH'):'')}</table>
+    <table class="tbl kv">${row(t('lh_peak'),'<b>'+lhKw(b.tot)+' kW · '+(b.tot/3517).toFixed(2)+' TR · '+money(b.tot*3.412)+' BTU/h</b>')+row(t('lh_sens'),lhKw(b.sens)+' kW')+row(t('lh_lat'),lhKw(b.lat)+' kW')+row(t('lh_at'),lhAt(b.pk))+
+      row(t('lh_sumpk'),lhKw(b.sum)+' kW'+(hr?' · '+t('lh_div')+' '+Math.round(b.div*100)+' %':''))+row(t('lh_air'),air(b.supply)+' '+au)+row(t('lh_heat'),lhKw(b.heat)+' kW')+`<tr><th colspan="2">${t('lh_cks')}</th></tr>`+
+      row(t('lh_wm2'),b.area>0?Math.round(b.tot/b.area)+' W/m²':'—')+row(t('lh_m2tr'),b.tot>0?(b.area/(b.tot/3517)).toFixed(1)+' m²/TR':'—')+row(t('lh_lsm2'),b.area>0?(b.supply/b.area).toFixed(2)+' L/(s·m²)':'—')+row(t('lh_lskw'),b.tot>0?(b.supply/(b.tot/1000)).toFixed(1)+' L/(s·kW)':'—')+
+      row(t('lh_m2p'),b.people>0?(b.area/b.people).toFixed(1)+' m²':'—')+row(t('lh_hwm2'),b.area>0?Math.round(b.heat/b.area)+' W/m²':'—')}</table></div>`+lhChart(b);
+  h+=`<h4>${t('lh_lsum')}</h4>`+tbl(sumHead,R.lv.map(x=>sumRow(x,x.ids)).join(''));
+  h+=`<h4>${t('lh_zsum')}</h4>`+tbl(sumHead,R.zn.map(x=>sumRow(x,x.ids)).join(''));
+  h+=`<h4>${t('lh_ssum')}</h4>`+tbl([[t('c_number')],[t('c_name')],[t('c_area')+' (m²)',1],[t('p_people'),1],[t('lh_peak')+' (kW)',1],[t('lh_sens')+' (kW)',1],[t('lh_lat')+' (kW)',1],[t('lh_at')],[t('lh_air')+' ('+au+')',1],[t('lh_wm2'),1],[t('lh_heat')+' (kW)',1]],
+    R.rows.map(r=>{const a=r.area/1e6;return`<tr data-lh="${r.id}"><td>${esc(r.number)}</td><td>${esc(r.name)}</td><td class="n">${a.toFixed(1)}</td><td class="n">${r.people}</td><td class="n"><b>${lhKw(r.total)}</b></td><td class="n">${lhKw((r.sens+(r.q.oaS||0))*(1+S.sf/100))}</td><td class="n">${lhKw((r.lat+(r.q.oaL||0))*(1+S.sf/100))}</td><td>${lhAt(r.pk)}</td><td class="n">${air(r.supply)}</td><td class="n">${a>0?Math.round(r.total/a):''}</td><td class="n">${lhKw(r.heat||0)}</td></tr>`}).join(''));
+  h+=`<h4>${t('lh_comp')}</h4>`;
+  for(const r of R.rows){const c=lhComps(r,S),tot=Object.values(c).reduce((a,v)=>a+v,0);
+    h+=`<details class="adv"><summary>${esc((r.number?r.number+' ':'')+r.name)} · ${lhKw(r.total)} kW · ${lhAt(r.pk)}</summary>`+tbl([[t('lh_c')],[t('lh_cool')+' (W)',1],['%',1]],LH_COMP.map(key=>`<tr><td>${t('lh_c_'+key)}</td><td class="n">${money(c[key])}</td><td class="n">${lhPct(c[key],tot)}</td></tr>`).join('')+`<tr class="ft"><td><b>${t('c_total')}</b></td><td class="n"><b>${money(tot)}</b></td><td class="n">100 %</td></tr>`)+'</details>'}
+  return h+`<p class="note">${t(hr?'lh_note_hr':'lh_note_pk')}</p>`}
+function dlgLhRep(){const R=lhReport(P);ui.helpAt='calc';
+  const body=R.rows.length?`<style>.lhr .lhg,.lhr .lhc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:12px;align-items:start}.lhr .lhc{margin-top:10px}.lhr svg{width:100%;height:auto;display:block}.lhr .kv{width:100%}.lhr .kv th{font-weight:500;text-align:left;width:46%}.lhr tr[data-lh]{cursor:pointer}</style><div class="lhr">${lhHtml(R)}</div>`:`<p class="note">${t('lh_none')}</p>`;
+  openDlg(t('a_ldrep'),body,`<button class="btn" data-lhx="loads">${t('a_loads')}…</button><button class="btn" data-lhx="html"${R.rows.length?'':' disabled'}>${t('lh_save')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {click(ev){const x=ev.target.closest('[data-lhx]');if(x){if(x.dataset.lhx==='loads'){dlgLoads();return}if(x.dataset.lhx==='html'){lhSave(R);return}}
+      if(ev.target.closest('summary,details'))return;const tr=ev.target.closest('tr[data-lh]');if(tr){showEls(tr.dataset.lh.split(',').map(Number))}}},'wide')}
+XA.ldrep=dlgLhRep;
+/* the report as a page of its own, to keep or print */
+function lhSave(R){const nm=String((P.info&&P.info.name)||P.name||'PENUM BIM').trim()||'PENUM BIM',d=new Date();
+  const css='body{font:13px/1.45 system-ui,sans-serif;color:#1d2433;margin:24px;max-width:1100px}h1{font-size:20px;margin:0 0 4px}h4{font-size:15px;margin:22px 0 8px;border-bottom:2px solid #4a90d9;padding-bottom:3px}table{border-collapse:collapse;width:100%;margin:4px 0}th,td{border:1px solid #cfd6e2;padding:3px 7px;text-align:left;vertical-align:top}thead th{background:#eef2f8}td.n,th.n{text-align:right}.kv th{width:46%;font-weight:500;background:#f6f8fb}.lhg{display:grid;grid-template-columns:1fr 1fr;gap:14px}.lhc{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}svg{width:100%;height:auto}details{margin:4px 0}details>summary{cursor:pointer;font-weight:600}.note{color:#566}@media print{details{break-inside:avoid}details:not([open])>*:not(summary){display:block}}';
+  const html=`<!doctype html><html lang="${LANG==='en'?'en':'th'}"><head><meta charset="utf-8"><title>${esc(t('a_ldrep'))} — ${esc(nm)}</title><style>${css}</style></head><body><h1>${esc(t('a_ldrep'))} — ${esc(nm)}</h1><p class="note">${d.toLocaleString(LANG==='en'?'en-GB':'th-TH')} · PENUM BIM ${V1_NAME}</p>${lhHtml(R).replace(/<details class="adv">/g,'<details open>')}</body></html>`;
+  saveFile(nm.replace(/[\\/:*?"<>|]+/g,'_')+' - '+t('lh_file')+'.html',html,'text/html')}
+/* the loads dialog: the method, the daily range, infiltration, the hours of each use, the block load, and the report */
+{const f0=dlgLoads;dlgLoads=(...a)=>{const r=f0(...a),D=$('#dlg');if(!D||!D.open||!ui.dlg||!ui.dlg.ld)return r;const S=loadSet(P),g=D.querySelector('.ldg');
+  if(g&&!D.querySelector('[data-lh="meth"]')){const w=document.createElement('div');w.style.display='contents';
+    w.innerHTML=`<label><span>${t('lh_meth')}</span><span><select data-lh="meth"><option value="pk"${S.meth==='pk'?' selected':''}>${t('lh_m_pk')}</option><option value="hr"${S.meth==='hr'?' selected':''}>${t('lh_m_hr')}</option></select></span></label>`+
+      (S.meth==='hr'?`<label><span>${t('ld_dr')}</span><span><input type="number" data-ld="dr" value="${S.dr}" step="0.5" min="0" max="20"><small>K</small></span></label>`:'')+
+      `<label><span>${t('ld_inf')}</span><span><input type="number" data-ld="inf" value="${S.inf}" step="0.1" min="0" max="5"><small>ACH</small></span></label>`;
+    g.prepend(w);w.querySelector('[data-lh="meth"]').addEventListener('change',ev=>{if(!ui.dlg)return;const v=ev.target.value;edit(()=>{const L=Object.assign({},P.load||{});if(v==='hr')L.meth='hr';else delete L.meth;P.load=L});dlgLoads()});
+    if(S.meth==='hr'){const dt=document.createElement('details');dt.className='adv';if(ui.lhHrs)dt.open=true;
+      dt.innerHTML=`<summary>${t('lh_hrs')}</summary><p class="note">${t('lh_hrs_note')}</p><div class="tblw"><table class="tbl"><tr><th>${t('c_use')}</th><th class="n">${t('lh_from')}</th><th class="n">${t('lh_to')}</th></tr>`+
+        Object.keys(LH_HRS).map(k=>`<tr><td>${t('use_'+k)}</td>${[0,1].map(i=>`<td class="n"><input type="number" min="0" max="24" step="1" value="${S.hrs[k][i]}" data-lhh="${k}:${i}" aria-label="${t('use_'+k)} ${t(i?'lh_to':'lh_from')}"></td>`).join('')}</tr>`).join('')+'</table></div>';
+      g.after(dt);dt.addEventListener('toggle',()=>{ui.lhHrs=dt.open});
+      dt.addEventListener('change',ev=>{if(!ui.dlg)return;const q=(ev.target.dataset.lhh||'').split(':'),v=parseFloat(ev.target.value);if(q.length!==2||!isFinite(v))return;ev.stopPropagation();
+        edit(()=>{const L=Object.assign({},P.load||{}),H=Object.assign({},L.hrs||{}),cur=loadSet(P).hrs[q[0]].slice();cur[+q[1]]=clamp(Math.round(v),0,24)%24;H[q[0]]=cur;L.hrs=H;P.load=L});dlgLoads()})}}
+  const rt=D.querySelector('#ldRooms');if(rt&&!D.querySelector('#lhBlk')){const R=lhReport(P),b=R.b,p=document.createElement('p');p.className='note';p.id='lhBlk';
+    p.innerHTML=b.n?(S.meth==='hr'?t('lh_blk',lhKw(b.tot),lhAt(b.pk),lhKw(b.sum),Math.round(b.div*100)):t('lh_blk_pk',lhKw(b.tot)))+` <button class="btn" data-act="ldrep">${t('a_ldrep')}…</button>`:'';rt.after(p)}
+  const ls=D.querySelector('[data-act="loadsched"]');if(ls&&!ls.parentNode.querySelector('[data-act="ldrep"]')){const bt=document.createElement('button');bt.className='btn';bt.dataset.act='ldrep';bt.textContent=t('a_ldrep');ls.before(bt)}
+  return r}}
+/* Properties of a room: its peak hour; schedules of rooms: the same */
+XP.push((c,els)=>{if(c!=='room'||els.length!==1)return'';const S=loadSet(P);if(S.meth!=='hr')return'';const r=LDm().find(x=>x.id===els[0].id);if(!r||r.total==null)return'';
+  return PR.grp('g_lh')+PR.ro('lh_peak',lhKw(r.total)+' kW')+PR.ro('lh_at',lhAt(r.pk))+`<div class="pa"><button class="btn" data-act="ldrep">${t('a_ldrep')}…</button></div>`});
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='room')return F;const R=e=>{if(Q!==P)return null;const r=LDm().find(x=>x.id===e.id);return r&&r.total!=null?r:null};
+  F.push({k:'ldpkat',l:tr('lh_at'),g:e=>{const r=R(e);return r&&r.pk?lhAt(r.pk):''},grp:'i'},{k:'ldpkw',l:tr('lh_peak')+' (W)',g:e=>{const r=R(e);return r?Math.round(r.total):''},grp:'i',num:1});return F}}
+for(const tab of ['analyze']){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t==='p_loads');if(p&&!p.b.includes('@ldrep')){const i=p.b.indexOf('@loadsched');p.b.splice(i<0?p.b.length:i+1,0,'@ldrep')}}
+BTN['@ldrep']=['report',''];
+Object.assign(STR,{
+  a_ldrep:['รายงานภาระความเย็น (Loads Report)','Loads Report'],g_lh:['ภาระความเย็นรายชั่วโมง','Hourly Loads'],lh_file:['รายงานภาระความเย็น','Loads Report'],lh_save:['บันทึกเป็นไฟล์ HTML','Save as HTML'],
+  lh_meth:['วิธีคำนวณ','Method'],lh_m_pk:['ค่าสูงสุดของแต่ละส่วน (แบบเดิม)','Each part at its own peak (as before)'],lh_m_hr:['รายชั่วโมง 12 เดือน (ชั่วโมงสูงสุด)','Hourly, 12 months (peak hour)'],
+  ld_dr:['ช่วงอุณหภูมิกลางวัน–กลางคืน','Daily range'],ld_inf:['อากาศรั่วซึม (Infiltration)','Infiltration'],
+  lh_hrs:['ชั่วโมงใช้งานของห้องแต่ละประเภท','Hours each use is occupied'],lh_hrs_note:['คน ไฟ อุปกรณ์ และอากาศภายนอกคิดเฉพาะชั่วโมงที่ใช้งาน และหาชั่วโมงสูงสุดในช่วงนั้น · เริ่มเท่ากับเลิก = ทั้งวัน','People, lights, equipment and outdoor air count only in the hours of use, and the peak is looked for in those hours · from = to: all day'],
+  lh_from:['เริ่ม (ชม.)','From (h)'],lh_to:['เลิก (ชม.)','To (h)'],
+  lh_blk:['ทั้งอาคารพร้อมกัน (Block): {0} kW เวลา {1} · ผลรวมค่าสูงสุดของห้อง {2} kW · ใช้จริง {3} %','Whole building at once (block): {0} kW at {1} · sum of the room peaks {2} kW · {3} %'],
+  lh_blk_pk:['ทั้งอาคาร: {0} kW (ผลรวมค่าสูงสุดของห้อง)','Whole building: {0} kW (sum of the room peaks)'],
+  lh_bsum:['สรุปทั้งอาคาร (Building Summary)','Building Summary'],lh_lsum:['สรุปตามชั้น (Level Summary)','Level Summary'],lh_zsum:['สรุปตามโซน (Zone Summary)','Zone Summary'],lh_ssum:['สรุปตามห้อง (Space Summary)','Space Summary'],
+  lh_comp:['องค์ประกอบภาระของแต่ละห้อง ณ ชั่วโมงสูงสุด','Load components of each space at its peak'],lh_c:['องค์ประกอบ','Component'],lh_cool:['ภาระความเย็น','Cooling'],
+  lh_c_wall:['ผนัง','Walls'],lh_c_glassC:['กระจก (การนำความร้อน)','Windows (conduction)'],lh_c_glassS:['กระจก (แดด)','Windows (solar)'],lh_c_roof:['หลังคา','Roof'],lh_c_part:['ผนังกั้นห้อง','Partitions'],
+  lh_c_inf:['อากาศรั่วซึม','Infiltration'],lh_c_vent:['อากาศภายนอก (Ventilation)','Ventilation'],lh_c_lights:['แสงสว่าง','Lighting'],lh_c_equip:['อุปกรณ์ไฟฟ้า','Power'],lh_c_people:['คน','People'],
+  lh_place:['ที่ตั้ง (ละติจูด, ลองจิจูด)','Location (latitude, longitude)'],lh_out:['ภายนอก กระเปาะแห้ง / เปียก','Outside dry / wet bulb'],lh_in:['ภายใน · ความชื้น','Inside · humidity'],lh_dr:['ช่วงกลางวัน–กลางคืน {0} K','daily range {0} K'],
+  lh_rooms:['ห้องที่ปรับอากาศ','Cooled spaces'],lh_peak:['ภาระความเย็นสูงสุด','Peak cooling load'],lh_sens:['ความร้อนสัมผัส','Sensible'],lh_lat:['ความร้อนแฝง','Latent'],lh_at:['เดือน · เวลาที่สูงสุด','Peak month · hour'],
+  lh_sumpk:['ผลรวมค่าสูงสุดของห้อง','Sum of space peaks'],lh_div:['ใช้จริง','Diversity'],lh_air:['ลมจ่าย','Supply airflow'],lh_heat:['ภาระความร้อน (ทำความร้อน)','Heating load'],
+  lh_cks:['ค่าตรวจสอบ (Check Sums)','Check Sums'],lh_wm2:['ภาระต่อพื้นที่ (W/m²)','Cooling load density (W/m²)'],lh_m2tr:['พื้นที่ต่อตันความเย็น (m²/TR)','Cooling area per load (m²/TR)'],
+  lh_lsm2:['ลมต่อพื้นที่','Cooling flow density'],lh_lskw:['ลมต่อภาระ','Cooling flow per load'],lh_m2p:['พื้นที่ต่อคน','Area per person'],lh_hwm2:['ภาระความร้อนต่อพื้นที่','Heating load density'],
+  lh_nozone:['(ไม่อยู่ในโซน)','(no zone)'],lh_day:['ภาระทั้งอาคารรายชั่วโมง วันที่ 21 {0}','Building load by hour, 21 {0}'],lh_months:['ค่าสูงสุดของแต่ละเดือน','Peak of each month'],
+  lh_none:['ยังไม่มีห้องที่ปรับอากาศ วางห้องและเปิด ภาระความเย็น (LO) ก่อน','No cooled spaces yet: place rooms and open Heating and Cooling Loads (LO) first'],
+  lh_note_hr:['คิดทุกชั่วโมงของวันที่ 21 ทุกเดือน: อุณหภูมิภายนอกตามช่วงกลางวัน–กลางคืน แดดท้องฟ้าโปร่งตามละติจูดของโครงการ (ตำแหน่งโครงการ) ผนังและหลังคาตามอุณหภูมิ sol-air ที่ช้าและลดลงตามมวล ความร้อนแผ่รังสีกระจายไปชั่วโมงถัดไป (Radiant Time Series) · ห้องใช้ชั่วโมงสูงสุดของตัวเอง โซน ชั้น และอาคารใช้ชั่วโมงที่ห้องรวมกันสูงสุด (Block) จึงเลือกเครื่องส่วนกลางได้เล็กกว่าผลรวม · ค่าเผื่อรวมอยู่แล้ว','Every hour of the 21st of each month: the outdoor temperature by the daily range, clear-sky sun from the latitude of the project (Location), walls and roof by their sol-air temperature, delayed and damped by their mass, radiant gains spread over the next hours (radiant time series) · a space takes its own peak hour; zones, levels and the building the hour when their spaces together peak (block), so central plant can be smaller than the sum · the safety factor is included'],
+  lh_note_pk:['วิธีเดิม: แต่ละผนังและกระจกคิดที่ค่าสูงสุดของทิศนั้น จึงไม่มีเดือนและเวลา และทั้งอาคารเท่ากับผลรวมของห้อง · เลือกวิธีรายชั่วโมงใน ภาระความเย็น (LO) เพื่อดูชั่วโมงสูงสุดและ Block load','The method as before: each wall and window at the worst for the way it faces, so there is no peak month or hour and the building is the sum of its spaces · choose the hourly method in Heating and Cooling Loads (LO) for peak hours and block loads']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -29596,6 +29751,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.150 · ลมของห้องแบบ Space ของ Revit: [[p_saf]] หรือคิดจากภาระความเย็น ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] หรือ [[p_ach]] · เทียบกับ [[p_rasa]] [[p_rara]] [[p_raea]] ของหัวจ่ายในห้อง · [[a_airdist]] ตั้งลมหัวจ่ายตามที่ห้องต้องการ · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] เตือนห้องที่ลมไม่พอหรือเกิน
 - V1.151 · สัญลักษณ์ท่อขึ้น/ลงแบบ Rise/Drop ของ Revit: ในแปลนของแต่ละชั้น ท่อแนวดิ่งบอกเองว่าขึ้น ลง หรือผ่านตลอด · ท่อลมลงแรเงาครึ่งหนึ่ง · ท่อน้ำขึ้นเป็นวงกลมมีจุด ลงเป็นวงกลมมีกากบาท · ตั้งค่าและเปิด UP / DN ได้ใน [[a_mset]] หน้า [[ms_p_rd]] · [[p_rddir]] ในแผงคุณสมบัติ
 - V1.152 · [[a_vrfrep]]: จากท่อระบบ REF ที่ต่อเครื่องภายนอก (VRF / CDU) กับเครื่องภายใน · [[rf_ratio]] · ขนาดท่อของเหลว/ท่อแก๊สตามความเย็นที่แต่ละท่อนจ่าย · ความยาวรวม ไกลสุด จากจุดแยกแรก · ความสูงต่าง · Refnet · น้ำยาที่ต้องเติมและทั้งระบบ · ความเข้มข้นในห้องเล็กสุดเทียบ RCL · [[a_rfapply]] · [[a_sysck]] เตือนเมื่อเกินขีดจำกัด
+- V1.153 · [[a_loads]]: [[lh_meth]] [[lh_m_hr]] · ห้องใช้ชั่วโมงสูงสุดของตัวเองในชั่วโมงที่ใช้งาน โซน ชั้น และอาคารใช้ชั่วโมงที่รวมกันสูงสุด (Block) · [[ld_dr]] · [[ld_inf]] · [[lh_hrs]] · [[a_ldrep]]: [[lh_bsum]] พร้อม [[lh_cks]] กราฟรายชั่วโมงและรายเดือน [[lh_lsum]] [[lh_zsum]] [[lh_ssum]] และ [[lh_comp]] · [[lh_save]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -29626,6 +29782,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 7. กล่อง VAV / CAV / VAV มีพัดลม: เลือก [[t_ductacc]] ชนิด [[o_vav]] [[o_cav]] หรือ [[o_fpb]] แล้วคลิกบนท่อลมก่อนถึงหัวจ่ายของโซนนั้น · แผงคุณสมบัติบอก [[p_vmax]] (ลมของท่อที่กล่องอยู่ หลังกด [[a_airflow]]) · ตั้ง [[p_vmin]] เป็น % (ค่าเริ่มต้น 30 %) · [[p_vin]] [[p_vvel]] (เกิน 10 m/s ขึ้นเตือน) · [[p_vdp]] (ตั้งใน [[type_props]]: [[f_vpd]] [[f_bw]] [[f_bh]]) · [[p_vterms]] [[p_vrooms]] และโซน · ทำตาราง VAV: [[a_mepsched]] หรือตารางใหม่หมวด [[cat_ductacc]] แล้วเลือกคอลัมน์ [[p_vmax]] [[p_vminf]] [[p_vin]] [[p_vdp]] [[p_vrooms]]
 8. ลมของห้อง: เลือกห้องแล้วดูกลุ่ม [[g_rair]] ในแผงคุณสมบัติ · [[p_racalc]] มาจาก [[a_loads]] (ห้องที่ปรับอากาศ) ใส่ [[p_saf]] เพื่อใช้ค่าของตัวเอง · ลมระบายใส่เป็น [[p_eaf]] หรือ [[p_ach]] (คูณปริมาตรห้องถึงฝ้า) · [[p_raf]] ถ้าไม่ใส่ = ลมจ่าย − ลมระบาย · [[a_airdist]] (แท็บ [[tab_analyze]]): แบ่งลมที่ห้องต้องการให้หัวจ่ายในห้องเท่า ๆ กัน (ห้องที่เลือก หรือทุกห้องของแปลนที่เปิดอยู่) แล้วกด [[a_airflow]] เพื่อให้ท่อรับลมใหม่ · [[a_airsched]] และ [[a_airfill]]: แดง [[ra_st_l]] · ส้ม [[ra_st_z]] · เหลือง [[ra_st_h]] · เขียว [[ra_st_o]] · ฟ้า [[ra_st_u]]
 9. ท่อน้ำยา VRF: วาดท่อระบบ REF (เส้นเดียวแทนท่อของเหลวและท่อแก๊ส) จากเครื่องภายนอก (VRF หรือ CDU) ไปเครื่องภายใน (แอร์ฝังฝ้า ติดผนัง FCU AHU) ที่มี [[f_cap]] ใน [[type_props]] · [[a_vrfrep]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): แต่ละระบบบอก [[rf_ratio]] [[rf_tot]] [[rf_far]] [[rf_far2]] ความสูงต่าง [[rf_joints]] [[rf_add]] [[rf_charge]] และ [[rf_rcl]] (เลือก [[rf_ref]] R410A หรือ R32) · ตารางท่อบอก [[rf_c_liq]] และ [[rf_c_gas]] ของแต่ละท่อน · [[a_rfapply]] ปรับขนาดท่อในโมเดลเป็นท่อแก๊ส · เลือกท่อน้ำยาหรือเครื่องภายนอกเพื่อดูกลุ่ม [[g_rf]] ในแผงคุณสมบัติ
+10. ภาระความเย็นรายชั่วโมง: ใน [[a_loads]] (LO) เลือก [[lh_meth]] = [[lh_m_hr]] · ภาระของแต่ละห้องคิดทุกชั่วโมงของวันที่ 21 ทุกเดือนจากละติจูดของโครงการ และบอกเดือนและเวลาที่สูงสุด · [[lh_hrs]] กำหนดได้ · [[a_ldrep]] (แท็บ [[tab_analyze]]) แสดงภาระทั้งอาคาร ชั้น โซน และห้อง ค่าตรวจสอบ (W/m², m²/TR) และองค์ประกอบของแต่ละห้อง บันทึกเป็น HTML เพื่อพิมพ์ได้
 > ต่างจาก Revit: กล่องเป็นอุปกรณ์ท่อลม (ไม่ใช่เครื่องจักร) ท่อเข้าและออกจึงเป็นท่อเส้นเดียวกัน · กำลังไฟของพัดลมในกล่อง ([[f_kw]]) ยังไม่เข้าวงจรไฟฟ้า
 > ต่างจาก Revit: ESP ที่ต้องการคิดจากเส้นทางวิกฤตของท่อ ข้อต่อ อุปกรณ์ และหัวจ่าย ไม่รวมความดันภายในเครื่อง (คอยล์ ฟิลเตอร์) · ลมกลับผ่านฝ้า (ไม่มีท่อ) ไม่ถูกนับ
 
@@ -29870,6 +30027,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.150 · The airflow of rooms, as of a Revit Space: [[p_saf]] or one from the cooling load ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] or [[p_ach]] · against [[p_rasa]], [[p_rara]] and [[p_raea]] of the terminals in the room · [[a_airdist]] sets the terminals to what their rooms need · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] warns of rooms with too little or too much air
 - V1.151 · Rise and drop symbols, as in Revit: in the plan of each level a riser shows by itself whether it rises, drops or passes through · a duct drop is half shaded · a pipe rise is a circle with a dot, a drop a circle with a cross · set them, and UP / DN, in [[a_mset]] › [[ms_p_rd]] · [[p_rddir]] in Properties
 - V1.152 · [[a_vrfrep]]: from the REF pipes between an outdoor unit (VRF / CDU) and the indoor units · [[rf_ratio]] · liquid and gas sizes by the capacity each pipe serves · total length, to the farthest unit, from the first branch · heights · Refnets · refrigerant to add and the system charge · the concentration in the smallest room against the RCL · [[a_rfapply]] · [[a_sysck]] warns of what is over the limits
+- V1.153 · [[a_loads]]: [[lh_meth]] [[lh_m_hr]] · a space takes its own peak hour among the hours it is used; zones, levels and the building the hour when they peak together (block) · [[ld_dr]] · [[ld_inf]] · [[lh_hrs]] · [[a_ldrep]]: [[lh_bsum]] with [[lh_cks]], charts by hour and by month, [[lh_lsum]], [[lh_zsum]], [[lh_ssum]] and the [[lh_comp]] · [[lh_save]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -29900,6 +30058,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 7. VAV, CAV and fan-powered boxes: take [[t_ductacc]] of the kind [[o_vav]], [[o_cav]] or [[o_fpb]] and click on the duct before the terminals of its zone · Properties give [[p_vmax]] (the air of the duct it is on, after [[a_airflow]]) · set [[p_vmin]] in % (30 % unless set) · [[p_vin]], [[p_vvel]] (a warning above 10 m/s) · [[p_vdp]] (in [[type_props]]: [[f_vpd]], [[f_bw]], [[f_bh]]) · [[p_vterms]], [[p_vrooms]] and the zones · for a VAV schedule: [[a_mepsched]] or a new schedule of [[cat_ductacc]] with the fields [[p_vmax]], [[p_vminf]], [[p_vin]], [[p_vdp]], [[p_vrooms]]
 8. The airflow of rooms: select a room and see [[g_rair]] in Properties · [[p_racalc]] comes from [[a_loads]] (cooled rooms); type [[p_saf]] to use your own · exhaust is given as [[p_eaf]] or as [[p_ach]] (times the volume of the room up to its ceiling) · [[p_raf]] is the supply less the exhaust unless given · [[a_airdist]] (the [[tab_analyze]] tab): the terminals of a room share what it needs equally (the rooms selected, or every room of the plan that is open); then press [[a_airflow]] so the ducts take the new air · [[a_airsched]] and [[a_airfill]]: red [[ra_st_l]] · orange [[ra_st_z]] · yellow [[ra_st_h]] · green [[ra_st_o]] · blue [[ra_st_u]]
 9. VRF refrigerant piping: draw REF pipes (one line for the liquid and gas pair) from an outdoor unit (VRF or CDU) to the indoor units (cassette, wall-mounted, FCU, AHU) that have a [[f_cap]] in [[type_props]] · [[a_vrfrep]] (the [[tab_analyze]] and [[tab_sys]] tabs): for each system the [[rf_ratio]], [[rf_tot]], [[rf_far]], [[rf_far2]], heights, [[rf_joints]], [[rf_add]], [[rf_charge]] and [[rf_rcl]] (choose the [[rf_ref]], R410A or R32) · the table of pipes gives the [[rf_c_liq]] and [[rf_c_gas]] of each · [[a_rfapply]] sets the model to the gas sizes · select a refrigerant pipe or an outdoor unit to see [[g_rf]] in Properties
+10. Hourly loads: in [[a_loads]] (LO) set [[lh_meth]] to [[lh_m_hr]] · each space is worked out for every hour of the 21st of each month from the latitude of the project and shows its peak month and hour · [[lh_hrs]] can be set · [[a_ldrep]] (the [[tab_analyze]] tab) gives the building, levels, zones and spaces, check sums (W/m², m²/TR) and the components of each space, and saves as HTML to print
 > Unlike Revit: a box is a duct accessory (not mechanical equipment), so its inlet and outlet are one duct · the motor of a fan-powered box ([[f_kw]]) is not yet on an electrical circuit
 > Unlike Revit: the required external static pressure is the critical path of the ducts, fittings, accessories and terminals, without the losses inside the unit (coil, filters) · return air through a ceiling plenum (no duct) is not counted
 
@@ -31779,6 +31938,7 @@ window.PenumBIM.r63={info:id=>{const I=vavInfo(IDX.get(id));return{flow:I.flow,m
 window.PenumBIM.r64={rows:()=>RAm().map(r=>Object.assign({},r,{T:{SA:r.T.SA.slice(),RA:r.T.RA.slice(),EA:r.T.EA.slice()}})),row:id=>{const r=raRow(id);return r?JSON.parse(JSON.stringify(r)):null},dist:ids=>airDist(ids),scheme:()=>{const S=CSm('rair');return S?S.items.map(it=>({v:it.v,n:it.n,label:csLabel(S,it,t)})):null}};
 window.PenumBIM.r65={dir:(id,lv)=>rdDir(IDX.get(id),lv),set:()=>rdSet(P)};
 window.PenumBIM.r66={nets:()=>refNets().map(n=>({odu:n.odu?n.odu.id:0,kind:n.kind,idus:n.idus.map(e=>e.id),cap:n.cap,ocap:n.ocap,ratio:n.ratio,tot:n.tot,far:n.far,far2:n.far2,hUp:n.hUp,hDn:n.hDn,hId:n.hId,joints:n.joints.map(j=>({kw:j.kw,lab:j.lab,n:j.n})),add:n.add,charge:n.charge,worst:n.worst,P:n.P.map(p=>p[0]),pipes:[...n.pipes.values()].map(E=>({id:E.id,seg:E.seg,kw:E.kw,liq:E.liq,gas:E.gas,dia:E.dia,small:E.small}))})),apply:()=>rfApply(refNets())};
+window.PenumBIM.r67={rows:()=>LDm().filter(r=>r.total!=null).map(r=>({id:r.id,name:r.name,use:r.use,total:r.total,sens:r.sens,lat:r.lat,oa:r.oa,supply:r.supply,heat:r.heat,pk:r.pk||null,vol:r.vol,inf:r.inf,q:Object.assign({},r.q)})),rep:()=>{const R=lhReport(P),f=x=>({name:x.name,n:x.n,area:x.area,tot:x.tot,sum:x.sum,div:x.div,pk:x.pk,supply:x.supply,mon:x.mon,prof:x.prof});return{b:f(R.b),lv:R.lv.map(f),zn:R.zn.map(f)}},set:()=>loadSet(P)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
