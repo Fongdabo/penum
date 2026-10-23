@@ -10,7 +10,7 @@
      change, on start, when the window comes back and every 3 minutes the device merges its list with the company's and sends the
      result: per line the newest edit wins (u), a deletion wins over older edits, and the price it replaced goes into the history.
    window.penumPrices: attach(cfg) · items() · put(rows, opt) · set(id, field, value) · remove(id) · on(fn) · sync() · open() the
-   library window · render(el) · find(row) · state(). cfg: app 'pm'|'mep'|'bim' · code() the licence code or '' · cid() the customer
+   library window · render(el) · find(row) · state() · rowSync(name, o) another company list kept the same way. cfg: app 'pm'|'mep'|'bim' · code() the licence code or '' · cid() the customer
    id · co() company name · who() the user's name · off() true while nothing may be written (a sample, read-only) · seed() rows to
    start an empty list from. PM keeps its own fuller page (pm/src/960–985); MEP and BIM open this window from their menus. */
 (()=>{if(window.penumPrices)return;
@@ -168,6 +168,20 @@ async function sync0(){let code='';try{code=String(CFG.code&&CFG.code()||'')}cat
     if(w.err){ST.st=w.err==='big'||w.err==='full'?'bad':w.err;return}const j=w.j||{};
     if(j.at){await rpc('penum_team_unlock',{p_t:T.t,p_p:p,p_dev:dev()});ST.st='ok';ST.at=j.at;return}          // nobody holds the price list open
     if(j.lock){ST.st='ok';soon(20e3);return}if(j.off){ST.st='ok';return}}}          // stale: someone sent theirs first, so merge again
+// --- another list of the company kept the same way (PENUM BIM's family library, V1.169): rowSync(name, o) merges this device's list with the
+// company's row 'name' (as above: per line the newest u wins, a deletion wins over older edits) and sends the result. o: get() this device's
+// {items, del} · set(M) keep the merged one · app 'mep'|'bim' · k the row's kind (a row with a kind is left out of the project lists). → 'ok' or a state
+async function rowSync(name,o){if(!CFG||off())return 'nolic';let code='';try{code=String(CFG.code&&CFG.code()||'')}catch(e){}if(!code)return 'nolic';
+  const T=await team(code,cid());if(T.err)return T.err;const p=hex((await sha('penum-team-p:'+name)).slice(0,16));
+  for(let i=0;i<4;i++){const g=await rpc('penum_team_get',{p_t:T.t,p_p:p});if(g.err)return g.err;
+    let R={items:[],del:{}};const at=g.j&&g.j.at||null;if(g.j){try{R=await dec(T.key,g.j.d)}catch(e){return 'bad'}}
+    const L=o.get(),M=merge(L,R);if(sig(M)!==sig(L))o.set(M);
+    if(g.j&&sig(M)===sig(R))return 'ok';if(!g.j&&!M.items.length&&!Object.keys(M.del).length)return 'ok';
+    const w=await rpc('penum_team_put',{p_t:T.t,p_p:p,p_a:o.app||'mep',p_m:await enc(T.key,{k:o.k||'list',name:'',by:who(),n:M.items.length,at:Date.now()}),
+      p_d:await enc(T.key,{items:M.items,del:M.del},1),p_base:at,p_dev:dev()});
+    if(w.err)return w.err==='full'?'big':w.err;const j=w.j||{};
+    if(j.at){await rpc('penum_team_unlock',{p_t:T.t,p_p:p,p_dev:dev()});return 'ok'}if(j.lock)return 'lock';if(j.off)return 'ok'}
+  return 'bad'}
 addEventListener('focus',()=>{if(CFG&&Date.now()-ST.t>30e3)soon(500)});
 setInterval(()=>{if(CFG&&document.visibilityState==='visible')sync()},EVERY);
 
@@ -278,5 +292,5 @@ const CSS=`.ppl-win{width:min(1500px,calc(100vw - 16px));max-width:none;height:c
 @media(max-width:640px){.ppl-body{padding:10px}.ppl-top{padding:10px 12px}.ppl-tw{max-height:none}}`;
 const st=document.createElement('style');st.textContent=CSS;(document.head||document.documentElement).appendChild(st);
 const deleted=()=>Object.assign({},lib(rd()).del);
-window.penumPrices={attach,items,deleted,put,set,remove,on,sync,open,render,find,state,merge,parse,_rd:rd};
+window.penumPrices={attach,items,deleted,put,set,remove,on,sync,open,render,find,state,merge,parse,rowSync,_rd:rd};
 })();
