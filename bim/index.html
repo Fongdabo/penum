@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=165,V1_NAME='V1.154';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=166,V1_NAME='V1.155';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -28420,6 +28420,46 @@ Object.assign(STR,{
   ds_maxw:['ความกว้างท่อสูงสุด','Maximum duct width'],ds_how:['ที่มาของขนาด','Sized by'],ds_how_main:['ท่อหลัก','Main'],ds_how_sr:['Static Regain','Static Regain'],ds_how_srx:['Static Regain (ชดเชยไม่ได้ทั้งหมด)','Static Regain (not fully regained)'],
   ds_how_ef:['Equal Friction','Equal Friction'],ds_how_conn:['ขนาดคอหัวจ่าย','Connector'],ds_how_and:['','' ],ds_how_or:['',''],ds_how_f:['',''],ds_how_v:['',''],
   ds_insa:['ท่อลมคิดด้วยวิธี {0} · ท่อแยก: {1} (เปลี่ยนได้ที่ ปรับขนาดท่อลม)','Ducts follow {0} · branches: {1} (change it in Duct Sizing)']});
+/* ===== 155 flow direction arrows on ducts and pipes (V1.155; Revit: the flow direction annotations of pipes and ducts, which follow the flow the system calculates).
+   The way the air or water goes in each piece of a run comes from the networks the calculations already trace (airflow, waterflow): away from the source for supply
+   systems (supply air; cold, hot and fire water; chilled and condenser water supply), towards it for return, exhaust and outside air, chilled and condenser water return,
+   and towards the outlet for drains; condensate and rainwater lines run downhill; vents and refrigerant lines get none.  P.fa = {d: 1 ducts, p: 1 pipes, sp spacing (m),
+   sz size on paper (mm), st: 'open'}, only what differs; without d and p no arrows are drawn. ===== */
+const FA_AWAY=['SA','CW','HW','FP','CHWS','CDWS'],FA_TOWARD=['RA','EA','OA','CHWR','CDWR','S','W'],FA_SLOPE=['CD','RL'];
+const faSet=P0=>{const f=P0&&P0.fa&&typeof P0.fa==='object'?P0.fa:{},n=(v,a,b,d)=>v!=null&&v!==''&&isFinite(+v)?clamp(+v,a,b):d;return{d:f.d?1:0,p:f.p?1:0,sp:n(f.sp,1,50,6),sz:n(f.sz,1,8,2.5),st:f.st==='open'?'open':'fill'}};
+XC.push(()=>{const f=P.fa;if(f===undefined)return;const o={};if(f&&typeof f==='object'){const S=faSet(P);if(S.d)o.d=1;if(S.p)o.p=1;if(S.sp!==6)o.sp=S.sp;if(S.sz!==2.5)o.sz=S.sz;if(S.st==='open')o.st='open'}if(Object.keys(o).length)P.fa=o;else delete P.fa});
+/* the directed pieces of each run: Map(run id → [[x1, y1, x2, y2] …], from where the flow enters to where it leaves) */
+let FAC=null;
+function faSegs(){if(FAC&&FAC.v===VER&&FAC.P===P)return FAC.m;const m=new Map(),put=(e,a,b)=>{(m.get(e.id)||m.set(e.id,[]).get(e.id)).push([a.x,a.y,b.x,b.y])};
+  const dir=(F,ed,away)=>{const N=F.G.nodes;let a=N[ed.a],b=N[ed.b];if(F.par[ed.b]===ed.i){}else if(F.par[ed.a]===ed.i){const x=a;a=b;b=x}else return null;return away?[a,b]:[b,a]};
+  try{if(P.els.some(e=>e.cat==='duct')){const A=airflow(P);for(const ed of A.G.edges){if(ed.riser||!ed.r)continue;const e=ed.r.e,c=SCL(e.sys||'SA');if(!FA_AWAY.includes(c)&&!FA_TOWARD.includes(c))continue;const d=dir(A,ed,FA_AWAY.includes(c));if(d)put(e,d[0],d[1])}}}catch(x){}
+  try{if(P.els.some(e=>e.cat==='pipe')){const W=waterflow(P),N=W.G.nodes;for(const ed of W.G.edges){if(ed.riser||!ed.r)continue;const e=ed.r.e,c=SCL(e.sys||'CW');
+      if(FA_SLOPE.includes(c)){const a=N[ed.a],b=N[ed.b];if(Math.abs((a.z||0)-(b.z||0))<1)continue;if(a.z>b.z)put(e,a,b);else put(e,b,a);continue}
+      if(!FA_AWAY.includes(c)&&!FA_TOWARD.includes(c))continue;const d=dir(W,ed,FA_AWAY.includes(c));if(d)put(e,d[0],d[1])}}}catch(x){}
+  FAC={v:VER,P,m};return m}
+/* the arrows, over the runs of a plan */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const S=faSet(P);if(!S.d&&!S.p)return;const sc=v.scale||100,M=faSegs(),L=S.sz*sc,W=L*0.6;
+  for(const cat of ['duct','pipe']){if(cat==='duct'?!S.d:!S.p)continue;for(const [e] of of(cat)){const segs=M.get(e.id);if(!segs)continue;const k=hl(e.id)||col.ink;g.el(e);ctx.fillStyle=k;ctx.strokeStyle=k;ctx.lineWidth=g.lw(0.25);
+    for(const [x1,y1,x2,y2] of segs){const len=Math.hypot(x2-x1,y2-y1);if(len<L*2.5)continue;const ux=(x2-x1)/len,uy=(y2-y1)/len,n=Math.max(1,Math.floor(len/(S.sp*1000)));
+      for(let i=0;i<n;i++){const t=(i+0.5)/n,cx=x1+ux*len*t,cy=y1+uy*len*t,tip=[cx+ux*L/2,cy+uy*L/2],b1=[cx-ux*L/2-uy*W/2,cy-uy*L/2+ux*W/2],b2=[cx-ux*L/2+uy*W/2,cy-uy*L/2-ux*W/2];
+        if(S.st==='open'){g.seg(b1,tip);g.seg(tip,b2)}else{g.path([tip,b1,b2]);ctx.fill()}}}}}});
+/* Mechanical Settings › Flow Direction (the page is in MS_PAGES) */
+{const f0=dlgMech;dlgMech=(pg,keep)=>{if(!(pg==='fa'||(pg==null&&ui.msPage==='fa')))return f0(pg,keep);f0('hl',keep);ui.msPage='fa';const c=$('#dlg .msc');if(!c)return;const S=faSet(P);
+  for(const b of document.querySelectorAll('#dlg [data-msp]'))b.setAttribute('aria-pressed',String(b.dataset.msp==='fa'));
+  const chk=k=>`<div class="fr"><label for="fa_${k}">${t('fa_'+k)}</label><input type="checkbox" id="fa_${k}" data-fa="${k}"${S[k]?' checked':''}></div>`,num=(k,u,st,a,b)=>`<div class="fr"><label for="fa_${k}">${t('fa_'+k)} (${u})</label><input type="number" id="fa_${k}" data-fa="${k}" value="${S[k]}" step="${st}" min="${a}" max="${b}"></div>`;
+  c.innerHTML=chk('d')+chk('p')+num('sp','m',0.5,1,50)+num('sz',t('u_mm'),0.5,1,8)+`<div class="fr"><label for="fa_st">${t('fa_st')}</label><select id="fa_st" data-fa="st">${['fill','open'].map(x=>`<option value="${x}"${x===S.st?' selected':''}>${t('fa_st_'+x)}</option>`).join('')}</select></div><p class="note">${t('fa_note')}</p>`;
+  c.addEventListener('change',ev=>{const el=ev.target,k=el.dataset.fa;if(!k||!ui.dlg)return;edit(()=>{const o=Object.assign({},P.fa||{});if(k==='d'||k==='p'){if(el.checked)o[k]=1;else delete o[k]}else if(k==='st'){if(el.value==='open')o.st='open';else delete o.st}else{const v=parseFloat(el.value);if(isFinite(v))o[k]=v}P.fa=o});
+    const f=P.fa;if(f){const S2=faSet(P),q={};if(S2.d)q.d=1;if(S2.p)q.p=1;if(S2.sp!==6)q.sp=S2.sp;if(S2.sz!==2.5)q.sz=S2.sz;if(S2.st==='open')q.st='open';if(Object.keys(q).length)P.fa=q;else delete P.fa}dlgMech('fa',true)});
+  const rb=$('#dlg [data-msx="reset"]');if(rb){rb.removeAttribute('data-msx');rb.disabled=!P.fa;rb.addEventListener('click',()=>{edit(()=>{delete P.fa});dlgMech('fa',true)})}}}
+/* a switch on the ribbon: arrows on ducts and pipes, or none */
+XA.flowarr=()=>{const S=faSet(P),on=S.d||S.p;edit(()=>{const o=Object.assign({},P.fa||{});if(on){delete o.d;delete o.p}else{o.d=1;o.p=1}if(Object.keys(o).length)P.fa=o;else delete P.fa});toast(t(on?'fa_off':'fa_on'))};
+for(const [tab,pn,after] of [['annot','p_symbol','sym'],['sys','p_hvac','fitedit']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@flowarr')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@flowarr')}}
+BTN['@flowarr']=['airflow',''];
+Object.assign(STR,{
+  a_flowarr:['ลูกศรทิศทางการไหล','Flow Direction Arrows'],ms_p_fa:['ทิศทางการไหล (Flow Direction)','Flow Direction'],fa_d:['แสดงบนท่อลม','On ducts'],fa_p:['แสดงบนท่อน้ำ','On pipes'],
+  fa_sp:['ระยะห่างของลูกศร','Spacing'],fa_sz:['ขนาดลูกศรบนกระดาษ','Size on paper'],fa_st:['รูปลูกศร','Arrow'],fa_st_fill:['สามเหลี่ยมทึบ','Filled triangle'],fa_st_open:['หัวลูกศรเปิด','Open arrowhead'],
+  fa_on:['แสดงลูกศรทิศทางการไหลบนท่อลมและท่อน้ำแล้ว','Flow arrows shown on ducts and pipes'],fa_off:['ซ่อนลูกศรทิศทางการไหลแล้ว','Flow arrows hidden'],
+  fa_note:['ทิศทางมาจากการคำนวณระบบ: ลมจ่ายและน้ำจ่าย (น้ำเย็น น้ำร้อน น้ำดับเพลิง CHWS CDWS) ไหลออกจากต้นทาง ลมกลับ ลมระบาย ลมภายนอก CHWR CDWR ไหลกลับต้นทาง ท่อระบายไหลไปทางออก ท่อน้ำทิ้งแอร์และท่อน้ำฝนไหลลงตามความลาด · ท่ออากาศและท่อน้ำยาไม่มีลูกศร · ลูกศรอย่างน้อยหนึ่งตัวต่อช่วงท่อและเพิ่มตามระยะห่าง','The way comes from the system calculations: supply air and supply water (cold, hot, fire, CHWS, CDWS) leave the source; return, exhaust and outside air, CHWR and CDWR go back to it; drains run to the outlet; condensate and rainwater lines downhill · vents and refrigerant lines get none · at least one arrow on each piece of a run, more by the spacing']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -28460,7 +28500,7 @@ function insRemove(lin){const E=insSel().els.filter(lin?linOf:insOf);if(!E.lengt
    The settings are kept with the project (P.ms; what they mean, msOf, msClean and mechUse are in 27-mep.js).  A page of the dialog for each part:
    hidden lines of runs that cross, the air and the longest flexible duct, the sizes of rectangular and round ducts and of pipes (which of them the size lists
    offer and which sizing may choose), the water of each pipe system, and the slopes the Slope box offers. */
-const MS_PAGES=['hl','duct','ang','rect','round','psz','seg','fluid','slope','rd'],MS_TAB={rect:['rect',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
+const MS_PAGES=['hl','duct','ang','rect','round','psz','seg','fluid','slope','rd','fa'],MS_TAB={rect:['rect',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
 function msEdit(fn){edit(()=>{const m=JSON.parse(JSON.stringify(P.ms||{}));fn(m);P.ms=m})}          // sanitize (msClean) keeps only what differs from the stock values
 function dlgMech(pg,keep){pg=MS_PAGES.includes(pg)?pg:(MS_PAGES.includes(ui.msPage)?ui.msPage:'hl');ui.msPage=pg;const M=msOf(P),S=P.ms||{},dc=keep?$('#dlg .clr'):null,top=dc?dc.scrollTop:0;let h='';
   const num=(k,lab,val,unit,at)=>`<div class="fr"><label for="ms_${k}">${t(lab)}</label><span class="un"><input type="number" id="ms_${k}" data-ms="${k}" value="${val}" ${at}> ${unit}</span></div>`;
@@ -29838,6 +29878,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.152 · [[a_vrfrep]]: จากท่อระบบ REF ที่ต่อเครื่องภายนอก (VRF / CDU) กับเครื่องภายใน · [[rf_ratio]] · ขนาดท่อของเหลว/ท่อแก๊สตามความเย็นที่แต่ละท่อนจ่าย · ความยาวรวม ไกลสุด จากจุดแยกแรก · ความสูงต่าง · Refnet · น้ำยาที่ต้องเติมและทั้งระบบ · ความเข้มข้นในห้องเล็กสุดเทียบ RCL · [[a_rfapply]] · [[a_sysck]] เตือนเมื่อเกินขีดจำกัด
 - V1.153 · [[a_loads]]: [[lh_meth]] [[lh_m_hr]] · ห้องใช้ชั่วโมงสูงสุดของตัวเองในชั่วโมงที่ใช้งาน โซน ชั้น และอาคารใช้ชั่วโมงที่รวมกันสูงสุด (Block) · [[ld_dr]] · [[ld_inf]] · [[lh_hrs]] · [[a_ldrep]]: [[lh_bsum]] พร้อม [[lh_cks]] กราฟรายชั่วโมงและรายเดือน [[lh_lsum]] [[lh_zsum]] [[lh_ssum]] และ [[lh_comp]] · [[lh_save]]
 - V1.154 · [[a_ductsize]] แบบ Revit: [[ds_method]] [[ds_mode_and]] / [[ds_mode_or]] / [[ds_mode_f]] / [[ds_mode_v]] / [[ds_mode_ef]] / [[ds_mode_sr]] · [[ds_cons]]: [[ds_br]] ([[ds_br_conn]] จาก [[f_neck]] ของชนิดหัวจ่าย) · [[ds_maxh]] · [[ds_maxw]] · [[a_sizeall]] ใช้วิธีเดียวกัน
+- V1.155 · [[a_flowarr]] บนท่อลมและท่อน้ำในแปลน ตามทิศที่ระบบคำนวณ (ลมจ่าย/น้ำจ่ายออกจากต้นทาง ลมกลับ/ลมระบาย/CHWR กลับต้นทาง ท่อระบายไปทางออก ท่อน้ำทิ้งแอร์ลงตามความลาด) · ตั้งค่าที่ [[ms_p_fa]] ใน Mechanical Settings · ปุ่มเปิด/ปิดที่แท็บ [[tab_annot]] และ [[tab_sys]] · ออกไปกับ DXF
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -29870,6 +29911,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 9. ท่อน้ำยา VRF: วาดท่อระบบ REF (เส้นเดียวแทนท่อของเหลวและท่อแก๊ส) จากเครื่องภายนอก (VRF หรือ CDU) ไปเครื่องภายใน (แอร์ฝังฝ้า ติดผนัง FCU AHU) ที่มี [[f_cap]] ใน [[type_props]] · [[a_vrfrep]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): แต่ละระบบบอก [[rf_ratio]] [[rf_tot]] [[rf_far]] [[rf_far2]] ความสูงต่าง [[rf_joints]] [[rf_add]] [[rf_charge]] และ [[rf_rcl]] (เลือก [[rf_ref]] R410A หรือ R32) · ตารางท่อบอก [[rf_c_liq]] และ [[rf_c_gas]] ของแต่ละท่อน · [[a_rfapply]] ปรับขนาดท่อในโมเดลเป็นท่อแก๊ส · เลือกท่อน้ำยาหรือเครื่องภายนอกเพื่อดูกลุ่ม [[g_rf]] ในแผงคุณสมบัติ
 10. ภาระความเย็นรายชั่วโมง: ใน [[a_loads]] (LO) เลือก [[lh_meth]] = [[lh_m_hr]] · ภาระของแต่ละห้องคิดทุกชั่วโมงของวันที่ 21 ทุกเดือนจากละติจูดของโครงการ และบอกเดือนและเวลาที่สูงสุด · [[lh_hrs]] กำหนดได้ · [[a_ldrep]] (แท็บ [[tab_analyze]]) แสดงภาระทั้งอาคาร ชั้น โซน และห้อง ค่าตรวจสอบ (W/m², m²/TR) และองค์ประกอบของแต่ละห้อง บันทึกเป็น HTML เพื่อพิมพ์ได้
 11. วิธีหาขนาดท่อลม: [[a_ductsize]] เลือก [[ds_method]] ได้ 6 แบบเหมือน Revit (ความเสียดทานและ/หรือความเร็ว, Equal Friction, Static Regain) · [[ds_br]] ให้ท่อแยกเข้าหัวจ่ายเท่าขนาดคอ ([[f_neck]] ใน [[type_props]] ของหัวจ่าย) · จำกัดความสูงและความกว้างท่อ · ตารางบอก [[ds_how]] ของแต่ละท่อ · ค่าเหล่านี้เก็บกับโครงการและ [[a_sizeall]] ใช้ด้วย
+12. ลูกศรทิศทางการไหล: กด [[a_flowarr]] (แท็บ [[tab_annot]] หรือ [[tab_sys]]) ลูกศรขึ้นบนท่อลมและท่อน้ำในแปลนตามทิศที่ระบบไหลจริง เปลี่ยนเมื่อแก้ระบบ · Mechanical Settings › [[ms_p_fa]] เลือกเฉพาะท่อลมหรือท่อน้ำ ระยะห่าง ขนาด และรูปลูกศร
 > ต่างจาก Revit: กล่องเป็นอุปกรณ์ท่อลม (ไม่ใช่เครื่องจักร) ท่อเข้าและออกจึงเป็นท่อเส้นเดียวกัน · กำลังไฟของพัดลมในกล่อง ([[f_kw]]) ยังไม่เข้าวงจรไฟฟ้า
 > ต่างจาก Revit: ESP ที่ต้องการคิดจากเส้นทางวิกฤตของท่อ ข้อต่อ อุปกรณ์ และหัวจ่าย ไม่รวมความดันภายในเครื่อง (คอยล์ ฟิลเตอร์) · ลมกลับผ่านฝ้า (ไม่มีท่อ) ไม่ถูกนับ
 
@@ -30116,6 +30158,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.152 · [[a_vrfrep]]: from the REF pipes between an outdoor unit (VRF / CDU) and the indoor units · [[rf_ratio]] · liquid and gas sizes by the capacity each pipe serves · total length, to the farthest unit, from the first branch · heights · Refnets · refrigerant to add and the system charge · the concentration in the smallest room against the RCL · [[a_rfapply]] · [[a_sysck]] warns of what is over the limits
 - V1.153 · [[a_loads]]: [[lh_meth]] [[lh_m_hr]] · a space takes its own peak hour among the hours it is used; zones, levels and the building the hour when they peak together (block) · [[ld_dr]] · [[ld_inf]] · [[lh_hrs]] · [[a_ldrep]]: [[lh_bsum]] with [[lh_cks]], charts by hour and by month, [[lh_lsum]], [[lh_zsum]], [[lh_ssum]] and the [[lh_comp]] · [[lh_save]]
 - V1.154 · [[a_ductsize]] as in Revit: [[ds_method]] [[ds_mode_and]] / [[ds_mode_or]] / [[ds_mode_f]] / [[ds_mode_v]] / [[ds_mode_ef]] / [[ds_mode_sr]] · [[ds_cons]]: [[ds_br]] ([[ds_br_conn]] from the [[f_neck]] of the air terminal type) · [[ds_maxh]] · [[ds_maxw]] · [[a_sizeall]] follows the same method
+- V1.155 · [[a_flowarr]] on the ducts and pipes of plans, the way the systems calculate it (supply air and water leave the source, return / exhaust air and CHWR go back, drains to the outlet, condensate downhill) · set in Mechanical Settings › [[ms_p_fa]] · a switch on the [[tab_annot]] and [[tab_sys]] tabs · in DXF too
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -30148,6 +30191,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 9. VRF refrigerant piping: draw REF pipes (one line for the liquid and gas pair) from an outdoor unit (VRF or CDU) to the indoor units (cassette, wall-mounted, FCU, AHU) that have a [[f_cap]] in [[type_props]] · [[a_vrfrep]] (the [[tab_analyze]] and [[tab_sys]] tabs): for each system the [[rf_ratio]], [[rf_tot]], [[rf_far]], [[rf_far2]], heights, [[rf_joints]], [[rf_add]], [[rf_charge]] and [[rf_rcl]] (choose the [[rf_ref]], R410A or R32) · the table of pipes gives the [[rf_c_liq]] and [[rf_c_gas]] of each · [[a_rfapply]] sets the model to the gas sizes · select a refrigerant pipe or an outdoor unit to see [[g_rf]] in Properties
 10. Hourly loads: in [[a_loads]] (LO) set [[lh_meth]] to [[lh_m_hr]] · each space is worked out for every hour of the 21st of each month from the latitude of the project and shows its peak month and hour · [[lh_hrs]] can be set · [[a_ldrep]] (the [[tab_analyze]] tab) gives the building, levels, zones and spaces, check sums (W/m², m²/TR) and the components of each space, and saves as HTML to print
 11. Duct sizing methods: [[a_ductsize]] offers the six [[ds_method]] choices of Revit (friction and/or velocity, Equal Friction, Static Regain) · [[ds_br]] can make the branches to air terminals match their neck ([[f_neck]] in the [[type_props]] of the terminal) · height and width can be restricted · the table says what each duct was [[ds_how]] · the settings stay with the project and [[a_sizeall]] uses them too
+12. Flow direction arrows: [[a_flowarr]] (the [[tab_annot]] or [[tab_sys]] tab) puts arrows on the ducts and pipes of plans the way each system flows, and they follow any change to the system · Mechanical Settings › [[ms_p_fa]]: ducts and/or pipes, spacing, size and the shape of the arrow
 > Unlike Revit: a box is a duct accessory (not mechanical equipment), so its inlet and outlet are one duct · the motor of a fan-powered box ([[f_kw]]) is not yet on an electrical circuit
 > Unlike Revit: the required external static pressure is the critical path of the ducts, fittings, accessories and terminals, without the losses inside the unit (coil, filters) · return air through a ceiling plenum (no duct) is not counted
 
@@ -32029,6 +32073,7 @@ window.PenumBIM.r65={dir:(id,lv)=>rdDir(IDX.get(id),lv),set:()=>rdSet(P)};
 window.PenumBIM.r66={nets:()=>refNets().map(n=>({odu:n.odu?n.odu.id:0,kind:n.kind,idus:n.idus.map(e=>e.id),cap:n.cap,ocap:n.ocap,ratio:n.ratio,tot:n.tot,far:n.far,far2:n.far2,hUp:n.hUp,hDn:n.hDn,hId:n.hId,joints:n.joints.map(j=>({kw:j.kw,lab:j.lab,n:j.n})),add:n.add,charge:n.charge,worst:n.worst,P:n.P.map(p=>p[0]),pipes:[...n.pipes.values()].map(E=>({id:E.id,seg:E.seg,kw:E.kw,liq:E.liq,gas:E.gas,dia:E.dia,small:E.small}))})),apply:()=>rfApply(refNets())};
 window.PenumBIM.r67={rows:()=>LDm().filter(r=>r.total!=null).map(r=>({id:r.id,name:r.name,use:r.use,total:r.total,sens:r.sens,lat:r.lat,oa:r.oa,supply:r.supply,heat:r.heat,pk:r.pk||null,vol:r.vol,inf:r.inf,q:Object.assign({},r.q)})),rep:()=>{const R=lhReport(P),f=x=>({name:x.name,n:x.n,area:x.area,tot:x.tot,sum:x.sum,div:x.div,pk:x.pk,supply:x.supply,mon:x.mon,prof:x.prof});return{b:f(R.b),lv:R.lv.map(f),zn:R.zn.map(f)}},set:()=>loadSet(P)};
 window.PenumBIM.r68={net:d=>[...dsNet(P,Object.assign({},sizeOpt(P).d,d||{}))].map(([id,n])=>({id,w:n.w,h:n.h,how:n.how})),plan:d=>sizePlan(P,{auto:0,d:Object.assign({},sizeOpt(P).d,d||{}),p:sizeOpt(P).p}).rows.filter(r=>r.kind==='duct').map(r=>({id:r.e.id,sh:r.sh,flow:r.flow,was:r.was,now:r.now,how:r.how||''})),size:(sh,q,o)=>sizeDuct(sh,q,Object.assign({},sizeOpt(P).d,o||{}),0,0)};
+window.PenumBIM.r69={segs:id=>faSegs().get(id)||[],set:()=>faSet(P)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
