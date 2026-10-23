@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=172,V1_NAME='V1.161';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=173,V1_NAME='V1.162';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -29078,6 +29078,107 @@ Object.assign(STR,{
   fs_show:['แสดงพื้นที่ครอบคลุมบนแปลน','Show coverage on plans'],fs_hide:['ซ่อนพื้นที่ครอบคลุม','Hide coverage'],fs_selbad:['เลือกห้องที่ยังไม่ครบ ({0})','Select rooms not covered ({0})'],
   fs_apply:['วางหัว {0} หัว','Place {0} heads'],fs_applyp:['วางหัว {0} หัว + ท่อ {1} เส้น','Place {0} heads + {1} pipes'],fs_done:['วางหัวสปริงเกลอร์ {0} หัวแล้ว กดย้อนกลับได้','{0} sprinkler heads placed — Undo to go back'],fs_donev:['วางหัวสปริงเกลอร์ {0} หัวแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} sprinkler heads placed, shown in the plan {1} — Undo to go back'],
   sc_spr:['ห้องที่สปริงเกลอร์ยังไม่ครอบคลุม: {0}','Room not covered by sprinklers: {0}']});
+/* ===== 162 Sprinkler hydraulic calculation (V1.162; Revit has none: it needs an add-in.  NFPA 13 Chapter 19 density/area method and Chapter 28 calculations).
+   For every sprinkler network (system FP, as waterflow() finds it, from its source): the hazard class of its rooms (161) gives the density and the design area; the
+   design area is the most remote one — the head farthest along the pipes from the source and the heads nearest it, as many as the area over the coverage of a head.
+   Each head of it must give at least the density over its coverage and at least the least pressure (Q = K·√P).  Walking back to the source, the pipes lose pressure
+   by Hazen-Williams (p = 6.05·10⁵·Q^1.85 / (C^1.85·d^4.87) bar/m, Q L/min, d mm inside), with the equivalent lengths of elbows and tees (NFPA 13 Table 28.2.3.1.1) and the
+   height; where two flows meet, the one that needs less pressure is raised to the higher pressure by its K (Q' = Q·√(P/Pᵢ)).  At the source: the sprinkler demand, with
+   the hose allowance and the duration of the class (Table 19.2.3.1.2) the fire pump and the water to store.  P.fpz: {k, pmin, C, hose} where the project sets them. ===== */
+const FH_D={k:80,pmin:0.5,C:120,hose:0},FH_BAR=0.0980665,FH_EQ={25:[0.6,1.5],32:[0.9,1.8],40:[1.2,2.4],50:[1.5,3.0],65:[1.8,3.7],80:[2.1,4.6],100:[3.0,6.1],125:[3.7,7.6],150:[4.3,9.1],200:[5.5,10.7],250:[6.7,15.2]};
+const FH_KS=[57,80,115,160,200,240],FH_CS=[100,120,140,150];
+function fhSet(P0){const f=P0&&P0.fpz||{},n=(v,a,b,d)=>v!=null&&v!==''&&isFinite(+v)?clamp(+v,a,b):d;return{k:n(f.k,20,400,FH_D.k),pmin:n(f.pmin,0.3,7,FH_D.pmin),C:n(f.C,80,150,FH_D.C),hose:n(f.hose,0,200,0)}}
+/* friction in bar a metre */
+const fhHW=(q,d,C)=>q>0&&d>0?6.05e5*Math.pow(q,1.85)/(Math.pow(C,1.85)*Math.pow(d,4.87)):0;
+/* the equivalent length of an elbow (0) or a tee with the flow turned (1), m */
+const fhEq=(d,k)=>{const s=Object.keys(FH_EQ).map(Number);let b=s[0];for(const x of s)if(x<=d+0.5)b=x;return FH_EQ[b][k]};
+let FHM=null;
+function fhNow(){if(FHM&&FHM.ver===VER&&FHM.P===P)return FHM.L;const L=fhCalc(P);FHM={ver:VER,P,L};return L}
+/* -> one entry per sprinkler network that has heads: {ni, sys, from, root, hz, H, d, A, ah, nd, heads, design [{id, q L/min, p bar, a m²}], Q, Pr (bar at the source),
+   hose, Qt, dur, store m³, pump {q L/s, h m, kw}, crit [pipe ids from the source to the far head], vmax, sect [{id, dia, len, eq, q, v, hf}], rated: the pump/tank in the model} */
+function fhCalc(P0){const W=waterNow(),G=W.G,N=G.nodes,par=W.par,S=fhSet(P0),out=[];if(!G||!par)return out;
+  const hzOf=new Map();for(const it of fsNow())for(const h of it.heads)hzOf.set(h.id,{hz:it.hz,a:it.c.n?Math.min(it.c.A/it.c.n,(FS_HZ[it.hz]||{ah:20.9}).ah):0,room:it.r});
+  const dIn=ed=>ed.riser?(ed.riser.w||100):pipeIn(P0,ed.r.e,runW(ed.r.e));
+  W.nets.forEach((n,ni)=>{if(n.kind!=='fire')return;const ns=n.ns,root=n.ri,heads=[];
+    for(const i of ns)for(const f of N[i].fix)if(f.role==='s')heads.push({f:f.f,i,z:elev(P0,f.f.level)+(f.f.off||0)});if(!heads.length)return;
+    /* the class that governs: the highest density among the rooms of its heads */
+    let hz='';for(const h of heads){const x=hzOf.get(h.f.id);const k=x&&x.hz;if(k&&(!hz||FS_HZ[k].d>FS_HZ[hz].d))hz=k}if(!hz)hz=fsDef(P0)||'lh';const H=FS_HZ[hz];
+    /* the length along the pipes from the source to every node */
+    const dist=new Map([[root,0]]),q0=[root];while(q0.length){const i=q0.shift();for(const a of N[i].arms){if(par[a.far]!==a.ed.i||dist.has(a.far))continue;dist.set(a.far,dist.get(i)+a.ed.len);q0.push(a.far)}}
+    const aOf=h=>{const x=hzOf.get(h.f.id);return x&&x.a>0?x.a:H.ah},ahAvg=heads.filter(h=>(hzOf.get(h.f.id)||{}).hz===hz).reduce((s,h,_,A)=>s+aOf(h)/A.length,0)||H.ah;
+    const nd=Math.min(heads.length,Math.max(1,Math.ceil(H.A/ahAvg-1e-9))),far=heads.reduce((a,b)=>(dist.get(b.i)||0)>(dist.get(a.i)||0)?b:a);
+    const lvF=far.f.level,des=heads.slice().sort((a,b)=>((a.f.level===lvF?0:1e9)+Math.hypot(a.f.x-far.f.x,a.f.y-far.f.y))-((b.f.level===lvF?0:1e9)+Math.hypot(b.f.x-far.f.x,b.f.y-far.f.y))).slice(0,nd);
+    const D=new Map(des.map(h=>[h.f.id,h])),res=new Map();let vmax=0;const qp=new Map();
+    /* what a node needs from the pipe that feeds it: {Q L/min, P bar}, or null when no head of the design area is beyond it */
+    const need=i=>{const items=[];
+      for(const f of N[i].fix){if(f.role!=='s'||!D.has(f.f.id))continue;const h=D.get(f.f.id),a=aOf(h),q=Math.max(H.d*a,S.k*Math.sqrt(S.pmin)),p=Math.pow(q/S.k,2);
+        res.set(f.f.id,{a,q,p});items.push({Q:q,P:p+FH_BAR*(h.z-N[i].z)/1000,head:f.f.id})}
+      const inArm=par[i]>=0?N[i].arms.find(a=>a.ed.i===par[i]):null;
+      for(const a of N[i].arms){if(par[a.far]!==a.ed.i)continue;const c=need(a.far);if(!c)continue;const ed=a.ed,d=dIn(ed),C=S.C;
+        let eq=0;if(inArm&&!ed.riser&&!inArm.ed.riser){const straight=-(inArm.dx*a.dx+inArm.dy*a.dy)>0.985;if(!straight)eq=fhEq(runW(ed.r.e),N[i].arms.length>2?1:0)}
+        const hf=fhHW(c.Q,d,C)*(ed.len/1000+eq),v=c.Q/60000/(Math.PI*d*d/4e6);vmax=Math.max(vmax,v);
+        qp.set(ed.i,{Q:c.Q,hf,eq,v,d,P:c.P});items.push({Q:c.Q,P:c.P+hf+FH_BAR*(N[a.far].z-N[i].z)/1000,ed:ed.i})}
+      if(!items.length)return null;const Pm=Math.max(...items.map(x=>x.P));let Q=0;
+      for(const x of items){const f=x.P>1e-9?Math.sqrt(Pm/x.P):1;Q+=x.Q*f;if(f!==1){if(x.head!=null){const r=res.get(x.head);r.q*=f;r.p*=f*f}else scaleDown(x.ed,f)}}
+      return{Q,P:Pm}};
+    /* a branch raised to a higher pressure gives more water all the way down it */
+    const scaleDown=(ei,f)=>{const s=qp.get(ei);if(!s)return;s.Q*=f;s.hf*=Math.pow(f,1.85);s.v*=f;vmax=Math.max(vmax,s.v);const E=G.edges[ei],c=par[E.a]===ei?E.a:E.b;
+      for(const fx of N[c].fix){const r=res.get(fx.f.id);if(r){r.q*=f;r.p*=f*f}}for(const a of N[c].arms)if(par[a.far]===a.ed.i)scaleDown(a.ed.i,f)};
+    const R=need(root)||{Q:0,P:0};
+    /* the critical path: from the source to the far head, along the pipes that carry it */
+    const crit=[],sect=[];for(let i=far.i;par[i]>=0;){const E=G.edges[par[i]],s=qp.get(E.i),id=E.riser?E.riser.id:E.r.e.id;crit.push(id);if(s)sect.push({id,dia:E.riser?(E.riser.w||100):runW(E.r.e),len:E.len,eq:s.eq,q:s.Q,v:s.v,hf:s.hf});i=E.a===i?E.b:E.a}
+    crit.reverse();sect.reverse();
+    const hose=S.hose>0?S.hose:H.hose,Qt=R.Q+hose*60,dur=H.min,store=Qt*dur/1000,hm=R.P/FH_BAR,pump={q:Qt/60,h:hm,kw:9.81*Qt/60000*hm/0.65};
+    const rq=n.root&&n.root.cat==='equip'?n.root:null,T=rq?typ(P0,rq)||{}:null;
+    out.push({ni,sys:n.sys,from:n.from,root:rq,rootNode:root,hz,H,d:H.d,A:H.A,ah:ahAvg,nd,heads:heads.length,design:des.map(h=>Object.assign({id:h.f.id},res.get(h.f.id)||{q:0,p:0,a:0})),far:far.f.id,
+      Q:R.Q,Pr:R.P,hose,Qt,dur,store,pump,crit,sect,vmax,rated:T?{wf:+T.wf>0?+T.wf:0,hd:+T.hd>0?+T.hd:0,kind:T.kind,mark:rq.mark||T.mark||''}:null})});
+  return out}
+const fhOk=c=>!c.rated||!c.rated.wf&&!c.rated.hd?null:(!c.rated.wf||c.rated.wf>=c.pump.q-1e-6)&&(!c.rated.hd||c.rated.hd>=c.pump.h-0.05);
+function dlgFH(){const S=fhSet(P),L=fhNow(),f0=P.fpz||{},row=(l,v)=>`<tr><th>${l}</th><td>${v}</td></tr>`,lm=q=>Math.round(q)+' L/min · '+fmtWater(q/60)+' '+waterUnit(),bar=p=>p.toFixed(2)+' bar ('+(p/FH_BAR).toFixed(1)+' m)';ui.helpAt='calc';
+  const sel=(k,L0,v,lab)=>`<label><span>${t('fh_'+k)}</span><span><select data-fh="${k}">${L0.map(x=>`<option value="${x}"${+x===+v?' selected':''}>${lab?lab(x):x}</option>`).join('')}</select></span></label>`;
+  const set=`<div class="ldg pz">${sel('k',[...new Set([...FH_KS,S.k])].sort((a,b)=>a-b),S.k,x=>'K'+x+' (K'+(x/14.4).toFixed(1)+' US)')}<label><span>${t('fh_pmin')}</span><span><input type="number" data-fh="pmin" value="${S.pmin}" step="0.1" min="0.3" max="7"><small>bar</small></span></label>
+    ${sel('C',[...new Set([...FH_CS,S.C])].sort((a,b)=>a-b),S.C,x=>'C = '+x+' · '+t('fh_c'+x))}<label><span>${t('fh_hose')}</span><span><input type="number" data-fh="hose" value="${f0.hose>0?S.hose:''}" placeholder="${t('fh_auto')}" step="0.1" min="0" max="200"><small>L/s</small></span></label></div>`;
+  const nets=L.map((c,i)=>{const ok=fhOk(c),src=c.root?esc(c.rated&&c.rated.mark||'')+' · '+t('fh_src_eq'):t('fh_src_'+c.from);
+    let a=`<table class="tbl kv">${row(t('fh_r_src'),src)+row(t('fs_hzc'),t('fs_'+c.hz))+row(t('fh_r_des'),`${c.d} mm/min · ${c.A} m² · ${t('fh_r_ah',c.ah.toFixed(1))}`)+row(t('fh_r_nd'),`<b>${c.nd}</b> / ${c.heads}`)}</table>`;
+    let b=`<table class="tbl kv">${row(t('fh_r_q'),'<b>'+lm(c.Q)+'</b>')+row(t('fh_r_p'),'<b>'+bar(c.Pr)+'</b>')+row(t('fh_r_hose'),lm(c.hose*60))+row(t('fh_r_qt'),'<b>'+lm(c.Qt)+'</b>')+row(t('fh_r_v'),c.vmax.toFixed(2)+' m/s'+(c.vmax>6?' ⚠':''))}</table>`;
+    let p=`<table class="tbl kv">${row(t('fh_r_pump'),`<b>${fmtWater(c.pump.q)} ${waterUnit()} @ ${c.pump.h.toFixed(1)} m</b> · ${c.pump.kw.toFixed(1)} kW`)+row(t('fh_r_store'),`<b>${c.store.toFixed(1)} m³</b> · ${c.dur} ${t('fh_min')}`)+
+      (c.rated?row(t('fh_r_rated'),`${c.rated.wf?fmtWater(c.rated.wf)+' '+waterUnit():'—'} · ${c.rated.hd?c.rated.hd.toFixed(1)+' m':'—'}${ok===null?'':ok?' ✓':' ⚠ '+t('fh_small')}`):row(t('fh_r_rated'),t('fh_nopump')))}</table>`;
+    const hd=c.design.slice().sort((x,y)=>x.p-y.p).slice(0,1)[0],cr=c.sect.length?`<div class="tblw"><table class="tbl"><thead><tr><th>Ø</th><th class="n">${t('fh_len')}</th><th class="n">${t('fh_q')}</th><th class="n">v</th><th class="n">${t('fh_hf')}</th></tr></thead><tbody>`+
+      c.sect.map(s=>`<tr data-id="${s.id}"><td>Ø${s.dia}</td><td class="n">${(s.len/1000).toFixed(2)}${s.eq?' + '+s.eq.toFixed(1):''} m</td><td class="n">${Math.round(s.q)}</td><td class="n">${s.v.toFixed(2)}</td><td class="n">${s.hf.toFixed(3)}</td></tr>`).join('')+'</tbody></table></div>':'';
+    return`<h4>${t('fh_net',i+1,c.sys)}</h4><div class="lhg"><div>${a}</div><div>${b}</div><div>${p}</div></div><p class="note">${t('fh_minhead',hd?Math.round(hd.q):0,hd?hd.p.toFixed(2):0)}</p><details><summary>${t('fh_crit',c.sect.length)}</summary>${cr}</details>`}).join('');
+  const body=`<style>.fhd .lhg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px;align-items:start}.fhd .kv{width:100%}.fhd .kv th{font-weight:500;text-align:left;width:48%}.fhd h4{margin:12px 0 6px}.fhd .kv th,.fhd .kv td{white-space:normal;vertical-align:top}.fhd details{margin:4px 0 8px}.fhd summary{cursor:pointer}</style>
+    <div class="fhd"><p class="note">${t('fh_intro')}</p>${set}${L.length?nets:`<p class="note warn">${t('fh_none')}</p>`}<p class="note">${t('fh_note')}</p></div>`;
+  openDlg(t('a_sprhyd'),body,`<button class="btn" data-fhx="des"${L.length?'':' disabled'}>${t('fh_seldes')}</button><button class="btn" data-fhx="crit"${L.length?'':' disabled'}>${t('fh_selcrit')}</button><button class="btn" data-fhx="lay">${t('a_sprlay')}…</button><button class="btn" data-fhx="reset"${['k','pmin','C','hose'].some(k=>f0[k]!=null)?'':' disabled'}>${t('ld_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,k=el.dataset.fh;if(!k||!ui.dlg)return;edit(()=>{const o=Object.assign({},P.fpz||{}),v=parseFloat(el.value);if(isFinite(v)&&(k!=='hose'||v>0))o[k]=v;else delete o[k];P.fpz=o});dlgFH()},
+     click(ev){const x=ev.target.closest('[data-fhx]');if(x&&ui.dlg){const k=x.dataset.fhx;if(k==='lay'){dlgSpr();return}if(k==='reset'){edit(()=>{if(P.fpz)for(const q of ['k','pmin','C','hose'])delete P.fpz[q]});dlgFH();return}
+         const ids=k==='des'?L.flatMap(c=>c.design.map(h=>h.id)):L.flatMap(c=>c.crit);if(ids.length){ui.sel=new Set(ids);closeDlg();setTool('modify')}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.sprhyd=dlgFH;
+for(const [tab,pn,after] of [['sys','p_piping','@sprlay'],['analyze','p_check','@sprlay']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@sprhyd')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@sprhyd')}}
+BTN['@sprhyd']=['pipecheck',''];
+/* the Properties of a sprinkler head of a design area: what it gives */
+XP.push((c,els)=>{if(c!=='sprinkler'||els.length!==1)return'';for(const n of fhNow()){const h=n.design.find(x=>x.id===els[0].id);if(h)return PR.grp('g_fhyd')+PR.ro('fh_q',Math.round(h.q)+' L/min')+PR.ro('fh_p',h.p.toFixed(2)+' bar')+PR.ro('fh_a',h.a.toFixed(1)+' m²')}return''});
+/* Check Systems: a fire pump smaller than the sprinkler demand */
+SCX.push(add=>{for(const c of fhNow()){if(fhOk(c)!==false)continue;const q=c.root;add('sc_fhp','pipe',[q.id],q.x,q.y,q.level,(c.rated.mark||'')+' '+fmtWater(c.pump.q)+' '+waterUnit()+' @ '+c.pump.h.toFixed(1)+' m')}});
+WARN_K.push('sc_fhp');
+Object.assign(STR,{
+  a_sprhyd:['คำนวณชลศาสตร์สปริงเกลอร์และปั๊มดับเพลิง','Sprinkler Hydraulics and Fire Pump'],g_fhyd:['ชลศาสตร์ (พื้นที่ออกแบบ)','Hydraulics (design area)'],
+  fh_intro:['คำนวณตาม NFPA 13 วิธี Density/Area: เลือกพื้นที่ออกแบบที่ไกลที่สุดตามแนวท่อจากต้นทาง หัวแต่ละหัวต้องให้น้ำไม่น้อยกว่าความหนาแน่นคูณพื้นที่ครอบคลุมและแรงดันไม่ต่ำกว่าค่าต่ำสุด ไล่การสูญเสียในท่อ (Hazen-Williams) ข้อต่อ และความสูงกลับไปที่ต้นทาง แล้วรวมน้ำสำหรับสายฉีด ได้ขนาดปั๊มดับเพลิงและปริมาตรน้ำสำรอง',
+    'By the NFPA 13 density/area method: the design area farthest along the pipes from the source; every head of it gives at least the density over its coverage and at least the least pressure; losses in the pipes (Hazen-Williams), fittings and height are carried back to the source, the hose allowance is added, and the fire pump and the water to store follow'],
+  fh_k:['ค่า K ของหัว (L/min/bar½)','Head K-factor (L/min/bar½)'],fh_pmin:['แรงดันต่ำสุดที่หัว','Least pressure at a head'],fh_C:['ค่า C ของท่อ (Hazen-Williams)','Pipe C (Hazen-Williams)'],fh_hose:['น้ำสำหรับสายฉีด (Hose)','Hose allowance'],fh_auto:['ตามประเภทอันตราย','by the hazard class'],
+  fh_c100:['เหล็กดำ ระบบแห้ง','black steel, dry'],fh_c120:['เหล็กดำ ระบบเปียก','black steel, wet'],fh_c140:['ท่อซีเมนต์บุ / เหล็กอาบสังกะสี','cement lined, galvanised'],fh_c150:['ทองแดง / CPVC / สแตนเลส','copper, CPVC, stainless'],
+  fh_net:['ระบบที่ {0} ({1})','Network {0} ({1})'],fh_r_src:['ต้นทาง','Source'],fh_src_eq:['เครื่องในโมเดล','equipment in the model'],fh_src_riser:['ท่อแนวดิ่ง','a riser'],fh_src_open:['ปลายท่อที่เปิดอยู่ (ต่อเมนเข้าที่นี่)','an open end (the main joins here)'],fh_src_any:['ไม่พบต้นทาง','no source found'],
+  fh_r_des:['ความหนาแน่น · พื้นที่ออกแบบ','Density · design area'],fh_r_ah:['{0} m² ต่อหัว','{0} m² a head'],fh_r_nd:['หัวในพื้นที่ออกแบบ / ทั้งระบบ','Heads in the design area / all'],
+  fh_r_q:['น้ำที่หัวสปริงเกลอร์ต้องการ','Sprinkler demand'],fh_r_p:['แรงดันที่ต้องการที่ต้นทาง','Pressure needed at the source'],fh_r_hose:['น้ำสำหรับสายฉีด','Hose allowance'],fh_r_qt:['รวมน้ำที่ต้องการ','Total demand'],fh_r_v:['ความเร็วสูงสุดในท่อ','Highest velocity'],
+  fh_r_pump:['ปั๊มดับเพลิง (อัตราไหล @ Head)','Fire pump (flow @ head)'],fh_r_store:['น้ำสำรองดับเพลิง','Water to store'],fh_min:['นาที','min'],fh_r_rated:['ปั๊มในโมเดล (Flow · Rated Head)','Pump in the model (flow · head)'],
+  fh_nopump:['ยังไม่มีปั๊มที่ต้นทาง: วางปั๊มดับเพลิงที่ปลายท่อต้นทางและใส่ Rated Flow / Head ในชนิด','No pump at the source: place a fire pump at the start of the pipes and give its type a flow and head'],fh_small:['ปั๊มเล็กเกินไป','pump too small'],
+  fh_minhead:['หัวที่ไกลที่สุดในพื้นที่ออกแบบ: {0} L/min ที่ {1} bar','The far head of the design area: {0} L/min at {1} bar'],fh_crit:['ท่อตามเส้นทางวิกฤต ({0} ช่วง)','Pipes of the critical path ({0})'],
+  fh_len:['ยาว + ข้อต่อ','Length + fittings'],fh_q:['น้ำ (L/min)','Flow (L/min)'],fh_hf:['สูญเสีย (bar)','Loss (bar)'],fh_p:['แรงดันที่หัว','Pressure at the head'],fh_a:['พื้นที่ครอบคลุม','Coverage'],
+  fh_none:['ยังไม่มีท่อดับเพลิง (ระบบ FP) ที่มีหัวสปริงเกลอร์ต่ออยู่','No fire pipes (system FP) with sprinkler heads on them yet'],
+  fh_note:['NFPA 13 ตาราง 19.2.3.1.2: น้ำสำหรับสายฉีดและเวลา อันตรายน้อย 6.3 L/s 30 นาที · ปานกลาง 15.8 L/s 60–90 นาที · มาก 31.5 L/s 90–120 นาที · ความยาวเทียบเท่าของข้องอและสามทางตามตาราง 28.2.3.1.1 · ปั๊มคิดประสิทธิภาพ 65% · ปั๊มดับเพลิงควรได้ 150% ของอัตราไหลที่ Head ไม่น้อยกว่า 65% (NFPA 20) · ผลนี้เป็นการคำนวณเบื้องต้น ผู้ออกแบบต้องตรวจพื้นที่ออกแบบให้เป็นรูปสี่เหลี่ยมตามแนวท่อกิ่งยาว 1.2√A',
+    'NFPA 13 Table 19.2.3.1.2: hose allowance and duration Light 6.3 L/s 30 min · Ordinary 15.8 L/s 60–90 min · Extra 31.5 L/s 90–120 min · equivalent lengths of elbows and tees by Table 28.2.3.1.1 · pump efficiency 65 % · a fire pump gives 150 % of its rated flow at no less than 65 % of its head (NFPA 20) · a first calculation: the designer checks that the design area is a rectangle 1.2√A long along the branch lines'],
+  fh_seldes:['เลือกหัวในพื้นที่ออกแบบ','Select the design area'],fh_selcrit:['เลือกท่อเส้นทางวิกฤต','Select the critical path'],
+  sc_fhp:['ปั๊มดับเพลิงเล็กกว่าที่สปริงเกลอร์ต้องการ: {0}','Fire pump smaller than the sprinkler demand: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -30505,6 +30606,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.159 · [[a_wsup]]: น้ำใช้ต่อวัน ขนาดถังเก็บน้ำล่างและบนหลังคา ปั๊มเพิ่มแรงดันหรือปั๊มส่ง (อัตราไหล Head kW) และเครื่องทำน้ำร้อนรวม (ASHRAE) · ตรวจแรงดันที่สุขภัณฑ์ทุกชิ้นจากความสูงของถัง Rated Head ของปั๊ม (ช่องใหม่ในชนิดปั๊ม) หรือแรงดันท่อประปา
 - V1.160 · [[a_pslope]] (แท็บงานระบบ แผงท่อน้ำ): ให้ท่อระบายที่เลือกหรือทั้งระบบลาดลงทางออกต่อเนื่องกัน ตามค่าที่เลือกหรือค่าน้อยสุดตามขนาดท่อ กลับทิศท่อที่วาดกลับด้าน และท่อแนวดิ่งที่ตั้งอยู่บนท่อขยับตาม · คุณสมบัติท่อบอกระดับท้องท่อ (Invert) ทั้งสองปลาย
 - V1.161 · [[a_sprlay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ประเภทอันตรายของแต่ละห้องตาม NFPA 13 (คุณสมบัติห้อง) วางหัวสปริงเกลอร์ให้ทั้งห้องด้วยจำนวนหัวน้อยที่สุดที่ไม่เกินพื้นที่และระยะห่างที่กำหนด พร้อมท่อกิ่งและท่อประธานย่อย · ตรวจว่าทุกจุดของห้องมีหัวครอบคลุม หัวชิดกันหรือชิดผนังเกินไป แสดงส่วนที่ไม่ครอบคลุมบนแปลน และรวมใน [[a_sysck]]
+- V1.162 · [[a_sprhyd]]: คำนวณชลศาสตร์ตาม NFPA 13 (Density/Area) หาพื้นที่ออกแบบที่ไกลที่สุด น้ำและแรงดันที่หัวทุกหัว การสูญเสียตาม Hazen-Williams พร้อมข้อต่อและความสูง ได้น้ำและแรงดันที่ต้นทาง ขนาดปั๊มดับเพลิง (Flow @ Head, kW) และน้ำสำรอง · ตรวจกับปั๊มในโมเดล และรวมใน [[a_sysck]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30552,6 +30654,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 7. [[a_wsup]] (แท็บ [[tab_analyze]] หรือแผงท่อน้ำของงานระบบ): เลือกการใช้งานอาคาร จำนวนคน (เว้นว่างให้คิดจากห้อง: บ้าน 2 คนต่อห้องนอน) และระบบจ่ายน้ำ แล้วอ่านขนาดถัง ปั๊ม และน้ำร้อน · แรงดันที่สุขภัณฑ์ตรวจเมื่อต้นทางของท่อน้ำประปาเป็นถังที่อยู่สูง ปั๊มที่มี Rated Head หรือใส่แรงดันท่อประปา (ระบบต่อตรง) · [[a_pipereport]] บอกสุขภัณฑ์ที่แรงดันไม่พอ
 8. [[a_pslope]]: เลือกท่อระบายเส้นใดเส้นหนึ่งหรือหลายเส้น เลือกค่าความลาด (หรือน้อยสุดตามขนาดท่อ) และเลือกว่าจะปรับเฉพาะที่เลือกหรือทั้งระบบ · ปลายต่ำสุดของระบบอยู่ที่เดิม ท่ออื่นไล่ระดับขึ้นไปจากจุดนั้น
 9. [[a_sprlay]]: เลือกห้อง (หรือใช้ห้องในชั้นของมุมมอง) ตรวจประเภทอันตรายของแต่ละห้องในตาราง แล้วกดวางหัว · ห้องที่มีหัวแล้วจะไม่ถูกแตะ เว้นแต่ติ๊กแทนที่ · ปุ่มแสดงพื้นที่ครอบคลุมวาดวงระยะของแต่ละหัวและระบายสีส่วนที่ไม่มีหัวครอบคลุม
+10. [[a_sprhyd]]: ต่อหัวสปริงเกลอร์เข้ากับท่อดับเพลิง (ระบบ FP) ที่ต้นทางเป็นปั๊มดับเพลิง ท่อแนวดิ่ง หรือปลายท่อที่เปิดไว้ แล้วเปิดคำสั่งนี้ · เลือกค่า K แรงดันต่ำสุด และค่า C ของท่อได้ · ปุ่มเลือกหัวในพื้นที่ออกแบบและท่อเส้นทางวิกฤตแสดงให้เห็นบนแปลน · ใส่ Rated Flow และ Rated Head ในชนิดปั๊มเพื่อตรวจว่าปั๊มพอ
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -30797,6 +30900,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.159 · [[a_wsup]]: water a day, ground and roof tanks, the booster or transfer pump (flow, head, kW) and a central water heater (ASHRAE) · every fixture is checked for pressure from the height of a tank, the Rated Head of a pump (new in pump types) or the pressure of the main
 - V1.160 · [[a_pslope]] (Systems, piping panel): the selected drains, or their whole networks, fall continuously to the outlet at the slope chosen or the least for their size; pipes drawn the wrong way are turned and risers standing on them follow · Properties show the invert at both ends of a pipe
 - V1.161 · [[a_sprlay]] (piping panel of Systems, or the [[tab_analyze]] tab): every room has an NFPA 13 hazard class (room Properties); heads are laid out over whole rooms with the fewest that keep the area and spacing limits, with branch lines and a cross main · coverage is checked at every point of a room, heads too close to each other or to a wall are reported, gaps are shown on the plans and in [[a_sysck]]
+- V1.162 · [[a_sprhyd]]: an NFPA 13 density/area calculation finds the most remote design area, the flow and pressure at every head of it and the Hazen-Williams losses with fittings and height, and gives the flow and pressure at the source, the fire pump (flow @ head, kW) and the water to store · checked against the pump in the model and in [[a_sysck]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -30844,6 +30948,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 7. [[a_wsup]] (the [[tab_analyze]] tab or the piping panel of Systems): choose the use of the building, the persons (blank: from the rooms, two for each bedroom of a home) and the supply, then read the tanks, pumps and hot water · fixtures are checked for pressure when the cold water starts at a raised tank, a pump with a Rated Head, or a main whose pressure is typed in · [[a_pipereport]] lists the fixtures short of pressure
 8. [[a_pslope]]: select one or more drains, choose the slope (or the least for the size) and whether only those or their whole networks change · the lowest open end of the network stays put and the rest is raised from there
 9. [[a_sprlay]]: select rooms (or take those of the level of the view), check the hazard class of each in the table and place the heads · rooms that have heads are left alone unless Replace is ticked · Show coverage draws the reach of every head and shades what no head covers
+10. [[a_sprhyd]]: join the heads to fire pipes (system FP) that start at a fire pump, a riser or an open end, then open this · K-factor, least pressure and pipe C can be chosen · Select the design area and Select the critical path show them on the plans · give the pump type a rated flow and head to check it
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -32730,6 +32835,8 @@ window.PenumBIM.r74={plan:(ids,o)=>{const Q=pslPlan(P,ids,o);return{out:Q.out.ma
 window.PenumBIM.r75={rooms:()=>fsNow().map(it=>({id:it.r.id,lv:it.lv,hz:it.hz,n:it.heads.length,st:it.c.st,A:it.c.A,aph:it.c.aph,gap:it.c.gap,close:it.c.close,wall:it.c.wall})),
   plan:(ids,o)=>{const Q=fsPlan(P,ids,Object.assign({type:'auto',repl:false,pipes:true},o||{}));return{rooms:Q.rooms.map(x=>({id:x.it.r.id,st:x.st,n:x.n,sx:x.sx,sy:x.sy})),add:Q.add,del:[...Q.del]}},
   apply:(ids,o)=>fsApply(fsPlan(P,ids,Object.assign({type:'auto',repl:false,pipes:true},o||{}))),grid:(id,hz)=>{const it=fsRooms(P).find(x=>x.r.id===id);return it?fsGrid(it.g,hz||it.hz):null},reach:hz=>fsReach(FS_HZ[hz]),sc:()=>scChecks().filter(c=>c.k==="sc_spr").map(c=>c.a),fire:()=>{const W=waterNow();return{nets:W.nets.filter(n=>n.kind==="fire").map(n=>({n:n.n,fu:n.fu,flow:n.flow,ids:n.ids.length})),lost:W.lost}},sizes:()=>{const o=pszOpt(),W=waterNow(),S=pipeSizes(P,W,o);return[...S].filter(([id])=>{const e=IDX.get(id);return e&&e.sys==="FP"})}};
+window.PenumBIM.r76={calc:()=>fhNow().map(c=>({sys:c.sys,from:c.from,hz:c.hz,nd:c.nd,heads:c.heads,ah:c.ah,Q:c.Q,Pr:c.Pr,hose:c.hose,Qt:c.Qt,store:c.store,dur:c.dur,pump:c.pump,vmax:c.vmax,crit:c.crit,sect:c.sect,design:c.design,far:c.far,rated:c.rated,ok:fhOk(c)})),
+  hw:fhHW,eq:fhEq,set:()=>fhSet(P),sc:()=>scChecks().filter(c=>c.k==='sc_fhp').map(c=>c.a)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
