@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=175,V1_NAME='V1.164';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=176,V1_NAME='V1.165';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -29300,6 +29300,84 @@ Object.assign(STR,{
   ac_note:['วสท. (มาตรฐานการติดตั้งทางไฟฟ้า) ใช้เกณฑ์เต้ารับคิด 180 VA ต่อจุด · ค่าตั้งต้น: โคมไม่เกิน 10 ดวงหรือ 1,200 W เต้ารับไม่เกิน 8 จุดหรือ 1,800 W ต่อวงจร · ตรวจเบรกเกอร์ ขนาดสาย และแรงดันตกได้ในตารางโหลดของตู้ · ใช้ปรับสมดุลโหลดถ้าเฟสไม่เท่ากัน',
     'Receptacles are taken at 180 VA a point (EIT and NEC) · stock limits: 10 lights or 1,200 W, 8 receptacles or 1,800 W a circuit · breakers, wire sizes and voltage drop are in the panel schedules · Rebalance Loads evens the phases'],
   ac_apply:['สร้าง {0} วงจร ({1} จุด)','Make {0} circuits ({1} points)'],ac_done:['สร้างวงจรแล้ว {0} วงจร กดย้อนกลับได้','{0} circuits made — Undo to go back']});
+/* ===== 165 Electrical service: load summary, transformer, main breaker, fault current and generator (V1.165; Revit sums the loads of panels and stops there).
+   From the panel tree (elecTree: the circuits of every panel and the panels fed from it, after the demand factors): for each panel at the top of a tree (or the transformer
+   that feeds it) the connected and demand load, the current, a transformer of the next standard size with room to grow (or the one in the model, its kVA and impedance in
+   its type: kva, zt; a type with neither takes the kVA from its name), the main breaker, and the three-phase fault current (IEC 60909: c·U ÷ √3·|Z|, the supply network,
+   the transformer and the feeders to each panel — copper R by CU_RHO, X 0.08 mΩ/m, the feeder sized like a circuit) for the breaking capacity of the breakers.
+   The generator: the panels fed from a generator in the model, else the life-safety loads (emergency lights and exit signs, fire and jockey pumps), at 0.8 power factor
+   with 25 % to spare, and the largest motor started star-delta.  P.svc: {sp % to spare, smva MVA of the supply, gh h of fuel}. ===== */
+const SV_D={sp:25,smva:500,gh:8},SV_TX=[50,100,160,250,315,400,500,630,800,1000,1250,1500,2000,2500,3000],SV_GEN=[20,30,45,60,80,100,150,200,250,300,400,500,625,750,1000,1250,1500,2000,2500],
+  SV_KA=[6,10,15,18,25,36,50,65,85,100,150],SV_BRK=[1250,1600,2000,2500,3200,4000,5000,6300],SV_X=0.08e-3;          // Ω/m of a cable
+const svSet=P0=>{const s=P0&&P0.svc||{},n=(v,a,b,d)=>v!=null&&v!==''&&isFinite(+v)?clamp(+v,a,b):d;return{sp:n(s.sp,0,200,SV_D.sp),smva:n(s.smva,10,10000,SV_D.smva),gh:n(s.gh,0.5,72,SV_D.gh)}};
+XC.push(()=>{const s=P.svc;if(s===undefined)return;const o={};if(s&&typeof s==='object'&&!Array.isArray(s)){const S=svSet(P);for(const k in SV_D)if(s[k]!=null&&s[k]!==''&&S[k]!==SV_D[k])o[k]=S[k]}if(Object.keys(o).length)P.svc=o;else delete P.svc});
+/* a transformer has a rating and an impedance, a generator a rating */
+{const F=TYPE_FIELDS.eequip;F.splice(Math.max(0,F.findIndex(f=>f[0]==='w')),0,['kva','num','kVA',5],['zt','num','%',0.1])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='eequip'||!F)return F;const k=T&&T.kind;return F.filter(f=>f[0]==='kva'?k==='tx'||k==='gen':f[0]==='zt'?k==='tx':true)}}
+const svKva=T=>{if(!T)return 0;if(+T.kva>0)return+T.kva;const m=String(T.name||'').match(/(\d+(?:\.\d+)?)\s*kVA/i);return m?+m[1]:0};
+const svZt=(T,kva)=>T&&+T.zt>0?+T.zt:kva<=630?4:6;          // IEC 60076-5: the impedance of a distribution transformer, %
+const svUp=(L,v)=>L.find(x=>x>=v-1e-9)||L[L.length-1];
+let SVM=null;
+function svNow(){if(SVM&&SVM.ver===VER&&SVM.P===P)return SVM.R;SVM={ver:VER,P,R:svCalc(P)};return SVM.R}
+/* -> {trees [{root, tx (the transformer in the model or null), kw, dem, kva, amp, need (kVA with the spare), txKva (in the model or chosen), load %, main A, ik kA (at the
+   secondary), icu, panels [{mark, up, dem kW, amp, wire mm², len m, ik kA, icu kA, brk}]}], gen {src: 'model'|'safety', kw, mot (largest motor kW), kva, size, fuel L/h, tank L, ids}} */
+function svCalc(P0){const E=esOf(P0),S=svSet(P0),T=elecTree(P0,circuits(P0).filter(c=>!c.feed)),pan=T.pan,kids=new Map(),U=E.vll,c=1.05,brks=[...new Set([...E.brk,...SV_BRK])].sort((a,b)=>a-b);
+  for(const [s,p] of T.up)(kids.get(p)||kids.set(p,[]).get(p)).push(s);
+  const kind=mk=>(typ(P0,pan.get(mk))||{}).kind,W=E.wire.some(r=>r[2])?E.wire.filter(r=>r[2]):E.wire,trees=[];
+  const roots=[...pan.keys()].filter(mk=>!T.up.has(mk)&&kind(mk)!=='gen'&&((T.tot.get(mk)||{}).load>0||kids.has(mk)));
+  for(const mk of roots){const tot=T.tot.get(mk),isTx=kind(mk)==='tx',txE=isTx?pan.get(mk):null,TT=txE?typ(P0,txE):null,kw=tot.load/1000,dem=tot.dem/1000,kva=dem/E.pf,amp=kva*1000/(Math.sqrt(3)*U),need=kva*(1+S.sp/100);
+    const inK=svKva(TT),txKva=inK>0?inK:svUp(SV_TX,need),zt=svZt(TT,txKva)/100,Zs=c*U*U/(S.smva*1e6),Zt=zt*U*U/(txKva*1000),Rt=Zt*0.2,Xt=Math.sqrt(Zt*Zt-Rt*Rt),R0=Rt+Zs*0.1,X0=Xt+Zs*0.995;
+    const ik=(R,X)=>c*U/(Math.sqrt(3)*Math.hypot(R,X))/1000,ik0=ik(R0,X0),main=svUp(brks,amp*E.brkK*(1+S.sp/100));
+    const panels=[];const walk=(m,R,X,up)=>{const t=T.tot.get(m)||{dem:0,load:0},pe=pan.get(m),three=panelDist(P0,pe)==='3p',va=t.dem/E.pf,a=va/(three?Math.sqrt(3)*U:E.vln),brk=svUp(brks,Math.max(a*E.brkK,E.brkMin));
+      let len=0,wire=0,vd=0,small=false;if(up){len=circuitLen(P0,pan.get(up),[pe])/1000;const vdOf=s=>(three?Math.sqrt(3):2)*a*len*CU_RHO/s/(three?U:E.vln)*100;let w=W.find(r=>r[1]*E.ka*E.kg>=brk&&vdOf(r[0])<=E.vd);small=!w;if(!w)w=W[W.length-1];wire=w[0];vd=vdOf(wire);R+=CU_RHO*len/wire;X+=SV_X*len}
+      const k=ik(R,X);if(!(isTx&&m===mk))panels.push({mark:m,up:up||'',kind:kind(m),dem:t.dem/1000,amp:a,brk,wire,len,vd,small,ik:k,icu:svUp(SV_KA,k)});
+      for(const s of (kids.get(m)||[]).sort())walk(s,R,X,m)};
+    walk(mk,R0,X0,null);
+    trees.push({root:mk,tx:txE,kw,dem,kva,amp,need,txKva,inModel:inK>0,zt:zt*100,load:kva/txKva*100,main,ik:ik0,icu:svUp(SV_KA,ik0),panels})}
+  /* the generator */
+  const gens=[...pan.keys()].filter(mk=>kind(mk)==='gen');let gkw=0,mot=0,src='safety',ids=[],gsize=0;
+  if(gens.length&&gens.some(g=>kids.has(g))){src='model';for(const g of gens){const t=T.tot.get(g);if(t){gkw+=t.dem/1000;ids.push(pan.get(g).id)}}const gt=typ(P0,pan.get(gens[0]));gsize=svKva(gt)}
+  for(const e of P0.els){const Ty=typ(P0,e)||{};if(src==='safety'){if(e.cat==='light'&&(Ty.kind==='emer'||Ty.kind==='exit')){gkw+=(+Ty.load||0)/1000;ids.push(e.id)}else if(e.cat==='equip'&&(Ty.kind==='fpump'||Ty.kind==='jpump')){gkw+=+Ty.kw||0;ids.push(e.id)}}
+    if(e.cat==='equip'&&+Ty.kw>0&&['fpump','jpump','pump','ahu','chiller','fan'].includes(Ty.kind)&&(src==='safety'?Ty.kind==='fpump'||Ty.kind==='jpump':true))mot=Math.max(mot,+Ty.kw)}
+  const run=gkw/0.8,gkva=Math.max(run*1.25,run+mot/0.8),gen=gkw>0?{src,kw:gkw,mot,kva:gkva,size:gsize>0?gsize:svUp(SV_GEN,gkva),inModel:gsize>0,fuel:0.27*gkw,ids}:null;
+  if(gen){gen.tank=gen.fuel*S.gh}
+  return{trees,gen,S,E}}
+function dlgSvc(){const R=svNow(),S=R.S,s0=P.svc||{},row=(l,v)=>`<tr><th>${l}</th><td>${v}</td></tr>`,kw=v=>v.toFixed(v<100?1:0)+' kW',kv=v=>v.toFixed(v<100?1:0)+' kVA';ui.helpAt='calc';
+  const num=(k,u,st,a,b)=>`<label><span>${t('sv_'+k)}</span><span><input type="number" data-sv="${k}" value="${s0[k]!=null?S[k]:''}" placeholder="${SV_D[k]}" step="${st}" min="${a}" max="${b}"><small>${u}</small></span></label>`;
+  const set=`<div class="ldg pz">${num('sp','%',5,0,200)}${num('smva','MVA',50,10,10000)}${num('gh',t('sv_h'),1,0.5,72)}</div>`;
+  const trees=R.trees.map(x=>{const a=`<table class="tbl kv">${row(t('sv_r_kw'),kw(x.kw))+row(t('sv_r_dem'),'<b>'+kw(x.dem)+'</b> · '+kv(x.kva))+row(t('sv_r_amp'),Math.round(x.amp)+' A @ '+R.E.vll+' V')+row(t('sv_r_need'),kv(x.need))}</table>`;
+    const b=`<table class="tbl kv">${row(t('sv_r_tx'),'<b>'+x.txKva+' kVA</b> · Z '+x.zt.toFixed(1)+'% · '+t(x.inModel?'sv_inmodel':'sv_chosen'))+row(t('sv_r_load'),Math.round(x.load)+'%'+(x.load>100?' ⚠':''))+row(t('sv_r_main'),'<b>'+x.main+' A</b>')+row(t('sv_r_ik'),'<b>'+x.ik.toFixed(1)+' kA</b> → Icu ≥ '+x.icu+' kA')}</table>`;
+    const pt=x.panels.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('p_panel')}</th><th>${t('sv_c_up')}</th><th class="n">${t('sv_c_dem')}</th><th class="n">A</th><th class="n">${t('c_brk')}</th><th class="n">${t('sv_c_feed')}</th><th class="n">${t('c_vd')}</th><th class="n">Ik</th><th class="n">Icu</th></tr></thead><tbody>`+
+      x.panels.map(q=>`<tr data-mk="${esc(q.mark)}"><td>${esc(q.mark)}</td><td>${esc(q.up||'—')}</td><td class="n">${kw(q.dem)}</td><td class="n">${Math.round(q.amp)}</td><td class="n">${q.brk}</td><td class="n">${q.wire?q.wire+' mm²'+(q.small?' ⚠':'')+' · '+q.len.toFixed(1)+' m':'—'}</td><td class="n">${q.wire?q.vd.toFixed(2)+'%':'—'}</td><td class="n">${q.ik.toFixed(1)} kA</td><td class="n">${q.icu} kA</td></tr>`).join('')+'</tbody></table></div>':'';
+    return`<h4>${t('sv_tree',esc(x.root))}</h4><div class="lhg"><div>${a}</div><div>${b}</div></div>${pt}`}).join('');
+  const G=R.gen,gen=G?`<h4>${t('sv_h_gen')}</h4><table class="tbl kv">${row(t('sv_r_gsrc'),t('sv_gsrc_'+G.src))+row(t('sv_r_gkw'),kw(G.kw))+(G.mot?row(t('sv_r_mot'),kw(G.mot)):'')+row(t('sv_r_gkva'),kv(G.kva))+row(t('sv_r_gsize'),'<b>'+G.size+' kVA</b>'+(G.inModel?' · '+t('sv_inmodel')+(G.size<G.kva?' ⚠':' ✓'):''))+row(t('sv_r_fuel'),G.fuel.toFixed(1)+' L/h · '+t('sv_tank',Math.round(G.tank),S.gh))}</table>`:`<p class="note">${t('sv_nogen')}</p>`;
+  const body=`<style>.svd .lhg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:12px;align-items:start}.svd .kv{width:100%}.svd .kv th{font-weight:500;text-align:left;width:50%}.svd h4{margin:12px 0 6px}.svd .kv th,.svd .kv td{white-space:normal;vertical-align:top}</style>
+    <div class="svd"><p class="note">${t('sv_intro')}</p>${set}${R.trees.length?trees:`<p class="note warn">${t('sv_none')}</p>`}${gen}<p class="note">${t('sv_note')}</p></div>`;
+  openDlg(t('a_svc'),body,`<button class="btn" data-svx="sched">${t('a_pnlsched')}…</button><button class="btn" data-svx="reset"${P.svc?'':' disabled'}>${t('ld_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,k=el.dataset.sv;if(!k||!ui.dlg)return;edit(()=>{const o=Object.assign({},P.svc||{}),v=parseFloat(el.value);if(isFinite(v))o[k]=v;else delete o[k];P.svc=o});dlgSvc()},
+     click(ev){const x=ev.target.closest('[data-svx]');if(x&&ui.dlg){const k=x.dataset.svx;if(k==='sched'){act('pnlsched');return}if(k==='reset'){edit(()=>{delete P.svc});dlgSvc()}return}
+       const tr=ev.target.closest('tr[data-mk]');if(tr){const e=pnEl(P,tr.dataset.mk);if(e){ui.sel=new Set([e.id]);closeDlg();setTool('modify')}}}},'wide')}
+XA.svc=dlgSvc;
+for(const [tab,pn,after] of [['sys','p_elec','@autock'],['analyze','p_check','@sprhyd']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@svc')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@svc')}}
+BTN['@svc']=['eequip',''];
+/* Check Systems: a transformer or a generator in the model smaller than what it carries */
+SCX.push(add=>{const R=svNow();for(const x of R.trees)if(x.tx&&x.inModel&&x.load>100)add('sc_txo','duct',[x.tx.id],x.tx.x,x.tx.y,x.tx.level,(x.tx.mark||'')+' '+Math.round(x.kva)+' / '+x.txKva+' kVA');
+  const G=R.gen;if(G&&G.inModel&&G.size<G.kva){const g=IDX.get(G.ids[0]);if(g)add('sc_geno','duct',[g.id],g.x,g.y,g.level,(g.mark||'')+' '+Math.round(G.kva)+' / '+G.size+' kVA')}});
+WARN_K.push('sc_txo','sc_geno');
+Object.assign(STR,{
+  a_svc:['สรุปโหลด หม้อแปลง และกระแสลัดวงจร','Electrical Service and Fault Current'],f_kva:['พิกัดกำลัง','Rating'],f_zt:['อิมพีแดนซ์ (%Z)','Impedance (%Z)'],
+  sv_intro:['จากตารางโหลดของตู้ทุกใบรวมตู้ย่อย (หลังคิด Demand Factor): โหลดรวมและกระแสของตู้บนสุดแต่ละชุด ขนาดหม้อแปลงมาตรฐานที่เผื่อโหลดเพิ่ม (หรือหม้อแปลงในโมเดล) เบรกเกอร์ประธาน กระแสลัดวงจร 3 เฟสตาม IEC 60909 ที่หม้อแปลงและที่ตู้แต่ละใบ (ผ่านสายป้อน) เพื่อเลือกค่าทนกระแสลัดวงจร (Icu) ของเบรกเกอร์ และเครื่องกำเนิดไฟฟ้า',
+    'From the schedules of every panel and the panels fed from it (after the demand factors): the load and current of each top panel, the next standard transformer with room to grow (or the one in the model), the main breaker, the three-phase fault current by IEC 60909 at the transformer and at every panel along its feeder, for the breaking capacity (Icu) of the breakers, and the generator'],
+  sv_sp:['เผื่อโหลดเพิ่ม','Spare for growth'],sv_smva:['กำลังลัดวงจรของระบบการไฟฟ้า','Fault level of the supply'],sv_gh:['น้ำมันเครื่องกำเนิดไฟฟ้า','Generator fuel for'],sv_h:['ชม.','h'],
+  sv_tree:['ระบบจ่ายไฟจาก {0}','Supply from {0}'],sv_r_kw:['โหลดที่ต่อ','Connected load'],sv_r_dem:['โหลดหลังคิด Demand','Demand load'],sv_r_amp:['กระแส','Current'],sv_r_need:['ต้องการ (เผื่อแล้ว)','Needed, with spare'],
+  sv_r_tx:['หม้อแปลง','Transformer'],sv_inmodel:['ในโมเดล','in the model'],sv_chosen:['ขนาดมาตรฐานที่เลือกให้','standard size chosen'],sv_r_load:['ภาระหม้อแปลง','Transformer loading'],sv_r_main:['เบรกเกอร์ประธาน','Main breaker'],sv_r_ik:['กระแสลัดวงจรที่หม้อแปลง','Fault current at the transformer'],
+  sv_c_up:['รับไฟจาก','Fed from'],sv_c_dem:['โหลด','Demand'],sv_c_feed:['สายป้อน','Feeder'],
+  sv_h_gen:['เครื่องกำเนิดไฟฟ้า','Generator'],sv_r_gsrc:['โหลดที่สำรอง','Loads on it'],sv_gsrc_model:['ตู้ที่รับไฟจากเครื่องกำเนิดไฟฟ้าในโมเดล','the panels fed from the generator in the model'],sv_gsrc_safety:['โหลดฉุกเฉิน: ไฟฉุกเฉิน ป้ายทางหนีไฟ ปั๊มดับเพลิง','life safety: emergency lights, exit signs, fire pumps'],
+  sv_r_gkw:['โหลดที่จ่าย','Load'],sv_r_mot:['มอเตอร์ใหญ่สุด (สตาร์ท Y-Δ)','Largest motor (star-delta)'],sv_r_gkva:['ต้องการ','Needed'],sv_r_gsize:['ขนาดเครื่อง','Size'],sv_r_fuel:['น้ำมัน','Fuel'],sv_tank:['ถัง {0} L สำหรับ {1} ชม.','tank {0} L for {1} h'],
+  sv_nogen:['ไม่มีโหลดฉุกเฉินหรือเครื่องกำเนิดไฟฟ้าในโมเดล','No life-safety loads or generator in the model'],sv_none:['ยังไม่มีตู้ไฟฟ้าที่มีวงจร: สร้างวงจรก่อน (Power หรือจัดวงจรอัตโนมัติ)','No panel with circuits yet: make circuits first (Power or Auto Circuits)'],
+  sv_note:['หม้อแปลงขนาดมาตรฐาน PEA/MEA · %Z ตาม IEC 60076-5 (ถึง 630 kVA 4% ใหญ่กว่า 6%) ใส่ค่าจริงในชนิดหม้อแปลงได้ · c = 1.05 · สายป้อนเลือกขนาดเหมือนวงจร (ทนกระแสเบรกเกอร์และแรงดันตกตามที่ตั้ง) ยาวตามแนวแกนจากตู้ต้นทาง ⚠ คือสายใหญ่สุดในตารางยังไม่พอ ให้ใช้สายขนานหรือบัสเวย์ · เครื่องกำเนิดไฟฟ้าคิด PF 0.8 เผื่อ 25% และน้ำมัน 0.27 L/kWh · เป็นการคำนวณเบื้องต้นสำหรับวิศวกรตรวจ',
+    'Standard PEA/MEA transformer sizes · %Z by IEC 60076-5 (to 630 kVA 4 %, larger 6 %), or the transformer type\'s own · c = 1.05 · feeders sized like circuits (the breaker and the voltage drop set), as long as the way along the axes from the panel feeding them; ⚠: the largest wire of the table is not enough, run cables in parallel or a busway · generators at 0.8 power factor with 25 % to spare, fuel 0.27 L/kWh · a first calculation for the engineer to check'],
+  sc_txo:['หม้อแปลงรับโหลดเกินพิกัด: {0}','Transformer over its rating: {0}'],sc_geno:['เครื่องกำเนิดไฟฟ้าเล็กกว่าโหลด: {0}','Generator smaller than its load: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -30545,6 +30623,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[a_circuit]] — แท็บ [[tab_sys]] (และขึ้นเองเมื่อเลือกโคมหรือเต้ารับ): รวมสิ่งที่เลือกเป็นวงจรเดียวบนตู้ที่เลือก ใส่เลขวงจรว่างถัดไปให้ และเดินสายในแปลนไฟฟ้าให้ได้ · ท่อโสโครก (S) กับท่อน้ำทิ้ง (W) ที่มาบรรจบกันนับเป็นโครงข่ายระบายเดียวกันแล้ว
 [[a_autock]] — แท็บ [[tab_sys]] แผงไฟฟ้า: เลือกโคมและเต้ารับ (หรือไม่เลือกเพื่อใช้ทั้งชั้นของมุมมอง) ตั้งจำนวนจุดและโหลดสูงสุดต่อวงจร แล้วกดสร้างวงจร · ตารางบอกตู้ หมายเลขวงจร จำนวนจุด โหลด และห้อง ก่อนสร้าง
+[[a_svc]] — แท็บ [[tab_sys]] แผงไฟฟ้า หรือแท็บ [[tab_analyze]]: ต่อตู้ย่อยเข้ากับตู้ต้นทาง (Supply From) และ MDB เข้ากับหม้อแปลง แล้วเปิดคำสั่งนี้ · ตั้งการเผื่อโหลด กำลังลัดวงจรของระบบการไฟฟ้า และชั่วโมงน้ำมันได้ · คลิกแถวตู้เพื่อเลือกตู้นั้น
 
 [[a_wheel]] ((F8)) หรือ Shift+W: วงล้อนำทาง กดค้างที่ ZOOM, PAN หรือ ORBIT แล้วลาก · REWIND ย้อนมุมมองก่อนหน้า · ลากจาก CENTER ไปปล่อยบนชิ้นงานเพื่อย้ายจุดหมุน · ลากที่กลางวงล้อเพื่อย้ายวงล้อ · ในมุมมอง 3 มิติ ลากเมาส์ปุ่มซ้ายจากที่ว่างเป็นกรอบเลือก (ซ้ายไปขวา = อยู่ในกรอบทั้งชิ้น ขวาไปซ้าย = แค่แตะ) หมุนมุมมองด้วย Shift+ปุ่มกลาง หรือลากปุ่มขวา
 - วงล้อในมุมมอง 3 มิติมี LOOK (หมุนมองรอบจากจุดยืน) WALK (กดค้างแล้วลากขึ้นเพื่อเดินหน้า ลากลงถอยหลัง ซ้ายขวาเพื่อเลี้ยว) และ UP/DOWN (ลากขึ้นลงเพื่อยกหรือลดระดับสายตา) · มุมมองเปลี่ยนเป็นเพอร์สเปกทีฟให้เอง
@@ -30731,6 +30810,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.162 · [[a_sprhyd]]: คำนวณชลศาสตร์ตาม NFPA 13 (Density/Area) หาพื้นที่ออกแบบที่ไกลที่สุด น้ำและแรงดันที่หัวทุกหัว การสูญเสียตาม Hazen-Williams พร้อมข้อต่อและความสูง ได้น้ำและแรงดันที่ต้นทาง ขนาดปั๊มดับเพลิง (Flow @ Head, kW) และน้ำสำรอง · ตรวจกับปั๊มในโมเดล และรวมใน [[a_sysck]]
 - V1.163 · [[a_ltlay]] (แผงไฟฟ้าของงานระบบ หรือแผงแสงสว่างของแท็บ [[tab_analyze]]): วางโคมไฟให้ทุกห้องที่เลือกได้ความสว่างตามเกณฑ์ด้วยวิธีลูเมน เลือกชนิดโคมตามการใช้ห้องหรือเลือกเอง วางเป็นตารางเท่ากันไม่เกิน 1.5 เท่าของความสูงโคม และบอกความสว่างที่จะได้ก่อนวาง
 - V1.164 · [[a_autock]] (แผงไฟฟ้าของงานระบบ): โคม เต้ารับ และเครื่องที่ยังไม่มีวงจร จัดเข้าวงจรของตู้ที่ใกล้ที่สุดในคราวเดียว ไล่ทีละห้อง ไม่เกินจำนวนจุดและโหลดที่ตั้ง โคมกับเต้ารับแยกวงจร เครื่องวงจรละเครื่อง ใช้ช่องว่างของตู้วนเฟส L1 L2 L3 และวาดสายในแปลนไฟฟ้า
+- V1.165 · [[a_svc]]: สรุปโหลดของทั้งระบบจากตารางโหลดของตู้ ขนาดหม้อแปลงมาตรฐาน (หรือหม้อแปลงในโมเดลกับ kVA และ %Z ในชนิด) เบรกเกอร์ประธาน กระแสลัดวงจรที่หม้อแปลงและที่ตู้ทุกใบผ่านสายป้อน (IEC 60909) เพื่อเลือก Icu ของเบรกเกอร์ และขนาดเครื่องกำเนิดไฟฟ้ากับน้ำมัน · หม้อแปลงหรือเครื่องกำเนิดไฟฟ้าที่เล็กไปอยู่ใน [[a_sysck]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30843,6 +30923,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[a_circuit]] — on the [[tab_sys]] tab (and by itself when lights or receptacles are selected): makes one circuit of the selection on a panel, with the next free number and, if wanted, its wiring in the electrical plan · soil (S) and waste (W) pipes that meet now count as one drainage network
 [[a_autock]] — on the [[tab_sys]] tab, electrical panel: select lights and receptacles (or nothing, for the whole level of the view), set the most points and load a circuit takes, and make the circuits · the table shows the panel, circuit number, points, load and rooms of each before they are made
+[[a_svc]] — on the [[tab_sys]] tab, electrical panel, or the [[tab_analyze]] tab: feed the panels from their supply (Supply From) and the main board from the transformer, then open this · the spare, the fault level of the supply and the hours of fuel can be set · click a panel row to select it
 
 [[a_wheel]] ((F8)) or Shift+W: the navigation wheel — press ZOOM, PAN or ORBIT and drag · REWIND steps back · drag from CENTER and release over an element to move the pivot · drag its hub to move the wheel · in a 3D view a left drag from empty space is a selection box (left to right: wholly inside, right to left: touched); orbit with Shift+middle button or a right drag
 - In a 3D view the wheel also has LOOK (turn about where you stand), WALK (hold and drag up to go on, down to go back, aside to turn) and UP/DOWN (drag to raise or lower the eye) · the view becomes perspective by itself
@@ -31029,6 +31110,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.162 · [[a_sprhyd]]: an NFPA 13 density/area calculation finds the most remote design area, the flow and pressure at every head of it and the Hazen-Williams losses with fittings and height, and gives the flow and pressure at the source, the fire pump (flow @ head, kW) and the water to store · checked against the pump in the model and in [[a_sysck]]
 - V1.163 · [[a_ltlay]] (electrical panel of Systems, or the lighting panel of [[tab_analyze]]): fixtures for every room chosen, enough for its lighting level by the lumen method, of a type by the room's use or the one picked, on an even grid no wider than 1.5 times their height, with the level they will give shown before they are placed
 - V1.164 · [[a_autock]] (electrical panel of Systems): every light, receptacle and machine with no circuit goes on circuits of the nearest panel in one go, room by room, within the points and load set, lights apart from receptacles and a circuit for each machine, on the free ways of the panel turning L1 L2 L3, with the wires drawn in the electrical plans
+- V1.165 · [[a_svc]]: the load of the whole supply from the panel schedules, a standard transformer (or the one in the model, its kVA and %Z in its type), the main breaker, the fault current at the transformer and at every panel along its feeder (IEC 60909) for the breaking capacity of the breakers, and the generator with its fuel · a transformer or generator too small is in [[a_sysck]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -32971,6 +33053,7 @@ window.PenumBIM.r77={plan:(ids,o)=>{const Q=lgPlan(P,ids,Object.assign({type:'au
   grid:(net,nx,ny)=>gridLay(net,()=>({nx,ny}),100),fs:id=>{const it=fsRooms(P).find(x=>x.r.id===id);return it?fsGrid(it.g,it.hz):null}};
 window.PenumBIM.r78={plan:(ids,o)=>{const Q=acPlan(P,ids,Object.assign({},AC_D,o||{}));return{cks:Q.cks.map(c=>({pn:c.pn,ck:c.ck,k:c.k,ids:c.els.map(e=>e.id),W:c.W,rooms:c.rooms.map(r=>r.id)})),none:Q.none,n:Q.n}},
   apply:(ids,o)=>{const O=Object.assign({},AC_D,o||{});return acApply(acPlan(P,ids,O),O)}};
+window.PenumBIM.r79={calc:()=>{const R=svNow();return{trees:R.trees.map(x=>Object.assign({},x,{tx:x.tx?x.tx.id:null})),gen:R.gen}},kva:svKva,sc:()=>scChecks().filter(c=>c.k==='sc_txo'||c.k==='sc_geno').map(c=>c.k+':'+c.a)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
