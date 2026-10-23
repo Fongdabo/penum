@@ -5533,7 +5533,7 @@ function airflow(P){
   const loss=ed=>{if(ed.riser){const s=ed.riser,T=typ(P,s),tl=2*linOf(s),c=ductCalc(T&&T.kind==='duct'?'rect':'round',(s.w||400)-tl,(s.h||250)-tl,fe[ed.i]);return{c,fr:c.dp*ed.len/1000,fit:0}}
     const e=ed.r.e,tl=2*linOf(e),c=ductCalc(runShape(P,e),runW(e)-tl,runH(P,e)-tl,fe[ed.i],ductRoughOf(P,e));let fit=0;
     for(const k of acc){if(k.level!==e.level)continue;const t=((k.x-e.x1)*ed.r.ux+(k.y-e.y1)*ed.r.uy)/ed.r.L,d=Math.abs((k.x-e.x1)*-ed.r.uy+(k.y-e.y1)*ed.r.ux);
-      if(d<40&&t>=ed.t0&&t<ed.t1){const T=typ(P,k),kd=T?T.kind:'';fit+=kd==='att'?LOSS.att:(LOSS[kd]||0)*c.pv}}
+      if(d<40&&t>=ed.t0&&t<ed.t1){const T=typ(P,k),kd=T?T.kind:'';fit+=accDp(T,kd,c.pv)}}
     return{c,fr:c.dp*ed.len/1000,fit}};
   for(let s=0;s<N.length;s++){if(par[s]!==-2)continue;
     const ns=[],q=[s],mark=new Set([s]);while(q.length){const i=q.pop();ns.push(i);for(const a of N[i].arms)if(!mark.has(a.far)){mark.add(a.far);q.push(a.far)}}
@@ -6354,7 +6354,7 @@ function ifcWrite(P,items,o){o=o||{};const X3=o.schema==='IFC2X3',PIDS=new Map()
       for(let k=0;k+2<tr3.length;k+=3){tri(P3(tr3[k],h+l.elev),P3(tr3[k+1],h+l.elev),P3(tr3[k+2],h+l.elev));tri(P3(tr3[k],l.elev),P3(tr3[k+2],l.elev),P3(tr3[k+1],l.elev))}
       for(let k=0;k<m;k++){const j=(k+1)%m;tri(P3(k,l.elev),P3(j,l.elev),P3(j,l.elev+h));tri(P3(k,l.elev),P3(j,l.elev+h),P3(k,l.elev+h))}
       const f=faceSet(t,l.elev,[0.55,0.75,0.95],0.25);if(!f)continue;const pl=E('IFCLOCALPLACEMENT('+st.pl+','+AX+')'),sid=E('IFCSPACE('+G('el:'+e.id)+','+oh+','+S(e.number||String(e.id))+','+(e.comment?S(e.comment):'$')+',$,'+pl+','+shape([f])+','+S(e.name||'')+',.ELEMENT.,.INTERNAL.,$)');st.sp.push(sid);n.spaces++;
-      pset(e.id,'Pset_SpaceCommon',[prop('Reference',e.number||String(e.id),'IFCIDENTIFIER')],sid);qto(e.id,'Qto_SpaceBaseQuantities',[['Height','L',h],['NetPerimeter','L',RG[i].perim],['NetFloorArea','A',RG[i].area],['NetVolume','V',RG[i].area*h]],sid)}}
+      pset(e.id,'Pset_SpaceCommon',[prop('Reference',e.number||String(e.id),'IFCIDENTIFIER')],sid);pset(e.id,'PENUM_BIM',raIfc(P,e,prop),sid);qto(e.id,'Qto_SpaceBaseQuantities',[['Height','L',h],['NetPerimeter','L',RG[i].perim],['NetFloorArea','A',RG[i].area],['NetVolume','V',RG[i].area*h]],sid)}}
   /* the grids: one IfcGrid on the lowest storey, the axes that run more across than up as U, the others as V */
   if(levels.length&&(P.grids||[]).length){const st=ST.get(levels[0].id),U=[],V=[];for(const g of P.grids){if(!isFinite(g.x1+g.y1+g.x2+g.y2))continue;
       const pl=E('IFCPOLYLINE(('+gridPath(g).map(p=>E('IFCCARTESIANPOINT(('+R(p[0])+','+R(-p[1])+'))')).join(',')+'))'),ax=E('IFCGRIDAXIS('+S(String(g.name||''))+','+pl+',.T.)');(Math.abs(g.x2-g.x1)>=Math.abs(g.y2-g.y1)?U:V).push(ax)}
@@ -7994,6 +7994,7 @@ function drawMEP(g,v,T,col,H,shown,hl,hc,det){
   // ---- duct accessories: across the duct, true size
   for(const e of of('ductacc')){g.el(e);const W=typ(P,e)||{},F=localF(e),h=hl(e.id),k=h||SYS[e.sys]||SYS.SA,l=compSize(P,e).w/2,w=(e.w||400)/2,lw=h?2:g.lw(0.3),box=[F(-l,-w),F(l,-w),F(l,w),F(-l,w)];
     if(W.kind==='flexc'){P1(box,col.paper,k,g.lw(0.2));const z=[],n=Math.max(4,Math.round(w/l));for(let i=0;i<=n;i++)z.push(F(i%2?l*0.7:-l*0.7,-w+2*w*i/n));L1(z,k,g.lw(0.2))}
+    else if(VAV_K.includes(W.kind))vavPlan(g,F,W,l,w,k,lw,col,P1,L1);
     else if(W.kind==='att'){P1(box,col.paper,k,lw);g.hatch(box,0.9,k)}
     else{L1([F(-l,-w),F(l,w)],k,lw);g.circle(F(0,0),0.5);fill(k);
       if(W.kind==='fd')for(const s of [-1,1]){g.circle(F(s*l,s*w),0.45);fill(k)}
@@ -8011,12 +8012,13 @@ function drawMEP(g,v,T,col,H,shown,hl,hc,det){
       else if(kd==='bal'||kd==='ctrl'){L1([F(0,0),F(0,-b*1.9)],k,lw);if(kd==='bal')L1([F(-a*0.6,-b*1.9),F(a*0.6,-b*1.9)],k,lw);
         else{const q=F(0,-b*1.9-1.2*sc),r=1.2*sc;P1([[q[0]-r,q[1]-r],[q[0]+r,q[1]-r],[q[0]+r,q[1]+r],[q[0]-r,q[1]+r]],col.paper,k,g.lw(0.18));g.text('M',q,1.5,{color:k,bold:true})}}}}
   // ---- risers
-  for(const e of of('riser')){g.el(e);const W=typ(P,e)||{},F=localF(e),pipe=W.kind==='pipe',h=hl(e.id),k=h||(pipe?(PSYS[e.sys]||PSYS.CW)[0]:(SYS[e.sys]||SYS.SA)),lw=h?2:g.lw(0.3),two=SCL(e.sys)==='SA'||SCL(e.sys)==='OA';
-    const ti=insOf(e),tl=linOf(e),iq=(ti||tl)&&insOn(pipe?'pipe':'duct',e);if(iq)insOff('riser',e);          // iq: its insulation shows in this view
-    if(W.kind==='duct'){const w=(e.w||400)/2,d=(e.h||250)/2,box=[F(-w,-d),F(w,-d),F(w,d),F(-w,d)],bx=q=>[F(-w-q,-d-q),F(w+q,-d-q),F(w+q,d+q),F(-w-q,d+q)];P1(box,col.paper,k,lw);ctx.lineWidth=thin;g.seg(box[0],box[2]);if(two)g.seg(box[1],box[3]);
+  for(const e of of('riser')){g.el(e);const rd=v.kind==='plan'&&v.level!=null?rdDir(e,v.level):'thru',RS=rdSet(P),W=typ(P,e)||{},F=localF(e),pipe=W.kind==='pipe',h=hl(e.id),k=h||(pipe?(PSYS[e.sys]||PSYS.CW)[0]:(SYS[e.sys]||SYS.SA)),lw=h?2:g.lw(0.3),two=SCL(e.sys)==='SA'||SCL(e.sys)==='OA';
+    const ti=insOf(e),tl=linOf(e),iq=(ti||tl)&&insOn(pipe?'pipe':'duct',e);if(iq)insOff('riser',e);rdText(g,e,W,rd,RS,k,sc);          // iq: its insulation shows in this view
+    if(W.kind==='duct'){const w=(e.w||400)/2,d=(e.h||250)/2,box=[F(-w,-d),F(w,-d),F(w,d),F(-w,d)],bx=q=>[F(-w-q,-d-q),F(w+q,-d-q),F(w+q,d+q),F(-w-q,d+q)];P1(box,col.paper,k,lw);ctx.lineWidth=thin;g.seg(box[0],box[2]);if(two)g.seg(box[1],box[3]);if(rd==='dn'&&RS.d==='shade')rdShade(g,[box[0],box[1],box[2]],k,thin);
       if(iq){insOn('duct',e);if(ti)P1(bx(ti),null,k,thin);if(tl){g.dash([1.4,0.9]);P1(bx(-tl),null,k,thin)}insOff('riser',e)}}
-    else{const r=Math.max((e.w||100)/2,(pipe?0.8:1.2)*sc),p=[e.x,e.y];g.circle(p,r/sc);fill(pipe?k:col.paper);stroke(k,lw);
-      if(pipe){g.circle(p,r/sc+0.55);stroke(k,thin)}else{const q=r*0.7071;ctx.lineWidth=thin;g.seg([e.x-q,e.y-q],[e.x+q,e.y+q]);if(two)g.seg([e.x+q,e.y-q],[e.x-q,e.y+q])}
+    else{const r=Math.max((e.w||100)/2,(pipe?0.8:1.2)*sc),p=[e.x,e.y];const pa=pipe&&RS.p==='arrow'&&rd!=='thru',rr=pa?Math.max(r,1.1*sc):r;g.circle(p,rr/sc);fill(pipe&&!pa?k:col.paper);stroke(k,lw);          // a pipe that rises: a ring with a dot; that drops: a ring with a cross
+      if(pa){if(rd==='up'){g.circle(p,Math.max(0.35,rr/sc*0.3));fill(k)}else{const q=rr*0.7071;ctx.lineWidth=thin;ctx.strokeStyle=k;g.seg([e.x-q,e.y-q],[e.x+q,e.y+q]);g.seg([e.x+q,e.y-q],[e.x-q,e.y+q])}}else 
+      if(pipe){g.circle(p,r/sc+0.55);stroke(k,thin)}else{const q=r*0.7071;ctx.lineWidth=thin;g.seg([e.x-q,e.y-q],[e.x+q,e.y+q]);if(two)g.seg([e.x+q,e.y-q],[e.x-q,e.y+q]);if(rd==='dn'&&RS.d==='shade')rdShade(g,rdHalf(e,r),k,thin)}
       if(iq){insOn(pipe?'pipe':'duct',e);if(ti){g.circle(p,Math.max((r+ti)/sc,pipe?r/sc+1.1:0));stroke(k,thin)}if(tl&&!pipe&&r-tl>2){g.dash([1.4,0.9]);g.circle(p,(r-tl)/sc);stroke(k,thin)}insOff('riser',e)}}}
   // ---- air terminals
   for(const e of of('terminal')){g.el(e);const W=typ(P,e)||{w:600,d:600},c=SYS[e.sys]||SYS.SA,h=hl(e.id);
@@ -12869,10 +12871,10 @@ function dlgSysReport(){
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`;
   const cards=A.comps.map((c,i)=>{const w=c.worst,src=c.root?esc(c.root.mark||t('cat_equip')):c.riser?t('cat_riser'):t('sr_openend');
     return`<div class="card"><div class="ch"><i style="background:${SYS[c.sys]||SYS.SA}"></i>${esc(t('sys_'+(SYS[c.sys]?c.sys:'SA')))}<button class="btn" data-sr="${i}">${t('sr_select')}</button></div>`+
-      row(t('sr_source'),src)+row(t('sr_flow'),money(c.total*flowK(P))+' '+airUnit())+row(t('sr_terms'),c.terms)+row(t('sr_vmax'),c.vmax.toFixed(1)+' m/s')+
+      row(t('sr_source'),src)+scCardRows(c,row)+row(t('sr_flow'),money(c.total*flowK(P))+' '+airUnit())+row(t('sr_terms'),c.terms)+row(t('sr_vmax'),c.vmax.toFixed(1)+' m/s')+
       (w.term?row(t('sr_path'),fmtLen(w.len)+' '+unitName())+row(t('sr_dp'),Math.round(w.dp)+' Pa')+`<div class="kv sub"><span>${t('sr_dp_parts',w.fr.toFixed(1),(w.fit-LOSS.terminal).toFixed(1),LOSS.terminal)}</span></div>`:'')+
       (c.loop?`<p class="note warn">${t('sr_loop')}</p>`:'')+'</div>'}).join('');
-  const body=(A.comps.length?cards:`<p class="note">${t('sr_none')}</p>`)+(A.loose.length?`<p class="note">${t('sr_loose',A.loose.length)} <button class="btn" data-sr="loose">${t('sr_select')}</button></p>`:'')+
+  const body=scBlock('duct')+(A.comps.length?cards:`<p class="note">${t('sr_none')}</p>`)+(A.loose.length?`<p class="note">${t('sr_loose',A.loose.length)} <button class="btn" data-sr="loose">${t('sr_select')}</button></p>`:'')+
     (stale?`<p class="note warn">${t('sr_stale',stale)}</p>`:'')+`<p class="note">${t('sr_note',t('k_byshape'),LOSS.branch,LOSS.thru,LOSS.vd,LOSS.fd,LOSS.att,LOSS.terminal)}</p>`;
   openDlg(t('a_sysreport'),body,`<button class="btn${stale?' primary':''}" data-sr="flow">${t('a_airflow')}</button><button class="btn" data-sr="size">${t('a_ductsize')}…</button><button class="btn" data-close="1">${t('close')}</button>`,
     {click(e){const k=e.target.dataset.sr;if(k==null)return;if(k==='flow'){toast(t('airflow_done',applyAirflow(A)));dlgSysReport()}else if(k==='size')dlgDuctSize();
@@ -13305,7 +13307,7 @@ function ductLossReport(P){const G=runGraph(P,'duct'),N=G.nodes,E=G.edges,fe=new
   const loss=ed=>{if(ed.riser){const s=ed.riser,T=typ(P,s),tl=2*linOf(s),c=ductCalc(T&&T.kind==='duct'?'rect':'round',(s.w||400)-tl,(s.h||250)-tl,fe[ed.i]);return{c,fr:c.dp*ed.len/1000,fit:0}}
     const e=ed.r.e,tl=2*linOf(e),c=ductCalc(runShape(P,e),runW(e)-tl,runH(P,e)-tl,fe[ed.i],ductRoughOf(P,e));let fit=0;
     for(const k of acc){if(k.level!==e.level)continue;const t=((k.x-e.x1)*ed.r.ux+(k.y-e.y1)*ed.r.uy)/ed.r.L,d=Math.abs((k.x-e.x1)*-ed.r.uy+(k.y-e.y1)*ed.r.ux);
-      if(d<40&&t>=ed.t0&&t<ed.t1){const T=typ(P,k),kd=T?T.kind:'';fit+=kd==='att'?LOSS.att:(LOSS[kd]||0)*c.pv}}
+      if(d<40&&t>=ed.t0&&t<ed.t1){const T=typ(P,k),kd=T?T.kind:'';fit+=accDp(T,kd,c.pv)}}
     return{c,fr:c.dp*ed.len/1000,fit}};
   for(let s=0;s<N.length;s++){if(par[s]!==-2)continue;
     const ns=[],q=[s],mark=new Set([s]);while(q.length){const i=q.pop();ns.push(i);for(const a of N[i].arms)if(!mark.has(a.far)){mark.add(a.far);q.push(a.far)}}
@@ -14011,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=158,V1_NAME='V1.147';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=163,V1_NAME='V1.152';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -27697,6 +27699,487 @@ Object.assign(STR,{
   bo_dep_ind:['อิสระ (Independent)','Independent'],bo_dep_pri:['มุมมองหลัก (Primary)','Primary'],bo_dep_dep:['มุมมองย่อย (Dependent)','Dependent'],
   cat_view:['มุมมอง (Views)','Views'],cat_sheet:['ชีต (Sheets)','Sheets'],pp_vinst:['มุมมองและชีตใช้ได้กับพารามิเตอร์ของชิ้น (Instance) เท่านั้น','Views and sheets take instance parameters only']});
 
+/* ===== 148 Check Systems, the rated airflow and external static pressure of equipment, the rated flow of pumps (V1.148; Revit: Analyze › Check Systems ›
+   Check Duct Systems and Check Pipe Systems; the Airflow and External Static Pressure of an air handling unit, a fan coil unit or a fan; the Flow of a pump).
+   A type of equipment that moves air may say the airflow it is rated for (T.af, L/s) and its external static pressure (T.esp, Pa); a pump type its rated flow (T.wf, L/s).
+   A cooling unit with no T.af is taken at 400 CFM a ton of refrigeration (53.7 L/s a kW) and says that it is an estimate.  What a unit is asked for comes from the duct
+   systems it is the source of (airflow() in 27-mepcalc.js): the airflow of its supply systems, and as its external static pressure the critical path of its supply system
+   with that of its return (or exhaust) system added.
+   ui.sysck: Check Systems is on — the problems are marked on the plans and listed in Review Warnings, as Revit's Check Duct Systems and Check Pipe Systems do: a duct or
+   chilled/condenser water system with no source, a terminal with no airflow, a ducted unit no duct reaches, more air than a unit is rated for, a critical path longer than
+   its external static pressure, a loop, a run that ends on a run of another system, more flow than a pump is rated for.  Open ends stay with Show Disconnects. ===== */
+const SC_AIR=['ahu','fcu','cassette','wall','fan'],SC_DUCTED=['ahu','fcu','fan'],SC_COOL=['ahu','fcu','cassette','wall'],SC_PUMP=['pump','fpump','jpump'],SC_LSKW=400*0.471947/3.51685,SC_DRAIN=['S','W','V','RL'];
+{const F=TYPE_FIELDS.equip;F.splice(F.findIndex(f=>f[0]==='kw')+1,0,['af','num','L/s',10],['esp','num','Pa',10],['wf','num','L/s',0.1])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='equip'||!F||!T)return F;const k=T.kind;return F.filter(f=>f[0]==='af'||f[0]==='esp'?SC_AIR.includes(k):f[0]==='wf'?SC_PUMP.includes(k):true)}}
+const scKind=(Q,e)=>((typ(Q,e)||{}).kind)||'';
+/* the airflow a unit is rated for: {v L/s, est: 1 when it is worked out from its cooling capacity}, or null */
+function scRated(T){if(!T)return null;if(+T.af>0)return{v:+T.af,est:0};if(SC_COOL.includes(T.kind)&&+T.cap>0)return{v:+T.cap*SC_LSKW,est:1};return null}
+const scFan=k=>k==='fan';
+/* every unit that is the source of a duct system: {sup, ret: L/s; dpS, dpR: the critical path of its supply and of its return/exhaust systems, Pa; req: the external
+   static pressure it needs; comps}; att: the units some duct reaches */
+let SCA=null;
+function scAir(){if(SCA&&SCA.ver===VER&&SCA.P===P)return SCA;const A=airflow(P),M=new Map(),att=new Set();
+  for(const n of A.G.nodes)for(const q of n.equips)att.add(q.id);
+  for(const c of A.comps){const q=c.root;if(!q)continue;let m=M.get(q.id);if(!m)M.set(q.id,m={sup:0,ret:0,dpS:0,dpR:0,comps:[]});m.comps.push(c);
+    const dp=c.worst&&c.worst.term!=null?c.worst.dp:0,s=scFan(scKind(P,q))||SCL(c.sys)==='SA';if(s){m.sup+=c.total;m.dpS=Math.max(m.dpS,dp)}else{m.ret+=c.total;m.dpR=Math.max(m.dpR,dp)}}
+  for(const m of M.values())m.req=m.dpS+m.dpR;
+  SCA={ver:VER,P,A,M,att};return SCA}
+/* a unit: what it is asked for and what it is rated for */
+function scUnit(e){const T=typ(P,e)||{},S=scAir(),m=S.M.get(e.id)||null,R=scRated(T),esp=+T.esp>0?+T.esp:0;
+  return{T,m,R,esp,att:S.att.has(e.id),over:!!(m&&R&&m.sup>R.v*1.05),low:!!(m&&esp&&m.req>esp+0.5)}}
+/* a pump: the flow it is asked for (a pump of a set: what each pump on duty gives) and what it is rated for */
+function scPump(e){const T=typ(P,e)||{},W=waterNow(),S=mesOf(e);let q=0;
+  if(S)q=mesInfo(S).q;else for(const n of W.nets)if(n.root===e&&n.flow>q)q=n.flow;
+  const wf=+T.wf>0?+T.wf:0;return{T,q,wf,over:!!(wf&&q>wf*1.05)}}
+/* the end of a run that stops on a run of another system: [own run, the other run] */
+function scMix(G,wet){const out=[],seen=new Set();
+  for(const n of G.nodes){if(n.arms.length!==1||n.terms.length||n.equips.length||n.risers.length||(n.fix&&n.fix.length)||n.arms[0].ed.riser)continue;const e=n.arms[0].ed.r.e;
+    for(const r of G.R){const o=r.e;if(o===e||(o.sys||'')===(e.sys||''))continue;if(wet&&SC_DRAIN.includes(o.sys)&&SC_DRAIN.includes(e.sys))continue;
+      const t=(n.x-o.x1)*r.ux+(n.y-o.y1)*r.uy,d=Math.abs((n.x-o.x1)*-r.uy+(n.y-o.y1)*r.ux);if(t<-30||t>r.L+30||d>r.hw+30)continue;
+      const z=r.z[0]+(r.z[1]-r.z[0])*clamp01(t/r.L);if(Math.abs(z-n.z)>r.hh+runH(P,e)/2+30)continue;
+      const k=Math.min(e.id,o.id)+'|'+Math.max(e.id,o.id);if(seen.has(k))continue;seen.add(k);out.push({n,e,o})}}
+  return out}
+/* the problems: {k, d: 'duct' or 'pipe', ids, x, y, level, a: the text the message takes} */
+const SCX=[];          // what later files add to the checks: (add, scAir()) → nothing
+let SCK=null;
+function scChecks(){if(SCK&&SCK.ver===VER&&SCK.P===P)return SCK.L;const L=[],S=scAir(),A=S.A,N=A.G.nodes,add=(k,d,ids,x,y,level,a)=>L.push({k,d,ids,x,y,level,a:a==null?'':a});
+  const sysN=s=>SYS[s]?t('sys_'+s):s,lvAt=ids=>{for(const id of ids){const e=IDX.get(id);if(e&&e.level!=null)return e.level}return null};
+  A.comps.forEach(c=>{const n=N[c.ri],terms=[];for(const i of c.ns)for(const tm of N[i].terms)terms.push(tm);const all=c.ids.concat(terms.map(x=>x.id)),lv=lvAt(c.ids);
+    if(terms.length&&!c.root&&!c.riser)add('sc_nosrc','duct',all,n.x,n.y,lv,sysN(c.sys));
+    if(c.loop)add('sc_loop','duct',all,n.x,n.y,lv,sysN(c.sys));
+    for(const tm of terms)if(!(+tm.flow>0))add('sc_noflow','duct',[tm.id],tm.x,tm.y,tm.level)});
+  for(const q of P.els){if(q.cat!=='equip')continue;const k=scKind(P,q);
+    if(SC_DUCTED.includes(k)&&!S.att.has(q.id)){add('sc_eqfree','duct',[q.id],q.x,q.y,q.level,q.mark||((typ(P,q)||{}).mark)||t('cat_equip'));continue}
+    if(SC_AIR.includes(k)){const U=scUnit(q),ids=U.m?[q.id,...new Set(U.m.comps.flatMap(c=>c.ids))]:[q.id];
+      if(U.over)add('sc_over','duct',ids,q.x,q.y,q.level,(q.mark||'')+' '+fmtAir(U.m.sup)+' > '+fmtAir(U.R.v)+' '+airUnit());
+      if(U.low)add('sc_esp','duct',ids,q.x,q.y,q.level,(q.mark||'')+' '+Math.round(U.m.req)+' > '+Math.round(U.esp)+' Pa')}
+    else if(SC_PUMP.includes(k)&&+(typ(P,q)||{}).wf>0){const U=scPump(q);if(U.over)add('sc_pover','pipe',[q.id],q.x,q.y,q.level,(q.mark||'')+' '+fmtWater(U.q)+' > '+fmtWater(U.wf)+' '+waterUnit())}}
+  for(const m of scMix(A.G,false))add('sc_mix','duct',[m.e.id,m.o.id],m.n.x,m.n.y,m.e.level,m.e.sys+' / '+m.o.sys);
+  if(P.els.some(e=>e.cat==='pipe')){const W=waterNow(),H=W.G;
+    for(const n of W.nets){if((n.kind!=='chw'&&n.kind!=='cdw')||n.from!=='open'||!(n.n>0||n.flow>0))continue;const x=H.nodes[n.ri];add('sc_pnosrc','pipe',n.ids.slice(),x.x,x.y,lvAt(n.ids),n.sys+' · '+t('ps_'+n.sys))}
+    for(const m of scMix(H,true))add('sc_pmix','pipe',[m.e.id,m.o.id],m.n.x,m.n.y,m.e.level,m.e.sys+' / '+m.o.sys)}
+  for(const f of SCX)f(add,S);SCK={ver:VER,P,L};return L}
+/* Review Warnings: the problems join the list while Check Systems is on */
+WARN_K.push('sc_nosrc','sc_eqfree','sc_noflow','sc_over','sc_esp','sc_loop','sc_mix','sc_pnosrc','sc_pover','sc_pmix');
+let SCW=null;
+{const f0=warnAll;warnAll=()=>{const W=f0();if(!ui.sysck)return W;const S=scChecks();if(SCW&&SCW.base===W&&SCW.ck===S)return SCW.out;
+  const list=W.list.concat(S.map(c=>({k:c.k,ids:c.ids.slice(),a:c.a}))).sort((a,b)=>WARN_K.indexOf(a.k)-WARN_K.indexOf(b.k)),ids=new Set(W.ids);for(const c of S)for(const id of c.ids)ids.add(id);
+  SCW={base:W,ck:S,out:{ver:W.ver,list,ids}};return SCW.out}}
+/* the command: a button that stays pressed, as Revit's Check Duct Systems */
+XA.sysck=()=>{ui.sysck=!ui.sysck;refresh();if(!ui.sysck){toast(t('sc_off'));return}const n=scChecks().length;toast(n?t('sc_on',n):t('sc_none'),5000)};
+{const f0=pressed;pressed=id=>id==='@sysck'?!!ui.sysck:f0(id)}
+for(const [tab,pn] of [['analyze','p_check'],['sys','p_analyze']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@sysck'))p.b.splice(Math.max(0,p.b.indexOf('@disc')+1),0,'@sysck')}
+BTN['@sysck']=['warn',''];
+/* the markers on the plans: a red-orange disc with an exclamation mark where each problem is */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.sysck||v.kind!=='plan'||v.draft)return;const sc=v.scale||100,r=2.2*sc;
+  for(const c of scChecks()){if(c.level!==v.level)continue;const e=IDX.get(c.ids[0]);if(e&&!planShow(v,e))continue;
+    g.path([...Array(20).keys()].map(i=>[c.x+r*Math.cos(i*Math.PI/10),c.y+r*Math.sin(i*Math.PI/10)]));ctx.fillStyle='#e8590c';ctx.fill();ctx.strokeStyle='#5a1e00';ctx.lineWidth=g.lw(0.25);ctx.stroke();g.text('!',[c.x,c.y+0.1*r],2.6,{color:'#fff',bold:true})}});
+/* the Properties of a unit that moves air, and of a pump */
+XP.push((c,els)=>{if(c!=='equip'||els.length!==1)return'';const e=els[0],k=scKind(P,e);
+  if(SC_AIR.includes(k)){const U=scUnit(e),m=U.m,au=' '+airUnit();let h=PR.grp('g_scair');
+    h+=PR.ro(scFan(k)?'p_scfan':'p_scsup',m?fmtAir(m.sup)+au:'—');if(!scFan(k))h+=PR.ro('p_scret',m&&m.ret>0?fmtAir(m.ret)+au:'—');
+    h+=PR.ro('p_scaf',U.R?fmtAir(U.R.v)+au+(U.R.est?' *':''):'—')+PR.ro('p_scespq',m&&m.req>0?Math.round(m.req)+' Pa':'—')+PR.ro('p_scesp',U.esp?Math.round(U.esp)+' Pa':t('sc_noesp'));
+    const st=!m?t(SC_DUCTED.includes(k)&&!U.att?'sc_st_free':'sc_st_none'):[U.over?t('sc_st_over'):'',U.low?t('sc_st_esp'):''].filter(Boolean).join(' · ')||t('sc_st_ok');
+    return h+PR.ro('p_scok',st)+(U.R&&U.R.est?`<div class="pnote">* ${t('sc_est',+U.T.cap||0)}</div>`:'')}
+  if(SC_PUMP.includes(k)){const U=scPump(e),wu=' '+waterUnit();return PR.grp('g_scpump')+PR.ro('p_scwq',U.q>0?fmtWater(U.q)+wu:'—')+PR.ro('p_scwf',U.wf?fmtWater(U.wf)+wu:t('sc_nowf'))+PR.ro('p_scok',U.wf&&U.q>0?t(U.over?'sc_st_pover':'sc_st_ok'):'—')}
+  return''});
+/* the Duct System Report (DC) and the Pipe System Report (PC): the unit of each system against what it is rated for, and the problems of the discipline */
+function scCardRows(c,row){const q=c.root;if(!q||!SC_AIR.includes(scKind(P,q)))return'';const U=scUnit(q),m=U.m;if(!m)return'';const au=' '+airUnit();
+  const bad=s=>`<span style="color:var(--warn);font-weight:600">${s}</span>`,af=U.R?fmtAir(U.R.v)+au+(U.R.est?' *':''):'—',esp=U.esp?Math.round(U.esp)+' Pa':'—';
+  return row(t('sr_rated'),(U.over?bad(af):af)+' · '+(U.low?bad(esp):esp))+row(t('sr_espq'),m.req>0?(m.dpR>0?Math.round(m.dpS)+' + '+Math.round(m.dpR)+' = ':'')+Math.round(m.req)+' Pa':'—')+(U.R&&U.R.est?`<div class="kv sub"><span>* ${t('sc_est',+U.T.cap||0)}</span></div>`:'')}
+function scPipeRows(n,row){const q=n.root;if(!q||!SC_PUMP.includes(scKind(P,q)))return'';const U=scPump(q);if(!U.wf)return'';const s=fmtWater(U.wf)+' '+waterUnit();return row(t('pr_rated'),U.over?`<span style="color:var(--warn);font-weight:600">${s}</span>`:s)}
+function scBlock(d){const L=scChecks().filter(c=>c.d===d);
+  return`<div class="card"><div class="ch">${t('sc_block',L.length)}<label style="margin-left:auto;font-weight:400"><input type="checkbox" data-act="sysck"${ui.sysck?' checked':''}> ${t('sc_mark')}</label></div>`+
+    (L.length?`<div style="max-height:24vh;overflow:auto">`+L.map(c=>`<div class="kv" style="align-items:center"><span style="color:var(--ink)">${esc(t('wn_'+c.k,c.a))}</span><button class="btn" data-act="scshow" data-arg="${c.ids.join(',')}">${t('sr_select')}</button></div>`).join('')+'</div>':`<p class="note">${t('sc_noprob')}</p>`)+'</div>'}
+XA.scshow=arg=>showEls(String(arg||'').split(',').map(Number).filter(x=>x>0));
+/* schedules of mechanical equipment */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='equip')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),air=e=>Q===P&&SC_AIR.includes(scKind(Q,e)),au=' ('+flowSym(Q)+')',k1=flowK(Q);
+  add('scsup',tr('p_scsup')+au,e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m?Math.round(m.sup*k1*100)/100:''},{num:1,dec:0});
+  add('scret',tr('p_scret')+au,e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m&&m.ret>0?Math.round(m.ret*k1*100)/100:''},{num:1,dec:0});
+  add('scaf',tr('p_scaf')+au,e=>{if(!air(e))return'';const R=scRated(typ(Q,e));return R?Math.round(R.v*k1*100)/100:''},{num:1,dec:0});
+  add('scespq',tr('p_scespq')+' (Pa)',e=>{if(!air(e))return'';const m=scAir().M.get(e.id);return m&&m.req>0?Math.round(m.req):''},{num:1,dec:0});
+  add('scok',tr('p_scok'),e=>{if(Q!==P)return'';const k=scKind(Q,e);if(SC_PUMP.includes(k)){const U=scPump(e);return U.wf&&U.q>0?tr(U.over?'sc_st_pover':'sc_st_ok'):''}
+    if(!SC_AIR.includes(k))return'';const U=scUnit(e);if(!U.m)return'';return[U.over?tr('sc_st_over'):'',U.low?tr('sc_st_esp'):''].filter(Boolean).join(' · ')||tr('sc_st_ok')});
+  return F}}
+/* IFC: what the unit and the pump are rated for */
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='equip'||!T)return r;
+  if(+T.af>0)r.push(prop('RatedAirflow',fx2(+T.af)+' L/s'));if(+T.esp>0)r.push(prop('ExternalStaticPressure',Math.round(+T.esp)+' Pa'));if(+T.wf>0)r.push(prop('RatedFlow',fx2(+T.wf)+' L/s'));return r}}
+Object.assign(STR,{
+  a_sysck:['ตรวจปัญหาระบบ','Check Systems'],f_af:['พิกัดลม (Airflow)','Rated Airflow'],f_esp:['ความดันสถิตภายนอก (ESP)','External Static Pressure'],f_wf:['พิกัดอัตราไหล (Flow)','Rated Flow'],
+  sc_on:['ตรวจปัญหาระบบ: พบ {0} รายการ ดูเครื่องหมายบนแปลน หรือใน Review Warnings','Check Systems: {0} problems, marked on the plans and listed in Review Warnings'],
+  sc_none:['ตรวจปัญหาระบบ: ไม่พบปัญหา','Check Systems: no problems found'],sc_off:['ปิดการตรวจปัญหาระบบแล้ว','Check Systems is off'],
+  wn_sc_nosrc:['ระบบ {0} มีหัวจ่ายแต่ไม่มีเครื่องเป็นต้นทาง (AHU, FCU หรือพัดลม) จึงคิดความดันของพัดลมไม่ได้','System {0} has air terminals but no equipment as its source (an AHU, an FCU or a fan), so the fan pressure cannot be worked out'],
+  wn_sc_eqfree:['เครื่อง {0} ยังไม่มีท่อลมต่อ','Equipment {0} is not connected to any duct'],
+  wn_sc_noflow:['หัวจ่ายต่อท่อแล้วแต่ยังไม่ได้ใส่ปริมาณลม','Air terminal is connected but has no airflow'],
+  wn_sc_over:['ลมที่ต่ออยู่มากกว่าพิกัดลมของเครื่อง: {0}','More air is connected than the equipment is rated for: {0}'],
+  wn_sc_esp:['ความดันสูญเสียตามเส้นทางวิกฤตมากกว่า ESP ของเครื่อง: {0}','The critical path loses more pressure than the external static pressure of the equipment: {0}'],
+  wn_sc_loop:['ระบบ {0} มีท่อต่อกันเป็นวง ปริมาณลมอาจคิดผิด','System {0} forms a loop: its airflow may be wrong'],
+  wn_sc_mix:['ปลายท่อลมของระบบหนึ่งชนท่อของอีกระบบ ({0})','A duct of one system ends on a duct of another system ({0})'],
+  wn_sc_pnosrc:['ระบบท่อ {0} มีเครื่องรับน้ำแต่ไม่มีต้นทาง (เครื่องทำน้ำเย็น ปั๊ม หรือคูลลิ่งทาวเวอร์)','Pipe system {0} serves equipment but has no source (a chiller, a pump or a cooling tower)'],
+  wn_sc_pover:['อัตราไหลที่ระบบต้องการมากกว่าพิกัดของปั๊ม: {0}','The system asks for more flow than the pump is rated for: {0}'],
+  wn_sc_pmix:['ปลายท่อน้ำของระบบหนึ่งชนท่อของอีกระบบ ({0})','A pipe of one system ends on a pipe of another system ({0})'],
+  g_scair:['ระบบลมของเครื่อง','Air System'],p_scsup:['ลมจ่ายที่ต่ออยู่','Connected Supply Airflow'],p_scret:['ลมกลับ/ลมระบายที่ต่ออยู่','Connected Return Airflow'],p_scfan:['ลมที่ต่ออยู่','Connected Airflow'],
+  p_scaf:['พิกัดลมของเครื่อง','Rated Airflow'],p_scespq:['ESP ที่ต้องการ (เส้นทางวิกฤต)','Required ESP (critical path)'],p_scesp:['ESP ของเครื่อง','External Static Pressure'],p_scok:['ผลตรวจ','Check'],
+  sc_est:['ประมาณจาก {0} kW ที่ 400 CFM ต่อตัน','estimated from {0} kW at 400 CFM a ton'],sc_noesp:['— (ใส่ใน แก้ชนิด)','— (set it in Edit Type)'],sc_nowf:['— (ใส่ใน แก้ชนิด)','— (set it in Edit Type)'],
+  sc_st_ok:['ผ่าน','OK'],sc_st_over:['ลมเกินพิกัด','Airflow over rating'],sc_st_esp:['ESP ไม่พอ','ESP too low'],sc_st_free:['ยังไม่มีท่อลมต่อ','No duct connected'],sc_st_none:['ไม่ได้เป็นต้นทางของระบบท่อลม','Not the source of a duct system'],sc_st_pover:['อัตราไหลเกินพิกัด','Flow over rating'],
+  g_scpump:['อัตราไหลของปั๊ม','Pump Flow'],p_scwq:['อัตราไหลที่ต้องการ (ต่อปั๊มที่ทำงาน)','Required Flow (each pump on duty)'],p_scwf:['พิกัดอัตราไหลของปั๊ม','Rated Flow'],
+  sr_rated:['พิกัดลม · ESP ของเครื่อง','Rated airflow · ESP of the unit'],sr_espq:['ESP ที่ต้องการ (จ่าย + กลับ)','Required ESP (supply + return)'],pr_rated:['พิกัดอัตราไหลของปั๊ม','Rated flow of the pump'],
+  sc_block:['ปัญหาของระบบ ({0})','System problems ({0})'],sc_mark:['แสดงบนแปลนและใน Review Warnings','Mark them on the plans and in Review Warnings'],sc_noprob:['ไม่พบปัญหาของระบบ','No system problems found']});
+/* ===== 149 VAV, CAV and fan-powered terminal units in the ducts (V1.149; Revit: a VAV box family placed in line on a duct — its Maximum and Minimum Flow, Inlet Size,
+   Pressure Drop and the rooms it serves — and the VAV schedule) =====
+   A terminal unit is a duct accessory of the kind vav, cav or fpb (fan powered): the duct runs through it and its air is the air of that duct.  Its type gives the box
+   (T.bw wide, T.bh high, T.len long, mm), its pressure drop at the design airflow (T.vpd, Pa; it counts on the critical path as the drop of an attenuator does) and the motor
+   of a fan-powered box (T.kw).  Each unit keeps its minimum airflow as a share of the design airflow (e.vmin, %, 30 when unset).  What it serves: the air terminals
+   downstream of it and the rooms (and zones) they are in.  P.vavT: the three stock types were given to the project (once; what is purged stays purged). */
+const VAV_K=['vav','cav','fpb'],VAV_DP={vav:100,cav:80,fpb:50},VAV_MIN=30,VAV_VMAX=10;
+const vavIs=T=>!!T&&VAV_K.includes(T.kind);
+/* the pressure an accessory takes from the air: an attenuator and a terminal unit a fixed drop, a damper a share of the velocity pressure */
+function accDp(T,kd,pv){return kd==='att'?LOSS.att:VAV_K.includes(kd)?(+(T&&T.vpd)>0?+T.vpd:VAV_DP[kd]):(LOSS[kd]||0)*pv}
+{const F=TYPE_FIELDS.ductacc,k=F.find(f=>f[0]==='kind');for(const x of VAV_K)if(!k[2].includes(x))k[2].push(x);F.push(['bw','num'],['bh','num'],['vpd','num','Pa',5],['kw','num','kW',0.05])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='ductacc'||!F||!T)return F;const v=vavIs(T);return F.filter(f=>f[0]==='bw'||f[0]==='bh'||f[0]==='vpd'?v:f[0]==='kw'?T.kind==='fpb':true)}}
+function vavStock(en){const N=(a,b)=>en?b:a;return[{name:N('กล่อง VAV 600×350','VAV box 600x350'),mark:'VAV',kind:'vav',len:900,bw:600,bh:350,vpd:100,cost:18000},
+  {name:N('กล่อง CAV 600×350','CAV box 600x350'),mark:'CAV',kind:'cav',len:900,bw:600,bh:350,vpd:80,cost:15000},
+  {name:N('กล่อง VAV มีพัดลม 900×450','Fan-powered box 900x450'),mark:'FPB',kind:'fpb',len:1200,bw:900,bh:450,vpd:50,kw:0.37,cost:45000}]}
+XC.push(()=>{if(P.vavT||!P.types||!Array.isArray(P.types.ductacc))return;P.vavT=1;const A=P.types.ductacc;for(const T of vavStock(ui.lang==='en'))if(!A.some(x=>x.kind===T.kind))A.push(Object.assign({id:P.seq++},T))});
+XC.push(()=>{for(const e of P.els)if(e.vmin!==undefined&&(e.cat!=='ductacc'||!isFinite(+e.vmin)||+e.vmin<0||+e.vmin>100||!vavIs(typ(P,e))))delete e.vmin});
+/* its size is the box: as long as the type, as wide and as high as the box or the duct, whichever is more */
+{const f0=compSize;compSize=(Q,e)=>{const S=f0(Q,e);if(e.cat!=='ductacc')return S;const T=typ(Q,e);if(!vavIs(T))return S;return{w:+T.len||900,d:Math.max(S.d,+T.bw||600),h:Math.max(S.h,+T.bh||350)}}}
+/* in 3D: a round inlet, the casing, the controller with its actuator on the side; a fan-powered box has its fan in a box beside it */
+{const f0=ductAccModel;ductAccModel=(K,kind,S,z0,z1,sysc)=>{if(!VAV_K.includes(kind))return f0(K,kind,S,z0,z1,sysc);
+  const L=S.w,D=S.d,H=z1-z0,zc=(z0+z1)/2,cas=K.part(mixc(sysc,MC.galv,0.25)),st=K.part(MC.galv),r=Math.max(45,Math.min(D,H)*0.3),Lb=L*0.72,u0=L/2-Lb;
+  K.cyl(st,[-L/2,0,zc],[u0,0,zc],r);K.bx(st,-L/2+5,0,10,r*2.2,zc-r*1.1,zc+r*1.1);K.bx(cas,u0+Lb/2,0,Lb,D,z0,z1);K.bx(st,L/2-6,0,12,D+10,z0-5,z1+5);
+  const dk=K.part([0.27,0.29,0.33]);K.box(dk,u0+Lb*0.06,D/2,zc-H*0.32,u0+Lb*0.36,D/2+70,zc+H*0.28);K.box(K.part(MC.orange),u0+Lb*0.09,D/2+70,zc+H*0.08,u0+Lb*0.33,D/2+75,zc+H*0.2,1);
+  if(kind==='cav')K.cyl(K.part(MC.steel),[u0-r*0.5,-r,zc+r*0.8],[u0-r*0.5,r,zc+r*0.8],8);
+  if(kind==='fpb'){const fw=Math.min(Lb*0.5,H*1.2),fd=H*0.75,v=-D/2-fd/2;K.bx(cas,u0+Lb*0.62,v,fw,fd,z0,z1);K.cyl(K.part(MC.dark),[u0+Lb*0.62,v-fd/2,zc],[u0+Lb*0.62,v-fd/2-8,zc],Math.min(fw,H)*0.36)}}}
+/* on plans: the box with a diagonal; its mark comes from the tag (drawn in place of a damper's symbol, from the plan loop of duct accessories) */
+function vavPlan(g,F,W,l,w,k,lw,col,P1,L1){const b=Math.max(w,(+W.bw||600)/2),Lb=l*2*0.72,u0=l-Lb;
+  L1([F(-l,-w*0.55),F(u0,-w*0.55)],k,g.lw(0.18));L1([F(-l,w*0.55),F(u0,w*0.55)],k,g.lw(0.18));
+  P1([F(u0,-b),F(l,-b),F(l,b),F(u0,b)],col.paper,k,lw);L1([F(u0,b),F(l,-b)],k,g.lw(0.18));
+  if(W.kind==='fpb'){const q=[F(u0+Lb*0.4,-b),F(u0+Lb*0.84,-b),F(u0+Lb*0.84,-b-Lb*0.3),F(u0+Lb*0.4,-b-Lb*0.3)];P1(q,col.paper,k,g.lw(0.18))}}
+/* the duct it sits on, the design airflow (the air of that duct), the air terminals downstream and the rooms they are in */
+function vavHost(e){let best=null,bd=40;for(const d of P.els){if(d.cat!=='duct'||d.level!==e.level)continue;const s=segDist(e.x,e.y,d.x1,d.y1,d.x2,d.y2);if(s<bd){bd=s;best=d}}return best}
+let VRM=null;
+function vavRoom(lv,x,y){if(!VRM||VRM.ver!==VER||VRM.P!==P)VRM={ver:VER,P,m:new Map()};let m=VRM.m.get(lv);
+  if(!m){const R=REG(lv),L=[];for(const r of P.els)if(r.cat==='room'&&r.level===lv){const i=regionAt(R,r.x,r.y);if(i>=0&&!L[i])L[i]=r}VRM.m.set(lv,m={R,L})}const i=regionAt(m.R,x,y);return i>=0?m.L[i]||null:null}
+function vavInfo(e){const T=typ(P,e)||{},A=scAir().A,h=vavHost(e),flow=h?(A.flow.get(h.id)||0):0,mn=e.vmin!=null?+e.vmin:VAV_MIN,terms=[];let v=0,size='';
+  if(h){const tl=2*linOf(h),sh=runShape(P,h),w=runW(h)-tl,hh=runH(P,h)-tl,ar=(sh==='round'||sh==='flex'?Math.PI*w*w/4:sh==='oval'?ovalA(w,hh):w*hh)/1e6;v=ar>0?flow/1000/ar:0;size=sh==='round'||sh==='flex'?'Ø'+runW(h):runW(h)+'×'+runH(P,h);
+    const G=A.G,ed=G.edges.find(x=>!x.riser&&x.r.e===h&&(()=>{const t=((e.x-h.x1)*x.r.ux+(e.y-h.y1)*x.r.uy)/x.r.L;return t>=x.t0-1e-6&&t<=x.t1+1e-6})());
+    if(ed){const c=A.par[ed.a]===ed.i?ed.a:A.par[ed.b]===ed.i?ed.b:-1;if(c>=0){const st=[c];while(st.length){const i=st.pop(),n=G.nodes[i];for(const tm of n.terms)terms.push(tm);for(const a of n.arms)if(A.par[a.far]===a.ed.i&&a.far!==i)st.push(a.far)}}}}
+  const rooms=[];for(const tm of terms){const r=vavRoom(tm.level,tm.x,tm.y);if(r&&!rooms.includes(r))rooms.push(r)}
+  const zones=[...new Set(rooms.map(r=>{const z=zoneOf(P,r);return z?z.name:''}).filter(Boolean))];
+  return{T,host:h,flow,min:flow*mn/100,mn,v,size,dp:+T.vpd>0?+T.vpd:VAV_DP[T.kind]||0,terms,rooms,zones,fast:v>VAV_VMAX}}
+const vavRoomsTxt=I=>I.rooms.map(r=>[r.number,r.name].filter(Boolean).join(' ')).join(', ');
+/* Properties of a terminal unit: the minimum airflow is its own, the rest comes from the system */
+XP.push((c,els)=>{if(c!=='ductacc'||!els.every(e=>vavIs(typ(P,e))))return'';const V=f=>{const a=els.map(f);return a.every(x=>x===a[0])?a[0]:''};let h=PR.grp('g_vav')+PR.num('vmin','p_vmin',V(e=>e.vmin!=null?+e.vmin:VAV_MIN),'%','step="5" min="0" max="100"');
+  if(els.length!==1)return h;const I=vavInfo(els[0]),au=' '+airUnit();
+  h+=PR.ro('p_vmax',I.flow>0?fmtAir(I.flow)+au:'—')+PR.ro('p_vminf',I.flow>0?fmtAir(I.min)+au:'—')+PR.ro('p_vin',I.size||'—')+PR.ro('p_vvel',I.flow>0?I.v.toFixed(1)+' m/s':'—')+PR.ro('p_vdp',Math.round(I.dp)+' Pa')
+    +PR.ro('p_vterms',String(I.terms.length))+PR.ro('p_vrooms',vavRoomsTxt(I)||'—');if(I.zones.length)h+=PR.ro('c_zone',I.zones.join(', '));
+  if(I.fast)h+=`<div class="pnote" style="color:var(--warn)">${t('vav_fast',VAV_VMAX)}</div>`;if(!I.host)h+=`<div class="pnote">${t('vav_nohost')}</div>`;return h});
+XF.push((cat,o,key,raw)=>{if(cat!=='ductacc'||key!=='vmin')return false;const n=parseFloat(raw);if(!isFinite(n))return true;const x=clamp(Math.round(n),0,100);if(x===VAV_MIN)delete o.vmin;else o.vmin=x;return true});
+/* Check Systems: a unit no air goes through, a unit whose inlet is too fast */
+SCX.push(add=>{for(const e of P.els){if(e.cat!=='ductacc'||!vavIs(typ(P,e)))continue;const I=vavInfo(e),m=e.mark||I.T.mark||'';
+  if(!(I.flow>0))add('sc_vavnf','duct',[e.id],e.x,e.y,e.level,m);else if(I.fast)add('sc_vavv','duct',[e.id],e.x,e.y,e.level,m+' '+I.v.toFixed(1)+' > '+VAV_VMAX+' m/s')}});
+WARN_K.push('sc_vavnf','sc_vavv');
+/* schedules of duct accessories: the VAV schedule's columns */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='ductacc')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),I=e=>Q===P&&vavIs(typ(Q,e))?vavInfo(e):null,au=' ('+flowSym(Q)+')',k1=flowK(Q);
+  add('vmin',tr('p_vmin')+' (%)',e=>vavIs(typ(Q,e))?(e.vmin!=null?+e.vmin:VAV_MIN):'',{num:1,dec:0});
+  add('vmax',tr('p_vmax')+au,e=>{const x=I(e);return x&&x.flow>0?Math.round(x.flow*k1*100)/100:''},{num:1,dec:0,sum:1});
+  add('vminf',tr('p_vminf')+au,e=>{const x=I(e);return x&&x.flow>0?Math.round(x.min*k1*100)/100:''},{num:1,dec:0,sum:1});
+  add('vin',tr('p_vin'),e=>{const x=I(e);return x?x.size:''});
+  add('vvel',tr('p_vvel')+' (m/s)',e=>{const x=I(e);return x&&x.flow>0?Math.round(x.v*10)/10:''},{num:1,dec:1});
+  add('vdp',tr('p_vdp')+' (Pa)',e=>{const x=I(e);return x?Math.round(x.dp):''},{num:1,dec:0});
+  add('vrooms',tr('p_vrooms'),e=>{const x=I(e);return x?vavRoomsTxt(x):''});
+  add('vzones',tr('c_zone'),e=>{const x=I(e);return x?x.zones.join(', '):''});
+  return F}}
+/* IFC: an air terminal box */
+{const f0=ifcClass;ifcClass=(Q,e)=>{if(e.cat!=='ductacc')return f0(Q,e);const k=(typ(Q,e)||{}).kind;return k==='cav'?['IFCAIRTERMINALBOX','.CONSTANTFLOW.','','']:k==='vav'||k==='fpb'?['IFCAIRTERMINALBOX','.VARIABLEFLOWPRESSUREINDEPENDANT.','','']:f0(Q,e)}}
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='ductacc'||!vavIs(T))return r;
+  r.push(prop('PressureDrop',Math.round(+T.vpd>0?+T.vpd:VAV_DP[T.kind])+' Pa'),prop('MinimumAirflowShare',(e.vmin!=null?+e.vmin:VAV_MIN)+' %'));if(P0===P){const I=vavInfo(e);if(I.flow>0)r.push(prop('MaximumAirflow',fx2(I.flow)+' L/s'),prop('MinimumAirflow',fx2(I.min)+' L/s'))}return r}}
+Object.assign(STR,{
+  o_vav:['กล่อง VAV','VAV box'],o_cav:['กล่อง CAV','CAV box'],o_fpb:['กล่อง VAV มีพัดลม (Fan-powered)','Fan-powered box'],f_bw:['ความกว้างกล่อง','Box Width'],f_bh:['ความสูงกล่อง','Box Height'],f_vpd:['ความดันตกที่ลมออกแบบ','Pressure Drop at Design Airflow'],
+  g_vav:['กล่องปรับปริมาณลม (VAV)','Terminal Unit'],p_vmin:['ลมต่ำสุด','Minimum Airflow'],p_vmax:['ลมออกแบบ (สูงสุด)','Design (Maximum) Airflow'],p_vminf:['ลมต่ำสุด (ปริมาณ)','Minimum Airflow (flow)'],p_vin:['ขนาดท่อเข้า','Inlet Size'],
+  p_vvel:['ความเร็วลมขาเข้า','Inlet Velocity'],p_vdp:['ความดันตกของกล่อง','Pressure Drop'],p_vterms:['หัวจ่ายที่จ่ายให้','Air Terminals Served'],p_vrooms:['ห้องที่จ่ายให้','Rooms Served'],
+  vav_fast:['ความเร็วลมขาเข้าเกิน {0} m/s: ใช้ท่อเข้าใหญ่ขึ้น หรือแบ่งเป็นหลายกล่อง','Inlet velocity over {0} m/s: use a larger inlet or split the area over more units'],
+  vav_nohost:['วางบนท่อลมเพื่อให้รู้ปริมาณลม','Put it on a duct to know its airflow'],
+  wn_sc_vavnf:['กล่อง VAV {0} ไม่มีลมผ่าน (ไม่ได้อยู่บนท่อที่มีปริมาณลม)','Terminal unit {0} has no air through it (it is not on a duct that carries airflow)'],
+  wn_sc_vavv:['ความเร็วลมขาเข้ากล่อง VAV สูงเกินไป: {0}','The inlet velocity of a terminal unit is too high: {0}']});
+/* ===== 150 the airflow of rooms (V1.150; Revit: a Space's Specified, Calculated and Actual Supply Airflow, its Return Airflow, Specified and Actual Exhaust
+   Airflow, a color scheme of spaces by airflow and a schedule of spaces).  A room needs the supply its cooling load asks for (26 loads) unless it is given one
+   (r.saf, L/s); exhaust is given in L/s (r.eaf) or in air changes an hour (r.ach); return is given (r.raf) or is the supply less the exhaust.  What the air
+   terminals inside the room carry is its actual airflow.  Distribute Airflow sets the terminals of rooms to what their rooms need, shared equally. ===== */
+const RA_TOL=0.1,RA_COL={l:'#ff8f78',z:'#ffb35c',h:'#ffd866',o:'#6fd6a0',u:'#7fdbe2',n:'#d8cfbd'},RA_ORD=['l','z','h','o','u','n','x'];
+const raNum=v=>v!=null&&v!==''&&isFinite(+v)&&+v>=0?+v:null;
+/* one row per room: {id, number, name, level, open, cond, area (mm²), h (mm), vol (m³), calc (supply from the load), saf / raf / eaf / ach (given, or null),
+   sreq / rreq / ereq (what it needs), sa / ra / ea (what its terminals carry), T: {SA, RA, EA} (the terminals' ids), cap (W of cooling units in it),
+   ss / rs / es (each 'l' low, 'h' high, 'o' within ±10 %, 'z' none placed, 'u' a unit in the room, '' not asked), st (the worst of them; 'x' not enclosed)} */
+function airRooms(P0){const out=[],LD=new Map((P0===P?LDm():roomLoads(P0)).map(r=>[r.id,r])),R=new Map(),byLv=new Map();
+  const reg=r=>{if(P0===P)return REG(r.level,r.ph||'new',dsE(P,r));const k=r.level+'|'+(r.ph||'')+'|'+(r.dop||'');let g=R.get(k);if(!g){g=regions(P0,r.level,r.ph||'new',dsE(P0,r));R.set(k,g)}return g};
+  for(const e of P0.els)if(e.cat==='terminal')(byLv.get(e.level)||byLv.set(e.level,[]).get(e.level)).push(e);
+  const cmp=(a,q)=>a<q*(1-RA_TOL)?'l':a>q*(1+RA_TOL)?'h':'o';
+  for(const r of P0.els){if(r.cat!=='room')continue;const g=reg(r),i=regionAt(g,r.x,r.y),G=i>=0?g[i]:null,ld=LD.get(r.id)||{};
+    const row={id:r.id,number:r.number||'',name:r.name||'',level:r.level,open:!G,cond:roomCooled(r),area:G?G.area:0,h:0,vol:0,calc:0,saf:raNum(r.saf),raf:raNum(r.raf),eaf:raNum(r.eaf),ach:raNum(r.ach),
+      sreq:0,rreq:0,ereq:0,sa:0,ra:0,ea:0,T:{SA:[],RA:[],EA:[]},cap:ld.cap||0,ss:'',rs:'',es:'',st:'x'};out.push(row);if(!G)continue;
+    const lv=lvl(P0,r.level),up=levelAbove(P0,r.level),ce=ceilingAt(P0,r.level,r.x,r.y);row.h=ce?ce.off:up&&lv?up.elev-lv.elev:3000;row.vol=G.area/1e6*row.h/1000;
+    for(const e of byLv.get(r.level)||[]){if(regionAt(g,e.x,e.y)!==i)continue;const c=SCL(e.sys||'SA');if(!row.T[c])continue;row.T[c].push(e.id);row[c.toLowerCase()]+=+e.flow||0}
+    row.calc=row.cond&&ld.supply>0?ld.supply:0;row.sreq=row.saf!=null?row.saf:row.calc;row.ereq=row.eaf!=null?row.eaf:row.ach!=null?row.ach*row.vol/3.6:0;row.rreq=row.raf!=null?row.raf:Math.max(0,row.sreq-row.ereq);
+    row.ss=row.sreq>0?(row.sa>0?cmp(row.sa,row.sreq):row.cap>0&&row.saf==null?'u':'z'):row.sa>0&&row.saf!=null?'h':'';
+    row.rs=(row.T.RA.length||row.raf!=null)&&row.rreq>0?(row.ra>0?cmp(row.ra,row.rreq):'z'):'';
+    row.es=row.ereq>0?(row.ea>0?cmp(row.ea,row.ereq):'z'):'';
+    const S=[row.ss,row.rs,row.es];row.st=['l','z','h','o','u'].find(k=>S.includes(k))||'n'}
+  return out}
+let RAFC=null;
+const RAm=()=>{if(!RAFC||RAFC.v!==VER||RAFC.P!==P){const r=airRooms(P);RAFC={v:VER,P,r,m:new Map(r.map(x=>[x.id,x]))}}return RAFC.r},raRow=id=>{RAm();return RAFC.m.get(id)||null};
+const raName=r=>[r.number,r.name].filter(Boolean).join(' ')||'#'+r.id;
+/* Distribute Airflow: the supply, return and exhaust terminals of each room share what the room needs, rounded up to a whole unit of airflow */
+function airDist(ids){const k=flowK(P),per=(q,n)=>Math.round(Math.ceil(q*k/n-1e-9)/k*1e4)/1e4,ch=[];let nr=0;
+  for(const id of ids){const r=raRow(id);if(!r||r.open)continue;let did=false;
+    for(const [c,q] of [['SA',r.sreq],['RA',r.T.RA.length?r.rreq:0],['EA',r.ereq]]){const L=r.T[c];if(!L.length||!(q>0))continue;const f=per(q,L.length);did=true;
+      for(const tid of L){const e=IDX.get(tid);if(e&&Math.abs((+e.flow||0)-f)>1e-6)ch.push([e,f])}}
+    if(did)nr++}
+  if(ch.length)edit(()=>{for(const [e,f] of ch)e.flow=f});return{n:ch.length,rooms:nr}}
+/* which rooms: those selected, else those of the selected terminals, else those of the plan that is open (or of every level) */
+XA.airdist=()=>{const sel=[...ui.sel].map(id=>IDX.get(id)).filter(Boolean);let ids=sel.filter(e=>e.cat==='room').map(e=>e.id);
+  if(!ids.length&&sel.some(e=>e.cat==='terminal')){const want=new Set(sel.filter(e=>e.cat==='terminal').map(e=>e.id));ids=RAm().filter(r=>[...r.T.SA,...r.T.RA,...r.T.EA].some(i=>want.has(i))).map(r=>r.id)}
+  if(!ids.length){const v=activeView(),lv=v&&v.kind==='plan'&&!v.draft&&!v.legend?v.level:null;ids=RAm().filter(r=>lv==null||r.level===lv).map(r=>r.id)}
+  const R=airDist(ids);toast(R.n?t('ra_done',R.n,R.rooms):t('ra_none'),5000)};
+/* the room's own numbers are kept only where they are numbers */
+XC.push(()=>{for(const e of P.els)for(const k of ['saf','raf','eaf','ach'])if(e[k]!==undefined&&(e.cat!=='room'||raNum(e[k])==null))delete e[k]});
+/* Properties of a room: what it is given, what it needs and what its terminals carry */
+XP.push((c,els)=>{if(c!=='room')return'';const one=els.length===1?raRow(els[0].id):null,au=airUnit(),V=f=>{const a=els.map(f);return a.every(x=>x===a[0])?a[0]:''},fi=x=>x==null?'':flowIn(x);
+  const inp=(k,l,v,u,ph)=>`<div class="pr"><label for="p_${k}">${t(l)}</label><div><input type="number" id="p_${k}" data-p="${k}" min="0" step="any" value="${v}" placeholder="${esc(ph)}">${u?`<span class="u">${u}</span>`:''}</div></div>`;
+  const A=x=>fmtAir(x)+' '+au,pct=(a,q)=>q>0?' · '+Math.round(a/q*100)+' %':'',ro=(l,s,v)=>`<div class="pr"><label>${t(l)}</label><div><span class="ro"${s==='l'||s==='h'||s==='z'?' style="color:var(--warn);font-weight:600"':''}>${esc(v)}</span></div></div>`;
+  let h=PR.grp('g_rair')+inp('saf','p_saf',V(e=>fi(raNum(e.saf))),au,one&&one.calc>0?fmtAir(one.calc)+' ('+t('auto')+')':t('auto'));
+  if(one&&!one.open)h+=PR.ro('p_racalc',one.cond?A(one.calc):t('ld_off'))+ro('p_rasa',one.ss,A(one.sa)+' · '+t('ra_nt',one.T.SA.length)+pct(one.sa,one.sreq));
+  h+=inp('raf','p_raf',V(e=>fi(raNum(e.raf))),au,one&&!one.open&&one.T.RA.length?fmtAir(Math.max(0,one.sreq-one.ereq))+' ('+t('auto')+')':t('auto'));
+  if(one&&!one.open&&(one.T.RA.length||one.raf!=null))h+=ro('p_rara',one.rs,A(one.ra)+' · '+t('ra_nt',one.T.RA.length)+pct(one.ra,one.rreq));
+  h+=inp('eaf','p_eaf',V(e=>fi(raNum(e.eaf))),au,'')+inp('ach','p_ach',V(e=>raNum(e.ach)==null?'':raNum(e.ach)),t('u_ach'),'');
+  if(one&&!one.open){if(one.ereq>0||one.ea>0)h+=PR.ro('p_raereq',A(one.ereq))+ro('p_raea',one.es,A(one.ea)+' · '+t('ra_nt',one.T.EA.length)+pct(one.ea,one.ereq));
+    h+=PR.ro('p_rvol',ntrim(one.vol,1)+' m³')+ro('p_rast',one.st,t('ra_st_'+one.st))}
+  return h+`<div class="pa"><button class="btn" data-act="airdist">${t('a_airdist')}</button></div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||!['saf','raf','eaf','ach'].includes(key))return false;const n=parseFloat(raw);if(String(raw).trim()===''||!isFinite(n)||n<0){delete o[key];return true}
+  o[key]=key==='ach'?Math.round(n*100)/100:Math.round(flowOut(n)*1e4)/1e4;return true});
+/* Check Systems: a room that gets less air than it needs, or more than 10 % over it */
+SCX.push(add=>{const au=' '+airUnit();for(const r of RAm()){if(r.open)continue;const rm=IDX.get(r.id);if(!rm)continue;const lo=[],hi=[];
+  for(const [s,a,q,c,given] of [[r.ss,r.sa,r.sreq,'SA',r.saf!=null],[r.rs,r.ra,r.rreq,'RA',r.raf!=null],[r.es,r.ea,r.ereq,'EA',r.eaf!=null||r.ach!=null]]){
+    const txt=c+' '+fmtAir(a)+' / '+fmtAir(q)+au;if(s==='l'||(s==='z'&&given))lo.push(txt);else if(s==='h')hi.push(txt)}
+  if(lo.length)add('sc_rmlo','duct',[r.id],rm.x,rm.y,r.level,raName(r)+' · '+lo.join(' · '));if(hi.length)add('sc_rmhi','duct',[r.id],rm.x,rm.y,r.level,raName(r)+' · '+hi.join(' · '))}});
+WARN_K.push('sc_rmlo','sc_rmhi');
+/* the schedule Airflow by Room (made on demand) */
+{const f0=scheduleTable;scheduleTable=(P0,kind,tr,o)=>kind==='rair'?raTable(P0,tr):f0(P0,kind,tr,o)}
+function raTable(P0,tr){const ln=id=>{const l=lvl(P0,id);return l?l.name:''},rows=[],A=(k,l)=>({k,label:tr(l),num:1,dec:0,u:'air'});
+  const cols=[{k:'number',label:tr('c_number')},{k:'name',label:tr('c_name')},{k:'level',label:tr('c_level')},{k:'area',label:tr('c_area'),num:1,u:'m2',fix:1},{k:'vol',label:tr('c_vol'),num:1,u:'m3'},
+    A('calc','p_racalc'),A('sreq','p_rasreq'),A('sa','p_rasa'),{k:'pct',label:tr('c_rapct'),num:1,dec:0},A('rreq','p_rarreq'),A('ra','p_rara'),A('ereq','p_raereq'),A('ea','p_raea'),{k:'nt',label:tr('c_rant'),num:1,dec:0},{k:'st',label:tr('p_rast')}];
+  for(const r of P0===P?RAm():airRooms(P0)){const c=!r.open,ret=c&&(r.T.RA.length||r.raf!=null),ex=c&&(r.ereq>0||r.ea>0);
+    rows.push({_ids:[r.id,...r.T.SA,...r.T.RA,...r.T.EA],number:r.number,name:r.name,level:ln(r.level),_o:elev(P0,r.level),area:r.area||0,vol:c?r.area*r.h:'',calc:c&&r.cond?r.calc:'',sreq:c?r.sreq:'',sa:c?r.sa:'',
+      pct:c&&r.sreq>0?Math.round(r.sa/r.sreq*100):'',rreq:ret?r.rreq:'',ra:ret?r.ra:'',ereq:ex?r.ereq:'',ea:ex?r.ea:'',nt:c?r.T.SA.length+r.T.RA.length+r.T.EA.length:'',st:r.open?tr('not_enclosed'):tr('ra_st_'+r.st)})}
+  rows.sort((a,b)=>a._o-b._o||String(a.number).localeCompare(String(b.number),undefined,{numeric:true})||a._ids[0]-b._ids[0]);          // a row picks its room and the terminals in it
+  const sum=k=>rows.reduce((s,r)=>s+(typeof r[k]==='number'?r[k]:0),0),S=sum('sreq'),SA=sum('sa');
+  return{cols,rows,foot:{number:tr('c_total'),area:sum('area'),vol:sum('vol'),calc:sum('calc'),sreq:S,sa:SA,pct:S>0?Math.round(SA/S*100):'',rreq:sum('rreq'),ra:sum('ra'),ereq:sum('ereq'),ea:sum('ea'),nt:sum('nt')}}}
+XA.airsched=()=>{let v=P.views.find(x=>x.kind==='schedule'&&x.sched==='rair');if(!v)edit(()=>{v={id:P.seq++,kind:'schedule',sched:'rair',name:t('ra_sched'),scale:100,detail:'coarse',hidden:[],hiddenCats:[]};P.views.push(v)});closeDlg();showView(v.id)};
+/* the color scheme of rooms by their airflow: under, none placed, over, within ±10 %, a unit in the room, nothing needed */
+CS_KEYS.push('rair');
+{const f0=colorScheme;colorScheme=(P0,key,areaOf)=>key==='rair'?raScheme(P0):f0(P0,key,areaOf)}
+function raScheme(P0){const own=P0.cfs&&P0.cfs.rair&&typeof P0.cfs.rair==='object'?P0.cfs.rair:{},M=new Map(),of=new Map(),rows=(P0===P?RAm():airRooms(P0)).slice().sort((a,b)=>a.id-b.id);
+  for(const r of rows){const v=r.st;let it=M.get(v);if(!it){const def=v==='x'?CS_OPEN:RA_COL[v];it={v,def,color:csHex(own[v])||def,n:0};M.set(v,it)}it.n++;of.set(r.id,it)}
+  return{key:'rair',items:[...M.values()].sort((a,b)=>RA_ORD.indexOf(a.v)-RA_ORD.indexOf(b.v)),of,lim:csLimits(P0)}}
+{const f0=csLabel;csLabel=(S,it,tr)=>S.key==='rair'&&!S.akey?(it.v==='x'?tr('not_enclosed'):tr('ra_st_'+it.v)):f0(S,it,tr)}
+XA.airfill=()=>{let v=activeView();if(!(v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.area==null))v=planOf(ui.level,'mech')||planOf(ui.level)||P.views.find(x=>x.kind==='plan'&&!x.draft&&x.area==null);if(!v){toast(t('cfleg_na'));return}
+  edit(()=>{v.cs='rair'});closeDlg();showView(v.id);toast(t('ra_filled',v.name))};
+/* schedules of rooms: the airflow fields */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='room')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),R=e=>Q===P?raRow(e.id):null,au=' ('+flowSym(Q)+')',k1=flowK(Q),q=x=>Math.round(x*k1*100)/100;
+  add('rasreq',tr('p_rasreq')+au,e=>{const r=R(e);return r&&!r.open?q(r.sreq):''},{num:1,dec:0,sum:1});
+  add('rasa',tr('p_rasa')+au,e=>{const r=R(e);return r&&!r.open?q(r.sa):''},{num:1,dec:0,sum:1});
+  add('rapct',tr('c_rapct'),e=>{const r=R(e);return r&&r.sreq>0?Math.round(r.sa/r.sreq*100):''},{num:1,dec:0});
+  add('rarreq',tr('p_rarreq')+au,e=>{const r=R(e);return r&&!r.open&&(r.T.RA.length||r.raf!=null)?q(r.rreq):''},{num:1,dec:0,sum:1});
+  add('rara',tr('p_rara')+au,e=>{const r=R(e);return r&&!r.open?q(r.ra):''},{num:1,dec:0,sum:1});
+  add('raereq',tr('p_raereq')+au,e=>{const r=R(e);return r&&!r.open&&r.ereq>0?q(r.ereq):''},{num:1,dec:0,sum:1});
+  add('raea',tr('p_raea')+au,e=>{const r=R(e);return r&&!r.open?q(r.ea):''},{num:1,dec:0,sum:1});
+  add('rast',tr('p_rast'),e=>{const r=R(e);return r?(r.open?tr('not_enclosed'):tr('ra_st_'+r.st)):''});
+  return F}}
+/* IFC: the airflow of a space */
+function raIfc(P0,e,prop){if(P0!==P)return[];const r=raRow(e.id);if(!r||r.open)return[];const L=x=>fx2(x)+' L/s',o=[];
+  if(r.sreq>0)o.push(prop('CoolingDesignAirflow',L(r.sreq)));if(r.sa>0)o.push(prop('ActualSupplyAirflow',L(r.sa)));if(r.T.RA.length||r.raf!=null)o.push(prop('ReturnAirflow',L(r.rreq)),prop('ActualReturnAirflow',L(r.ra)));
+  if(r.ereq>0)o.push(prop('ExhaustAirflow',L(r.ereq)));if(r.ea>0)o.push(prop('ActualExhaustAirflow',L(r.ea)));if(r.ach!=null)o.push(prop('ExhaustAirChanges',String(r.ach)));return o}
+/* the ribbon: Analyze › Space Airflow, and Distribute Airflow in Systems › Analyze */
+{const A=RIBBON.find(r=>r.id==='analyze'),i=A?A.panels.findIndex(p=>p.t==='p_loads'):-1;if(A)A.panels.splice(i<0?A.panels.length:i+1,0,{t:'p_rair',b:['@airdist','@airsched','@airfill']});
+  const S=RIBBON.find(r=>r.id==='sys'),p=S&&S.panels.find(q=>q.t==='p_analyze');if(p&&!p.b.includes('@airdist'))p.b.push('@airdist')}
+Object.assign(BTN,{'@airdist':['airflow',''],'@airsched':['sched',''],'@airfill':['cscheme','']});
+Object.assign(STR,{
+  a_airdist:['แบ่งลมให้หัวจ่าย','Distribute Airflow'],a_airsched:['ตารางลมของห้อง','Airflow by Room'],a_airfill:['ระบายสีห้องตามลม','Color Rooms by Airflow'],p_rair:['ลมของห้อง','Space Airflow'],
+  g_rair:['ลมของห้อง (Airflow)','Airflow'],p_saf:['ลมจ่ายที่กำหนด','Specified Supply Airflow'],p_racalc:['ลมจ่ายจากภาระความเย็น','Calculated Supply Airflow'],p_rasreq:['ลมจ่ายที่ต้องการ','Required Supply Airflow'],
+  p_rasa:['ลมจ่ายจริง (หัวจ่าย)','Actual Supply Airflow'],p_raf:['ลมกลับที่กำหนด','Specified Return Airflow'],p_rarreq:['ลมกลับที่ต้องการ','Required Return Airflow'],p_rara:['ลมกลับจริง','Actual Return Airflow'],
+  p_eaf:['ลมระบายที่กำหนด','Specified Exhaust Airflow'],p_ach:['ลมระบาย (ACH)','Exhaust Air Changes'],u_ach:['เท่า/ชม.','ACH'],p_raereq:['ลมระบายที่ต้องการ','Required Exhaust Airflow'],
+  p_raea:['ลมระบายจริง','Actual Exhaust Airflow'],p_rvol:['ปริมาตรห้อง','Volume'],p_rast:['ผลตรวจลม','Airflow Check'],c_rapct:['ลมจ่ายจริง/ที่ต้องการ (%)','Actual / Required Supply (%)'],c_rant:['หัวจ่าย','Terminals'],ra_nt:['{0} หัว','{0} terminals'],
+  ra_st_l:['ลมไม่พอ','Under-supplied'],ra_st_z:['ยังไม่มีหัวจ่าย','No air terminals'],ra_st_h:['ลมเกิน','Over-supplied'],ra_st_o:['ลมพอดี (±10 %)','Within ±10 %'],ra_st_u:['ใช้เครื่องในห้อง','Unit in the room'],
+  ra_st_n:['ไม่ต้องใช้ลม','No airflow needed'],ra_sched:['ตารางลมของห้อง','Space Airflow Schedule'],cs_rair:['ลมของห้อง (ลมจริงเทียบที่ต้องการ)','Airflow (actual vs required)'],
+  ra_done:['ตั้งลมแล้ว {0} หัวจ่าย ใน {1} ห้อง','Airflow set on {0} terminals in {1} rooms'],ra_none:['ไม่มีหัวจ่ายที่ต้องเปลี่ยน: เลือกห้อง หรือเปิดแปลนของชั้นที่มีห้องและหัวจ่าย','No terminal to change: select rooms, or open the plan of a level with rooms and terminals'],
+  ra_filled:['ระบายสีห้องตามลมใน {0} แล้ว','Rooms in {0} colored by airflow'],
+  wn_sc_rmlo:['ห้องได้ลมน้อยกว่าที่ต้องการ: {0}','A room gets less air than it needs: {0}'],wn_sc_rmhi:['ห้องได้ลมมากกว่าที่ต้องการเกิน 10 %: {0}','A room gets more than 10 % over the air it needs: {0}']});
+/* ===== 151 rise and drop symbols (V1.151; Revit: Mechanical Settings › Duct Settings and Pipe Settings › Rise Drop — the symbol a duct or a pipe shows in a
+   plan where it turns up or down).  A riser seen in the plan of a level rises from there when its foot meets a run of that level (or it starts within the
+   storey), drops when its head meets a run of that level (or it ends within the storey), and otherwise passes through (or lies wholly below or above the storey).  Ducts: a rise as before (a box or a
+   circle with one diagonal, two for supply), a drop the same with the half beyond the diagonal shaded; pipes: a rise is a ring with a dot (coming towards
+   the viewer), a drop a ring with a cross (going away), one passing through as before.  P.rd = {d: 'same', p: 'same', txt: 1}, only what differs. ===== */
+const rdSet=P0=>{const r=P0&&P0.rd||{};return{d:r.d==='same'?'same':'shade',p:r.p==='same'?'same':'arrow',txt:r.txt?1:0}};
+XC.push(()=>{const r=P.rd;if(r===undefined)return;const o={};if(r&&typeof r==='object'){if(r.d==='same')o.d='same';if(r.p==='same')o.p='same';if(r.txt)o.txt=1}if(Object.keys(o).length)P.rd=o;else delete P.rd});
+let RDC=null;
+function rdDir(e,lv){if(!RDC||RDC.v!==VER||RDC.P!==P)RDC={v:VER,P,m:new Map()};const key=e.id+'|'+lv;if(RDC.m.has(key))return RDC.m.get(key);
+  const T=typ(P,e)||{},pipe=T.kind==='pipe',z=zRange(P,e),L=elev(P,lv),up=levelAbove(P,lv),top=up?up.elev:L+4000,tol=(pipe?(e.w||100):Math.max(e.w||400,T.kind==='duct'?e.h||250:0))/2+60;let lo=false,hi=false;
+  for(const r of P.els){if(r.level!==lv||r.cat!==(pipe?'pipe':'duct'))continue;const Z=runZ(P,r);
+    for(const [x,y,zz] of [[r.x1,r.y1,Z[0]],[r.x2,r.y2,Z[1]]])if(Math.hypot(x-e.x,y-e.y)<=tol){if(Math.abs(zz-z[0])<=Math.abs(zz-z[1]))lo=true;else hi=true}}
+  const d=hi?'dn':lo?'up':z[1]<=L+50||z[0]>=top-50?'thru':z[0]>=L-50?'up':z[1]<=top+50?'dn':'thru';RDC.m.set(key,d);return d}          // a run at the head is the one seen from above: the riser drops from it
+/* the half of a duct riser beyond its diagonal, shaded for a drop */
+function rdShade(g,pts,k,lw){const ctx=g.ctx;g.path(pts);ctx.globalAlpha=0.45;ctx.fillStyle=k;ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=k;ctx.lineWidth=lw;ctx.stroke()}
+const rdHalf=(e,r)=>{const a=[];for(let i=0;i<=16;i++){const q=Math.PI/4+Math.PI*i/16;a.push([e.x+r*Math.cos(q),e.y+r*Math.sin(q)])}return a};
+/* UP / DN written by the symbol, when Mechanical Settings ask for it */
+function rdText(g,e,W,rd,RS,k,sc){if(!RS.txt||rd==='thru')return;const pipe=W.kind==='pipe',hw=W.kind==='duct'?Math.max(e.w||400,e.h||250)/2:Math.max((e.w||100)/2,(pipe?0.8:1.2)*sc);
+  g.text(rd==='up'?'UP':'DN',[e.x+hw+2.2*sc,e.y-hw-0.9*sc],1.8,{color:k,bold:true,halo:true})}
+/* Properties of a riser: which way it goes in the plan that is open */
+XP.push((c,els)=>{if(c!=='riser'||els.length!==1)return'';const v=activeView();if(!v||v.kind!=='plan'||v.level==null)return'';return PR.ro('p_rddir',t('rd_'+rdDir(els[0],v.level)))});
+/* Mechanical Settings › Rise / Drop (the page is in MS_PAGES) */
+{const f0=dlgMech;dlgMech=(pg,keep)=>{if(!(pg==='rd'||(pg==null&&ui.msPage==='rd')))return f0(pg,keep);f0('hl',keep);ui.msPage='rd';const c=$('#dlg .msc');if(!c)return;const S=rdSet(P);
+  for(const b of document.querySelectorAll('#dlg [data-msp]'))b.setAttribute('aria-pressed',String(b.dataset.msp==='rd'));
+  const sel=(k,o,val)=>`<div class="fr"><label for="rd_${k}">${t('rd_'+k)}</label><select id="rd_${k}" data-rd="${k}">${o.map(x=>`<option value="${x}"${x===val?' selected':''}>${t('rd_'+k+'_'+x)}</option>`).join('')}</select></div>`;
+  c.innerHTML=sel('d',['shade','same'],S.d)+sel('p',['arrow','same'],S.p)+`<div class="fr"><label for="rd_txt">${t('rd_txt')}</label><input type="checkbox" id="rd_txt" data-rd="txt"${S.txt?' checked':''}></div><p class="note">${t('rd_note')}</p>`;
+  c.addEventListener('change',ev=>{const el=ev.target,k=el.dataset.rd;if(!k)return;edit(()=>{const o=Object.assign({},P.rd||{});if(k==='txt'){if(el.checked)o.txt=1;else delete o.txt}else if(el.value==='same')o[k]='same';else delete o[k];if(Object.keys(o).length)P.rd=o;else delete P.rd});dlgMech('rd',true)});
+  const rb=$('#dlg [data-msx="reset"]');if(rb){rb.removeAttribute('data-msx');rb.disabled=!P.rd;rb.addEventListener('click',()=>{edit(()=>{delete P.rd});dlgMech('rd',true)})}}}
+Object.assign(STR,{
+  ms_p_rd:['ท่อขึ้น/ลง (Rise/Drop)','Rise / Drop'],rd_d:['ท่อลมขึ้น/ลง','Duct rise / drop'],rd_d_shade:['ขึ้น = เส้นทแยง · ลง = แรเงาครึ่งหนึ่ง','Rise: diagonal · Drop: half shaded'],rd_d_same:['เหมือนกันทั้งขึ้นและลง','The same both ways'],
+  rd_p:['ท่อน้ำขึ้น/ลง','Pipe rise / drop'],rd_p_arrow:['ขึ้น = วงกลมมีจุด · ลง = วงกลมมีกากบาท','Rise: circle with a dot · Drop: circle with a cross'],rd_p_same:['เหมือนกันทั้งขึ้นและลง','The same both ways'],
+  rd_txt:['เขียน UP / DN ข้างสัญลักษณ์','Write UP / DN by the symbol'],
+  rd_note:['ดูจากแปลนของแต่ละชั้น: ท่อแนวดิ่งที่โคนต่อกับท่อของชั้นนั้น (หรือเริ่มในชั้นนั้น) คือขึ้น ที่หัวต่อกับท่อของชั้นนั้น (หรือจบในชั้นนั้น) คือลง ที่ผ่านตลอดใช้สัญลักษณ์เดิม','Seen from the plan of each level: a riser whose foot meets a run of that level (or that starts within the storey) rises, one whose head meets a run of that level (or that ends within the storey) drops, one passing through keeps its symbol'],
+  p_rddir:['ในแปลนที่เปิดอยู่','In the open plan'],rd_up:['ขึ้น (Rise)','Rise'],rd_dn:['ลง (Drop)','Drop'],rd_thru:['ผ่านตลอด','Passes through']});
+/* ===== 152 VRF refrigerant piping (V1.152; Revit has no tool of its own for it — makers' selection programs do it, here from the model: the refrigerant
+   pipes (system REF, one line for the liquid and gas pair) between an outdoor unit (VRF or condensing unit) and the indoor units on them).  For each network:
+   the indoor capacity against the outdoor unit (combination ratio), the main pipe, the pipes between branches and to each unit with the liquid and gas sizes
+   their capacity asks for (the same tables as PENUM MEP's VRF page), lengths (total, to the farthest unit, from the first branch), heights, branch joints,
+   the refrigerant to add, the charge in the system and the concentration in the smallest room an indoor unit is in (ASHRAE 15 / 34).  P.rfB = {ref:'R32'}. ===== */
+const RF_REF={R410A:{rcl:0.42,k:1},R32:{rcl:0.077,k:0.9}},RF_LIM={len:165,far:40,tot:1000,hUp:50,hDn:40,hId:15,maxHp:60},RF_SPLIT={len:30,hUp:15,hDn:15},RF_KWHP=2.8;          // m, HP; a split unit's limits are its own
+const RF_KG={'1/4"':0.022,'3/8"':0.059,'1/2"':0.12,'5/8"':0.18,'3/4"':0.26,'7/8"':0.37,'1-1/8"':0.52},RF_FAC={8:5.9,10:6,12:6.3,14:10.3,16:10.4,18:11.7,20:11.8};          // kg/m of liquid line (R410A); factory charge by HP
+const RF_MAIN=[[8,'3/8"','3/4"'],[10,'3/8"','7/8"'],[16,'1/2"','1-1/8"'],[22,'5/8"','1-1/8"'],[26,'5/8"','1-3/8"'],[60,'3/4"','1-5/8"'],[1e9,'7/8"','1-5/8"']];          // by outdoor HP
+const RF_HDR=[[15,'3/8"','5/8"'],[20,'3/8"','3/4"'],[29,'3/8"','7/8"'],[42,'1/2"','1-1/8"'],[64,'5/8"','1-1/8"'],[92,'3/4"','1-3/8"'],[1e9,'3/4"','1-5/8"']];          // by indoor kW after the branch
+const RF_BR=[[5.6,'1/4"','1/2"'],[16,'3/8"','5/8"'],[22.4,'3/8"','3/4"'],[1e9,'3/8"','7/8"']],RF_JN=[[20,'< 20 kW'],[29,'20–29 kW'],[64,'29–64 kW'],[1e9,'≥ 64 kW']];          // by indoor unit kW; branch joints
+const RF_MM={'1/4"':6.35,'3/8"':9.52,'1/2"':12.7,'5/8"':15.88,'3/4"':19.05,'7/8"':22.22,'1-1/8"':28.58,'1-3/8"':34.92,'1-5/8"':41.28};          // copper tube, outside diameter
+const RF_ODU=['vrf','cdu'],RF_IDU=['cassette','wall','fcu','ahu'];
+const rfPick=(T,x)=>T.find(r=>x<=r[0]+1e-9)||T[T.length-1];
+const rfSet=P0=>{const r=P0&&P0.rfB||{};return{ref:RF_REF[r.ref]?r.ref:'R410A'}};
+XC.push(()=>{const r=P.rfB;if(r===undefined)return;if(r&&typeof r==='object'&&r.ref==='R32')P.rfB={ref:'R32'};else delete P.rfB});
+const rfCap=e=>Math.max(0,+(typ(P,e)||{}).cap||0);
+/* the networks: {ns, odu, kind ('vrf' | 'cdu' | ''), idus, cap (indoor kW), ocap, hp, ratio, edges [{ed, id, seg, kw, liq, gas, dia, small}], pipes (Map id → the
+   largest need among its edges), tot / far / far2 (m), hUp / hDn / hId (m), joints [{node, kw, lab}], liqLen {size: m}, add / fac / charge (kg), rooms, worst, P (problems)} */
+let RFC=null;
+function refNets(){if(RFC&&RFC.v===VER&&RFC.P===P)return RFC.r;const G=runGraph(P,'pipe',false,true),N=G.nodes,out=[],seen=new Uint8Array(N.length),S=rfSet(P),R=RF_REF[S.ref],kOf=q=>(typ(P,q)||{}).kind;
+  for(let s0=0;s0<N.length;s0++){if(seen[s0]||SCL(N[s0].sys||'')!=='REF')continue;const ns=[],q=[s0];seen[s0]=1;while(q.length){const i=q.pop();ns.push(i);for(const a of N[i].arms)if(!seen[a.far]){seen[a.far]=1;q.push(a.far)}}
+    if(!ns.some(i=>N[i].arms.length))continue;
+    const od=new Map(),id=new Map();for(const i of ns)for(const e of N[i].equips){const k=kOf(e);if(RF_ODU.includes(k)){if(!od.has(e.id))od.set(e.id,{e,i})}else if(RF_IDU.includes(k)&&!id.has(e.id))id.set(e.id,{e,i})}
+    const O=[...od.values()].sort((a,b)=>rfCap(b.e)-rfCap(a.e))[0]||null,net={ns,odu:O?O.e:null,kind:O?kOf(O.e):'',idus:[...id.values()].map(x=>x.e),edges:[],pipes:new Map(),joints:[],liqLen:{},rooms:[],P:[],ids:new Set()};
+    for(const i of ns)for(const a of N[i].arms)net.ids.add(a.ed.riser?a.ed.riser.id:a.ed.r.e.id);
+    net.cap=net.idus.reduce((s,e)=>s+rfCap(e),0);net.ocap=O?rfCap(O.e):0;net.hp=net.ocap/RF_KWHP;net.ratio=net.ocap>0?net.cap/net.ocap:0;out.push(net);
+    if(!O){net.P.push(['noodu']);continue}
+    // the tree from the outdoor unit: each indoor unit counted once, at the first node it is found at
+    const root=O.i,par=new Map([[root,null]]),order=[root],dist=new Map([[root,0]]);for(let k=0;k<order.length;k++){const i=order[k];for(const a of N[i].arms)if(!par.has(a.far)){par.set(a.far,a);dist.set(a.far,dist.get(i)+a.ed.len);order.push(a.far)}}
+    const at=new Map();for(const x of id.values()){let best=null;for(const i of order)if(N[i].equips.includes(x.e)){best=i;break}if(best!=null)(at.get(best)||at.set(best,[]).get(best)).push(x.e)}
+    const down=new Map();for(let k=order.length-1;k>=0;k--){const i=order[k];const L=(at.get(i)||[]).slice();for(const a of N[i].arms){const p=par.get(a.far);if(p&&p.ed===a.ed&&a.far!==root&&down.has(a.far))L.push(...down.get(a.far))}down.set(i,L)}
+    const nI=net.idus.length,M=net.kind==='vrf'?rfPick(RF_MAIN,net.hp):null,mm=x=>RF_MM[x]||0;
+    for(const i of order){const a=par.get(i);if(!a)continue;const D=down.get(i)||[],kw=D.reduce((s,e)=>s+rfCap(e),0),ed=a.ed,eid=ed.riser?ed.riser.id:ed.r.e.id,dia=ed.riser?(ed.riser.w||0):runW(ed.r.e);
+      let seg,liq='',gas='';if(!D.length)seg='dead';else if(net.kind!=='vrf'){seg=D.length===nI?'main':'br';const b=rfPick(RF_BR,D.length===1?rfCap(D[0]):kw);liq=b[1];gas=b[2]}
+      else if(D.length===nI){seg='main';liq=M[1];gas=M[2]}else if(D.length===1){seg='br';const b=rfPick(RF_BR,rfCap(D[0]));liq=b[1];gas=b[2]}
+      else{seg='hdr';const h=rfPick(RF_HDR,kw);liq=mm(h[1])>mm(M[1])?M[1]:h[1];gas=mm(h[2])>mm(M[2])?M[2]:h[2]}
+      const E={ed,id:eid,seg,kw,liq,gas,dia,len:ed.len/1000,small:!!gas&&dia<mm(gas)-0.6};net.edges.push(E);if(liq)net.liqLen[liq]=(net.liqLen[liq]||0)+E.len;
+      const w=net.pipes.get(eid);if(!w||mm(gas)>mm(w.gas))net.pipes.set(eid,E)}
+    /* a riser that goes on past the last point of the network (down to the outdoor unit, up to an indoor unit) adds its length there, at the sizes of that end */
+    const xtra=new Map();{const RS=new Map();for(const i of ns)for(const r of N[i].risers)(RS.get(r)||RS.set(r,[]).get(r)).push(i);
+      for(const [r,I] of RS){if(SCL(r.sys||'')!=='REF')continue;const z=zRange(P,r),cov=net.edges.filter(E=>E.ed&&E.ed.riser===r).reduce((s,E)=>s+E.len*1000,0),ex=(z[1]-z[0])-cov;if(ex<=1)continue;
+        const i=I.includes(root)?root:I.find(j=>at.has(j))!=null?I.find(j=>at.has(j)):I[0];xtra.set(i,(xtra.get(i)||0)+ex);
+        const D=i===root?net.idus:(at.get(i)||down.get(i)||[]),k1=D.reduce((s,e)=>s+rfCap(e),0);let seg,liq,gas;
+        if(i===root&&net.kind==='vrf'){seg='main';liq=M[1];gas=M[2]}else{seg=i===root||D.length===nI?'main':'br';const b=rfPick(RF_BR,D.length===1?rfCap(D[0]):k1);liq=b[1];gas=b[2]}
+        const E={ed:null,id:r.id,seg,kw:k1,liq,gas,dia:r.w||0,len:ex/1000,small:(r.w||0)<mm(gas)-0.6};net.edges.push(E);net.liqLen[liq]=(net.liqLen[liq]||0)+E.len;const w=net.pipes.get(r.id);if(!w||mm(gas)>mm(w.gas))net.pipes.set(r.id,E)}}
+    // lengths and heights
+    net.tot=net.edges.reduce((s,E)=>s+E.len,0);const x0=xtra.get(root)||0,di=[...at.keys()].map(i=>(dist.get(i)+x0+(i!==root?xtra.get(i)||0:0))/1000);net.far=di.length?Math.max(...di):0;
+    {const fb=order.find(i=>N[i].arms.filter(a=>{const p=par.get(a.far);return p&&p.ed===a.ed&&a.far!==root&&(down.get(a.far)||[]).length}).length>=2);net.far2=fb!=null&&di.length?net.far-(dist.get(fb)+x0)/1000:0;
+      for(const i of order){const br=N[i].arms.filter(a=>{const p=par.get(a.far);return p&&p.ed===a.ed&&a.far!==root&&(down.get(a.far)||[]).length});if(br.length>=2){const kw=(down.get(i)||[]).reduce((s,e)=>s+rfCap(e),0)-(at.get(i)||[]).reduce((s,e)=>s+rfCap(e),0);net.joints.push({x:N[i].x,y:N[i].y,kw,lab:rfPick(RF_JN,kw)[1],n:br.length-1})}}}
+    const zo=zRange(P,O.e)[0],zi=net.idus.map(e=>zRange(P,e)[0]);net.hUp=zi.length?Math.max(0,zo-Math.min(...zi))/1000:0;net.hDn=zi.length?Math.max(0,Math.max(...zi)-zo)/1000:0;net.hId=zi.length?(Math.max(...zi)-Math.min(...zi))/1000:0;
+    // refrigerant: what is added for the liquid line, what the outdoor unit holds, the room it can all leak into
+    if(net.kind==='vrf'){net.add=Object.entries(net.liqLen).reduce((s,[k,len])=>s+len*(RF_KG[k]??0.26)*R.k,0);const h=Math.round(net.hp);net.fac=(RF_FAC[h]||net.hp*0.6)*R.k;net.charge=net.add+net.fac;
+      const seenR=new Set();for(const e of net.idus){const r=rfRoom(e);if(r&&!seenR.has(r.id)&&r.vol>0){seenR.add(r.id);net.rooms.push({id:r.id,name:raName(r),vol:r.vol,c:net.charge/r.vol})}}
+      net.rooms.sort((a,b)=>b.c-a.c);net.worst=net.rooms[0]||null}
+    // problems
+    const L=net.kind==='vrf'?RF_LIM:RF_SPLIT,pr=(k,a,ids)=>net.P.push([k,a,ids]);
+    if(!nI)pr('noidu');
+    if(net.far>L.len)pr('len',net.far.toFixed(1)+' > '+L.len+' m');if(net.kind==='vrf'&&net.far2>L.far)pr('far2',net.far2.toFixed(1)+' > '+L.far+' m');if(net.kind==='vrf'&&net.tot>L.tot)pr('tot',net.tot.toFixed(0)+' > '+L.tot+' m');
+    if(net.hUp>L.hUp)pr('hup',net.hUp.toFixed(1)+' > '+L.hUp+' m');if(net.hDn>L.hDn)pr('hdn',net.hDn.toFixed(1)+' > '+L.hDn+' m');if(net.kind==='vrf'&&net.hId>L.hId)pr('hid',net.hId.toFixed(1)+' > '+L.hId+' m');
+    if(net.kind==='vrf'&&nI&&(net.ratio<0.5||net.ratio>1.3))pr('ratio',Math.round(net.ratio*100)+' %');if(net.kind==='vrf'&&net.hp>L.maxHp)pr('hp',net.hp.toFixed(0)+' > '+L.maxHp+' HP');
+    {const sm=[...net.pipes.values()].filter(E=>E.small);if(sm.length)pr('small',String(sm.length),sm.map(E=>E.id))}
+    if(net.worst&&net.worst.c>R.rcl)pr('rcl',net.worst.name+' '+net.worst.c.toFixed(3)+' > '+R.rcl+' kg/m³',[net.worst.id])}
+  RFC={v:VER,P,r:out};return out}
+/* the room an indoor unit is in (its airflow row has the volume up to the ceiling) */
+function rfRoom(e){for(const r of RAm()){if(r.level!==e.level||r.open)continue;const rm=IDX.get(r.id);if(!rm)continue;const R=REG(rm.level,rm.ph||'new',dsE(P,rm)),i=regionAt(R,rm.x,rm.y);if(i>=0&&regionAt(R,e.x,e.y)===i)return r}return null}
+const rfNetOf=e=>refNets().find(n=>n.ids.has(e.id)||n.odu===e||n.idus.includes(e))||null;
+const rfSize=x=>x?x+' ('+RF_MM[x]+')':'—';
+/* Apply Sizes: each refrigerant pipe takes the gas size its capacity asks for (a pair drawn as one line is drawn at its gas line) */
+function rfApply(nets){const ch=[];for(const n of nets)for(const E of n.pipes.values()){if(!E.gas)continue;const e=IDX.get(E.id),d=RF_MM[E.gas];if(!e)continue;if(e.cat==='riser'?Math.abs((e.w||0)-d)>0.01:Math.abs((e.dia||0)-d)>0.01)ch.push([e,d])}
+  if(ch.length)edit(()=>{for(const [e,d] of ch){if(e.cat==='riser'){e.w=d;e.h=d}else e.dia=d}});return ch.length}
+/* the report */
+XA.vrfrep=()=>dlgVrf();
+function dlgVrf(){const nets=refNets(),S=rfSet(P),R=RF_REF[S.ref],row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`,bad=s=>`<span style="color:var(--warn);font-weight:600">${s}</span>`,kw=x=>(Math.round(x*10)/10)+' kW',m=x=>x.toFixed(1)+' m';
+  const cards=nets.map((n,i)=>{const L=n.kind==='vrf'?RF_LIM:RF_SPLIT,has=k=>n.P.some(p=>p[0]===k),od=n.odu;
+    let h=`<div class="card"><div class="ch"><i style="background:${PSYS.REF[0]}"></i>${esc(od?(od.mark||(typ(P,od)||{}).mark||t('cat_equip'))+' · '+t(n.kind==='vrf'?'rf_vrf':'rf_split'):t('rf_noodu_t'))}<button class="btn" data-rf="n${i}">${t('sr_select')}</button></div>`;
+    if(!od)return h+`<p class="note warn">${t('wn_sc_rfnoodu','')}</p></div>`;
+    h+=row(t('rf_idu'),n.idus.length+' · '+kw(n.cap))+row(t('rf_odu'),kw(n.ocap)+(n.kind==='vrf'?' · '+n.hp.toFixed(1)+' HP':''))+(n.kind==='vrf'?row(t('rf_ratio'),has('ratio')?bad(Math.round(n.ratio*100)+' %'):Math.round(n.ratio*100)+' %'):'');
+    h+=row(t('rf_tot'),has('tot')?bad(m(n.tot)):m(n.tot))+row(t('rf_far'),(has('len')?bad(m(n.far)):m(n.far))+' / '+L.len+' m')+(n.kind==='vrf'?row(t('rf_far2'),(has('far2')?bad(m(n.far2)):m(n.far2))+' / '+L.far+' m'):'');
+    h+=row(t('rf_hod'),(n.hUp>0?(has('hup')?bad(m(n.hUp)):m(n.hUp))+' '+t('rf_above')+' / '+L.hUp+' m':n.hDn>0?(has('hdn')?bad(m(n.hDn)):m(n.hDn))+' '+t('rf_below')+' / '+L.hDn+' m':'0 m'))+(n.kind==='vrf'?row(t('rf_hid'),(has('hid')?bad(m(n.hId)):m(n.hId))+' / '+L.hId+' m'):'');
+    if(n.kind==='vrf'){const J={};for(const j of n.joints)J[j.lab]=(J[j.lab]||0)+j.n;h+=row(t('rf_joints'),Object.keys(J).length?Object.entries(J).map(([k,c])=>c+' × '+k).join(' · '):'0');
+      h+=row(t('rf_add'),n.add.toFixed(2)+' kg')+row(t('rf_charge'),n.charge.toFixed(1)+' kg')+`<div class="kv sub"><span>${t('rf_charge_parts',n.add.toFixed(2),n.fac.toFixed(1),S.ref)}</span></div>`;
+      if(n.worst)h+=row(t('rf_rcl'),(has('rcl')?bad(n.worst.c.toFixed(3)):n.worst.c.toFixed(3))+' / '+R.rcl+' kg/m³')+`<div class="kv sub"><span>${esc(n.worst.name)} · ${n.worst.vol.toFixed(1)} m³</span></div>`;else h+=`<div class="kv sub"><span>${t('rf_noroom')}</span></div>`}
+    const ps=[...n.pipes.values()].filter(E=>E.seg!=='dead');
+    h+=`<details class="adv"><summary>${t('rf_pipes',ps.length)}</summary><div class="tblw"><table class="tbl"><tr><th>${t('rf_c_seg')}</th><th class="n">kW</th><th>${t('rf_c_liq')}</th><th>${t('rf_c_gas')}</th><th class="n">${t('rf_c_dia')}</th><th class="n">${t('c_len')} (m)</th></tr>`+
+      ps.map(E=>`<tr data-id="${E.id}"><td>${t('rf_s_'+E.seg)}</td><td class="n">${(Math.round(E.kw*10)/10)}</td><td>${rfSize(E.liq)}</td><td>${rfSize(E.gas)}</td><td class="n">${E.small?bad('Ø'+ntrim(E.dia,2)):'Ø'+ntrim(E.dia,2)}</td><td class="n">${E.len.toFixed(2)}</td></tr>`).join('')+'</table></div></details>';
+    const pb=n.P.filter(p=>p[0]!=='small');if(has('small'))h+=`<p class="note warn">${t('rf_small',n.P.find(p=>p[0]==='small')[1])} <button class="btn" data-rf="a${i}">${t('a_rfapply')}</button></p>`;
+    if(!pb.length&&!has('small'))h+=`<p class="note ok">${t('rf_ok')}</p>`;
+    return h+'</div>'}).join('');
+  const body=nets.length?`<div class="ldg pz"><label><span>${t('rf_ref')}</span><span><select data-rf="ref">${Object.keys(RF_REF).map(k=>`<option value="${k}"${k===S.ref?' selected':''}>${k}</option>`).join('')}</select></span></label></div>`+scBlock('pipe')+`<h4>${t('rf_systems')}</h4><div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(min(100%,480px),1fr))">${cards}</div><p class="note">${t('rf_note')}</p>`:`<p class="note">${t('rf_none')}</p>`;
+  openDlg(t('a_vrfrep'),body,`<button class="btn" data-rf="all"${nets.some(n=>n.P.some(p=>p[0]==='small'))?'':' disabled'}>${t('a_rfapply')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(el.dataset.rf!=='ref')return;edit(()=>{if(el.value==='R32')P.rfB={ref:'R32'};else delete P.rfB});dlgVrf()},
+     click(ev){const k=ev.target.dataset.rf;if(k==null){const tr=ev.target.closest('tr[data-id]');if(tr)showEls([+tr.dataset.id]);return}if(k==='ref')return;
+       if(k==='all'||k[0]==='a'){const n=rfApply(k==='all'?nets:[nets[+k.slice(1)]]);toast(t('rf_applied',n));dlgVrf();return}
+       if(k[0]==='n'){const n=nets[+k.slice(1)];showEls([...n.ids,...(n.odu?[n.odu.id]:[]),...n.idus.map(e=>e.id)])}}},'wide')}
+/* Check Systems: the problems of each refrigerant network */
+SCX.push(add=>{for(const n of refNets()){const at=n.odu||IDX.get([...n.ids][0]);if(!at)continue;const x=at.x!=null?at.x:at.x1,y=at.y!=null?at.y:at.y1,nm=n.odu?(n.odu.mark||(typ(P,n.odu)||{}).mark||''):'';
+  for(const [k,a,ids] of n.P)add('sc_rf'+k,'pipe',ids&&ids.length?ids:n.odu?[n.odu.id]:[...n.ids],k==='rcl'&&ids?(IDX.get(ids[0])||at).x:x,k==='rcl'&&ids?(IDX.get(ids[0])||at).y:y,at.level,(nm?nm+' · ':'')+(a||''))}});
+WARN_K.push('sc_rfnoodu','sc_rfnoidu','sc_rflen','sc_rffar2','sc_rftot','sc_rfhup','sc_rfhdn','sc_rfhid','sc_rfratio','sc_rfhp','sc_rfsmall','sc_rfrcl');
+/* Properties: a refrigerant pipe's part of its network and the sizes it asks for; an outdoor unit's network in brief */
+XP.push((c,els)=>{if(els.length!==1)return'';const e=els[0];
+  if((c==='pipe'||c==='riser')&&SCL(e.sys||'')==='REF'){const n=rfNetOf(e),E=n&&n.pipes.get(e.id);if(!E)return'';return PR.grp('g_rf')+PR.ro('rf_c_seg',t('rf_s_'+E.seg))+PR.ro('rf_c_kw',(Math.round(E.kw*10)/10)+' kW')+PR.ro('rf_c_liq',rfSize(E.liq))+PR.ro('rf_c_gas',rfSize(E.gas))+(E.small?`<div class="pnote" style="color:var(--warn)">${t('rf_small1',RF_MM[E.gas])}</div>`:'')+`<div class="pa"><button class="btn" data-act="vrfrep">${t('a_vrfrep')}…</button></div>`}
+  if(c==='equip'&&RF_ODU.includes((typ(P,e)||{}).kind)){const n=refNets().find(x=>x.odu===e);if(!n)return'';return PR.grp('g_rf')+PR.ro('rf_idu',n.idus.length+' · '+(Math.round(n.cap*10)/10)+' kW')+(n.kind==='vrf'?PR.ro('rf_ratio',Math.round(n.ratio*100)+' %')+PR.ro('rf_charge',n.charge.toFixed(1)+' kg'):'')+PR.ro('rf_far',n.far.toFixed(1)+' m')+`<div class="pa"><button class="btn" data-act="vrfrep">${t('a_vrfrep')}…</button></div>`}
+  return''});
+/* schedules of pipes: the refrigerant sizes */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='pipe')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),E=e=>{if(Q!==P||SCL(e.sys||'')!=='REF')return null;const n=rfNetOf(e);return n&&n.pipes.get(e.id)||null};
+  add('rfseg',tr('rf_c_seg'),e=>{const x=E(e);return x?tr('rf_s_'+x.seg):''});add('rfliq',tr('rf_c_liq'),e=>{const x=E(e);return x&&x.liq||''});add('rfgas',tr('rf_c_gas'),e=>{const x=E(e);return x&&x.gas||''});
+  return F}}
+/* the ribbon: Analyze › Check and Systems › Analyze */
+for(const [tab,pn] of [['analyze','p_check'],['sys','p_analyze']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@vrfrep')){const i=p.b.indexOf('@pipereport');p.b.splice(i<0?p.b.length:i+1,0,'@vrfrep')}}
+BTN['@vrfrep']=['report',''];
+Object.assign(STR,{
+  a_vrfrep:['ท่อน้ำยา VRF','VRF Refrigerant Piping'],a_rfapply:['ปรับขนาดท่อตามตาราง','Apply Sizes'],g_rf:['ท่อน้ำยา (VRF)','Refrigerant Piping'],rf_ref:['สารทำความเย็น','Refrigerant'],rf_systems:['ระบบท่อน้ำยา','Refrigerant systems'],
+  rf_vrf:['ระบบ VRF','VRF system'],rf_split:['แอร์แยกส่วน','Split system'],rf_noodu_t:['ท่อน้ำยาที่ไม่มีเครื่องภายนอก','Refrigerant pipes without an outdoor unit'],
+  rf_idu:['เครื่องภายใน','Indoor units'],rf_odu:['เครื่องภายนอก','Outdoor unit'],rf_ratio:['สัดส่วนเครื่องภายใน/ภายนอก (Combination ratio)','Combination ratio'],
+  rf_tot:['ความยาวท่อรวม','Total pipe length'],rf_far:['ท่อถึงเครื่องภายในไกลสุด','To the farthest indoor unit'],rf_far2:['จากจุดแยกแรกถึงเครื่องไกลสุด','First branch to the farthest unit'],
+  rf_hod:['ความสูงต่าง เครื่องภายนอก–ภายใน','Height, outdoor to indoor'],rf_above:['(ภายนอกอยู่สูงกว่า)','(outdoor above)'],rf_below:['(ภายนอกอยู่ต่ำกว่า)','(outdoor below)'],rf_hid:['ความสูงต่าง ระหว่างเครื่องภายใน','Height between indoor units'],
+  rf_joints:['ข้อต่อแยก (Refnet)','Branch joints (Refnet)'],rf_add:['น้ำยาที่ต้องเติม','Additional refrigerant'],rf_charge:['น้ำยาทั้งระบบ','System charge'],
+  rf_charge_parts:['เติมตามท่อของเหลว {0} kg + มากับเครื่องภายนอก {1} kg ({2})','{0} kg for the liquid line + {1} kg in the outdoor unit ({2})'],
+  rf_rcl:['ความเข้มข้นในห้องเล็กสุด','Concentration in the smallest room'],rf_noroom:['เครื่องภายในไม่ได้อยู่ในห้องที่ปิดล้อม: ไม่ได้ตรวจความเข้มข้น','No indoor unit is in an enclosed room: the concentration is not checked'],
+  rf_pipes:['ท่อ {0} ท่อน และขนาดตามตาราง','{0} pipes and the sizes they ask for'],rf_c_seg:['ส่วนของท่อ','Part'],rf_c_kw:['ความเย็นที่ท่อนี้จ่าย','Capacity served'],rf_c_liq:['ท่อของเหลว','Liquid line'],rf_c_gas:['ท่อแก๊ส','Gas line'],rf_c_dia:['ขนาดในโมเดล','Modelled'],
+  rf_s_main:['ท่อหลัก','Main'],rf_s_hdr:['ระหว่างจุดแยก','Between branches'],rf_s_br:['เข้าเครื่องภายใน','To an indoor unit'],rf_s_dead:['ไม่มีเครื่องปลายทาง','Serves nothing'],
+  rf_small:['ท่อ {0} ท่อนเล็กกว่าท่อแก๊สตามตาราง','{0} pipes are smaller than the gas line the table asks for'],rf_small1:['เล็กกว่าท่อแก๊สตามตาราง (Ø{0})','Smaller than the gas line the table asks for (Ø{0})'],
+  rf_ok:['ไม่พบปัญหาของระบบนี้','No problem found in this system'],rf_applied:['ปรับขนาดท่อน้ำยาแล้ว {0} ท่อน','{0} refrigerant pipes resized'],
+  rf_none:['ยังไม่มีท่อน้ำยา: วาดท่อระบบ REF ต่อเครื่องภายนอก (VRF หรือ CDU) กับเครื่องภายใน','No refrigerant piping yet: draw REF pipes from an outdoor unit (VRF or CDU) to the indoor units'],
+  rf_note:['ท่อน้ำยาวาดเป็นเส้นเดียวแทนท่อของเหลวและท่อแก๊สคู่กัน ขนาดในโมเดลเทียบกับท่อแก๊ส · ขนาดตามตารางทั่วไปของ VRF R410A (ตรวจกับแคตาล็อกของผู้ผลิตก่อนใช้) · ขีดจำกัด VRF: ไกลสุด 165 m, จากจุดแยกแรก 40 m, รวม 1000 m, สูงต่าง 50/40 m, ระหว่างเครื่องภายใน 15 m, สัดส่วน 50–130 % · แอร์แยกส่วน: 30 m, สูงต่าง 15 m · RCL ตาม ASHRAE 34','A refrigerant pipe is one line for the liquid and gas pair; its modelled size is compared with the gas line · sizes from a general R410A VRF table (check with the maker\'s catalogue) · VRF limits: farthest 165 m, from the first branch 40 m, total 1000 m, heights 50 / 40 m, between indoor units 15 m, ratio 50–130 % · split units: 30 m, height 15 m · RCL by ASHRAE 34'],
+  wn_sc_rfnoodu:['ท่อน้ำยาไม่ได้ต่อกับเครื่องภายนอก (VRF / CDU){0}','Refrigerant pipes not connected to an outdoor unit (VRF / CDU){0}'],wn_sc_rfnoidu:['ระบบท่อน้ำยาไม่มีเครื่องภายใน: {0}','A refrigerant system has no indoor unit: {0}'],
+  wn_sc_rflen:['ท่อน้ำยาถึงเครื่องภายในไกลสุดยาวเกินขีดจำกัด: {0}','Refrigerant pipe to the farthest indoor unit is over the limit: {0}'],wn_sc_rffar2:['ท่อจากจุดแยกแรกถึงเครื่องไกลสุดยาวเกิน: {0}','First branch to the farthest unit is over the limit: {0}'],
+  wn_sc_rftot:['ความยาวท่อน้ำยารวมเกินขีดจำกัด: {0}','Total refrigerant pipe length is over the limit: {0}'],wn_sc_rfhup:['เครื่องภายนอกอยู่สูงกว่าเครื่องภายในเกินขีดจำกัด: {0}','The outdoor unit is too far above the indoor units: {0}'],
+  wn_sc_rfhdn:['เครื่องภายนอกอยู่ต่ำกว่าเครื่องภายในเกินขีดจำกัด: {0}','The outdoor unit is too far below the indoor units: {0}'],wn_sc_rfhid:['ความสูงต่างระหว่างเครื่องภายในเกินขีดจำกัด: {0}','The height between indoor units is over the limit: {0}'],
+  wn_sc_rfratio:['สัดส่วนเครื่องภายใน/ภายนอกอยู่นอกช่วง 50–130 %: {0}','The combination ratio is outside 50–130 %: {0}'],wn_sc_rfhp:['เครื่องภายนอกใหญ่เกินขนาดของระบบเดียว: {0}','The outdoor unit is larger than one system takes: {0}'],
+  wn_sc_rfsmall:['ท่อน้ำยาเล็กกว่าตาราง: {0} ท่อน','Refrigerant pipes smaller than the table: {0}'],wn_sc_rfrcl:['ความเข้มข้นน้ำยาในห้องเกินค่า RCL: {0}','Refrigerant concentration in a room is over the RCL: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -27737,7 +28220,7 @@ function insRemove(lin){const E=insSel().els.filter(lin?linOf:insOf);if(!E.lengt
    The settings are kept with the project (P.ms; what they mean, msOf, msClean and mechUse are in 27-mep.js).  A page of the dialog for each part:
    hidden lines of runs that cross, the air and the longest flexible duct, the sizes of rectangular and round ducts and of pipes (which of them the size lists
    offer and which sizing may choose), the water of each pipe system, and the slopes the Slope box offers. */
-const MS_PAGES=['hl','duct','ang','rect','round','psz','seg','fluid','slope'],MS_TAB={rect:['rect',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
+const MS_PAGES=['hl','duct','ang','rect','round','psz','seg','fluid','slope','rd'],MS_TAB={rect:['rect',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
 function msEdit(fn){edit(()=>{const m=JSON.parse(JSON.stringify(P.ms||{}));fn(m);P.ms=m})}          // sanitize (msClean) keeps only what differs from the stock values
 function dlgMech(pg,keep){pg=MS_PAGES.includes(pg)?pg:(MS_PAGES.includes(ui.msPage)?ui.msPage:'hl');ui.msPage=pg;const M=msOf(P),S=P.ms||{},dc=keep?$('#dlg .clr'):null,top=dc?dc.scrollTop:0;let h='';
   const num=(k,lab,val,unit,at)=>`<div class="fr"><label for="ms_${k}">${t(lab)}</label><span class="un"><input type="number" id="ms_${k}" data-ms="${k}" value="${val}" ${at}> ${unit}</span></div>`;
@@ -27853,7 +28336,7 @@ function dlgPipeReport(){
   const was=$('#dlg').open&&ui.dlg&&ui.dlg.pr,k0=was&&$('#dlg .dc')?$('#dlg .dc').scrollTop:0,opened=was?new Set($$('#dlg details[open]').map(d=>d.dataset.net)):new Set();
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`,kinds=new Set(nets.map(x=>x.n.kind)),wq=q=>fmtWater(q)+' '+waterUnit()+(ufOf().fw==='ls'?' · '+Math.round(q*60)+' L/min':'');          // litres a second read better with litres a minute beside them
   const cards=nets.map(({n,i})=>{const w=n.worst,pr=PRESS[n.kind]&&n.flow>0,src=n.root?esc(n.root.mark||t('cat_equip')):n.riser?t('cat_riser'):n.from==='open'?t('sr_openend'):'—';
-    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src)+mesPR(n,row);
+    let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'?'pr_outlet':'sr_source'),src)+mesPR(n,row)+scPipeRows(n,row);
     if(n.kind==='sup')h+=row(t('pr_fixtures'),n.n)+row(t('pr_wsfu'),n.fu.toFixed(1))+row(t('pr_flow'),wq(n.flow));
     else if(n.kind==='drain')h+=row(t('pr_fixtures'),n.n)+row(t('pr_dfu'),n.fu);
     else if(n.kind==='fire')h+=row(t('pr_heads'),n.heads)+row(t('pr_fpflow',Math.min(n.heads,des.n)),wq(n.flow));
@@ -27870,7 +28353,7 @@ function dlgPipeReport(){
   const num=(k,u,st,min)=>`<label><span>${t('pz_'+k)}</span><span><input type="number" data-po="${k}" value="${o[k]}" step="${st}" min="${min}"><small>${u}</small></span></label>`;
   const opts=(kinds.has('sup')?num('resid','kPa',10,0):'')+(kinds.has('chw')||kinds.has('cdw')?num('dT','K',0.5,1):'')+(kinds.has('fire')?`<label><span>${t('pz_haz')}</span><span><select data-po="haz"><option value="light"${o.haz==='light'?' selected':''}>${t('pz_h_light')}</option><option value="ord"${o.haz==='ord'?' selected':''}>${t('pz_h_ord')}</option></select></span></label>`:'');
   const chk=issues.length?issues.map(([k,ids])=>`<p class="note warn" data-issue="${k}">${t('pr_i_'+k,ids.length)} <button class="btn" data-pr="${k==='small'?'size':'i'+k}">${k==='small'?t('a_pipesize')+'…':t('sr_select')}</button></p>`).join(''):`<p class="note ok" data-issue="none">${t('pr_ok')}</p>`;
-  const body=nets.length?(opts?`<div class="ldg pz">${opts}</div>`:'')+`<h4>${t('pr_checks')}</h4>${chk}<h4>${t('pr_systems')}</h4><div class="cards">${cards}</div>`+(stale?`<p class="note warn">${t('pr_stale',stale)}</p>`:'')+`<p class="note">${t('pr_wnote',WLOSS.elbow,WLOSS.branch,WLOSS.thru)}</p>`:`<p class="note">${t('pr_none')}</p>`;
+  const body=nets.length?(opts?`<div class="ldg pz">${opts}</div>`:'')+`<h4>${t('pr_checks')}</h4>${chk}${scBlock('pipe')}<h4>${t('pr_systems')}</h4><div class="cards">${cards}</div>`+(stale?`<p class="note warn">${t('pr_stale',stale)}</p>`:'')+`<p class="note">${t('pr_wnote',WLOSS.elbow,WLOSS.branch,WLOSS.thru)}</p>`:`<p class="note">${t('pr_none')}</p>`;
   openDlg(t('a_pipereport')+' (PC)',body,`<button class="btn${stale?' primary':''}" data-pr="flow"${nets.length?'':' disabled'}>${t('a_waterflow')}</button><button class="btn" data-pr="size"${nets.length?'':' disabled'}>${t('a_pipesize')}…</button><button class="btn" data-pr="csv"${nets.length?'':' disabled'}>${t('a_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
     {pr:1,change(ev){const el=ev.target,k=el.dataset.po;if(!k)return;if(k==='haz')o.haz=el.value;else{const v=parseFloat(el.value);if(isFinite(v)&&v>=(k==='dT'?0.5:0))o[k]=v}if(k!=='resid')szKeep();dlgPipeReport()},
      click(ev){const k=ev.target.dataset.pr;
@@ -28726,6 +29209,7 @@ The [[tab_insert]] tab: [[a_dxfin]] lays a DXF under the plan, and its lines can
 - [[ms_p_fluid]]: อุณหภูมิน้ำของแต่ละระบบท่อ ความหนาแน่นและความหนืดเปลี่ยนตาม มีผลกับความเสียดทานและการหาขนาดท่อ
 - [[ms_p_seg]]: วัสดุ ชั้นคุณภาพ ความขรุขระ และตารางขนาด (ขนาดระบุ ID OD) · ชุดของโปรแกรม: PVC มอก. 17 ชั้น 5, 8.5, 13.5 · เหล็ก Sch 40 · เหล็กอาบสังกะสี BS 1387 ชนิดกลาง · ทองแดง Type L · PPR PN20 · HDPE PN10 · ทำสำเนาแล้วแก้ได้ · ชนิดท่อเลือกชุดที่ แก้ชนิด › ชุดขนาดท่อ แล้วท่อมีรายการขนาดของชุด (พร้อมขนาดนิ้ว) ความเร็วและความเสียดทานคิดจาก ID และ [[a_pipesize]] เลือกจากขนาดของชุด
 - [[ms_p_slope]]: ค่าความชันที่ช่อง [[p_slopepct]] เสนอให้เลือก
+- [[ms_p_rd]]: สัญลักษณ์ในแปลนของท่อแนวดิ่งที่ขึ้นหรือลงจากชั้นนั้น: [[rd_d]] ([[rd_d_shade]] หรือ [[rd_d_same]]) · [[rd_p]] ([[rd_p_arrow]] หรือ [[rd_p_same]]) · [[rd_txt]] · ท่อแนวดิ่งที่ผ่านตลอดใช้สัญลักษณ์เดิม
 > [[ms_reset]] คืนค่าของหน้าที่เปิดอยู่ · ย้ายไปโครงการอื่นได้ด้วย [[a_transfer]]
 
 # ฉนวนและ Lining ของท่อ
@@ -28803,6 +29287,7 @@ Lay the route of a run down as a single line — no elbows, no tees, no body yet
 - [[ms_p_fluid]]: the water temperature of each pipe system; density and viscosity follow, and with them friction and pipe sizing
 - [[ms_p_seg]]: the material, schedule, roughness and table of sizes (nominal, ID, OD) · stock: TIS 17 PVC classes 5, 8.5 and 13.5 · steel Sch 40 · BS 1387 medium galvanised · copper type L · PPR PN20 · HDPE PN10 · Duplicate one to change it · a pipe type picks its segment in Edit Type; its pipes then offer the sizes of the segment (with inches), their velocity and friction come from the ID, and [[a_pipesize]] chooses among its sizes
 - [[ms_p_slope]]: the slopes the [[p_slopepct]] box offers
+- [[ms_p_rd]]: the plan symbol of a riser that rises or drops from the level of the plan: [[rd_d]] ([[rd_d_shade]] or [[rd_d_same]]) · [[rd_p]] ([[rd_p_arrow]] or [[rd_p_same]]) · [[rd_txt]] · a riser passing through keeps its symbol
 > [[ms_reset]] puts the page shown back to the stock values · [[a_transfer]] takes the settings to another project
 
 # Insulation and lining
@@ -29106,6 +29591,11 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.145 · ชุดงานแบบ Revit ([[a_worksets]]) ในแท็บใหม่ [[tab_collab]]: [[a_wsact]] · เปิดปิดชุดงาน · ซ่อนชุดงานในมุมมอง ([[vg_tab_ws]] ใน [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] ในคุณสมบัติ ตัวกรอง และตาราง
 - V1.146 · Path of Travel แบบ Revit ([[t_pot]]) ในแท็บ [[tab_analyze]]: ทางที่สั้นที่สุดอ้อมสิ่งกีดขวางและผ่านประตู · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · ตารางเส้นทางเดิน
 - V1.147 · จัดกลุ่ม Project Browser แบบ Revit ([[a_borg]]): มุมมอง [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · ชีต [[bo_pfx]] · ตั้งตัวกรอง โฟลเดอร์ 6 ชั้น และการเรียงเอง · พารามิเตอร์ของโครงการให้มุมมองและชีต
+- V1.148 · ตรวจปัญหาระบบแบบ Revit Check Duct/Pipe Systems ([[a_sysck]]): ระบบที่ไม่มีเครื่องต้นทาง หัวจ่ายที่ยังไม่มีปริมาณลม เครื่องที่ไม่มีท่อต่อ ลมเกินพิกัด ESP ไม่พอ ท่อต่อเป็นวง ท่อต่อชนท่อต่างระบบ ปั๊มอัตราไหลเกินพิกัด · ชนิดของเครื่องมี [[f_af]] [[f_esp]] และ [[f_wf]] ของปั๊ม · แผงคุณสมบัติ ตาราง และ [[a_sysreport]] เทียบสิ่งที่ระบบต้องการกับพิกัดของเครื่อง
+- V1.149 · กล่อง VAV, CAV และ VAV มีพัดลมแบบ Revit ([[t_ductacc]] ชนิด [[o_vav]] · [[o_cav]] · [[o_fpb]]): วางบนท่อลม ลมออกแบบเท่ากับลมของท่อ ตั้ง [[p_vmin]] เป็น % · บอก [[p_vin]] [[p_vvel]] [[p_vdp]] [[p_vrooms]] และโซน · ความดันตกของกล่องคิดในเส้นทางวิกฤต · ตาราง VAV จากตารางอุปกรณ์ท่อลม · สัญลักษณ์บนแปลนและรูป 3 มิติ · [[a_sysck]] เตือนกล่องที่ไม่มีลมผ่านหรือลมเข้าเร็วเกิน
+- V1.150 · ลมของห้องแบบ Space ของ Revit: [[p_saf]] หรือคิดจากภาระความเย็น ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] หรือ [[p_ach]] · เทียบกับ [[p_rasa]] [[p_rara]] [[p_raea]] ของหัวจ่ายในห้อง · [[a_airdist]] ตั้งลมหัวจ่ายตามที่ห้องต้องการ · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] เตือนห้องที่ลมไม่พอหรือเกิน
+- V1.151 · สัญลักษณ์ท่อขึ้น/ลงแบบ Rise/Drop ของ Revit: ในแปลนของแต่ละชั้น ท่อแนวดิ่งบอกเองว่าขึ้น ลง หรือผ่านตลอด · ท่อลมลงแรเงาครึ่งหนึ่ง · ท่อน้ำขึ้นเป็นวงกลมมีจุด ลงเป็นวงกลมมีกากบาท · ตั้งค่าและเปิด UP / DN ได้ใน [[a_mset]] หน้า [[ms_p_rd]] · [[p_rddir]] ในแผงคุณสมบัติ
+- V1.152 · [[a_vrfrep]]: จากท่อระบบ REF ที่ต่อเครื่องภายนอก (VRF / CDU) กับเครื่องภายใน · [[rf_ratio]] · ขนาดท่อของเหลว/ท่อแก๊สตามความเย็นที่แต่ละท่อนจ่าย · ความยาวรวม ไกลสุด จากจุดแยกแรก · ความสูงต่าง · Refnet · น้ำยาที่ต้องเติมและทั้งระบบ · ความเข้มข้นในห้องเล็กสุดเทียบ RCL · [[a_rfapply]] · [[a_sysck]] เตือนเมื่อเกินขีดจำกัด
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -29131,11 +29621,19 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 2. เปิด [[a_ductsize]] (แท็บ [[tab_sys]]) แล้วกดปุ่ม [[a_airflow]] ในหน้าต่างนั้น: โปรแกรมรวมปริมาณลมจากหัวจ่ายย้อนไปตามท่อจนถึงเครื่อง
 3. ในหน้าต่างเดียวกัน ตั้ง [[ds_fric]] และ [[ds_vmax]] โปรแกรมเสนอขนาดมาตรฐานเล็กที่สุดที่ไม่เกินเกณฑ์ แล้วกดปุ่มใช้ขนาดใหม่เพื่อปรับจริง
 4. [[a_sysreport]] ((DC)): สรุปแต่ละระบบ — ต้นทาง ปริมาณลมรวม ความเร็วสูงสุด เส้นทางวิกฤต และความดันสูญเสียโดยประมาณ สำหรับตรวจขนาดพัดลม
+5. พิกัดของเครื่อง: ใน [[type_props]] ของ AHU, FCU, แอร์ฝังฝ้า, แอร์ติดผนัง และพัดลม ใส่ [[f_af]] และ [[f_esp]] (ถ้าไม่ใส่พิกัดลม เครื่องทำความเย็นจะประมาณจากขนาดทำความเย็นที่ 400 CFM ต่อตัน) · เลือกเครื่องแล้วแผงคุณสมบัติบอก [[p_scsup]] [[p_scret]] [[p_scespq]] (เส้นทางวิกฤตของลมจ่ายบวกลมกลับ) และ [[p_scok]] · การ์ดของแต่ละระบบใน [[a_sysreport]] และตารางเครื่องจักรก็แสดงเช่นกัน
+6. [[a_sysck]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): ปุ่มเปิดปิดแบบ Check Duct Systems / Check Pipe Systems ของ Revit · เมื่อเปิด ปัญหาของระบบขึ้นเป็นวงกลมสีส้มมี ! บนแปลน และอยู่ในรายการ Review Warnings: ระบบที่มีหัวจ่ายแต่ไม่มีเครื่องต้นทาง · หัวจ่ายที่ยังไม่มีปริมาณลม · AHU, FCU หรือพัดลมที่ไม่มีท่อต่อ · ลมเกินพิกัด · ESP ไม่พอ · ท่อต่อเป็นวง · ปลายท่อชนท่อของอีกระบบ · ระบบน้ำเย็นหรือน้ำระบายความร้อนที่ไม่มีต้นทาง · ปั๊มที่ระบบต้องการอัตราไหลเกินพิกัด · ปลายท่อที่เปิดค้างยังดูได้ด้วย [[a_disc]]
+7. กล่อง VAV / CAV / VAV มีพัดลม: เลือก [[t_ductacc]] ชนิด [[o_vav]] [[o_cav]] หรือ [[o_fpb]] แล้วคลิกบนท่อลมก่อนถึงหัวจ่ายของโซนนั้น · แผงคุณสมบัติบอก [[p_vmax]] (ลมของท่อที่กล่องอยู่ หลังกด [[a_airflow]]) · ตั้ง [[p_vmin]] เป็น % (ค่าเริ่มต้น 30 %) · [[p_vin]] [[p_vvel]] (เกิน 10 m/s ขึ้นเตือน) · [[p_vdp]] (ตั้งใน [[type_props]]: [[f_vpd]] [[f_bw]] [[f_bh]]) · [[p_vterms]] [[p_vrooms]] และโซน · ทำตาราง VAV: [[a_mepsched]] หรือตารางใหม่หมวด [[cat_ductacc]] แล้วเลือกคอลัมน์ [[p_vmax]] [[p_vminf]] [[p_vin]] [[p_vdp]] [[p_vrooms]]
+8. ลมของห้อง: เลือกห้องแล้วดูกลุ่ม [[g_rair]] ในแผงคุณสมบัติ · [[p_racalc]] มาจาก [[a_loads]] (ห้องที่ปรับอากาศ) ใส่ [[p_saf]] เพื่อใช้ค่าของตัวเอง · ลมระบายใส่เป็น [[p_eaf]] หรือ [[p_ach]] (คูณปริมาตรห้องถึงฝ้า) · [[p_raf]] ถ้าไม่ใส่ = ลมจ่าย − ลมระบาย · [[a_airdist]] (แท็บ [[tab_analyze]]): แบ่งลมที่ห้องต้องการให้หัวจ่ายในห้องเท่า ๆ กัน (ห้องที่เลือก หรือทุกห้องของแปลนที่เปิดอยู่) แล้วกด [[a_airflow]] เพื่อให้ท่อรับลมใหม่ · [[a_airsched]] และ [[a_airfill]]: แดง [[ra_st_l]] · ส้ม [[ra_st_z]] · เหลือง [[ra_st_h]] · เขียว [[ra_st_o]] · ฟ้า [[ra_st_u]]
+9. ท่อน้ำยา VRF: วาดท่อระบบ REF (เส้นเดียวแทนท่อของเหลวและท่อแก๊ส) จากเครื่องภายนอก (VRF หรือ CDU) ไปเครื่องภายใน (แอร์ฝังฝ้า ติดผนัง FCU AHU) ที่มี [[f_cap]] ใน [[type_props]] · [[a_vrfrep]] (แท็บ [[tab_analyze]] และ [[tab_sys]]): แต่ละระบบบอก [[rf_ratio]] [[rf_tot]] [[rf_far]] [[rf_far2]] ความสูงต่าง [[rf_joints]] [[rf_add]] [[rf_charge]] และ [[rf_rcl]] (เลือก [[rf_ref]] R410A หรือ R32) · ตารางท่อบอก [[rf_c_liq]] และ [[rf_c_gas]] ของแต่ละท่อน · [[a_rfapply]] ปรับขนาดท่อในโมเดลเป็นท่อแก๊ส · เลือกท่อน้ำยาหรือเครื่องภายนอกเพื่อดูกลุ่ม [[g_rf]] ในแผงคุณสมบัติ
+> ต่างจาก Revit: กล่องเป็นอุปกรณ์ท่อลม (ไม่ใช่เครื่องจักร) ท่อเข้าและออกจึงเป็นท่อเส้นเดียวกัน · กำลังไฟของพัดลมในกล่อง ([[f_kw]]) ยังไม่เข้าวงจรไฟฟ้า
+> ต่างจาก Revit: ESP ที่ต้องการคิดจากเส้นทางวิกฤตของท่อ ข้อต่อ อุปกรณ์ และหัวจ่าย ไม่รวมความดันภายในเครื่อง (คอยล์ ฟิลเตอร์) · ลมกลับผ่านฝ้า (ไม่มีท่อ) ไม่ถูกนับ
 
 # ท่อน้ำ
 1. [[a_pipesize]]: คิดจากสุขภัณฑ์ที่ต่ออยู่ (หน่วยสุขภัณฑ์ WSFU และ DFU) จำนวนหัวสปริงเกลอร์ และเครื่องน้ำเย็น แล้วเสนอขนาดท่อ
 2. [[a_pipereport]] ((PC)): ตรวจว่าสุขภัณฑ์ทุกชิ้นมีท่อน้ำและท่อระบาย ท่อระบายลาดเอียงพอ และขนาดไม่เล็กกว่าที่คำนวณได้ พร้อมแรงดันสูญเสียและแรงดันที่ต้องการที่ต้นทาง ส่งออกเป็น CSV ได้
 3. ปั๊มที่ต่อขนานเป็นชุด ([[a_mesnew]]): อัตราไหลของระบบแบ่งเท่ากันให้ปั๊มที่ทำงาน ท่อแต่ละช่วงคิดอัตราไหลมากที่สุดที่ผ่านได้ ไม่ว่าปั๊มตัวไหนทำงานหรือสำรอง ด้านดูดของปั๊ม (ระบบที่ไม่มีภาระต่อ) ใช้อัตราไหลของชุดจากด้านที่ปั๊มจ่าย
+4. [[f_wf]] ใน [[type_props]] ของปั๊ม: [[a_pipereport]] และแผงคุณสมบัติเทียบกับอัตราไหลที่ระบบต้องการ (ปั๊มในชุด: ต่อปั๊มที่ทำงาน)
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -29367,6 +29865,11 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.145 · Worksets, as in Revit ([[a_worksets]]) on a new [[tab_collab]] tab: [[a_wsact]] · open and close worksets · hide them in a view ([[vg_tab_ws]] in [[a_vg]]) · [[a_wsgray]] · [[a_wsdisp]] · [[p_ws]] in Properties, filters and schedules
 - V1.146 · Path of Travel, as in Revit ([[t_pot]]) on the [[tab_analyze]] tab: the shortest way round obstacles and through doors · [[a_potrooms]] · [[a_potrvo]] · [[a_potwp]] · [[a_potupdall]] · [[a_potset]] · schedules of paths
 - V1.147 · Browser Organization, as in Revit ([[a_borg]]): views by [[bo_disc]] · [[bo_nos]] · [[bo_phase]] · [[bo_tdisc]] · sheets by [[bo_pfx]] · schemes of your own with filters, 6 levels of folders and sorting · project parameters of views and sheets
+- V1.148 · Check Systems, as Revit's Check Duct Systems and Check Pipe Systems ([[a_sysck]]): systems with no source, terminals with no airflow, units no duct reaches, more air than a unit is rated for, too little external static pressure, loops, runs that end on another system, pumps asked for more than their rated flow · equipment types take [[f_af]], [[f_esp]] and, for pumps, [[f_wf]] · Properties, schedules and [[a_sysreport]] compare what the systems ask with what the units are rated for
+- V1.149 · VAV, CAV and fan-powered boxes, as in Revit ([[t_ductacc]] of the kinds [[o_vav]], [[o_cav]] and [[o_fpb]]): placed on a duct, their design airflow is the air of that duct, [[p_vmin]] is set in % · they give [[p_vin]], [[p_vvel]], [[p_vdp]], [[p_vrooms]] and the zones · the drop of the box counts on the critical path · a VAV schedule from a schedule of duct accessories · a plan symbol and a 3D model · [[a_sysck]] warns of a box no air goes through or with too fast an inlet
+- V1.150 · The airflow of rooms, as of a Revit Space: [[p_saf]] or one from the cooling load ([[p_racalc]]) · [[p_raf]] · [[p_eaf]] or [[p_ach]] · against [[p_rasa]], [[p_rara]] and [[p_raea]] of the terminals in the room · [[a_airdist]] sets the terminals to what their rooms need · [[a_airsched]] · [[a_airfill]] · [[a_sysck]] warns of rooms with too little or too much air
+- V1.151 · Rise and drop symbols, as in Revit: in the plan of each level a riser shows by itself whether it rises, drops or passes through · a duct drop is half shaded · a pipe rise is a circle with a dot, a drop a circle with a cross · set them, and UP / DN, in [[a_mset]] › [[ms_p_rd]] · [[p_rddir]] in Properties
+- V1.152 · [[a_vrfrep]]: from the REF pipes between an outdoor unit (VRF / CDU) and the indoor units · [[rf_ratio]] · liquid and gas sizes by the capacity each pipe serves · total length, to the farthest unit, from the first branch · heights · Refnets · refrigerant to add and the system charge · the concentration in the smallest room against the RCL · [[a_rfapply]] · [[a_sysck]] warns of what is over the limits
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -29392,11 +29895,19 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 2. Open [[a_ductsize]] (the [[tab_sys]] tab) and press [[a_airflow]] in that window: the program adds the airflow up from the terminals back along the ducts to the machine
 3. In the same window set the [[ds_fric]] and the [[ds_vmax]]; the smallest standard size within both is proposed, and the apply button makes the change
 4. [[a_sysreport]] ((DC)): each system in brief — its source, total airflow, highest velocity, critical path and estimated pressure drop, for checking the fan
+5. What a unit is rated for: in the [[type_props]] of an AHU, a fan coil unit, a cassette, a wall-mounted unit or a fan, set [[f_af]] and [[f_esp]] (with no rated airflow, a cooling unit is taken at 400 CFM a ton of its cooling capacity) · select a unit and Properties give [[p_scsup]], [[p_scret]], [[p_scespq]] (the critical path of the supply air plus that of the return air) and [[p_scok]] · the card of each system in [[a_sysreport]] and the equipment schedules show them too
+6. [[a_sysck]] (the [[tab_analyze]] and [[tab_sys]] tabs): a button that stays on, as Revit's Check Duct Systems and Check Pipe Systems · while it is on, the problems of the systems show as orange discs with ! on the plans and in Review Warnings: a system with terminals and no source unit · a terminal with no airflow · an AHU, fan coil unit or fan no duct reaches · more air than a unit is rated for · too little external static pressure · a loop · a run that ends on a run of another system · a chilled or condenser water system with no source · a pump asked for more than its rated flow · open ends stay with [[a_disc]]
+7. VAV, CAV and fan-powered boxes: take [[t_ductacc]] of the kind [[o_vav]], [[o_cav]] or [[o_fpb]] and click on the duct before the terminals of its zone · Properties give [[p_vmax]] (the air of the duct it is on, after [[a_airflow]]) · set [[p_vmin]] in % (30 % unless set) · [[p_vin]], [[p_vvel]] (a warning above 10 m/s) · [[p_vdp]] (in [[type_props]]: [[f_vpd]], [[f_bw]], [[f_bh]]) · [[p_vterms]], [[p_vrooms]] and the zones · for a VAV schedule: [[a_mepsched]] or a new schedule of [[cat_ductacc]] with the fields [[p_vmax]], [[p_vminf]], [[p_vin]], [[p_vdp]], [[p_vrooms]]
+8. The airflow of rooms: select a room and see [[g_rair]] in Properties · [[p_racalc]] comes from [[a_loads]] (cooled rooms); type [[p_saf]] to use your own · exhaust is given as [[p_eaf]] or as [[p_ach]] (times the volume of the room up to its ceiling) · [[p_raf]] is the supply less the exhaust unless given · [[a_airdist]] (the [[tab_analyze]] tab): the terminals of a room share what it needs equally (the rooms selected, or every room of the plan that is open); then press [[a_airflow]] so the ducts take the new air · [[a_airsched]] and [[a_airfill]]: red [[ra_st_l]] · orange [[ra_st_z]] · yellow [[ra_st_h]] · green [[ra_st_o]] · blue [[ra_st_u]]
+9. VRF refrigerant piping: draw REF pipes (one line for the liquid and gas pair) from an outdoor unit (VRF or CDU) to the indoor units (cassette, wall-mounted, FCU, AHU) that have a [[f_cap]] in [[type_props]] · [[a_vrfrep]] (the [[tab_analyze]] and [[tab_sys]] tabs): for each system the [[rf_ratio]], [[rf_tot]], [[rf_far]], [[rf_far2]], heights, [[rf_joints]], [[rf_add]], [[rf_charge]] and [[rf_rcl]] (choose the [[rf_ref]], R410A or R32) · the table of pipes gives the [[rf_c_liq]] and [[rf_c_gas]] of each · [[a_rfapply]] sets the model to the gas sizes · select a refrigerant pipe or an outdoor unit to see [[g_rf]] in Properties
+> Unlike Revit: a box is a duct accessory (not mechanical equipment), so its inlet and outlet are one duct · the motor of a fan-powered box ([[f_kw]]) is not yet on an electrical circuit
+> Unlike Revit: the required external static pressure is the critical path of the ducts, fittings, accessories and terminals, without the losses inside the unit (coil, filters) · return air through a ceiling plenum (no duct) is not counted
 
 # Pipes
 1. [[a_pipesize]]: worked out from the fixtures connected (fixture units, WSFU and DFU), the number of sprinkler heads and the chilled water machines; sizes are proposed
 2. [[a_pipereport]] ((PC)): checks that every fixture has its water and its drain, that drains fall enough and that no pipe is smaller than worked out, with the pressure loss and the pressure needed at the source. It exports to CSV
 3. Pumps in a set ([[a_mesnew]]): the flow of the system is shared equally by the pumps on duty, and each pipe carries the most that can pass through it whichever pumps are on duty or on standby; the suction side of the pumps (a network with no loads) takes the flow of the set from the side the pumps supply
+4. [[f_wf]] in the [[type_props]] of a pump: [[a_pipereport]] and Properties compare it with the flow the system asks for (a pump of a set: for each pump on duty)
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -31260,6 +31771,14 @@ window.PenumBIM.r13={keys:vid=>saKeys(viewById(vid)).map(k=>({x:k.x,y:k.y,kind:k
   pdf:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size));await saReady(L);const u=await pwVector(L,O);return{b64:window.PenumBIM.r13.b64(u),st:PW_ST,n:u.length}},
   ras:async(ids,O)=>{O=O||{};const L=ids.flatMap(id=>printSheets(viewById(id),O.size)),pages=[];await saReady(L);for(const sh of L){const S=sheetSize(sh),cv=renderSheetCanvas(sh,O.dpi||200);if(O.color==='gray'||O.color==='bw')printTone(cv,O.color);
     const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',0.92));pages.push({jpg:new Uint8Array(await blob.arrayBuffer()),pw:cv.width,ph:cv.height,w:S[0],h:S[1]})}const u=makePDF(pages);return{b64:window.PenumBIM.r13.b64(u),n:u.length}}};
+window.PenumBIM.r62={air:()=>{const S=scAir(),o={};for(const [id,m] of S.M)o[id]={sup:m.sup,ret:m.ret,dpS:m.dpS,dpR:m.dpR,req:m.req,n:m.comps.length};return{units:o,att:[...S.att]}},
+  unit:id=>{const U=scUnit(IDX.get(id));return{R:U.R,esp:U.esp,att:U.att,over:U.over,low:U.low,m:U.m?{sup:U.m.sup,ret:U.m.ret,req:U.m.req}:null}},pump:id=>{const U=scPump(IDX.get(id));return{q:U.q,wf:U.wf,over:U.over}},
+  checks:()=>scChecks().map(c=>({k:c.k,d:c.d,ids:c.ids.slice(),x:c.x,y:c.y,level:c.level,a:c.a,msg:t('wn_'+c.k,c.a)})),rated:T=>scRated(T),fields:(cat,T)=>(tdFields(cat,T)||[]).map(f=>f[0]),lskw:SC_LSKW};
+window.PenumBIM.r63={info:id=>{const I=vavInfo(IDX.get(id));return{flow:I.flow,min:I.min,mn:I.mn,v:I.v,size:I.size,dp:I.dp,terms:I.terms.length,rooms:I.rooms.map(r=>r.name),zones:I.zones,host:I.host?I.host.id:null,fast:I.fast}},
+  accDp:(id,pv)=>{const e=IDX.get(id),T=typ(P,e)||{};return accDp(T,T.kind,pv||0)},size:id=>compSize(P,IDX.get(id))};
+window.PenumBIM.r64={rows:()=>RAm().map(r=>Object.assign({},r,{T:{SA:r.T.SA.slice(),RA:r.T.RA.slice(),EA:r.T.EA.slice()}})),row:id=>{const r=raRow(id);return r?JSON.parse(JSON.stringify(r)):null},dist:ids=>airDist(ids),scheme:()=>{const S=CSm('rair');return S?S.items.map(it=>({v:it.v,n:it.n,label:csLabel(S,it,t)})):null}};
+window.PenumBIM.r65={dir:(id,lv)=>rdDir(IDX.get(id),lv),set:()=>rdSet(P)};
+window.PenumBIM.r66={nets:()=>refNets().map(n=>({odu:n.odu?n.odu.id:0,kind:n.kind,idus:n.idus.map(e=>e.id),cap:n.cap,ocap:n.ocap,ratio:n.ratio,tot:n.tot,far:n.far,far2:n.far2,hUp:n.hUp,hDn:n.hDn,hId:n.hId,joints:n.joints.map(j=>({kw:j.kw,lab:j.lab,n:j.n})),add:n.add,charge:n.charge,worst:n.worst,P:n.P.map(p=>p[0]),pipes:[...n.pipes.values()].map(E=>({id:E.id,seg:E.seg,kw:E.kw,liq:E.liq,gas:E.gas,dia:E.dia,small:E.small}))})),apply:()=>rfApply(refNets())};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
