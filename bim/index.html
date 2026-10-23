@@ -28561,6 +28561,16 @@ function snVent(dfu,len,d,stk){let v=snHalf(d||32);
     let k=r.length-1;for(let j=3;j<r.length;j++)if(r[j]>=ft){k=j;break}const s=SN_VS[r[2]+k-3];if(s>v)v=s}
   else if(len>12192){const i=SN_VS.indexOf(v);if(i>=0&&i<SN_VS.length-1)v=SN_VS[i+1]}
   return v}
+/* the graph of one class of pipe system (V, RL …) with the parts of its risers that no pipe meets — a vent or a downpipe drawn as a riser alone:
+   nodes {x,y,z,gi: the node of W.G or -1, arms}, edges {a,b,len,id: the pipe or riser, el: that element, ris: vertical} */
+function sysGraph(P,W,cls){const N=W.G.nodes,E=W.G.edges,VN=[],VE=[],idx=new Map(),R=P.els.filter(s=>s.cat==='riser'&&SCL(s.sys||'')===cls&&(typ(P,s)||{}).kind==='pipe');
+  const node=(x,y,z,gi)=>{VN.push({x,y,z,gi,arms:[]});return VN.length-1},edge=(a,b,len,el,ris)=>{const ed={i:VE.length,a,b,len,id:el.id,el,ris};VE.push(ed);VN[a].arms.push({ed,far:b});VN[b].arms.push({ed,far:a})};
+  N.forEach((n,i)=>{if(SCL(n.sys||'')===cls)idx.set(i,node(n.x,n.y,n.z,i))});
+  for(const ed of E)if(idx.has(ed.a)&&idx.has(ed.b))edge(idx.get(ed.a),idx.get(ed.b),ed.len,ed.riser||ed.r.e,!!ed.riser);
+  for(const s of R){const zr=zRange(P,s),hit=[...idx.values()].filter(v=>Math.abs(VN[v].x-s.x)<40&&Math.abs(VN[v].y-s.y)<40&&VN[v].z>zr[0]-170&&VN[v].z<zr[1]+170).sort((a,b)=>VN[a].z-VN[b].z);
+    if(!hit.length){edge(node(s.x,s.y,zr[0],-1),node(s.x,s.y,zr[1],-1),zr[1]-zr[0],s,true);continue}
+    const lo=hit[0],hi=hit[hit.length-1];if(VN[lo].z-zr[0]>170)edge(node(s.x,s.y,zr[0],-1),lo,VN[lo].z-zr[0],s,true);if(zr[1]-VN[hi].z>170)edge(hi,node(s.x,s.y,zr[1],-1),zr[1]-VN[hi].z,s,true)}
+  return{VN,VE}}
 /* ---- what each drain is, the stacks, the vents and what they vent: worked out with the water of the pipes, W.sn ---- */
 function snAnalyse(P,W){const G=W.G,N=G.nodes,E=G.edges,par=W.par,L=W.L,idOf=ed=>ed.riser?ed.riser.id:ed.r.e.id,diaOf=ed=>ed.riser?(ed.riser.w||100):runW(ed.r.e);
   const sn={role:new Map(),kids:new Map(),orders:[],stacks:[],stOf:new Map(),idRole:new Map(),fix:new Map(),conns:[],checked:false,unv:[]};W.sn=sn;
@@ -28580,15 +28590,8 @@ function snAnalyse(P,W){const G=W.G,N=G.nodes,E=G.edges,par=W.par,L=W.L,idOf=ed=
       const S={ni,eds,ids:ris.map(s=>s.id),bot,top,botE,x:N[top].x,y:N[top].y,fu:botE!=null&&L[botE]?L[botE].fu:0,iv:ivs.length,ivMax:Math.max(0,...ivs.map(x=>x.q)),sv:ztop-N[top].z>=300,vent:false,dia:Math.max(...ris.map(s=>s.w||100))};
       for(const e of eds)sn.stOf.set(e,sn.stacks.length);sn.stacks.push(S)}});
   const RK={st:3,bd:2,br:1};for(const [ei,r] of sn.role){const id=idOf(E[ei]),o=sn.idRole.get(id);if(!o||RK[r]>RK[o])sn.idRole.set(id,r)}
-  /* ---- vents: the graph of the vent pipes and risers, with the parts of a vent riser that no pipe meets ---- */
-  const VR=P.els.filter(s=>s.cat==='riser'&&SCL(s.sys||'')==='V'&&(typ(P,s)||{}).kind==='pipe'),VN=[],VE=[],vIdx=new Map();
-  if(!VR.length&&!N.some(n=>n.sys==='V')&&!sn.stacks.some(s=>s.sv))return sn;
-  const vnode=(x,y,z,gi)=>{VN.push({x,y,z,gi,arms:[]});return VN.length-1},vedge=(a,b,len,id)=>{const ed={i:VE.length,a,b,len,id};VE.push(ed);VN[a].arms.push({ed,far:b});VN[b].arms.push({ed,far:a})};
-  N.forEach((n,i)=>{if(n.sys==='V')vIdx.set(i,vnode(n.x,n.y,n.z,i))});
-  for(const ed of E)if(vIdx.has(ed.a)&&vIdx.has(ed.b))vedge(vIdx.get(ed.a),vIdx.get(ed.b),ed.len,idOf(ed));
-  for(const s of VR){const zr=zRange(P,s),hit=[...vIdx.values()].filter(v=>Math.abs(VN[v].x-s.x)<40&&Math.abs(VN[v].y-s.y)<40&&VN[v].z>zr[0]-170&&VN[v].z<zr[1]+170).sort((a,b)=>VN[a].z-VN[b].z);
-    if(!hit.length){vedge(vnode(s.x,s.y,zr[0],-1),vnode(s.x,s.y,zr[1],-1),zr[1]-zr[0],s.id);continue}
-    const lo=hit[0],hi=hit[hit.length-1];if(VN[lo].z-zr[0]>170)vedge(vnode(s.x,s.y,zr[0],-1),lo,VN[lo].z-zr[0],s.id);if(zr[1]-VN[hi].z>170)vedge(hi,vnode(s.x,s.y,zr[1],-1),zr[1]-VN[hi].z,s.id)}
+  /* ---- vents ---- */
+  const VG=sysGraph(P,W,'V'),VN=VG.VN,VE=VG.VE;if(!VN.length&&!sn.stacks.some(s=>s.sv))return sn;
   /* where an open end of a vent meets the drainage: a drain within reach, else a fixture */
   const DE=E.filter(ed=>sn.role.has(ed.i)),FX=[...sn.fix.values()];
   const branchOut=ed=>{let cur=ed,g=0;for(;;){const dn=par[cur.a]===cur.i?cur.b:cur.a,pe=par[dn];if(pe<0||sn.role.get(pe)!=='br'||g++>1e5)return cur;cur=E[pe]}};
