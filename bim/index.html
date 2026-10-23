@@ -13603,17 +13603,18 @@ function famEval(src,V){const tk=String(src).match(/\d+(?:\.\d+)?|[A-Za-z_]\w*|<
   function fa(){const q=tk[i++];if(q==='-')return-fa();if(q==='+')return fa();if(q==='('){const a=cm();return eat(')')?a:NaN}if(q==null)return NaN;if(/^\d/.test(q))return+q;
     if(/^[A-Za-z_]/.test(q)){if(peek()==='('&&FAM_FN[q]){i++;const A=[cm()];while(eat(','))A.push(cm());return eat(')')?FAM_FN[q](...A):NaN}return Object.prototype.hasOwnProperty.call(V,q)?V[q]:NaN}return NaN}
   const r=cm();return i===tk.length&&isFinite(r)?r:NaN}
-const FAM_DIR={'+x':[1,0,0],'-x':[-1,0,0],'+y':[0,1,0],'-y':[0,-1,0],'+z':[0,0,1],'-z':[0,0,-1],x:[1,0,0],y:[0,1,0],z:[0,0,1]},FAM_CN={sa:'SA',ra:'RA',air:'air',p:'p'},FAM_PC=new Map();
+const FAM_AX={x:1,y:1,z:1},FAM_DIR={'+x':[1,0,0],'-x':[-1,0,0],'+y':[0,1,0],'-y':[0,-1,0],'+z':[0,0,1],'-z':[0,0,-1],x:[1,0,0],y:[0,1,0],z:[0,0,1]},FAM_CN={sa:'SA',ra:'RA',air:'air',p:'p'},FAM_PC=new Map();
 /* the values a family's formulas see: W, D, H and its own parameters */
 function famVars(T,W,D,H){const V={W,D,H};for(const q of (T.fam||{}).p||[])if(Array.isArray(q)&&/^[A-Za-z_]\w*$/.test(q[0])&&!['W','D','H'].includes(q[0]))V[q[0]]=+q[1]||0;return V}
 /* family type T at size W × D × H, at detail level det of a plan ('coarse', 'medium', 'fine'; none: the 3D model, which shows what Fine shows) ->
    {s: solids and plan lines in the form of furnShape, cn: connectors in the form of equipPorts, n: lines understood, bad: [line numbers]}.  Shared: do not change it. */
 function famParse(T,W,D,H,det){const F=T.fam||{},key=JSON.stringify(F)+'|'+W+'|'+D+'|'+H+'|'+(det||''),c0=FAM_PC.get(key);if(c0)return c0;
-  const V=famVars(T,W,D,H),s=[],cn=[],bad=[],E=x=>famEval(x,V),col=c=>FAM_COLS.has(c)?c:'m',lv=(det||'fine')[0];let n=0;
+  const V=famRefs(F.src,famVars(T,W,D,H)),s=[],cn=[],bad=[],E=x=>famEval(x,V),col=c=>FAM_COLS.has(c)?c:'m',lv=(det||'fine')[0];let n=0;
   String(F.src||'').split('\n').forEach((ln,i)=>{let L=ln.replace(/#.*/,'').trim();if(!L)return;let fl='';
     L=L.replace(/(^|\s)@([cmf3]+)(?=\s|:|$)/gi,(m,a,b)=>{fl+=b.toLowerCase();return a}).replace(/\s+:/,' :').trim();
     const on=!/[cmf]/.test(fl)||fl.includes(lv),pf=det&&fl.includes('3')?0:1,w=L.split(':')[0].trim().split(/\s+/),k=w[0].toLowerCase(),A=(a,b)=>w.slice(a,b).map(E),ok=v=>v.every(isFinite),
       put=q=>{n++;if(on)s.push(q)},sym=q=>{n++;if(on&&det)s.push(q)};          // a plan line is no part of the model
+    if(k==='ref'&&w.length>=4&&/^[A-Za-z_]\w*$/.test(w[1])&&FAM_AX[w[2].toLowerCase()]&&isFinite(V[w[1]])){n++;return}          // a reference plane (V1.170): its value was set by famRefs
     if(k==='box'&&w.length>=7){const v=A(1,7);if(ok(v)&&v[3]!==v[0]&&v[4]!==v[1]&&v[5]>v[2]){put(['b',Math.min(v[0],v[3]),Math.min(v[1],v[4]),v[2],Math.max(v[0],v[3]),Math.max(v[1],v[4]),v[5],col(w[7]),pf]);return}}
     else if(k==='cyl'&&w.length>=6){const v=A(1,6);if(ok(v)&&v[2]>0&&v[4]>v[3]){put(['c',v[0],v[1],v[2],v[3],v[4],col(w[6]),pf]);return}}
     else if(k==='sph'&&w.length>=5){const v=A(1,5);if(ok(v)&&v[3]>0){put(['s',v[0],v[1],v[2],v[3],col(w[5]),pf]);return}}
@@ -13687,7 +13688,7 @@ function dlgFamily(id){ui.helpAt='calc';const L=famTypes(),T=L.find(x=>x.id===+i
  </div><div><div id="fmSvg" style="margin:0 0 6px">${famSvg(T,det)}</div><textarea id="fm_src" data-fm="src" rows="12" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:12px;height:240px" aria-label="${t('fam_geo')}">${esc(T.fam.src||'')}</textarea></div></div>${famTypesBlock(T,cat)}
       <p id="fmNote" class="note${R.bad.length?' warn':''}">${famNote(T,used)}</p><p class="note">${t('fam_dsl')}</p><p class="note">${t('fam_dsl2')}</p>`:`<p class="note">${t('fam_none')}</p>`);
   const smp=c=>Object.keys(FAM_SAMPLE).filter(k=>(FAM_SAMPLE[k].cat||'furn')===c).map(k=>`<option value="${k}">${t('fam_s_'+k)}</option>`).join('');
-  openDlg(t('a_famed'),body,`<select data-fm="new" aria-label="${t('fam_new')}"><option value="">＋ ${t('fam_new')}…</option><optgroup label="${esc(t('cat_furn'))}">${smp('furn')}</optgroup><optgroup label="${esc(t('cat_equip'))}">${smp('equip')}</optgroup></select>${T?`<button class="btn" data-fmx="dup">${t('duplicate')}</button><button class="btn" data-fmx="del"${used?' disabled':''}>${t('pp_remove')}</button>`:''}<button class="btn" data-fmx="lib">${t('fl_title')}…</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>${T?`<button class="btn primary" data-fmx="place">${t('fam_place')}</button>`:''}`,
+  openDlg(t('a_famed'),body,`<select data-fm="new" aria-label="${t('fam_new')}"><option value="">＋ ${t('fam_new')}…</option><optgroup label="${esc(t('cat_furn'))}">${smp('furn')}</optgroup><optgroup label="${esc(t('cat_equip'))}">${smp('equip')}</optgroup></select>${T?`<button class="btn" data-fmx="dup">${t('duplicate')}</button><button class="btn" data-fmx="del"${used?' disabled':''}>${t('pp_remove')}</button>`:''}${T?`<button class="btn" data-fmx="sketch">${t('fx_open')}…</button>`:''}<button class="btn" data-fmx="lib">${t('fl_title')}…</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>${T?`<button class="btn primary" data-fmx="place">${t('fam_place')}</button>`:''}`,
     {change(e){if(T&&famTypesEv(e,T))return;const el=e.target,k=el.dataset.fm;if(!k)return;const v=el.value;
        if(k==='new'){if(!v)return;let N=null;edit(()=>{N=famNew(v)});dlgFamily(N.id);return}if(k==='pick'){dlgFamily(+v);return}if(!T)return;
        if(k==='det'){ui.famDet=v;const a=$('#fmSvg');if(a)a.innerHTML=famSvg(T,v);return}
@@ -13698,7 +13699,7 @@ function dlgFamily(id){ui.helpAt='calc';const L=famTypes(),T=L.find(x=>x.id===+i
          else if(k==='src')T.fam=Object.assign({},T.fam,{src:v.slice(0,12000)});
          if(['src','p','fn','as','grp'].includes(k))famSyncSibs(T)});
        if(k==='name'||k==='fn'||k==='p'){dlgFamily(T.id);return}const a=$('#fmSvg'),b=$('#fmNote');if(a)a.innerHTML=famSvg(T,ui.famDet||'coarse');if(b){b.innerHTML=famNote(T,used);b.classList.toggle('warn',famParse(T,+T.w||0,+T.d||0,+T.h||0).bad.length>0)}},
-     click(e){if(T&&famTypesEv(e,T))return;const b=e.target.closest('[data-fmx]');if(!b)return;const a=b.dataset.fmx;if(a==='lib'){dlgFamLib(T?T.id:0);return}if(!T)return;
+     click(e){if(T&&famTypesEv(e,T))return;const b=e.target.closest('[data-fmx]');if(!b)return;const a=b.dataset.fmx;if(a==='lib'){dlgFamLib(T?T.id:0);return}if(!T)return;if(a==='sketch'){dlgFamSketch(T.id);return}
        if(a==='place'){closeDlg();defs(cat).type=T.id;setTool(cat);refresh();return}
        if(a==='dup'){let N=null;edit(()=>{N=Object.assign(JSON.parse(JSON.stringify(T)),{id:P.seq++,name:T.name+' 2'});P.types[cat].push(N)});dlgFamily(N.id);return}
        if(a==='del'&&!used){edit(()=>{P.types[cat]=P.types[cat].filter(x=>x!==T)});ui.famId=0;dlgFamily();return}}},'wide')}
@@ -13875,6 +13876,155 @@ Object.assign(STR,{
   fl_st_nolic:['ใช้ในเครื่องนี้ (ส่งให้เครื่องอื่นของบริษัทได้เมื่อมีรหัสเปิดใช้งาน)','On this computer (shared with the company\'s other computers once there is a licence code)'],
   fl_st_offline:['ต่ออินเทอร์เน็ตไม่ได้ ใช้คลังในเครื่องนี้ไปก่อน','No internet: using this computer\'s library for now'],fl_st_nosql:['ORIEN ยังไม่ได้เปิดระบบรายการของบริษัท ตอนนี้ใช้ได้เฉพาะในเครื่องนี้','ORIEN has not switched the company list on yet: this computer only'],
   fl_st_big:['คลังใหญ่เกินกว่าจะส่งขึ้นคลาวด์ ลบชิ้นส่วนที่ไม่ใช้ออกบ้าง','The library is too big to share: delete families you do not use'],fl_st_lock:['เครื่องอื่นกำลังส่งคลังอยู่ จะลองใหม่เอง','Another computer is sending the library: it will try again'],fl_st_bad:['อัปเดตกับเครื่องอื่นไม่สำเร็จ จะลองใหม่ภายหลัง','Could not update with other computers; try again later']});
+/* ===== 170 sketching a family (V1.170; Revit: the Family Editor's views, reference planes, dimensions labelled with parameters, Flex).
+   ลากวาด (Sketch) shows the family from above and from the front, at a size of its own (Flex: W, D, H tried out without changing the type).
+   Its lines are drawn as they are written in src, so what is sketched is written back into the same lines:
+   - drag a solid, a connector or a symbolic line to move it (its numbers and formulas get a constant added: "D/2+40" becomes "D/2+65");
+   - drag a handle (an edge of a box, the end of a cylinder, a radius) to size it: an edge let go on a reference plane is locked to it — the line
+     takes the plane's formula (W/2, -D/2, H, or the name of a plane of your own), so the solid follows when W, D, H or a parameter change;
+   - draw a box, a cylinder, a connector or a reference plane with the tools; click a dimension to type its length (a number or a formula).
+   Reference planes: the middle and the faces of the box W × D × H, and lines of src: ref NAME x|y|z formula — a plane of your own whose name the
+   other lines' formulas may use (famRefs), as Revit's named reference planes and labelled dimensions. ===== */
+/* the planes of src added to V, in order (each may use those before it) */
+function famRefs(src,V){for(const ln of String(src||'').split('\n')){const L=ln.replace(/#.*/,'').trim();if(!/^ref\s/i.test(L))continue;const w=L.split(/\s+/);
+    if(w.length<4||!/^[A-Za-z_]\w*$/.test(w[1])||['W','D','H'].includes(w[1])||FAM_FN[w[1]]||!FAM_AX[w[2].toLowerCase()])continue;const v=famEval(w.slice(3).join(' '),V);if(isFinite(v))V[w[1]]=v}
+  return V}
+/* src as lines: {i, raw, k, w (the tokens before ':'), pts (the points after it), fl (flags), cm (the remark)}; fxJoin writes back the lines marked mod */
+function fxLines(src){return String(src||'').split('\n').map((raw,i)=>{const ci=raw.indexOf('#'),body=ci>=0?raw.slice(0,ci):raw,cm=ci>=0?raw.slice(ci).trim():'';let fl='';
+  const b=body.replace(/(^|\s)@([cmf3]+)(?=\s|:|$)/gi,(m,a,f)=>{fl+=f.toLowerCase();return a}).trim();if(!b)return{i,raw,k:''};
+  const head=b.split(':')[0].trim(),w=head.split(/\s+/),pts=b.includes(':')?b.slice(b.indexOf(':')+1).split(',').map(q=>q.trim().split(/\s+/)):null;
+  if(w[0].toLowerCase()==='ref'&&w.length>4)w.splice(3,w.length-3,w.slice(3).join(''));return{i,raw,k:w[0].toLowerCase(),w,pts,fl,cm}})}
+const fxJoin=L=>L.map(x=>x.mod?[x.w.join(' '),x.fl?'@'+x.fl:'',x.pts?': '+x.pts.map(p=>p.join(' ')).join(', '):'',x.cm].filter(Boolean).join(' '):x.raw).join('\n');
+/* which tokens of a line are its coordinates along each axis, and its radius */
+const FX_AX={box:{x:[1,4],y:[2,5],z:[3,6]},cyl:{x:[1],y:[2],z:[4,5],r:3},sph:{x:[1],y:[2],z:[3],r:4},xcyl:{x:[4,5],y:[1],z:[2],r:3},ycyl:{x:[1],y:[4,5],z:[2],r:3},
+  con:{x:[2],y:[3],z:[4]},line:{x:[1,3],y:[2,4]},rect:{x:[1,3],y:[2,4]},circle:{x:[1],y:[2],r:3},arc:{x:[1],y:[2],r:3},ext:{z:[1,2]},ref:{}};
+const fxR=v=>{const r=Math.round(v*10)/10;return String(Object.is(r,-0)?0:r)};
+/* a number added to a coordinate written as a number or a formula: the constant at its end takes it */
+function fxAdd(tok,d){if(Math.abs(d)<0.05)return tok;if(/^-?\d+(\.\d+)?$/.test(tok))return fxR(+tok+d);
+  const m=/^(.*[\w)])([+-])(\d+(?:\.\d+)?)$/.exec(tok);if(m&&!/[*\/]$/.test(m[1])){const c=(m[2]==='-'?-1:1)*+m[3]+d;return Math.abs(c)<0.05?m[1]:m[1]+(c<0?'-':'+')+fxR(Math.abs(c))}
+  return tok+(d<0?'-':'+')+fxR(Math.abs(d))}
+/* the planes along an axis at size W × D × H: [{v, e (what a locked edge writes), nm (shown), own (a ref line)}] */
+function fxPlanes(ax,V,L){const W=V.W,D=V.D,H=V.H,o=ax==='x'?[{v:-W/2,e:'-W/2'},{v:0,e:'0'},{v:W/2,e:'W/2'}]:ax==='y'?[{v:-D/2,e:'-D/2'},{v:0,e:'0'},{v:D/2,e:'D/2'}]:[{v:0,e:'0'},{v:H/2,e:'H/2'},{v:H,e:'H'}];
+  for(const x of L)if(x.k==='ref'&&x.w.length>=4&&(x.w[2]||'').toLowerCase()===ax&&isFinite(V[x.w[1]]))o.push({v:V[x.w[1]],e:x.w[1],nm:x.w[1],own:x.i});return o}
+const FX={st:null};          // the sketch: {T, src (shown, maybe not yet kept), sel (line), tool, ck, ra, flex {W,D,H}, drag}
+function fxState(T){if(!FX.st||FX.st.id!==T.id)FX.st={id:T.id,src:T.fam.src||'',sel:-1,tool:'sel',ck:'SA',ra:'x',flex:null,drag:null};FX.st.T=T;return FX.st}
+/* the drawing: top view left (x right, y down as in plan), front view right (x right, z up) */
+function fxSvg(S){const T=S.T,fl=S.flex||{},W=+fl.W||+T.w||1000,D=+fl.D||+T.d||600,H=+fl.H||+T.h||750,Tv=Object.assign({},T,{fam:Object.assign({},T.fam,{src:S.src})}),
+    V=famRefs(S.src,famVars(Tv,W,D,H)),L=fxLines(S.src),E=x=>famEval(x,V),R=famParse(Tv,W,D,H);
+  const ext=Math.max(W,D,H,...R.cn.map(c=>2*Math.max(Math.abs(c.u),Math.abs(c.v),Math.abs(c.z-H/2))+200))*1.25,k=420/ext,f=x=>Math.round(x*10)/10;
+  const TX=x=>f(250+x*k),TY=y=>f(250+y*k),FXx=x=>f(760+x*k),FZ=z=>f(250-(z-H/2)*k);S.geo={k,W,D,H,V};
+  const o=[`<rect x="10" y="20" width="480" height="460" class="fxpan" data-pan="top"/><rect x="520" y="20" width="480" height="460" class="fxpan" data-pan="front"/>`,
+    `<text x="20" y="40" class="fxl">${esc(t('fam_top'))}</text><text x="530" y="40" class="fxl">${esc(t('fam_front'))}</text>`];
+  /* reference planes */
+  const pl=(ax,p)=>{const own=p.own!=null,cls='fxrp'+(own?' own':'')+(own&&S.sel===p.own?' on':''),at=own?` data-li="${p.own}" data-h="m"`:'',lab=esc(p.nm||p.e);
+    if(ax==='x')return`<line x1="${TX(p.v)}" y1="25" x2="${TX(p.v)}" y2="475" class="${cls}"${at}/><line x1="${FXx(p.v)}" y1="25" x2="${FXx(p.v)}" y2="475" class="${cls}"${at}/><text x="${TX(p.v)+2}" y="472" class="fxpl">${lab}</text><text x="${FXx(p.v)+2}" y="472" class="fxpl">${lab}</text>`;
+    if(ax==='y')return`<line x1="15" y1="${TY(p.v)}" x2="485" y2="${TY(p.v)}" class="${cls}"${at}/><text x="482" y="${TY(p.v)-2}" text-anchor="end" class="fxpl">${lab}</text>`;
+    return`<line x1="525" y1="${FZ(p.v)}" x2="995" y2="${FZ(p.v)}" class="${cls}"${at}/><text x="992" y="${FZ(p.v)-2}" text-anchor="end" class="fxpl">${lab}</text>`};
+  for(const ax of ['x','y','z'])for(const p of fxPlanes(ax,V,L))o.push(pl(ax,p));
+  /* the lines of src */
+  const hd=(x,y,h,li)=>`<rect x="${f(x-4)}" y="${f(y-4)}" width="8" height="8" class="fxh" data-li="${li}" data-h="${h}"/>`,dm=(x1,y1,x2,y2,val,li,ax,ofs)=>{const mx=(x1+x2)/2,my=(y1+y2)/2,vt=Math.abs(x2-x1)<1;
+      return`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="fxdm"/><text x="${f(mx+(vt?ofs:0))}" y="${f(my+(vt?3:ofs))}" class="fxdt" text-anchor="${vt?(ofs<0?'end':'start'):'middle'}" data-li="${li}" data-dim="${ax}">${esc(fxR(val))}</text>`};
+  const top=[];          // the handles and dimensions of the selected line, over everything
+  for(const x of L){if(!x.k||!FX_AX[x.k]||x.k==='ref')continue;const v=x.w.map(E),sel=S.sel===x.i,cls=(x.k==='line'||x.k==='rect'||x.k==='circle'||x.k==='arc'?'fxsy':'fxso')+(sel?' on':'')+(/[cmf]/.test(x.fl||'')&&!/f/.test(x.fl)?' lo':''),at=`data-li="${x.i}" data-h="m"`,h=[];
+    if(x.k==='box'&&v.slice(1,7).every(isFinite)){const [x0,y0,z0,x1,y1,z1]=v.slice(1,7);o.push(`<rect x="${Math.min(TX(x0),TX(x1))}" y="${Math.min(TY(y0),TY(y1))}" width="${f(Math.abs(x1-x0)*k)}" height="${f(Math.abs(y1-y0)*k)}" class="${cls}" ${at}/>`,`<rect x="${Math.min(FXx(x0),FXx(x1))}" y="${Math.min(FZ(z0),FZ(z1))}" width="${f(Math.abs(x1-x0)*k)}" height="${f(Math.abs(z1-z0)*k)}" class="${cls}" ${at}/>`);
+      if(sel){h.push(hd(TX(x0),TY((y0+y1)/2),'x0',x.i),hd(TX(x1),TY((y0+y1)/2),'x1',x.i),hd(TX((x0+x1)/2),TY(y0),'y0',x.i),hd(TX((x0+x1)/2),TY(y1),'y1',x.i),hd(FXx(x0),FZ((z0+z1)/2),'x0',x.i),hd(FXx(x1),FZ((z0+z1)/2),'x1',x.i),hd(FXx((x0+x1)/2),FZ(z0),'z0',x.i),hd(FXx((x0+x1)/2),FZ(z1),'z1',x.i));
+        const yb=Math.max(TY(y0),TY(y1))+16,xr=Math.max(TX(x0),TX(x1))+14,xf=Math.max(FXx(x0),FXx(x1))+14;h.push(dm(TX(Math.min(x0,x1)),yb,TX(Math.max(x0,x1)),yb,Math.abs(x1-x0),x.i,'x',-4),dm(xr,TY(Math.min(y0,y1)),xr,TY(Math.max(y0,y1)),Math.abs(y1-y0),x.i,'y',4),dm(xf,FZ(Math.max(z0,z1)),xf,FZ(Math.min(z0,z1)),Math.abs(z1-z0),x.i,'z',4))}}
+    else if(x.k==='cyl'&&v.slice(1,6).every(isFinite)){const [cx,cy,r,z0,z1]=v.slice(1,6);o.push(`<circle cx="${TX(cx)}" cy="${TY(cy)}" r="${f(r*k)}" class="${cls}" ${at}/>`,`<rect x="${FXx(cx-r)}" y="${FZ(z1)}" width="${f(2*r*k)}" height="${f((z1-z0)*k)}" class="${cls}" ${at}/>`);
+      if(sel){h.push(hd(TX(cx+r),TY(cy),'r',x.i),hd(FXx(cx),FZ(z0),'z0',x.i),hd(FXx(cx),FZ(z1),'z1',x.i),dm(TX(cx-r),TY(cy)+r*k+16,TX(cx+r),TY(cy)+r*k+16,2*r,x.i,'r',-4),dm(FXx(cx+r)+14,FZ(z1),FXx(cx+r)+14,FZ(z0),z1-z0,x.i,'z',4))}}
+    else if(x.k==='sph'&&v.slice(1,5).every(isFinite)){const [cx,cy,cz,r]=v.slice(1,5);o.push(`<circle cx="${TX(cx)}" cy="${TY(cy)}" r="${f(r*k)}" class="${cls}" ${at}/>`,`<circle cx="${FXx(cx)}" cy="${FZ(cz)}" r="${f(r*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(TX(cx+r),TY(cy),'r',x.i))}
+    else if((x.k==='xcyl'||x.k==='ycyl')&&v.slice(1,6).every(isFinite)){const a=v[1],z=v[2],r=v[3],b0=v[4],b1=v[5];
+      if(x.k==='xcyl'){o.push(`<rect x="${Math.min(TX(b0),TX(b1))}" y="${TY(a-r)}" width="${f(Math.abs(b1-b0)*k)}" height="${f(2*r*k)}" class="${cls}" ${at}/>`,`<rect x="${Math.min(FXx(b0),FXx(b1))}" y="${FZ(z+r)}" width="${f(Math.abs(b1-b0)*k)}" height="${f(2*r*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(TX(b0),TY(a),'x0',x.i),hd(TX(b1),TY(a),'x1',x.i),hd(TX((b0+b1)/2),TY(a+r),'r',x.i))}
+      else{o.push(`<rect x="${TX(a-r)}" y="${Math.min(TY(b0),TY(b1))}" width="${f(2*r*k)}" height="${f(Math.abs(b1-b0)*k)}" class="${cls}" ${at}/>`,`<circle cx="${FXx(a)}" cy="${FZ(z)}" r="${f(r*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(TX(a),TY(b0),'y0',x.i),hd(TX(a),TY(b1),'y1',x.i),hd(TX(a+r),TY((b0+b1)/2),'r',x.i))}}
+    else if(x.k==='ext'&&x.pts){const P0=x.pts.map(p=>p.map(E));if(P0.every(p=>p.length===2&&isFinite(p[0])&&isFinite(p[1]))&&isFinite(v[1])&&isFinite(v[2])){let u0=Infinity,u1=-Infinity;for(const p of P0){u0=Math.min(u0,p[0]);u1=Math.max(u1,p[0])}
+      o.push(`<polygon points="${P0.map(p=>TX(p[0])+','+TY(p[1])).join(' ')}" class="${cls}" ${at}/>`,`<rect x="${FXx(u0)}" y="${FZ(v[2])}" width="${f((u1-u0)*k)}" height="${f((v[2]-v[1])*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(FXx((u0+u1)/2),FZ(v[1]),'z0',x.i),hd(FXx((u0+u1)/2),FZ(v[2]),'z1',x.i))}}
+    else if((x.k==='line'||x.k==='rect')&&v.slice(1,5).every(isFinite)){const [a,b,c,d]=v.slice(1,5);o.push(x.k==='line'?`<line x1="${TX(a)}" y1="${TY(b)}" x2="${TX(c)}" y2="${TY(d)}" class="${cls}" ${at}/>`:`<rect x="${Math.min(TX(a),TX(c))}" y="${Math.min(TY(b),TY(d))}" width="${f(Math.abs(c-a)*k)}" height="${f(Math.abs(d-b)*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(TX(a),TY(b),'p0',x.i),hd(TX(c),TY(d),'p1',x.i))}
+    else if((x.k==='circle'||x.k==='arc')&&v.slice(1,4).every(isFinite)){const [cx,cy,r]=v.slice(1,4);o.push(`<circle cx="${TX(cx)}" cy="${TY(cy)}" r="${f(r*k)}" class="${cls}" ${at}/>`);if(sel)h.push(hd(TX(cx+r),TY(cy),'r',x.i))}
+    else if(x.k==='con'&&v.slice(2,5).every(isFinite)){const cc=FAM_CCOL[FAM_CN[(x.w[1]||'').toLowerCase()]]||'#888',d=FAM_DIR[(x.w[5]||'').toLowerCase()]||[0,0,0];
+      for(const [px,py,dx,dy] of [[TX(v[2]),TY(v[3]),d[0],d[1]],[FXx(v[2]),FZ(v[4]),d[0],-d[2]]])o.push(`<circle cx="${px}" cy="${py}" r="${sel?6:4.5}" fill="${cc}" class="fxcn${sel?' on':''}" ${at}/>`+(Math.hypot(dx,dy)>0.1?`<line x1="${px}" y1="${py}" x2="${f(px+dx*16)}" y2="${f(py+dy*16)}" stroke="${cc}" stroke-width="2" pointer-events="none"/>`:''))}
+    top.push(...h)}
+  o.push(...top);
+  return`<svg id="fxSvg" viewBox="0 0 1010 490" width="100%" style="touch-action:none;user-select:none;max-height:62vh">${o.join('')}</svg>`}
+const FX_CSS=`<style>#fxSvg .fxpan{fill:var(--paper);stroke:var(--line2)}#fxSvg .fxl{font-size:12px;fill:var(--muted)}#fxSvg .fxrp{stroke:#0B7F8C;stroke-width:.8;stroke-dasharray:6 4;opacity:.55}#fxSvg .fxrp.own{stroke-width:1.6;opacity:.9;cursor:move}#fxSvg .fxrp.on{stroke:#e0663a}
+  #fxSvg .fxpl{font-size:10px;fill:#0B7F8C}#fxSvg .fxso{fill:rgba(140,155,170,.28);stroke:var(--ink);stroke-width:1;cursor:move}#fxSvg .fxso.lo{stroke-dasharray:4 3}#fxSvg .fxsy{fill:none;stroke:#3a6fd0;stroke-width:1.4;cursor:move}
+  #fxSvg .on{stroke:#e0663a;stroke-width:2}#fxSvg .fxh{fill:#fff;stroke:#e0663a;stroke-width:1.5;cursor:pointer}#fxSvg .fxdm{stroke:#e0663a;stroke-width:.8}#fxSvg .fxdt{font-size:11px;fill:#e0663a;cursor:text;font-weight:600}
+  #fxSvg .fxcn{stroke:#fff;stroke-width:1.2;cursor:move}.fxtb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 6px}.fxtb .btn[aria-pressed="true"]{background:var(--accent,#0B7F8C);color:#fff}.fxtb input{width:76px}</style>`;
+function dlgFamSketch(id){ui.helpAt='calc';const T=famTypes().find(x=>x.id===id);if(!T){dlgFamily();return}const S=fxState(T);
+  const tb=(k,l)=>`<button class="btn" data-fxt="${k}" aria-pressed="${S.tool===k}">${t(l)}</button>`,fl=S.flex||{};
+  const body=`${FX_CSS}<p class="note">${t('fx_note')}</p><div class="fxtb">${tb('sel','fx_sel')}${tb('box','fx_box')}${tb('cyl','fx_cyl')}${tb('con','fx_con')}<select data-fxs="ck" aria-label="${esc(t('fx_con'))}">${['SA','RA','air','p'].map(c=>`<option${S.ck===c?' selected':''}>${c}</option>`).join('')}</select>${tb('ref','fx_ref')}<select data-fxs="ra" aria-label="${esc(t('fx_ref'))}">${['x','y','z'].map(c=>`<option${S.ra===c?' selected':''}>${c}</option>`).join('')}</select>
+      <button class="btn" data-fxt="del"${S.sel>=0?'':' disabled'}>${t('pp_remove')}</button><span style="flex:1"></span><b style="font-size:12px">${t('fx_flex')}</b>${['W','D','H'].map(k=>`<label style="font-size:12px">${k} <input type="number" data-fxf="${k}" value="${fl[k]||''}" placeholder="${T[k.toLowerCase()]}" step="10" min="10"></label>`).join('')}<button class="btn" data-fxt="unflex"${S.flex?'':' disabled'}>${t('fx_unflex')}</button></div>
+    <div id="fxBox">${fxSvg(S)}</div><textarea id="fxSrc" rows="6" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:12px;height:120px;margin-top:6px" aria-label="${t('fam_geo')}">${esc(S.src)}</textarea><p class="note" id="fxMsg">${t('fx_hint')}</p>`;
+  openDlg(t('fx_title',famFn(T)+' : '+T.name),body,`<button class="btn" data-fxt="back">${t('a_famed')}</button><span style="flex:1"></span><button class="btn primary" data-fxt="done">${t('close')}</button>`,
+    {change(e){const el=e.target;if(el.id==='fxSrc'){fxKeep(S,el.value);fxRedraw(S);return}if(el.dataset.fxs){S[el.dataset.fxs]=el.value;return}
+       if(el.dataset.fxf){const v=Math.round(+el.value),o=Object.assign({},S.flex||{});if(v>=10&&v<=50000)o[el.dataset.fxf]=v;else delete o[el.dataset.fxf];S.flex=Object.keys(o).length?o:null;dlgFamSketch(T.id)}},
+     click(e){const b=e.target.closest('[data-fxt]');if(b){const a=b.dataset.fxt;if(a==='back'){dlgFamily(T.id);return}if(a==='done'){closeDlg();return}if(a==='unflex'){S.flex=null;dlgFamSketch(T.id);return}
+         if(a==='del'){if(S.sel<0)return;const L=fxLines(S.src).filter(x=>x.i!==S.sel);S.sel=-1;fxKeep(S,L.map(x=>x.raw).join('\n'));dlgFamSketch(T.id);return}S.tool=a;dlgFamSketch(T.id);return}
+       const dt=e.target.closest('[data-dim]');if(dt){fxDim(S,+dt.dataset.li,dt.dataset.dim);return}}},'wide');
+  fxWire(S)}
+/* keep the sketch's src in the type and the rest of its family (one step of Undo) */
+function fxKeep(S,src){const T=S.T;S.src=String(src).slice(0,12000);if(S.src===(T.fam.src||''))return;edit(()=>{T.fam=Object.assign({},T.fam,{src:S.src});famSyncSibs(T)})}
+function fxRedraw(S){const b=$('#fxBox');if(b)b.innerHTML=fxSvg(S);const a=$('#fxSrc');if(a&&document.activeElement!==a)a.value=S.src;fxWire(S)}
+/* the pointer on the drawing: which view, and where in millimetres */
+function fxAt(S,ev){const sv=$('#fxSvg');if(!sv)return null;const m=sv.getScreenCTM();if(!m)return null;const p=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(m.inverse()),G=S.geo;
+  if(p.x<505)return{pan:'top',a:(p.x-250)/G.k,b:(p.y-250)/G.k,X:p.x,Y:p.y};return{pan:'front',a:(p.x-760)/G.k,b:G.H/2-(p.y-250)/G.k,X:p.x,Y:p.y}}
+/* the plane near value v along ax, within 7 px */
+function fxSnap(S,ax,v){const G=S.geo,L=fxLines(S.src);let best=null;for(const p of fxPlanes(ax,G.V,L)){const d=Math.abs(p.v-v)*G.k;if(d<7&&(!best||d<best.d))best={p,d}}return best?best.p:null}
+function fxWire(S){const ta=$('#fxSrc');if(ta&&!ta.dataset.w){ta.dataset.w=1;const pick=()=>{const i=ta.value.slice(0,ta.selectionStart).split('\n').length-1,x=fxLines(ta.value)[i];const n=x&&FX_AX[x.k]?i:-1;if(n!==S.sel&&ta.value===S.src){S.sel=n;const b=$('#fxBox');if(b){b.innerHTML=fxSvg(S);fxWire(S)}const d=document.querySelector('[data-fxt="del"]');if(d)d.disabled=S.sel<0}};
+    ta.addEventListener('click',pick);ta.addEventListener('keyup',e=>{if(/^Arrow|^Page|^Home|^End/.test(e.key))pick()})}
+  const sv=$('#fxSvg');if(!sv)return;
+  sv.addEventListener('pointerdown',ev=>{const at=fxAt(S,ev);if(!at)return;const tg=ev.target;let li=tg.dataset&&tg.dataset.li!=null?+tg.dataset.li:-1,h=tg.dataset&&tg.dataset.h;
+    if(tg.dataset&&tg.dataset.dim)return;
+    if(S.tool==='sel'&&ev.altKey&&li>=0){const hits=document.elementsFromPoint(ev.clientX,ev.clientY).map(e=>e.dataset&&e.dataset.li!=null?+e.dataset.li:-1).filter((v,i,a)=>v>=0&&a.indexOf(v)===i);if(hits.length>1){S.sel=hits[(hits.indexOf(S.sel)+1)%hits.length];fxRedraw(S);fxBtns(S);ev.preventDefault();return}}
+    if(S.tool==='sel'&&S.sel>=0&&li!==S.sel&&h==='m'&&document.elementsFromPoint(ev.clientX,ev.clientY).some(e=>e.dataset&&+e.dataset.li===S.sel&&e.dataset.li!=null))li=S.sel;          // the selected shape stays the one dragged where others lie over it
+    if(S.tool==='sel'){if(li<0){if(S.sel>=0){S.sel=-1;fxRedraw(S);fxBtns(S)}return}if(S.sel!==li){S.sel=li;fxRedraw(S);fxBtns(S)}
+      S.drag={li,h,at,src0:S.src,pan:at.pan};fxCap(ev);ev.preventDefault();return}
+    S.drag={tool:S.tool,at,pan:at.pan,src0:S.src};fxCap(ev);ev.preventDefault()});
+  sv.addEventListener('pointermove',ev=>{const g=S.drag;if(!g)return;const at=fxAt(S,ev);if(!at)return;g.cur=at;if(g.tool){fxRubber(S,g);return}
+    const src=fxMove(S,g,at.a-g.at.a,at.b-g.at.b);if(src!=null&&src!==S.src){S.src=src;const b=$('#fxBox');if(b){b.innerHTML=fxSvg(S);fxWire(S);fxCap(ev)}}});
+  sv.addEventListener('pointerup',ev=>{const g=S.drag;S.drag=null;if(!g)return;const at=fxAt(S,ev)||g.at;
+    if(g.tool){const ln=fxNew(S,g.tool,g.at,at);if(ln){const src=(S.src.replace(/\s+$/,'')+'\n'+ln).replace(/^\n/,'');S.sel=src.split('\n').length-1;fxKeep(S,src);S.tool='sel';dlgFamSketch(S.T.id)}else fxRedraw(S);return}
+    if(S.src!==g.src0){const s=S.src;S.src=g.src0;fxKeep(S,s)}fxRedraw(S);const a=$('#fxSrc');if(a)a.value=S.src})}
+const fxCap=ev=>{const n=$('#fxSvg');if(n)try{n.setPointerCapture(ev.pointerId)}catch(x){}};
+function fxBtns(S){const d=document.querySelector('[data-fxt="del"]');if(d)d.disabled=S.sel<0;const a=$('#fxSrc');if(a&&S.sel>=0){const L=a.value.split('\n');let p=0;for(let i=0;i<S.sel&&i<L.length;i++)p+=L[i].length+1;try{a.setSelectionRange(p,p+(L[S.sel]||'').length)}catch(x){}}}
+/* src with line g.li moved (handle 'm') or sized (an edge, a radius) by da, db in the view g.pan */
+function fxMove(S,g,da,db){const L=fxLines(g.src0),x=L.find(q=>q.i===g.li);if(!x||!x.k)return null;const A=FX_AX[x.k]||{},G=S.geo,V=G.V,E=q=>famEval(q,V),pan=g.pan,axA='x',axB=pan==='top'?'y':'z',db2=db;
+  x.mod=1;x.w=x.w.slice();if(x.pts)x.pts=x.pts.map(p=>p.slice());
+  if(x.k==='ref'){const ax=(x.w[2]||'').toLowerCase(),d=ax==='x'?da:ax===axB?db2:0;if(!d)return null;const v=E(x.w[3])+d,sn=fxSnap(S,ax,v);x.w[3]=fxAdd(x.w[3],sn&&sn.e!==x.w[1]?sn.v-E(x.w[3]):d);return fxJoin(L)}
+  const h=g.h||'m';
+  if(h==='m'){/* a move: snap the nearest coordinate along each axis to a plane */
+    for(const [ax,d] of [[axA,da],[axB,db2]]){const ix=A[ax]||[];let dd=d,best=null;for(const j of ix){const v=E(x.w[j])+d,sn=fxSnap(S,ax,v);if(sn){const c=Math.abs(sn.v-v);if(!best||c<best)best=c,dd=sn.v-E(x.w[j])}}
+      for(const j of ix)x.w[j]=fxAdd(x.w[j],dd);if(x.pts&&(ax==='x'||ax==='y'))x.pts=x.pts.map(p=>{const q=p.slice(),c=ax==='x'?0:1;q[c]=fxAdd(q[c],dd);return q})}
+    return fxJoin(L)}
+  if(h==='r'){const r=E(x.w[A.r]),cx=E(x.w[(A.x||[])[0]]),cy=E(x.w[(A.y||[])[0]]),nr=x.k==='xcyl'?Math.abs(g.at.b+db-E(x.w[1])):x.k==='ycyl'?Math.abs(g.at.a+da-E(x.w[1])):Math.hypot(g.at.a+da-cx,g.at.b+db-cy);if(!(nr>1))return null;x.w[A.r]=fxAdd(x.w[A.r],nr-r);return fxJoin(L)}
+  if(h==='p0'||h==='p1'){const j=h==='p0'?0:1;for(const [ax,d] of [['x',da],['y',db]]){const ti=A[ax][j],v=E(x.w[ti])+d,sn=fxSnap(S,ax,v);x.w[ti]=sn?sn.e:fxAdd(x.w[ti],d)}return fxJoin(L)}
+  const ax=h[0],j=+h[1],ti=(A[ax]||[])[j];if(ti==null)return null;const d=ax==='x'?da:db2,v=E(x.w[ti])+d,sn=fxSnap(S,ax,v);x.w[ti]=sn?sn.e:fxAdd(x.w[ti],d);return fxJoin(L)}
+/* while a tool draws: a rubber band */
+function fxRubber(S,g){const sv=$('#fxSvg');if(!sv)return;let r=sv.querySelector('#fxRb');if(!r){r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.id='fxRb';r.setAttribute('fill','rgba(224,102,58,.12)');r.setAttribute('stroke','#e0663a');r.setAttribute('stroke-dasharray','4 3');sv.appendChild(r)}
+  const a=g.at,b=g.cur;if(g.tool==='cyl'){const rr=Math.hypot(b.X-a.X,b.Y-a.Y);r.setAttribute('x',a.X-rr);r.setAttribute('y',a.Y-rr);r.setAttribute('width',2*rr);r.setAttribute('height',2*rr);r.setAttribute('rx',rr);return}
+  r.setAttribute('x',Math.min(a.X,b.X));r.setAttribute('y',Math.min(a.Y,b.Y));r.setAttribute('width',Math.abs(b.X-a.X));r.setAttribute('height',Math.abs(b.Y-a.Y))}
+/* a new line drawn with a tool from a to b (both in view a.pan), or null */
+function fxNew(S,tool,a,b){const ax2=a.pan==='top'?'y':'z',sn=(ax,v)=>{const p=fxSnap(S,ax,v);return p?{v:p.v,e:p.e}:{v,e:fxR(v)}};
+  if(tool==='box'){const x0=sn('x',Math.min(a.a,b.a)),x1=sn('x',Math.max(a.a,b.a)),p0=sn(ax2,Math.min(a.b,b.b)),p1=sn(ax2,Math.max(a.b,b.b));if(Math.abs(x1.v-x0.v)<5||Math.abs(p1.v-p0.v)<5)return null;
+    return a.pan==='top'?`box ${x0.e} ${p0.e} 0 ${x1.e} ${p1.e} H m`:`box ${x0.e} -D/2 ${p0.e} ${x1.e} D/2 ${p1.e} m`}
+  if(tool==='cyl'){if(a.pan!=='top')return null;const c0=sn('x',a.a),c1=sn('y',a.b),r=Math.hypot(b.a-a.a,b.b-a.b);if(r<5)return null;return`cyl ${c0.e} ${c1.e} ${fxR(r)} 0 H m`}
+  if(tool==='con'){const G=S.geo,K=S.ck,u=sn('x',a.a),w=sn(ax2,a.b);let dir;if(a.pan==='top'){dir=Math.abs(a.a)/(G.W/2)>=Math.abs(a.b)/(G.D/2)?(a.a<0?'-x':'+x'):(a.b<0?'-y':'+y')}else{dir=Math.abs(a.a)/(G.W/2)>=Math.abs(a.b-G.H/2)/(G.H/2)?(a.a<0?'-x':'+x'):(a.b<G.H/2?'-z':'+z')}
+    const sz=K==='p'?'25':K==='air'?'min(D,H)*0.6':dir[1]==='x'?'D*0.6 H*0.6':dir[1]==='y'?'W*0.6 H*0.6':'W*0.6 D*0.6';
+    return a.pan==='top'?`con ${K} ${u.e} ${w.e} H/2 ${dir} ${sz}`:`con ${K} ${u.e} 0 ${w.e} ${dir} ${sz}`}
+  if(tool==='ref'){const ax=S.ra==='x'?'x':a.pan==='top'?(S.ra==='z'?null:'y'):(S.ra==='y'?null:'z');if(!ax){toast(t('fx_refview'));return null}const v=ax==='x'?a.a:a.b,L=fxLines(S.src);let n=1;while(L.some(x=>x.k==='ref'&&x.w[1]==='R'+n))n++;return`ref R${n} ${ax} ${fxR(v)}`}
+  return null}
+/* a dimension clicked: type its length; the far edge (or the radius) takes it */
+function fxDim(S,li,ax){const L=fxLines(S.src),x=L.find(q=>q.i===li);if(!x)return;const A=FX_AX[x.k]||{},V=S.geo.V,E=q=>famEval(q,V);let cur=0;
+  if(ax==='r')cur=2*E(x.w[A.r]);else{const ix=A[ax];if(!ix||ix.length<2)return;cur=Math.abs(E(x.w[ix[1]])-E(x.w[ix[0]]))}
+  const s=prompt(t('fx_dimq'),fxR(cur));if(s==null||!String(s).trim())return;const q=String(s).trim().replace(/\s+/g,''),val=famEval(q,V);if(!isFinite(val)||val<=0){toast(t('fx_dimbad'));return}
+  x.mod=1;x.w=x.w.slice();const num=/^\d+(\.\d+)?$/.test(q);
+  if(ax==='r')x.w[A.r]=num?fxR(val/2):'('+q+')/2';else{const ix=A[ax],lo=E(x.w[ix[0]])<=E(x.w[ix[1]])?0:1,a=x.w[ix[lo]];x.w[ix[1-lo]]=num&&/^-?\d+(\.\d+)?$/.test(a)?fxR(+a+val):a+'+'+(num?q:'('+q+')')}
+  fxKeep(S,fxJoin(L));fxRedraw(S)}
+Object.assign(STR,{
+  fx_open:['ลากวาด (Sketch)','Sketch'],fx_title:['ลากวาดชิ้นส่วน: {0}','Sketch: {0}'],fx_sel:['เลือก/ลาก','Select'],fx_box:['＋ กล่อง','＋ Box'],fx_cyl:['＋ ทรงกระบอก','＋ Cylinder'],fx_con:['＋ จุดต่อ','＋ Connector'],fx_ref:['＋ เส้นอ้างอิง','＋ Ref. plane'],
+  fx_flex:['ลองยืดขนาด (Flex)','Flex'],fx_unflex:['ขนาดของชนิด','Type size'],
+  fx_note:['ลากรูปทรงเพื่อย้าย ลากจุดสี่เหลี่ยมเพื่อปรับขอบ ปล่อยขอบบนเส้นอ้างอิง (เส้นประ) แล้วขอบนั้นจะผูกกับเส้นนั้น (เขียนเป็นสูตร เช่น W/2) จึงยืดตามเมื่อเปลี่ยน W D H หรือพารามิเตอร์ · คลิกตัวเลขบอกขนาดเพื่อพิมพ์ความยาวหรือสูตร · ลองยืดขนาดด้วยช่อง W D H ด้านขวาโดยไม่เปลี่ยนชนิด · ทุกการแก้เขียนกลับลงบรรทัดรูปทรงด้านล่าง',
+    'Drag a shape to move it, drag a square handle to move an edge; let an edge go on a reference plane (dashed) and it is locked to it (written as its formula, as W/2), so it follows when W, D, H or a parameter change · click a dimension to type its length or a formula · try other sizes with W, D, H on the right without changing the type · every edit is written back into the lines below'],
+  fx_hint:['คลิกบรรทัดด้านล่างเพื่อเลือกรูปทรงนั้น หรือ Alt+คลิกเพื่อเลือกรูปทรงที่ซ้อนอยู่ข้างใต้ · เส้นอ้างอิงของตัวเอง: ref ชื่อ x|y|z สูตร (เช่น ref Front y D/2-T) แล้วใช้ชื่อนั้นในสูตรของบรรทัดอื่นได้ · ลากเส้นอ้างอิงของตัวเองเพื่อย้าย','Click a line below to select its shape, or Alt+click to pick a shape lying under another · planes of your own: ref NAME x|y|z formula (as ref Front y D/2-T), whose name other lines may use in their formulas · drag a plane of your own to move it'],
+  fx_dimq:['ความยาว (มม.) หรือสูตร เช่น W-2*T','Length (mm) or a formula, as W-2*T'],fx_dimbad:['อ่านค่าไม่ได้หรือไม่เป็นบวก','Not a positive length'],fx_refview:['แกนนี้ไม่อยู่ในมุมมองนี้','That axis is not in this view']});
 /* Macros (Revit: the Macro Manager; Dynamo in its place): scripts in JavaScript kept with the project, P.macros = [{id, name, code}], run with `api`.
    A run is one step of Undo.  Where the page may not run a script (a strict host) the error says so. */
 const MACRO_SAMPLES={count:"// how many of each category, and the length of the walls\nconst n={};for(const e of api.els)n[e.cat]=(n[e.cat]||0)+1;\nlog(n);\nlog('walls', api.find('wall').reduce((s,w)=>s+api.len(w),0)/1000, 'm');",
@@ -14245,7 +14395,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=180,V1_NAME='V1.169';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=181,V1_NAME='V1.170';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31045,6 +31195,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.165 · [[a_svc]]: สรุปโหลดของทั้งระบบจากตารางโหลดของตู้ ขนาดหม้อแปลงมาตรฐาน (หรือหม้อแปลงในโมเดลกับ kVA และ %Z ในชนิด) เบรกเกอร์ประธาน กระแสลัดวงจรที่หม้อแปลงและที่ตู้ทุกใบผ่านสายป้อน (IEC 60909) เพื่อเลือก Icu ของเบรกเกอร์ และขนาดเครื่องกำเนิดไฟฟ้ากับน้ำมัน · หม้อแปลงหรือเครื่องกำเนิดไฟฟ้าที่เล็กไปอยู่ใน [[a_sysck]]
 - V1.168 · [[a_famed]]: ชิ้นส่วนเครื่องจักรงานระบบของตัวเอง (Revit: Mechanical Equipment family) มีจุดต่อท่อลม (SA RA ช่องสี่เหลี่ยมหรือกลม) และท่อน้ำ (เลือกระบบได้) ที่ท่อลากมาต่อและ Check Systems อ่านเหมือนเครื่องสำเร็จรูป · ทำงานเป็น FCU พัดลม ปั๊ม … ในการคำนวณ · ทุกบรรทัดตั้งได้ว่าเห็นที่ หยาบ ปานกลาง ละเอียด และเส้นสัญลักษณ์ที่เห็นแต่ในแปลน (line rect circle arc) · รูปทรงใหม่ sph xcyl ycyl และสูตร if() < > sqrt round · ตัวอย่าง FCU แขวน พัดลมในท่อ ปั๊ม Inline · ในแปลนเลือกเครื่องแล้วเห็นจุดต่อ
 - V1.169 · [[a_famed]]: ชิ้นส่วนหนึ่งมีได้หลายชนิด (Family Types) ตารางชนิดแก้ขนาด ค่าพารามิเตอร์ และพิกัดเครื่องได้ในที่เดียว รูปทรงเป็นของชิ้นส่วนแก้ครั้งเดียวทุกชนิดตาม · [[ft_imp]] จาก CSV หรือวางจาก Excel (อ่าน Type Catalog ของ Revit ได้ แปลงหน่วยให้) เลือกชนิดที่จะนำเข้า และส่งออก CSV · [[fl_title]]: บันทึกชิ้นส่วนไว้ใช้ทุกโครงการ ทุกเครื่องของบริษัทเห็นคลังเดียวกันเมื่อมีรหัสเปิดใช้งาน (แบบคลังราคากลาง) โหลดซ้ำเพื่ออัปเดต และส่งเป็นไฟล์ .penfam
+- V1.170 · [[fx_open]] ในตัวสร้างชิ้นส่วน: วาดและแก้ชิ้นส่วนด้วยเมาส์ในมุมมองจากบนและด้านหน้า ลากรูปทรง จุดต่อ และเส้นสัญลักษณ์เพื่อย้าย ลากจุดจับเพื่อปรับขอบ ปล่อยขอบบนเส้นอ้างอิงแล้วขอบผูกกับเส้นนั้นเป็นสูตร (ยืดตาม W D H และพารามิเตอร์) · เครื่องมือ ＋ กล่อง ทรงกระบอก จุดต่อ เส้นอ้างอิง · เส้นอ้างอิงของตัวเอง (ref ชื่อ แกน สูตร) ที่ใช้ชื่อในสูตรได้ · คลิกตัวเลขบอกขนาดเพื่อพิมพ์ความยาวหรือสูตร · ลองยืดขนาด (Flex) โดยไม่เปลี่ยนชนิด · ทุกการแก้เขียนกลับลงบรรทัดรูปทรง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -31347,6 +31498,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.165 · [[a_svc]]: the load of the whole supply from the panel schedules, a standard transformer (or the one in the model, its kVA and %Z in its type), the main breaker, the fault current at the transformer and at every panel along its feeder (IEC 60909) for the breaking capacity of the breakers, and the generator with its fuel · a transformer or generator too small is in [[a_sysck]]
 - V1.168 · [[a_famed]]: mechanical equipment families of your own (Revit: a Mechanical Equipment family) with duct connectors (SA, RA; rectangular or round) and pipe connectors (for chosen systems) that the runs join and Check Systems reads as it does a stock machine's · they work as an FCU, a fan, a pump … in the calculations · every line can be shown at Coarse, Medium or Fine, and symbolic lines (line, rect, circle, arc) show in plans only · new solids sph, xcyl, ycyl and formulas with if(), < >, sqrt, round · samples: hung FCU, inline fan, inline pump · a selected machine shows its connectors in plan
 - V1.169 · [[a_famed]]: a family has types (Family Types): one table edits their sizes, parameter values and ratings, and the geometry belongs to the family, so one edit changes every type · [[ft_imp]] from a CSV or a table pasted from Excel (a Revit Type Catalog is read and its units turned into millimetres), ticking the types to load, and export to CSV · [[fl_title]]: keep families for every project; with the company's licence code every computer of the company sees one library (as the price library); load again to update; give one as a .penfam file
+- V1.170 · [[fx_open]] in the Family Editor: draw and edit a family with the mouse from above and from the front; drag solids, connectors and symbolic lines to move them and handles to move their edges; an edge let go on a reference plane is locked to it as a formula (it follows W, D, H and the parameters) · tools ＋ Box, Cylinder, Connector, Reference plane · planes of your own (ref NAME axis formula) whose names formulas may use · click a dimension to type a length or a formula · Flex other sizes without changing the type · every edit is written back into the geometry lines
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -33296,6 +33448,9 @@ window.PenumBIM.r91={sibs:id=>{const T=famTypes().find(x=>x.id===id);return T?fa
   parse:txt=>famCatalogParse(txt),load:(id,txt,names)=>{const T=famTypes().find(x=>x.id===id),R=famCatalogParse(txt);return famCatalogLoad(T,R,R.rows.filter(r=>!names||names.includes(r.name)))},
   csv:id=>famCatalogCSV(famTypes().find(x=>x.id===id)),setSrc:(id,src)=>{const T=famTypes().find(x=>x.id===id);edit(()=>{T.fam=Object.assign({},T.fam,{src});famSyncSibs(T)})},
   save:id=>flSave(famTypes().find(x=>x.id===id)),lib:()=>flRd().L.items.map(x=>({id:x.id,name:x.name,cat:x.cat,n:x.types.length})),loadLib:id=>flLoad(flRd().L.items.find(x=>x.id===id)),rm:id=>flRemove(id),st:()=>FLS.st};
+window.PenumBIM.r92={add:(t0,d)=>fxAdd(t0,d),lines:s=>fxLines(s).map(x=>({k:x.k,w:x.w,fl:x.fl,cm:x.cm})),join:s=>fxJoin(fxLines(s).map(x=>Object.assign(x,{mod:!!x.k}))),
+  move:(id,li,h,pan,da,db)=>{const T=famTypes().find(x=>x.id===id),S=fxState(T);S.src=T.fam.src;fxSvg(S);const r=fxMove(S,{li,h,pan,src0:S.src,at:{a:0,b:0}},da,db);if(r!=null)fxKeep(S,r);return T.fam.src},
+  neu:(id,tool,pan,a0,b0,a1,b1,o)=>{const T=famTypes().find(x=>x.id===id),S=fxState(T);Object.assign(S,o||{});S.src=T.fam.src;fxSvg(S);return fxNew(S,tool,{pan,a:a0,b:b0},{pan,a:a1,b:b1})},open:id=>dlgFamSketch(id)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
