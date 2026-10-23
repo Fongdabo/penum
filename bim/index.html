@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=170,V1_NAME='V1.159';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=171,V1_NAME='V1.160';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -28875,6 +28875,61 @@ Object.assign(STR,{
   ws_note:['แรงดันใช้งานต่ำสุดของสุขภัณฑ์: โถส้วมชักโครกและอ่างอาบน้ำ 138 kPa โถปัสสาวะฟลัชวาล์ว 172 kPa อื่น ๆ 55 kPa · ปั๊มคิดกำลังเพลาจากอัตราไหล Head และประสิทธิภาพ · ปั๊มส่งคิด Head จากความสูงถึงถังบน +10% +3 ม. · บ้านพักอาศัยมักใช้เครื่องทำน้ำอุ่นที่ฝักบัวจุดละ 3.5–6 kW แทนถังน้ำร้อนรวม',
     'Least pressure at a fixture: flush tank water closets and bathtubs 138 kPa, urinal flush valves 172 kPa, the others 55 kPa · pump shaft power from flow, head and efficiency · the transfer pump lifts to the top of the roof tank plus 10 % and 3 m · homes often have an instantaneous heater of 3.5–6 kW at each shower instead of a central one'],
   pr_i_lowp:['สุขภัณฑ์ {0} ชิ้นแรงดันไม่พอใช้งาน','{0} fixtures are short of pressure']});
+/* ===== 160 Slope a run of gravity pipes (V1.160; Revit: Modify | Pipes › Slope — the Slope Editor that gives a connected run one slope from an anchor and keeps
+   it joined).  From the outlet of each network that holds a selected pipe — its lowest open end, which stays where it is — the pipes are walked upstream; each one
+   in scope gets the slope (or the least one for its size, IPC Table 704.1) and starts where the pipe below it meets it, turned to fall towards the outlet when it ran
+   the other way.  A riser keeps its heights: the pipes above it start again from where they meet it.  A pipe that drains both ways from its middle is left as it is
+   and reported.  Properties of a sloped pipe show the invert (bottom of the bore) at its two ends, as Revit's Invert Elevation. ===== */
+const PSL_SYS=['S','W','RL','CD'];
+/* the changes: [{e, x1,y1,x2,y2, off, slope}] and the pipes left out */
+function pslPlan(P,ids,o){const sel=new Set(ids),G=runGraph(P,'pipe',false,true),N=G.nodes,out=[],skip=[],done=new Set(),ris=new Map();
+  const isG=e=>PSL_SYS.includes(SCL(e.sys||'')),inScope=e=>o.scope==='net'?isG(e):sel.has(e.id);
+  const nets=[],seen=new Uint8Array(N.length);
+  for(let s=0;s<N.length;s++){if(seen[s])continue;const g=[],q=[s];seen[s]=1;while(q.length){const i=q.pop();g.push(i);for(const a of N[i].arms)if(!seen[a.far]){seen[a.far]=1;q.push(a.far)}}
+    if(g.some(i=>N[i].arms.some(a=>!a.ed.riser&&sel.has(a.ed.r.e.id)&&isG(a.ed.r.e))))nets.push(g)}
+  for(const g of nets){const ends=g.filter(i=>N[i].arms.length===1),root=(ends.length?ends:g).reduce((a,b)=>N[b].z<N[a].z-1?b:a),Z=new Map([[root,N[root].z]]),q=[root];
+    while(q.length){const i=q.shift();
+      for(const a of N[i].arms){if(Z.has(a.far))continue;const ed=a.ed;
+        if(ed.riser){const sr=ed.riser,zr=zRange(P,sr),dz=Z.get(i)-N[i].z;          /* a riser that stands on a pipe that moved goes down or up with it, its top stays */
+          if(Math.abs(dz)>0.5&&Math.abs(zr[0]-N[i].z)<200&&N[a.far].z>N[i].z&&!ris.has(sr.id))ris.set(sr.id,{s:sr,baseOff:Math.round(((sr.baseOff||0)+dz)*10)/10,height:sr.top?sr.height:Math.round(((sr.height||0)-dz)*10)/10});
+          Z.set(a.far,N[a.far].z);q.push(a.far);continue}
+        if(done.has(ed.r.e.id)||!inScope(ed.r.e)){Z.set(a.far,N[a.far].z);q.push(a.far);continue}
+        const e=ed.r.e,r=ed.r,tn=a.far===ed.b?ed.t0:ed.t1;          /* where the walk comes into the pipe, along it (0 at x1, 1 at x2) */
+        if(tn>1e-6&&tn<1-1e-6){skip.push(e.id);done.add(e.id);Z.set(a.far,N[a.far].z);q.push(a.far);continue}
+        const s=o.mode==='size'?drainSlope(runW(e)):o.slope,flip=tn<0.5,z0=Z.get(i),lv=elev(P,e.level);
+        const c={e,x1:flip?e.x2:e.x1,y1:flip?e.y2:e.y1,x2:flip?e.x1:e.x2,y2:flip?e.y1:e.y2,slope:s};          /* the pipe falls from x1 to x2: x2 is where it meets the pipe below */
+        c.off=Math.round((z0-lv+r.L*s/100)*10)/10;out.push(c);done.add(e.id);
+        /* the heights of every point where the walk may go on, along this pipe */
+        for(const k of g)for(const b of N[k].arms)if(!b.ed.riser&&b.ed.r.e===e){for(const [nd,tt] of [[b.ed.a,b.ed.t0],[b.ed.b,b.ed.t1]]){if(Z.has(nd))continue;const d=(flip?tt:1-tt)*r.L;Z.set(nd,z0+d*s/100);q.push(nd)}}}}}
+  return{out,skip:[...new Set(skip)],n:nets.length,ris:[...ris.values()]}}
+function pslApply(Q){edit(()=>{for(const c of Q.out){const e=c.e;e.x1=c.x1;e.y1=c.y1;e.x2=c.x2;e.y2=c.y2;e.off=c.off;e.slope=c.slope}for(const x of Q.ris||[]){x.s.baseOff=x.baseOff;x.s.height=x.height}})}
+const pslSet=()=>Object.assign(ui.psl||(ui.psl={mode:'size',slope:1,scope:'sel'}),{});
+function dlgSlope(){const o=pslSet(),ids=[...ui.sel].filter(id=>{const e=IDX.get(id);return e&&e.cat==='pipe'&&PSL_SYS.includes(SCL(e.sys||''))}),Q=ids.length?pslPlan(P,ids,o):{out:[],skip:[],n:0};
+  const sl=msOf(P).slopes,ch=Q.out.filter(c=>{const e=c.e;return Math.abs((e.slope||0)-c.slope)>1e-9||Math.abs((e.off||0)-c.off)>0.05||e.x1!==c.x1||e.y1!==c.y1});
+  const body=`<p class="note">${t('psl_intro')}</p><div class="ldg pz"><label><span>${t('psl_mode')}</span><span><select data-psl="mode"><option value="size"${o.mode==='size'?' selected':''}>${t('psl_size')}</option>${sl.map(s=>`<option value="${s}"${o.mode==='val'&&+o.slope===s?' selected':''}>${fmtSlope(s/100,'ps')}</option>`).join('')}</select></span></label>
+    <label><span>${t('psl_scope')}</span><span><select data-psl="scope"><option value="sel"${o.scope==='sel'?' selected':''}>${t('psl_sel')}</option><option value="net"${o.scope==='net'?' selected':''}>${t('psl_net')}</option></select></span></label></div>`+
+    (ids.length?`<p class="note">${t('psl_n',Q.out.length,ch.length,Q.n)}</p>`+(Q.skip.length?`<p class="note warn">${t('psl_skip',Q.skip.length)}</p>`:'')+
+      (Q.out.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('c_sys')}</th><th>Ø</th><th class="n">${t('psl_was')}</th><th class="n">${t('psl_now')}</th><th class="n">${t('psl_low')}</th></tr></thead><tbody>`+
+        Q.out.map(c=>{const e=c.e,L=Math.hypot(c.x2-c.x1,c.y2-c.y1);return`<tr data-id="${e.id}"${ch.includes(c)?' class="chg"':''}><td>${esc(e.sys||'')}</td><td>Ø${runW(e)}</td><td class="n">${fmtSlope((e.slope||0)/100,'ps')}</td><td class="n"><b>${fmtSlope(c.slope/100,'ps')}</b></td><td class="n">${fmtLen(c.off-L*c.slope/100)}</td></tr>`}).join('')+'</tbody></table></div>':'')
+     :`<p class="note warn">${t('psl_none')}</p>`);
+  openDlg(t('a_pslope'),body,`<span style="flex:1"></span><button class="btn primary" data-psl="apply"${ch.length?'':' disabled'}>${t('psl_apply',ch.length)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,k=el.dataset.psl;if(!k||!ui.dlg)return;if(k==='mode'){if(el.value==='size')o.mode='size';else{o.mode='val';o.slope=+el.value}}else o.scope=el.value;dlgSlope()},
+     click(ev){const k=ev.target.dataset.psl;if(k==='apply'&&ch.length&&ui.dlg){pslApply({out:ch,ris:Q.ris});toast(t('psl_done',ch.length));dlgSlope();return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('button')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.pslope=dlgSlope;
+{const A=RIBBON.find(r=>r.id==='sys'),p=A&&A.panels.find(q=>q.t==='p_piping');if(p&&!p.b.includes('@pslope')){const i=p.b.indexOf('@flexpipe');p.b.splice(i<0?p.b.length:i+1,0,'@pslope')}}
+BTN['@pslope']=['ppipe',''];
+/* the invert of a pipe at its two ends (Revit: Invert Elevation): the bottom of the bore, from the level */
+XP.push((c,els)=>{if(c!=='pipe'||els.length!==1)return'';const e=els[0];if(!e.slope&&!PSL_SYS.includes(SCL(e.sys||'')))return'';const z=runZ(P,e),lv=elev(P,e.level),ri=pipeIn(P,e,runW(e))/2,U=' '+unitName();
+  return PR.grp('g_inv')+PR.ro('psl_inv1',fmtLen(z[0]-ri-lv)+U)+PR.ro('psl_inv2',fmtLen(z[1]-ri-lv)+U)});
+Object.assign(STR,{
+  a_pslope:['ความลาดท่อทั้งแนว (Slope)','Slope Pipes'],psl_intro:['ให้ท่อระบายที่เลือก (ระบบ S W RL CD) ลาดลงไปทางออกของระบบ ปลายต่ำสุดของระบบอยู่ที่เดิม ท่อแต่ละเส้นเริ่มจากจุดที่ต่อกับท่อที่อยู่ต่ำกว่า และกลับทิศให้ลาดลงทางออกถ้าวาดไว้กลับด้าน ท่อแนวดิ่ง (Riser) คงความสูงเดิม',
+    'The selected gravity pipes (systems S, W, RL, CD) fall towards the outlet of their network: its lowest open end stays put, each pipe starts where the pipe below meets it and is turned to fall the right way; risers keep their heights'],
+  psl_mode:['ความลาด','Slope'],psl_size:['น้อยสุดตามขนาดท่อ (IPC 704.1: ถึง 65 มม. 2% · 80–150 มม. 1% · ใหญ่กว่า 0.5%)','Least for its size (IPC 704.1: to 65 mm 2 % · 80–150 mm 1 % · larger 0.5 %)'],
+  psl_scope:['ท่อที่ปรับ','Pipes'],psl_sel:['เฉพาะที่เลือก','Selected only'],psl_net:['ทั้งระบบของที่เลือก','Their whole networks'],psl_n:['ท่อ {0} เส้นในระบบ {2} ชุด จะเปลี่ยน {1} เส้น','{0} pipes in {2} networks, {1} to change'],
+  psl_skip:['ท่อ {0} เส้นระบายออกทั้งสองข้างจากกลางท่อ จึงไม่ได้ปรับ','{0} pipes drain both ways from their middle and are left as they are'],psl_none:['เลือกท่อระบาย (ระบบ S W RL หรือ CD) ก่อน','Select drains (systems S, W, RL or CD) first'],
+  psl_was:['เดิม','Was'],psl_now:['ใหม่','New'],psl_low:['ระดับปลายต่ำ (จากชั้น)','Low end (from level)'],psl_apply:['ปรับ {0} เส้น','Slope {0}'],psl_done:['ปรับความลาดท่อ {0} เส้นแล้ว กดย้อนกลับได้','{0} pipes sloped — Undo to go back'],
+  g_inv:['ระดับท้องท่อ (Invert)','Invert'],psl_inv1:['ท้องท่อต้นท่อ (จากชั้น)','Invert at start (from level)'],psl_inv2:['ท้องท่อปลายท่อ (จากชั้น)','Invert at end (from level)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -30300,6 +30355,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.157 · ท่อโสโครกและท่ออากาศ: [[a_pipesize]] แยกท่อแยกแนวนอน ท่อตั้ง (คิดจำนวนช่วงชั้น) และท่อระบายหลักตามความลาด และไม่ลดขนาดตามทางไหล · คำนวณขนาดท่ออากาศ (ระบบ V) จาก DFU และความยาวท่อ · [[a_pipereport]] บอกท่อตั้งแต่ละต้น ท่อระบายหลัก ท่ออากาศ และสุขภัณฑ์ที่อยู่ไกลท่ออากาศเกินระยะ
 - V1.158 · น้ำฝน: พื้นที่หลังคาแบ่งให้ท่อลงจากรางน้ำและปลายท่อน้ำฝน (ระบบ RL) ที่ใกล้ที่สุด คูณความเข้มฝน (ตั้งได้ ค่าเริ่ม 150 มม./ชม.) · [[a_pipesize]] ปรับขนาดท่อน้ำฝนแนวดิ่งและแนวนอนตามความลาด · [[a_pipereport]] บอกพื้นที่ อัตราไหล และท่อลงที่รับน้ำไม่พอ
 - V1.159 · [[a_wsup]]: น้ำใช้ต่อวัน ขนาดถังเก็บน้ำล่างและบนหลังคา ปั๊มเพิ่มแรงดันหรือปั๊มส่ง (อัตราไหล Head kW) และเครื่องทำน้ำร้อนรวม (ASHRAE) · ตรวจแรงดันที่สุขภัณฑ์ทุกชิ้นจากความสูงของถัง Rated Head ของปั๊ม (ช่องใหม่ในชนิดปั๊ม) หรือแรงดันท่อประปา
+- V1.160 · [[a_pslope]] (แท็บงานระบบ แผงท่อน้ำ): ให้ท่อระบายที่เลือกหรือทั้งระบบลาดลงทางออกต่อเนื่องกัน ตามค่าที่เลือกหรือค่าน้อยสุดตามขนาดท่อ กลับทิศท่อที่วาดกลับด้าน และท่อแนวดิ่งที่ตั้งอยู่บนท่อขยับตาม · คุณสมบัติท่อบอกระดับท้องท่อ (Invert) ทั้งสองปลาย
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30345,6 +30401,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 5. ท่อโสโครกและท่ออากาศ: ระยะจากที่ดักกลิ่นถึงท่ออากาศตรวจเมื่อโครงการมีท่ออากาศ (ระบบ V) หรือท่อตั้งที่ต่อขึ้นไปเป็นท่ออากาศ · ท่อตั้งคือท่อแนวดิ่ง (Riser) ของระบบ S หรือ W โปรแกรมนับช่วงชั้นที่มีท่อแยกเข้า ท่อแนวนอนที่รับน้ำจากท่อตั้งคือท่อระบายหลักซึ่งคิดตามความลาดที่ใส่ไว้ · ท่ออากาศ (ระบบ V) ต้องมีปลายหนึ่งขึ้นไปถึงอากาศภายนอก (ปลายที่สูงที่สุด) และปลายอื่นอยู่ห่างท่อระบายไม่เกิน 150 มม. ในแปลน (สูงกว่าได้ถึง 1.5 ม.) หรืออยู่ที่สุขภัณฑ์ · ท่อตั้งที่ต่อยาวขึ้นเหนือท่อแยกสุดท้ายนับเป็นท่ออากาศของท่อตั้ง (Stack vent) · [[a_pipereport]] ตรวจระยะจากสุขภัณฑ์ตามท่อระบายถึงท่ออากาศ (IPC ตาราง 909.1)
 6. น้ำฝน: ปลายบนของท่อน้ำฝน (ระบบ RL ท่อหรือท่อแนวดิ่ง) ที่อยู่บนหลังคาหรือห่างขอบหลังคาไม่เกิน 1 ม. คือจุดรับน้ำ ท่อลงจากรางน้ำของหลังคาที่ปลายล่างอยู่ที่ท่อน้ำฝนจะส่งน้ำเข้าท่อนั้น · ปลายต่ำสุดของท่อน้ำฝนคือทางออก · ตั้งความเข้มฝนได้ใน [[a_pipesize]] หรือ [[a_pipereport]]
 7. [[a_wsup]] (แท็บ [[tab_analyze]] หรือแผงท่อน้ำของงานระบบ): เลือกการใช้งานอาคาร จำนวนคน (เว้นว่างให้คิดจากห้อง: บ้าน 2 คนต่อห้องนอน) และระบบจ่ายน้ำ แล้วอ่านขนาดถัง ปั๊ม และน้ำร้อน · แรงดันที่สุขภัณฑ์ตรวจเมื่อต้นทางของท่อน้ำประปาเป็นถังที่อยู่สูง ปั๊มที่มี Rated Head หรือใส่แรงดันท่อประปา (ระบบต่อตรง) · [[a_pipereport]] บอกสุขภัณฑ์ที่แรงดันไม่พอ
+8. [[a_pslope]]: เลือกท่อระบายเส้นใดเส้นหนึ่งหรือหลายเส้น เลือกค่าความลาด (หรือน้อยสุดตามขนาดท่อ) และเลือกว่าจะปรับเฉพาะที่เลือกหรือทั้งระบบ · ปลายต่ำสุดของระบบอยู่ที่เดิม ท่ออื่นไล่ระดับขึ้นไปจากจุดนั้น
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -30588,6 +30645,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.157 · Sanitary and vents: [[a_pipesize]] tells horizontal branches, stacks (by their branch intervals) and the building drain (by its slope) apart and never makes a drain smaller downstream · vent pipes (system V) are sized by DFU and developed length · [[a_pipereport]] lists each stack, the building drain, the vents and the fixtures too far from a vent
 - V1.158 · Rainwater: the area of each roof goes to its nearest gutter downspout or rainwater inlet (system RL), times the rainfall intensity (150 mm/h unless set) · [[a_pipesize]] sizes leaders and horizontal storm drains at their slope · [[a_pipereport]] shows the area, the flow and downspouts that are too small
 - V1.159 · [[a_wsup]]: water a day, ground and roof tanks, the booster or transfer pump (flow, head, kW) and a central water heater (ASHRAE) · every fixture is checked for pressure from the height of a tank, the Rated Head of a pump (new in pump types) or the pressure of the main
+- V1.160 · [[a_pslope]] (Systems, piping panel): the selected drains, or their whole networks, fall continuously to the outlet at the slope chosen or the least for their size; pipes drawn the wrong way are turned and risers standing on them follow · Properties show the invert at both ends of a pipe
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -30633,6 +30691,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 5. Sanitary and vents: the distance from each trap to a vent is checked once the project has vent pipes (system V) or a stack that goes on up as a vent · a stack is a riser of system S or W; the program counts the branch intervals that enter it, and a horizontal drain that takes a stack is the building drain, sized at the slope it is drawn with · a vent (system V) goes out to the air at its highest open end, and each other end must come within 150 mm of a drain in plan (up to 1.5 m above it) or reach a fixture · a stack that goes on up past its last branch is its own stack vent · [[a_pipereport]] checks the way along the drain from each fixture to a vent (IPC Table 909.1)
 6. Rainwater: an upper end of a rainwater pipe (system RL, pipe or riser) on a roof or within 1 m of its edge is an inlet; a gutter downspout that ends over a rainwater pipe feeds it · the lowest open end is the outlet · set the rainfall intensity in [[a_pipesize]] or [[a_pipereport]]
 7. [[a_wsup]] (the [[tab_analyze]] tab or the piping panel of Systems): choose the use of the building, the persons (blank: from the rooms, two for each bedroom of a home) and the supply, then read the tanks, pumps and hot water · fixtures are checked for pressure when the cold water starts at a raised tank, a pump with a Rated Head, or a main whose pressure is typed in · [[a_pipereport]] lists the fixtures short of pressure
+8. [[a_pslope]]: select one or more drains, choose the slope (or the least for the size) and whether only those or their whole networks change · the lowest open end of the network stays put and the rest is raised from there
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -32515,6 +32574,7 @@ window.PenumBIM.r72={ds:id=>roofDownspouts(P,P.els.find(e=>e.id===id)),leader:rn
   nets:W.nets.filter(n=>n.kind==='storm').map(n=>({fu:n.fu,flow:n.flow,n:n.n,ins:n.ins,ids:n.ids,dsp:n.dsp?n.dsp.length:0})),pipes:[...W.pipes].filter(([id,r])=>r.kind==='storm').map(([id,r])=>({id,A:r.fu,q:r.flow,ris:r.ris,need:S.get(id)})),issues:pipeIssues(W).map(x=>[x[0],x[1].length])}}};
 window.PenumBIM.r73={set:()=>wsSet(P),design:()=>{const D=wsDesign(P);return{pp:D.pp,ppAuto:D.ppAuto,day:D.day,peak:D.peak,need:D.need,Hm:D.Hm,est:D.est,ground:D.ground,roof:D.roof,boost:D.boost,transfer:D.transfer,grav:D.grav,direct:D.direct,hw:D.hw,low:D.low,checked:D.checked}},
   press:()=>{const W=waterflow(P,pszOpt());return W.ws?[...W.ws.nets].map(([ni,r])=>({sys:r.sys,need:r.need,av:r.av,src:r.src,fx:r.fx.map(x=>({id:x.id,p:x.p,mn:x.mn,ok:x.ok}))})):[]}};
+window.PenumBIM.r74={plan:(ids,o)=>{const Q=pslPlan(P,ids,o);return{out:Q.out.map(c=>({id:c.e.id,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,off:c.off,slope:c.slope})),skip:Q.skip,n:Q.n,ris:Q.ris.map(x=>({id:x.s.id,baseOff:x.baseOff,height:x.height}))}},apply:(ids,o)=>pslApply(pslPlan(P,ids,o))};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
