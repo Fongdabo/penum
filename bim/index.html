@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=171,V1_NAME='V1.160';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=172,V1_NAME='V1.161';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -28930,6 +28930,154 @@ Object.assign(STR,{
   psl_skip:['ท่อ {0} เส้นระบายออกทั้งสองข้างจากกลางท่อ จึงไม่ได้ปรับ','{0} pipes drain both ways from their middle and are left as they are'],psl_none:['เลือกท่อระบาย (ระบบ S W RL หรือ CD) ก่อน','Select drains (systems S, W, RL or CD) first'],
   psl_was:['เดิม','Was'],psl_now:['ใหม่','New'],psl_low:['ระดับปลายต่ำ (จากชั้น)','Low end (from level)'],psl_apply:['ปรับ {0} เส้น','Slope {0}'],psl_done:['ปรับความลาดท่อ {0} เส้นแล้ว กดย้อนกลับได้','{0} pipes sloped — Undo to go back'],
   g_inv:['ระดับท้องท่อ (Invert)','Invert'],psl_inv1:['ท้องท่อต้นท่อ (จากชั้น)','Invert at start (from level)'],psl_inv2:['ท้องท่อปลายท่อ (จากชั้น)','Invert at end (from level)']});
+/* ===== 161 Sprinkler layout and coverage (V1.161; Revit places sprinkler heads one at a time and checks none of them: NFPA 13, which the Thai fire code of the EIT follows).
+   Each room has a hazard class (room Properties; left on auto it comes from the room's name and use: stores and shops Ordinary Hazard 2, car parks, plant and laundries
+   Ordinary Hazard 1, the rest Light Hazard; P.fpz.hz sets another default for the project), and with it the most a standard spray head may cover and the widest
+   spacing between heads (NFPA 13 §10.2.4: Light 20.9 m² and 4.6 m, Ordinary 12.1 m² and 4.6 m, Extra 9.3 m² and 3.7 m).  The layout puts the fewest heads on an even
+   grid along the room's longest wall that keeps both limits, half a spacing from the walls; under a ceiling a pendent head at the ceiling, elsewhere an upright one
+   350 mm below the storey above.  It can also run the branch lines along the rows and a cross main along the first column, on to 300 mm from the wall where the main is to join it
+   (pipe schedule sizes, NFPA 13 §28.5).
+   The coverage check samples every room: a point farther from every head than half the diagonal of the largest spacing allowed is not covered; heads closer to each
+   other than 1.8 m or to a wall than 100 mm are reported (§10.2.5). ===== */
+const FS_HZ={lh:{s:4.6,ah:20.9,d:4.1,A:139,hose:6.3,min:30},oh1:{s:4.6,ah:12.1,d:6.1,A:139,hose:15.8,min:60},oh2:{s:4.6,ah:12.1,d:8.1,A:139,hose:15.8,min:90},
+  eh1:{s:3.7,ah:9.3,d:12.2,A:232,hose:31.5,min:90},eh2:{s:3.7,ah:9.3,d:16.3,A:232,hose:31.5,min:120}};
+const FS_HZS=Object.keys(FS_HZ),FS_MIN=1800,FS_WALL=100;
+const FS_GUESS=[['oh2',/เก็บของ|เก็บสินค้า|คลังสินค้า|โกดัง|ร้าน|ขาย|โชว์รูม|ห้าง|store|storage|warehouse|shop|retail|showroom|mall/i],
+  ['oh1',/จอดรถ|ห้องเครื่อง|ไฟฟ้า|ปั๊ม|ซักรีด|ซักล้าง|parking|garage|plant|mech|elec|pump|laundry|boiler/i]];
+const fsGuess=r=>{const n=String(r.name||'');for(const [k,re] of FS_GUESS)if(re.test(n))return k;return r.use==='retail'?'oh2':'lh'};
+const fsDef=P0=>P0&&P0.fpz&&FS_HZ[P0.fpz.hz]?P0.fpz.hz:'';
+/* the hazard class of a room, or '' when it has no sprinklers */
+const fsHz=(P0,r)=>r.fhz==='no'?'':FS_HZ[r.fhz]?r.fhz:fsDef(P0)||fsGuess(r);
+const fsSched=hz=>hz==='lh'?'light':'ord';
+XC.push(()=>{const f=P.fpz;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f)){if(FS_HZ[f.hz])o.hz=f.hz;for(const k of ['k','pmin','C','ps','hose'])if(isFinite(+f[k])&&f[k]!==''&&f[k]!=null)o[k]=+f[k]}
+  if(Object.keys(o).length)P.fpz=o;else delete P.fpz});
+/* every room with its region: {r, lv, g (region: net polygon, area mm²), hz, heads} */
+function fsRooms(P0){const byLv=new Map(),out=[];for(const e of P0.els)if(e.cat==='room')(byLv.get(e.level)||byLv.set(e.level,[]).get(e.level)).push(e);
+  for(const [lv,rooms] of byLv){const regs=regions(P0,lv,true),hs=P0.els.filter(e=>e.cat==='sprinkler'&&e.level===lv),used=new Set();
+    for(const r of rooms){const i=regionAt(regs,r.x,r.y);if(i<0||used.has(i))continue;used.add(i);const g=regs[i];out.push({r,lv,g,hz:fsHz(P0,r),heads:hs.filter(h=>inPoly(h.x,h.y,g.net))})}}
+  return out}
+const fsName=r=>((r.number?r.number+' ':'')+(r.name||t('cat_room'))).trim();
+/* the distance from a point to the edges of a polygon */
+function fsEdge(x,y,poly){let d=Infinity;for(let k=0;k<poly.length;k++){const p=poly[k],q=poly[(k+1)%poly.length],dx=q[0]-p[0],dy=q[1]-p[1],L2=dx*dx+dy*dy||1,s=clamp01(((x-p[0])*dx+(y-p[1])*dy)/L2);
+  d=Math.min(d,Math.hypot(p[0]+dx*s-x,p[1]+dy*s-y))}return d}
+/* the widest a head may be from the farthest point it covers: half the diagonal of the largest spacing the class allows */
+const fsReach=H=>{const S=H.s*1000,L=Math.min(S,H.ah*1e6/S);return Math.hypot(S,L)/2};
+/* the grid of heads for a room: {pts [{x,y,i,j,u,v}], nx, ny, sx, sy (mm), c, s (the axis of the rows)} */
+function fsGrid(g,hz){const H=FS_HZ[hz],S=H.s*1000,Am=H.ah*1e6,net=g.net;let a=0,best=0;
+  for(let k=0;k<net.length;k++){const p=net[k],q=net[(k+1)%net.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L>best){best=L;a=Math.atan2(q[1]-p[1],q[0]-p[0])}}
+  const frame=a=>{const c=Math.cos(a),s=Math.sin(a),U=net.map(p=>[p[0]*c+p[1]*s,-p[0]*s+p[1]*c]);let u0=Infinity,u1=-Infinity,v0=Infinity,v1=-Infinity;for(const [u,v] of U){u0=Math.min(u0,u);u1=Math.max(u1,u);v0=Math.min(v0,v);v1=Math.max(v1,v)}return{c,s,u0,u1,v0,v1}};
+  let F=frame(a);if(F.v1-F.v0>F.u1-F.u0+1)F=frame(a+Math.PI/2);          // the rows (branch lines) run the long way
+  const Lu=F.u1-F.u0,Lv=F.v1-F.v0;let nx=Math.max(1,Math.ceil(Lu/S-1e-9)),ny=Math.max(1,Math.ceil(Lv/S-1e-9));
+  while((Lu/nx)*(Lv/ny)>Am+1){if(Lu/nx>=Lv/ny)nx++;else ny++}
+  const sx=Lu/nx,sy=Lv/ny,X=(u,v)=>[u*F.c-v*F.s,u*F.s+v*F.c],pts=[];
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const u=F.u0+(i+0.5)*sx,v=F.v0+(j+0.5)*sy;let [x,y]=X(u,v);
+    if(!inPoly(x,y,net)||fsEdge(x,y,net)<FS_WALL){let n=0,su=0,sv=0;          /* a cell the room only partly fills: its head goes to the middle of the part inside */
+      for(let p=0;p<5;p++)for(let q=0;q<5;q++){const uu=F.u0+(i+(p+0.5)/5)*sx,vv=F.v0+(j+(q+0.5)/5)*sy,[xx,yy]=X(uu,vv);if(inPoly(xx,yy,net)&&fsEdge(xx,yy,net)>=FS_WALL){n++;su+=uu;sv+=vv}}
+      if(n<3)continue;const m=X(su/n,sv/n);if(!inPoly(m[0],m[1],net))continue;[x,y]=m}
+    pts.push({x:Math.round(x),y:Math.round(y),i,j,u:x*F.c+y*F.s,v:-x*F.s+y*F.c})}
+  return{pts,nx,ny,sx,sy,c:F.c,s:F.s,v0:F.v0}}
+/* the coverage of one room: {st, A m², n, aph, gap (share not covered), close, wall, miss [[x,y]] (points not covered), step} */
+function fsCover(it){const A=it.g.area/1e6,n=it.heads.length,H=FS_HZ[it.hz];if(!H)return{st:'no',A,n};if(!n)return{st:'none',A,n:0,aph:0};
+  const net=it.g.net,R=fsReach(H)+50,hs=it.heads;let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const [x,y] of net){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+  const step=Math.max(200,Math.sqrt(it.g.area)/50),miss=[];let tot=0;
+  for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net))continue;tot++;let ok=false;for(const h of hs)if(Math.hypot(h.x-x,h.y-y)<=R){ok=true;break}if(!ok)miss.push([x,y])}
+  let close=0;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(Math.hypot(hs[i].x-hs[j].x,hs[i].y-hs[j].y)<FS_MIN)close++;
+  const wall=hs.filter(h=>(typ(P,h)||{}).kind!=='side'&&fsEdge(h.x,h.y,net)<FS_WALL-1).length,aph=A/n,gap=tot?miss.length/tot:0;
+  const st=gap>0.005?'gap':aph>H.ah+0.05?'few':close?'close':wall?'wall':'ok';return{st,A,n,aph,gap,close,wall,miss,step}}
+let FSM=null;
+function fsNow(){if(FSM&&FSM.ver===VER&&FSM.P===P)return FSM.L;const L=fsRooms(P).map(it=>Object.assign(it,{c:fsCover(it)}));FSM={ver:VER,P,L};return L}
+/* the layout: new heads (and pipes) for the rooms asked for. o:{type:'auto'|type id, repl: take away the heads there are, pipes: run the branch lines and a cross main}
+   -> {rooms [{it, st:'new'|'has'|'no'|'small', n, sx, sy}], add [elements without ids], del Set of ids} */
+function fsPlan(P0,ids,o){const want=new Set(ids),Ts=P0.types.sprinkler||[],add=[],del=new Set(),rooms=[];
+  const tOf=up=>o.type!=='auto'&&Ts.some(T=>T.id===+o.type)?+o.type:((Ts.find(T=>T.kind===(up?'up':'pend'))||Ts[0]||{}).id);
+  const PT=P0.types.pipe||[],ptype=(PT.find(T=>T.mark==='BSP')||PT.find(T=>T.seg==='sch40')||PT[0]||{}).id;
+  for(const it of fsRooms(P0)){if(!want.has(it.r.id))continue;if(!it.hz){rooms.push({it,st:'no',n:0});continue}
+    if(it.heads.length&&!o.repl){rooms.push({it,st:'has',n:it.heads.length});continue}
+    const G=fsGrid(it.g,it.hz);if(!G.pts.length){rooms.push({it,st:'small',n:0});continue}
+    for(const h of it.heads)del.add(h.id);
+    const L=lvl(P0,it.lv),up=sortedLevels(P0).find(l=>L&&l.elev>L.elev+1),Hs=L&&up?up.elev-L.elev:3000,hs=[];
+    for(const p of G.pts){const cl=ceilingAt(P0,it.lv,p.x,p.y),type=tOf(!cl),T=Ts.find(x=>x.id===type)||{},off=cl?cl.off:Math.max(2100,Hs-350);
+      const e={cat:'sprinkler',type,level:it.lv,x:p.x,y:p.y,rot:0,off};add.push(e);hs.push({e,p,T})}
+    if(o.pipes&&hs.length){const pend=hs.some(h=>h.T.kind!=='up'),zp=pend?Math.max(...hs.map(h=>h.e.off))+150:Math.min(...hs.map(h=>h.e.off))-100,sch=fsSched(it.hz);
+      const X=(u,v)=>[Math.round(u*G.c-v*G.s),Math.round(u*G.s+v*G.c)],rows=new Map();for(const h of hs)(rows.get(h.p.j)||rows.set(h.p.j,[]).get(h.p.j)).push(h);
+      const js=[...rows.keys()].sort((a,b)=>a-b),u0=Math.min(...hs.map(h=>h.p.u)),pipe=(a,b,n)=>{if(Math.hypot(a[0]-b[0],a[1]-b[1])<50)return;add.push({cat:'pipe',type:ptype,level:it.lv,x1:a[0],y1:a[1],x2:b[0],y2:b[1],dia:sizeFire(n,sch),off:zp,sys:'FP',slope:0,flow:0})};
+      const vj=new Map();let total=0;
+      for(const j of js){const R=rows.get(j).sort((a,b)=>a.p.u-b.p.u),v=R.reduce((s,h)=>s+h.p.v,0)/R.length;vj.set(j,{v,n:R.length});total+=R.length;
+        let at=X(u0,v);for(let k=0;k<R.length;k++){const b=X(R[k].p.u,v);pipe(at,b,R.length-k);at=b}}
+      let left=total;for(let k=0;k+1<js.length;k++){left-=vj.get(js[k]).n;pipe(X(u0,vj.get(js[k]).v),X(u0,vj.get(js[k+1]).v),left)}
+      const f0=vj.get(js[0]).v,fe=G.v0+300;if(f0-fe>100)pipe(X(u0,fe),X(u0,f0),total)}          /* the feed: the cross main goes on to 300 mm from the wall, where the main joins it */
+    rooms.push({it,st:'new',n:hs.length,sx:G.sx,sy:G.sy})}
+  return{rooms,add,del}}
+/* places the heads and pipes; a level that gets heads and has no fire protection plan gets one (Revit: the Fire Protection plans of the templates),
+   made from its plumbing plan or its floor plan.  -> the plan the heads are seen in, of the level of the view (or of the first level) */
+function fsApply(Q){if(!Q.add.length&&!Q.del.size)return null;const lvs=[...new Set(Q.add.map(e=>e.level))],av=activeView(),out=new Map();
+  edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e));
+    for(const lv of lvs){const pl=P.views.filter(v=>v.kind==="plan"&&v.level===lv&&!v.rcp&&!v.draft&&!v.legend&&v.dep==null),has=pl.find(v=>v.disc==='fire'||v.disc==='coord');if(has){out.set(lv,has.id);continue}
+      const src=pl.find(v=>v.disc==='plumb')||pl.find(v=>!v.disc||v.disc==='arch')||pl[0];if(!src)continue;const L=lvl(P,lv),v=JSON.parse(JSON.stringify(src));
+      Object.assign(v,{id:P.seq++,name:(L?L.name:'')+' - '+t('disc_fire'),disc:'fire'});delete v.tpl;P.views.push(v);out.set(lv,v.id)}});
+  const lv=av&&out.has(av.level)?av.level:lvs[0];return lv!=null?out.get(lv)||null:null}
+/* the rooms the command works on: those selected, else those of the level of the view */
+function fsScope(){const sel=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='room');if(sel.length)return{k:'sel',ids:sel.map(e=>e.id)};
+  const v=activeView(),lv=v&&v.level!=null?v.level:null;return{k:lv!=null?'level':'all',ids:P.els.filter(e=>e.cat==='room'&&(lv==null||e.level===lv)).map(e=>e.id),lv}}
+const fsSet=()=>ui.fsl||(ui.fsl={type:'auto',repl:false,pipes:true,all:false});
+function dlgSpr(){const o=fsSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,want=new Set(ids),L=fsNow().filter(it=>want.has(it.r.id)),Q=fsPlan(P,ids,o),qm=new Map(Q.rooms.map(x=>[x.it.r.id,x]));ui.helpAt='calc';
+  const Ts=P.types.sprinkler||[],hzO=(v,auto)=>[['auto',auto],...FS_HZS.map(k=>[k,t('fs_'+k)]),['no',t('fs_no')]].map(([k,l])=>`<option value="${k}"${k===v?' selected':''}>${esc(l)}</option>`).join('');
+  const set=`<div class="ldg pz"><label><span>${t('fs_def')}</span><span><select data-fs="hz">${hzO(fsDef(P)||'auto',t('fs_auto'))}</select></span></label>
+    <label><span>${t('fs_type')}</span><span><select data-fs="type"><option value="auto"${o.type==='auto'?' selected':''}>${t('fs_tauto')}</option>${Ts.map(T=>`<option value="${T.id}"${String(o.type)===String(T.id)?' selected':''}>${esc(T.name||T.mark||'')}</option>`).join('')}</select></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-fs="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    <label><span>${t('fs_pipes')}</span><span><input type="checkbox" data-fs="pipes"${o.pipes?' checked':''}></span></label><label><span>${t('fs_repl')}</span><span><input type="checkbox" data-fs="repl"${o.repl?' checked':''}></span></label></div>`;
+  const m2=a=>a.toFixed(a<100?1:0)+' m²',m=x=>(x/1000).toFixed(2);
+  const rows=L.map(it=>{const c=it.c,q=qm.get(it.r.id),H=FS_HZ[it.hz],cls=c.st==='ok'||c.st==='no'?'':' class="chg"';
+    const now=c.st==='no'?'—':c.n?`${c.n} · ${m2(c.aph)}`:'0',st=t('fs_st_'+c.st)+(c.st==='gap'?' '+Math.round(c.gap*100)+'%':'');
+    const plan=!q?'':q.st==='new'?`<b>${q.n}</b> · ${m(q.sx)} × ${m(q.sy)} m`:t('fs_q_'+q.st);
+    return`<tr data-id="${it.r.id}"${cls}><td>${esc(fsName(it.r))}</td><td><select data-fhz="${it.r.id}">${hzO(it.r.fhz||'auto',t('fs_auto')+' · '+t('fs_'+(fsDef(P)||fsGuess(it.r))))}</select></td><td class="n">${m2(c.A)}</td><td class="n">${H?m2(H.ah)+' · '+H.s+' m':'—'}</td><td class="n">${now}</td><td>${st}</td><td class="n">${plan}</td></tr>`}).join('');
+  const nNew=Q.add.filter(e=>e.cat==='sprinkler').length,nP=Q.add.length-nNew,bad=L.filter(it=>!['ok','no'].includes(it.c.st));
+  const body=`<style>.fsd td select{max-width:220px}</style><div class="fsd"><p class="note">${t('fs_intro')}</p>${set}`+(L.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th>${t('fs_hzc')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fs_max')}</th><th class="n">${t('fs_now')}</th><th>${t('fs_cov')}</th><th class="n">${t('fs_plan')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+
+    `<p class="note">${t('fs_note')}</p></div>`;
+  openDlg(t('a_sprlay'),body,`<button class="btn" data-fsx="show">${t(ui.fsShow?'fs_hide':'fs_show')}</button><button class="btn" data-fsx="bad"${bad.length?'':' disabled'}>${t('fs_selbad',bad.length)}</button><span style="flex:1"></span><button class="btn primary" data-fsx="apply"${nNew?'':' disabled'}>${t(nP?'fs_applyp':'fs_apply',nNew,nP)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.fhz){const r=IDX.get(+el.dataset.fhz);if(r)edit(()=>{if(el.value==='auto')delete r.fhz;else r.fhz=el.value});dlgSpr();return}
+       const k=el.dataset.fs;if(!k)return;if(k==='hz'){edit(()=>{const f=Object.assign({},P.fpz||{});if(el.value==='auto')delete f.hz;else f.hz=el.value;P.fpz=f})}else if(k==='type')o.type=el.value==='auto'?'auto':+el.value;else if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgSpr()},
+     click(ev){const x=ev.target.closest('[data-fsx]');if(x&&ui.dlg){const k=x.dataset.fsx;if(k==='apply'&&nNew){const vid=fsApply(Q),av=activeView(),v=vid!=null&&viewById(vid);if(v&&av&&av.id!==v.id&&!(av.kind==='plan'&&av.level===v.level&&['fire','coord'].includes(av.disc))){showView(v.id);toast(t('fs_donev',nNew,v.name),6000)}else toast(t('fs_done',nNew));dlgSpr();return}
+         if(k==='show'){ui.fsShow=!ui.fsShow;refresh();dlgSpr();return}if(k==='bad'&&bad.length){ui.sel=new Set(bad.map(it=>it.r.id));ui.fsShow=true;closeDlg();setTool('modify');return}}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);ui.fsShow=true;closeDlg();setTool('modify')}}},'wide')}
+XA.sprlay=dlgSpr;
+for(const [tab,pn,after] of [['sys','p_piping','sprinkler'],['analyze','p_check','@wsup']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@sprlay')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@sprlay')}}
+BTN['@sprlay']=['sprinkler',''];
+/* on the plans while asked for: the reach of every head, and the parts of rooms no head covers */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.fsShow||v.kind!=='plan'||v.draft)return;const L=fsNow().filter(it=>it.lv===v.level);if(!L.length)return;
+  ctx.save();for(const it of L){const H=FS_HZ[it.hz];if(!H)continue;const R=fsReach(H);ctx.strokeStyle='rgba(224,58,58,.55)';ctx.lineWidth=g.lw(0.18);g.dash([1.5,1]);
+    for(const h of it.heads){g.path([...Array(36).keys()].map(i=>[h.x+R*Math.cos(i*Math.PI/18),h.y+R*Math.sin(i*Math.PI/18)]));ctx.stroke()}g.dash(null);
+    const c=it.c;if(c.miss&&c.miss.length){ctx.fillStyle='rgba(232,89,12,.35)';const s=c.step/2;for(const [x,y] of c.miss){g.path([[x-s,y-s],[x+s,y-s],[x+s,y+s],[x-s,y+s]]);ctx.fill()}}}
+  ctx.restore()});
+
+/* the hazard class in the Properties of a room */
+XP.push((c,els)=>{if(c!=='room')return'';const V=els.every(x=>(x.fhz||'auto')===(els[0].fhz||'auto'))?(els[0].fhz||'auto'):'';
+  let h=PR.grp('g_fire')+PR.sel('fhz','fs_hzc',V,[['auto',t('fs_auto')+(els.length===1?' · '+t('fs_'+(fsDef(P)||fsGuess(els[0]))):'')],...FS_HZS.map(k=>[k,t('fs_'+k)]),['no',t('fs_no')]]);
+  if(els.length===1){const it=fsNow().find(x=>x.r.id===els[0].id);if(it&&it.hz){const C=it.c;h+=PR.ro('fs_now',C.n?C.n+' · '+C.aph.toFixed(1)+' m²':'0')+PR.ro('fs_cov',t('fs_st_'+C.st)+(C.st==='gap'?' '+Math.round(C.gap*100)+'%':''))}}
+  return h});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||key!=='fhz')return false;if(FS_HZ[raw]||raw==='no')o.fhz=raw;else delete o.fhz;return true});
+/* Check Systems: rooms on a level that has sprinklers but are not covered */
+SCX.push(add=>{const lv=new Set(P.els.filter(e=>e.cat==='sprinkler').map(e=>e.level));if(!lv.size)return;
+  for(const it of fsNow()){if(!lv.has(it.lv))continue;const c=it.c;if(c.st==='ok'||c.st==='no')continue;add('sc_spr','pipe',[it.r.id,...it.heads.map(h=>h.id)],it.r.x,it.r.y,it.lv,fsName(it.r)+' · '+t('fs_st_'+c.st)+(c.st==='gap'?' '+Math.round(c.gap*100)+'%':''))}});
+WARN_K.push('sc_spr');
+Object.assign(STR,{
+  a_sprlay:['วางหัวสปริงเกลอร์และตรวจพื้นที่ครอบคลุม','Sprinkler Layout and Coverage'],g_fire:['ระบบดับเพลิง','Fire Protection'],
+  fs_intro:['ตาม NFPA 13 (มาตรฐานการป้องกันอัคคีภัยของ วสท. ใช้เกณฑ์เดียวกัน): แต่ละห้องมีประเภทความเสี่ยงอันตราย กำหนดพื้นที่ครอบคลุมสูงสุดต่อหัวและระยะห่างระหว่างหัวสูงสุด การวางหัวใช้จำนวนหัวน้อยที่สุดในตารางที่เท่ากันตามแนวผนังที่ยาวที่สุดของห้อง ห่างผนังครึ่งหนึ่งของระยะห่าง ใต้ฝ้าใช้หัวห้อยลงที่ระดับฝ้า ไม่มีฝ้าใช้หัวตั้งขึ้นต่ำกว่าชั้นบน 350 มม.',
+    'By NFPA 13 (the EIT fire code takes the same rules): every room has a hazard class, which sets the most one head may cover and the widest spacing. The layout puts the fewest heads on an even grid along the room\'s longest wall, half a spacing from the walls: pendent heads at the ceiling where there is one, otherwise upright heads 350 mm under the storey above'],
+  fs_def:['ประเภทอันตรายเริ่มต้นของโครงการ','Default hazard class'],fs_auto:['อัตโนมัติ','Auto'],fs_type:['ชนิดหัว','Head type'],fs_tauto:['ตามฝ้า (ห้อยลงใต้ฝ้า / ตั้งขึ้นถ้าไม่มีฝ้า)','By ceiling (pendent under a ceiling, upright without)'],
+  fs_rooms:['ห้อง','Rooms'],fs_sel:['ห้องที่เลือก ({0})','Selected rooms ({0})'],fs_level:['ห้องในชั้นนี้ ({0})','Rooms of this level ({0})'],fs_allr:['ทุกห้องในโครงการ ({0})','Every room ({0})'],
+  fs_pipes:['เดินท่อกิ่งและท่อประธานย่อยในห้องให้ด้วย','Run branch lines and a cross main'],fs_repl:['แทนที่หัวที่มีอยู่แล้วในห้อง','Replace the heads already there'],
+  fs_lh:['อันตรายน้อย (Light)','Light Hazard'],fs_oh1:['อันตรายปานกลาง กลุ่ม 1 (OH1)','Ordinary Hazard 1'],fs_oh2:['อันตรายปานกลาง กลุ่ม 2 (OH2)','Ordinary Hazard 2'],fs_eh1:['อันตรายมาก กลุ่ม 1 (EH1)','Extra Hazard 1'],fs_eh2:['อันตรายมาก กลุ่ม 2 (EH2)','Extra Hazard 2'],fs_no:['ไม่ติดสปริงเกลอร์','No sprinklers'],
+  fs_hzc:['ประเภทอันตราย (สปริงเกลอร์)','Hazard class (sprinklers)'],fs_area:['พื้นที่','Area'],fs_max:['สูงสุดต่อหัว · ระยะห่าง','Most a head · spacing'],fs_now:['หัวที่มี · พื้นที่ต่อหัว','Heads · area a head'],fs_cov:['การครอบคลุม','Coverage'],fs_plan:['วางใหม่ · ระยะห่าง','New layout · spacing'],
+  fs_st_ok:['ครอบคลุมครบ','Covered'],fs_st_none:['ยังไม่มีหัว','No heads'],fs_st_no:['ไม่ต้องติด','None needed'],fs_st_gap:['มีส่วนที่ไม่ครอบคลุม','Not covered:'],fs_st_few:['พื้นที่ต่อหัวเกินกำหนด','Too much area a head'],
+  fs_st_close:['หัวชิดกันเกิน 1.8 ม.','Heads closer than 1.8 m'],fs_st_wall:['หัวชิดผนังเกิน 100 มม.','Heads closer than 100 mm to a wall'],
+  fs_q_has:['มีหัวอยู่แล้ว (ติ๊กแทนที่)','Has heads (tick Replace)'],fs_q_no:['—','—'],fs_q_small:['ห้องเล็กเกินไป','Too small'],
+  fs_norooms:['ยังไม่มีห้อง: วาดผนังและวางห้อง (Room) ก่อน','No rooms yet: draw walls and place rooms first'],
+  fs_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้นบนแปลน · ระยะห่างสูงสุด NFPA 13 ข้อ 10.2.4: อันตรายน้อย 20.9 ม.² / 4.6 ม. · ปานกลาง 12.1 ม.² / 4.6 ม. · มาก 9.3 ม.² / 3.7 ม. · หัวห่างกันอย่างน้อย 1.8 ม. และห่างผนังอย่างน้อย 100 มม. · ท่อที่เดินให้ใช้ท่อเหล็กดำ ขนาดตามตาราง Pipe Schedule ต่อท่อเมนเข้าที่ปลายท่อประธานย่อยของแต่ละห้องเอง',
+    'Click a room to select it on the plan · NFPA 13 §10.2.4: Light 20.9 m² / 4.6 m · Ordinary 12.1 m² / 4.6 m · Extra 9.3 m² / 3.7 m · heads at least 1.8 m apart and 100 mm from walls · the pipes run are black steel sized by the pipe schedule; join the main to the end of each room\'s cross main yourself'],
+  fs_show:['แสดงพื้นที่ครอบคลุมบนแปลน','Show coverage on plans'],fs_hide:['ซ่อนพื้นที่ครอบคลุม','Hide coverage'],fs_selbad:['เลือกห้องที่ยังไม่ครบ ({0})','Select rooms not covered ({0})'],
+  fs_apply:['วางหัว {0} หัว','Place {0} heads'],fs_applyp:['วางหัว {0} หัว + ท่อ {1} เส้น','Place {0} heads + {1} pipes'],fs_done:['วางหัวสปริงเกลอร์ {0} หัวแล้ว กดย้อนกลับได้','{0} sprinkler heads placed — Undo to go back'],fs_donev:['วางหัวสปริงเกลอร์ {0} หัวแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} sprinkler heads placed, shown in the plan {1} — Undo to go back'],
+  sc_spr:['ห้องที่สปริงเกลอร์ยังไม่ครอบคลุม: {0}','Room not covered by sprinklers: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -30356,6 +30504,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.158 · น้ำฝน: พื้นที่หลังคาแบ่งให้ท่อลงจากรางน้ำและปลายท่อน้ำฝน (ระบบ RL) ที่ใกล้ที่สุด คูณความเข้มฝน (ตั้งได้ ค่าเริ่ม 150 มม./ชม.) · [[a_pipesize]] ปรับขนาดท่อน้ำฝนแนวดิ่งและแนวนอนตามความลาด · [[a_pipereport]] บอกพื้นที่ อัตราไหล และท่อลงที่รับน้ำไม่พอ
 - V1.159 · [[a_wsup]]: น้ำใช้ต่อวัน ขนาดถังเก็บน้ำล่างและบนหลังคา ปั๊มเพิ่มแรงดันหรือปั๊มส่ง (อัตราไหล Head kW) และเครื่องทำน้ำร้อนรวม (ASHRAE) · ตรวจแรงดันที่สุขภัณฑ์ทุกชิ้นจากความสูงของถัง Rated Head ของปั๊ม (ช่องใหม่ในชนิดปั๊ม) หรือแรงดันท่อประปา
 - V1.160 · [[a_pslope]] (แท็บงานระบบ แผงท่อน้ำ): ให้ท่อระบายที่เลือกหรือทั้งระบบลาดลงทางออกต่อเนื่องกัน ตามค่าที่เลือกหรือค่าน้อยสุดตามขนาดท่อ กลับทิศท่อที่วาดกลับด้าน และท่อแนวดิ่งที่ตั้งอยู่บนท่อขยับตาม · คุณสมบัติท่อบอกระดับท้องท่อ (Invert) ทั้งสองปลาย
+- V1.161 · [[a_sprlay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ประเภทอันตรายของแต่ละห้องตาม NFPA 13 (คุณสมบัติห้อง) วางหัวสปริงเกลอร์ให้ทั้งห้องด้วยจำนวนหัวน้อยที่สุดที่ไม่เกินพื้นที่และระยะห่างที่กำหนด พร้อมท่อกิ่งและท่อประธานย่อย · ตรวจว่าทุกจุดของห้องมีหัวครอบคลุม หัวชิดกันหรือชิดผนังเกินไป แสดงส่วนที่ไม่ครอบคลุมบนแปลน และรวมใน [[a_sysck]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30402,6 +30551,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 6. น้ำฝน: ปลายบนของท่อน้ำฝน (ระบบ RL ท่อหรือท่อแนวดิ่ง) ที่อยู่บนหลังคาหรือห่างขอบหลังคาไม่เกิน 1 ม. คือจุดรับน้ำ ท่อลงจากรางน้ำของหลังคาที่ปลายล่างอยู่ที่ท่อน้ำฝนจะส่งน้ำเข้าท่อนั้น · ปลายต่ำสุดของท่อน้ำฝนคือทางออก · ตั้งความเข้มฝนได้ใน [[a_pipesize]] หรือ [[a_pipereport]]
 7. [[a_wsup]] (แท็บ [[tab_analyze]] หรือแผงท่อน้ำของงานระบบ): เลือกการใช้งานอาคาร จำนวนคน (เว้นว่างให้คิดจากห้อง: บ้าน 2 คนต่อห้องนอน) และระบบจ่ายน้ำ แล้วอ่านขนาดถัง ปั๊ม และน้ำร้อน · แรงดันที่สุขภัณฑ์ตรวจเมื่อต้นทางของท่อน้ำประปาเป็นถังที่อยู่สูง ปั๊มที่มี Rated Head หรือใส่แรงดันท่อประปา (ระบบต่อตรง) · [[a_pipereport]] บอกสุขภัณฑ์ที่แรงดันไม่พอ
 8. [[a_pslope]]: เลือกท่อระบายเส้นใดเส้นหนึ่งหรือหลายเส้น เลือกค่าความลาด (หรือน้อยสุดตามขนาดท่อ) และเลือกว่าจะปรับเฉพาะที่เลือกหรือทั้งระบบ · ปลายต่ำสุดของระบบอยู่ที่เดิม ท่ออื่นไล่ระดับขึ้นไปจากจุดนั้น
+9. [[a_sprlay]]: เลือกห้อง (หรือใช้ห้องในชั้นของมุมมอง) ตรวจประเภทอันตรายของแต่ละห้องในตาราง แล้วกดวางหัว · ห้องที่มีหัวแล้วจะไม่ถูกแตะ เว้นแต่ติ๊กแทนที่ · ปุ่มแสดงพื้นที่ครอบคลุมวาดวงระยะของแต่ละหัวและระบายสีส่วนที่ไม่มีหัวครอบคลุม
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -30646,6 +30796,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.158 · Rainwater: the area of each roof goes to its nearest gutter downspout or rainwater inlet (system RL), times the rainfall intensity (150 mm/h unless set) · [[a_pipesize]] sizes leaders and horizontal storm drains at their slope · [[a_pipereport]] shows the area, the flow and downspouts that are too small
 - V1.159 · [[a_wsup]]: water a day, ground and roof tanks, the booster or transfer pump (flow, head, kW) and a central water heater (ASHRAE) · every fixture is checked for pressure from the height of a tank, the Rated Head of a pump (new in pump types) or the pressure of the main
 - V1.160 · [[a_pslope]] (Systems, piping panel): the selected drains, or their whole networks, fall continuously to the outlet at the slope chosen or the least for their size; pipes drawn the wrong way are turned and risers standing on them follow · Properties show the invert at both ends of a pipe
+- V1.161 · [[a_sprlay]] (piping panel of Systems, or the [[tab_analyze]] tab): every room has an NFPA 13 hazard class (room Properties); heads are laid out over whole rooms with the fewest that keep the area and spacing limits, with branch lines and a cross main · coverage is checked at every point of a room, heads too close to each other or to a wall are reported, gaps are shown on the plans and in [[a_sysck]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -30692,6 +30843,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 6. Rainwater: an upper end of a rainwater pipe (system RL, pipe or riser) on a roof or within 1 m of its edge is an inlet; a gutter downspout that ends over a rainwater pipe feeds it · the lowest open end is the outlet · set the rainfall intensity in [[a_pipesize]] or [[a_pipereport]]
 7. [[a_wsup]] (the [[tab_analyze]] tab or the piping panel of Systems): choose the use of the building, the persons (blank: from the rooms, two for each bedroom of a home) and the supply, then read the tanks, pumps and hot water · fixtures are checked for pressure when the cold water starts at a raised tank, a pump with a Rated Head, or a main whose pressure is typed in · [[a_pipereport]] lists the fixtures short of pressure
 8. [[a_pslope]]: select one or more drains, choose the slope (or the least for the size) and whether only those or their whole networks change · the lowest open end of the network stays put and the rest is raised from there
+9. [[a_sprlay]]: select rooms (or take those of the level of the view), check the hazard class of each in the table and place the heads · rooms that have heads are left alone unless Replace is ticked · Show coverage draws the reach of every head and shades what no head covers
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -32575,6 +32727,9 @@ window.PenumBIM.r72={ds:id=>roofDownspouts(P,P.els.find(e=>e.id===id)),leader:rn
 window.PenumBIM.r73={set:()=>wsSet(P),design:()=>{const D=wsDesign(P);return{pp:D.pp,ppAuto:D.ppAuto,day:D.day,peak:D.peak,need:D.need,Hm:D.Hm,est:D.est,ground:D.ground,roof:D.roof,boost:D.boost,transfer:D.transfer,grav:D.grav,direct:D.direct,hw:D.hw,low:D.low,checked:D.checked}},
   press:()=>{const W=waterflow(P,pszOpt());return W.ws?[...W.ws.nets].map(([ni,r])=>({sys:r.sys,need:r.need,av:r.av,src:r.src,fx:r.fx.map(x=>({id:x.id,p:x.p,mn:x.mn,ok:x.ok}))})):[]}};
 window.PenumBIM.r74={plan:(ids,o)=>{const Q=pslPlan(P,ids,o);return{out:Q.out.map(c=>({id:c.e.id,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,off:c.off,slope:c.slope})),skip:Q.skip,n:Q.n,ris:Q.ris.map(x=>({id:x.s.id,baseOff:x.baseOff,height:x.height}))}},apply:(ids,o)=>pslApply(pslPlan(P,ids,o))};
+window.PenumBIM.r75={rooms:()=>fsNow().map(it=>({id:it.r.id,lv:it.lv,hz:it.hz,n:it.heads.length,st:it.c.st,A:it.c.A,aph:it.c.aph,gap:it.c.gap,close:it.c.close,wall:it.c.wall})),
+  plan:(ids,o)=>{const Q=fsPlan(P,ids,Object.assign({type:'auto',repl:false,pipes:true},o||{}));return{rooms:Q.rooms.map(x=>({id:x.it.r.id,st:x.st,n:x.n,sx:x.sx,sy:x.sy})),add:Q.add,del:[...Q.del]}},
+  apply:(ids,o)=>fsApply(fsPlan(P,ids,Object.assign({type:'auto',repl:false,pipes:true},o||{}))),grid:(id,hz)=>{const it=fsRooms(P).find(x=>x.r.id===id);return it?fsGrid(it.g,hz||it.hz):null},reach:hz=>fsReach(FS_HZ[hz]),sc:()=>scChecks().filter(c=>c.k==="sc_spr").map(c=>c.a),fire:()=>{const W=waterNow();return{nets:W.nets.filter(n=>n.kind==="fire").map(n=>({n:n.n,fu:n.fu,flow:n.flow,ids:n.ids.length})),lost:W.lost}},sizes:()=>{const o=pszOpt(),W=waterNow(),S=pipeSizes(P,W,o);return[...S].filter(([id])=>{const e=IDX.get(id);return e&&e.sys==="FP"})}};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
