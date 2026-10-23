@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=169,V1_NAME='V1.158';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=170,V1_NAME='V1.159';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -28760,6 +28760,121 @@ Object.assign(STR,{
   pz_rain:['ความเข้มฝนออกแบบ','Rainfall intensity'],rn_grade:['ลงพื้นที่ท่อลงแต่ละต้น','To grade at each downspout'],
   pz_note_r:['ท่อน้ำฝน: อัตราไหลจากพื้นที่หลังคา (แปลน) คูณความเข้มฝน ท่อแนวดิ่งตาม IPC ตาราง 1106.2 ท่อแนวนอนตามความลาด (ตาราง 1106.3) และไม่เล็กกว่าท่อที่ไหลเข้ามา',
     'Rainwater: the flow is the roof area (in plan) times the rainfall intensity; leaders by IPC Table 1106.2, horizontal storm drains at their slope by Table 1106.3, never smaller than a pipe that empties into them.']});
+/* ===== 159 water supply: the pressure at every fixture, and the tanks, pumps and water heaters of a building (V1.159; Revit's Pipe Pressure Loss Report and
+   Check Pipe Systems stop at the critical path — here every fixture is checked against the pressure it needs to work (IPC Table 604.3) from what the model
+   has at the source: the height of a tank, the rated head of a pump (Rated Head, a new type parameter of pumps), the pressure of the main typed in for a network
+   that starts at an open end, and for hot water the pressure the cold water brings to the heater.  The Water Supply dialog sizes the storage, the pumps and a
+   central water heater as a first estimate: litres a person a day by the use of the building, Hunter's probable demand of the cold water networks and
+   the ASHRAE fixture method for hot water.  P.wsup = {bt: use of the building, pp: persons, lpd: litres a person a day, sys: 'direct' | 'boost' | 'grav',
+   days: days stored below, rf: share of a day stored on the roof, ps: kPa of the main, eta: pump efficiency, hrs: hours a day the transfer pump runs,
+   hwT: hot water °C}, only what differs. ===== */
+/* the least flowing pressure at the outlet of each fixture, kPa (IPC Table 604.3: 8 psi; flush tank water closet, bathtub 20 psi; urinal flush valve 25 psi) */
+const WS_MIN={wc:138,urinal:172,lav:55,sink:55,shower:55,tub:138};
+/* by the use of the building: litres a person a day, and the ASHRAE fixture method for hot water — US gallons an hour at 60 °C for each fixture, the demand factor
+   and the storage factor (ASHRAE Handbook, Service Water Heating) */
+const WS_BT={home:{lpd:200,df:0.3,sf:1.25,hw:{lav:2,sink:10,shower:30,tub:20}},office:{lpd:70,df:0.3,sf:2,hw:{lav:6,sink:20,shower:30,tub:20}},hotel:{lpd:350,df:0.25,sf:0.8,hw:{lav:2,sink:30,shower:75,tub:20}},
+  hosp:{lpd:500,df:0.25,sf:0.6,hw:{lav:6,sink:20,shower:75,tub:20}},school:{lpd:50,df:0.4,sf:1,hw:{lav:15,sink:20,shower:225,tub:20}},shop:{lpd:50,df:0.3,sf:1,hw:{lav:6,sink:20,shower:30,tub:20}}};
+const WS_BTS=Object.keys(WS_BT),WS_SYS=['direct','boost','grav'],WS_D={days:1,rf:0.33,ps:0,eta:0.6,hrs:4,hwT:60},WS_RG=998*9.81/1e6;          // kPa for each mm of height
+function wsSet(P0){const w=P0&&P0.wsup&&typeof P0.wsup==='object'&&!Array.isArray(P0.wsup)?P0.wsup:{},n=(v,a,b,d)=>v!=null&&v!==''&&isFinite(+v)?clamp(+v,a,b):d,bt=WS_BT[w.bt]?w.bt:'home';
+  return{bt,pp:n(w.pp,0,1e5,0),lpd:n(w.lpd,10,2000,WS_BT[bt].lpd),sys:WS_SYS.includes(w.sys)?w.sys:'boost',days:n(w.days,0.25,7,1),rf:n(w.rf,0,1,0.33),ps:n(w.ps,0,1000,0),eta:n(w.eta,0.2,0.95,0.6),hrs:n(w.hrs,0.5,24,4),hwT:n(w.hwT,40,80,60)}}
+function wsClean(P0){const w=P0.wsup;if(w===undefined)return;const o={};if(w&&typeof w==='object'&&!Array.isArray(w)){const S=wsSet(P0);if(S.bt!=='home')o.bt=S.bt;if(S.pp>0)o.pp=S.pp;if(S.lpd!==WS_BT[S.bt].lpd)o.lpd=S.lpd;if(S.sys!=='boost')o.sys=S.sys;
+  for(const k in WS_D)if(S[k]!==WS_D[k])o[k]=S[k]}if(Object.keys(o).length)P0.wsup=o;else delete P0.wsup}
+XC.push(()=>wsClean(P));
+/* pumps have a rated head, tanks and water heaters a capacity */
+{const F=TYPE_FIELDS.equip;F.splice(F.findIndex(f=>f[0]==='wf')+1,0,['hd','num','m',0.5],['tv','num','L',10])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='equip'||!F||!T)return F;const k=T.kind;return F.filter(f=>f[0]==='hd'?SC_PUMP.includes(k):f[0]==='tv'?k==='tank'||k==='heater':true)}}
+/* ---- the pressure at each fixture: W.ws = {nets: Map(index of the network -> {need, av, src, fx}), low: fixtures short of pressure} ---- */
+function wsPress(P,W){const N=W.G.nodes,par=W.par,LS=W.LS,S=wsSet(P),R={nets:new Map(),low:[]};W.ws=R;const kindOf=e=>(typ(P,e)||{}).kind||'';
+  const nets=W.nets.map((n,ni)=>({n,ni})).filter(x=>x.n.kind==='sup'&&x.n.ri>=0),hwNeed=new Map(),hwP=new Map();
+  const loss=n=>{const L=new Map([[n.ri,0]]),q=[n.ri];while(q.length){const i=q.pop();for(const a of N[i].arms)if(par[a.far]===a.ed.i&&!L.has(a.far)){const s=LS[a.ed.i];L.set(a.far,L.get(i)+(s?(s.fr+s.fit)/1000:0));q.push(a.far)}}return L};
+  for(const pass of ['HW','CW','HW']){for(const {n,ni} of nets){const hot=SCL(n.sys)==='HW';if(hot!==(pass==='HW'))continue;const L=loss(n),z0=N[n.ri].z,role=hot?'h':'c',F=[];
+      for(const i of n.ns)for(const f of N[i].fix){if(f.role!==role)continue;const k=kindOf(f.f),mn=WS_MIN[k]||55,zf=elev(P,f.f.level)+(f.f.off||0)+(f.U?f.U.z:0),st=WS_RG*(zf-z0),ls=L.get(i)||0;F.push({id:f.f.id,i,mn,st,ls,need:st+ls+mn})}
+      let need=Math.max(0,...F.map(x=>x.need));
+      if(!hot)for(const i of n.ns)for(const q of N[i].equips){if(i===n.ri||!hwNeed.has(q.id))continue;const v=hwNeed.get(q.id)+WS_RG*(N[i].z-z0)+(L.get(i)||0);if(v>need)need=v}
+      const rt=n.root,k=rt?kindOf(rt):'';let av=null,src=null;
+      if(k==='tank'){av=Math.max(0,WS_RG*(zRange(P,rt)[0]-z0));src='tank'}
+      else if(SC_PUMP.includes(k)){src='pump';const T=typ(P,rt)||{};if(+T.hd>0)av=+T.hd*1000*WS_RG}
+      else if(k==='heater'){src='heater';if(hwP.has(rt.id))av=hwP.get(rt.id)}
+      else if(!rt&&S.ps>0){av=S.ps;src='city'}
+      if(hot&&rt&&k==='heater')hwNeed.set(rt.id,need);
+      if(!hot&&av!=null)for(const i of n.ns)for(const q of N[i].equips)if(i!==n.ri&&kindOf(q)==='heater')hwP.set(q.id,av-WS_RG*(N[i].z-z0)-(L.get(i)||0));
+      for(const x of F){x.p=av!=null?av-x.st-x.ls:null;x.ok=x.p==null||x.p>=x.mn-0.5}
+      R.nets.set(ni,{need,av,src,fx:F,sys:n.sys})}}
+  for(const r of R.nets.values())for(const x of r.fx)if(!x.ok&&!R.low.includes(x.id))R.low.push(x.id);
+  return R}
+{const f0=waterflow;waterflow=(P,o)=>{const W=f0(P,o);try{wsPress(P,W)}catch(x){console.error(x)}return W}}
+{const f0=pipeIssues;pipeIssues=W=>{const r=f0(W);if(W.ws&&W.ws.low.length)r.push(['lowp',W.ws.low.slice()]);return r}}
+const wsM=k=>k/(WS_RG*1000);          // kPa -> m of water
+function wsCard(n,row){const W=waterNow(),r=W.ws&&W.ws.nets.get(W.nets.indexOf(n));if(!r||!r.fx.length)return'';const f=v=>Math.round(v)+' kPa · '+wsM(v).toFixed(1)+' m';
+  let h=row(t('ws_need'),f(r.need));
+  if(r.av!=null){h+=row(t('ws_av_'+r.src),f(r.av));const lo=r.fx.reduce((a,b)=>b.p-b.mn<a.p-a.mn?b:a);h+=row(t('ws_lo'),`<span${lo.ok?'':' style="color:var(--warn);font-weight:600"'}>${Math.round(lo.p)} / ${lo.mn} kPa</span>`);
+    const bad=r.fx.filter(x=>!x.ok).length;if(bad)h+=`<p class="note warn">${t('ws_bad',bad)}</p>`}
+  else if(r.src==='pump')h+=`<div class="kv sub"><span>${t('ws_nohd',wsM(r.need).toFixed(1))}</span></div>`;
+  return h}
+/* ---- the Water Supply dialog ---- */
+function wsDesign(P){const S=wsSet(P),W=waterNow(),R=W.ws||{nets:new Map(),low:[]},rows=LDm(),kindOf=e=>(typ(P,e)||{}).kind||'',B=WS_BT[S.bt];
+  const bed=rows.filter(r=>r.use==='bed').length,ppAuto=S.bt==='home'?(bed?2*bed:rows.length?2:0):Math.round(rows.reduce((s,r)=>s+(+r.people||0),0)),pp=S.pp>0?S.pp:ppAuto,day=pp*S.lpd;
+  const fx=P.els.filter(e=>e.cat==='fixture').map(f=>({f,k:kindOf(f)})).filter(x=>FIX_FU[x.k]),cw=W.nets.map((n,i)=>({n,i})).filter(x=>x.n.kind==='sup'&&SCL(x.n.sys)==='CW');
+  const peak=cw.length?cw.reduce((s,x)=>s+x.n.flow,0):hunter(fx.reduce((s,x)=>s+FIX_FU[x.k].c+0.4*FIX_FU[x.k].h,0));
+  let need=0,est=false;for(const x of cw){const r=R.nets.get(x.i);if(r&&r.need>need)need=r.need}
+  const LV=sortedLevels(P),zg=LV.length?LV[0].elev:0;
+  if(!need&&fx.length){const hi=Math.max(...fx.map(x=>elev(P,x.f.level)+(x.f.off||0)+FIX_FU[x.k].z));need=WS_RG*(hi-zg)*1.15+Math.max(...fx.map(x=>WS_MIN[x.k]||55));est=true}
+  const kw=(q,h)=>9.81*q*h/(1000*S.eta),tanks=P.els.filter(e=>e.cat==='equip'&&kindOf(e)==='tank'),pumps=P.els.filter(e=>e.cat==='equip'&&['pump'].includes(kindOf(e))),heaters=P.els.filter(e=>e.cat==='equip'&&kindOf(e)==='heater');
+  const zt=tanks.length?Math.max(...tanks.map(e=>zRange(P,e)[1])):(LV.length?LV[LV.length-1].elev:0)+3000,Ht=(zt-zg)/1000*1.1+3;
+  const o={S,pp,ppAuto,day,peak,need,Hm:wsM(need),est,ground:S.sys!=='direct'?day*S.days:0,roof:S.sys==='grav'?day*S.rf:0,tanks,pumps,heaters,fx};
+  if(S.sys==='boost')o.boost={q:peak,h:o.Hm,kw:kw(peak,o.Hm)};
+  if(S.sys==='grav'){const q=day/(S.hrs*3600);o.transfer={q,h:Ht,kw:kw(q,Ht),est:!tanks.length};const g=cw.map(x=>R.nets.get(x.i)).filter(r=>r&&r.src==='tank');if(g.length){o.grav={av:Math.min(...g.map(r=>r.av)),need:Math.max(...g.map(r=>r.need))}}}
+  if(S.sys==='direct')o.direct={ps:S.ps,need};
+  /* hot water by the ASHRAE fixture method */
+  const hf=fx.filter(x=>FIX_FU[x.k].h>0),poss=hf.reduce((s,x)=>s+(B.hw[x.k]||0)*3.785,0),prob=poss*B.df;
+  o.hw={n:hf.length,poss,prob,store:prob*B.sf,kw:prob*4.186*(S.hwT-30)/3600,mkw:heaters.reduce((s,e)=>s+(+(typ(P,e)||{}).kw||0),0),mtv:heaters.reduce((s,e)=>s+(+(typ(P,e)||{}).tv||0),0)};
+  o.low=R.low.slice();o.checked=[...R.nets.values()].some(r=>r.av!=null);return o}
+function dlgWS(){const D=wsDesign(P),S=D.S,row=(l,v)=>`<tr><th>${l}</th><td>${v}</td></tr>`,m3=l=>(l/1000).toFixed(l<10000?2:1)+' m³',ls=q=>fmtWater(q)+' '+waterUnit(),hm=h=>h.toFixed(1)+' m';ui.helpAt='calc';
+  const num=(k,u,st,a,b,v,ph)=>`<label><span>${t('ws_'+k)}</span><span><input type="number" data-ws="${k}" value="${v}" step="${st}" min="${a}" max="${b}"${ph!=null?` placeholder="${ph}"`:''}><small>${u}</small></span></label>`;
+  const sel=(k,L,v)=>`<label><span>${t('ws_'+k)}</span><span><select data-ws="${k}">${L.map(x=>`<option value="${x}"${x===v?' selected':''}>${t('ws_'+k+'_'+x)}</option>`).join('')}</select></span></label>`;
+  const W0=P.wsup||{},set=`<div class="ldg pz">${sel('bt',WS_BTS,S.bt)}${num('pp',t('ws_ppu'),1,0,100000,W0.pp>0?S.pp:'',D.ppAuto)}${num('lpd','L',10,10,2000,W0.lpd!=null?S.lpd:'',WS_BT[S.bt].lpd)}${sel('sys',WS_SYS,S.sys)}`+
+    (S.sys!=='direct'?num('days',t('ws_dayu'),0.25,0.25,7,S.days):num('ps','kPa',10,0,1000,S.ps||''))+(S.sys==='grav'?num('rf','',0.05,0,1,S.rf)+num('hrs','h',0.5,0.5,24,S.hrs):'')+num('eta','',0.05,0.2,0.95,S.eta)+num('hwT','°C',1,40,80,S.hwT)+'</div>';
+  const cmpP=(q,h)=>D.pumps.length?D.pumps.map(e=>{const T=typ(P,e)||{},a=+T.wf>0?+T.wf:0,b=+T.hd>0?+T.hd:0,ok=(!a||a>=q-1e-6)&&(!b||b>=h-0.05);return`${esc(e.mark||T.name||'')}: ${a?ls(a):'—'} · ${b?hm(b):'—'}${a&&b?(ok?' ✓':' ⚠'):''}`}).join('<br>'):t('ws_none');
+  let res=`<table class="tbl kv">${row(t('ws_r_pp'),D.pp+(S.pp>0?'':' · '+t('ws_auto')))+row(t('ws_r_day'),'<b>'+m3(D.day)+'</b> · '+money(D.day)+' L')+row(t('ws_r_peak'),ls(D.peak))+row(t('ws_r_need'),Math.round(D.need)+' kPa · '+hm(D.Hm)+(D.est?' · '+t('ws_est'):''))}</table>`;
+  let st=`<table class="tbl kv">`+(S.sys!=='direct'?row(t('ws_r_ground'),'<b>'+m3(D.ground)+'</b>'):'')+(S.sys==='grav'?row(t('ws_r_roof'),'<b>'+m3(D.roof)+'</b>'):'')+
+    row(t('ws_r_tanks'),D.tanks.length?D.tanks.map(e=>{const T=typ(P,e)||{};return esc(e.mark||T.name||'')+(+T.tv>0?' · '+m3(+T.tv):'')}).join('<br>'):t('ws_none'));
+  if(D.boost)st+=row(t('ws_r_boost'),`<b>${ls(D.boost.q)} @ ${hm(D.boost.h)}</b> · ${D.boost.kw.toFixed(2)} kW`)+row(t('ws_r_pumps'),cmpP(D.boost.q,D.boost.h));
+  if(D.transfer)st+=row(t('ws_r_transfer'),`<b>${ls(D.transfer.q)} @ ${hm(D.transfer.h)}</b> · ${D.transfer.kw.toFixed(2)} kW${D.transfer.est?' · '+t('ws_tk_est'):''}`)+row(t('ws_r_pumps'),cmpP(D.transfer.q,D.transfer.h));
+  if(D.grav)st+=row(t('ws_r_grav'),`${Math.round(D.grav.av)} / ${Math.round(D.grav.need)} kPa${D.grav.av>=D.grav.need-0.5?' ✓':' ⚠ '+t('ws_raise',wsM(D.grav.need-D.grav.av).toFixed(1))}`);
+  if(D.direct)st+=row(t('ws_r_main'),D.direct.ps>0?`${Math.round(D.direct.ps)} / ${Math.round(D.direct.need)} kPa${D.direct.ps>=D.direct.need-0.5?' ✓':' ⚠'}`:t('ws_nops'));
+  st+='</table>';
+  const H=D.hw,hw=`<table class="tbl kv">${row(t('ws_r_hwn'),H.n)+row(t('ws_r_hwprob'),'<b>'+money(H.prob)+' L/h</b>')+row(t('ws_r_hwstore'),'<b>'+money(H.store)+' L</b>')+row(t('ws_r_hwkw'),'<b>'+H.kw.toFixed(1)+' kW</b>')+row(t('ws_r_hwmodel'),H.mkw>0||H.mtv>0?H.mkw.toFixed(1)+' kW · '+money(H.mtv)+' L':t('ws_none'))}</table>`;
+  const pr=D.checked?`<p class="note ${D.low.length?'warn':'ok'}">${D.low.length?t('ws_bad',D.low.length):t('ws_allok')}</p>`:`<p class="note">${t('ws_nochk')}</p>`;
+  const body=`<style>.wsd .lhg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:12px;align-items:start}.wsd .kv{width:100%}.wsd .kv th{font-weight:500;text-align:left;width:50%}.wsd h4{margin:12px 0 6px}.wsd .kv th,.wsd .kv td{white-space:normal;vertical-align:top}.wsd .lhg{margin-top:6px}</style>
+    <div class="wsd"><p class="note">${t('ws_intro')}</p>${set}<div class="lhg"><div><h4>${t('ws_h_use')}</h4>${res}</div><div><h4>${t('ws_h_store')}</h4>${st}</div><div><h4>${t('ws_h_hw')}</h4>${hw}</div></div><h4>${t('ws_h_press')}</h4>${pr}<p class="note">${t('ws_note')}</p></div>`;
+  openDlg(t('a_wsup'),body,`<button class="btn" data-wsx="low"${D.low.length?'':' disabled'}>${t('ws_sel')}</button><button class="btn" data-wsx="rep">${t('a_pipereport')}…</button><button class="btn" data-wsx="reset"${P.wsup?'':' disabled'}>${t('ld_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,k=el.dataset.ws;if(!k||!ui.dlg)return;edit(()=>{const o=Object.assign({},P.wsup||{});if(k==='bt'||k==='sys')o[k]=el.value;else{const v=parseFloat(el.value);if(isFinite(v))o[k]=v;else delete o[k]}P.wsup=o;wsClean(P)});dlgWS()},
+     click(ev){const x=ev.target.closest('[data-wsx]');if(!x||!ui.dlg)return;const k=x.dataset.wsx;if(k==='rep'){dlgPipeReport();return}if(k==='reset'){edit(()=>{delete P.wsup});dlgWS();return}
+       if(k==='low'&&D.low.length){ui.sel=new Set(D.low);closeDlg();setTool('modify')}}},'wide')}
+XA.wsup=dlgWS;
+for(const [tab,pn,after] of [['sys','p_piping','@pipelayout'],['analyze','p_check','@pipesize']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@wsup')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@wsup')}}
+BTN['@wsup']=['priser',''];
+Object.assign(STR,{
+  a_wsup:['ระบบน้ำใช้: ถังเก็บน้ำ ปั๊ม น้ำร้อน','Water Supply: Tanks, Pumps, Hot Water'],f_hd:['พิกัดแรงดัน (Head)','Rated Head'],f_tv:['ความจุ','Capacity'],
+  ws_intro:['ประมาณการเบื้องต้นจากโมเดล: ปริมาณน้ำต่อวันจากจำนวนคนและการใช้งานอาคาร อัตราไหลสูงสุดจากหน่วยสุขภัณฑ์ (Hunter) ของท่อน้ำประปา แรงดันจากเส้นทางของท่อถึงสุขภัณฑ์ทุกชิ้น และน้ำร้อนตามวิธีของ ASHRAE',
+    'A first estimate from the model: the water of a day from the persons and the use of the building, the peak flow from the fixture units of the cold water pipes (Hunter), the pressure along the pipes to every fixture, and hot water by the ASHRAE fixture method'],
+  ws_bt:['การใช้งานอาคาร','Use of the building'],ws_bt_home:['บ้านพักอาศัย / คอนโด','Homes, apartments'],ws_bt_office:['สำนักงาน','Offices'],ws_bt_hotel:['โรงแรม','Hotels'],ws_bt_hosp:['โรงพยาบาล','Hospitals'],ws_bt_school:['โรงเรียน','Schools'],ws_bt_shop:['ร้านค้า / ห้าง','Shops'],
+  ws_pp:['จำนวนคน','Persons'],ws_ppu:['คน','persons'],ws_lpd:['น้ำต่อคนต่อวัน','Water a person a day'],ws_sys:['ระบบจ่ายน้ำ','Supply'],ws_sys_direct:['ต่อตรงจากท่อประปา','Straight from the main'],ws_sys_boost:['ถังพักน้ำ + ปั๊มเพิ่มแรงดัน','Ground tank + booster pump'],ws_sys_grav:['ถังล่าง + ปั๊มส่ง + ถังบนหลังคา','Ground tank + transfer pump + roof tank'],
+  ws_days:['เก็บน้ำในถังล่าง','Stored below'],ws_dayu:['วัน','days'],ws_rf:['ถังบนหลังคา (ส่วนของน้ำต่อวัน)','Roof tank (share of a day)'],ws_hrs:['ปั๊มส่งเดินวันละ','Transfer pump runs'],ws_ps:['แรงดันท่อประปาที่ต้นทาง','Pressure of the main'],ws_eta:['ประสิทธิภาพปั๊ม','Pump efficiency'],ws_hwT:['อุณหภูมิน้ำร้อน','Hot water'],
+  ws_h_use:['ความต้องการน้ำ','Water used'],ws_h_store:['ถังเก็บน้ำและปั๊ม','Tanks and pumps'],ws_h_hw:['น้ำร้อน (ASHRAE)','Hot water (ASHRAE)'],ws_h_press:['แรงดันที่สุขภัณฑ์','Pressure at the fixtures'],
+  ws_r_pp:['จำนวนคน','Persons'],ws_auto:['จากห้องในโมเดล','from the rooms'],ws_r_day:['น้ำใช้ต่อวัน','Water a day'],ws_r_peak:['อัตราไหลสูงสุด (Hunter)','Peak flow (Hunter)'],ws_r_need:['แรงดันที่ต้องการที่ต้นทาง','Pressure needed at the source'],ws_est:['ประมาณจากสุขภัณฑ์ที่สูงที่สุด (ยังไม่มีท่อ)','from the highest fixture (no pipes yet)'],
+  ws_r_ground:['ถังเก็บน้ำล่าง','Ground tank'],ws_r_roof:['ถังเก็บน้ำบนหลังคา','Roof tank'],ws_r_tanks:['ถังในโมเดล','Tanks in the model'],ws_none:['ไม่มีในโมเดล','none in the model'],
+  ws_r_boost:['ปั๊มเพิ่มแรงดัน (อัตราไหล @ Head)','Booster pump (flow @ head)'],ws_r_transfer:['ปั๊มส่งน้ำขึ้นถังบน','Transfer pump'],ws_r_pumps:['ปั๊มในโมเดล (Flow · Head)','Pumps in the model (flow · head)'],ws_tk_est:['ยังไม่มีถังในโมเดล คิดถังสูงกว่าชั้นบนสุด 3 ม.','no tank in the model: 3 m above the top level'],
+  ws_r_grav:['แรงดันจากถังบน / ที่ต้องการ','Head of the roof tank / needed'],ws_raise:['ยกถังสูงขึ้นอีก {0} ม. หรือเพิ่มปั๊ม','raise the tank {0} m or add a pump'],ws_r_main:['แรงดันท่อประปา / ที่ต้องการ','Main / needed'],ws_nops:['ใส่แรงดันท่อประปาเพื่อตรวจ','type the pressure of the main to check'],
+  ws_r_hwn:['สุขภัณฑ์ที่ใช้น้ำร้อน','Fixtures with hot water'],ws_r_hwprob:['ความต้องการสูงสุดต่อชั่วโมง','Probable maximum demand'],ws_r_hwstore:['ขนาดถังเก็บน้ำร้อน','Storage'],ws_r_hwkw:['กำลังทำความร้อน (จาก 30 °C)','Recovery (from 30 °C)'],ws_r_hwmodel:['เครื่องทำน้ำร้อนในโมเดล','Water heaters in the model'],
+  ws_need:['แรงดันที่ต้นทางให้สุขภัณฑ์ทุกชิ้นใช้งานได้','Pressure at the source for every fixture'],ws_av_tank:['แรงดันจากความสูงของถัง','Head of the tank'],ws_av_pump:['แรงดันจากปั๊ม (Rated Head)','Head of the pump'],ws_av_city:['แรงดันท่อประปา','Pressure of the main'],ws_av_heater:['แรงดันน้ำเย็นที่เข้าเครื่องทำน้ำร้อน','Cold water at the heater'],
+  ws_lo:['สุขภัณฑ์ที่แรงดันเหลือน้อยที่สุด / ต้องการ','The tightest fixture / needed'],ws_bad:['สุขภัณฑ์ {0} ชิ้นแรงดันไม่พอใช้งาน (IPC ตาราง 604.3)','{0} fixtures get less pressure than they need (IPC Table 604.3)'],
+  ws_nohd:['ใส่ Rated Head ในคุณสมบัติชนิดของปั๊ม เพื่อตรวจแรงดันที่สุขภัณฑ์ (ต้องการอย่างน้อย {0} ม.)','Give the pump type a Rated Head to check the fixtures (at least {0} m)'],
+  ws_allok:['สุขภัณฑ์ทุกชิ้นได้แรงดันพอใช้งาน','Every fixture gets the pressure it needs'],ws_nochk:['ยังตรวจแรงดันที่สุขภัณฑ์ไม่ได้: ต้นทางของท่อน้ำประปาต้องเป็นถังที่อยู่สูง ปั๊มที่มี Rated Head หรือใส่แรงดันท่อประปา','The fixtures cannot be checked yet: the cold water must start at a raised tank, a pump with a Rated Head, or a main with its pressure typed in'],
+  ws_sel:['เลือกสุขภัณฑ์ที่แรงดันไม่พอ','Select fixtures short of pressure'],
+  ws_note:['แรงดันใช้งานต่ำสุดของสุขภัณฑ์: โถส้วมชักโครกและอ่างอาบน้ำ 138 kPa โถปัสสาวะฟลัชวาล์ว 172 kPa อื่น ๆ 55 kPa · ปั๊มคิดกำลังเพลาจากอัตราไหล Head และประสิทธิภาพ · ปั๊มส่งคิด Head จากความสูงถึงถังบน +10% +3 ม. · บ้านพักอาศัยมักใช้เครื่องทำน้ำอุ่นที่ฝักบัวจุดละ 3.5–6 kW แทนถังน้ำร้อนรวม',
+    'Least pressure at a fixture: flush tank water closets and bathtubs 138 kPa, urinal flush valves 172 kPa, the others 55 kPa · pump shaft power from flow, head and efficiency · the transfer pump lifts to the top of the roof tank plus 10 % and 3 m · homes often have an instantaneous heater of 3.5–6 kW at each shower instead of a central one'],
+  pr_i_lowp:['สุขภัณฑ์ {0} ชิ้นแรงดันไม่พอใช้งาน','{0} fixtures are short of pressure']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -28917,7 +29032,7 @@ function dlgPipeReport(){
   const row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`,kinds=new Set(nets.map(x=>x.n.kind)),wq=q=>fmtWater(q)+' '+waterUnit()+(ufOf().fw==='ls'?' · '+Math.round(q*60)+' L/min':'');          // litres a second read better with litres a minute beside them
   const cards=nets.map(({n,i})=>{const w=n.worst,pr=PRESS[n.kind]&&n.flow>0,src=n.root?esc(n.root.mark||t('cat_equip')):n.riser?t('cat_riser'):n.from==='open'?t('sr_openend'):'—';
     let h=`<div class="card"><div class="ch"><i style="background:${(PSYS[n.sys]||PSYS.CW)[0]}"></i>${esc(n.sys+' · '+t('ps_'+n.sys))}<button class="btn" data-pr="n${i}">${t('sr_select')}</button></div>`+row(t(n.kind==='drain'||n.kind==='storm'?'pr_outlet':n.kind==='vent'?'sn_top':'sr_source'),n.kind==='vent'?fmtLen(n.vtop||0)+' '+unitName():n.dsp?t('rn_grade'):src)+mesPR(n,row)+scPipeRows(n,row);
-    if(n.kind==='sup')h+=row(t('pr_fixtures'),n.n)+row(t('pr_wsfu'),n.fu.toFixed(1))+row(t('pr_flow'),wq(n.flow));
+    if(n.kind==='sup')h+=row(t('pr_fixtures'),n.n)+row(t('pr_wsfu'),n.fu.toFixed(1))+row(t('pr_flow'),wq(n.flow))+wsCard(n,row);
     else if(n.kind==='drain')h+=row(t('pr_fixtures'),n.n)+row(t('pr_dfu'),n.fu)+snDrainCard(n,row);
     else if(n.kind==='vent')h+=snVentCard(n,row);
     else if(n.kind==='storm')h+=rnCard(n,row);
@@ -30184,6 +30299,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.156 · [[a_energy]] (แท็บ [[tab_analyze]]): พลังงานไฟฟ้าทั้งปีแยกตามการใช้งาน (ทำความเย็น พัดลม ปั๊ม หอผึ่งเย็น แสงสว่าง อุปกรณ์) รายเดือน EUI ค่าไฟ ความต้องการไฟฟ้าสูงสุด · เลือก [[en_sys]] (แยกส่วน VRF เครื่องทำน้ำเย็น) และ COP · [[en_cmp]]
 - V1.157 · ท่อโสโครกและท่ออากาศ: [[a_pipesize]] แยกท่อแยกแนวนอน ท่อตั้ง (คิดจำนวนช่วงชั้น) และท่อระบายหลักตามความลาด และไม่ลดขนาดตามทางไหล · คำนวณขนาดท่ออากาศ (ระบบ V) จาก DFU และความยาวท่อ · [[a_pipereport]] บอกท่อตั้งแต่ละต้น ท่อระบายหลัก ท่ออากาศ และสุขภัณฑ์ที่อยู่ไกลท่ออากาศเกินระยะ
 - V1.158 · น้ำฝน: พื้นที่หลังคาแบ่งให้ท่อลงจากรางน้ำและปลายท่อน้ำฝน (ระบบ RL) ที่ใกล้ที่สุด คูณความเข้มฝน (ตั้งได้ ค่าเริ่ม 150 มม./ชม.) · [[a_pipesize]] ปรับขนาดท่อน้ำฝนแนวดิ่งและแนวนอนตามความลาด · [[a_pipereport]] บอกพื้นที่ อัตราไหล และท่อลงที่รับน้ำไม่พอ
+- V1.159 · [[a_wsup]]: น้ำใช้ต่อวัน ขนาดถังเก็บน้ำล่างและบนหลังคา ปั๊มเพิ่มแรงดันหรือปั๊มส่ง (อัตราไหล Head kW) และเครื่องทำน้ำร้อนรวม (ASHRAE) · ตรวจแรงดันที่สุขภัณฑ์ทุกชิ้นจากความสูงของถัง Rated Head ของปั๊ม (ช่องใหม่ในชนิดปั๊ม) หรือแรงดันท่อประปา
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30228,6 +30344,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 4. [[f_wf]] ใน [[type_props]] ของปั๊ม: [[a_pipereport]] และแผงคุณสมบัติเทียบกับอัตราไหลที่ระบบต้องการ (ปั๊มในชุด: ต่อปั๊มที่ทำงาน)
 5. ท่อโสโครกและท่ออากาศ: ระยะจากที่ดักกลิ่นถึงท่ออากาศตรวจเมื่อโครงการมีท่ออากาศ (ระบบ V) หรือท่อตั้งที่ต่อขึ้นไปเป็นท่ออากาศ · ท่อตั้งคือท่อแนวดิ่ง (Riser) ของระบบ S หรือ W โปรแกรมนับช่วงชั้นที่มีท่อแยกเข้า ท่อแนวนอนที่รับน้ำจากท่อตั้งคือท่อระบายหลักซึ่งคิดตามความลาดที่ใส่ไว้ · ท่ออากาศ (ระบบ V) ต้องมีปลายหนึ่งขึ้นไปถึงอากาศภายนอก (ปลายที่สูงที่สุด) และปลายอื่นอยู่ห่างท่อระบายไม่เกิน 150 มม. ในแปลน (สูงกว่าได้ถึง 1.5 ม.) หรืออยู่ที่สุขภัณฑ์ · ท่อตั้งที่ต่อยาวขึ้นเหนือท่อแยกสุดท้ายนับเป็นท่ออากาศของท่อตั้ง (Stack vent) · [[a_pipereport]] ตรวจระยะจากสุขภัณฑ์ตามท่อระบายถึงท่ออากาศ (IPC ตาราง 909.1)
 6. น้ำฝน: ปลายบนของท่อน้ำฝน (ระบบ RL ท่อหรือท่อแนวดิ่ง) ที่อยู่บนหลังคาหรือห่างขอบหลังคาไม่เกิน 1 ม. คือจุดรับน้ำ ท่อลงจากรางน้ำของหลังคาที่ปลายล่างอยู่ที่ท่อน้ำฝนจะส่งน้ำเข้าท่อนั้น · ปลายต่ำสุดของท่อน้ำฝนคือทางออก · ตั้งความเข้มฝนได้ใน [[a_pipesize]] หรือ [[a_pipereport]]
+7. [[a_wsup]] (แท็บ [[tab_analyze]] หรือแผงท่อน้ำของงานระบบ): เลือกการใช้งานอาคาร จำนวนคน (เว้นว่างให้คิดจากห้อง: บ้าน 2 คนต่อห้องนอน) และระบบจ่ายน้ำ แล้วอ่านขนาดถัง ปั๊ม และน้ำร้อน · แรงดันที่สุขภัณฑ์ตรวจเมื่อต้นทางของท่อน้ำประปาเป็นถังที่อยู่สูง ปั๊มที่มี Rated Head หรือใส่แรงดันท่อประปา (ระบบต่อตรง) · [[a_pipereport]] บอกสุขภัณฑ์ที่แรงดันไม่พอ
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -30470,6 +30587,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.156 · [[a_energy]] (the [[tab_analyze]] tab): the electricity of a year by end use (cooling, fans, pumps, heat rejection, lighting, equipment) and by month, EUI, cost, peak demand · choose the [[en_sys]] (split, VRF, chillers) and COP · [[en_cmp]]
 - V1.157 · Sanitary and vents: [[a_pipesize]] tells horizontal branches, stacks (by their branch intervals) and the building drain (by its slope) apart and never makes a drain smaller downstream · vent pipes (system V) are sized by DFU and developed length · [[a_pipereport]] lists each stack, the building drain, the vents and the fixtures too far from a vent
 - V1.158 · Rainwater: the area of each roof goes to its nearest gutter downspout or rainwater inlet (system RL), times the rainfall intensity (150 mm/h unless set) · [[a_pipesize]] sizes leaders and horizontal storm drains at their slope · [[a_pipereport]] shows the area, the flow and downspouts that are too small
+- V1.159 · [[a_wsup]]: water a day, ground and roof tanks, the booster or transfer pump (flow, head, kW) and a central water heater (ASHRAE) · every fixture is checked for pressure from the height of a tank, the Rated Head of a pump (new in pump types) or the pressure of the main
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -30514,6 +30632,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 4. [[f_wf]] in the [[type_props]] of a pump: [[a_pipereport]] and Properties compare it with the flow the system asks for (a pump of a set: for each pump on duty)
 5. Sanitary and vents: the distance from each trap to a vent is checked once the project has vent pipes (system V) or a stack that goes on up as a vent · a stack is a riser of system S or W; the program counts the branch intervals that enter it, and a horizontal drain that takes a stack is the building drain, sized at the slope it is drawn with · a vent (system V) goes out to the air at its highest open end, and each other end must come within 150 mm of a drain in plan (up to 1.5 m above it) or reach a fixture · a stack that goes on up past its last branch is its own stack vent · [[a_pipereport]] checks the way along the drain from each fixture to a vent (IPC Table 909.1)
 6. Rainwater: an upper end of a rainwater pipe (system RL, pipe or riser) on a roof or within 1 m of its edge is an inlet; a gutter downspout that ends over a rainwater pipe feeds it · the lowest open end is the outlet · set the rainfall intensity in [[a_pipesize]] or [[a_pipereport]]
+7. [[a_wsup]] (the [[tab_analyze]] tab or the piping panel of Systems): choose the use of the building, the persons (blank: from the rooms, two for each bedroom of a home) and the supply, then read the tanks, pumps and hot water · fixtures are checked for pressure when the cold water starts at a raised tank, a pump with a Rated Head, or a main whose pressure is typed in · [[a_pipereport]] lists the fixtures short of pressure
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -32394,6 +32513,8 @@ window.PenumBIM.r71={stack:snStack,bldg:snBldg,vent:snVent,half:d=>snHalf(d),tra
   nets:W.nets.map(n=>({sys:n.sys,kind:n.kind,fu:n.fu,n:n.n,dl:n.dl,stk:n.stk,loose:n.loose,ids:n.ids})),sizes:[...S],issues:pipeIssues(W).map(x=>[x[0],x[1].length])}}};
 window.PenumBIM.r72={ds:id=>roofDownspouts(P,P.els.find(e=>e.id===id)),leader:rnLeader,drain:rnDrain,cap:rnCapV,an:()=>{const o=pszOpt(),W=waterflow(P,o),S=pipeSizes(P,W,o),rn=W.rn||{};return{I:rn.I,roofs:(rn.roofs||[]).map(R=>({id:R.rf.id,area:R.area,ins:R.ins.map(x=>({kind:x.kind,A:x.A,q:x.q,net:!!x.net}))})),
   nets:W.nets.filter(n=>n.kind==='storm').map(n=>({fu:n.fu,flow:n.flow,n:n.n,ins:n.ins,ids:n.ids,dsp:n.dsp?n.dsp.length:0})),pipes:[...W.pipes].filter(([id,r])=>r.kind==='storm').map(([id,r])=>({id,A:r.fu,q:r.flow,ris:r.ris,need:S.get(id)})),issues:pipeIssues(W).map(x=>[x[0],x[1].length])}}};
+window.PenumBIM.r73={set:()=>wsSet(P),design:()=>{const D=wsDesign(P);return{pp:D.pp,ppAuto:D.ppAuto,day:D.day,peak:D.peak,need:D.need,Hm:D.Hm,est:D.est,ground:D.ground,roof:D.roof,boost:D.boost,transfer:D.transfer,grav:D.grav,direct:D.direct,hw:D.hw,low:D.low,checked:D.checked}},
+  press:()=>{const W=waterflow(P,pszOpt());return W.ws?[...W.ws.nets].map(([ni,r])=>({sys:r.sys,need:r.need,av:r.av,src:r.src,fx:r.fx.map(x=>({id:x.id,p:x.p,mn:x.mn,ok:x.ok}))})):[]}};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
