@@ -14013,7 +14013,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=174,V1_NAME='V1.163';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=175,V1_NAME='V1.164';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -29234,6 +29234,72 @@ Object.assign(STR,{
   lg_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้น · ความสว่างที่ต้องการตามการใช้ห้อง (มาตรฐาน TIEA / EN 12464) หรือใส่เองในคุณสมบัติห้อง · ลูเมนของโคมใส่ในชนิดโคม (Initial Intensity) ถ้าไม่ใส่คิดจากวัตต์ · หลังวางแล้วใช้ Power เพื่อจัดวงจร',
     'Click a room to select it · the lighting level comes from the room\'s use (TIEA / EN 12464) or its own value in Properties · the lumens of a fixture are its type\'s Initial Intensity, or worked out from its watts · after placing, make circuits with Power'],
   lg_apply:['วางโคม {0} ดวง','Place {0} lights'],lg_done:['วางโคม {0} ดวงแล้ว กดย้อนกลับได้','{0} lights placed — Undo to go back']});
+/* ===== 164 Auto circuits (V1.164; Revit makes a circuit of what is selected and nothing more: Create Systems › Power).  The lights, receptacles and other Power
+   devices that have no circuit yet, of the selection or of the level of the view, go on circuits of the panel nearest them (a load centre or a distribution board on
+   the same level, else the nearest one), room by room from the panel outwards: lights and receptacles never share a circuit, a circuit takes no more than its
+   number of points and its load, a room is kept on one circuit when it fits; machines with a power rating (air conditioners, pumps) get a circuit each.  The circuits
+   take the first free ways of the panel, which turn the phases of a three-phase panel L1 L2 L3 in turn, and their wires are drawn in the electrical plans. ===== */
+const AC_D={nl:10,nr:8,wl:1200,wr:1800,eq:true,wire:true,pn:'auto',all:false};
+const acSet=()=>ui.acs||(ui.acs=Object.assign({},AC_D));
+const AC_PNL=['lc','db'];
+/* what goes on a circuit: 'l' lights, 'r' receptacles and other Power devices with a load, 'e' machines; null: nothing here */
+function acKind(P0,e){if(e.cat==='light')return'l';const T=typ(P0,e)||{};
+  if(e.cat==='device')return ckSysOf(P0,e)==='power'&&(+T.load>0||T.kind==='recep')?'r':null;if(e.cat==='equip')return +T.kw>0&&!['tank'].includes(T.kind)?'e':null;return null}
+const acW=(P0,e)=>{const T=typ(P0,e)||{};return e.cat==='equip'?(+T.kw||0)*1000:(+T.load||0)};
+/* the panel an element goes to: the one asked for, else the nearest of its level, else the nearest */
+function acPanel(P0,e,pn){const ps=P0.els.filter(q=>q.cat==='eequip'&&q.mark&&AC_PNL.includes((typ(P0,q)||{}).kind));if(pn!=='auto'){const q=ps.find(x=>x.mark===pn)||P0.els.find(x=>x.cat==='eequip'&&x.mark===pn);if(q)return q}
+  const z=elev(P0,e.level);let b=null,bd=Infinity;for(const q of ps){const d=Math.hypot(q.x-e.x,q.y-e.y)+(q.level===e.level?0:1e7+Math.abs(elev(P0,q.level)-z)*10);if(d<bd){bd=d;b=q}}return b}
+/* the plan: {cks [{pn, ck, k, els, W, rooms}], none (elements with no panel to go to), n} */
+function acPlan(P0,ids,o){const els=ids.map(id=>P0.els.find(e=>e.id===id)).filter(e=>e&&!(e.panel&&e.circuit)&&acKind(P0,e)&&(o.eq||acKind(P0,e)!=='e'));
+  const roomOf=new Map(),RM=fsRooms(P0);for(const e of els){const it=RM.find(x=>x.lv===e.level&&inPoly(e.x,e.y,x.g.net));roomOf.set(e.id,it?it.r:null)}
+  const groups=new Map(),none=[];for(const e of els){const pe=acPanel(P0,e,o.pn);if(!pe){none.push(e.id);continue}const k=acKind(P0,e),key=pe.mark+'|'+k+'|'+e.level;(groups.get(key)||groups.set(key,{pe,k,lv:e.level,els:[]}).get(key)).els.push(e)}
+  const occ=new Map(),free=(pe,poles)=>{let S=occ.get(pe.mark);if(!S)occ.set(pe.mark,S=pnlOcc(P0,pe.mark));const lay=panelLay(pe),k=panelDist(P0,pe)==='3p'&&poles===3?3:1;
+    for(let n=1;n<5000;n++){const sl=ckSlots(lay,n,k);if(!sl.some(s=>S.has(s))){for(const s of sl)S.add(s);return String(n)}}return'1'};
+  const cks=[],lim=k=>k==='l'?{n:o.nl,w:o.wl}:{n:o.nr,w:o.wr};
+  for(const G of [...groups.values()].sort((a,b)=>a.pe.mark.localeCompare(b.pe.mark)||'lre'.indexOf(a.k)-'lre'.indexOf(b.k))){const pe=G.pe;
+    if(G.k==='e'){for(const e of G.els.slice().sort((a,b)=>Math.hypot(a.x-pe.x,a.y-pe.y)-Math.hypot(b.x-pe.x,b.y-pe.y)))cks.push({pe,pn:pe.mark,k:'e',els:[e],W:acW(P0,e),rooms:[roomOf.get(e.id)].filter(Boolean),ck:free(pe,+e.poles===3?3:1)});continue}
+    /* rooms from the panel outwards, nearest next; in a room its points in a chain from the one nearest where the circuit comes in */
+    const byR=new Map();for(const e of G.els){const r=roomOf.get(e.id),k=r?r.id:'x'+e.id;(byR.get(k)||byR.set(k,{r,els:[]}).get(k)).els.push(e)}
+    const rs=[...byR.values()].map(x=>Object.assign(x,{cx:x.els.reduce((s,e)=>s+e.x,0)/x.els.length,cy:x.els.reduce((s,e)=>s+e.y,0)/x.els.length}));
+    const order=[];let cx=pe.level===G.lv?pe.x:rs[0].cx,cy=pe.level===G.lv?pe.y:rs[0].cy;while(rs.length){let bi=0,bd=Infinity;rs.forEach((x,i)=>{const d=Math.hypot(x.cx-cx,x.cy-cy);if(d<bd){bd=d;bi=i}});const x=rs.splice(bi,1)[0];
+      const rest=x.els.slice(),ch=[];let px=cx,py=cy;while(rest.length){let bj=0,bd2=Infinity;rest.forEach((e,i)=>{const d=Math.hypot(e.x-px,e.y-py);if(d<bd2){bd2=d;bj=i}});const e=rest.splice(bj,1)[0];ch.push(e);px=e.x;py=e.y}
+      order.push({r:x.r,els:ch});cx=x.cx;cy=x.cy}
+    const L=lim(G.k);let cur=null;const close=()=>{if(cur&&cur.els.length){cur.ck=free(pe,1);cks.push(cur)}cur=null},open=()=>{cur={pe,pn:pe.mark,k:G.k,els:[],W:0,rooms:[]}};
+    for(const x of order){const w=x.els.reduce((s,e)=>s+acW(P0,e),0);
+      if(cur&&cur.els.length&&(cur.els.length+x.els.length>L.n||cur.W+w>L.w))close();          // the room does not fit on what is left: a new circuit
+      for(const e of x.els){if(!cur)open();const we=acW(P0,e);if(cur.els.length&&(cur.els.length+1>L.n||cur.W+we>L.w)){close();open()}cur.els.push(e);cur.W+=we;if(x.r&&!cur.rooms.includes(x.r))cur.rooms.push(x.r)}}
+    close()}
+  return{cks,none,n:els.length}}
+function acApply(Q,o){let nw=0;edit(()=>{for(const c of Q.cks){for(const e of c.els){e.panel=c.pn;e.circuit=c.ck}if(o.wire){const ws=c.els.filter(e=>e.cat!=='equip');if(ws.length)nw+=ckWire(P,ws,c.pn,c.ck)}}});return nw}
+/* what the command works on: the selection, else the level of the view (or every level) */
+function acScope(o){const sel=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&(e.cat==='light'||e.cat==='device'||e.cat==='equip'));if(sel.length&&!o.all)return{k:'sel',ids:sel.map(e=>e.id)};
+  const v=activeView(),lv=!o.all&&v&&v.level!=null?v.level:null;return{k:lv!=null?'level':'all',ids:P.els.filter(e=>(e.cat==='light'||e.cat==='device'||e.cat==='equip')&&(lv==null||e.level===lv)).map(e=>e.id)}}
+function dlgAutoCk(){const o=acSet(),S=acScope(o),Q=acPlan(P,S.ids,o),pans=P.els.filter(e=>e.cat==='eequip'&&e.mark&&AC_PNL.includes((typ(P,e)||{}).kind)).map(e=>e.mark);ui.helpAt='calc';
+  const num=(k,u,st,a,b)=>`<label><span>${t('ac_'+k)}</span><span><input type="number" data-ac="${k}" value="${o[k]}" step="${st}" min="${a}" max="${b}"><small>${u}</small></span></label>`;
+  const set=`<div class="ldg pz"><label><span>${t('p_panel')}</span><span><select data-ac="pn"><option value="auto"${o.pn==='auto'?' selected':''}>${t('ac_pauto')}</option>${[...new Set(pans)].map(m=>`<option${m===o.pn?' selected':''}>${esc(m)}</option>`).join('')}</select></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-ac="all"><option value="0"${o.all?'':' selected'}>${t(S.k==='sel'?'ac_sel':S.k==='level'?'ac_level':'ac_every')}</option><option value="1"${o.all?' selected':''}>${t('ac_every')}</option></select></span></label>
+    ${num('nl',t('ac_pts'),1,1,40)}${num('wl','W',100,100,5000)}${num('nr',t('ac_pts'),1,1,40)}${num('wr','W',100,100,5000)}
+    <label><span>${t('ac_eq')}</span><span><input type="checkbox" data-ac="eq"${o.eq?' checked':''}></span></label><label><span>${t('ck_wire')}</span><span><input type="checkbox" data-ac="wire"${o.wire?' checked':''}></span></label></div>`;
+  const rows=Q.cks.map((c,i)=>`<tr data-ci="${i}"><td>${esc(c.pn)}</td><td>${esc(c.ck)}</td><td>${t('ac_k_'+c.k)}</td><td class="n">${c.els.length}</td><td class="n">${money(c.W)} W</td><td>${esc(c.rooms.map(fsName).join(', '))}</td></tr>`).join('');
+  const body=`<div class="acd"><p class="note">${t('ac_intro')}</p>${set}`+(!pans.length?`<p class="note warn">${t('ck_nopanel')}</p>`:Q.cks.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('p_panel')}</th><th>${t('p_circuit')}</th><th>${t('c_desc')}</th><th class="n">${t('c_count')}</th><th class="n">${t('c_load')}</th><th>${t('cat_room')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note">${t('ac_none')}</p>`)+
+    (Q.none.length?`<p class="note warn">${t('ac_nopn',Q.none.length)}</p>`:'')+`<p class="note">${t('ac_note')}</p></div>`;
+  openDlg(t('a_autock'),body,`<button class="btn" data-acx="ck">${t('a_circuit')}…</button><span style="flex:1"></span><button class="btn primary" data-acx="apply"${Q.cks.length?'':' disabled'}>${t('ac_apply',Q.cks.length,Q.cks.reduce((s,c)=>s+c.els.length,0))}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,k=el.dataset.ac;if(!k||!ui.dlg)return;if(k==='pn')o.pn=el.value;else if(k==='all')o.all=el.value==='1';else if(el.type==='checkbox')o[k]=el.checked;else{const v=parseFloat(el.value);if(isFinite(v)&&v>0)o[k]=v}dlgAutoCk()},
+     click(ev){const x=ev.target.closest('[data-acx]');if(x&&ui.dlg){const k=x.dataset.acx;if(k==='ck'){dlgCircuit();return}if(k==='apply'&&Q.cks.length){const nw=acApply(Q,o);toast(t('ac_done',Q.cks.length)+(nw?' · '+t('ck_wired',nw):''),6000);dlgAutoCk()}return}
+       const tr=ev.target.closest('tr[data-ci]');if(tr){ui.sel=new Set(Q.cks[+tr.dataset.ci].els.map(e=>e.id));closeDlg();setTool('modify')}}},'wide')}
+XA.autock=dlgAutoCk;
+{const A=RIBBON.find(r=>r.id==='sys'),p=A&&A.panels.find(q=>q.t==='p_elec');if(p&&!p.b.includes('@autock')){const i=p.b.indexOf('@circuit');p.b.splice(i<0?p.b.length:i+1,0,'@autock')}}
+BTN['@autock']=['circuit',''];
+Object.assign(STR,{
+  a_autock:['จัดวงจรอัตโนมัติ','Auto Circuits'],ac_intro:['โคม เต้ารับ และอุปกรณ์ไฟฟ้ากำลังที่ยังไม่มีวงจร จัดเข้าวงจรของตู้ที่ใกล้ที่สุดในชั้นเดียวกัน ไล่ทีละห้องจากตู้ออกไป โคมกับเต้ารับไม่อยู่วงจรเดียวกัน แต่ละวงจรไม่เกินจำนวนจุดและโหลดที่กำหนด ห้องหนึ่งอยู่วงจรเดียวถ้าใส่ได้ เครื่องที่มีพิกัดกำลัง (แอร์ ปั๊ม) วงจรละเครื่อง ใช้ช่องว่างแรกของตู้ซึ่งวน L1 L2 L3 และวาดสายในแปลนไฟฟ้า',
+    'Lights, receptacles and other Power devices with no circuit go on circuits of the nearest panel of their level, room by room from the panel outwards: lights and receptacles never share a circuit, a circuit takes no more points and load than set, a room stays on one circuit when it fits, machines with a power rating (air conditioners, pumps) get one each; the first free ways of the panel turn L1 L2 L3, and the wires are drawn in the electrical plans'],
+  ac_pauto:['ตู้ที่ใกล้ที่สุด','The nearest'],ac_sel:['ที่เลือก','The selection'],ac_level:['ชั้นของมุมมองนี้','The level of this view'],ac_every:['ทุกชั้น','Every level'],ac_pts:['จุด','points'],
+  ac_nl:['โคมต่อวงจรไม่เกิน','Lights a circuit, at most'],ac_wl:['โหลดวงจรแสงสว่างไม่เกิน','Lighting load a circuit, at most'],ac_nr:['เต้ารับต่อวงจรไม่เกิน','Receptacles a circuit, at most'],ac_wr:['โหลดวงจรเต้ารับไม่เกิน','Receptacle load a circuit, at most'],
+  ac_eq:['เครื่องปรับอากาศ/ปั๊ม วงจรละเครื่อง','A circuit for each machine'],ac_k_l:['แสงสว่าง','Lighting'],ac_k_r:['เต้ารับ','Receptacles'],ac_k_e:['เครื่อง','Machine'],
+  ac_none:['ไม่มีโคมหรือเต้ารับที่ยังไม่มีวงจร','Nothing without a circuit'],ac_nopn:['{0} ชิ้นไม่มีตู้ให้ต่อ: วางตู้โหลดเซ็นเตอร์หรือตู้ DB และใส่ Mark','{0} have no panel to go to: place a load centre or distribution board with a Mark'],
+  ac_note:['วสท. (มาตรฐานการติดตั้งทางไฟฟ้า) ใช้เกณฑ์เต้ารับคิด 180 VA ต่อจุด · ค่าตั้งต้น: โคมไม่เกิน 10 ดวงหรือ 1,200 W เต้ารับไม่เกิน 8 จุดหรือ 1,800 W ต่อวงจร · ตรวจเบรกเกอร์ ขนาดสาย และแรงดันตกได้ในตารางโหลดของตู้ · ใช้ปรับสมดุลโหลดถ้าเฟสไม่เท่ากัน',
+    'Receptacles are taken at 180 VA a point (EIT and NEC) · stock limits: 10 lights or 1,200 W, 8 receptacles or 1,800 W a circuit · breakers, wire sizes and voltage drop are in the panel schedules · Rebalance Loads evens the phases'],
+  ac_apply:['สร้าง {0} วงจร ({1} จุด)','Make {0} circuits ({1} points)'],ac_done:['สร้างวงจรแล้ว {0} วงจร กดย้อนกลับได้','{0} circuits made — Undo to go back']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -30478,6 +30544,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[t_connect]] — แท็บ [[tab_sys]]: คลิกหัวจ่ายลม สุขภัณฑ์ หรือหัวสปริงเกลอร์ แล้วคลิกท่อที่จะต่อเข้า โปรแกรมเดินท่อแยกให้เอง
 
 [[a_circuit]] — แท็บ [[tab_sys]] (และขึ้นเองเมื่อเลือกโคมหรือเต้ารับ): รวมสิ่งที่เลือกเป็นวงจรเดียวบนตู้ที่เลือก ใส่เลขวงจรว่างถัดไปให้ และเดินสายในแปลนไฟฟ้าให้ได้ · ท่อโสโครก (S) กับท่อน้ำทิ้ง (W) ที่มาบรรจบกันนับเป็นโครงข่ายระบายเดียวกันแล้ว
+[[a_autock]] — แท็บ [[tab_sys]] แผงไฟฟ้า: เลือกโคมและเต้ารับ (หรือไม่เลือกเพื่อใช้ทั้งชั้นของมุมมอง) ตั้งจำนวนจุดและโหลดสูงสุดต่อวงจร แล้วกดสร้างวงจร · ตารางบอกตู้ หมายเลขวงจร จำนวนจุด โหลด และห้อง ก่อนสร้าง
 
 [[a_wheel]] ((F8)) หรือ Shift+W: วงล้อนำทาง กดค้างที่ ZOOM, PAN หรือ ORBIT แล้วลาก · REWIND ย้อนมุมมองก่อนหน้า · ลากจาก CENTER ไปปล่อยบนชิ้นงานเพื่อย้ายจุดหมุน · ลากที่กลางวงล้อเพื่อย้ายวงล้อ · ในมุมมอง 3 มิติ ลากเมาส์ปุ่มซ้ายจากที่ว่างเป็นกรอบเลือก (ซ้ายไปขวา = อยู่ในกรอบทั้งชิ้น ขวาไปซ้าย = แค่แตะ) หมุนมุมมองด้วย Shift+ปุ่มกลาง หรือลากปุ่มขวา
 - วงล้อในมุมมอง 3 มิติมี LOOK (หมุนมองรอบจากจุดยืน) WALK (กดค้างแล้วลากขึ้นเพื่อเดินหน้า ลากลงถอยหลัง ซ้ายขวาเพื่อเลี้ยว) และ UP/DOWN (ลากขึ้นลงเพื่อยกหรือลดระดับสายตา) · มุมมองเปลี่ยนเป็นเพอร์สเปกทีฟให้เอง
@@ -30663,6 +30730,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.161 · [[a_sprlay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ประเภทอันตรายของแต่ละห้องตาม NFPA 13 (คุณสมบัติห้อง) วางหัวสปริงเกลอร์ให้ทั้งห้องด้วยจำนวนหัวน้อยที่สุดที่ไม่เกินพื้นที่และระยะห่างที่กำหนด พร้อมท่อกิ่งและท่อประธานย่อย · ตรวจว่าทุกจุดของห้องมีหัวครอบคลุม หัวชิดกันหรือชิดผนังเกินไป แสดงส่วนที่ไม่ครอบคลุมบนแปลน และรวมใน [[a_sysck]]
 - V1.162 · [[a_sprhyd]]: คำนวณชลศาสตร์ตาม NFPA 13 (Density/Area) หาพื้นที่ออกแบบที่ไกลที่สุด น้ำและแรงดันที่หัวทุกหัว การสูญเสียตาม Hazen-Williams พร้อมข้อต่อและความสูง ได้น้ำและแรงดันที่ต้นทาง ขนาดปั๊มดับเพลิง (Flow @ Head, kW) และน้ำสำรอง · ตรวจกับปั๊มในโมเดล และรวมใน [[a_sysck]]
 - V1.163 · [[a_ltlay]] (แผงไฟฟ้าของงานระบบ หรือแผงแสงสว่างของแท็บ [[tab_analyze]]): วางโคมไฟให้ทุกห้องที่เลือกได้ความสว่างตามเกณฑ์ด้วยวิธีลูเมน เลือกชนิดโคมตามการใช้ห้องหรือเลือกเอง วางเป็นตารางเท่ากันไม่เกิน 1.5 เท่าของความสูงโคม และบอกความสว่างที่จะได้ก่อนวาง
+- V1.164 · [[a_autock]] (แผงไฟฟ้าของงานระบบ): โคม เต้ารับ และเครื่องที่ยังไม่มีวงจร จัดเข้าวงจรของตู้ที่ใกล้ที่สุดในคราวเดียว ไล่ทีละห้อง ไม่เกินจำนวนจุดและโหลดที่ตั้ง โคมกับเต้ารับแยกวงจร เครื่องวงจรละเครื่อง ใช้ช่องว่างของตู้วนเฟส L1 L2 L3 และวาดสายในแปลนไฟฟ้า
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -30774,6 +30842,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[t_connect]] — on the [[tab_sys]] tab: click air terminals, fixtures or sprinkler heads, then the run to connect into; the branch is routed for you
 
 [[a_circuit]] — on the [[tab_sys]] tab (and by itself when lights or receptacles are selected): makes one circuit of the selection on a panel, with the next free number and, if wanted, its wiring in the electrical plan · soil (S) and waste (W) pipes that meet now count as one drainage network
+[[a_autock]] — on the [[tab_sys]] tab, electrical panel: select lights and receptacles (or nothing, for the whole level of the view), set the most points and load a circuit takes, and make the circuits · the table shows the panel, circuit number, points, load and rooms of each before they are made
 
 [[a_wheel]] ((F8)) or Shift+W: the navigation wheel — press ZOOM, PAN or ORBIT and drag · REWIND steps back · drag from CENTER and release over an element to move the pivot · drag its hub to move the wheel · in a 3D view a left drag from empty space is a selection box (left to right: wholly inside, right to left: touched); orbit with Shift+middle button or a right drag
 - In a 3D view the wheel also has LOOK (turn about where you stand), WALK (hold and drag up to go on, down to go back, aside to turn) and UP/DOWN (drag to raise or lower the eye) · the view becomes perspective by itself
@@ -30959,6 +31028,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.161 · [[a_sprlay]] (piping panel of Systems, or the [[tab_analyze]] tab): every room has an NFPA 13 hazard class (room Properties); heads are laid out over whole rooms with the fewest that keep the area and spacing limits, with branch lines and a cross main · coverage is checked at every point of a room, heads too close to each other or to a wall are reported, gaps are shown on the plans and in [[a_sysck]]
 - V1.162 · [[a_sprhyd]]: an NFPA 13 density/area calculation finds the most remote design area, the flow and pressure at every head of it and the Hazen-Williams losses with fittings and height, and gives the flow and pressure at the source, the fire pump (flow @ head, kW) and the water to store · checked against the pump in the model and in [[a_sysck]]
 - V1.163 · [[a_ltlay]] (electrical panel of Systems, or the lighting panel of [[tab_analyze]]): fixtures for every room chosen, enough for its lighting level by the lumen method, of a type by the room's use or the one picked, on an even grid no wider than 1.5 times their height, with the level they will give shown before they are placed
+- V1.164 · [[a_autock]] (electrical panel of Systems): every light, receptacle and machine with no circuit goes on circuits of the nearest panel in one go, room by room, within the points and load set, lights apart from receptacles and a circuit for each machine, on the free ways of the panel turning L1 L2 L3, with the wires drawn in the electrical plans
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -32899,6 +32969,8 @@ window.PenumBIM.r76={calc:()=>fhNow().map(c=>({sys:c.sys,from:c.from,hz:c.hz,nd:
 window.PenumBIM.r77={plan:(ids,o)=>{const Q=lgPlan(P,ids,Object.assign({type:'auto',repl:false},o||{}));return{rooms:Q.rooms.map(x=>({id:x.it.r.id,st:x.st,n:x.n,need:x.need,lux:x.lux,type:x.T&&x.T.id,kind:x.T&&x.T.kind,sx:x.sx,sy:x.sy})),add:Q.add,del:[...Q.del]}},
   apply:(ids,o)=>lgApply(lgPlan(P,ids,Object.assign({type:'auto',repl:false},o||{}))),rows:()=>ILUm().map(r=>({id:r.id,req:r.req,n:r.n,avg:r.avg,st:r.st,use:r.use})),
   grid:(net,nx,ny)=>gridLay(net,()=>({nx,ny}),100),fs:id=>{const it=fsRooms(P).find(x=>x.r.id===id);return it?fsGrid(it.g,it.hz):null}};
+window.PenumBIM.r78={plan:(ids,o)=>{const Q=acPlan(P,ids,Object.assign({},AC_D,o||{}));return{cks:Q.cks.map(c=>({pn:c.pn,ck:c.ck,k:c.k,ids:c.els.map(e=>e.id),W:c.W,rooms:c.rooms.map(r=>r.id)})),none:Q.none,n:Q.n}},
+  apply:(ids,o)=>{const O=Object.assign({},AC_D,o||{});return acApply(acPlan(P,ids,O),O)}};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
