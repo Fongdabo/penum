@@ -31,6 +31,7 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .demo-band{position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 16px;background:var(--warn-soft,#fff1c7);color:var(--ink);border-bottom:1px solid var(--line);font-size:14px}
 .demo-band b{font-weight:700}.demo-band .sp{flex:1}
 @media (max-width:640px){.demo-band span:not(.sp){font-size:12.5px}}
+@media print{.demo-band{display:none!important}}
 </style>`);
 
 /* Clearing sample data that was loaded into a real company before 3.17 (or by pressing the demo button more than once).

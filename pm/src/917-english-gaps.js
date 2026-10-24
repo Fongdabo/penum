@@ -1,0 +1,97 @@
+/* ---------- 4.28: English for screens added in 3.9x–4.27 that still showed Thai in English mode ----------
+   Found by opening every page of the sample company in English and listing the Thai left on screen (quotation 4.x, ORIEN
+   form shop, internal cost print buttons, warranty and retention, payment plan chart, storage and cloud settings, MEP link,
+   PM checklists, site GPS, Gantt hints). What people type and the sample data stay as written; printed documents keep Thai. */
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x){Object.assign(I18N.en.x,{
+  // Gantt
+  'ใส่จำนวนวันและงานก่อนหน้า (เลขแถว เช่น 2,3 · 2FS+5 = รอ 5 วันหลังงาน 2 เสร็จ · 4SS = เริ่มพร้อมงาน 4) แล้ววันที่จะคำนวณให้ · ＋ แทรกงานใต้แถวนั้น · ⇥ ทำเป็นหัวข้อย่อย ⇤ กลับเป็นหัวข้อใหญ่ · แถบสีส้ม = สายงานวิกฤต':'Enter the duration and the predecessors (row numbers, e.g. 2,3 · 2FS+5 = wait 5 days after task 2 finishes · 4SS = start with task 4) and the dates are worked out · ＋ inserts a task under that row · ⇥ makes it a sub-task ⇤ makes it a main task again · orange bar = critical path',
+  'หมวด BOQ ใช้คิดน้ำหนักงานจากมูลค่า':'BOQ section, used to weight the task by value','เลขแถว + ชนิด FS/SS/FF/SF + วันรอ':'Row number + type FS/SS/FF/SF + lag days',
+  'เลขแถวงานก่อนหน้า เช่น 2 · 2FS+5 · 4SS':'Predecessor row numbers, e.g. 2 · 2FS+5 · 4SS','แทรกงานใหม่ใต้แถวนี้':'Insert a new task under this row','เลื่อนออก':'Outdent','เลื่อนเข้าเป็นหัวข้อย่อย':'Indent as a sub-task',
+  'เส้นทั้งหมด':'All links','เฉพาะหัวข้อหลัก':'Main tasks only','ปิดเส้น':'No links','เส้นลูกศรที่โยงงานก่อนหน้า':'Arrows to predecessor tasks',
+  'ต้นทุนคาดการณ์ = แต่ละหมวดใช้ค่าที่มากกว่าระหว่างงบ BOQ กับต้นทุนผูกพัน':'Forecast cost = for each section, the larger of the BOQ budget and the committed cost',
+  // quotation
+  'ตำแหน่งผู้ลงนาม':'Signer\'s position','หน้าแรกที่พิมพ์':'First printed page','ผู้ลงนาม':'Signer','เป็นเงิน':'Amount','ไม่คิด':'Not charged',
+  'ติ๊ก “ใช้” รายการที่คิดในใบนี้ ใส่เป็น % ของยอดรวม หรือเป็นจำนวนเงิน รายการที่ไม่ติ๊กหรือเป็น 0 ไม่พิมพ์':'Tick "Use" for the lines charged on this quotation, as a % of the total or an amount. Lines not ticked or at 0 are not printed',
+  'รับประกันและเงินประกันผลงาน':'Warranty and retention','วิธีหักเงินประกันผลงาน':'How retention is deducted',
+  'กด “ได้งาน” แล้ว ระยะรับประกันไปอยู่ในทะเบียนการรับประกันของโครงการ และงวดเงินหักเงินประกันผลงานตามที่เลือก':'After "Won", the warranty periods go to the project\'s warranty register and the instalments deduct retention as chosen',
+  'ว่าง = ผู้ติดต่อของลูกค้า':'Blank = the customer\'s contact','เช่น ภายใน 210 วันหลังทำสัญญา':'e.g. within 210 days of signing the contract','เช่น นายอาทิตย์ บับภาสิทธิ์':'e.g. Mr. Arthit','เช่น กรรมการผู้จัดการ':'e.g. Managing Director',
+  'กำหนดแล้วเสร็จ':'Completion','รับประกันผลงานติดตั้ง':'Installation warranty','รับประกันตัวเครื่อง: อะไหล่':'Equipment warranty: parts','รับประกันคอมเพรสเซอร์':'Compressor warranty',
+  'แยกค่าเครื่อง':'Split equipment','รายการไหนเป็นเครื่อง ติ๊กในช่อง “เครื่อง” ด้านขวาของตาราง':'Tick "Equipment" at the right of the table for lines that are equipment','ค้นทุกหมวด':'Search all sections',
+  'ติ๊ก = ค่าเครื่อง (ไม่โดนหัก ณ ที่จ่าย 3% เมื่อเลือกแยกค่าเครื่องตอนพิมพ์)':'Ticked = equipment (no 3% withholding tax when equipment is split on the print)','ด้านล่าง':'below',
+  'ค่าของ (วัสดุ)':'Material','ราคาตัวอย่าง':'Sample price','เคยเสนอ':'Quoted before','(ราคาต่อเมตรต่อ 1 นิ้ว ใช้คำนวณใน MEP)':'(price per metre per inch, used by MEP)','m ต่อนิ้ว':'m per inch',
+  'คลังยังว่าง เปิดคลังราคากลางเพื่อเติมราคาก่อน หรือกด “บันทึกราคางานนี้เข้าคลัง”':'The library is empty. Open the price library to add prices first, or press "Save this job\'s prices to the library"',
+  'จับคู่จากชื่อ หน่วย และยี่ห้อ':'Matched by name, unit and brand','พิมพ์ชื่อสินค้า หรือเลือกจากรายการของหมวดนี้':'Type a product name or pick from this section\'s list',
+  'พิมพ์ฉบับภายใน':'Print internal copy','Excel แบบ ORIEN':'Excel, ORIEN form','Excel ฉบับภายใน':'Excel, internal copy',
+  'ราคาทุน ราคาขาย และกำไรทุกรายการ สำหรับใช้ในบริษัท':'Cost, selling price and profit of every line, for use inside the company',
+  'ไฟล์ Excel ตามแบบฟอร์ม BOQ มาตรฐาน ORIEN: หน้าสรุป และ BOQ แยกค่าวัสดุ/ค่าแรง':'Excel file in ORIEN\'s standard BOQ form: summary page and BOQ with material/labour split',
+  'เพิ่มชีตราคาทุน ราคาขาย และกำไรต่อรายการ อย่าส่งให้ลูกค้า':'Adds a sheet with cost, price and profit per line. Do not send it to the customer',
+  // ORIEN form shop
+  'แบบฟอร์มเอกสาร':'Document forms','ร้านฟอร์ม ORIEN':'ORIEN form shop','✓ ใช้อยู่':'✓ In use','ฟรี':'Free','ซื้อแล้ว':'Bought',
+  'กดเลือกแล้วกด "พิมพ์ใบเสนอราคา" ข้อมูลเดิมพิมพ์ออกมาในแบบที่เลือก โลโก้และชื่อบริษัทเป็นของบริษัทคุณเอง':'Pick one, then press "Print quotation": the same data prints in the chosen form, with your own company logo and name',
+  'เอกชนทั่วไป':'Private sector','งานระบบ MEP':'MEP systems','งานบริการ PM/MA':'PM/MA service','งานเฉพาะ':'Special jobs',
+  'น้ำเงิน-เขียวน้ำทะเล สะอาด อ่านง่าย (แบบเริ่มต้น)':'Navy and teal, clean and easy to read (default)','Excel คลาสสิก':'Classic Excel','เส้นตารางดำ แถบเขียว แบบ BOQ ที่ผู้รับเหมาคุ้นเคย':'Black grid lines and green bands, the BOQ look contractors know',
+  'ขาวดำเรียบ':'Plain black and white','ไม่มีพื้นสี พิมพ์ขาวดำหรือถ่ายเอกสารแล้วยังชัด ประหยัดหมึก':'No colour fills: stays clear in black-and-white prints and photocopies, saves ink',
+  'สีตามโลโก้บริษัท':'Company logo colours','ใช้สีจากโลโก้ของบริษัทคุณเอง หรือเลือกสีเอง':'Uses the colours of your own logo, or colours you pick',
+  'ย่อ 1 หน้า':'Short, 1 page','รายการ ยอดรวม และลายเซ็นอยู่หน้าเดียว เหมาะกับงานเล็ก งานซ่อม':'Lines, total and signatures on one page, for small and repair jobs',
+  'สัญญารายปี ผ่อนรายเดือน':'Yearly contract, monthly payments','ตารางผ่อนชำระรายเดือนครบทั้งสัญญา และข้อสัญญาต่ออายุ ยกเลิก ราคาคงที่':'Monthly payment table for the whole contract, with renewal, cancellation and fixed-price clauses',
+  'อัตราค่าบริการต่อครั้ง':'Rate per visit','ใบเสนออัตราค่าบริการต่อเครื่องต่อครั้ง สำหรับลูกค้าที่เรียกใช้เมื่อต้องการ ไม่ผูกสัญญา':'Rates per unit per visit, for customers who call when needed without a contract',
+  'เหมารวมอะไหล่':'All-inclusive with parts','สัญญาบริการรวมอะไหล่ บอกชัดว่าคุ้มครองอะไร ไม่คุ้มครองอะไร วงเงินอะไหล่ และเวลาซ่อมเสร็จ':'Service contract including parts: what is and is not covered, the parts limit and repair times',
+  'งานต่อเติม / รีโนเวท':'Extension / renovation','อ่านง่ายสำหรับเจ้าของบ้านและร้านค้า บอกงานแต่ละส่วน ราคาเดียวต่อรายการ งวดเงินเป็นกล่องใหญ่':'Easy for home and shop owners: each part of the work, one price per line, payments in large boxes',
+  'แยกค่าออกแบบกับค่าก่อสร้างชัดเจน บอกสิ่งที่ส่งมอบงานออกแบบ และขั้นตอนงานตั้งแต่ออกแบบถึงส่งมอบ':'Design and construction priced apart, with the design deliverables and the steps from design to handover',
+  'แยกงานเพิ่มกับงานลด (จำนวนติดลบ = งานลด) สรุปมูลค่าสัญญาเดิม ส่วนต่าง และมูลค่าสัญญาใหม่':'Additions and omissions apart (negative quantity = omission), with the original contract value, the difference and the new contract value',
+  'ปร.4 รายการปริมาณงานและราคา':'Por.4 Bill of quantities and prices','แบบแสดงรายการ ปริมาณงาน และราคา แยกค่าวัสดุ ค่าแรงงาน รวมทุกหมวด กระดาษแนวนอน':'Items, quantities and prices with material and labour split, every section, landscape paper',
+  'ปร.5 (ก) สรุปค่าก่อสร้าง':'Por.5 (A) Construction cost summary','สรุปค่างานต้นทุนทีละหมวด คูณ Factor F เป็นค่าก่อสร้าง พร้อมเงื่อนไขเงินล่วงหน้า ประกันผลงาน ดอกเบี้ย':'Cost by section times Factor F gives the construction cost, with the advance, retention and interest terms',
+  'ปร.5 (ข) สรุปค่าครุภัณฑ์จัดซื้อ':'Por.5 (B) Purchased equipment summary','ครุภัณฑ์และของที่ซื้อมาติดตั้ง ไม่คูณ Factor F คิดภาษีมูลค่าเพิ่ม 7% อย่างเดียว แยกตามหมวด':'Equipment bought and installed, without Factor F, VAT 7% only, by section',
+  'ปร.6 สรุปราคากลาง':'Por.6 Reference price summary','หน้าสรุปรวมค่าก่อสร้างจาก ปร.5 (ก) กับค่าครุภัณฑ์จาก ปร.5 (ข) เป็นราคาเดียว พร้อมช่องลงนามคณะกรรมการ':'Construction cost from Por.5 (A) and equipment from Por.5 (B) as one price, with the committee\'s signature boxes',
+  'งานระบบไฟฟ้า':'Electrical systems','ขนาดทำความเย็นรวม (TR) จำนวนเครื่อง มาตรฐาน วสท./ASHRAE การทดสอบ และสิ่งที่ไม่รวมในราคา':'Total cooling (TR), number of units, EIT/ASHRAE standards, testing and what the price excludes',
+  'จำนวนดวงโคม เต้ารับ ตู้ไฟฟ้า มาตรฐาน วสท. 2001 การวัดฉนวนและหลักดินก่อนส่งมอบ':'Luminaires, sockets and panels, EIT 2001 standard, insulation and earth tests before handover',
+  'งานระบบประปา-สุขาภิบาล':'Plumbing and sanitary','จำนวนสุขภัณฑ์ เครื่องสูบน้ำ ความยาวท่อ มาตรฐานท่อ การทดสอบแรงดันและการรั่วซึม':'Fixtures, pumps, pipe lengths, pipe standards, pressure and leak tests',
+  'จำนวนหัวกระจายน้ำ อุปกรณ์ตรวจจับ ตู้และถังดับเพลิง มาตรฐาน NFPA และการทดสอบตามข้อกำหนด':'Sprinklers, detectors, hose cabinets and extinguishers, NFPA standards and the specified tests',
+  'รวมทุกระบบ แยกหมวด':'All systems by section','สรุปราคาแยกตามระบบพร้อมสัดส่วน แล้วรายการทั้งหมด และมาตรฐานการทดสอบของแต่ละระบบที่มีในงาน':'Price by system with shares, then every line and the test standards of each system in the job',
+  // claims, payments, receipts
+  'รับจริง (ตามสลิป)':'Received (per slip)','หักเงินประกันผลงานเมื่อไร':'When retention is deducted','เครดิตรับเงิน (วัน นับจากวันเบิก)':'Payment terms (days from the claim)','ครบกำหนดรับเงิน':'Payment due','กดเพื่อเรียงขึ้น / ลง':'Click to sort up / down',
+  'ทุกงวดอยู่ในแผ่นเดียว: งบตามสัญญา ยอดเบิกแต่ละงวดและ % ยอดคงเหลือ แล้วหักประกันผลงาน VAT และภาษี ณ ที่จ่าย จนเป็นยอดสุทธิ ท้ายตารางมียอดที่ลูกค้าจ่ายจริงและค้างรับ':'Every instalment on one sheet: contract budget, each claim and %, the balance, then retention, VAT and withholding tax down to the net amount, with what the customer actually paid and what is still due at the end',
+  'เลือกไฟล์ PO หรือสัญญา ระบบใช้ชื่อไฟล์เป็นเลขที่สัญญา เช่น PO0869-NET-52.pdf':'Pick the PO or contract file; its file name becomes the contract number, e.g. PO0869-NET-52.pdf',
+  '📄 ดึงจากชื่อไฟล์ PO':'📄 From the file name: PO','ใบเบิกงวดทุกโครงการ (รวมใบร่าง)':'Claims of every project (drafts included)','ใบเบิกงวดทุกโครงการ':'Claims of every project','ดูใบเบิกทุกใบ':'See every claim','ส่งเบิกแล้ว ค้างรับ':'Claimed, not yet received',
+  'เลขซ้ำ':'Duplicate number','(โครงการนี้)':'(this project)','ดูทุกโครงการ':'See every project','ลูกหนี้':'Receivables','รายการใบเบิกงวดของทุกโครงการ อยู่ที่ บริษัท':'The claims of every project are under Company',
+  'ยอดเป็นรับสุทธิ (รวม VAT แล้ว หักเงินล่วงหน้า ประกันผลงาน และภาษีหัก ณ ที่จ่ายแล้ว)':'Amounts are net receipts (VAT included, advance, retention and withholding tax deducted)','ยอดไม่รวม VAT':'amounts exclude VAT',
+  // settings: PIN, storage, cloud, e-signature
+  'ตั้ง PIN ให้แต่ละคนแล้วบอกเขาเป็นการส่วนตัว · พนักงานที่ใช้คอมพิวเตอร์ของตัวเอง กด':'Set a PIN for each person and tell them in private · staff on their own computer: press',
+  'โฟลเดอร์ข้อมูล PENUM-PM':'PENUM-PM data folder','เก็บข้อมูลไว้ที่':'Keep the data in','(แนะนำ)':'(recommended)','โฟลเดอร์กลางในบริษัท (NAS / เซิร์ฟเวอร์)':'A shared company folder (NAS / server)','เฉพาะเครื่องนี้ (ไม่แชร์)':'This device only (not shared)',
+  'PENUM PM บันทึกลงโฟลเดอร์ในคอมพิวเตอร์ แล้วโปรแกรมซิงค์ (OneDrive, Google Drive, Dropbox) หรือ NAS ส่งต่อให้เครื่องอื่น ใช้ได้กับ Edge หรือ Chrome บนคอมพิวเตอร์':'PENUM PM saves to a folder on the computer, and a sync program (OneDrive, Google Drive, Dropbox) or a NAS passes it to other devices. Works in Edge or Chrome on a computer',
+  'ข้อมูลเก็บบนคลาวด์ของ PENUM (เซิร์ฟเวอร์สิงคโปร์) ไม่ต้องติดตั้งโปรแกรมหรือเลือกโฟลเดอร์ ใช้ได้ทั้งคอมพิวเตอร์และมือถือ สำรองข้อมูลอัตโนมัติวันละครั้ง':'Data is kept on the PENUM cloud (Singapore servers). Nothing to install and no folder to pick, works on computers and phones, backed up automatically once a day',
+  '✦ เก็บข้อมูลบนคลาวด์ PENUM':'✦ Keep the data on the PENUM cloud','คลาวด์ PENUM':'PENUM cloud','รอสักครู่ ระบบสร้างที่เก็บของบริษัทและบันทึกข้อมูลให้ เสร็จแล้ว':'Please wait while the company\'s storage is created and the data saved. When done,',
+  'พนักงานเข้าใช้ด้วย':'Staff sign in with','ลิงก์เชิญ':'Invite link','(ตั้งค่า › เข้าระบบด้วย PIN) กดลิงก์แล้วเข้าได้เลย ไม่ต้องเลือกโฟลเดอร์':'(Settings › Sign in with PIN): they open the link and are in, no folder to pick',
+  'เก็บลายเซ็นของแต่ละคนไว้ แล้วเลือกใส่ตอนกดพิมพ์เอกสาร (หนังสือ ใบเบิกงวด ใบเสนอราคา ใบสั่งซื้อ ใบเสร็จ ฯลฯ)':'Keep each person\'s signature and choose where it goes when printing (letters, claims, quotations, purchase orders, receipts and so on)',
+  'ตอนพิมพ์ ระบบถามว่าจะใส่ลายเซ็นของใครในช่องไหน ลายเซ็นของตัวเองใส่ได้ทันทีเมื่อเข้าระบบด้วย PIN ของตัวเอง ลายเซ็นของคนอื่นต้องใส่ PIN ของคนนั้น คนที่ยังไม่มี PIN ใช้ลายเซ็นได้เฉพาะตอนเลือกชื่อตัวเองที่มุมบน':'When printing you are asked whose signature goes in which box. Your own signature goes in straight away when you signed in with your PIN; someone else\'s needs their PIN. People without a PIN can use their signature only after choosing their own name at the top',
+  'อัปเดตของบริษัท':'Company updates','แท็บ':'Tab',
+  // purchasing, MEP link, service, site
+  'อ่านใบเสนอราคาของผู้ขาย (PDF / Excel) แล้วใส่ราคาต่อหน่วยให้อัตโนมัติ':'Reads the supplier\'s quotation (PDF / Excel) and fills in the unit prices',
+  'ใส่รหัสเชื่อมจาก PENUM MEP':'Enter a link code from PENUM MEP','เปิดไฟล์จาก PENUM MEP':'Open a file from PENUM MEP','บันทึกไฟล์โครงการ':'Save project file','ส่งไฟล์มาทาง LINE อีเมล หรือแฟลชไดรฟ์ แล้วกด':'Send the file by LINE, e-mail or a flash drive, then press','ที่นี่':'here',
+  'ถ้าผูกเครื่องกับสัญญาไว้ในทะเบียนเครื่อง (หรือลูกค้ามีเครื่องในทะเบียน) ปุ่ม':'If units are tied to the contract in the unit register (or the customer has units there), the button',
+  'จะสร้างนัดตามรอบของแต่ละระบบ แทนจำนวนครั้งในสัญญา':'makes the visits from each system\'s interval instead of the number of visits in the contract',
+  'เครื่องแต่ละเครื่องเลือกระบบได้ในแท็บทะเบียนเครื่อง ใบงาน PM จะดึงรายการตรวจของระบบนั้นมาให้':'Each unit\'s system is chosen in the unit register tab; the PM work order brings in that system\'s checklist',
+  'รายการเริ่มต้นร่างจากงานบำรุงรักษาทั่วไป ควรให้วิศวกรของบริษัทตรวจและปรับก่อนใช้จริง · เขียนหนึ่งรายการต่อหนึ่งบรรทัด ใส่ค่ามาตรฐานหลังเครื่องหมาย | ได้ เช่น':'The starting lists are drafted from general maintenance practice; have your engineer check and adjust them before use · one item per line, with the standard value after | for example',
+  '· ทุก (เดือน) = รอบที่ใช้สร้างนัดจากสัญญา':'· Every (months) = the interval used to make visits from the contract','ทุก':'Every','วัดแรงดันน้ำยา | 110–140 psi':'Measure refrigerant pressure | 110–140 psi','ทำรายงานส่งลูกค้า:':'Make the customer report:',
+  'ช่างเช็กชื่อด้วย GPS ระบบเทียบกับจุดนี้ ถ้าห่างเกินรัศมีจะขึ้นเตือนให้หัวหน้าเห็น':'Technicians check in by GPS against this point; beyond the radius their supervisor sees a warning',
+  'กดปุ่มตอนยืนอยู่ที่ไซต์ หรือเปิด Google Maps กดค้างที่ไซต์ แล้วคัดลอกตัวเลข (เช่น 13.7563, 100.5018) มาวางในช่องละติจูด':'Press the button while standing on site, or long-press the site in Google Maps and paste the numbers (e.g. 13.7563, 100.5018) into the latitude box',
+  'สำนักงานยังไม่ได้บันทึกตำแหน่งไซต์ ระบบจึงยังไม่ตรวจระยะ':'The office has not saved the site location yet, so distance is not checked','ยังไม่ได้บันทึกตำแหน่งไซต์ ระบบจึงยังไม่ตรวจระยะ':'The site location is not saved yet, so distance is not checked',
+  // bidding
+  'ค่าก่อสร้าง × F':'Construction cost × F',
+  'ทั้งงานเป็นอาคารเดียว กด “+ เพิ่มอาคาร” เมื่อมีหลายอาคารหรือหลายส่วนงาน แล้ว ปร.4 และ ปร.5 จะแยกแผ่นตามอาคาร และ ปร.6 สรุปรวม':'The whole job is one building. Press "+ Add building" for several buildings or parts; Por.4 and Por.5 then get one sheet per building and Por.6 sums them',
+  'Factor F อ่านจากค่างานต้นทุนรวมทั้งโครงการ แล้วใช้กับทุกอาคาร · ปร.6 รวมค่าก่อสร้างทุกส่วน ปัดเศษ และเขียนเป็นตัวอักษร':'Factor F is read from the whole project\'s total cost and used for every building · Por.6 adds every part, rounds it and writes it in words',
+  'ราคาที่เสนอ':'Offered price','+ เบิกเงินสดย่อย':'+ Petty cash withdrawal',
+  // timesheet: the short Thursday (the other day names are already in the dictionary)
+  'พฤหัส':'Thu'});
+ // sentences with a number or a name inside
+ if(I18N.en.p)Object.assign(I18N.en.p,{
+  'บวกกำไร {0} (%)':'Markup, {0} (%)','ตอนพิมพ์: {0}':'On the print: {0}','คิดอัตโนมัติ {0}% ของค่าวัสดุ + ค่าแรงในหมวด (ไม่รวมค่าเครื่อง)':'Automatic: {0}% of material + labour in the section (equipment excluded)',
+  'ราคาเสนอว่างไว้ = ต้นทุน (ของ+แรง) บวก {0}':'Blank offer price = cost (material + labour) plus {0}','พิมพ์ในเงื่อนไขว่า: {0}':'Printed in the terms as: {0}','ว่าง = {0}':'Blank = {0}',
+  '{0} รายการในคลัง':'{0} items in the library','{0} อัตโนมัติ':'{0} automatic','{0} ส่วน':'{0} part(s)','{0} ตามโครงการ':'{0} (project setting)','ประกันผลงาน {0}':'Retention {0}',
+  '{0} ล้าน':'{0} M','ควรเบิกถึงวันนี้ {0} ล้าน':'Should be claimed by today {0} M','เบิกแล้ว {0} ล้าน':'Claimed {0} M','ช้ากว่าแผน {0}':'Behind plan {0}','ครบ {0}':'Due {0}',
+  'เบิกจริงสะสม {0} บาท':'Claimed to date {0} baht','รับเงินแล้วสะสม {0} บาท':'Received to date {0} baht','เบิกช้ากว่าแผน {0} บาท':'Claims behind plan {0} baht','เส้นประสีแดง = วันนี้ {0}':'Red dashed line = today {0}',
+  'งบ {0} = ค่าของ+ค่าแรงใน BOQ':'Budget {0} = material + labour in the BOQ','สัญญา − ต้นทุนคาดการณ์ {0}':'Contract − forecast cost {0}','สมุดรายวัน: เดบิต {0}':'Journal: debit {0}','เครดิต {0}':'credit {0}',
+  '{0} ใบ จาก {1} โครงการ':'{0} documents from {1} projects','มาแล้ว {0} / {1} คน':'Arrived {0} / {1} people','เครื่องในทะเบียน {0}':'Units in the register {0}','กำลังทำ ถึง {0}':'In progress until {0}',
+  'ใช้ที่อื่นแทน {0}':'Use another place instead of {0}','จันทร์ {0}':'Mon {0}','อังคาร {0}':'Tue {0}','พุธ {0}':'Wed {0}','พฤหัส {0}':'Thu {0}','ศุกร์ {0}':'Fri {0}','เสาร์ {0}':'Sat {0}','อาทิตย์ {0}':'Sun {0}'});
+ // strings looked up before this file loaded were remembered as untranslated
+ LPAT=null;LMEMO.clear()}
