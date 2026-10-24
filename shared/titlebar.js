@@ -16,7 +16,7 @@
    · extra: [elements] after the quick buttons (wide screens only) · title() → text · titleTip · titleClick() · titleNode (an element shown
    after the name) · search: {ph, index() → [{t, sub, ic, k, go}], first(index) → the hits before anything is typed,
    find(text, index) → the hits for what was typed, when the app ranks them itself}
-   · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] in this order in
+   · cart() opens the app's form shop (without it the cart says the shop is coming) · company() → the customer company's name, shown beside the user (default: 'penum.company' from PENUM PM, else the licence's) · user (element) · right: [elements] in this order in
    every app: the app's extras, colour mode (class ptb-ib ptb-thm), คู่มือ (ptb-ib ptb-hlp), language (ptb-bx), เมนู (ptb-bx) · tabs: {cur() → id, start() → bool (the start page is showing), has(id), name(id), open(id),
    close(id) after the bar asked about unsaved changes (every tab has ×; closing the last one shows the start page), save(id) → bool, add(), home(), lost(id, cloud): the question's note for closing unsaved,
    cloud(id) → true when the project's main copy is in the cloud (PM's company cloud, MEP/BIM company projects): * then means
@@ -122,7 +122,7 @@ function build(){const w=document.createElement('div');w.className='ptbw';w.id='
   if(C.titleNode)w.querySelector('.ptb-tt').appendChild(C.titleNode);
   w.querySelector('.ptb-logo').addEventListener('click',e=>{const L=(C.menu?C.menu():[]).slice();if(C.ver)L.push('-',{html:`<small>${esc(C.ver)}</small>`});pop(e.currentTarget,L,'ptb-lm')});
   w.querySelector('.ptb-tt').addEventListener('click',()=>{if(C.titleClick)C.titleClick()});
-  w.querySelector('.ptb-cart').addEventListener('click',e=>pop(e.currentTarget,[{html:`<b>${esc(t('cart'))}</b><span class="ptb-soon">${esc(t('soon'))}</span><p>${esc(t('cartP'))}</p>`}],'ptb-cp'));
+  w.querySelector('.ptb-cart').addEventListener('click',e=>C.cart?(popClose(),C.cart()):pop(e.currentTarget,[{html:`<b>${esc(t('cart'))}</b><span class="ptb-soon">${esc(t('soon'))}</span><p>${esc(t('cartP'))}</p>`}],'ptb-cp'));
   w.querySelector('.pdt-add').addEventListener('click',()=>{popClose();C.tabs.add()});
   w.querySelector('.pdt-m').addEventListener('click',e=>{const c=cur(),st=C.tabs.start(),L=ids();
     pop(e.currentTarget,[{t:t('start'),on:st,run:()=>C.tabs.home()},...L.map(id=>({t:nameOf(id)+(dirty(id)?' *':''),on:!st&&id===c,run:()=>openTab(id)})),'-',{t:t('others'),dis:L.length<2,run:closeOthers}])});
@@ -173,7 +173,7 @@ function refresh(){if(!W)return;const L=ids(),c=cur(),st=C.tabs.start(),s=W.quer
   s.innerHTML=`<button type="button" class="pdt-t pdt-st${st?' on':''}" role="tab" aria-selected="${st}">${esc(t('start'))}</button>`+L.map(id=>{const on=!st&&id===c,d=dirty(id),n=nameOf(id);
     return `<div class="pdt-t${on?' on':''}${d?' dt':''}" role="tab" tabindex="0" aria-selected="${on}" data-id="${esc(id)}" title="${esc(n+(d?' · '+dirtyT(id):''))}"><span class="pdt-n">${esc(n)}</span>${d?'<span class="pdt-d" aria-hidden="true">*</span>':''}<button type="button" class="pdt-x" title="${esc(t('close'))}" aria-label="${esc(t('close')+' '+n)}">${IC.x}</button></div>`}).join('');
   s.scrollLeft=sl;const on=s.querySelector('.on');if(on&&refresh.on!==(on.dataset.id||'start')){refresh.on=on.dataset.id||'start';on.scrollIntoView({block:'nearest',inline:'nearest'})}
-  W.querySelector('.pdt-m').title=t('all');W.querySelector('.pdt-add').title=t('add');W.querySelector('.ptb-logo').title=t('menu');W.querySelector('.ptb-cart').title=t('cart')+' · '+t('soon');
+  W.querySelector('.pdt-m').title=t('all');W.querySelector('.pdt-add').title=t('add');W.querySelector('.ptb-logo').title=t('menu');W.querySelector('.ptb-cart').title=t('cart')+(C.cart?'':' · '+t('soon'));
   W.querySelector('.ptb-si').placeholder=t('ph');
   for(const it of C.quick||[])if(!it.node){const b=W.querySelector('.ptb-'+it.k);if(b){b.title=it.t||t(it.k);if(it.k==='share')b.querySelector('span').textContent=t('share')}}
   dark();title()}
