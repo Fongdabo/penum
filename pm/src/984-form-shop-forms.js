@@ -1,4 +1,4 @@
-/* ---------- 4.6 ร้านฟอร์ม ORIEN: the forms sold in the shop (983-form-shop.js lists them, opens them by licence, shows the shop) ----------
+/* ---------- 4.8 ร้านฟอร์ม ORIEN: the forms sold in the shop (983-form-shop.js lists them, opens them by licence, shows the shop) ----------
    Each form prints the quotation's own data. Forms built on the ORIEN Modern print (981) add their parts to it; the others have their
    own layout here but keep its classes (QM_CSS), so they read as one family and take a colour from fsVars().
    Service (PM/MA) quotations: สัญญารายปี ผ่อนรายเดือน, อัตราค่าบริการต่อครั้ง, เหมารวมอะไหล่.

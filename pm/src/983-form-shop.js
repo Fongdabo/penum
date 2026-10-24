@@ -123,7 +123,7 @@ ACT.fsLogo=async()=>{const C=CO(),c=await fsLogoColor(C.logo);if(!c){toast('อ�
 // the colour box sends "change" once the colour is picked
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset.fsc)return;const C=CO();if(!fsRgb(t.value))return;C.formColor=t.value;save();render()});
 
-/* ---- 4.6 ร้านฟอร์ม ORIEN: the shop page, previews, buying ----
+/* ---- 4.8 ร้านฟอร์ม ORIEN: the shop page, previews, buying ----
    Prices come from files/plans.json "forms" ([{k, price}], k 'all' = the whole set) when it lists them, else from FS_FORMS.
    A purchase is a request to ORIEN (LINE / e-mail / copy, as ขอเปลี่ยนแพ็กเกจ) ending "[PENUM-FORM] customer serial +id,id";
    ORIEN ฝ่ายขาย ticks the forms on the customer and approves, the new code (payload fm) reaches the company by itself. */
