@@ -100,6 +100,7 @@ const QM_CSS=`<style>
 #print .qm-tot div.gt{background:linear-gradient(110deg,var(--qn),var(--qt));color:#fff;padding:8px 12px;align-items:center}
 #print .qm-tot div.gt span{font-weight:600}#print .qm-tot div.gt .en{color:#CFEDEF}
 #print .qm-tot div.gt b{font-size:15px;font-weight:700}
+#print .qm-wh{margin-top:6px;font-size:10px}#print .qm-wh div.nt{background:var(--qs);font-weight:600}#print .qm-wh div.nt b{color:var(--qn)}
 #print .qm-tot div.pm{background:var(--qs);color:var(--qn)}
 #print .qm-wd{margin-top:8px;border-radius:10px;background:var(--qs);border-left:4px solid var(--qo);padding:6px 10px;font-size:10.5px}
 #print .qm-wd span{color:var(--qg);font-size:9.5px;display:block}
@@ -148,18 +149,26 @@ const QM_CSS=`<style>
 PRINT.quoteXl=PRINT.quote;
 // a quote this short prints every line on page 1 by itself (a one-row summary would hide quantities and units)
 const QM_ONE=12;
+// 4.14 ค่าเครื่อง (user: "แยกค่าเครื่องออก ... เพราะค่าเครื่องไม่โดนหัก 3%"): a line is equipment when ticked in the lines table (i.eqp),
+// otherwise when its name is a machine in the air-con section (units, chillers, AHU/FCU, pumps, cooling towers, fans), not an accessory.
+// With Q.eqSep the BOQ prints ค่าเครื่อง / ค่าวัสดุ / ค่าแรง, and the totals show the part the customer withholds 3% on (Q.whtB:
+// '' material + labour, 'l' labour only, 'none' not shown) and the net they pay.
+const QM_EQ=/แอร์|split|vrf|vrv|package|rooftop|chiller|ชิลเลอร์|\bahu\b|\bfcu\b|fan coil|cooling tower|ปั๊ม|pump|พัดลม|\bfan\b|\berv\b|เครื่อง|\bcdu\b/i,
+  QM_ACC=/support|ขาแขวน|bracket|ยางรอง|รางครอบ|duct cover|refnet|branch|รีโมท|remote|drain pump|กาลักน้ำ|controller|ชุดควบคุม|ท่อ|pipe|ฉนวน|สาย|ทดสอบ|ค่าแรง|ติดตั้ง/i;
+const qmIsEq=i=>{if(i.eqp===true||i.eqp===false)return i.eqp;const t=[i.type,i.desc].filter(Boolean).join(' ');return i.g==='eq'&&QM_EQ.test(t)&&!QM_ACC.test(t)};
+const QM_WHT=[['','ค่าวัสดุ + ค่าแรง (ไม่หักเฉพาะค่าเครื่อง)'],['l','ค่าแรงอย่างเดียว'],['none','ไม่แสดง']];
 PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const f=qForm(Q);
   if(!qmMa(Q)&&(Q.look==='xl'||f==='G'||f==='E'))return PRINT.quoteXl(id,bq);
   try{return qmPrint(Q,bq)}catch(e){console.error(e);return PRINT.quoteXl(id,bq)}};
 
-function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),sp=!ma&&qSplit(Q),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
+function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),eqs=!ma&&!!Q.eqSep,sp=!ma&&(qSplit(Q)||eqs),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
   // a label in the chosen language; bilingual puts the English under (or beside) the Thai
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
   const dt=s=>{if(!okD(s))return '';const d=pd(s);return EN?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)};
   const cu=C.customers.find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'',cuA=EN&&cu.addrEn||cu.addr||'',biE=(th,en)=>L==='bi'&&en&&en!==th?`<i class="en">${esc(en)}</i>`:'',st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
-  const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={m:0,l:0,t:0};order.push(i.g)}const g=G[i.g];g.m+=x.mt;g.l+=x.lt;g.t+=x.t});
-  const T=order.reduce((a,k)=>({m:a.m+G[k].m,l:a.l+G[k].l,t:a.t+G[k].t}),{m:0,l:0,t:0}),mk=sep&&Math.abs(c.lines-T.t)>0.005?c.lines-T.t:0,A=c.adds.filter(a=>a.v||a.name);
+  const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={e:0,m:0,l:0,t:0};order.push(i.g)}const g=G[i.g],e=eqs&&qmIsEq(i);g.e+=e?x.mt:0;g.m+=e?0:x.mt;g.l+=x.lt;g.t+=x.t});
+  const T=order.reduce((a,k)=>({e:a.e+G[k].e,m:a.m+G[k].m,l:a.l+G[k].l,t:a.t+G[k].t}),{e:0,m:0,l:0,t:0}),mk=sep&&Math.abs(c.lines-T.t)>0.005?c.lines-T.t:0,A=c.adds.filter(a=>a.v||a.name);
   const M=v=>Math.abs(v)<0.005?'<span class="dash">–</span>':fmt(v,2);
   const ttl=ma?t('ใบเสนอราคาบริการบำรุงรักษา','Maintenance Service Quotation'):t('ใบเสนอราคา','Quotation');
   // ---- header: colour bar, logo, company; title band and the number box
@@ -182,39 +191,44 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     :`<p class="qm-in">${L!=='en'?`บริษัทฯ มีความยินดีขอเสนอราคา${what}${pj?' สำหรับโครงการ '+pj:''} ตามรายละเอียดดังนี้`:''}${L!=='th'?`<i class="en"${L==='en'?' style="font-size:1em;color:inherit"':''}>We are pleased to submit our quotation${what?' for '+what:''}${pj?', '+pj:''}, as detailed below.</i>`:''}</p>`;
   // ---- tables
   const cols=w=>`<colgroup>${w.map(x=>`<col style="width:${x}%">`).join('')}</colgroup>`,fill=w=>{w[1]=100-w.reduce((a,b,i)=>i===1?a:a+b,0);return w};
-  const thD2=sp?`<tr class="ch"><th rowspan="2">${t('ลำดับ','No.')}</th><th rowspan="2">${t('รายการ','Description')}</th><th rowspan="2">${t('จำนวน','Qty')}</th><th rowspan="2">${t('หน่วย','Unit')}</th><th colspan="2">${t('ค่าวัสดุ','Material',1)}</th><th colspan="2">${t('ค่าแรง','Labour',1)}</th><th rowspan="2">${t('รวมเงิน','Amount')}</th></tr>
-      <tr class="ch2"><th>${tx('ราคา/หน่วย','Unit price')}</th><th>${tx('จำนวนเงิน','Total')}</th><th>${tx('ราคา/หน่วย','Unit price')}</th><th>${tx('จำนวนเงิน','Total')}</th></tr>`
+  const MG=eqs?['e','m','l']:sp?['m','l']:[],lab={e:t('ค่าเครื่อง','Equipment',1),m:t('ค่าวัสดุ','Material',1),l:t('ค่าแรง','Labour',1)};
+  const thD2=sp?`<tr class="ch"><th rowspan="2">${t('ลำดับ','No.')}</th><th rowspan="2">${t('รายการ','Description')}</th><th rowspan="2">${t('จำนวน','Qty')}</th><th rowspan="2">${t('หน่วย','Unit')}</th>${MG.map(k=>`<th colspan="2">${lab[k]}</th>`).join('')}<th rowspan="2">${t('รวมเงิน','Amount')}</th></tr>
+      <tr class="ch2">${MG.map(()=>`<th>${tx('ราคา/หน่วย','Unit price')}</th><th>${tx('จำนวนเงิน','Total')}</th>`).join('')}</tr>`
     :`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th><th>${t('ราคา/หน่วย','Unit price')}</th><th>${t('จำนวนเงิน','Amount')}</th></tr>`;
-  const nc=S0?(sp?7:5):sp?9:6,wD=S0?(sp?fill([7,0,9,8,15,15,16]):fill([7,0,10,9,18])):sp?fill([6,0,7,6,10,11,9,10,12]):fill([7,0,9,8,14,15]);
+  const nc=S0?5+MG.length:sp?5+2*MG.length:6,wD=S0?(eqs?fill([6,0,8,7,13,13,13,14]):sp?fill([7,0,9,8,15,15,16]):fill([7,0,10,9,18])):eqs?fill([5,0,6,5,8,9,8,9,7,8,10]):sp?fill([6,0,7,6,10,11,9,10,12]):fill([7,0,9,8,14,15]);
   // BOQ-S: every line with its quantity and unit, the money only on each section's row
-  const thS=`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th>${sp?`<th>${t('ค่าวัสดุ','Material')}</th><th>${t('ค่าแรง','Labour')}</th>`:''}<th>${t('จำนวนเงิน','Amount')}</th></tr>`;
+  const thS=`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th>${MG.map(k=>`<th>${lab[k]}</th>`).join('')}<th>${t('จำนวนเงิน','Amount')}</th></tr>`;
   const emp=k=>'<td></td>'.repeat(k);
   // detail lines: a section row, sub-heads from "head" (two levels split by " · "), the lines, and a subtotal per section
   const det=()=>{const body=[];let lg=null,lh=null,ls=null,gi=0,hi=0,li=0;
-    const sumG=(g)=>`<tr class="s"><td></td><td>${tx('รวม','Subtotal')} ${esc(gN(g))}${L==='bi'?'<i class="en il">Subtotal</i>':''}</td>${emp(2)}${sp?`<td></td><td class="r">${M(G[g].m)}</td><td></td><td class="r">${M(G[g].l)}</td>`:'<td></td>'}<td class="r">${fmt(G[g].t,2)}</td></tr>`;
-    Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${sp?`<td class="r">${M(G[i.g].m)}</td><td class="r">${M(G[i.g].l)}</td>`:''}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
+    const sumG=(g)=>`<tr class="s"><td></td><td>${tx('รวม','Subtotal')} ${esc(gN(g))}${L==='bi'?'<i class="en il">Subtotal</i>':''}</td>${emp(2)}${MG.length?MG.map(k=>`<td></td><td class="r">${M(G[g][k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(G[g].t,2)}</td></tr>`;
+    Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
       if(h1!==lh){lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
       if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
-      li++;const x=qLine(Q,i);let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
+      li++;const x=qLine(Q,i),E=eqs&&qmIsEq(i),V={e:[E?x.mu:0,E?x.mt:0],m:[E?0:x.mu,E?0:x.mt],l:[x.lu,x.lt]};let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
       if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi}
-      body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):sp?`<td class="r">${M(x.mu)}</td><td class="r">${M(x.mt)}</td><td class="r">${M(x.lu)}</td><td class="r">${M(x.lt)}</td>`:`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
+      body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):MG.length?MG.map(k=>`<td class="r">${M(V[k][0])}</td><td class="r">${M(V[k][1])}</td>`).join(''):`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
     if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));
-    body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${S0?(sp?`<td class="r">${M(T.m)}</td><td class="r">${M(T.l)}</td>`:''):sp?`<td></td><td class="r">${M(T.m)}</td><td></td><td class="r">${M(T.l)}</td>`:'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
+    body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${S0?MG.map(k=>`<td class="r">${M(T[k])}</td>`).join(''):MG.length?MG.map(k=>`<td></td><td class="r">${M(T[k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
     return body.join('')};
   const mini=`<tr class="rh"><th colspan="${nc}"><div class="qm-mini">${C.logo?`<img src="${C.logo}" alt="">`:`<b>${esc(C.name||'')}</b>`}<div><b>${t('บัญชีแสดงปริมาณงานและราคา','Bill of Quantities',1)}</b></div><span class="sp"></span><div class="no">${esc(Q.no||'')}${Q.ref?' · '+esc(Q.ref):''}<br>${esc([Q.pname,Q.title].filter(Boolean).join(' · '))}</div></div></th></tr>`;
   const detail=(withMini)=>`<table class="qm-t">${cols(wD)}<thead>${withMini?mini:''}${S0?thS:thD2}</thead><tbody>${det()}</tbody></table>`;
   // page-one summary by section
-  const summary=()=>{const w=sp?fill([7,0,17,17,18]):fill([7,0,20]);
-    const rows=order.map((g,k)=>`<tr><td class="n">${k+1}</td><td>${esc(gN(g))}</td>${sp?`<td class="r">${M(G[g].m)}</td><td class="r">${M(G[g].l)}</td>`:''}<td class="r">${fmt(G[g].t,2)}</td></tr>`).join('');
-    return `<table class="qm-t">${cols(w)}<thead><tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th>${sp?`<th>${t('ค่าวัสดุ','Material')}</th><th>${t('ค่าแรง','Labour')}</th>`:''}<th>${t('จำนวนเงิน','Amount')}</th></tr></thead>
-      <tbody>${rows}<tr class="tt"><td></td><td>${t('รวม','Total',1)}</td>${sp?`<td class="r">${M(T.m)}</td><td class="r">${M(T.l)}</td>`:''}<td class="r">${fmt(T.t,2)}</td></tr></tbody></table>`};
+  const summary=()=>{const w=eqs?fill([7,0,14,14,14,16]):sp?fill([7,0,17,17,18]):fill([7,0,20]);
+    const rows=order.map((g,k)=>`<tr><td class="n">${k+1}</td><td>${esc(gN(g))}</td>${MG.map(k=>`<td class="r">${M(G[g][k])}</td>`).join('')}<td class="r">${fmt(G[g].t,2)}</td></tr>`).join('');
+    return `<table class="qm-t">${cols(w)}<thead><tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th>${MG.map(k=>`<th>${lab[k]}</th>`).join('')}<th>${t('จำนวนเงิน','Amount')}</th></tr></thead>
+      <tbody>${rows}<tr class="tt"><td></td><td>${t('รวม','Total',1)}</td>${MG.map(k=>`<td class="r">${M(T[k])}</td>`).join('')}<td class="r">${fmt(T.t,2)}</td></tr></tbody></table>`};
   // ---- totals, amount in words, terms
   const tr=(k,v,cl)=>`<div${cl?` class="${cl}"`:''}><span>${k}</span><b>${v}</b></div>`;
   const totals=`<div class="qm-tot">${tr(t('รวมเป็นเงิน','Subtotal',1),fmt(mk||A.length?T.t:c.sub,2))}${mk?tr(t(`ค่าดำเนินการและกำไร ${fmt(n(Q.mk),2)}%`,`Overhead &amp; profit ${fmt(n(Q.mk),2)}%`,1),fmt(mk,2)):''}
     ${A.map(a=>tr(esc(a.name||''),fmt(a.v,2))).join('')}${mk||A.length?tr(t('รวม','Total',1),fmt(c.sub,2)):''}
     ${c.disc?tr(t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d')+tr(t('ยอดหลังหักส่วนลด','After discount',1),fmt(c.net,2)):''}${tr(t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2))}
     ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
+  // the part the customer withholds 3% on, in proportion to the amount before VAT (after markup, extras and discount)
+  const wb=eqs&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,wy=wb==null?0:c.net*wb/T.t,ww=wy*3/100;
+  const wht=wb==null?'':`<div class="qm-tot qm-wh">${tr(t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
+    ${tr(t('หักภาษี ณ ที่จ่าย 3% (โดยประมาณ)','Withholding tax 3% (approx.)',1),'-'+fmt(ww,2),'d')}${tr(t('ยอดรับสุทธิหลังหัก ณ ที่จ่าย','Net after withholding tax',1),fmt(c.grand-ww,2),'nt')}</div>`;
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
   const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
   const r2=(k,v)=>v?`<div class="row2"><span>${k}</span><div>${v}</div></div>`:'';
@@ -224,7 +238,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     ${pay.length?`<div><span style="color:var(--qg)">${t('การชำระเงิน','Payment',1)}</span><table class="pay"><thead><tr><th>${tx('งวด','No.')}</th><th>${tx('เมื่อ','When')}</th><th class="r">%</th><th class="r">${tx('จำนวนเงิน (รวม VAT)','Amount (incl. VAT)')}</th></tr></thead><tbody>
       ${pay.map((x,k)=>`<tr><td>${esc(x.no||String(k+1))}</td><td>${esc(x.desc||'')}</td><td class="r">${fmt(x.pct,0)}%</td><td class="r">${fmt(c.grand*n(x.pct)/100,2)}</td></tr>`).join('')}</tbody></table></div>`:''}
     ${notes.length?`<div><span style="color:var(--qg)">${t('หมายเหตุ','Notes',1)}</span><ol>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:''}</div>`;
-  const foot=`<div class="qm-ft">${terms}<div>${totals}${words}</div></div>`;
+  const foot=`<div class="qm-ft">${terms}<div>${totals}${wht}${words}</div></div>`;
   // ---- signatures: empty div.ln is where an e-signature goes
   const blank=EN?'Date ........ / ........ / ........':'วันที่ ........ / ........ / ........';
   const sgBox=(h,q,who,cl)=>`<div${cl?` class="${cl}"`:''}><h4>${h}</h4>${q?`<div class="q">${q}</div>`:''}<div class="sp"></div><div class="ln"></div><div class="who">${who}</div><div class="dt">${blank}</div></div>`;
@@ -276,6 +290,8 @@ function qmScope(Q,t,tx){if(typeof pmGuess!=='function'||typeof pmSysGet!=='func
   const xl=Q.look==='xl',f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
   const opts=`<label>ประเภทใบเสนอราคา${sel('kind',QM_KIND,Q.kind)}</label><label>หน้าตาเอกสาร${sel('look',QM_LOOK,Q.look)}</label><label>ภาษาในเอกสาร${sel('lang',QM_LANG,Q.lang)}</label>
     <label class="chk" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="${b}.one"${Q.one?' checked':''}${xl||qmMa(Q)?' disabled':''}> ใบสั้น: รายการทั้งหมดอยู่หน้าเดียวกับยอดรวมและลายเซ็น (ไม่แยกแผ่น BOQ)</label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="${b}.eqSep"${Q.eqSep?' checked':''}${xl||qmMa(Q)||fixed?' disabled':''}> แยกค่าเครื่อง: พิมพ์ ค่าเครื่อง / ค่าวัสดุ / ค่าแรง แยกกัน (ติ๊กว่ารายการไหนเป็นเครื่องได้ในตารางรายการ)</label>
+    ${Q.eqSep&&!xl?`<label>หัก ณ ที่จ่าย 3% คิดจาก${sel('whtB',QM_WHT,Q.whtB)}</label>`:''}
     ${fixed&&!xl?'<small class="hint" style="flex-basis:100%;margin:0">BOQ-G (ปร.4) และ BOQ-E พิมพ์แบบ Excel เดิมเสมอ เพราะรูปแบบกำหนดไว้แล้ว</small>':''}${xl?'<small class="hint" style="flex-basis:100%;margin:0">แบบ Excel เดิมพิมพ์ภาษาไทยตามต้นฉบับ ภาษาและใบสั้นใช้กับแบบ ORIEN Modern</small>':''}`;
   h=h.replace(`<label>แบบฟอร์ม BOQ ที่พิมพ์`,opts+`<label>แบบฟอร์ม BOQ ที่พิมพ์`);
   if(qmMa(Q)){h=h.replace(/(<button type="button" class="btn sm pri" data-a=")(?:qWonDlg|qWon)(" data-id="[^"]+">)[^<]*(<\/button>)/,(_,a,c,d)=>`${a}qmaWon${c}${Q.svc&&C.svc.some(s=>s.id===Q.svc)?'เปิดสัญญาบริการ':'ได้งาน → สร้างสัญญาบริการ'}${d}`);
@@ -334,3 +350,10 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ปร�
   'สัญญาบริการบำรุงรักษา (PM/MA)':'Maintenance service contract (PM/MA)','เริ่มสัญญา':'Contract start','ระยะสัญญา (เดือน)':'Term (months)','เข้าบำรุงรักษา (ครั้ง/ปี)':'PM visits a year',
   'เมื่อแจ้งเสีย':'Breakdown call','เวลาให้บริการ':'Service hours','อะไหล่':'Spare parts','เครื่อง / ระบบ':'Equipment / system','ครั้ง/ปี':'Visits/yr','ราคา/หน่วย/ครั้ง':'Per unit per visit',
   'ราคาต่อปี':'Per year','+ เพิ่มเครื่อง / ระบบ':'+ Add equipment / system','เพิ่มระบบนี้':'Add this system','ได้งาน → สร้างสัญญาบริการ':'Won → make a service contract','+ ใบเสนอราคาบริการ PM/MA':'+ PM/MA service quotation','เปิดสัญญาบริการ':'Open the service contract'});
+
+// 4.14 a won quote with ค่าเครื่อง split: the new project's withholding rate covers only the withheld part (3% × its share of the
+// price), so its claims and invoices deduct the right amount
+const qmWhtShare=Q=>{let a=0,w=0;Q.items.forEach(i=>{const x=qLine(Q,i);a+=x.t;w+=Q.whtB==='l'?x.lt:(qmIsEq(i)?0:x.mt)+x.lt});return a>0?w/a:1};
+{const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);
+  if(!Q||had||!Q.eqSep||Q.whtB==='none'||qmMa(Q))return;const p=Q.pj&&DB.projects[Q.pj];if(!p)return;
+  p.info.wht=Math.round(3*qmWhtShare(Q)*1000)/1000;save();toast(`หัก ณ ที่จ่ายของโครงการ ${fmt(p.info.wht,3)}% (3% เฉพาะส่วนที่ไม่ใช่ค่าเครื่อง)`)}}
