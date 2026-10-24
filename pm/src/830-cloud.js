@@ -151,7 +151,7 @@ function licGateView(){const ph=typeof mobileMode==='function'&&mobileMode(),c=(
 // "ข้ามไปก่อน" no longer leaves an empty company open for use
 {const f=welcomeView;welcomeView=function(){const h=f.apply(this,arguments);return DEMOPG||DB.co.lic?h:h.replace(/<p style="margin-top:14px"><button type="button" class="btn ghost sm" data-a="wlSkip">[^<]*<\/button><\/p>/,'')}}
 {const r=render;render=function(){const x=r.apply(this,arguments);try{if(typeof DB==='undefined'||!DB||!licGate()||(typeof pinOn==='function'&&pinOn()&&!authOK()))return x;
-  const v=$('#view');if(!v||v.querySelector('.wl'))return x;v.innerHTML=licGateView()}catch(e){console.error(e)}return x}}
+  const v=$('#view');if(!v||v.querySelector('#licGate'))return x;v.innerHTML=licGateView()}catch(e){console.error(e)}return x}}
 
 // 3.55 a new place on the cloud needs a valid, current activation code (ORIEN's own data, which has records and no code, may move too)
 // records, not just a typed company name

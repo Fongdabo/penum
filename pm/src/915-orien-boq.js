@@ -16,7 +16,8 @@ ACT.qXl=async b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),I=b.dataset.v
     toast(await download(nm,orienBoq.bytes(X,wb),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')?(I?'ดาวน์โหลด Excel ฉบับภายในแล้ว มีราคาทุน อย่าส่งให้ลูกค้า':'ดาวน์โหลด Excel แบบ ORIEN แล้ว ส่งให้ลูกค้าได้เลย'):'ดาวน์โหลดไม่สำเร็จ')}
   catch(e){toast(e.message||'ทำไฟล์ Excel ไม่สำเร็จ')}};
 
-/* ---- print: ฉบับภายใน (cost, price and profit of every line) ---- */
+/* ---- print: ฉบับภายใน (cost, price and profit of every line) ----
+   Ten columns: printed on a landscape A4 so the item name keeps a third of the width and nothing runs off the right edge. */
 PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},R='class="r"';
   const G={},order=[];let lg=null;const body=[];
   Q.items.forEach(i=>{const q=n(i.q),base=n(i.m)+n(i.l),cu_=base||(q?n(i.t)/q:0),u=qUnit(Q,i),ct=q*cu_,st=q*u,g=G[i.g]=G[i.g]||{c:0,s:0};g.c+=ct;g.s+=st;
@@ -29,7 +30,7 @@ PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';cons
   <table><thead><tr><th>รายการ</th><th>หน่วย</th><th ${R}>จำนวน</th><th ${R}>ทุนวัสดุ/หน่วย</th><th ${R}>ทุนค่าแรง/หน่วย</th><th ${R}>รวมทุน</th><th ${R}>ราคาขาย/หน่วย</th><th ${R}>รวมราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>${body.join('')}</tbody></table>
   <table class="obi-s"><tbody>${row('ต้นทุนรวม (วัสดุ + ค่าแรง)',fmt(c.cost,2))}${row('ราคาขายตามรายการ',fmt(c.lines,2))}${A.map(a=>row(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')}
     ${c.disc?row('ส่วนลด','-'+fmt(c.disc,2)):''}${row('ราคาเสนอ ไม่รวม VAT',fmt(c.net,2),1)}${row('กำไรขั้นต้น',`${fmt(gp,2)} (${c.net?fmt(gp*100/c.net,1):0}%)`,1)}${row('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${row('รวมทั้งสิ้น',fmt(c.grand,2))}</tbody></table>
-  <style>#print .obi{font-size:11px}#print .obi h1{font-size:17px;margin:4px 0}#print .obi-w{border:2px solid #b42318;color:#b42318;font-weight:700;text-align:center;padding:3px;margin:0 0 6px;font-size:12.5px}
+  <style>@page{size:A4 landscape;margin:10mm}#print .obi{font-size:11px}#print .obi table:not(.obi-s) th:first-child{width:30%}#print .obi table:not(.obi-s) td:first-child{word-break:normal;overflow-wrap:anywhere}#print .obi h1{font-size:17px;margin:4px 0}#print .obi-w{border:2px solid #b42318;color:#b42318;font-weight:700;text-align:center;padding:3px;margin:0 0 6px;font-size:12.5px}
   #print .obi table{width:100%;border-collapse:collapse;margin-top:8px}#print .obi th,#print .obi td{border:1px solid #999;padding:2px 5px}#print .obi td.r,#print .obi th.r{text-align:right;white-space:nowrap}
   #print .obi tr.obg td{background:#eef2f1;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print .obi tr.obs td{font-weight:700;background:#fafafa}
   #print .obi table.obi-s{width:55%;margin-left:auto}#print .obi tr.tot td{font-weight:700}</style></div>`};
