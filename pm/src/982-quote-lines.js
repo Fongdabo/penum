@@ -5,6 +5,15 @@
    960-price-library.js), and picking one fills the unit and the costs. A line's cost is i.t (qUnit reads it), so a change to the
    quantity or the costs keeps i.t = quantity × cost per unit. Service (PM/MA) quotes keep their own card (981). */
 const QL_G=()=>[...Object.entries(BOQ_G),['mat','วัสดุก่อสร้างทั่วไป']];
+// 4.9 the air-con section by system (user: "ระบบปรับอากาศ ควรแยกไหม เช่น CHILLER, VRF"): a second box picks the system, the
+// suggestions show only its products, and the line keeps the system in i.head, so the printout gets a sub-heading per system.
+// A product's system comes from its name (checked in this order); a past quote line keeps the one it was added under.
+const QL_SYS=[['vrf','ระบบ VRF / VRV',/vrf|vrv|refnet|branch joint/i],['package','ระบบแพ็คเกจ (Package / Rooftop)',/package|rooftop|แพ็คเกจ/i],
+  ['split','ระบบแยกส่วน (Split Type)',/split|แอร์|เครื่องปรับอากาศ|cassette|floor standing|wall type|ceiling type|support (fcu|cdu)/i],
+  ['chiller','ระบบชิลเลอร์ (Chiller)',/chiller|ชิลเลอร์|\bahu\b|\bfcu\b|fan coil|cooling tower|หอผึ่งเย็น|ปั๊มน้ำ|น้ำเย็น/i],
+  ['vent','ระบบระบายอากาศ (Ventilation)',/พัดลม|\bfan\b|exhaust|ระบายอากาศ|\berv\b|fresh air|อากาศบริสุทธิ์/i]];
+const qlSys=x=>{if(x.sys)return x.sys;const t=[x.name,x.br].filter(Boolean).join(' '),r=QL_SYS.find(y=>y[2].test(t));return r?r[0]:''};
+const qlSysL=k=>(QL_SYS.find(y=>y[0]===k)||[])[1]||'';
 const qlLab=x=>[x.name,x.br].filter(Boolean).join(' · ');
 // 4.3 sample products with assumed prices (material, labour per unit, excl. VAT) for the sections MEP has no rates for; ORIEN
 // should replace them with real prices. They also go into the price library with "ราคาตัวอย่าง".
@@ -32,25 +41,31 @@ const QL_SEED=[
  ['mg','สัญญาณเตือนแรงดันก๊าซ (Area Alarm)','ชุด',35000,3000],['mg','ท่อทองแดงทางการแพทย์ 1/2"','ม.',380,250],
  // air conditioners by type and size (one set = indoor + outdoor unit, standard installation)
  ['eq','แอร์ติดผนัง (Wall Type) Inverter 9,000 BTU','ชุด',13500,2500],['eq','แอร์ติดผนัง (Wall Type) Inverter 12,000 BTU','ชุด',16500,2500],['eq','แอร์ติดผนัง (Wall Type) Inverter 18,000 BTU','ชุด',24000,3000],['eq','แอร์ติดผนัง (Wall Type) Inverter 24,000 BTU','ชุด',31000,3500],['eq','แอร์แขวนใต้ฝ้า (Ceiling Type) Inverter 18,000 BTU','ชุด',30000,3500],['eq','แอร์แขวนใต้ฝ้า (Ceiling Type) Inverter 24,000 BTU','ชุด',36000,4000],['eq','แอร์แขวนใต้ฝ้า (Ceiling Type) Inverter 36,000 BTU','ชุด',48000,4500],['eq','แอร์แขวนใต้ฝ้า (Ceiling Type) Inverter 48,000 BTU','ชุด',60000,5000],
- ['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 18,000 BTU','ชุด',34000,4000],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 24,000 BTU','ชุด',40000,4500],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 36,000 BTU','ชุด',52000,5000],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 48,000 BTU','ชุด',64000,5500],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 36,000 BTU','ชุด',50000,4500],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 48,000 BTU','ชุด',62000,5000],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 60,000 BTU','ชุด',75000,5500]];
+ ['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 18,000 BTU','ชุด',34000,4000],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 24,000 BTU','ชุด',40000,4500],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 36,000 BTU','ชุด',52000,5000],['eq','แอร์ฝังฝ้า 4 ทิศทาง (Cassette Type) Inverter 48,000 BTU','ชุด',64000,5500],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 36,000 BTU','ชุด',50000,4500],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 48,000 BTU','ชุด',62000,5000],['eq','แอร์ตั้งพื้น (Floor Standing) Inverter 60,000 BTU','ชุด',75000,5500],
+ // 4.9 products for the VRF, chiller, package and ventilation systems
+ ['eq','VRF เครื่องภายใน Cassette 4 ทิศทาง 2.8 kW','เครื่อง',38000,3500],['eq','VRF เครื่องภายใน Ceiling Concealed (Duct) 5.6 kW','เครื่อง',42000,4500],['eq','VRF เครื่องภายใน Wall Type 2.2 kW','เครื่อง',26000,3000],['eq','VRF ข้อต่อแยกน้ำยา (Refnet / Branch joint)','ชุด',2800,600],['eq','VRF รีโมทคอนโทรลแบบมีสาย','ชุด',3500,500],['eq','VRF ชุดควบคุมส่วนกลาง (Central Controller)','ชุด',45000,5000],
+ ['eq','Fan Coil Unit (FCU) ระบบน้ำเย็น 400 CFM','เครื่อง',18000,3500],['eq','Fan Coil Unit (FCU) ระบบน้ำเย็น 800 CFM','เครื่อง',26000,4000],['eq','ปั๊มน้ำเย็น (CHW Pump) 15 kW','ชุด',185000,25000],['eq','ชุดควบคุมชิลเลอร์ (Chiller Plant Manager)','ชุด',350000,40000],['eq','Package Rooftop 10 TR','เครื่อง',220000,25000],['eq','Package Rooftop 20 TR','เครื่อง',410000,35000],
+ ['eq','พัดลมระบายอากาศติดผนัง 10 นิ้ว','ตัว',1800,500],['eq','พัดลมดูดอากาศติดเพดาน (Ceiling Exhaust Fan)','ตัว',1500,600],['eq','พัดลมระบายอากาศ Inline Duct Fan 8 นิ้ว','ตัว',4500,1200],['eq','พัดลมระบายอากาศ Centrifugal 3,000 CMH','ชุด',28000,4500],['eq','เครื่องเติมอากาศบริสุทธิ์ (ERV) 500 CMH','ชุด',38000,5000]];
 const qlSeedRows=()=>QL_SEED.map(([g,name,unit,m,l],k)=>({key:'ql:'+g+k,g,name,unit,m,l}));
 {const f=ACT.plSeed;if(f)ACT.plSeed=()=>{try{plMerge(qlSeedRows(),{src:'ราคาสมมติ (ตัวอย่าง ORIEN)',sk:'demo',keep:1})}catch(e){}return f()}}
 // what can be picked: the price library (or MEP's sample rates while it is empty), sample products not in it yet, then lines sold on
 // earlier quotations; each keeps its section (g) so the list follows the section chosen
 const qlLib=()=>{let L=[];try{L=typeof plCfg==='function'?plCfg():[];if(!L.length&&typeof plSeedRows==='function')L=plSeedRows()}catch(e){L=[]}
   const seen=new Set(L.map(x=>qlLab(x))),R=L.slice();qlSeedRows().forEach(x=>{if(!seen.has(x.name)){seen.add(x.name);R.push(Object.assign(x,{seed:1}))}});
-  CO().quotes.slice().reverse().forEach(q=>(q.items||[]).forEach(i=>{const k=String(i.desc||'').trim();if(!k||seen.has(k)||!(n(i.m)+n(i.l)))return;seen.add(k);R.push({name:k,g:i.g,unit:i.unit||'',m:n(i.m),l:n(i.l),past:1})}));return R};
+  CO().quotes.slice().reverse().forEach(q=>(q.items||[]).forEach(i=>{const k=String(i.desc||'').trim();if(!k||seen.has(k)||!(n(i.m)+n(i.l)))return;seen.add(k);R.push({name:k,g:i.g,unit:i.unit||'',m:n(i.m),l:n(i.l),past:1,sys:(QL_SYS.find(y=>y[1]===i.head)||[])[0]})}));return R};
 // one datalist per section (and one with everything); ids by position, since a section key can be any text
 const qlDl=(L,gs)=>{const ix={},o=x=>`<option value="${esc(qlLab(x))}">${esc([x.unit,n(x.m)+n(x.l)?fmt(n(x.m)+n(x.l),2):'',x.seed?'ราคาตัวอย่าง':x.past?'เคยเสนอ':''].filter(Boolean).join(' · '))}</option>`;
-  gs.forEach((g,k)=>ix[g]='qlL'+k);return {id:g=>S.sel.qlAll?'qlLall':ix[g]||'qlLall',html:gs.map(g=>`<datalist id="${ix[g]}">${L.filter(x=>(x.g||'')===g).slice(0,1500).map(o).join('')}</datalist>`).join('')+`<datalist id="qlLall">${L.slice(0,3000).map(o).join('')}</datalist>`,
-    count:g=>S.sel.qlAll?L.length:L.filter(x=>(x.g||'')===g).length}};
+  const ac=s=>L.filter(x=>(x.g||'')==='eq'&&qlSys(x)===s);
+  gs.forEach((g,k)=>ix[g]='qlL'+k);return {id:(g,s)=>S.sel.qlAll?'qlLall':g==='eq'&&s?'qlLs_'+s:ix[g]||'qlLall',html:gs.map(g=>`<datalist id="${ix[g]}">${L.filter(x=>(x.g||'')===g).slice(0,1500).map(o).join('')}</datalist>`).join('')+QL_SYS.map(([s])=>`<datalist id="qlLs_${s}">${ac(s).map(o).join('')}</datalist>`).join('')+`<datalist id="qlLall">${L.slice(0,3000).map(o).join('')}</datalist>`,
+    count:(g,s)=>S.sel.qlAll?L.length:g==='eq'&&s?ac(s).length:L.filter(x=>(x.g||'')===g).length}};
 const qlPh=k=>k?`พิมพ์ชื่อสินค้า หรือเลือกจากรายการ${S.sel.qlAll?'ทุกหมวด':'ของหมวดนี้'} (${fmt(k)} รายการ)`:'หมวดนี้ยังไม่มีสินค้าในคลัง พิมพ์ชื่อเองได้ หรือติ๊ก “ค้นทุกหมวด”';
 // the section picker switches the suggestions without redrawing the page
-document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.id!=='qlAll'))return;
-  if(t.id==='qlAll'){S.sel.qlAll=t.checked;render();return}S.sel.qlG=t.value;
-  const o=t.selectedOptions&&t.selectedOptions[0],i=$('#qlName');if(i&&o&&o.dataset.dl){i.setAttribute('list',o.dataset.dl);i.placeholder=qlPh(+o.dataset.n)}});
+document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.id!=='qlAll'&&t.id!=='qlS'))return;
+  if(t.id==='qlAll'){S.sel.qlAll=t.checked;render();return}
+  let o=t.selectedOptions&&t.selectedOptions[0];const i=$('#qlName'),sy=$('#qlS');
+  if(t.id==='qlS')S.sel.qlS=t.value;else{S.sel.qlG=t.value;if(sy){sy.style.display=t.value==='eq'?'':'none';if(t.value==='eq')o=sy.selectedOptions[0]}}if(i&&o&&o.dataset.dl){i.setAttribute('list',o.dataset.dl);i.placeholder=qlPh(+o.dataset.n)}});
 function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0]),GA=[...new Set([...G0,...Q.items.map(i=>i.g),...L.map(x=>x.g||'')])],D=qlDl(L,GA);let lg=null;
-  const rows=Q.items.map(i=>{const h=i.g!==lg?`<tr class="grp"><td colspan="9">${esc(gName(i.g))}</td></tr>`:'';lg=i.g;const u=qUnit(Q,i),pre=[i.head,i.type].filter(Boolean).join(' · ');
+  let lh=null;const rows=Q.items.map(i=>{const ng=i.g!==lg,h=(ng?`<tr class="grp"><td colspan="9">${esc(gName(i.g))}</td></tr>`:'')+(i.head&&(ng||i.head!==lh)?`<tr class="grp"><td colspan="9" style="padding-left:24px;font-weight:600;opacity:.85">${esc(i.head)}</td></tr>`:'');lg=i.g;lh=i.head||'';const u=qUnit(Q,i),pre=i.type||'';
     return h+`<tr><td style="min-width:240px">${pre?`<small class="muted" style="display:block">${esc(pre)}</small>`:''}<input data-p="${b}.items.${i.id}.desc" value="${esc(i.desc||'')}" list="${D.id(i.g)}" placeholder="ชื่อสินค้า / รายการ" aria-label="รายการ"></td>
     <td style="width:86px"><input data-p="${b}.items.${i.id}.unit" value="${esc(i.unit||'')}" aria-label="หน่วย"></td><td style="width:86px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.q" value="${n(i.q)}" aria-label="จำนวน"></td>
     <td style="width:110px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.m" value="${n(i.m)||''}" placeholder="0" aria-label="ค่าของต่อหน่วย"></td><td style="width:100px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.l" value="${n(i.l)||''}" placeholder="0" aria-label="ค่าแรงต่อหน่วย"></td>
@@ -59,8 +74,9 @@ function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0])
   const gs=QL_G(),last=Q.items.length?Q.items[Q.items.length-1].g:(S.sel.qlG||'eq'),gsel=S.sel.qlG||last;
   return `<div class="tw" style="max-height:620px;overflow:auto"><table class="ql-t"><thead><tr><th>รายการ</th><th>หน่วย</th><th class="r">จำนวน</th><th class="r">ค่าของ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">ราคาเสนอ/หน่วย</th><th class="r">รวม</th><th></th></tr></thead>
     <tbody>${rows||'<tr><td colspan="8" class="empty">ยังไม่มีรายการ พิมพ์หรือเลือกสินค้าในช่องด้านล่าง แล้วกด “+ เพิ่มรายการ”</td></tr>'}</tbody></table></div>
-  <div class="ql-add"><select id="qlG" aria-label="หมวด">${gs.map(([k,l])=>`<option value="${k}" data-dl="${D.id(k)}" data-n="${D.count(k)}"${k===gsel?' selected':''}>${esc(l)}</option>`).join('')}${Q.items.some(i=>!BOQ_G[i.g]&&i.g!=='mat')?[...new Set(Q.items.map(i=>i.g).filter(g=>!BOQ_G[g]&&g!=='mat'))].map(g=>`<option value="${esc(g)}" data-dl="${D.id(g)}" data-n="${D.count(g)}"${g===gsel?' selected':''}>${esc(gName(g))}</option>`).join(''):''}</select>
-    <input id="qlName" list="${D.id(gsel)}" placeholder="${qlPh(D.count(gsel))}" aria-label="ชื่อสินค้าหรือรายการ"><input id="qlQ" class="r" inputmode="decimal" value="1" aria-label="จำนวน" style="width:80px">
+  <div class="ql-add"><select id="qlG" aria-label="หมวด">${gs.map(([k,l])=>`<option value="${k}" data-dl="${D.id(k,k==='eq'?S.sel.qlS:'')}" data-n="${D.count(k,k==='eq'?S.sel.qlS:'')}"${k===gsel?' selected':''}>${esc(l)}</option>`).join('')}${Q.items.some(i=>!BOQ_G[i.g]&&i.g!=='mat')?[...new Set(Q.items.map(i=>i.g).filter(g=>!BOQ_G[g]&&g!=='mat'))].map(g=>`<option value="${esc(g)}" data-dl="${D.id(g)}" data-n="${D.count(g)}"${g===gsel?' selected':''}>${esc(gName(g))}</option>`).join(''):''}</select>
+    <select id="qlS" aria-label="ระบบปรับอากาศ"${gsel==='eq'?'':' style="display:none"'}><option value="" data-dl="${D.id('eq')}" data-n="${D.count('eq')}">ทุกระบบ</option>${QL_SYS.map(([s,l])=>`<option value="${s}" data-dl="${D.id('eq',s)}" data-n="${D.count('eq',s)}"${S.sel.qlS===s?' selected':''}>${esc(l)}</option>`).join('')}</select>
+    <input id="qlName" list="${D.id(gsel,gsel==='eq'?S.sel.qlS:'')}" placeholder="${qlPh(D.count(gsel,gsel==='eq'?S.sel.qlS:''))}" aria-label="ชื่อสินค้าหรือรายการ"><input id="qlQ" class="r" inputmode="decimal" value="1" aria-label="จำนวน" style="width:80px">
     <button type="button" class="btn sm pri" data-a="qlAdd" data-id="${Q.id}">+ เพิ่มรายการ</button><label class="chk" style="display:flex;gap:4px;align-items:center;font-size:13px"><input type="checkbox" id="qlAll"${S.sel.qlAll?' checked':''}> ค้นทุกหมวด</label>
     <span class="hint" style="margin:0">ราคาเสนอว่างไว้ = ต้นทุน (ของ+แรง) บวก ${fmt(n(Q.mk),1)}% · ราคาทุนมาจากคลังราคากลางและรายการที่เคยเสนอ (เพิ่มสินค้าในคลังได้ที่ ประมาณราคา › คลังราคากลาง)</span></div>
   ${D.html}`}
@@ -69,9 +85,10 @@ const qlFind=s=>{const k=String(s||'').trim();if(!k)return null;const L=qlLib();
 const qlCost=i=>{const u=n(i.m)+n(i.l);if(u)i.t=Math.round(n(i.q)*u*100)/100};
 ACT.qlAdd=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;const nm=($('#qlName')||{}).value||'',g=($('#qlG')||{}).value||'eq',q=n(($('#qlQ')||{}).value)||1,x=qlFind(nm);
   if(!nm.trim()){toast('พิมพ์ชื่อสินค้าหรือรายการก่อน');const e=$('#qlName');if(e)e.focus();return}
-  const it={id:uid(),g,head:'',type:'',desc:x?qlLab(x):nm.trim(),unit:x?x.unit||'':'',q,m:x?n(x.m):0,l:x?n(x.l):0,t:0,sp:''};qlCost(it);
+  const sy=g==='eq'?(S.sel.qlS||qlSys(x||{name:nm})):'';
+  const it={id:uid(),g,head:qlSysL(sy),type:'',desc:x?qlLab(x):nm.trim(),unit:x?x.unit||'':'',q,m:x?n(x.m):0,l:x?n(x.l):0,t:0,sp:''};qlCost(it);
   // a new line goes after the last line of its section, so sections stay together on the printout
-  let k=-1;Q.items.forEach((i,j)=>{if(i.g===g)k=j});if(k<0)Q.items.push(it);else Q.items.splice(k+1,0,it);
+  let k=-1,kh=-1;Q.items.forEach((i,j)=>{if(i.g===g){k=j;if((i.head||'')===it.head)kh=j}});if(kh>=0)k=kh;if(k<0)Q.items.push(it);else Q.items.splice(k+1,0,it);
   S.sel.qlG=g;save();render();setTimeout(()=>{const e=$('#qlName');if(e)e.focus()},30);
   toast(x?`เพิ่ม “${it.desc}” ${x.seed?'ราคาตัวอย่าง แก้เป็นราคาจริงได้ในตาราง':x.past?'ราคาทุนตามที่เคยเสนอ':'ราคาทุนจากคลังราคา'}${it.m+it.l?'':' (ยังไม่มีราคา ใส่ได้ในตาราง)'}`:`เพิ่ม “${it.desc}” แล้ว ใส่หน่วยและราคาในตาราง`)};
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&(e.target.id==='qlName'||e.target.id==='qlQ')){e.preventDefault();const b=document.querySelector('[data-a="qlAdd"]');if(b)ACT.qlAdd(b)}});
@@ -91,7 +108,7 @@ document.head.insertAdjacentHTML('beforeend',`<style>.ql-t td input{width:100%;m
 .ql-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;padding:10px;border:1px dashed var(--line);border-radius:12px;background:var(--sunk)}
 .ql-add select{max-width:230px}.ql-add #qlName{flex:1;min-width:240px}.ql-add .hint{flex-basis:100%}</style>`);
 if(typeof SBKW==='object')SBKW['co.sales.quote']=(SBKW['co.sales.quote']||'')+' เพิ่มรายการ สินค้า พิมพ์รายการเอง คลังราคา';
-if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ชื่อลูกค้า (อังกฤษ)':'Customer name (English)','ที่อยู่ (อังกฤษ)':'Address (English)','+ เพิ่มรายการ':'+ Add line','ค่าของ/หน่วย':'Material/unit','ค่าแรง/หน่วย':'Labour/unit','ราคาเสนอ/หน่วย':'Price/unit','วัสดุก่อสร้างทั่วไป':'General building materials','งานระบบแจ้งเหตุเพลิงไหม้':'Fire alarm system','งานระบบสื่อสาร':'Communication system','งานระบบกล้องวงจรปิด (CCTV)':'CCTV system','งานระบบควบคุมการเข้า-ออก':'Access control system','งานระบบเสียงประกาศ':'Public address system','งานระบบควบคุมอาคารอัตโนมัติ (BMS)':'Building management system (BMS)','งานระบบป้องกันฟ้าผ่าและสายดิน':'Lightning protection & earthing','งานเครื่องกำเนิดไฟฟ้าและ UPS':'Generator & UPS','งานระบบโซลาร์เซลล์':'Solar PV system','งานระบบบำบัดน้ำเสีย':'Wastewater treatment','งานระบบก๊าซทางการแพทย์':'Medical gas system'});
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ทุกระบบ':'All systems','ชื่อลูกค้า (อังกฤษ)':'Customer name (English)','ที่อยู่ (อังกฤษ)':'Address (English)','+ เพิ่มรายการ':'+ Add line','ค่าของ/หน่วย':'Material/unit','ค่าแรง/หน่วย':'Labour/unit','ราคาเสนอ/หน่วย':'Price/unit','วัสดุก่อสร้างทั่วไป':'General building materials','งานระบบแจ้งเหตุเพลิงไหม้':'Fire alarm system','งานระบบสื่อสาร':'Communication system','งานระบบกล้องวงจรปิด (CCTV)':'CCTV system','งานระบบควบคุมการเข้า-ออก':'Access control system','งานระบบเสียงประกาศ':'Public address system','งานระบบควบคุมอาคารอัตโนมัติ (BMS)':'Building management system (BMS)','งานระบบป้องกันฟ้าผ่าและสายดิน':'Lightning protection & earthing','งานเครื่องกำเนิดไฟฟ้าและ UPS':'Generator & UPS','งานระบบโซลาร์เซลล์':'Solar PV system','งานระบบบำบัดน้ำเสีย':'Wastewater treatment','งานระบบก๊าซทางการแพทย์':'Medical gas system'});
 // 4.2 more systems (CCTV, fire alarm, communication, access control, PA, BMS, lightning, generator/UPS, solar, wastewater,
 // medical gas): headings written other ways in a pasted or imported BOQ find their section too
 if(typeof G_ALIAS==='object')G_ALIAS.unshift([/กล้องวงจรปิด|CCTV/i,'cctv'],[/แจ้งเหตุเพลิงไหม้|fire ?alarm/i,'fa'],[/ควบคุมการเข้า|access ?control|คีย์การ์ด/i,'acc'],
