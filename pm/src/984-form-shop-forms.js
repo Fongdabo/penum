@@ -107,7 +107,7 @@ FS_FORMS.push(
         :['ชำระค่าบริการแต่ละงวดภายใน 30 วันนับจากวันที่ได้รับใบแจ้งหนี้','สัญญาต่ออายุคราวละ 1 ปี เว้นแต่ฝ่ายใดแจ้งเลิกเป็นหนังสือล่วงหน้า 30 วัน','ราคาคงที่ตลอดอายุสัญญา',Q.maParts==='all'?'รวมค่าอะไหล่ตามรายการในสัญญานี้':'อะไหล่ที่ต้องเปลี่ยนจะเสนอราคาให้อนุมัติก่อนทุกครั้ง','ยกเลิกสัญญาได้โดยแจ้งล่วงหน้า 30 วัน เดือนที่ให้บริการแล้วชำระตามจริง'];
       const cls=`<div class="fs-sec"><h3>${X.t('ข้อสัญญา','Contract terms')}</h3><ol style="margin:0;padding-left:16px">${cl.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`;
       const kpi=`<div class="fs-kpi"><div><span>${X.t('ระยะสัญญา','Contract term',1)}</span><b>${X.EN?m+' months':m+' เดือน'}</b></div><div class="hi"><span>${X.t('ผ่อนเดือนละ (รวม VAT)','Monthly (incl. VAT)',1)}</span><b>${fmt(per,2)}</b></div><div><span>${X.t('รวมทั้งสัญญา (รวม VAT)','Whole contract (incl. VAT)',1)}</span><b>${fmt(X.c.grand,2)}</b></div></div>`;
-      return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,bill+cls),kpi),'#15803D')}},
+      return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,cls),kpi),'#15803D')}},
   {id:'ma-visit',g:'ma',k:'ma',n:'อัตราค่าบริการต่อครั้ง',d:'ใบเสนออัตราค่าบริการต่อเครื่องต่อครั้ง สำหรับลูกค้าที่เรียกใช้เมื่อต้องการ ไม่ผูกสัญญา',p:690,col:'#4338CA',
     inp:[['maCall','ค่าเดินทางต่อครั้ง (บาท)','num'],['maHour','ค่าแรงซ่อมนอกรายการ ชั่วโมงละ (บาท)','num'],['maMin','ค่าบริการขั้นต่ำต่อครั้ง (บาท)','num']],
     pr:Q=>{const X=fsCtx(Q),{t,tx}=X,call=n(Q.maCall),rows=Q.items.map((i,k)=>{const u=qmPerVisit(Q,i);return {i,u,a:n(i.q)*u}}),sub=sum(rows,r=>r.a),base=Math.max(sub+call,n(Q.maMin)),vat=base*0.07;
@@ -132,7 +132,7 @@ FS_FORMS.push(
 </div>`;
       const kpi=`<div class="fs-kpi"><div><span>${t('วงเงินอะไหล่ต่อปี','Parts limit a year',1)}</span><b>${n(Q.maCap)?fmt(Q.maCap,0)+tx(' บาท',''):tx('ไม่จำกัด','No limit')}</b></div>
           <div><span>${t('เมื่อแจ้งเสีย','Breakdown call',1)}</span><b>${esc(Q.maResp||tx('ภายใน 24 ชั่วโมง','Within 24 hours'))}</b></div><div class="hi"><span>${t('ซ่อมเสร็จภายใน','Repaired within',1)}</span><b>${esc(Q.maFix||tx('48 ชั่วโมงหลังเข้าตรวจ','48 hours after inspection'))}</b></div></div>`;
-      return fsTint(fsTop(fsBefore(qmPrint(Object.assign({},Q,{maParts:'all'})),fsSigns,cov),kpi),'#7E22CE')}});
+      return fsTint(fsTop(qmPrint(Object.assign({},Q,{maParts:'all'})),kpi),'#7E22CE')}});
 
 // ===== installation quotations
 // ต่อเติม / รีโนเวท: for home owners and small shops: what is done in each part, one price per line, the instalments in big boxes
@@ -160,12 +160,12 @@ FS_FORMS.push(
       const dsec=`<div class="fs-sec"><h3>${t('สิ่งที่ส่งมอบในงานออกแบบ','Design deliverables')}</h3><ul>${DL.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
       const tt=X.tot([[t('งานออกแบบ','Design',1),fmt(tD*k,2)],[t('งานก่อสร้าง','Construction',1),fmt(tB*k,2)],c.disc?[t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d']:null,[t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2)],[t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt']]);
       const pj=X.card(t('โครงการ','Project'),`${X.kv(t('โครงการ','Project',1),esc(Q.pname||Q.title||''),'big')}${X.kv(t('สถานที่','Site',1),esc(Q.site||''))}${X.kv(t('แล้วเสร็จ','Completion',1),esc(Q.dlv||''))}`);
-      const body=X.head('ใบเสนอราคาออกแบบและก่อสร้าง','Design &amp; Build Proposal','DESIGN &amp; BUILD PROPOSAL',[Q.title,Q.pname].filter(Boolean).join(' · '))+`<div class="qm-2">${X.custCard()}${pj}</div>${kpi}${steps}
+      const body=X.head('ใบเสนอราคาออกแบบและก่อสร้าง','Design &amp; Build Proposal','DESIGN &amp; BUILD PROPOSAL',[Q.title,Q.pname].filter(Boolean).join(' · '))+`<div class="qm-2">${X.custCard()}${pj}</div>${kpi}
         ${part(t('ส่วนที่ 1 งานออกแบบ','Part 1 Design'),D)}${part(t('ส่วนที่ 2 งานก่อสร้าง','Part 2 Construction'),B)}${dsec}<div class="qm-ft">${X.terms(X.pay())}<div>${tt}${X.words(c.grand)}</div></div>
         ${X.signs([[t('ผู้เสนอราคา','Prepared by'),'',X.by],[t('ผู้อนุมัติ','Approved by'),'',X.boss],[t('ผู้ว่าจ้างยืนยัน','Client acceptance'),tx('ตกลงจ้างออกแบบและก่อสร้างตามใบเสนอนี้','We accept this proposal'),'',1]])}`;
       return fsTint(X.doc('Design &amp; Build',body),'#0F766E')}},
   // งานเพิ่ม-ลด: a line with a negative quantity is work taken out
-  {id:'sp-vo',g:'sp',k:'boq',n:'งานเพิ่ม-ลด (VO)',d:'แยกงานเพิ่มกับงานลด (จำนวนติดลบ = งานลด) สรุปมูลค่าสัญญาเดิม ส่วนต่าง และมูลค่าสัญญาใหม่',p:990,col:'#1D4ED8',
+  {id:'sp-vo',g:'sp',k:'boq',smp:()=>({voNo:'VO-03',voBase:2500000,voDays:15,voWhy:'เจ้าของเพิ่มห้องประชุมชั้น 2 และยกเลิกการย้ายเครื่องเดิม'}),n:'งานเพิ่ม-ลด (VO)',d:'แยกงานเพิ่มกับงานลด (จำนวนติดลบ = งานลด) สรุปมูลค่าสัญญาเดิม ส่วนต่าง และมูลค่าสัญญาใหม่',p:990,col:'#1D4ED8',
     inp:[['voNo','เลขที่ VO','','เช่น VO-03'],['voBase','มูลค่าสัญญาเดิม ไม่รวม VAT (บาท)','num'],['voDays','ขยายเวลา (วัน)','num'],['voWhy','เหตุผลที่เปลี่ยนแปลง','area']],
     pr:Q=>{const X=fsCtx(Q),{t,tx,c}=X,G=fsGroups(Q);let A=0,O=0;
       const rows=G.map((g,k)=>`<tr class="g"><td class="n">${k+1}</td><td colspan="7">${esc(X.gN(g.g))}</td></tr>`+g.items.map((i,j)=>{const q=n(i.q),u=Math.abs(qUnit(Q,i)),v=q*u;if(v>=0)A+=v;else O-=v;
@@ -339,7 +339,8 @@ function fsMep(Q,key){const X=fsCtx(Q),{t,EN}=X,S=FS_SYS[key],std=fsOwnList(Q,'s
   const sec=`<div class="fs-sec"><h3>${t('มาตรฐาน การทดสอบ และการรับประกัน','Standards, tests and warranty')}</h3><div class="fs-2c"><div><b class="fs-lh">${t('มาตรฐานที่ใช้','Standards')}</b>${fsUl(std.length?std:EN?S.stdEn:S.std)}
       <b class="fs-lh">${t('การทดสอบก่อนส่งมอบ','Tests before handover')}</b>${fsUl(EN?S.testEn:S.test)}</div>
     <div class="no"><b class="fs-lh">${t('ไม่รวมในราคานี้','Not included')}</b>${fsUl(ex.length?ex:EN?S.exEn:S.ex)}<b class="fs-lh">${t('การรับประกัน','Warranty')}</b><div>${esc(Q.warr||(EN?S.warrEn:S.warr))}</div></div></div></div>`;
-  return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,sec),kpi),S.col)}
+  // the key numbers sit in the form's own block on top (4.27 FS_HERO); the strip stays only when that block has nothing to show
+  return fsTint(FS_HERO[key]&&FS_HERO[key](Q)?fsBefore(qmPrint(Q),fsSigns,sec):fsTop(fsBefore(qmPrint(Q),fsSigns,sec),kpi),S.col)}
 const fsMepInp=k=>[['std_'+k,'มาตรฐานที่ใช้ (บรรทัดละข้อ, ว่าง = ตามแบบ)','area',FS_SYS[k].std.join('\n')],['ex_'+k,'ไม่รวมในราคานี้ (บรรทัดละข้อ, ว่าง = ตามแบบ)','area',FS_SYS[k].ex.join('\n')],['warr','การรับประกัน','',FS_SYS[k].warr]];
 const FS_MEP_SMP={
   elec:it=>({title:'งานระบบไฟฟ้าและแสงสว่าง',items:[it('งานตู้ไฟฟ้า','ตู้ MDB 400A พร้อมเบรกเกอร์ป้องกัน','ตู้',1,185000,15000),it('งานตู้ไฟฟ้า','ตู้ไฟฟ้าย่อย LP 24 ช่อง','ตู้',6,12500,2500),
@@ -373,3 +374,140 @@ FS_FORMS.push(
       const S=R.filter(r=>r.k!=='oth'),std=S.length?`<div class="fs-sec"><h3>${t('มาตรฐานและการทดสอบของแต่ละระบบ','Standards and tests by system')}</h3>${S.map(r=>{const Y=FS_SYS[r.k];
         return `<div class="fs-row"><b style="color:${Y.col}">${esc(nm(r.k))}</b><div>${esc((EN?Y.stdEn:Y.std).join(' · '))}<br><span style="color:var(--qg)">${tx('ทดสอบ: ','Tests: ')}${esc((EN?Y.testEn:Y.test).join(' · '))}</span></div></div>`}).join('')}</div>`:'';
       return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,std),tb),'#334155')}});
+
+// ===== 4.27 each sold form looks like its own document: a skin (title band, top bar) and a hero block above the customer cards
+// that shows what the form is for (equipment schedule, load summary, fixture and pipe lists, NFPA checklist, month tiles…)
+const fsHero=(h,add)=>{const k=h.indexOf('<div class="qm-2">');return k<0?fsTop(h,add):h.slice(0,k)+add+h.slice(k)};
+const fsSkin=(h,k)=>h.replaceAll('<div class="qm fs-brand"',`<div class="qm fs-brand fs-sk-${k}"`);
+const fsSvgUrl=s=>`url("data:image/svg+xml,${encodeURIComponent(s)}")`;
+const FS_SKIN=`<style>
+#print .qm .fs-hero{display:grid;gap:10px;margin:0 0 8px;break-inside:avoid}
+#print .qm .fs-hero h4{margin:0 0 4px;font-size:10.5px;color:var(--qn);font-weight:700;letter-spacing:.02em}
+#print .qm .fs-hero h4 .en{display:inline;margin-left:4px}
+#print .qm .fs-hb{border:1px solid var(--ql);border-radius:12px;padding:7px 10px;background:#fff}
+#print .qm table.fs-ht{width:100%;border-collapse:collapse;font-size:9.8px;font-variant-numeric:tabular-nums}
+#print .qm table.fs-ht th{background:var(--qn);color:#fff;font-weight:600;padding:3px 5px;text-align:left;border:none}
+#print .qm table.fs-ht th:first-child{border-radius:6px 0 0 6px}#print .qm table.fs-ht th:last-child{border-radius:0 6px 6px 0}
+#print .qm table.fs-ht td{padding:3px 5px;border:none;border-bottom:1px solid #EDF3F4;background:none}
+#print .qm table.fs-ht .r{text-align:right}#print .qm table.fs-ht .c{text-align:center}
+#print .qm table.fs-ht tr.tt td{font-weight:700;color:var(--qn);border-top:1.5px solid var(--qn);border-bottom:none}
+#print .qm table.fs-ht td .tag{display:inline-block;min-width:38px;padding:0 5px;border-radius:5px;background:var(--qs);color:var(--qn);font-weight:700;text-align:center}
+#print .qm .fs-tiles{display:grid;gap:6px}
+#print .qm .fs-tiles>div{border-radius:10px;background:var(--qs);padding:6px 10px}
+#print .qm .fs-tiles span{display:block;font-size:9px;color:var(--qg)}#print .qm .fs-tiles b{font-size:16px;color:var(--qn);font-variant-numeric:tabular-nums;line-height:1.2}
+#print .qm .fs-tiles small{display:block;font-size:9px;color:var(--qg)}
+#print .qm .fs-tiles>div.hi{background:linear-gradient(120deg,var(--qn),var(--qt));color:#fff}#print .qm .fs-tiles>div.hi span,#print .qm .fs-tiles>div.hi small{color:var(--qe)}#print .qm .fs-tiles>div.hi b{color:#fff}
+#print .qm .fs-bars>div{display:grid;grid-template-columns:130px 1fr 70px;gap:6px;align-items:center;font-size:9.8px;margin:3px 0}
+#print .qm .fs-bars i{display:block;height:9px;border-radius:5px;background:#EDF2F4;overflow:hidden}#print .qm .fs-bars i em{display:block;height:100%;border-radius:5px;background:var(--qt)}
+#print .qm .fs-bars b{text-align:right;font-variant-numeric:tabular-nums}
+#print .qm .fs-chk{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#print .qm .fs-chk>div{display:grid;grid-template-columns:26px 1fr;gap:6px;align-items:center;border-radius:10px;padding:6px 8px;border:1.5px solid var(--ql)}
+#print .qm .fs-chk>div.on{border-color:var(--qt);background:var(--qz)}
+#print .qm .fs-chk i{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:700;font-size:13px;background:#E5E7EB;color:#9CA3AF}
+#print .qm .fs-chk>div.on i{background:var(--qt);color:#fff}
+#print .qm .fs-chk b{display:block;font-size:10.5px;color:var(--qn);line-height:1.2}#print .qm .fs-chk small{display:block;font-size:9px;color:var(--qg)}
+#print .qm .fs-cal{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+#print .qm .fs-cal>div{border-radius:9px;border:1px solid var(--ql);padding:4px 6px;text-align:center;position:relative}
+#print .qm .fs-cal>div span{display:block;font-size:9px;color:var(--qg);font-weight:600}#print .qm .fs-cal>div b{font-size:10.5px;color:var(--qn);font-variant-numeric:tabular-nums}
+#print .qm .fs-cal>div.v{background:var(--qs);border-color:var(--qt)}#print .qm .fs-cal>div.v:after{content:"";position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--qt)}
+#print .qm .fs-rc{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+#print .qm .fs-rc>div{border-radius:12px;border:1.5px dashed var(--qt);padding:7px 10px;position:relative;background:var(--qz)}
+#print .qm .fs-rc>div small{display:block;font-size:9.5px;color:var(--qg);line-height:1.3;min-height:24px}
+#print .qm .fs-rc>div b{display:block;font-size:17px;color:var(--qn);font-variant-numeric:tabular-nums}
+#print .qm .fs-rc>div em{font-style:normal;font-size:9px;color:var(--qg)}
+#print .qm .fs-wf{display:grid;grid-template-columns:110px 1fr 90px;gap:4px 8px;align-items:center;font-size:10px}
+#print .qm .fs-wf i{display:block;height:14px;border-radius:4px}#print .qm .fs-wf b{text-align:right;font-variant-numeric:tabular-nums}
+#print .qm .fs-ck{width:100%;border-collapse:collapse;font-size:9.8px}
+#print .qm .fs-ck th,#print .qm .fs-ck td{border:1px solid var(--ql);padding:3px 5px;background:none}
+#print .qm .fs-ck th{background:var(--qs);color:var(--qn)}#print .qm .fs-ck td.b{text-align:center;color:var(--ql);font-size:12px}
+#print .qm .fs-ck tr.sy td{background:var(--qz);font-weight:700;color:var(--qn)}
+#print .qm .fs-pb{page-break-before:always;break-before:page}
+/* skins */
+#print .qm.fs-sk-hvac .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><g fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2" stroke-linecap="round"><path d="M32 12v40M14.7 22l34.6 20M14.7 42l34.6-20M27 15l5 5 5-5M27 49l5-5 5 5"/></g></svg>')} right center/56px repeat-y,linear-gradient(120deg,var(--qn),var(--qt))}
+#print .qm.fs-sk-hvac .qm-bar{background:repeating-linear-gradient(90deg,var(--qt) 0 18px,var(--q3) 18px 22px)}
+#print .qm.fs-sk-elec .qm-bar{height:8px;border-radius:2px;background:repeating-linear-gradient(-45deg,#111827 0 8px,#FACC15 8px 16px)}
+#print .qm.fs-sk-elec .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="80"><path d="M34 4 12 46h16l-6 30 26-46H32z" fill="#FACC15" fill-opacity=".35"/></svg>')} right 18px center/44px no-repeat,linear-gradient(120deg,#111827,#374151);border-left:6px solid #FACC15}
+#print .qm.fs-sk-plumb .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><path d="M0 22q15-12 30 0t30 0 30 0 30 0V40H0z" fill="#fff" fill-opacity=".12"/><path d="M0 30q15-12 30 0t30 0 30 0 30 0V40H0z" fill="#fff" fill-opacity=".12"/></svg>')} bottom/120px 40px repeat-x,linear-gradient(120deg,var(--qn),var(--qt))}
+#print .qm.fs-sk-fire .qm-bar{height:7px;border-radius:2px;background:repeating-linear-gradient(-45deg,#B91C1C 0 10px,#fff 10px 14px)}
+#print .qm.fs-sk-fire .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="70"><path d="M30 4c4 14 18 20 18 38a18 18 0 0 1-36 0c0-10 6-14 8-22 3 6 6 8 8 8-2-8 0-16 2-24z" fill="#FDE68A" fill-opacity=".35"/></svg>')} right 18px center/40px no-repeat,linear-gradient(120deg,#7F1D1D,#DC2626)}
+#print .qm.fs-sk-all .qm-bar{height:6px;background:linear-gradient(90deg,#0284C7 0 20%,#CA8A04 20% 40%,#2563EB 40% 60%,#DC2626 60% 80%,#7C3AED 80%)}
+#print .qm.fs-sk-myear .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="1.5"/></svg>')} right/24px,linear-gradient(120deg,var(--qn),var(--qt))}
+#print .qm.fs-sk-mvisit .qm-ti{border:2px dashed rgba(255,255,255,.55);outline:3px solid var(--qn);outline-offset:-1px}
+#print .qm.fs-sk-mall .qm-ti{background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="70"><path d="M30 4 52 12v20c0 16-10 28-22 34C18 60 8 48 8 32V12z" fill="#fff" fill-opacity=".16"/><path d="m20 34 7 7 14-15" stroke="#fff" stroke-opacity=".5" stroke-width="4" fill="none"/></svg>')} right 18px center/44px no-repeat,linear-gradient(120deg,var(--qn),var(--qt))}
+#print .qm.fs-sk-reno .qm-ti{border-radius:22px;background:${fsSvgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="70" height="60"><path d="M6 30 35 6l29 24M14 24v30h42V24" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="4" stroke-linejoin="round"/><rect x="29" y="36" width="12" height="18" fill="#fff" fill-opacity=".3"/></svg>')} right 18px center/52px no-repeat,linear-gradient(120deg,var(--qt),var(--q3))}
+#print .qm.fs-sk-reno .qm-ti:before,#print .qm.fs-sk-reno .qm-ti:after,#print .qm.fs-sk-db .qm-ti:before,#print .qm.fs-sk-db .qm-ti:after,#print .qm.fs-sk-elec .qm-ti:before,#print .qm.fs-sk-elec .qm-ti:after{display:none}
+#print .qm.fs-sk-db .qm-ti{background:repeating-linear-gradient(0deg,rgba(255,255,255,.09) 0 1px,transparent 1px 12px),repeating-linear-gradient(90deg,rgba(255,255,255,.09) 0 1px,transparent 1px 12px),linear-gradient(120deg,var(--qn),var(--qt))}
+#print .qm.fs-sk-vo .qm-ti:after{content:"VO";width:auto;height:auto;right:18px;top:50%;transform:translateY(-50%) rotate(-12deg);border:3px solid rgba(255,255,255,.55);border-radius:10px;background:none;padding:0 10px;font-size:28px;font-weight:800;color:rgba(255,255,255,.55)}
+</style>`;
+// small helpers for the heroes
+const fsTxt=i=>[i.type,i.desc].filter(Boolean).join(' ');
+const fsPos=Q=>Q.items.filter(i=>n(i.q)>0);
+const fsTiles=(X,R,cols)=>`<div class="fs-tiles" style="grid-template-columns:repeat(${cols||1},1fr)">${R.map(([th,en,v,sub,hi])=>`<div${hi?' class="hi"':''}><span>${X.t(th,en,1)}</span><b>${v}</b>${sub?`<small>${sub}</small>`:''}</div>`).join('')}</div>`;
+const fsH4=(X,th,en)=>`<h4>${X.t(th,en)}</h4>`;
+function fsAcType(s){return /vrf|vrv/i.test(s)?'VRF':/cassette|4\s*ทิศ|4.?way/i.test(s)?'Cassette':/ceiling|แขวน/i.test(s)?'แขวนใต้ฝ้า':/fcu|fan ?coil/i.test(s)?'FCU':/ahu/i.test(s)?'AHU':/package/i.test(s)?'Package':/chiller/i.test(s)?'Chiller':/split|แยกส่วน|ติดผนัง|wall/i.test(s)?'Split':'แอร์'}
+const FS_HERO={
+  hvac:Q=>{const X=fsCtx(Q),EN=X.EN;let k=0,TR=0,U=0;
+    const rows=fsPos(Q).map(i=>{const s=fsTxt(i),m=s.match(/([\d,]+(?:\.\d+)?)\s*btu/i);if(!m)return '';const b=n(m[1].replace(/,/g,'')),q=n(i.q);TR+=b*q/12000;U+=q;k++;
+      return `<tr><td><span class="tag">AC-${String(k).padStart(2,'0')}</span></td><td>${esc(fsAcType(s))}</td><td class="r">${fmt(b,0)}</td><td class="r">${fmt(b/12000,2)}</td><td class="c">${fmtq(q)}</td><td class="r">${fmt(b*q/12000,2)}</td></tr>`}).join('');
+    if(!k)return '';
+    const pipe=fsCnt(Q,/ท่อ|pipe/i,/^(ม|ม\.|เมตร|m)$/i);
+    return `<div class="fs-hero" style="grid-template-columns:1fr 150px"><div class="fs-hb">${fsH4(X,'ตารางเครื่องปรับอากาศ','Equipment schedule')}<table class="fs-ht"><thead><tr><th>${X.tx('รหัส','Tag')}</th><th>${X.tx('ชนิด','Type')}</th><th class="r">BTU/h</th><th class="r">TR</th><th class="c">${X.tx('จำนวน','Qty')}</th><th class="r">${X.tx('รวม TR','Total TR')}</th></tr></thead>
+      <tbody>${rows}<tr class="tt"><td colspan="4">${X.t('รวม','Total',1)}</td><td class="c">${fmtq(U)}</td><td class="r">${fmt(TR,2)}</td></tr></tbody></table></div>
+      ${fsTiles(X,[['ทำความเย็นรวม','Total cooling',fmt(TR,1)+' TR',fmt(TR*12000,0)+' BTU/h',1],['จำนวนเครื่อง','Units',fmtq(U)+(EN?'':' เครื่อง')],...(pipe?[['ท่อน้ำยา / ท่อน้ำทิ้ง','Piping',fmtq(pipe)+(EN?' m':' ม.')]]:[])])}</div>`},
+  elec:Q=>{const X=fsCtx(Q),EN=X.EN;let lw=0,lq=0;fsPos(Q).forEach(i=>{const s=fsTxt(i);if(!/โคม|หลอด|lamp|light|led|luminaire/i.test(s))return;const m=s.match(/(\d+(?:\.\d+)?)\s*w\b/i),x=s.match(/(\d+)\s*x\s*(\d+(?:\.\d+)?)\s*w\b/i);
+      lq+=n(i.q);lw+=n(i.q)*(x?n(x[1])*n(x[2]):m?n(m[1]):0)});
+    const pts=fsCnt(Q,/เต้ารับ|ปลั๊ก|socket|outlet|receptacle/i),ow=pts*180,tot=lw+ow,amp=tot/(Math.sqrt(3)*400);
+    const pan=fsPos(Q).filter(i=>/ตู้|mdb|\blp\b|\bdb\b|switchboard|consumer unit/i.test(fsTxt(i)));if(!lq&&!pts&&!pan.length)return '';
+    const bar=(th,en,v)=>`<div><span>${X.t(th,en,1)}</span><i><em style="width:${tot?(v*100/tot).toFixed(1):0}%"></em></i><b>${fmt(v/1000,2)} kVA</b></div>`;
+    return `<div class="fs-hero" style="grid-template-columns:1.2fr 1fr"><div class="fs-hb">${fsH4(X,'สรุปโหลดไฟฟ้า (ประมาณการ)','Load summary (estimate)')}<div class="fs-bars">${bar('แสงสว่าง','Lighting',lw)}${bar('เต้ารับ (180 VA/จุด)','Outlets (180 VA each)',ow)}</div>
+        ${fsTiles(X,[['โหลดรวม','Total load',fmt(tot/1000,2)+' kVA','',1],['กระแสโดยประมาณ 3 เฟส 400 V','Approx. current, 3-phase 400 V',fmt(amp,1)+' A']],2)}</div>
+      <div class="fs-hb">${fsH4(X,'ตารางตู้ไฟฟ้า','Panel schedule')}<table class="fs-ht"><thead><tr><th>${X.tx('ตู้','Panel')}</th><th class="c">${X.tx('จำนวน','Qty')}</th></tr></thead><tbody>${pan.length?pan.map(i=>`<tr><td>${fsDesc(i)}</td><td class="c">${fmtq(i.q)}</td></tr>`).join(''):`<tr><td colspan="2">–</td></tr>`}</tbody></table>
+        <div style="margin-top:5px;font-size:9.5px;color:var(--qg)">${X.tx(`ดวงโคม ${fmtq(lq)} ชุด · เต้ารับ ${fmtq(pts)} จุด`,`${fmtq(lq)} light fittings · ${fmtq(pts)} outlets`)}</div></div></div>`},
+  plumb:Q=>{const X=fsCtx(Q),EN=X.EN,FX=[['โถสุขภัณฑ์','WC',/โถสุขภัณฑ์|ชักโครก|\bwc\b|toilet/i],['โถปัสสาวะ','Urinal',/ปัสสาวะ|urinal/i],['อ่างล้างหน้า','Lavatory',/อ่างล้างหน้า|lavatory|basin/i],['ซิงค์ / อ่างล้างจาน','Sink',/ซิงค์|ล้างจาน|sink/i],['ฝักบัว','Shower',/ฝักบัว|shower/i],['ก๊อกน้ำ','Faucet',/ก๊อก|faucet|tap/i]];
+    const C={};fsPos(Q).forEach(i=>{const f=FX.find(f=>f[2].test(fsTxt(i)));if(f)C[EN?f[1]:f[0]]=(C[EN?f[1]:f[0]]||0)+n(i.q)});const fx=Object.entries(C);
+    const P={};fsPos(Q).forEach(i=>{const s=fsTxt(i);if(!/ท่อ|pipe/i.test(s)||!/^(ม|ม\.|เมตร|m)$/i.test(String(i.unit||'').trim()))return;const z=s.match(/(\d+(?:\s+\d\/\d)?|\d\/\d)\s*(?:"|”|นิ้ว|in\b)/),mt=(s.match(/pp-?r|pvc|hdpe|gi|เหล็ก|ทองแดง|copper/i)||[''])[0].toUpperCase();
+      const k=[mt,z?z[1]+'"':''].filter(Boolean).join(' ')||X.tx('ท่ออื่น ๆ','Other');P[k]=(P[k]||0)+n(i.q)});
+    const pr=Object.entries(P);if(!fx.length&&!pr.length)return '';
+    return `<div class="fs-hero" style="grid-template-columns:1fr 1fr"><div class="fs-hb">${fsH4(X,'ตารางสุขภัณฑ์','Fixture schedule')}<table class="fs-ht"><thead><tr><th>${X.tx('ชนิด','Fixture')}</th><th class="r">${X.tx('จำนวน','Qty')}</th></tr></thead><tbody>${fx.length?fx.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="r">${fmtq(v)}</td></tr>`).join(''):'<tr><td colspan="2">–</td></tr>'}
+        <tr class="tt"><td>${X.t('รวม','Total',1)}</td><td class="r">${fmtq(sum(fx,x=>x[1]))}</td></tr></tbody></table></div>
+      <div class="fs-hb">${fsH4(X,'ท่อแยกตามขนาด','Pipe by size')}<table class="fs-ht"><thead><tr><th>${X.tx('ท่อ','Pipe')}</th><th class="r">${X.tx('ความยาว (ม.)','Length (m)')}</th></tr></thead><tbody>${pr.length?pr.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="r">${fmtq(v)}</td></tr>`).join(''):'<tr><td colspan="2">–</td></tr>'}
+        <tr class="tt"><td>${X.t('รวม','Total',1)}</td><td class="r">${fmtq(sum(pr,x=>x[1]))}</td></tr></tbody></table></div></div>`},
+  fire:Q=>{const X=fsCtx(Q),EN=X.EN,S=[['หัวกระจายน้ำดับเพลิง','Sprinklers','NFPA 13',/sprinkler|สปริงเกอร์|หัวกระจาย/i,'หัว','heads'],['ท่อยืนและตู้สายฉีด','Standpipes & hose cabinets','NFPA 14',/standpipe|ท่อยืน|fhc|ตู้ดับเพลิง|hose/i,'ตู้','cab.'],
+      ['เครื่องสูบน้ำดับเพลิง','Fire pump','NFPA 20',/fire ?pump|เครื่องสูบน้ำดับเพลิง|jockey/i,'ชุด','sets'],['ระบบแจ้งเหตุเพลิงไหม้','Fire alarm','NFPA 72',/alarm|แจ้งเหตุ|detector|ตรวจจับ|smoke|heat|facp/i,'จุด','pts'],
+      ['ถังดับเพลิงแบบมือถือ','Extinguishers','NFPA 10',/ถังดับเพลิง|extinguisher/i,'ถัง','pcs'],['ไฟฉุกเฉินและป้ายทางออก','Emergency light & exit signs','NFPA 101',/ไฟฉุกเฉิน|ทางออก|exit|emergency light/i,'ชุด','sets']];
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'ขอบเขตระบบป้องกันอัคคีภัยในใบเสนอราคานี้','Fire protection scope in this quotation')}<div class="fs-chk">${S.map(([th,en,std,re,u,ue])=>{const c=fsCnt(Q,re);
+      return `<div class="${c?'on':''}"><i>${c?'✓':'–'}</i><div><b>${EN?en:th}</b><small>${std} · ${c?`${fmtq(c)} ${EN?ue:u}`:X.tx('ไม่อยู่ในขอบเขต','Not in scope')}</small></div></div>`}).join('')}</div></div></div>`},
+  all:Q=>{const X=fsCtx(Q),EN=X.EN,B={};Q.items.forEach(i=>{const k=fsSysOf(i),b=B[k]=B[k]||{k,t:0};b.t+=qLine(Q,i).t});
+    const R=Object.values(B).sort((a,b)=>(a.k==='oth')-(b.k==='oth')),T=sum(R,r=>Math.max(0,r.t))||1,col=k=>k==='oth'?'#94A3B8':FS_SYS[k].col,nm=k=>k==='oth'?X.tx('งานอื่น ๆ','Other work'):EN?FS_SYS[k].en:FS_SYS[k].n;
+    let a=0;const arcs=R.map(r=>{const f=Math.max(0,r.t)/T,a0=a;a+=f;if(f<=0)return '';if(f>0.9999)return `<circle cx="50" cy="50" r="38" fill="none" stroke="${col(r.k)}" stroke-width="18"/>`;
+      const p=x=>[50+38*Math.sin(2*Math.PI*x),50-38*Math.cos(2*Math.PI*x)].map(v=>v.toFixed(2)).join(' ');return `<path d="M${p(a0)} A38 38 0 ${f>0.5?1:0} 1 ${p(a)}" fill="none" stroke="${col(r.k)}" stroke-width="18"/>`}).join('');
+    return `<div class="fs-hero" style="grid-template-columns:150px 1fr"><div class="fs-hb" style="text-align:center"><svg viewBox="0 0 100 100" width="118" height="118">${arcs}<text x="50" y="47" text-anchor="middle" font-size="9" fill="#6B7F87">${X.tx('ระบบ','systems')}</text><text x="50" y="60" text-anchor="middle" font-size="15" font-weight="700" fill="#16324F">${R.length}</text></svg></div>
+      <div class="fs-hb">${fsH4(X,'สัดส่วนราคาแต่ละระบบ','Share of each system')}<div class="fs-bars">${R.map(r=>`<div><span style="color:${col(r.k)};font-weight:700">${esc(nm(r.k))}</span><i><em style="width:${(Math.max(0,r.t)*100/T).toFixed(1)}%;background:${col(r.k)}"></em></i><b>${fmt(r.t*100/T,1)}%</b></div>`).join('')}</div></div></div>`},
+  myear:Q=>{const X=fsCtx(Q),EN=X.EN,m=qmMonths(Q),per=X.c.grand/m,s=okD(Q.maStart)?Q.maStart:'',v=Math.max(0,...Q.items.map(i=>qmVis(Q,i))),step=v?12/v:0;
+    const mon=k=>s?pd(addMon(s,k)).toLocaleDateString(EN?'en-GB':'th-TH',{month:'short',year:'2-digit'}):(EN?'M':'ด.')+(k+1);
+    const vis=k=>step>=1?Math.abs((k+1)/step-Math.round((k+1)/step))<1e-6:!!v;
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'ปฏิทินสัญญา ชำระรายเดือน · จุด = เดือนที่เข้าบำรุงรักษา','Contract calendar, monthly payments · dot = visit month')}<div class="fs-cal">${Array.from({length:Math.min(m,24)},(_,k)=>`<div${vis(k)?' class="v"':''}><span>${mon(k)}</span><b>${fmt(per,0)}</b></div>`).join('')}</div></div></div>`},
+  mvisit:Q=>{const X=fsCtx(Q),R=Q.items.filter(i=>n(i.q)>0).slice(0,8);if(!R.length)return '';
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'ราคาต่อเครื่องต่อครั้ง','Price per unit per visit')}<div class="fs-rc">${R.map(i=>`<div><small>${fsDesc(i)}</small><b>${fmt(qmPerVisit(Q,i),0)}</b><em>${X.tx('บาท / '+(i.unit||'เครื่อง')+' / ครั้ง','per '+(i.unit||'unit')+' per visit')}</em></div>`).join('')}</div></div></div>`},
+  mall:Q=>{const X=fsCtx(Q),EN=X.EN,IN=EN?['Wear parts: belts, bearings, filters, capacitors','Control boards and sensors','Fan and pump motors','Refrigerant top-up after a leak','Labour and travel for replacements']:FS_COVER_IN,
+      OUT=EN?['Natural disasters, flood, fire','Misuse or changes made by others','Power dips, surges or faults in the building supply','Structure, pipes or cables outside the unit','Units not listed in this contract']:FS_COVER_OUT;
+    const cell=(x,on)=>`<div class="${on?'on':''}"><i>${on?'✓':'✕'}</i><div><b style="font-weight:600;font-size:10px">${esc(x)}</b><small>${on?X.tx('คุ้มครอง','Covered'):X.tx('ไม่คุ้มครอง','Not covered')}</small></div></div>`;
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'ตารางความคุ้มครองอะไหล่','Parts coverage')}<div class="fs-chk" style="grid-template-columns:1fr 1fr">${IN.map((x,k)=>cell(x,1)+(OUT[k]?cell(OUT[k],0):'')).join('')}</div></div></div>`},
+  reno:Q=>{const X=fsCtx(Q),EN=X.EN,c=X.c,G=fsGroups(Q);
+    return `<div class="fs-hero" style="grid-template-columns:1fr 190px"><div class="fs-hb">${fsH4(X,'งานที่จะทำ','What we will do')}<div class="fs-steps" style="margin:0;flex-wrap:wrap">${G.slice(0,6).map((g,k)=>`<div style="min-width:120px"><i>${k+1}</i><b>${esc(X.gN(g.g))}</b>${fmt(g.t,0)} ${X.tx('บาท','')}</div>`).join('')}</div></div>
+      ${fsTiles(X,[['ราคาเหมารวมทั้งงาน (รวม VAT)','All-in price (incl. VAT)',fmt(c.grand,0),X.tx('บาท','baht'),1],['รับประกันผลงาน','Warranty',esc(Q.warr||X.tx('1 ปี','1 year'))]])}</div>`},
+  db:Q=>{const X=fsCtx(Q),EN=X.EN,S=EN?[['Brief','Needs and budget'],['Design','Drawings and price'],['Approval','You approve'],['Build','Construction'],['Handover','Tests and handover']]:[['รับโจทย์','ความต้องการและงบ'],['ออกแบบ','แบบและราคา'],['อนุมัติแบบ','ผู้ว่าจ้างอนุมัติ'],['ก่อสร้าง','ลงมือก่อสร้าง'],['ส่งมอบ','ทดสอบและส่งมอบ']];
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'ขั้นตอนออกแบบถึงส่งมอบ ทีมเดียวรับผิดชอบทั้งหมด','From design to handover, one team')}<div class="fs-steps" style="margin:0">${S.map(([a,b],k)=>`<div><i>${k+1}</i><b>${a}</b>${b}</div>`).join('')}</div></div></div>`},
+  vo:Q=>{const X=fsCtx(Q),EN=X.EN,base=n(Q.voBase);let A=0,O=0;Q.items.forEach(i=>{const v=n(i.q)*Math.abs(qUnit(Q,i));if(v>=0)A+=v;else O-=v});const nw=base+A-O-X.c.disc,mx=Math.max(base,base+A,nw,A,O)||1;
+    const row=(th,en,v,col)=>`<span>${X.t(th,en,1)}</span><i style="width:${Math.max(2,Math.abs(v)*100/mx).toFixed(1)}%;background:${col}"></i><b>${v<0?'-':''}${fmt(Math.abs(v),0)}</b>`;
+    return `<div class="fs-hero"><div class="fs-hb">${fsH4(X,'มูลค่าสัญญาก่อนและหลังเปลี่ยนแปลง (ไม่รวม VAT)','Contract value before and after (excl. VAT)')}<div class="fs-wf">${base?row('สัญญาเดิม','Original',base,'#94A3B8'):''}${row('งานเพิ่ม','Added',A,'#15803D')}${row('งานลด','Omitted',-O,'#B91C1C')}${base?row('สัญญาใหม่','Revised',nw,'var(--qn)'):''}</div></div></div>`}};
+// สัญญารายปี: a last page to tick at every visit, from the company's PM checklists
+function fsMaChecks(Q){if(typeof pmGuess!=='function'||typeof pmSysGet!=='function')return '';const X=fsCtx(Q),ids=[];Q.items.forEach(i=>{const s=i.sys||pmGuess(fsTxt(i));if(s&&!ids.includes(s))ids.push(s)});
+  const v=Math.min(12,Math.max(1,Math.round(Math.max(0,...Q.items.map(i=>qmVisits(Q,i)))))),rows=ids.map(id=>{const S=pmSysGet(id);if(!S)return '';const L=pmChecks(S);if(!L.length)return '';
+    return `<tr class="sy"><td colspan="${v+1}">${esc(S.n)}</td></tr>`+L.map(x=>`<tr><td>${esc(pmLine(x).t)}</td>${'<td class="b">☐</td>'.repeat(v)}</tr>`).join('')}).join('');if(!rows)return '';
+  return `<div class="fs-pb"></div><div class="fs-sec" style="border:0;padding:0"><h3>${X.t('ใบตรวจเช็คประจำการเข้าบำรุงรักษา','Visit checklist')}</h3><table class="fs-ck"><colgroup><col style="width:${Math.max(34,70-v*3)}%">${'<col>'.repeat(v)}</colgroup>
+    <thead><tr><th style="text-align:left">${X.t('รายการตรวจ','Check')}</th>${Array.from({length:v},(_,k)=>`<th>${X.tx('ครั้งที่','Visit')} ${k+1}</th>`).join('')}</tr></thead><tbody>${rows}
+    <tr><td>${X.t('ลงชื่อช่าง / วันที่','Technician / date')}</td>${'<td style="height:26px"></td>'.repeat(v)}</tr><tr><td>${X.t('ลงชื่อลูกค้า','Customer')}</td>${'<td style="height:26px"></td>'.repeat(v)}</tr></tbody></table></div>`}
+const fsAtEnd=(h,add)=>{const k=h.lastIndexOf('</div><div class="ofoot"');return k<0?h+add:h.slice(0,k)+add+h.slice(k)};
+const FS_LOOK={'mep-hvac':'hvac','mep-elec':'elec','mep-plumb':'plumb','mep-fire':'fire','mep-all':'all','ma-year':'myear','ma-visit':'mvisit','ma-all':'mall','sp-reno':'reno','sp-db':'db','sp-vo':'vo'};
+Object.entries(FS_LOOK).forEach(([id,k])=>{const F=fsForm(id);if(!F||!F.pr)return;const f=F.pr;F.pr=(Q,bq)=>{let h=f(Q,bq);let x='';try{x=FS_HERO[k](Q)}catch(e){console.error(e)}if(k==='myear'){let y='';try{y=fsMaChecks(Q)}catch(e){console.error(e)}if(y)h=fsAtEnd(h,y)}return fsSkin(x?fsHero(h,x):h,k)+FS_SKIN}});

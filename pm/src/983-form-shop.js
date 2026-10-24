@@ -98,6 +98,7 @@ const FS_UI=`<style>
 .fsg-l button:hover{border-color:var(--accent)}
 .fsg-l button.on{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
 .fsg-l svg{width:100%;height:auto;max-height:150px;display:block;background:#EEF2F4;border-radius:6px;padding:6px}
+.fsg-l .fs-mini{max-height:150px;padding:6px}
 .fsg-l b{font-size:13px}.fsg-l small{font-size:11.5px;color:var(--muted);line-height:1.35}
 .fsg-l .tag{align-self:flex-start;font-size:11px;padding:0 7px;border-radius:9px;background:#E3F4EA;color:#1F7A3A}
 .fsg-l .on .tag{background:var(--accent);color:#fff}
@@ -107,7 +108,7 @@ const FS_UI=`<style>
 // ---- the gallery on the quotation page; it takes the place of the old "หน้าตาเอกสาร" list
 {const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
   const cur=fsCur(Q),F=fsForm(cur),f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
-  const tiles=FS_FORMS.filter(x=>fsOwn(x)&&fsFits(x,Q)).map(x=>`<button type="button" class="${x.id===cur?'on':''}" data-a="fsPick" data-id="${Q.id}" data-v="${x.id}" aria-pressed="${x.id===cur}">${fsThumb(x)}<b>${esc(x.n)}</b><small>${esc(x.d)}</small><span class="tag">${x.id===cur?'✓ ใช้อยู่':x.p?'ซื้อแล้ว':'ฟรี'}</span></button>`).join('')+fsShopTile(Q);
+  const tiles=FS_FORMS.filter(x=>fsOwn(x)&&fsFits(x,Q)).map(x=>`<button type="button" class="${x.id===cur?'on':''}" data-a="fsPick" data-id="${Q.id}" data-v="${x.id}" aria-pressed="${x.id===cur}">${fsMini(x)}<b>${esc(x.n)}</b><small>${esc(x.d)}</small><span class="tag">${x.id===cur?'✓ ใช้อยู่':x.p?'ซื้อแล้ว':'ฟรี'}</span></button>`).join('')+fsShopTile(Q);
   const col=F&&F.th==='brand'?`<div class="fsg-c">สีของบริษัท <input type="color" data-fsc="1" value="${fsRgb(C.formColor)?esc(C.formColor):'#1c8f9b'}" aria-label="สีของบริษัท">
     <button type="button" class="btn sm" data-a="fsLogo"${C.logo?'':' disabled title="ใส่โลโก้บริษัทในตั้งค่าบริษัทก่อน"'}>ใช้สีจากโลโก้</button><small class="muted">ใช้กับทุกใบเสนอราคาที่เลือกแบบนี้</small></div>`:'';
   const g=FS_UI+`<div class="fsg"><div class="fsg-h"><b>แบบฟอร์มเอกสาร</b><small class="muted">กดเลือกแล้วกด "พิมพ์ใบเสนอราคา" ข้อมูลเดิมพิมพ์ออกมาในแบบที่เลือก โลโก้และชื่อบริษัทเป็นของบริษัทคุณเอง</small></div>
@@ -154,7 +155,7 @@ function fsSample(ma,own,F){const C=CO(),L=C.quotes.filter(q=>!!qmMa(q)===!!ma);
         it('งานท่อน้ำยาและท่อน้ำทิ้ง','ท่อทองแดงพร้อมฉนวน 5/8"','ม.',120,420,180),it('งานท่อน้ำยาและท่อน้ำทิ้ง','ถอดเครื่องเดิม (งานลด)','ชุด',-2,0,1500)]};
   // a form can bring its own sample work (F.smp), so the preview shows what it is made for
   return F&&F.smp?Object.assign(R,F.smp(it)):R}
-function fsPreview(F){const C=CO(),Q=Object.assign(fsSample(F.k==='ma',fsOwn(F),F),{id:'fs-pv'},F.set||{},{form:F.id});if(F.k==='boq')delete Q.kind;if(F.th==='brand'&&!fsRgb(C.formColor))C.formColor='#1c8f9b';
+function fsPreview(F){const C=CO(),Q=Object.assign(fsSample(F.k==='ma',fsOwn(F),F),{id:'fs-pv',status:'sent'},F.set||{},{form:F.id});if(F.k==='boq')delete Q.kind;if(F.th==='brand'&&!fsRgb(C.formColor))C.formColor='#1c8f9b';
   FS_PV=true;C.quotes.push(Q);let h='';try{h=PRINT.quote('fs-pv')}catch(e){console.error(e)}finally{C.quotes.splice(C.quotes.indexOf(Q),1);FS_PV=false}
   const wm=fsOwn(F)?'':`<div class="fs-wm" aria-hidden="true">${'<span>ตัวอย่าง · ร้านฟอร์ม ORIEN</span>'.repeat(12)}</div>`;
   let bar=$('#fsPvb');if(!bar){bar=document.createElement('div');bar.id='fsPvb';bar.className='fs-pvb';document.body.appendChild(bar)}
@@ -190,6 +191,7 @@ const FS_SHOP=`<style>
 .fss-c{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--surface)}
 .fss-c.in{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent)}
 .fss-c svg{width:100%;height:auto;max-height:190px;background:#EEF2F4;border-radius:8px;padding:8px;cursor:zoom-in}
+.fss-c .fs-mini{max-height:230px;padding:8px;cursor:zoom-in}
 .fss-c b{font-size:14px}.fss-c small{color:var(--muted);font-size:12.5px;line-height:1.4;flex:1}
 .fss-c .pr{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.fss-c .pr strong{font-size:15px}
 .fss-c .row{gap:6px;flex-wrap:wrap}
@@ -199,7 +201,7 @@ const FS_SHOP=`<style>
 CVIEWS.shop=()=>{const admin=!S.me,L=licP(),own=fsSold().filter(fsOwn),open=fsSold().filter(F=>!fsOwn(F)),tot=sum(FS_CART.map(fsForm).filter(Boolean),fsPrice),all=fsAllPrice(),useAll=open.length>1&&tot>all;
   const kind=F=>F.k==='ma'?'ใบเสนอราคาบริการ PM/MA':F.k==='boq'?'ใบเสนอราคางานติดตั้ง':'ใบเสนอราคาทุกแบบ';
   const cardOf=F=>{const o=fsOwn(F),inC=FS_CART.includes(F.id);
-    return `<div class="fss-c${inC?' in':''}"><span data-a="fsPv" data-v="${F.id}" role="button" tabindex="0" aria-label="ดูตัวอย่าง ${esc(F.n)}">${fsThumb(F)}</span><b>${esc(F.n)}</b><small>${esc(F.d)}<br><span class="muted">ใช้กับ: ${kind(F)}</span></small>
+    return `<div class="fss-c${inC?' in':''}"><span data-a="fsPv" data-v="${F.id}" role="button" tabindex="0" aria-label="ดูตัวอย่าง ${esc(F.n)}">${fsMini(F)}</span><b>${esc(F.n)}</b><small>${esc(F.d)}<br><span class="muted">ใช้กับ: ${kind(F)}</span></small>
       <div class="pr">${o?`<span class="pill ok">${F.p?'✓ ซื้อแล้ว':'ฟรีในทุกแพ็กเกจ'}</span>`:`<strong>${fmt(fsPrice(F))} บาท</strong><small class="muted" style="flex:none">จ่ายครั้งเดียว</small>`}</div>
       <div class="row"><button type="button" class="btn sm" data-a="fsPv" data-v="${F.id}">ดูตัวอย่าง</button>${o?`<button type="button" class="btn sm" data-a="go" data-m="co" data-k="sales" data-s="quote">ใช้ในใบเสนอราคา</button>`
         :`<button type="button" class="btn sm${inC?'':' pri'}" data-a="fsCart" data-v="${F.id}">${inC?'✓ ในตะกร้า (กดเพื่อเอาออก)':'ใส่ตะกร้า'}</button>`}</div></div>`};
@@ -233,3 +235,29 @@ ACT.fsMail=()=>{const L=licP();location.href=`mailto:${(PLANS.contact||{}).email
 ACT.fsCopy=async()=>{toast(await copyText(fsReqTxt())?'คัดลอกแล้ว วางส่งทาง LINE หรืออีเมลได้เลย':'คัดลอกไม่ได้')};
 // the cart in the title bar opens the shop (985 mounts the bar later)
 if(window.penumBar){const m=penumBar.mount;penumBar.mount=cfg=>m(Object.assign({cart:()=>ACT.go({dataset:{m:'co',k:'shop'}})},cfg))}
+
+/* ---- 4.27 card pictures: each form printed with its sample work, drawn into an image (SVG foreignObject) once per session.
+   status 'sent' keeps the print from adding lines to the sample and saving. */
+const FS_MINI={};
+function fsSampleHtml(F){const C=CO(),Q=Object.assign(fsSample(F.k==='ma',false,F),{id:'fs-pv',status:'sent'},F.set||{},{form:F.id}),fc=C.formColor;if(F.k==='boq')delete Q.kind;
+  if(F.th==='brand'&&!fsRgb(C.formColor))C.formColor='#1c8f9b';const was=FS_PV;FS_PV=true;C.quotes.push(Q);let h='';
+  try{h=PRINT.quote('fs-pv')}catch(e){console.error(e)}finally{C.quotes.splice(C.quotes.indexOf(Q),1);FS_PV=was;C.formColor=fc}return h}
+const fsMiniKey=F=>{const C=CO();return [F.id,C.formColor||'',(C.logo||'').length,C.name||''].join('|')};
+function fsMiniSrc(F){const k=fsMiniKey(F);if(FS_MINI[k])return FS_MINI[k];
+  const h=fsSampleHtml(F),land=/size:A4 landscape/.test(h),W=land?1123:794,FH=land?794:1123,H=Math.round(FH*(land?0.7:0.56));
+  const t=document.createElement('template');
+  t.innerHTML=`<div id="print" style="display:block;width:${W}px;height:${FH}px;padding:30px 36px;background:#fff;box-sizing:border-box;overflow:hidden;font-family:'IBM Plex Sans Thai',Anuphan,'Leelawadee UI',Tahoma,sans-serif"><style>#print .ofoot{display:none}</style>${h}</div>`;
+  t.content.querySelectorAll('script').forEach(x=>x.remove());
+  const x=new XMLSerializer().serializeToString(t.content.firstElementChild);
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><foreignObject x="0" y="0" width="${W}" height="${FH}">${x}</foreignObject></svg>`;
+  return FS_MINI[k]=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}))}
+// the card shows a grey box first; the pictures fill in a few at a time after the page is drawn
+const fsMini=F=>{const k=FS_MINI[fsMiniKey(F)];return `<img class="fs-mini" alt="" data-fsmini="${esc(F.id)}"${k?` src="${k}"`:''}>`};
+let fsMiT=0;
+function fsMiniFill(){clearTimeout(fsMiT);fsMiT=setTimeout(()=>{const L=[...document.querySelectorAll('img[data-fsmini]:not([src])')].slice(0,3);
+  L.forEach(im=>{const F=fsForm(im.dataset.fsmini);if(!F)return;let u='';try{u=fsMiniSrc(F)}catch(e){console.error(e)}
+    document.querySelectorAll(`img[data-fsmini="${F.id}"]:not([src])`).forEach(x=>{if(u)x.src=u;else x.removeAttribute('data-fsmini')})});
+  if(L.length)fsMiniFill()},30)}
+{const f=render;render=function(){const r=f.apply(this,arguments);if(document.querySelector('img[data-fsmini]:not([src])'))fsMiniFill();return r}}
+document.head.insertAdjacentHTML('beforeend',`<style>img.fs-mini{display:block;width:100%;height:auto;min-height:120px;object-fit:contain;object-position:top center;background:#E4EAED;border-radius:8px;box-sizing:border-box}
+img.fs-mini[src]{min-height:0}</style>`);
