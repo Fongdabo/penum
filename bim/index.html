@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=190,V1_NAME='V1.179';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=191,V1_NAME='V1.180';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30996,6 +30996,41 @@ Object.assign(STR,{
   fxc_k_wc:['โถส้วม (รวมโถปัสสาวะทดแทนได้ไม่เกินครึ่งของชาย)','Water closets (urinals for up to half of the men\'s)'],fxc_k_lav:['อ่างล้างหน้า','Lavatories'],fxc_k_bath:['ฝักบัว/อ่างอาบน้ำ','Showers or bathtubs'],fxc_k_sink:['อ่างล้างจาน/อ่างบริการ','Kitchen or service sinks'],
   fxc_note:['จำนวนคนคิดจากพื้นที่ห้องตามความหนาแน่นของการใช้ห้อง (เดียวกับภาระความเย็น) ชายหญิงอย่างละครึ่ง · สำนักงาน: โถส้วม 1 ต่อ 25 คนสำหรับ 50 คนแรก แล้ว 1 ต่อ 50 อ่างล้างหน้า 1 ต่อ 40 สำหรับ 80 คนแรก แล้ว 1 ต่อ 80 · ตรวจกับกฎหมายควบคุมอาคารของท้องถิ่นด้วย',
     'Occupants are the floor area of the rooms by the density of their use (as the cooling loads take it), half men and half women · business: water closets 1 per 25 for the first 50, then 1 per 50; lavatories 1 per 40 for the first 80, then 1 per 80 · check the local building code as well']});
+/* ===== 180 Placing MEP components in 3D views, sections and elevations (V1.180; Revit places a component on the face it is over in a 3D view: a face-based family).
+   Air terminals, mechanical and electrical equipment, plumbing fixtures, sprinkler heads, lights and devices go on the face under the pointer: on the underside of a
+   ceiling or a slab they hang from it at its height (equipment with its top there), on a floor or the top of anything they stand on it, on a wall they stand in front
+   of it facing out at the height of their type (as in a plan, 178), and over nothing (or over a run, a terminal or a head) on the work plane of the view at the
+   offset in Properties.  Their level is the
+   storey they are on.  A duct or pipe accessory goes into the duct or pipe it is put on.  Runs were already drawn there (89). ===== */
+const P3_CATS=['terminal','equip','eequip','fixture','sprinkler','light','device','ductacc','pipeacc'],P3_RUNS=['duct','pipe','tray','conduit','riser','ductacc','pipeacc','terminal','sprinkler'];
+/* the level a height belongs to: the highest whose floor is at or under it (for the underside of something, under it) */
+const p3Lv=(z,down)=>{const L=sortedLevels(P);let b=L[0];for(const l of L)if(l.elev<=z+(down?-1:1))b=l;return b};
+/* where component `cat` goes for pointer p: {x, y, rot, off, lv, extra?, k: 'down'|'up'|'wall'|'plane', z (the height of the point picked)} or {need} or null */
+function p3At(pn,v,p,cat){const d=defs(cat),T=(P.types[cat]||[]).find(x=>x.id===d.type)||{},pk=pickAt3(pn,v,p),S=compSize(P,{cat,type:d.type}),def=placeOff(d,T),spin=((d.rot||0)+ui.flip*90)%360;
+  if(cat==='ductacc'||cat==='pipeacc'){const rc=cat==='ductacc'?'duct':'pipe',e=pk&&IDX.get(pk.id);if(!e||e.cat!==rc||!(e.x2!=null))return{need:rc};const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,hl=cat==='ductacc'?(T.len||150)/2:0;
+    const tt=clamp(Math.round(((pk.p[0]-e.x1)*ux+(pk.p[2]-e.y1)*uy)/10)*10,Math.min(hl,L/2),Math.max(L-hl,L/2)),z=runZ(P,e),lv=lvl(P,e.level);
+    return{x:Math.round(e.x1+ux*tt),y:Math.round(e.y1+uy*tt),rot:Math.atan2(uy,ux)*180/Math.PI,lv,k:'run',z:z[0]+(z[1]-z[0])*tt/L+(lv?lv.elev:0),extra:cat==='ductacc'?{w:runW(e),h:runH(P,e),off:e.off||0,sys:e.sys}:{dia:runW(e),off:Math.round(((e.off||0)+(z[1]-z[0])*tt/L)*10)/10,sys:e.sys}}}
+  if(pk&&pk.p&&pk.n&&!P3_RUNS.includes(pk.cat)){const x=pk.p[0],y=pk.p[2],z=pk.p[1],nz=pk.n[1],nx=pk.n[0],ny=pk.n[2],hung=cat==='equip'||cat==='eequip'?(+T.h||S.h||300):0;
+    if(nz<-0.7){const lv=p3Lv(z,true);return{x:Math.round(x),y:Math.round(y),rot:spin,off:Math.round(z-lv.elev-hung),lv,k:'down',z}}
+    if(nz>0.7){const lv=p3Lv(z,false),wm=wallMounted(cat,T);return{x:Math.round(x),y:Math.round(y),rot:spin,off:Math.round(wm&&cat!=='fixture'?def:z-lv.elev),lv,k:'up',z}}
+    const h=Math.hypot(nx,ny)||1,n=[nx/h,ny/h],lv=p3Lv(z,false),dep=cat==='device'?0:cat==='sprinkler'?60:S.d/2;
+    return{x:Math.round(x+n[0]*dep),y:Math.round(y+n[1]*dep),rot:((Math.round(Math.atan2(-n[0],n[1])*1800/Math.PI)/10)%360+360)%360,off:Math.round(wallMounted(cat,T)?def:Math.max(0,z-lv.elev)),lv,k:'wall',z}}
+  if(v.kind!=='3d')return null;const lv=ev3Lv3(v),w=ev3Ray(pn,v,p,lv.elev+def);return w?{x:Math.round(w[0]),y:Math.round(w[1]),rot:spin,off:Math.round(def),lv,k:'plane',z:w[2]}:null}
+const p3Tool={ok:v=>ev3GL(v),
+  click(pn,v,p){const cat=ui.tool,q=p3At(pn,v,p,cat);if(!q){toast(t('p3_none'));return}if(q.need){toast(t('p3_need_'+q.need));return}let id=null;
+    edit(()=>{const o=newPointEl(cat,{level:q.lv.id,rcp:false},{x:q.x,y:q.y,rot:q.rot,extra:q.extra});o.level=q.lv.id;if(q.off!=null&&!q.extra)o.off=q.off;P.els.push(o);id=o.id});ui.sel=new Set([id]);refresh()},
+  draw(pn,ctx,v,nav){if(ui.curPane!==pn.i||!ui.cur)return;const cat=ui.tool,q=p3At(pn,v,ui.cur,cat),sp=ev3Scr(pn,v,nav);if(!q||q.need)return;const d=defs(cat),S=compSize(P,{cat,type:d.type}),a=q.rot*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+    const z=q.extra?q.z:q.lv.elev+q.off+(q.k==='down'&&(cat==='equip'||cat==='eequip')?S.h:0),W=(S.w||300)/2,D=(S.d||300)/2,R=[[-W,-D],[W,-D],[W,D],[-W,D]].map(([u,w])=>sp([q.x+u*c-w*s,q.y+u*s+w*c,z])).filter(Boolean);
+    ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.setLineDash([]);if(R.length===4){ctx.beginPath();R.forEach((r,i)=>i?ctx.lineTo(r[0],r[1]):ctx.moveTo(r[0],r[1]));ctx.closePath();ctx.stroke()}
+    const m=sp([q.x,q.y,z]);if(m){ev3Mark(ctx,m[0],m[1],'pt');ev3Lbl(ctx,m[0],m[1],t('p3_k_'+q.k)+' · '+q.lv.name+' +'+fmtLen(q.extra?q.extra.off||0:q.off)+' '+unitName())}},
+  hint(v){const c=ui.tool;return c==='ductacc'||c==='pipeacc'?t('p3_hrun'):t('p3_h')}};
+for(const k of P3_CATS)if(!XT3[k])XT3[k]=p3Tool;
+Object.assign(STR,{
+  p3_h:['คลิกบนฝ้า ผนัง หรือพื้นในภาพเพื่อวาง: ใต้ฝ้า/พื้นชั้นบนจะแขวนที่ระดับนั้น บนผนังหันออกจากผนังที่ความสูงของชนิด บนพื้นตั้งบนพื้น · ไม่มีอะไรใต้เมาส์วางบนระนาบทำงาน · Space หมุน 90°',
+    'Click a ceiling, a wall or a floor in the view: under a ceiling or a slab it hangs at that height, on a wall it faces out at the height of its type, on a floor it stands on it · over nothing it goes on the work plane · Space turns it 90°'],
+  p3_hrun:['คลิกบนท่อลมหรือท่อน้ำในภาพเพื่อแทรกอุปกรณ์ในท่อ','Click a duct or a pipe in the view to put the accessory in it'],
+  p3_none:['ไม่มีผิวใต้เมาส์: ชี้ที่ฝ้า ผนัง หรือพื้น','Nothing under the pointer: point at a ceiling, a wall or a floor'],p3_need_duct:['คลิกบนท่อลม','Click a duct'],p3_need_pipe:['คลิกบนท่อน้ำ','Click a pipe'],
+  p3_k_down:['ใต้ฝ้า/พื้น','Under'],p3_k_up:['บนพื้น','On top'],p3_k_wall:['บนผนัง','On the wall'],p3_k_plane:['ระนาบทำงาน','Work plane'],p3_k_run:['ในท่อ','In the run']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -32441,6 +32476,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.177 · [[a_diflay]] (แผงระบบปรับอากาศของงานระบบ หรือแผงลมของห้องในแท็บ [[tab_analyze]]): วางหัวจ่ายลมให้ทุกห้องตามลมที่ห้องต้องการ (จากภาระความเย็นหรือที่กำหนดเอง) จำนวนน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว เป็นตารางเท่ากันตามผนังยาว ระยะห่างไม่เกินที่ตั้ง · ตรวจระยะลมพุ่ง T50/L ตามเกณฑ์ ADPI ของ ASHRAE (0.7–1.3) และเพิ่มหัวเมื่อลมพุ่งแรงเกิน · วางหน้ากากลมกลับและหน้ากากระบาย (ห้องน้ำตาม ACH) ห่างหัวจ่าย 1.5 ม. · หลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟ และสปริงเกลอร์ · เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ได้ในขั้นเดียว (Generate Layout) · ชนิดหัวจ่ายมีช่องลมสูงสุดและระยะลมพุ่งตามแคตตาล็อก
 - V1.178 · [[a_wvlay]] (แผงไฟฟ้าของงานระบบ): วางเต้ารับตามแนวผนังของทุกห้องตามระยะห่างของการใช้ห้อง (NEC 210.52: ทุกจุดของแนวผนังห่างเต้ารับไม่เกิน 1.8 ม.; สำนักงาน 3.0 ม.; ครัว 1.8 ม. สูง 1.10 ม.; แก้ระยะของแต่ละการใช้ห้องได้) ขาดที่ประตูและห่างมุมห้อง · ห้องน้ำได้เต้ารับข้างอ่างล้างหน้า · สวิตช์ข้างประตูด้านมือจับ (ห้องน้ำติดนอกห้อง) ห้องหลายประตูได้สวิตช์สองทาง · ผูกโคมในห้องกับสวิตช์ (Switch ID) ให้เลย
 - V1.179 · [[a_tclay]] (แผงไฟฟ้าของงานระบบ): จุด LAN หนึ่งจุดต่อพื้นที่ทำงาน (TIA-568 ประมาณ 10 ม.² ของสำนักงาน แก้ได้ตามการใช้ห้อง) วางตามแนวผนังและหลบเต้ารับ · ห้องนอน/นั่งเล่นได้ LAN และเต้ารับทีวีกลางผนังยาว · กล้องวงจรปิดที่ทุกทางเข้าอาคารและในโถง/ทางเดินตามระยะห่างที่ตั้ง · [[a_fdrlay]] (แผงท่อน้ำ): ท่อระบายพื้นในห้องน้ำ ห้องซักล้าง ระเบียง ตามพื้นที่ ใกล้ฝักบัวและหลบสุขภัณฑ์ · ตรวจจำนวนสุขภัณฑ์ขั้นต่ำตาม IPC ตาราง 403.1 (บ้าน อาคารชุด สำนักงาน สถานศึกษา ร้านค้า อาคารชุมนุมคน) จากจำนวนคนตามพื้นที่ห้อง
+- V1.180 · วางอุปกรณ์งานระบบในมุมมอง 3D รูปตัด และรูปด้าน: หัวจ่ายลม เครื่องจักร ตู้ไฟ สุขภัณฑ์ สปริงเกลอร์ โคมไฟ และอุปกรณ์ไฟฟ้า วางบนผิวที่เมาส์ชี้ ใต้ฝ้าหรือพื้นชั้นบนจะแขวนที่ระดับนั้น บนผนังหันออกจากผนังที่ความสูงของชนิด บนพื้นตั้งบนพื้น ไม่มีอะไรใต้เมาส์วางบนระนาบทำงาน · อุปกรณ์ในท่อ (แดมเปอร์ วาล์ว) คลิกบนท่อในภาพ 3D เพื่อแทรก · ท่อลม ท่อน้ำ รางเดินสาย ท่อร้อยสาย วาดใน 3D ได้อยู่แล้ว
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -32756,6 +32792,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.177 · [[a_diflay]] (HVAC panel of Systems, or Space Airflow on the [[tab_analyze]] tab): supply diffusers for every room from the air it needs (its cooling load or its own value): the fewest that each carry no more than the type's Max Flow, on an even grid along the long wall, no farther apart than the spacing set · the throw is checked as T50/L against the ASHRAE ADPI range (0.7–1.3), with more diffusers where it blows too far · return and exhaust grilles (toilets by their ACH), 1.5 m from the diffusers · clear of smoke detectors by 0.91 m, of lights and of sprinkler heads · ducts from the air handlers to the new terminals in the same step (Generate Layout) · air terminal types take a Max Flow and a throw from their catalogue
 - V1.178 · [[a_wvlay]] (electrical panel of Systems): receptacles along the walls of every room at the spacing of its use (NEC 210.52: no point of the wall line farther than 1.8 m from one; offices 3.0 m; kitchens 1.8 m at 1.10 m; the spacing of each use can be changed), broken at the doors and clear of the corners · toilets one beside the washbasin · switches beside the latch side of the doors (toilets outside), three-way switches in rooms with several doors · the room's lights go on the switch (Switch ID)
 - V1.179 · [[a_tclay]] (electrical panel of Systems): a data outlet for each work area (TIA-568, about 10 m² of office, set by room use) along the walls, beside the receptacles · bedrooms and living rooms a data outlet and a TV outlet in the middle of the long wall · CCTV cameras at every way into the building and in lobbies and corridors at the spacing set · [[a_fdrlay]] (piping panel): floor drains in toilets, laundries and balconies by floor area, by the shower and clear of the fixtures · the least number of fixtures by IPC Table 403.1 (house, flats, business, educational, mercantile, assembly) from the occupants of the rooms
+- V1.180 · MEP components placed in 3D views, sections and elevations: air terminals, mechanical and electrical equipment, plumbing fixtures, sprinkler heads, lights and devices go on the face under the pointer: under a ceiling or a slab they hang at its height, on a wall they face out at the height of their type, on a floor they stand on it, over nothing on the work plane · duct and pipe accessories (dampers, valves) go into the run clicked in 3D · ducts, pipes, trays and conduits were already drawn in 3D
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -34739,6 +34776,9 @@ window.PenumBIM.r99={tc:(ids,o)=>{const Q=tcPlan(ids||P.els.filter(e=>e.cat==='r
   tcApply:(ids,o)=>tcApply(tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}))),
   fdr:(ids,o)=>{const Q=fdrPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},fdrOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,st:R.st,n:R.n,has:R.has})),add:Q.add,del:[...Q.del]}},
   fxc:()=>fxcCheck(),people:()=>fxcPeople()};
+window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
+  put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
+  pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
