@@ -28,7 +28,7 @@ function fsCtx(Q){const C=CO(),L=qmLang(Q),EN=L==='en';
   const card=(h,rows)=>`<div class="qm-c"><h3>${h}</h3>${rows}</div>`;
   const tot=rows=>`<div class="qm-tot">${rows.filter(Boolean).map(([k,v,cl])=>`<div${cl?` class="${cl}"`:''}><span>${k}</span><b>${v}</b></div>`).join('')}</div>`;
   const words=v=>`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(v))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(v)}</b>`:''}</div>`;
-  const notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
+  const notes=qTerms(Q);
   const terms=extra=>`<div class="qm-tm"><h3>${t('เงื่อนไข','Terms &amp; conditions')}</h3>${n(Q.valid)?`<div class="row2"><span>${t('ยืนราคา','Validity')}</span><div>${EN?`${n(Q.valid)} days from the quotation date`:`${n(Q.valid)} วันนับจากวันที่เสนอราคา`}</div></div>`:''}
     ${extra||''}${notes.length?`<div><span style="color:var(--qg)">${t('หมายเหตุ','Notes',1)}</span><ol>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:''}</div>`;
   const pay=()=>{const P=qEnsure(Q).qpay||[];return P.length?`<div><span style="color:var(--qg)">${t('การชำระเงิน','Payment',1)}</span><table class="pay"><thead><tr><th>${tx('งวด','No.')}</th><th>${tx('เมื่อ','When')}</th><th class="r">%</th><th class="r">${tx('จำนวนเงิน (รวม VAT)','Amount (incl. VAT)')}</th></tr></thead><tbody>

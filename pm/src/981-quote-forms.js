@@ -260,7 +260,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const wht=wb==null?(Q._part==='eq'?`<div class="qm-tot qm-wh"><div class="nt"><span>${t('ค่าเครื่อง (สินค้า) ไม่หัก ณ ที่จ่าย','Equipment (goods): no withholding tax',1)}</span><b></b></div></div>`:''):`<div class="qm-tot qm-wh">${sv&&Q.whtB!=='l'?'':tr(sv?t('ค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Material (no withholding tax)',1):Q.whtB==='l'?t('ค่าเครื่องและค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Equipment &amp; material (no withholding tax)',1):t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):sv?t('ค่าติดตั้ง วัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Installation, material &amp; labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
     ${tr(t('หักภาษี ณ ที่จ่าย 3% (โดยประมาณ)','Withholding tax 3% (approx.)',1),'-'+fmt(ww,2),'d')}${tr(t('ยอดรับสุทธิหลังหัก ณ ที่จ่าย','Net after withholding tax',1),fmt(c.grand-ww,2),'nt')}</div>`;
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
-  const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
+  const pay=qEnsure(Q).qpay||[],notes=qTerms(Q,EN);
   const r2=(k,v)=>v?`<div class="row2"><span>${k}</span><div>${v}</div></div>`:'';
   // 4.19 with แยกค่าเครื่อง on one sheet, the equipment and installation payment schedules print one under the other
   const PE=eqs&&(Q.qpayE||[]).length?qmParts(Q):null;
@@ -456,3 +456,18 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.
   const d=t.dataset.f==='t'?r2(n(t.dataset.sub)-v):r2(v);Q['disc'+t.dataset.k]=d;Q.disc=r2(n(Q.discE)+n(Q.discS));save();render()});
 HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.disc$/);if(!m)return;const Q=CO().quotes.find(q=>q.id===m[1]);if(Q){delete Q.discE;delete Q.discS}});
 
+
+// 4.22 a won quote passes its warranty and retention to the project: the warranty register gets the installation and equipment
+// warranties (start at handover), and each งวด carries its retention (rp: % of that claim; rx: % of the contract held from the last
+// claim). The equipment งวด keep none unless the quote says so.
+{const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);const W=qWr(Q),p=Q&&!had&&Q.pj&&DB.projects[Q.pj];if(!W||!p)return;
+  const st=okD(p.info.handover)?p.info.handover:'',co=p.info.company||DB.co.name||'',hasE=Q.items.some(qmIsEq);p.war=p.war||[];
+  if(n(W.i))p.war.push({id:uid(),item:'รับประกันผลงานติดตั้ง',vendor:co,start:st,months:n(W.i),note:'นับจากวันส่งมอบงาน (ตามใบเสนอราคา '+(Q.no||'')+')'});
+  if(hasE&&n(W.ep))p.war.push({id:uid(),item:'รับประกันตัวเครื่อง: อะไหล่',vendor:'',start:st,months:n(W.ep),note:'ตามเงื่อนไขผู้ผลิต'});
+  if(hasE&&n(W.ec))p.war.push({id:uid(),item:'รับประกันคอมเพรสเซอร์',vendor:'',start:st,months:n(W.ec),note:'ตามเงื่อนไขผู้ผลิต'});
+  const I=p.inst||[],ret=W.m?n(W.ret):0,sub=I.filter(x=>!(Q.eqSep&&!W.e&&/^E/.test(String(x.no||'')))),r=v=>Math.round(v*1000)/1000;
+  I.forEach(x=>{x.rp=0;delete x.rx});if(ret&&sub.length){if(W.m==='last')sub[sub.length-1].rx=r(ret*sum(sub,x=>n(x.pct))/100);else sub.forEach(x=>x.rp=ret)}
+  p.info.ret=I.length?0:ret;save();render()}}
+// a claim on an งวด with its own retention deducts that, in place of the project's one rate
+{const f=billCalc;billCalc=function(b){const c=f.apply(this,arguments);if(!b||(b.kind||'prog')!=='prog'||P.info.billMode!=='pct')return c;const it=(P.inst||[]).find(x=>x.id===b.inst);
+  if(!it||it.rp===undefined)return c;const ret=c.amt*n(it.rp)/100+contract().total*n(it.rx)/100;return Object.assign({},c,{ret,net:c.net+c.ret-ret})}}

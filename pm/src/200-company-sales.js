@@ -117,11 +117,11 @@ PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=
   const detail=`<table class="${sp?'qsplit':''}${G4?' pr4':''}"${sp?' style="font-size:10.5px"':''}><thead>${head}</thead><tbody>${body.join('')}</tbody></table>`;
   if(E0)return cphead(`ใบแจ้งปริมาณงาน (BOQ) ${esc(Q.no)}`,`วันที่ ${thDL(Q.date)}`)+code+meta.replace(/<div><b>เรียน<\/b>[\s\S]*?<\/div>/,'<div><b>เรียน</b> ผู้เสนอราคา ...................................................<br>บริษัท / ร้าน ...................................................<br>โทร ...................................</div>')+
     `<p>ขอให้เสนอราคาตามรายการและปริมาณงานด้านล่าง โดยกรอกราคาต่อหน่วยและจำนวนเงินทุกช่อง</p>${detail}
-    <h3 style="margin-top:12px">หมายเหตุ</h3><div class="box">${esc(Q.terms||'')}</div><div class="sign"><div>ผู้เสนอราคา (ลงชื่อ / ประทับตรา)</div><div>วันที่เสนอราคา / ยืนราคา ...... วัน</div><div>ผู้รับใบเสนอราคา ${esc(CO().name||'')}</div></div>`;
+    <h3 style="margin-top:12px">หมายเหตุ</h3><div class="box">${esc(qTerms(Q).join(' · '))}</div><div class="sign"><div>ผู้เสนอราคา (ลงชื่อ / ประทับตรา)</div><div>วันที่เสนอราคา / ยืนราคา ...... วัน</div><div>ผู้รับใบเสนอราคา ${esc(CO().name||'')}</div></div>`;
   const tail=f==='S'?'':`<div style="page-break-before:always"></div>${G4?`<style>@page{size:A4 landscape}</style><h1 style="text-align:center">แบบแสดงรายการ ปริมาณงาน และราคา (ปร.4)</h1>`:'<h1>รายละเอียดราคา</h1>'}${detail}`;
   return cphead(`ใบเสนอราคา (Quotation) ${esc(Q.no)}`,`วันที่ ${thDL(Q.date)}`)+code+meta+`
   ${G4?'<h3 style="margin:8px 0 4px">สรุปค่าก่อสร้าง (แบบ ปร.5)</h3>':''}${cover}
-  <h3 style="margin-top:12px">เงื่อนไข</h3><div class="box">${esc(Q.terms||'')}</div><div class="sign"><div>ผู้เสนอราคา ${esc(Q.by||'')}</div><div>ผู้อนุมัติ</div><div>ลูกค้า (ตกลงสั่งจ้าง)</div></div>
+  <h3 style="margin-top:12px">เงื่อนไข</h3><div class="box">${esc(qTerms(Q).join(' · '))}</div><div class="sign"><div>ผู้เสนอราคา ${esc(Q.by||'')}</div><div>ผู้อนุมัติ</div><div>ลูกค้า (ตกลงสั่งจ้าง)</div></div>
   ${tail}`};
 // 4.21 add-on lines a quote usually carries, listed on every draft quote with a tick (user: "เพิ่มไว้เลยถ้าไม่ใส่ก็ติ้กออก"):
 // key, name, default %, whether the % also counts the equipment when ค่าเครื่อง is split, ticked on a new quote. Unticked rows (a.off) and
@@ -136,3 +136,27 @@ function qAddSeed(Q){if(!Q||!Array.isArray(Q.items)||Q.status&&Q.status!=='draft
 {const f=salesQuote;salesQuote=function(){const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(qAddSeed(Q))save();return f.apply(this,arguments)}}
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('qAddOn'))return;const Q=CO().quotes.find(q=>q.id===t.dataset.id),a=Q&&(Q.adds||[]).find(x=>x.id===t.dataset.k);if(!a)return;
   if(t.checked)delete a.off;else a.off=true;save();render()});
+// 4.22 warranty and retention on the quotation (user: "เพิ่มรับประกันผลงานด้วยดีไหม"): Q.wr = {i: installation warranty months,
+// ep / ec: equipment parts / compressor months (manufacturer's), ret: retention %, m: '' none | 'inst' every claim | 'last' held from
+// the last claim, e: retention also on the equipment}. Retention normally leaves the equipment out (user: "ค่าเครื่องไม่ต้องหัก").
+// Old quotes without Q.wr print as before; a draft gets the defaults when it is opened.
+const QWR0={i:12,ep:12,ec:60,ret:5,m:'inst',e:false};
+const qWr=Q=>Q&&Q.wr&&Q.kind!=='ma'?Object.assign({},QWR0,Q.wr):null;
+const qWrT=(m,EN)=>{m=n(m);if(!m)return '';return m%12?(EN?`${m} months`:`${m} เดือน`):(EN?`${m/12} year${m>12?'s':''}`:`${m/12} ปี`)};
+function qWrLines(Q,EN){const W=qWr(Q);if(!W)return [];const pt=Q._part||'',hasE=Q.items.some(i=>typeof qmIsEq==='function'?qmIsEq(i):i.g==='eq'),sep=!!Q.eqSep,L=[];
+  const eqL=hasE&&(n(W.ep)||n(W.ec))?(EN?'Equipment warranty per the manufacturer: '+[n(W.ep)?'parts '+qWrT(W.ep,1):'',n(W.ec)?'compressor '+qWrT(W.ec,1):''].filter(Boolean).join(', ')
+    :'รับประกันตัวเครื่องตามเงื่อนไขผู้ผลิต: '+[n(W.ep)?'อะไหล่ '+qWrT(W.ep):'',n(W.ec)?'คอมเพรสเซอร์ '+qWrT(W.ec):''].filter(Boolean).join(' ')):'';
+  const inL=n(W.i)?(EN?`Installation workmanship warranty ${qWrT(W.i,1)} from handover`:`รับประกันผลงานติดตั้ง ${qWrT(W.i)} นับจากวันส่งมอบงาน`):'';
+  const of=sep&&!W.e?(EN?'of the installation price':'ของค่าติดตั้ง'):pt?'':(EN?'of the contract price':'ของมูลค่างาน'),bk=n(W.i)?(EN?', returned when the workmanship warranty ends':' คืนเมื่อพ้นระยะรับประกันผลงาน'):'';
+  const rL=n(W.ret)&&W.m?(W.m==='last'?(EN?`Retention ${fmtq(W.ret)}%${of?' '+of:''}, held from the final payment${bk}`:`เงินประกันผลงาน ${fmtq(W.ret)}%${of?' '+of:''} หักจากงวดสุดท้าย${bk}`)
+    :(EN?`Retention ${fmtq(W.ret)}% deducted from every payment${of?' '+of:''}${bk}`:`หักเงินประกันผลงาน ${fmtq(W.ret)}% จากทุกงวด${sep&&!W.e?'ของค่าติดตั้ง':''}${bk}`)):'';
+  if(pt!=='svc'&&eqL)L.push(eqL);if(pt!=='eq'&&inL)L.push(inL);if(rL&&(pt!=='eq'||W.e))L.push(rL);return L}
+// the terms lines a print shows: the typed ones (a warranty line among them gives way to the warranty above) and then the warranty lines
+function qTerms(Q,EN){const T=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean),W=qWrLines(Q,EN);return W.length?[...T.filter(x=>!/รับประกัน|warranty/i.test(x)),...W]:T}
+function qWrBox(Q){const W=qWr(Q);if(!W)return '';const b=`co.quotes.${Q.id}.wr`,num=(k,l,u)=>`<label>${l}<span class="qwr-u"><input class="r" data-t="num" data-p="${b}.${k}" value="${n(W[k])||''}" placeholder="0"><small>${u}</small></span></label>`;
+  return `<div class="qwr"><b>รับประกันและเงินประกันผลงาน</b><div class="form" style="margin-top:8px">${num('i','รับประกันผลงานติดตั้ง','เดือน')}${num('ep','รับประกันตัวเครื่อง: อะไหล่','เดือน')}${num('ec','รับประกันคอมเพรสเซอร์','เดือน')}${num('ret','เงินประกันผลงาน','%')}
+    <label>วิธีหักเงินประกันผลงาน<select data-p="${b}.m">${[['','ไม่หัก'],['inst','หักทุกงวด'],['last','หักงวดสุดท้าย']].map(([k,l])=>`<option value="${k}"${(W.m||'')===k?' selected':''}>${l}</option>`).join('')}</select></label>
+    ${Q.eqSep?`<label class="chk w2" style="align-self:end"><input type="checkbox" data-t="chk" data-p="${b}.e"${W.e?' checked':''}> หักเงินประกันผลงานจากค่าเครื่องด้วย</label>`:''}</div>
+    <p class="hint" style="margin:8px 0 0">พิมพ์ในเงื่อนไขว่า: ${qWrLines(Q).map(esc).join(' · ')||'–'}<br>กด “ได้งาน” แล้ว ระยะรับประกันไปอยู่ในทะเบียนการรับประกันของโครงการ และงวดเงินหักเงินประกันผลงานตามที่เลือก</p></div>`}
+{const f=salesQuote;salesQuote=function(){const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];
+  if(Q&&!Q.wr&&Q.kind!=='ma'&&(!Q.status||Q.status==='draft')){Q.wr=Object.assign({},QWR0);save()}return f.apply(this,arguments)}}

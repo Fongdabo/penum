@@ -127,7 +127,7 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(q|m|l|
   const t0='<div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>รายการ</th>',e0='<p class="empty">ยังไม่มีรายการ ดึงจาก PENUM MEP หรือนำเข้าจากไฟล์</p>';
   // 4.21 the extras, the discount and the totals follow the last line, under the add bar (user: "เอามาต่อหัวข้อสุดท้าย")
   const cut=k=>{const i=h.indexOf(`<!--${k}-->`),j=h.indexOf(`<!--/${k}-->`);if(i<0||j<i)return '';const x=h.slice(i,j+k.length+8);h=h.slice(0,i)+h.slice(j+k.length+8);return x};
-  const ad=cut('qadds'),ds=cut('qdisc'),sm=cut('qsum'),end=`<div class="ql-end">${ad}${Q.eqSep?'':ds.replace('<label>','<label class="ql-disc">')}${sm}</div>`;
+  const ad=cut('qadds'),ds=cut('qdisc'),sm=cut('qsum'),end=`<div class="ql-end">${ad}${Q.eqSep?'':ds.replace('<label>','<label class="ql-disc">')}${sm}${typeof qWrBox==='function'?qWrBox(Q):''}</div>`;
   const a=h.indexOf(t0);if(a>=0){const z=h.indexOf('</tbody></table></div>',a);if(z>0)h=h.slice(0,a)+qlTable(Q)+end+h.slice(z+'</tbody></table></div>'.length)}
   else if(h.includes(e0))h=h.replace(e0,qlTable(Q)+end);
   return h}}
@@ -166,6 +166,7 @@ document.head.insertAdjacentHTML('beforeend',`<style>.ql-t td input{width:100%;m
 .ql-eq label{display:flex;flex-direction:row;gap:8px;align-items:center;margin:0;cursor:pointer}.ql-eq input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;width:18px;height:18px;margin:0;accent-color:var(--accent,#1C8F9B)}
 .ql-eq select{width:auto;max-width:280px}.ql-eq small{opacity:.75;flex-basis:100%}
 .ql-end{margin-top:12px;display:flex;flex-direction:column;gap:12px}.ql-end .qadds{background:var(--surface)}.ql-end dl.stats{margin:0!important}.ql-end .qm-split{margin:0!important}
+.qwr{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}.qwr b{font-size:13.5px}.qwr-u{display:flex;align-items:center;gap:6px}.qwr-u input{flex:1;min-width:0}.qwr-u small{color:var(--muted)}
 .ql-disc{display:flex;align-items:center;gap:10px;justify-content:flex-end;font-weight:600;font-size:13.5px}.ql-disc input{width:180px;text-align:right}
 .ql-add select{max-width:230px}.ql-add #qlName{flex:1;min-width:240px}.ql-add .hint{flex-basis:100%}</style>`);
 if(typeof SBKW==='object')SBKW['co.sales.quote']=(SBKW['co.sales.quote']||'')+' เพิ่มรายการ สินค้า พิมพ์รายการเอง คลังราคา';
