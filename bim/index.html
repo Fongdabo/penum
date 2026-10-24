@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=187,V1_NAME='V1.176';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=188,V1_NAME='V1.177';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30650,6 +30650,144 @@ Object.assign(STR,{a_rsr:['ผังไรเซอร์','Riser Diagram'],br_r
   rsr_fp_sub:['Class {0} · {1} L/min · {2} bar ที่หัวต่อบนสุด · ปั๊ม {3} bar {4} kW','Class {0} · {1} L/min · {2} bar at the top outlet · pump {3} bar, {4} kW'],
   rsr_pl_sub:['ขนาดท่อตามโมเดล · DFU หน่วยระบายน้ำ · FU หน่วยสุขภัณฑ์น้ำประปา (L/s ตามกราฟฮันเตอร์) · ⚠ เล็กกว่าที่คำนวณได้','Sizes as modelled · DFU drainage fixture units · FU supply fixture units (L/s by the Hunter curve) · ⚠ smaller than worked out'],
   rsr_k_smoke:['ตัวตรวจจับควัน','Smoke detector'],rsr_k_heat:['ตัวตรวจจับความร้อน','Heat detector'],rsr_k_pull:['จุดแจ้งเหตุ (MCP)','Manual call point'],rsr_k_bell:['กระดิ่ง','Bell'],rsr_facp:['ตู้ควบคุม (FACP)','Control panel (FACP)']});
+/* ===== 177 Air terminal layout (V1.177; Revit places diffusers and grilles one at a time: here every room gets them from the air it needs, 150).  A room's supply
+   (its cooling load, or what it is given) goes to the fewest diffusers of the type that each carry no more than the type's Max Flow (T.qmax, L/s; left blank: the neck
+   at P.dif.nv m/s, 3.0, for a diffuser, the face less 30 % at P.dif.fv m/s, 2.0, for a grille), on an even grid along the room's longest wall, half a spacing from the
+   walls, no farther apart than P.dif.sp m (4.0).  The throw of a diffuser to 0.25 m/s (T50) is the type's own (T.t50, m at Max Flow, in proportion to its flow) or
+   K·Q ÷ (0.25·√A of the neck) (ASHRAE Fundamentals, ch. 20: K 0.7 for a four-way diffuser, 1.4 for a slot); the grid takes more diffusers while T50 ÷ L, L the distance to
+   the nearest wall or half the way to the next diffuser, is reported where it is outside P.dif.r0 … r1 (0.7 … 1.3: the ADPI selection guide of ASHRAE for ceiling
+   diffusers, ADPI ≥ 80); asked to (o.adpi), the grid takes more diffusers while it is over r1.  Return grilles take the return of the room, exhaust grilles its exhaust
+   (a toilet given none gets P.dif.ach air changes an hour, 10, written to the room), each the same way, then moved
+   to be 1.5 m clear of the supply diffusers.  Diffusers and grilles stay 0.91 m from smoke and heat detectors (NFPA 72 A.17.7.4.1) and clear of lights and sprinkler
+   heads, moved within their cell where they would not be.  At the ceiling where there is one, else 450 mm under the storey above.  Generate Layout (75) can join them
+   to their air handlers in the same step. ===== */
+const DIF_D={sp:4,nv:3,fv:2,r0:0.7,r1:1.3,ach:10},DIF_LIM={sp:[1.5,12],nv:[1,8],fv:[0.5,5],r0:[0.2,2],r1:[0.5,4],ach:[1,60]},DIF_SMK=910,DIF_RS=1500,DIF_VT=0.25,DIF_K={supply:0.7,linear:1.4};
+const DIF_WET=FAL_GUESS[0][1],DIF_C=[['SA','sa',['supply','linear']],['RA','ra',['return']],['EA','ea',['exhaust']]];
+XC.push(()=>{const f=P.dif;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f))for(const k in DIF_LIM){const v=+f[k];if(f[k]!==''&&f[k]!=null&&isFinite(v))o[k]=clamp(v,DIF_LIM[k][0],DIF_LIM[k][1])}
+  if(Object.keys(o).length)P.dif=o;else delete P.dif});
+const difSet=()=>Object.assign({},DIF_D,P.dif||{});
+const difSup=T=>!!T&&(T.kind==='supply'||T.kind==='linear'||!T.kind);
+/* the neck of a type (mm): its own, else about 0.42 of its face (250 for a 600 × 600 diffuser), 200 for a slot */
+const difNeck=T=>+T.neck>0?+T.neck:T.kind==='linear'?200:Math.max(100,Math.min(400,Math.round(Math.min(+T.w||600,+T.d||600)*0.42/25)*25));
+/* the most a terminal of type T carries (L/s) */
+function difMax(T,S){if(+T.qmax>0)return+T.qmax;if(difSup(T)){const r=difNeck(T)/2000;return Math.PI*r*r*S.nv*1000}return(+T.w||600)*(+T.d||600)/1e6*0.7*S.fv*1000}
+/* the throw to 0.25 m/s of a diffuser of type T carrying q L/s (m) */
+function difT50(T,q,S){if(+T.t50>0){const m=difMax(T,S);return m>0?+T.t50*q/m:0}const r=difNeck(T)/2000;return(DIF_K[T.kind]||DIF_K.supply)*(q/1000)/(DIF_VT*Math.sqrt(Math.PI*r*r))}
+const difPer=(q,n)=>{const k=flowK(P);return Math.round(Math.ceil(q*k/n-1e-9)/k*1e4)/1e4};
+/* T50/L of the supply diffusers pts [{x, y, q, T}] of a room: {r (their mean), lo, hi, L [m each], t [m each]}, or null */
+function difAdpi(pts,net,S){const D=pts.filter(p=>p.T&&p.T.kind!=='linear');if(!D.length)return null;let s=0;const L=[],T5=[];
+  for(const p of D){let l=fsEdge(p.x,p.y,net);for(const q of D)if(q!==p)l=Math.min(l,Math.hypot(q.x-p.x,q.y-p.y)/2);l=Math.max(l,300)/1000;const t5=difT50(p.T,p.q,S);L.push(l);T5.push(t5);s+=t5/l}
+  const r=s/D.length;return{r,lo:r<S.r0-1e-9,hi:r>S.r1+1e-9,L,t:T5}}
+/* every room with its region, its airflow row (150) and the terminals in it: [{it (161), row, has {SA, RA, EA: [elements]}, adpi}] */
+let DIFM=null;
+function difNow(){if(DIFM&&DIFM.ver===VER&&DIFM.P===P)return DIFM.L;const S=difSet(),L=[];
+  for(const it of fsRooms(P)){const row=raRow(it.r.id);if(!row)continue;const has={SA:[],RA:[],EA:[]};for(const c of ['SA','RA','EA'])for(const id of row.T[c]||[]){const e=IDX.get(id);if(e)has[c].push(e)}
+    L.push({it,row,has,adpi:difAdpi(has.SA.map(e=>({x:e.x,y:e.y,q:+e.flow||0,T:typ(P,e)||{}})),it.g.net,S)})}
+  DIFM={ver:VER,P,L};return L}
+const difType=(c,pick)=>{const A=(P.types.terminal||[]),ks=DIF_C.find(x=>x[0]===c)[2];if(pick!=='auto'&&pick!=null){const T=A.find(x=>x.id===+pick);if(T)return T}return A.find(T=>T.kind===ks[0])||A.find(T=>ks.includes(T.kind))||null};
+/* what a terminal keeps clear of on a level: [{x, y, r}] */
+function difObs(lv,w){const O=[],h=w/2;for(const e of P.els){if(e.level!==lv)continue;const T=typ(P,e)||{};
+  if(e.cat==='device'&&(T.kind==='smoke'||T.kind==='heat'))O.push({x:e.x,y:e.y,r:DIF_SMK});else if(e.cat==='sprinkler')O.push({x:e.x,y:e.y,r:h+300});
+  else if(e.cat==='light'&&T.kind!=='wall'&&T.kind!=='exit')O.push({x:e.x,y:e.y,r:h+Math.max(+T.w||300,+T.d||300)/2+100})}return O}
+/* a point of grid G moved within its cell (up to f of it) to be clear of H [{x, y, r}] and, if it can be, of Sf as well, inside the room and wall from its edges:
+   {x, y, ok (clear of H)} */
+function difNudge(p,G,H,Sf,net,wall,f){const mg=(L,x,y)=>L.length?Math.min(...L.map(o=>Math.hypot(o.x-x,o.y-y)-o.r)):Infinity,X=(u,v)=>[u*G.c-v*G.s,u*G.s+v*G.c];
+  if(mg(H,p.x,p.y)>=0&&mg(Sf,p.x,p.y)>=0)return{x:p.x,y:p.y,ok:1};const C=[],mu=G.sx*f,mv=G.sy*f;for(let du=-mu;du<=mu+1;du+=100)for(let dv=-mv;dv<=mv+1;dv+=100)C.push([du,dv,Math.hypot(du,dv)]);C.sort((a,b)=>a[2]-b[2]);
+  let best=null;for(const [du,dv] of C){const [x,y]=X(p.u+du,p.v+dv);if(!inPoly(x,y,net)||fsEdge(x,y,net)<wall)continue;const h=mg(H,x,y),s=mg(Sf,x,y);if(h>=0&&s>=0)return{x:Math.round(x),y:Math.round(y),ok:1};
+    const sc=h>=0?1e6+s:h;if(!best||sc>best.sc+50)best={sc,x,y,ok:h>=0?1:0}}
+  if(!best){const h=mg(H,p.x,p.y);return{x:p.x,y:p.y,ok:h>=0?1:0}}return{x:Math.round(best.x),y:Math.round(best.y),ok:best.ok}}
+/* the height of a terminal at a point: the ceiling, else 450 under the storey above */
+function difOff(lv,x,y){const cl=ceilingAt(P,lv,x,y);if(cl)return cl.off;const L=lvl(P,lv),up=levelAbove(P,lv);return Math.max(2400,(L&&up?up.elev-L.elev:3000)-450)}
+/* the layout. o: {sa, ra, ea (what to place), ts, tr, te (types: 'auto' | id), repl, avoid, adpi} -> {rooms [{it, row, SA/RA/EA {st:'new'|'has'|'none'|'unit'|'notype'|'small'|'off', n, T, q, sx, sy, ad}, clash}],
+   add [elements without ids], del Set, ach Map room id -> air changes it is given} */
+function difPlan(ids,o){const S=difSet(),want=new Set(ids),add=[],del=new Set(),rooms=[],ach=new Map();
+  for(const x of difNow()){const {it,row,has}=x;if(!want.has(it.r.id))continue;const R={it,row,clash:0},net=it.g.net,placed=[];rooms.push(R);
+    for(const [c,k] of DIF_C){const on=o[k];let need=c==='SA'?row.sreq:c==='RA'?row.rreq:row.ereq;
+      if(c==='EA'&&on&&!(need>0)&&!row.open&&row.eaf==null&&row.ach==null&&DIF_WET.test(String(it.r.name||''))){need=S.ach*row.vol/3.6;ach.set(it.r.id,S.ach)}
+      if(!on){R[c]={st:'off',n:0};continue}if(!(need>0)||row.open){R[c]={st:'none',n:0};continue}
+      if(c!=='EA'&&row.ss==='u'){R[c]={st:'unit',n:0};continue}if(c==='RA'&&!(R.SA.st==='new'||R.SA.st==='has')){R[c]={st:'none',n:0};continue}
+      if(has[c].length&&!o.repl){R[c]={st:'has',n:has[c].length};if(c==='SA')for(const e of has[c])placed.push({x:e.x,y:e.y});continue}
+      const T=difType(c,o['t'+k[0]]);if(!T){R[c]={st:'notype',n:0};continue}const qm=difMax(T,S),n0=Math.max(1,Math.ceil(need/qm-1e-9)),w=Math.max(+T.w||600,+T.d||600),wall=Math.max(300,w/2+50),SP=S.sp*1000;
+      const G=gridLay(net,(Lu,Lv)=>{let b=null;for(let nx=1;nx<=n0;nx++){const ny=Math.ceil(n0/nx),sc=Math.abs(Math.log((Lu/nx)/(Lv/ny)))+0.35*(nx*ny-n0)/n0;if(!b||sc<b.sc)b={nx,ny,sc}}
+        let {nx,ny}=b;if(c==='SA'){while(Lu/nx>SP&&nx<60)nx++;while(Lv/ny>SP&&ny<60)ny++;
+          if(o.adpi&&T.kind!=='linear')for(let i=0;i<200&&nx*ny<400;i++){const L=Math.max(Math.min(Lu/nx,Lv/ny)/2,300)/1000;if(difT50(T,need/(nx*ny),S)/L<=S.r1+1e-9)break;if(Lu/nx>=Lv/ny)nx++;else ny++}}
+        return{nx,ny}},wall);
+      if(!G.pts.length){R[c]={st:'small',n:0,T};continue}for(const e of has[c])del.add(e.id);
+      const O=o.avoid?difObs(it.lv,w):[],Sf=c==='SA'?[]:placed.map(p=>({x:p.x,y:p.y,r:DIF_RS}));
+      const rot0=Math.round(Math.atan2(G.s,G.c)*1800/Math.PI)/10,rot=T.kind==='linear'?((rot0%180)+180)%180:((rot0%90)+90)%90,q=difPer(need,G.pts.length),pts=[];
+      for(const p of G.pts){const m=O.length||Sf.length?difNudge(p,G,O,Sf,net,wall,c==='SA'?0.3:0.45):{x:p.x,y:p.y,ok:1};if(!m.ok)R.clash++;
+        add.push({cat:'terminal',type:T.id,level:it.lv,x:m.x,y:m.y,rot,off:Math.round(difOff(it.lv,m.x,m.y)),sys:c,flow:q});pts.push({x:m.x,y:m.y,q,T});if(c==='SA')placed.push({x:m.x,y:m.y})}
+      R[c]={st:'new',n:pts.length,T,q,need,sx:G.sx,sy:G.sy,ad:c==='SA'?difAdpi(pts,net,S):null}}}
+  return{rooms,add,del,ach}}
+/* places what the layout planned, and with o.duct the ducts from the air handlers to the new terminals (Generate Layout, its shortest solutions); a level that gets
+   terminals and has no mechanical plan gets one, made from its floor plan -> {vid (the plan of the level of the view, or of the first level), nd (ducts)} */
+function difApply(Q,o){if(!Q.add.length&&!Q.del.size)return null;const lvs=[...new Set(Q.add.map(e=>e.level))],av=activeView(),out=new Map();let nd=0;
+  edit(()=>{for(const [id,a] of Q.ach||[]){const r=IDX.get(id);if(r&&Q.add.some(e=>e.sys==='EA'&&e.level===r.level))r.ach=a}if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));const ids=[];for(const e of Q.add){const n=Object.assign({id:P.seq++},e);P.els.push(n);IDX.set(n.id,n);ids.push(n.id)}
+    if(o&&o.duct){const G=ductLayGroups(P,{only:new Set(ids),br:'round'});nd=ductLayApply(P,G,{}).length}
+    for(const lv of lvs){const pl=P.views.filter(v=>v.kind==="plan"&&v.level===lv&&!v.rcp&&!v.draft&&!v.legend&&v.dep==null),has=pl.find(v=>v.disc==='mech')||pl.find(v=>v.disc==='coord');if(has){out.set(lv,has.id);continue}
+      const src=pl.find(v=>!v.disc||v.disc==='arch')||pl[0];if(!src)continue;const L=lvl(P,lv),v=JSON.parse(JSON.stringify(src));
+      Object.assign(v,{id:P.seq++,name:(L?L.name:'')+' - '+t('disc_mech'),disc:'mech'});delete v.tpl;P.views.push(v);out.set(lv,v.id);
+      for(const a of P.ann.filter(a=>a.view===src.id&&a.cat==='rtag'))P.ann.push(Object.assign(JSON.parse(JSON.stringify(a)),{id:P.seq++,view:v.id}))}});
+  const lv=av&&out.has(av.level)?av.level:lvs[0];return{vid:lv!=null?out.get(lv)||null:null,nd}}
+/* the type fields: Max Flow and the throw at it */
+TYPE_FIELDS.terminal.push(['qmax','num','L/s',1],['t50','num','m',0.1]);
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(!F||!T||cat!=='terminal')return F;return F.filter(f=>f[0]!=='t50'||difSup(T))}}
+const difOpt=()=>ui.dif||(ui.dif={sa:true,ra:true,ea:true,ts:'auto',tr:'auto',te:'auto',repl:false,avoid:true,adpi:false,duct:false,all:false});
+function dlgDif(){const o=difOpt(),S=difSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=difPlan(ids,o),au=airUnit();ui.helpAt='calc';
+  const A=x=>fmtAir(x),tOpt=(c,k)=>{const ks=DIF_C.find(x=>x[0]===c)[2],Ts=(P.types.terminal||[]).filter(T=>ks.includes(T.kind||'supply'));
+    return`<select data-dfo="t${k[0]}"><option value="auto"${o['t'+k[0]]==='auto'?' selected':''}>${t('dif_tauto')}</option>${Ts.map(T=>`<option value="${T.id}"${String(o['t'+k[0]])===String(T.id)?' selected':''}>${esc(T.name||T.mark||'')}</option>`).join('')}</select>`};
+  const num=(k,st,u)=>`<label><span>${t('dif_'+k)}</span><span><input type="number" data-df="${k}" value="${S[k]}" step="${st}" min="${DIF_LIM[k][0]}" max="${DIF_LIM[k][1]}"><small>${u}</small></span></label>`,chk=k=>`<label><span>${t('dif_o_'+k)}</span><span><input type="checkbox" data-dfo="${k}"${o[k]?' checked':''}></span></label>`;
+  const set=`<div class="ldg pz">${chk('sa')}<label><span>${t('dif_ts')}</span><span>${tOpt('SA','sa')}</span></label>${chk('ra')}<label><span>${t('dif_tr')}</span><span>${tOpt('RA','ra')}</span></label>${chk('ea')}<label><span>${t('dif_te')}</span><span>${tOpt('EA','ea')}</span></label>
+    ${num('sp',0.1,'m')}${num('nv',0.1,'m/s')}${num('fv',0.1,'m/s')}${num('r0',0.05,'')}${num('r1',0.05,'')}${num('ach',1,t('u_ach'))}
+    <label><span>${t('fs_rooms')}</span><span><select data-dfo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    ${chk('adpi')}${chk('repl')}${chk('avoid')}${chk('duct')}</div>`;
+  const m2=a=>(a/1e6).toFixed(a<1e8?1:0)+' m²',ad=x=>x?x.r.toFixed(2)+(x.lo||x.hi?' ⚠':''):'—';
+  const cell=(R,c)=>{const z=R[c],nd=z&&z.need!=null?z.need:c==='SA'?R.row.sreq:c==='RA'?R.row.rreq:R.row.ereq,q=nd>0?A(nd):'—';if(!z||z.st==='off')return`<td class="n">${q}</td>`;
+    if(z.st!=='new')return`<td class="n">${q}${z.st==='none'?'':' · '+t('dif_q_'+z.st)+(z.st==='has'?' ('+z.n+')':'')}</td>`;
+    return`<td class="n">${q} → <b>${z.n}</b> × ${esc(z.T.mark||z.T.name||'')} · ${A(z.q)}${c==='SA'?' · '+(z.sx/1000).toFixed(2)+' × '+(z.sy/1000).toFixed(2)+' m':''}</td>`};
+  const bad=[],rows=Q.rooms.map(R=>{const x=difNow().find(y=>y.it.r.id===R.it.r.id),now=x?x.has.SA.length:0,a=R.SA&&R.SA.st==='new'?R.SA.ad:x&&x.adpi,isBad=(a&&(a.lo||a.hi))||R.clash||(R.row.ss==='l'||R.row.ss==='z')&&!(R.SA&&R.SA.st==='new');if(isBad)bad.push(R.it.r.id);
+    return`<tr data-id="${R.it.r.id}"${isBad?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td class="n">${m2(R.it.g.area)}</td><td class="n">${now?now+' · '+A(R.row.sa):'0'}</td>${cell(R,'SA')}<td class="n">${ad(a)}</td>${cell(R,'RA')}${cell(R,'EA')}<td class="n">${R.clash?R.clash+' ⚠':''}</td></tr>`}).join('');
+  const nS=Q.add.filter(e=>e.sys==='SA').length,nR=Q.add.filter(e=>e.sys==='RA').length,nE=Q.add.filter(e=>e.sys==='EA').length;
+  const body=`<style>.dfd td select,.dfd .ldg select{max-width:230px}</style><div class="dfd"><p class="note">${t('dif_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('dif_now')}</th><th class="n">${t('dif_nsa')} (${au})</th><th class="n">T50/L</th><th class="n">${t('dif_nra')} (${au})</th><th class="n">${t('dif_nea')} (${au})</th><th class="n">${t('dif_clash')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+
+    `<p class="note">${t('dif_note')}</p></div>`;
+  openDlg(t('a_diflay'),body,`<button class="btn" data-dfx="show">${t(ui.difShow?'dif_hide':'dif_show')}</button><button class="btn" data-dfx="bad"${bad.length?'':' disabled'}>${t('dif_selbad',bad.length)}</button><span style="flex:1"></span><button class="btn primary" data-dfx="apply"${Q.add.length?'':' disabled'}>${t('dif_apply',nS,nR,nE)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.df){const k=el.dataset.df,v=+el.value;edit(()=>{const f=Object.assign({},P.dif||{});if(el.value===''||!isFinite(v))delete f[k];else f[k]=clamp(v,DIF_LIM[k][0],DIF_LIM[k][1]);P.dif=f;if(!Object.keys(f).length)delete P.dif});dlgDif();return}
+       const k=el.dataset.dfo;if(!k)return;if(k==='all')o.all=el.value==='1';else if(k[0]==='t'&&k.length===2)o[k]=el.value==='auto'?'auto':+el.value;else o[k]=el.checked;dlgDif()},
+     click(ev){const x=ev.target.closest('[data-dfx]');if(x&&ui.dlg){const k=x.dataset.dfx;
+         if(k==='apply'&&Q.add.length){const r=difApply(Q,o),av=activeView(),v=r&&r.vid!=null&&viewById(r.vid),n=Q.add.length;if(v&&av&&av.id!==v.id&&!(av.kind==='plan'&&av.level===v.level&&['mech','coord'].includes(av.disc))){showView(v.id);toast(t('dif_donev',n,v.name,r.nd),7000)}else toast(t('dif_done',n,r?r.nd:0),7000);dlgDif();return}
+         if(k==='show'){ui.difShow=!ui.difShow;refresh();dlgDif();return}if(k==='bad'&&bad.length){ui.sel=new Set(bad);ui.difShow=true;closeDlg();setTool('modify');return}}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);ui.difShow=true;closeDlg();setTool('modify')}}},'wide')}
+XA.diflay=dlgDif;
+for(const [tab,pn,after] of [['sys','p_hvac','terminal'],['analyze','p_rair','@airdist']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@diflay')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@diflay')}}
+BTN['@diflay']=['terminal',''];
+/* on the plans while asked for: the throw of every supply diffuser (T50), and of the rooms whose T50/L is outside the range, the room in orange */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.difShow||v.kind!=='plan'||v.draft)return;const S=difSet(),L=difNow().filter(x=>x.it.lv===v.level);if(!L.length)return;ctx.save();
+  for(const x of L){const a=x.adpi;if(a&&(a.lo||a.hi)){ctx.fillStyle='rgba(232,89,12,.12)';g.path(x.it.g.net);ctx.fill()}
+    for(const e of x.has.SA){const Ty=typ(P,e)||{};if(Ty.kind==='linear')continue;const R=difT50(Ty,+e.flow||0,S)*1000;if(!(R>0))continue;ctx.strokeStyle='rgba(30,120,220,.65)';ctx.lineWidth=g.lw(0.18);g.dash([1.5,1]);
+      g.path([...Array(36).keys()].map(i=>[e.x+R*Math.cos(i*Math.PI/18),e.y+R*Math.sin(i*Math.PI/18)]));ctx.stroke();g.dash(null)}}
+  ctx.restore()});
+/* the throw of a supply diffuser in its Properties */
+XP.push((c,els)=>{if(c!=='terminal'||els.length!==1)return'';const e=els[0],T=typ(P,e)||{};if((e.sys&&SCL(e.sys)!=='SA')||!difSup(T))return'';const S=difSet(),q=+e.flow||0;
+  return PR.ro('dif_max',fmtAir(difMax(T,S))+' '+airUnit())+(T.kind==='linear'?'':PR.ro('dif_t50',(difT50(T,q,S)).toFixed(1)+' m'))});
+Object.assign(STR,{
+  a_diflay:['วางหัวจ่ายลม หน้ากากลมกลับและระบายอากาศอัตโนมัติ','Air Terminal Layout'],f_qmax:['ลมสูงสุดต่อหัว','Max Flow'],f_t50:['ระยะลมพุ่ง T50 ที่ลมสูงสุด','Throw T50 at Max Flow'],
+  dif_intro:['ลมจ่ายที่ห้องต้องการ (จากภาระความเย็น หรือที่กำหนดในคุณสมบัติห้อง) แบ่งให้หัวจ่ายน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว วางเป็นตารางเท่ากันตามแนวผนังที่ยาวที่สุด ห่างผนังครึ่งหนึ่งของระยะห่าง และห่างกันไม่เกินระยะที่กำหนด · ระยะลมพุ่ง (T50 ถึง 0.25 ม./วินาที) เทียบกับระยะ L (ถึงผนังหรือครึ่งทางถึงหัวถัดไป) ตรวจกับเกณฑ์ ADPI ของ ASHRAE (ติ๊กให้เพิ่มหัวจนผ่านได้) · หน้ากากลมกลับและระบายวางตามลมกลับและลมระบายของห้อง ห่างหัวจ่าย 1.5 ม. (ห้องน้ำที่ไม่ได้กำหนดลมระบายใช้ 10 เท่า/ชม.) · ทุกตัวหลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟและหัวสปริงเกลอร์',
+    'The supply a room needs (its cooling load, or what its Properties give) goes to the fewest diffusers that each carry no more than the type\'s Max Flow, on an even grid along the longest wall, half a spacing from the walls and no farther apart than the spacing set · the throw (T50, to 0.25 m/s) over L (to the wall or half the way to the next diffuser) is checked against the ASHRAE ADPI range (tick to add diffusers until it is within it) · return and exhaust grilles take the return and the exhaust of the room, 1.5 m from the diffusers · all keep 0.91 m from smoke detectors and clear of lights and sprinkler heads'],
+  dif_o_sa:['วางหัวจ่ายลม (SA)','Place supply diffusers (SA)'],dif_o_ra:['วางหน้ากากลมกลับ (RA)','Place return grilles (RA)'],dif_o_ea:['วางหน้ากากระบายอากาศ (EA)','Place exhaust grilles (EA)'],
+  dif_ts:['ชนิดหัวจ่าย','Diffuser type'],dif_tr:['ชนิดหน้ากากลมกลับ','Return grille type'],dif_te:['ชนิดหน้ากากระบาย','Exhaust grille type'],dif_tauto:['อัตโนมัติ (ชนิดแรกในโครงการ)','Auto (the first of the project)'],
+  dif_sp:['ระยะห่างหัวจ่ายสูงสุด','Widest diffuser spacing'],dif_nv:['ความเร็วลมที่คอหัวจ่าย','Neck velocity of diffusers'],dif_fv:['ความเร็วลมผ่านหน้ากาก','Face velocity of grilles'],dif_r0:['T50/L ต่ำสุด (ADPI)','Least T50/L (ADPI)'],dif_r1:['T50/L สูงสุด (ADPI)','Most T50/L (ADPI)'],
+  dif_o_repl:['แทนที่หัวที่มีอยู่แล้วในห้อง','Replace the terminals already there'],dif_o_avoid:['หลบอุปกรณ์ตรวจจับควัน โคมไฟ สปริงเกลอร์','Keep clear of detectors, lights and sprinklers'],dif_o_duct:['เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ด้วย (Generate Layout)','Run ducts from the air handlers to them (Generate Layout)'],
+  dif_now:['หัวจ่ายที่มี · ลม','Diffusers there · air'],dif_nsa:['ลมจ่าย → หัวจ่ายใหม่ · ต่อหัว · ระยะห่าง','Supply → new diffusers · each · spacing'],dif_nra:['ลมกลับ → หน้ากากใหม่','Return → new grilles'],
+  dif_nea:['ลมระบาย → หน้ากากใหม่','Exhaust → new grilles'],dif_clash:['หลบไม่ได้','Not clear'],dif_ach:['ลมระบายห้องน้ำที่ไม่ได้กำหนด','Exhaust of toilets given none'],
+  dif_o_adpi:['เพิ่มหัวจ่ายจน T50/L ไม่เกินเกณฑ์','Add diffusers until T50/L is within range'],
+  dif_q_has:['มีอยู่แล้ว (ติ๊กแทนที่)','There already (tick Replace)'],dif_q_none:['—','—'],dif_q_off:['—','—'],dif_q_unit:['ใช้เครื่องในห้อง','Unit in the room'],dif_q_notype:['ไม่มีชนิดหัว','No terminal type'],dif_q_small:['ห้องเล็กเกินไป','Too small'],
+  dif_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้นบนแปลน · ลมสูงสุดและระยะลมพุ่งของหัวใส่ในชนิดหัวจ่ายตามแคตตาล็อก ถ้าไม่ใส่คิดจากขนาดคอและความเร็วลม · T50/L ที่ดีของหัวจ่ายบนฝ้า 0.7–1.3 (ADPI ≥ 80) ต่ำไปลมไม่ทั่วห้อง สูงไปลมโดนคน · ห้องที่ใช้แอร์ติดผนังหรือแคสเซ็ตในห้องไม่วางหัวจ่าย · ห้องน้ำได้หน้ากากระบายตามลมระบาย (ACH) ที่กำหนดในคุณสมบัติห้อง ถ้าไม่ได้กำหนดใช้ค่าที่ตั้งไว้และบันทึกลงห้อง',
+    'Click a room to select it on the plan · type the Max Flow and the throw of a diffuser from its catalogue in its type; left blank they come from its neck and the velocity · T50/L for ceiling diffusers 0.7–1.3 (ADPI ≥ 80): lower, the air does not reach the room; higher, it blows on people · rooms with a unit of their own (wall or cassette) get no diffusers · toilets get exhaust grilles for the exhaust (ACH) set in the room\'s Properties, or the value set here, written to the room'],
+  dif_show:['แสดงระยะลมพุ่งบนแปลน','Show throw on plans'],dif_hide:['ซ่อนระยะลมพุ่ง','Hide throw'],dif_selbad:['เลือกห้องที่ยังไม่ผ่าน ({0})','Select rooms to look at ({0})'],
+  dif_apply:['วางหัวจ่าย {0} · ลมกลับ {1} · ระบาย {2}','Place {0} diffusers · {1} return · {2} exhaust'],
+  dif_done:['วางหัวจ่ายลมและหน้ากาก {0} ตัว ท่อลม {1} เส้นแล้ว กดย้อนกลับได้','{0} air terminals and {1} ducts placed — Undo to go back'],
+  dif_donev:['วางหัวจ่ายลมและหน้ากาก {0} ตัว ท่อลม {2} เส้นแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} air terminals and {2} ducts placed, shown in the plan {1} — Undo to go back'],
+  dif_max:['ลมสูงสุดของหัว','Max Flow'],dif_t50:['ระยะลมพุ่ง T50 (0.25 ม./วินาที)','Throw T50 (0.25 m/s)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -32092,6 +32230,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.174 · [[a_fallay]] (แผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_analyze]]): ทุกห้องมีชนิดตัวตรวจจับ (ควัน ความร้อน หรือไม่ต้องมี) ตามการใช้ห้อง วางตัวตรวจจับตามระยะของ NFPA 72 (ลดระยะตามความสูงฝ้า) ห่างผนัง 100 มม. และห่างหัวจ่ายลม 0.91 ม. · จุดแจ้งเหตุข้างทางออกทุกทาง ระยะเดินไม่เกิน 61 ม. วัดตามทางเดินจริง · กระดิ่งให้ดังกว่าเสียงรอบข้าง 15 dB ทุกห้อง (ห้องนอน 75 dB) หักเสียงที่ผ่านผนัง · ตู้ควบคุม (FACP) แบ่งโซนไม่เกิน 2,000 ตร.ม. วงจร Z และ N ให้อุปกรณ์ทุกตัว ขนาดแบตเตอรี่ 24 ชม. + 5 นาที · ส่วนที่ไม่ครอบคลุมแสดงในแปลนและใน [[a_sysck]]
 - V1.175 · [[a_fhclay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ตู้ดับเพลิง (FHC) ข้างประตูบันไดทุกแห่ง แล้วเพิ่มจนทุกจุดของชั้นอยู่ในระยะสายฉีด 30 ม. บวกระยะพุ่ง 9 ม. วัดตามทางเดินจริง (NFPA 14) · ถังดับเพลิงไม่เกิน 22.9 ม. (NFPA 10) · ตู้ที่ตรงกันหลายชั้นเป็นท่อยืน: เดินท่อยืนและท่อแยกเข้าตู้ · คำนวณอัตราไหล แรงดันที่หัวบนสุด แรงดันและกำลังปั๊ม และน้ำสำรอง เทียบกับปั๊มในโมเดล · ส่วนที่เข้าไม่ถึงแสดงในแปลนและใน [[a_sysck]]
 - V1.176 · [[a_rsr]] (แผงท่อน้ำและแผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_view]]): ผังไรเซอร์ที่วาดจากโมเดลเองและเปลี่ยนตามทันที: สุขาภิบาล (โสโครก น้ำทิ้ง อากาศ น้ำฝน ประปา น้ำร้อน: ขนาดและ DFU/FU ทุกช่วง สุขภัณฑ์ที่ต่อเข้าแต่ละชั้น ถังหรือปั๊มต้นทาง) · ท่อยืนดับเพลิง (ตู้ FHC ท่อแยกสปริงเกลอร์ ถังดับเพลิงแต่ละชั้น ปั๊ม หัวรับน้ำ) · แจ้งเหตุเพลิงไหม้ (ตู้ควบคุม สายแนวดิ่ง และอุปกรณ์ของทุกโซนในทุกชั้น) · วางบนชีต พิมพ์ และส่งออก DXF ได้
+- V1.177 · [[a_diflay]] (แผงระบบปรับอากาศของงานระบบ หรือแผงลมของห้องในแท็บ [[tab_analyze]]): วางหัวจ่ายลมให้ทุกห้องตามลมที่ห้องต้องการ (จากภาระความเย็นหรือที่กำหนดเอง) จำนวนน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว เป็นตารางเท่ากันตามผนังยาว ระยะห่างไม่เกินที่ตั้ง · ตรวจระยะลมพุ่ง T50/L ตามเกณฑ์ ADPI ของ ASHRAE (0.7–1.3) และเพิ่มหัวเมื่อลมพุ่งแรงเกิน · วางหน้ากากลมกลับและหน้ากากระบาย (ห้องน้ำตาม ACH) ห่างหัวจ่าย 1.5 ม. · หลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟ และสปริงเกลอร์ · เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ได้ในขั้นเดียว (Generate Layout) · ชนิดหัวจ่ายมีช่องลมสูงสุดและระยะลมพุ่งตามแคตตาล็อก
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -32404,6 +32543,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.174 · [[a_fallay]] (electrical panel of Systems, or the [[tab_analyze]] tab): every room has a detector kind (smoke, heat or none) by its use; detectors are laid out at the NFPA 72 spacing (less under high ceilings), 100 mm off walls and 0.91 m from supply diffusers · a call point beside every exit and no more than 61 m to walk, along the way one really walks · bells 15 dB over the ambient sound in every room (75 dB in bedrooms), less what the walls take · the panel (FACP), zones of no more than 2,000 m², circuits Z and N for every device, the battery for 24 h + 5 min · gaps are shown on the plans and in [[a_sysck]]
 - V1.175 · [[a_fhclay]] (piping panel of Systems, or the [[tab_analyze]] tab): a hose cabinet by every stair door, then more until every point of a level is within the 30 m hose plus the 9 m stream, along the way one walks (NFPA 14) · extinguishers no more than 22.9 m away (NFPA 10) · cabinets one above another are a standpipe: the riser and the branch to each cabinet are run · the flow, the pressure at the top outlet, the pump pressure and power and the water to store, compared with the pump in the model · what is out of reach is shown on the plans and in [[a_sysck]]
 - V1.176 · [[a_rsr]] (piping and electrical panels of Systems, or the [[tab_view]] tab): riser diagrams that draw themselves from the model and follow it at once: plumbing (soil, waste, vent, rainwater, cold and hot water: the size and DFU/FU of every length, the fixtures on every branch, the tank or pump a stack starts from) · standpipes (hose cabinets, sprinkler take-offs, extinguishers on every level, the pump, the inlet) · fire alarm (the panel, the cable riser and the devices of every zone on every level) · they go on sheets, print and export to DXF
+- V1.177 · [[a_diflay]] (HVAC panel of Systems, or Space Airflow on the [[tab_analyze]] tab): supply diffusers for every room from the air it needs (its cooling load or its own value): the fewest that each carry no more than the type's Max Flow, on an even grid along the long wall, no farther apart than the spacing set · the throw is checked as T50/L against the ASHRAE ADPI range (0.7–1.3), with more diffusers where it blows too far · return and exhaust grilles (toilets by their ACH), 1.5 m from the diffusers · clear of smoke detectors by 0.91 m, of lights and of sprinkler heads · ducts from the air handlers to the new terminals in the same step (Generate Layout) · air terminal types take a Max Flow and a throw from their catalogue
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -34376,6 +34516,10 @@ window.PenumBIM.r96={make:(k,s)=>rsrNew(k,s),is:vid=>rsrIs(viewById(vid)),
   lay:vid=>{const v=viewById(vid),L=v&&rsrIs(v)?rsrLay(v):null;return L?{k:L.k,n:L.n,none:L.none,box:L.box,hits:L.hits.map(h=>[...h.slice(0,4).map(x=>Math.round(x*10)/10),h[4]]),stacks:L.stacks,
     texts:L.ops.filter(o=>o.t==='T').map(o=>o.s),nops:L.ops.length}:null},
   at:(vid,x,y)=>{const v=viewById(vid),h=v&&rsrIs(v)?rsrAt(v,{x,y}):null;return h?h[4]:null},dxf:vid=>planDXF(viewById(vid)),stacks:f=>rsrStacks(new Set(f||['D','RL','CW','HW','FP'])).map(s=>({f:s.f,mark:s.mark,ids:s.ids,z0:s.z0,z1:s.z1}))};
+window.PenumBIM.r97={now:()=>difNow().map(x=>({id:x.it.r.id,name:x.it.r.name,lv:x.it.lv,sreq:x.row.sreq,rreq:x.row.rreq,ereq:x.row.ereq,ss:x.row.ss,sa:x.has.SA.length,ra:x.has.RA.length,ea:x.has.EA.length,adpi:x.adpi&&{r:x.adpi.r,lo:x.adpi.lo,hi:x.adpi.hi}})),
+  plan:(ids,o)=>{const Q=difPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},difOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,clash:R.clash,SA:R.SA&&{st:R.SA.st,n:R.SA.n,q:R.SA.q,ad:R.SA.ad&&R.SA.ad.r},RA:R.RA&&{st:R.RA.st,n:R.RA.n},EA:R.EA&&{st:R.EA.st,n:R.EA.n}})),add:Q.add,del:[...Q.del]}},
+  apply:(ids,o)=>{const O=Object.assign({},difOpt(),o||{});return difApply(difPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),O),O)},
+  t50:(tid,q)=>difT50((P.types.terminal||[]).find(T=>T.id===tid),q,difSet()),max:tid=>difMax((P.types.terminal||[]).find(T=>T.id===tid),difSet()),loose:()=>airflow(P).loose.slice()};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
