@@ -47,7 +47,7 @@ const t=(k,...a)=>(T[k]?T[k][EN()?1:0]:k).replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const G={eq:['งานเครื่องปรับอากาศ','Air conditioning'],pipe:['งานท่อน้ำยาและท่อน้ำทิ้ง','Refrigerant & drain pipes'],duct:['งานท่อลมและอุปกรณ์','Ductwork'],chw:['งานระบบน้ำเย็น','Chilled water'],
   el:['งานไฟฟ้าระบบปรับอากาศ','A/C electrical'],smk:['งานระบบควบคุมควันไฟ','Smoke control'],fp:['งานระบบดับเพลิง','Fire protection'],elb:['งานระบบไฟฟ้าอาคาร','Building electrical'],
-  com:['งานระบบสื่อสาร','Communication'],plb:['งานระบบสุขาภิบาล','Plumbing'],civ:['งานโยธาที่เกี่ยวข้อง','Civil & building'],oth:['งานทดสอบและอื่นๆ','Testing & others'],mat:['วัสดุก่อสร้างทั่วไป','General materials']};
+  fa:['งานระบบแจ้งเหตุเพลิงไหม้','Fire alarm'],com:['งานระบบสื่อสาร','Communication'],cctv:['งานระบบกล้องวงจรปิด (CCTV)','CCTV'],acc:['งานระบบควบคุมการเข้า-ออก','Access control'],pa:['งานระบบเสียงประกาศ','Public address'],bms:['งานระบบควบคุมอาคารอัตโนมัติ (BMS)','BMS'],lp:['งานระบบป้องกันฟ้าผ่าและสายดิน','Lightning protection & earthing'],genr:['งานเครื่องกำเนิดไฟฟ้าและ UPS','Generator & UPS'],sol:['งานระบบโซลาร์เซลล์','Solar PV'],wwt:['งานระบบบำบัดน้ำเสีย','Wastewater treatment'],mg:['งานระบบก๊าซทางการแพทย์','Medical gas'],plb:['งานระบบสุขาภิบาล','Plumbing'],civ:['งานโยธาที่เกี่ยวข้อง','Civil & building'],oth:['งานทดสอบและอื่นๆ','Testing & others'],mat:['วัสดุก่อสร้างทั่วไป','General materials']};
 const gName=g=>(G[g]||G.oth)[EN()?1:0];
 const SKC={demo:'warn',moc:'info',po:'ok',sup:'ok',dealer:'ok',bb:'info',cgd:'info',egp:'info'};
 
