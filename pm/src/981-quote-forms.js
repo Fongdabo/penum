@@ -170,7 +170,7 @@ function qmParts(Q){const E=[],V=[],r2=v=>Math.round(v*100)/100,EN=qmLang(Q)==='
   if(!E.length||!V.length)return null;
   const no=k=>Q.no?Q.no+'-'+k:'';
   const mk=(items,k)=>Object.assign({},Q,{items,_part:k,eqSep:false,eqDoc:'one',no:no(k==='eq'?1:2),_fno:Q.no?no(1)+' / '+no(2):'',ref:[Q.ref,(EN?'with ':'คู่กับ ')+no(k==='eq'?2:1)].filter(Boolean).join(' · '),
-    sow:k==='eq'?[]:Q.sow,qpay:(Q.qpay||[]).slice()});
+    sow:k==='eq'?[]:Q.sow,qpay:((k==='eq'?Q.qpayE:Q.qpay)||[]).slice()});
   const A=mk(E,'eq'),B=mk(V,'svc'),la=qCalc(Object.assign({},A,{disc:0})).lines,lb=qCalc(Object.assign({},B,{disc:0})).lines,w=la+lb>0?la/(la+lb):0.5;
   const sh=(P,f)=>{P.disc=r2(n(Q.disc)*f);P.adds=(Q.adds||[]).map(a=>n(a.pct)?a:Object.assign({},a,{amt:r2(n(a.amt)*f)}))};sh(A,w);sh(B,1-w);return [A,B]}
 {const f=qmPrint;qmPrint=function(Q,bq){const P=qmTwo(Q)&&!Q._part&&qmParts(Q);if(!P)return f.apply(this,arguments);
@@ -250,11 +250,14 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
   const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
   const r2=(k,v)=>v?`<div class="row2"><span>${k}</span><div>${v}</div></div>`:'';
+  // 4.19 with แยกค่าเครื่อง on one sheet, the equipment and installation payment schedules print one under the other
+  const PE=eqs&&(Q.qpayE||[]).length?qmParts(Q):null;
+  const payT=(L,g,h)=>L&&L.length?`<div><span style="color:var(--qg)">${h}</span><table class="pay"><thead><tr><th>${tx('งวด','No.')}</th><th>${tx('เมื่อ','When')}</th><th class="r">%</th><th class="r">${tx('จำนวนเงิน (รวม VAT)','Amount (incl. VAT)')}</th></tr></thead><tbody>
+      ${L.map((x,k)=>`<tr><td>${esc(x.no||String(k+1))}</td><td>${esc(x.desc||'')}</td><td class="r">${fmtq(x.pct)}%</td><td class="r">${fmt(g*n(x.pct)/100,2)}</td></tr>`).join('')}</tbody></table></div>`:'';
   const terms=`<div class="qm-tm"><h3>${t('เงื่อนไข','Terms &amp; conditions')}</h3>
     ${r2(t('ยืนราคา','Validity'),n(Q.valid)?(EN?`${n(Q.valid)} days from the quotation date`:`${n(Q.valid)} วันนับจากวันที่เสนอราคา`):'')}
     ${ma?'':r2(t('กำหนดแล้วเสร็จ','Completion'),esc(Q.dlv||''))}
-    ${pay.length?`<div><span style="color:var(--qg)">${t('การชำระเงิน','Payment',1)}</span><table class="pay"><thead><tr><th>${tx('งวด','No.')}</th><th>${tx('เมื่อ','When')}</th><th class="r">%</th><th class="r">${tx('จำนวนเงิน (รวม VAT)','Amount (incl. VAT)')}</th></tr></thead><tbody>
-      ${pay.map((x,k)=>`<tr><td>${esc(x.no||String(k+1))}</td><td>${esc(x.desc||'')}</td><td class="r">${fmt(x.pct,0)}%</td><td class="r">${fmt(c.grand*n(x.pct)/100,2)}</td></tr>`).join('')}</tbody></table></div>`:''}
+    ${PE?payT(Q.qpayE,qCalc(PE[0]).grand,t('การชำระเงิน ค่าเครื่อง','Payment: equipment',1))+payT(pay,qCalc(PE[1]).grand,t('การชำระเงิน ค่าติดตั้ง','Payment: installation',1)):payT(pay,c.grand,t('การชำระเงิน','Payment',1))}
     ${notes.length?`<div><span style="color:var(--qg)">${t('หมายเหตุ','Notes',1)}</span><ol>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:''}</div>`;
   const foot=`<div class="qm-ft">${terms}<div>${totals}${wht}${words}</div></div>`;
   // ---- signatures: empty div.ln is where an e-signature goes
@@ -385,3 +388,33 @@ const qmWhtShare=Q=>{let a=0,w=0;Q.items.forEach(i=>{const x=qLine(Q,i);a+=x.t;w
 {const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);
   if(!Q||had||!Q.eqSep||Q.whtB==='none'||qmMa(Q))return;const p=Q.pj&&DB.projects[Q.pj];if(!p)return;
   p.info.wht=Math.round(3*qmWhtShare(Q)*1000)/1000;save();toast(`หัก ณ ที่จ่ายของโครงการ ${fmt(p.info.wht,3)}% (3% เฉพาะส่วนที่ไม่ใช่ค่าเครื่อง)`)}}
+
+// 4.19 งวดเงิน with ค่าเครื่อง split (user: "พวกงวดงานเราจะแยกค่าเครื่องยังไงดี"): the equipment has its own schedule (Q.qpayE,
+// default deposit 50% on order, 50% on delivery) and Q.qpay becomes the installation schedule, each in % of its own part. Ticking
+// แยกค่าเครื่อง fills both when empty. A won quote gives the project both sets of งวด, in % of the contract, each carrying its own
+// withholding rate (i.wp: 0 for equipment, 3% × the withheld share for installation), which billCalc uses for that claim.
+const QM_PAYE=[['มัดจำเมื่อสั่งซื้อเครื่อง',50],['เมื่อส่งเครื่องถึงหน้างาน',50]],
+  QM_PAYS=[['เงินล่วงหน้าเมื่อลงนามสัญญา',30],['เมื่อติดตั้งท่อ สายไฟ และอุปกรณ์แล้วเสร็จ',30],['เมื่อติดตั้งเครื่องแล้วเสร็จ',30],['เมื่อทดสอบและส่งมอบงาน',10]];
+const qmPayL=L=>L.map(([d,p],i)=>({id:uid(),no:String(i+1),desc:d,pct:p}));
+const qmPayBase=(Q,k)=>{const P=Q&&Q.eqSep&&!qmMa(Q)&&qmParts(Q);return P?qCalc(P[k==='eq'?0:1]):qCalc(Q)};
+NEW.qpayE=arr=>({no:String(arr.length+1),desc:'',pct:0});
+ACT.qpayEStd=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;if((Q.qpayE||[]).length&&!confirm('แทนที่งวดเดิม?'))return;Q.qpayE=qmPayL(QM_PAYE);save();render()};
+HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.eqSep$/);if(!m||!v)return;const Q=CO().quotes.find(q=>q.id===m[1]);if(!Q)return;
+  if(!(Q.qpayE||[]).length)Q.qpayE=qmPayL(QM_PAYE);if(!(Q.qpay||[]).length)Q.qpay=qmPayL(QM_PAYS)});
+{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes[C.quotes.length-1];
+  if(!Q||!Q.eqSep||qmMa(Q))return h;const b=`co.quotes.${Q.id}`,L=Q.qpayE=Q.qpayE||[],c=qmPayBase(Q,'eq'),tp=sum(L,x=>x.pct),end='ใช้งวดมาตรฐาน 30/30/30/10</button></div></section>',k=h.indexOf(end);if(k<0)return h;
+  const sec=`<section class="card"><h2><span>งวดเงิน ค่าเครื่อง (สินค้า)</span><small>ไม่หัก ณ ที่จ่าย · คิดจากยอดค่าเครื่อง ${fmt(c.net,2)} บาท (ไม่รวม VAT)${L.length&&Math.abs(tp-100)>0.01?` · <span class="pill warn">รวม ${fmt(tp,1)}% ยังไม่เท่ากับ 100%</span>`:''}</small></h2>
+    ${gtable(`${b}.qpayE`,L,[{k:'no',h:'งวด',w:50},{k:'desc',h:'เมื่อ',w:320},{k:'pct',h:'% ของค่าเครื่อง',t:'num',w:80,sum:x=>x.pct},{k:'amt',h:'จำนวนเงิน (ไม่รวม VAT)',t:'calc',r:1,w:130,f:y=>`<input class="r" inputmode="decimal" data-qamt="${b}.qpayE.${y.id}" data-base="${c.net}" value="${fmt(c.net*n(y.pct)/100,2)}" aria-label="จำนวนเงิน">`},{h:'รวม VAT',t:'calc',r:1,f:x=>fmt(c.grand*n(x.pct)/100)}],{empty:'ยังไม่กำหนดงวดค่าเครื่อง'})}
+    <div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="add" data-c="${b}.qpayE">+ เพิ่มงวด</button><button type="button" class="btn sm" data-a="qpayEStd" data-id="${Q.id}">ใช้งวดมาตรฐาน มัดจำ 50 / ส่งของ 50</button></div></section>`;
+  h=h.slice(0,k+end.length)+sec+h.slice(k+end.length);
+  return h.replace('<span>เงื่อนไขการชำระเงิน (งวดเงิน)</span><small>','<span>งวดเงิน ค่าติดตั้ง วัสดุ และค่าแรง</span><small>หัก ณ ที่จ่าย 3% · คิดจากยอดค่าติดตั้ง · ')}}
+{const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);
+  if(!Q||had||!Q.eqSep||qmMa(Q)||!(Q.qpayE||[]).length||!(Q.qpay||[]).length)return;const p=Q.pj&&DB.projects[Q.pj],P=qmParts(Q);if(!p||!P)return;
+  const a=qCalc(P[0]).net,s=qCalc(P[1]).net,w=a+s>0?a/(a+s):0,ws=Q.whtB==='none'?0:Math.round(3*qmWhtShare(P[1])*1000)/1000,r=v=>Math.round(v*1000)/1000;
+  p.inst=[...Q.qpayE.map(x=>({id:uid(),no:'E'+x.no,desc:'ค่าเครื่อง: '+(x.desc||''),pct:r(n(x.pct)*w),wp:0,task:'',date:''})),
+    ...Q.qpay.map(x=>({id:uid(),no:'S'+x.no,desc:'ค่าติดตั้ง: '+(x.desc||''),pct:r(n(x.pct)*(1-w)),wp:ws,task:'',date:''}))];p.info.billMode='pct';save();
+  toast(`งวดของโครงการ: ค่าเครื่อง ${Q.qpayE.length} งวด (ไม่หัก ณ ที่จ่าย) + ค่าติดตั้ง ${Q.qpay.length} งวด (หัก ${fmtq(ws)}%)`)}}
+// a claim on an งวด with its own withholding rate deducts that rate
+{const f=billCalc;billCalc=function(b){const c=f.apply(this,arguments);if(!b||(b.kind||'prog')!=='prog'||P.info.billMode!=='pct')return c;const it=(P.inst||[]).find(x=>x.id===b.inst);
+  if(!it||it.wp===undefined||it.wp==='')return c;const wht=c.base*n(it.wp)/100;return Object.assign({},c,{wht,net:c.net+c.wht-wht})}}
+
