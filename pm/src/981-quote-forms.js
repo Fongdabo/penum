@@ -146,11 +146,13 @@ const QM_CSS=`<style>
 </style>`;
 
 PRINT.quoteXl=PRINT.quote;
+// a quote this short prints every line on page 1 by itself (a one-row summary would hide quantities and units)
+const QM_ONE=12;
 PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const f=qForm(Q);
   if(!qmMa(Q)&&(Q.look==='xl'||f==='G'||f==='E'))return PRINT.quoteXl(id,bq);
   try{return qmPrint(Q,bq)}catch(e){console.error(e);return PRINT.quoteXl(id,bq)}};
 
-function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),sp=!ma&&qSplit(Q),sep=qSep(Q),S0=!ma&&f==='S',one=!!Q.one&&!S0,lt=Q.cover==='letter'&&!ma;
+function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),sp=!ma&&qSplit(Q),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
   // a label in the chosen language; bilingual puts the English under (or beside) the Thai
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
@@ -183,23 +185,25 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const thD2=sp?`<tr class="ch"><th rowspan="2">${t('ลำดับ','No.')}</th><th rowspan="2">${t('รายการ','Description')}</th><th rowspan="2">${t('จำนวน','Qty')}</th><th rowspan="2">${t('หน่วย','Unit')}</th><th colspan="2">${t('ค่าวัสดุ','Material',1)}</th><th colspan="2">${t('ค่าแรง','Labour',1)}</th><th rowspan="2">${t('รวมเงิน','Amount')}</th></tr>
       <tr class="ch2"><th>${tx('ราคา/หน่วย','Unit price')}</th><th>${tx('จำนวนเงิน','Total')}</th><th>${tx('ราคา/หน่วย','Unit price')}</th><th>${tx('จำนวนเงิน','Total')}</th></tr>`
     :`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th><th>${t('ราคา/หน่วย','Unit price')}</th><th>${t('จำนวนเงิน','Amount')}</th></tr>`;
-  const nc=sp?9:6,wD=sp?fill([6,0,7,6,10,11,9,10,12]):fill([7,0,9,8,14,15]);
+  const nc=S0?(sp?7:5):sp?9:6,wD=S0?(sp?fill([7,0,9,8,15,15,16]):fill([7,0,10,9,18])):sp?fill([6,0,7,6,10,11,9,10,12]):fill([7,0,9,8,14,15]);
+  // BOQ-S: every line with its quantity and unit, the money only on each section's row
+  const thS=`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th>${sp?`<th>${t('ค่าวัสดุ','Material')}</th><th>${t('ค่าแรง','Labour')}</th>`:''}<th>${t('จำนวนเงิน','Amount')}</th></tr>`;
   const emp=k=>'<td></td>'.repeat(k);
   // detail lines: a section row, sub-heads from "head" (two levels split by " · "), the lines, and a subtotal per section
   const det=()=>{const body=[];let lg=null,lh=null,ls=null,gi=0,hi=0,li=0;
     const sumG=(g)=>`<tr class="s"><td></td><td>${tx('รวม','Subtotal')} ${esc(gN(g))}${L==='bi'?'<i class="en il">Subtotal</i>':''}</td>${emp(2)}${sp?`<td></td><td class="r">${M(G[g].m)}</td><td></td><td class="r">${M(G[g].l)}</td>`:'<td></td>'}<td class="r">${fmt(G[g].t,2)}</td></tr>`;
-    Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null&&order.length>1)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
+    Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${sp?`<td class="r">${M(G[i.g].m)}</td><td class="r">${M(G[i.g].l)}</td>`:''}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
       if(h1!==lh){lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
       if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
       li++;const x=qLine(Q,i);let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
       if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi}
-      body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${sp?`<td class="r">${M(x.mu)}</td><td class="r">${M(x.mt)}</td><td class="r">${M(x.lu)}</td><td class="r">${M(x.lt)}</td>`:`<td class="r">${M(x.u)}</td>`}<td class="r">${fmt(x.t,2)}</td></tr>`)});
-    if(lg!==null&&order.length>1)body.push(sumG(lg));
-    body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${sp?`<td></td><td class="r">${M(T.m)}</td><td></td><td class="r">${M(T.l)}</td>`:'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
+      body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):sp?`<td class="r">${M(x.mu)}</td><td class="r">${M(x.mt)}</td><td class="r">${M(x.lu)}</td><td class="r">${M(x.lt)}</td>`:`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
+    if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));
+    body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${S0?(sp?`<td class="r">${M(T.m)}</td><td class="r">${M(T.l)}</td>`:''):sp?`<td></td><td class="r">${M(T.m)}</td><td></td><td class="r">${M(T.l)}</td>`:'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
     return body.join('')};
   const mini=`<tr class="rh"><th colspan="${nc}"><div class="qm-mini">${C.logo?`<img src="${C.logo}" alt="">`:`<b>${esc(C.name||'')}</b>`}<div><b>${t('บัญชีแสดงปริมาณงานและราคา','Bill of Quantities',1)}</b></div><span class="sp"></span><div class="no">${esc(Q.no||'')}${Q.ref?' · '+esc(Q.ref):''}<br>${esc([Q.pname,Q.title].filter(Boolean).join(' · '))}</div></div></th></tr>`;
-  const detail=(withMini)=>`<table class="qm-t">${cols(wD)}<thead>${withMini?mini:''}${thD2}</thead><tbody>${det()}</tbody></table>`;
+  const detail=(withMini)=>`<table class="qm-t">${cols(wD)}<thead>${withMini?mini:''}${S0?thS:thD2}</thead><tbody>${det()}</tbody></table>`;
   // page-one summary by section
   const summary=()=>{const w=sp?fill([7,0,17,17,18]):fill([7,0,20]);
     const rows=order.map((g,k)=>`<tr><td class="n">${k+1}</td><td>${esc(gN(g))}</td>${sp?`<td class="r">${M(G[g].m)}</td><td class="r">${M(G[g].l)}</td>`:''}<td class="r">${fmt(G[g].t,2)}</td></tr>`).join('');
@@ -234,8 +238,8 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   let p1;
   if(lt){const to=`<div class="to"><span>${t('เรื่อง','Subject',1)}</span><b>${tx('เสนอราคา','Quotation for ')}${what}</b>${pj?`<span>${t('โครงการ','Project',1)}</span><div>${pj}</div>`:''}<span>${t('เรียน','Attn.',1)}</span><div>${esc([attn,cu.name].filter(Boolean).join(' · '))}</div>${one||S0?'':`<span>${t('สิ่งที่ส่งมาด้วย','Enclosure',1)}</span><div>${tx('บัญชีแสดงปริมาณงานและราคา (BOQ)','Bill of Quantities (BOQ)')}</div>`}</div>`;
     const close=L!=='en'?'จึงเรียนมาเพื่อโปรดพิจารณา บริษัทฯ หวังเป็นอย่างยิ่งว่าจะได้รับความไว้วางใจจากท่านในเร็ววันนี้':'We look forward to the opportunity of working with you.';
-    p1=`${head}<div class="qm-lt">${to}${intro}${one?detail(false):summary()}${foot}<p>${close}</p><div class="sg1">${t('ขอแสดงความนับถือ','Yours faithfully')}<div class="ln"></div>(${esc(Q.signName||Q.by||'')})<br>${esc(Q.signPos||st.role||'')}</div></div>`}
-  else p1=`${head}${cards}${intro}${one||S0?(S0?summary():detail(false)):summary()}${foot}${signs}`;
+    p1=`${head}<div class="qm-lt">${to}${intro}${one||S0?detail(false):summary()}${foot}<p>${close}</p><div class="sg1">${t('ขอแสดงความนับถือ','Yours faithfully')}<div class="ln"></div>(${esc(Q.signName||Q.by||'')})<br>${esc(Q.signPos||st.role||'')}</div></div>`}
+  else p1=`${head}${cards}${intro}${one||S0?detail(false):summary()}${foot}${signs}`;
   const p2=one||S0?'':`<div style="page-break-before:always"></div>${detail(true)}`;
   return QM_CSS+`<div class="qm"${dn}>${p1}${p2}${sowPrint(Q)}</div>${ofoot}`}
 
