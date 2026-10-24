@@ -43,7 +43,7 @@ ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;if(Q.
   DB.projects[p.id]=p;Q.pj=p.id;Q.status='won';CO().leads.filter(l=>l.quote===Q.id).forEach(l=>l.stage='won');
   DB.cur=p.id;P=p;S.mode='pj';S.tab='dash';S.sel={};save();render();toast('สร้างโครงการแล้ว ต่อไปกด “สร้างแผนตั้งต้นจาก BOQ” ในแท็บแผนงาน')};
 CVIEWS.sales=()=>{const {cur,html}=subTabs('sales',[['quote','ใบเสนอราคา'],['lead','งานที่กำลังติดตาม'],['cust','ลูกค้า']]);return html+({quote:salesQuote,lead:salesLead,cust:salesCust}[cur])()};
-function salesCust(){const C=CO(),cols=[{k:'name',h:'ชื่อลูกค้า',w:200},{k:'contact',h:'ผู้ติดต่อ',w:120},{k:'phone',h:'โทร',w:110},{k:'email',h:'อีเมล',w:150},{k:'tax',h:'เลขผู้เสียภาษี',w:130},{k:'addr',h:'ที่อยู่',t:'area',w:220},{k:'credit',h:'เครดิต (วัน)',t:'num',w:70},
+function salesCust(){const C=CO(),cols=[{k:'name',h:'ชื่อลูกค้า',w:200},{k:'nameEn',h:'ชื่อลูกค้า (อังกฤษ)',w:180},{k:'contact',h:'ผู้ติดต่อ',w:120},{k:'phone',h:'โทร',w:110},{k:'email',h:'อีเมล',w:150},{k:'tax',h:'เลขผู้เสียภาษี',w:130},{k:'addr',h:'ที่อยู่',t:'area',w:220},{k:'addrEn',h:'ที่อยู่ (อังกฤษ)',t:'area',w:200},{k:'credit',h:'เครดิต (วัน)',t:'num',w:70},
   {h:'โครงการ',t:'calc',r:1,f:c=>Object.values(DB.projects).filter(p=>p.info.cust===c.id).length||''}];TABLES.cust={rows:()=>C.customers,cols};
   return `<section class="card"><h2><span>ทะเบียนลูกค้า</span><span class="sp"></span>${copyBtn('cust')}</h2>${gtable('co.customers',C.customers,cols)}<div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="add" data-c="co.customers">+ เพิ่มลูกค้า</button></div></section>`}
 function salesLead(){const C=CO(),prob=l=>l.prob===''||l.prob==null?LPROB[l.stage]:n(l.prob);
