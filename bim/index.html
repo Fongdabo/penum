@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=184,V1_NAME='V1.173';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=185,V1_NAME='V1.174';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30065,6 +30065,276 @@ function dkNeck(P0,J,items){if(J.k!=='neck')return false;const tm=J.own,T=typ(P0
 {const f0=fitMeshes;fitMeshes=(P0,F,items)=>{const n0=items.length;f0(P0,F,items);dkRetone(items,n0)}}
 {const f0=rectFitMeshes;rectFitMeshes=(P0,RF,items)=>{const n0=items.length;f0(P0,RF,items);dkRetone(items,n0)}}
 {const f0=joinMeshes;joinMeshes=(P0,F,items)=>{const rest=(F.joins||[]).filter(J=>!dkNeck(P0,J,items)),n0=items.length;f0(P0,Object.assign({},F,{joins:rest}),items);dkRetone(items,n0,1)}}          // the necks and plenum boxes that join terminals are sheet metal too
+/* ===== 174 Fire alarm layout and coverage (V1.174; Revit places detectors, call points and bells one at a time and checks none of them: NFPA 72, which the EIT fire
+   alarm standard follows).  Each room has a detector class (room Properties; auto: heat detectors in kitchens, car parks, boiler, generator and laundry rooms, none in
+   toilets and showers, smoke detectors elsewhere).  A smoke detector takes the listed spacing of the project (P.fal.sd, 9.1 m: the 30 ft of NFPA 72), a heat detector
+   P.fal.hd (6.1 m) cut down by the height of the ceiling (NFPA 72 Table 17.6.3.5.1).  The layout puts the fewest detectors on an even grid along the room's longest wall
+   that leaves no point of the ceiling farther than 0.7 of the spacing from one, at the ceiling where there is one, else under the slab above.
+   A manual call point goes beside every exit door (a door to the outside, or into a stair), its middle 1.2 m above the floor, with a bell 450 mm on along the wall; where a
+   room is still farther than P.fal.mcp (61 m: 200 ft) to walk to a call point, one more by its own door.  The walk is worked out on the grid of route analysis (146).
+   The bells: each bell's sound level at 3 m (T.dba, 90 dB) falls 6 dB each time the distance doubles and P.fal.wl dB (20) at every wall on the way; a room must hear them
+   15 dB over its ambient level (P.fal.amb, 55 dBA), a bedroom at least 75 dBA (NFPA 72 Chapter 18); a room that does not gets a bell in the middle of its longest wall.
+   The control panel (an electrical equipment of the kind facp) goes on the other side of the first door out of the lowest level.  Zones: each level is one zone, cut
+   along its length into zones of no more than P.fal.za m² (2,000); detectors and call points take the circuit Z<n> of the panel, the bells N<level>.
+   The standby battery of the panel: 24 hours of standby then 5 minutes of alarm (NFPA 72 Chapter 10), 20 % added, from the currents of the types (T.ma, T.mal). ===== */
+const FAL_D={sd:9.1,hd:6.1,za:2000,amb:55,wl:20,mcp:61},FAL_LIM={sd:[3,30],hd:[3,30],za:[100,20000],amb:[30,95],wl:[0,60],mcp:[10,200]};
+const FAL_K=['smoke','heat'],FAL_ALL=['smoke','heat','pull','bell'],FAL_WALL=100,FAL_DIFF=910,FAL_DB=90,FAL_AH=[7,12,18,26,33,40,55,65,100,120,150,200];
+const FAL_MA={smoke:[0.1,0.1],heat:[0.05,0.05],pull:[0,0],bell:[0,60],facp:[200,500]};
+/* NFPA 72 Table 17.6.3.5.1: the share of its listed spacing a heat detector keeps under a ceiling up to that height (m); above 9.14 m it is not for heat detectors */
+const FAL_HT=[[3.05,1],[3.66,0.91],[4.27,0.84],[4.88,0.77],[5.49,0.71],[6.10,0.64],[6.71,0.58],[7.32,0.52],[7.92,0.46],[8.53,0.40],[9.14,0.34]];
+const FAL_GUESS=[['no',/ห้องน้ำ|ห้องส้วม|ส้วม|สุขา|อาบน้ำ|toilet|restroom|bath|shower|\bwc\b/i],['heat',/ครัว|แพนทรี|pantry|kitchen|จอดรถ|parking|garage|หม้อไอน้ำ|boiler|เครื่องกำเนิด|generator|ซักรีด|laundry/i]];
+const FAL_STAIR=/บันได|stair/i,FAL_BED=/นอน|bed|sleep|ห้องพัก|guest/i;
+XC.push(()=>{const f=P.fal;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f))for(const k in FAL_LIM){const v=+f[k];if(f[k]!==''&&f[k]!=null&&isFinite(v))o[k]=clamp(v,FAL_LIM[k][0],FAL_LIM[k][1])}
+  if(Object.keys(o).length)P.fal=o;else delete P.fal});
+XC.push(()=>{for(const e of P.els)if(e.fdt!==undefined&&(e.cat!=='room'||!['smoke','heat','no'].includes(e.fdt)))delete e.fdt});
+const falSet=()=>Object.assign({},FAL_D,P.fal||{});
+const falGuess=r=>{const n=String(r.name||'');for(const [k,re] of FAL_GUESS)if(re.test(n))return k;return'smoke'};
+/* the detector class of a room: 'smoke', 'heat', or '' when it takes none */
+const falCls=r=>{const k=r.fdt==='smoke'||r.fdt==='heat'||r.fdt==='no'?r.fdt:falGuess(r);return k==='no'?'':k};
+const falKind=e=>(typ(P,e)||{}).kind||'';
+const falFac=hc=>{for(const [h,f] of FAL_HT)if(hc<=h*1000+5)return f;return 0};
+/* the spacing of a detector (mm) under a ceiling hc high */
+const falSp=(S,k,hc)=>k==='heat'?S.hd*1000*Math.max(falFac(hc),FAL_HT[FAL_HT.length-1][1]):S.sd*1000;
+/* the height of the ceiling over a point and the height a detector there is mounted at: the ceiling, else the underside of the slab above */
+function falHt(lv,x,y){const cl=ceilingAt(P,lv,x,y);if(cl)return{hc:cl.off,off:cl.off,cl:1};const L=lvl(P,lv),up=levelAbove(P,lv),Hs=L&&up?up.elev-L.elev:3000;
+  const f=up&&P.els.find(e=>e.cat==='floor'&&e.level===up.id&&inPoly(x,y,e.pts)),u=f?Hs+(f.off||0)-((typ(P,f)||{}).thickness||150):Hs;return{hc:u,off:Math.round(u),cl:0}}
+/* where a device counts: a wall device a little in front of the wall face it is on */
+const falWallDev=k=>k==='pull'||k==='bell';
+const falPt=(e,k)=>{if(!falWallDev(k))return[e.x,e.y];const a=(e.rot||0)*Math.PI/180;return[e.x-Math.sin(a)*60,e.y+Math.cos(a)*60]};
+/* every room with its region and the fire alarm devices in it: {r, lv, g, i (its region), cls, hc, cl, S (mm), det, mcp, bell [{e, k}]}; .regs: level -> regions, .rmOf: level -> region -> room */
+function falRooms(){const byLv=new Map(),out=[],S=falSet(),devs=new Map();out.regs=new Map();out.rmOf=new Map();
+  for(const e of P.els){if(e.cat==='room')(byLv.get(e.level)||byLv.set(e.level,[]).get(e.level)).push(e);else if(e.cat==='device'){const k=falKind(e);if(FAL_ALL.includes(k))(devs.get(e.level)||devs.set(e.level,[]).get(e.level)).push({e,k})}}
+  for(const [lv,rooms] of byLv){const regs=regions(P,lv,true),D=devs.get(lv)||[],used=new Map();out.regs.set(lv,regs);out.rmOf.set(lv,used);
+    for(const r of rooms){const i=regionAt(regs,r.x,r.y);if(i<0||used.has(i))continue;used.set(i,r);const g=regs[i],cls=falCls(r),H=falHt(lv,r.x,r.y),mine=D.filter(d=>{const q=falPt(d.e,d.k);return inPoly(q[0],q[1],g.net)});
+      out.push({r,lv,g,i,cls,hc:H.hc,cl:H.cl,S:cls?falSp(S,cls,H.hc):0,det:mine.filter(d=>FAL_K.includes(d.k)),mcp:mine.filter(d=>d.k==='pull'),bell:mine.filter(d=>d.k==='bell')})}}
+  return out}
+/* the detector coverage of a room: {st, A m², n, apd (m² a detector), gap (share not covered), wall, diff, miss [[x, y]], step} */
+function falCover(it){const A=it.g.area/1e6,n=it.det.length;if(!it.cls)return{st:'no',A,n};if(!n)return{st:'none',A,n:0};const S=falSet(),net=it.g.net,ds=it.det.map(d=>({x:d.e.x,y:d.e.y,R:0.7*falSp(S,d.k,it.hc)+50,k:d.k,id:d.e.id}));
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const [x,y] of net){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+  const step=Math.max(200,Math.sqrt(it.g.area)/40),miss=[];let tot=0;
+  for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net))continue;tot++;if(!ds.some(d=>Math.hypot(d.x-x,d.y-y)<=d.R))miss.push([x,y])}
+  const wall=ds.filter(d=>fsEdge(d.x,d.y,net)<FAL_WALL-1).length,sup=P.els.filter(e=>e.cat==='terminal'&&e.level===it.lv&&inPoly(e.x,e.y,net)&&(falKind(e)==='supply'||falKind(e)==='linear'||SCL(e.sys||'')==='SA'));
+  const diff=ds.filter(d=>d.k==='smoke'&&sup.some(e=>Math.hypot(e.x-d.x,e.y-d.y)<FAL_DIFF)).length,gap=tot?miss.length/tot:0;
+  const st=gap>0.005?'gap':wall?'wall':diff?'diff':it.cls==='heat'&&!falFac(it.hc)?'high':'ok';return{st,A,n,apd:A/n,gap,wall,diff,miss,step}}
+let FALM=null;
+function falNow(){if(FALM&&FALM.ver===VER&&FALM.P===P)return FALM.L;const L=falRooms();for(const it of L)it.c=falCover(it);FALM={ver:VER,P,L};return L}
+/* the walls a sound passes through on a level */
+function falWalls(lv){const L=lvl(P,lv),z=(L?L.elev:0)+1500,W=[];for(const w of P.els)if(w.cat==='wall'){const r=zRange(P,w);if(r[0]<z&&r[1]>z)W.push(w)}return W}
+const falCross=(W,ax,ay,bx,by)=>{let n=0;for(const w of W){const d1=(bx-ax)*(w.y1-ay)-(by-ay)*(w.x1-ax),d2=(bx-ax)*(w.y2-ay)-(by-ay)*(w.x2-ax);if(d1*d2>=0)continue;
+  const d3=(w.x2-w.x1)*(ay-w.y1)-(w.y2-w.y1)*(ax-w.x1),d4=(w.x2-w.x1)*(by-w.y1)-(w.y2-w.y1)*(bx-w.x1);if(d3*d4<0)n++}return n};
+const falNeed=(S,r)=>FAL_BED.test(String(r.name||''))?Math.max(75,S.amb+15):S.amb+15;
+/* the sound level of the bells B [{x, y, db}] at the worst point of a room: {db, need, ok, at} (db -Infinity when no bell is heard) */
+function falAud(it,B,W,S){const need=falNeed(S,it.r),net=it.g.net,step=Math.max(400,Math.sqrt(it.g.area)/8);let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  for(const [x,y] of net){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}let worst=Infinity,at=null;
+  const spl=(x,y)=>{let b=-Infinity;for(const q of B){const d=Math.max(Math.hypot(q.x-x,q.y-y),300)/1000,L0=q.db-20*Math.log10(d/3);if(L0<=b)continue;const L1=L0-S.wl*falCross(W,q.x,q.y,x,y);if(L1>b)b=L1;if(b>=need+20)break}return b};
+  for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net))continue;const v=spl(x,y);if(v<worst){worst=v;at=[x,y]}}
+  if(!at){at=[it.r.x,it.r.y];worst=spl(at[0],at[1])}return{db:worst,need,ok:worst>=need-0.05,at}}
+const falBells=lv=>P.els.filter(e=>e.cat==='device'&&e.level===lv&&falKind(e)==='bell').map(e=>({x:e.x,y:e.y,db:+(typ(P,e)||{}).dba||FAL_DB}));
+/* how far one walks from every cell of a level's plan to the nearest call point: {G, D (cells)}, or null when the level has no plan to work on */
+let FALT=null;
+function falTravel(lv,pts){if(!pts.length)return null;const v=P.views.find(q=>potViewOk(q)&&q.level===lv&&!q.disc)||P.views.find(q=>potViewOk(q)&&q.level===lv);if(!v)return null;
+  const key=VER+'|'+v.id+'|'+pts.map(q=>Math.round(q[0])+','+Math.round(q[1])).join(';');if(FALT&&FALT.key===key)return FALT.R;
+  const G=raGrid(v,pts);if(!G){FALT={key,R:null};return null}const W=G.W,H=G.H,O=G.open,D=new Float32Array(W*H).fill(Infinity),done=new Uint8Array(W*H),hp=raHeap();
+  for(const q of pts){const s=raSnap(G,q[0],q[1]);if(s&&D[s.c]>0){D[s.c]=0;hp.push(0,s.c)}}
+  const NB=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1],[1,2],[1,-2],[-1,2],[-1,-2],[2,1],[2,-1],[-2,1],[-2,-1]];
+  while(hp.size()){const c=hp.pop();if(done[c])continue;done[c]=1;const i=c%W,j=(c/W)|0,d0=D[c];
+    for(const [a,b] of NB){const x=i+a,y=j+b;if(x<0||y<0||x>=W||y>=H)continue;const k=y*W+x;if(!O[k]||done[k])continue;
+      if(Math.abs(a)===2&&!(O[j*W+i+a/2]&&O[y*W+i+a/2]))continue;if(Math.abs(b)===2&&!(O[(j+b/2)*W+i]&&O[(j+b/2)*W+x]))continue;
+      const nd=d0+Math.hypot(a,b);if(nd<D[k]){D[k]=nd;hp.push(nd,k)}}}
+  const R={G,D};FALT={key,R};return R}
+/* the farthest one walks from a room to a call point (m), or null */
+function falFar(T,it){if(!T)return null;const {G,D}=T,net=it.g.net,step=Math.max(300,Math.sqrt(it.g.area)/12);let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity,far=-1;
+  for(const [x,y] of net){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+  for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net))continue;const i=Math.floor((x-G.x0)/G.cs),j=Math.floor((y-G.y0)/G.cs);let d=Infinity;
+    for(let b=j-2;b<=j+2;b++)for(let a=i-2;a<=i+2;a++)if(a>=0&&b>=0&&a<G.W&&b<G.H)d=Math.min(d,D[b*G.W+a]);if(isFinite(d))far=Math.max(far,d*G.cs/1000)}
+  return far<0?null:far}
+/* the sound and the walk of every room: Map room id -> {aud, far} */
+let FALC=null;
+function falChecks(){if(FALC&&FALC.ver===VER&&FALC.P===P)return FALC.M;const S=falSet(),L=falNow(),M=new Map(),lvs=[...new Set(L.map(it=>it.lv))];
+  const any=P.els.some(e=>e.cat==='device'&&falKind(e)==='pull');
+  for(const lv of lvs){const B=falBells(lv),W=falWalls(lv),mc=P.els.filter(e=>e.cat==='device'&&e.level===lv&&falKind(e)==='pull').map(e=>falPt(e,'pull')),T=mc.length?falTravel(lv,mc):null;
+    for(const it of L)if(it.lv===lv)M.set(it.r.id,{aud:B.length?falAud(it,B,W,S):null,far:T?falFar(T,it):any&&!mc.length?Infinity:null})}
+  FALC={ver:VER,P,M};return M}
+/* the exits of a level: a door with a room's region on one side only (a door out), or into a stair from somewhere else.
+   -> [{d, w, c [x, y] its middle, u (along the wall), n (into the room it is reached from), th, dw, pos, L, ri (that region), k: 'out'|'stair'}] */
+function falDoors(lv,regs,rmOf){const out=[],st=i=>{const r=rmOf.get(i);return!!r&&FAL_STAIR.test(String(r.name||''))};
+  for(const d of P.els){if(d.cat!=='door')continue;const w=IDX.get(d.host);if(!w||w.cat!=='wall'||w.level!==lv)continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L<1)continue;
+    const u=[(w.x2-w.x1)/L,(w.y2-w.y1)/L],n=[-u[1],u[0]],th=(typ(P,w)||{}).thickness||150,dw=+(typ(P,d)||{}).width||900,pos=+d.pos||0,c=[w.x1+u[0]*pos,w.y1+u[1]*pos],o=th/2+250;
+    const ia=regionAt(regs,c[0]+n[0]*o,c[1]+n[1]*o),ib=regionAt(regs,c[0]-n[0]*o,c[1]-n[1]*o),X={d,w,c,u,th,dw,pos,L,ia,ib};
+    if(ia>=0&&ib<0)out.push(Object.assign(X,{n,ri:ia,k:'out'}));else if(ib>=0&&ia<0)out.push(Object.assign(X,{n:[-n[0],-n[1]],ri:ib,k:'out'}));
+    else if(ia>=0&&ib>=0&&ia!==ib){const sa=st(ia),sb=st(ib);if(sa!==sb)out.push(Object.assign(X,sa?{n:[-n[0],-n[1]],ri:ib,k:'stair'}:{n,ri:ia,k:'stair'}));else out.push(Object.assign(X,{n,ri:ia,rj:ib,k:'in'}))}}
+  return out}
+/* a point on the wall face beside a door, `a` mm on from the edge of its leaf (the other way when the wall ends): {x, y, rot, s} */
+function falBeside(X,a,s){s=s||1;let at=X.pos+s*(X.dw/2+a);if(at>X.L-150||at<150){s=-s;at=X.pos+s*(X.dw/2+a)}
+  const f=X.th/2,x=X.w.x1+X.u[0]*at+X.n[0]*f,y=X.w.y1+X.u[1]*at+X.n[1]*f;return{x:Math.round(x),y:Math.round(y),rot:falRot(X.n),s}}
+/* a place on the walls of a region near a door: the point of a wall face nearest to the door, clear of its opening and `a` (250) beyond its leaf, no farther than o.max
+   (1.5 m) from its edge.  o.at [x, y], o.d: as near that distance from that point as it can be; o.w: a stretch that wide, clear of the points o.away.  -> {x, y, rot, n} or null */
+function falNear(X,net,o){o=o||{};const a=o.a||250,hw=(o.w||0)/2,mx=o.max||1500,c=X.c;let best=null;
+  for(let k=0;k<net.length;k++){const p=net[k],q=net[(k+1)%net.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L<2*hw+200)continue;const u=[(q[0]-p[0])/L,(q[1]-p[1])/L],m=[(p[0]+q[0])/2,(p[1]+q[1])/2];
+    let n=[-u[1],u[0]];if(!inPoly(m[0]+n[0]*60,m[1]+n[1]*60,net))n=[-n[0],-n[1]];
+    for(let s=hw+100;s<=L-hw-100;s+=50){const x=p[0]+u[0]*s,y=p[1]+u[1]*s,dx=x-c[0],dy=y-c[1],tu=dx*X.u[0]+dy*X.u[1],tn=dx*X.n[0]+dy*X.n[1],dc=Math.hypot(dx,dy);
+      if((Math.abs(tn)<X.th/2+60&&Math.abs(tu)<X.dw/2+a+hw)||dc>X.dw/2+mx+hw)continue;if(o.away&&o.away.some(z=>Math.hypot(z[0]-x,z[1]-y)<hw+250))continue;
+      const sc=o.at?Math.abs(Math.hypot(o.at[0]-x,o.at[1]-y)-o.d)+0.2*dc:dc;if(!best||sc<best.sc)best={sc,x:Math.round(x),y:Math.round(y),rot:falRot(n),n}}}
+  return best}
+const falRot=n=>((Math.round(Math.atan2(-n[0],n[1])*180/Math.PI)%360)+360)%360;
+/* as near the middle of the longest wall of a room as a door lets it be, facing in: {x, y, rot} */
+function falMidWall(net,X){const E=[];for(let k=0;k<net.length;k++){const p=net[k],q=net[(k+1)%net.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L>400)E.push({p,q,L})}E.sort((a,b)=>b.L-a.L);
+  const free=(x,y)=>!X.some(d=>{const dx=x-d.c[0],dy=y-d.c[1];return Math.abs(dx*d.n[0]+dy*d.n[1])<d.th/2+60&&Math.abs(dx*d.u[0]+dy*d.u[1])<d.dw/2+250});
+  for(const b of E){const u=[(b.q[0]-b.p[0])/b.L,(b.q[1]-b.p[1])/b.L];let n=[-u[1],u[0]];const m=[(b.p[0]+b.q[0])/2,(b.p[1]+b.q[1])/2];if(!inPoly(m[0]+n[0]*200,m[1]+n[1]*200,net))n=[-n[0],-n[1]];
+    for(let k=0;k<=2*Math.floor(b.L/2/250);k++){const s=b.L/2+(k%2?1:-1)*Math.ceil(k/2)*250;if(s<200||s>b.L-200)continue;const x=b.p[0]+u[0]*s,y=b.p[1]+u[1]*s;if(free(x,y))return{x:Math.round(x),y:Math.round(y),rot:falRot(n)}}}
+  const b=E[0]||{p:net[0],q:net[1],L:1},m=[(b.p[0]+b.q[0])/2,(b.p[1]+b.q[1])/2];return{x:Math.round(m[0]),y:Math.round(m[1]),rot:0}}
+/* the point of a room's walls nearest to `at` (or the nearest `d` from it), clear of doors, with a stretch w wide clear of the points `away`: {x, y, rot, n} */
+function falWallAt(net,X,at,d,w,away){w=w||0;let best=null;const hw=w/2,free=(x,y)=>!X.some(q=>{const dx=x-q.c[0],dy=y-q.c[1];return Math.abs(dx*q.n[0]+dy*q.n[1])<q.th/2+60&&Math.abs(dx*q.u[0]+dy*q.u[1])<q.dw/2+250+hw})&&!(away&&away.some(z=>Math.hypot(z[0]-x,z[1]-y)<hw+250+(z[2]||0)));
+  for(let k=0;k<net.length;k++){const p=net[k],q=net[(k+1)%net.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L<400+w)continue;const u=[(q[0]-p[0])/L,(q[1]-p[1])/L],m=[(p[0]+q[0])/2,(p[1]+q[1])/2];
+    let n=[-u[1],u[0]];if(!inPoly(m[0]+n[0]*60,m[1]+n[1]*60,net))n=[-n[0],-n[1]];
+    for(let s=200+hw;s<=L-200-hw;s+=50){const x=p[0]+u[0]*s,y=p[1]+u[1]*s;if(!free(x,y))continue;const h=Math.hypot(x-at[0],y-at[1]),sc=d?Math.abs(h-d):h;if(!best||sc<best.sc)best={sc,x:Math.round(x),y:Math.round(y),rot:falRot(n),n}}}
+  if(best)return best;const m=falMidWall(net,X),r=m.rot*Math.PI/180;return Object.assign(m,{n:[-Math.sin(r),Math.cos(r)]})}
+/* the zones: every level one zone, cut along its length into zones of no more than za m².  -> {Z [{n, lv, A, rooms}], of Map room id -> zone} */
+function falZones(L,S){const Z=[],of=new Map();let n=0;
+  for(const lvO of sortedLevels(P)){const R=L.filter(it=>it.lv===lvO.id);if(!R.length)continue;let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    for(const it of R){x0=Math.min(x0,it.r.x);x1=Math.max(x1,it.r.x);y0=Math.min(y0,it.r.y);y1=Math.max(y1,it.r.y)}const ax=x1-x0>=y1-y0?'x':'y';
+    R.sort((a,b)=>a.r[ax]-b.r[ax]||a.r[ax==='x'?'y':'x']-b.r[ax==='x'?'y':'x']);let z=null;
+    for(const it of R){const a=it.g.area/1e6;if(!z||z.A+a>S.za+1e-6){z={n:++n,lv:lvO.id,A:0,rooms:[]};Z.push(z)}z.A+=a;z.rooms.push(it.r.id);of.set(it.r.id,z.n)}}
+  return{Z,of}}
+/* the zone of a device: that of the room it is in, else of the nearest room of its level */
+function falZoneOf(L,zs,o,k){const q=falPt(o,k);let best=null,bd=Infinity;for(const it of L){if(it.lv!==o.level)continue;if(inPoly(q[0],q[1],it.g.net))return zs.of.get(it.r.id);const d=Math.hypot(it.r.x-q[0],it.r.y-q[1]);if(d<bd){bd=d;best=it}}
+  return best?zs.of.get(best.r.id):null}
+const falPanel=()=>P.els.find(e=>e.cat==='eequip'&&falKind(e)==='facp')||null;
+const falLvN=lv=>sortedLevels(P).findIndex(l=>l.id===lv)+1;
+/* the layout. o: {det, mcp, bell, panel, zones, repl} -> {rooms [{it, st:'new'|'has'|'no'|'small'|'notype'|'skip', n, sx, sy}], add [elements without ids; the panel's type
+   is 'facp' when the project has none yet], del Set, set Map id -> {panel, circuit}, nM, nB, zones} */
+function falPlan(ids,o){const S=falSet(),want=new Set(ids),L=falNow(),add=[],del=new Set(),set=new Map(),rooms=[],Ts=P.types.device||[],tk=k=>Ts.find(T=>T.kind===k)||null;
+  const lvW=sortedLevels(P).map(l=>l.id).filter(lv=>L.some(it=>it.lv===lv&&want.has(it.r.id))),dev=(k,lv,p,off)=>{const T=tk(k);if(!T)return null;const e={cat:'device',type:T.id,level:lv,x:p.x,y:p.y,rot:p.rot||0,off:Math.round(off),panel:'',circuit:'',_k:k};add.push(e);return e};
+  for(const it of L){if(!want.has(it.r.id))continue;if(!o.det){rooms.push({it,st:'skip',n:0});continue}if(!it.cls){rooms.push({it,st:'no',n:0});continue}
+    if(it.det.length&&!o.repl){rooms.push({it,st:'has',n:it.det.length});continue}const T=tk(it.cls);if(!T){rooms.push({it,st:'notype',n:0});continue}
+    const Sp=it.S,G=gridLay(it.g.net,(Lu,Lv)=>{let nx=Math.max(1,Math.ceil(Lu/Sp-1e-9)),ny=Math.max(1,Math.ceil(Lv/Sp-1e-9));while(Math.hypot(Lu/nx,Lv/ny)/2>0.7*Sp+1){if(Lu/nx>=Lv/ny)nx++;else ny++}return{nx,ny}},300);
+    if(!G.pts.length){rooms.push({it,st:'small',n:0});continue}for(const d of it.det)del.add(d.e.id);
+    for(const p of G.pts)dev(it.cls,it.lv,{x:p.x,y:p.y,rot:0},falHt(it.lv,p.x,p.y).off);rooms.push({it,st:'new',n:G.pts.length,sx:G.sx,sy:G.sy})}
+  let nM=0,nB=0,firstOut=null;const pullsOf=lv=>[...P.els.filter(e=>e.cat==='device'&&e.level===lv&&falKind(e)==='pull'),...add.filter(e=>e.level===lv&&e._k==='pull')];
+  const bellAt=(lv,p)=>{const T=tk('bell'),Hc=falHt(lv,p.x,p.y).hc;return dev('bell',lv,p,Math.max(2030,Math.min(+(T&&T.elev)||2300,Hc-250)))};
+  for(const lv of lvW){const regs=L.regs.get(lv),rmOf=L.rmOf.get(lv),X=falDoors(lv,regs,rmOf),wantR=i=>{const r=rmOf.get(i);return!r||want.has(r.id)};
+    for(const x of X){if(x.k==='in'||!wantR(x.ri))continue;if(x.k==='out'&&!firstOut)firstOut=Object.assign({net:regs[x.ri].net},x);if(!o.mcp)continue;
+      if(pullsOf(lv).some(q=>Math.hypot(q.x-x.c[0],q.y-x.c[1])<1500+x.dw/2))continue;const net=regs[x.ri].net,p=falNear(x,net)||falBeside(x,300);if(dev('pull',lv,p,1200)){nM++;if(o.bell&&bellAt(lv,falNear(x,net,{at:[p.x,p.y],d:450})||falBeside(x,750,p.s)))nB++}}
+    if(o.mcp&&!pullsOf(lv).length){const lvE=elev(P,lv),st=P.els.find(e=>e.cat==='stair'&&(e.top===lv||(e.level!==lv&&Math.abs((lvl(P,e.level)||{elev:-1e9}).elev+3000-lvE)<1&&!e.top))),R=L.filter(it=>it.lv===lv&&want.has(it.r.id));
+      const at=st?[st.x2,st.y2]:null,it=at&&R.find(q=>inPoly(at[0],at[1],q.g.net))||R.sort((a,b)=>b.g.area-a.g.area)[0];if(it){const p=at?falWallAt(it.g.net,X,at):falMidWall(it.g.net,X);if(dev('pull',lv,p,1200)){nM++;if(o.bell){const q=falWallAt(it.g.net,X,[p.x,p.y],450);if(q&&bellAt(lv,q))nB++}}}}
+    if(o.mcp){const pts=pullsOf(lv).map(e=>falPt(e,'pull'));if(pts.length){const T=falTravel(lv,pts);
+      if(T)for(const it of L){if(it.lv!==lv||!want.has(it.r.id))continue;const far=falFar(T,it);if(far==null||far<=S.mcp)continue;
+        const x=X.find(q=>q.ri===it.i||q.rj===it.i);if(!x)continue;const n=x.ri===it.i?x.n:[-x.n[0],-x.n[1]],X2=Object.assign({},x,{n}),p=falNear(X2,it.g.net)||falBeside(X2,300);if(dev('pull',lv,p,1200))nM++}}}
+    if(o.bell){const B=[...falBells(lv),...add.filter(e=>e.level===lv&&e._k==='bell').map(e=>({x:e.x,y:e.y,db:+(typ(P,e)||{}).dba||FAL_DB}))],W=falWalls(lv);
+      for(const it of L){if(it.lv!==lv||!want.has(it.r.id))continue;if(falAud(it,B,W,S).ok)continue;const p=falMidWall(it.g.net,X),e=bellAt(lv,p);if(e){nB++;B.push({x:e.x,y:e.y,db:+(typ(P,e)||{}).dba||FAL_DB})}}}}
+  let panel=falPanel();const pmark=panel&&panel.mark?panel.mark:'FACP';
+  if(o.panel&&!panel&&firstOut){const T=(P.types.eequip||[]).find(q=>q.kind==='facp'),d=T?+T.d||120:120,w=T?+T.w||400:400,lv=firstOut.w.level,away=add.filter(e=>e.level===lv&&e._k).map(e=>[e.x,e.y]);
+    const p=falNear(firstOut,firstOut.net,{w,away,max:4000})||Object.assign(falBeside(firstOut,300+w/2,-1),{n:firstOut.n});
+    panel={cat:'eequip',type:T?T.id:'facp',level:lv,x:Math.round(p.x+p.n[0]*d/2),y:Math.round(p.y+p.n[1]*d/2),rot:p.rot,off:T?+T.elev||1100:1100,mark:pmark};add.push(panel)}
+  let zones=null;
+  if(o.zones){const zs=falZones(L,S),lvs=new Set(lvW);zones=zs.Z.filter(z=>lvs.has(z.lv));
+    const cir=(e,k)=>{if(k==='bell')return'N'+falLvN(e.level);const z=falZoneOf(L,zs,e,k);return z==null?'':'Z'+z};
+    for(const e of P.els){if(e.cat!=='device'||!lvs.has(e.level)||del.has(e.id))continue;const k=falKind(e);if(!FAL_ALL.includes(k))continue;const c=cir(e,k);if(c&&(e.panel!==pmark||e.circuit!==c))set.set(e.id,{panel:pmark,circuit:c})}
+    for(const e of add)if(e._k){const c=cir(e,e._k);if(c){e.panel=pmark;e.circuit=c}}}
+  for(const e of add)delete e._k;
+  return{rooms,add,del,set,nM,nB,zones,pmark}}
+/* places what the layout planned; a level that gets devices and has no fire alarm plan gets one, made from its electrical plan or its floor plan -> that plan's id */
+function falApply(Q){if(!Q.add.length&&!Q.del.size&&!Q.set.size)return null;const lvs=[...new Set(Q.add.map(e=>e.level))],av=activeView(),out=new Map();
+  edit(()=>{if(Q.add.some(e=>e.type==='facp')){const A=P.types.eequip||(P.types.eequip=[]),T=Object.assign({id:P.seq++},falStock(ui.lang==='en'));A.push(T);for(const e of Q.add)if(e.type==='facp')e.type=T.id}
+    if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e));
+    for(const [id,v] of Q.set){const e=IDX.get(id);if(e)Object.assign(e,v)}
+    for(const lv of lvs){const L=lvl(P,lv),nm=(L?L.name:'')+' - '+t('fal_planv'),pl=P.views.filter(v=>v.kind==="plan"&&v.level===lv&&!v.rcp&&!v.draft&&!v.legend&&v.dep==null),has=pl.find(v=>v.name===nm);
+      if(has){out.set(lv,has.id);continue}const src=pl.find(v=>v.disc==='elec')||pl.find(v=>!v.disc||v.disc==='arch')||pl[0];if(!src)continue;const v=JSON.parse(JSON.stringify(src));
+      Object.assign(v,{id:P.seq++,name:nm,disc:'elec'});delete v.tpl;P.views.push(v);out.set(lv,v.id);
+      for(const a of P.ann.filter(a=>a.view===src.id&&a.cat==='rtag'))P.ann.push(Object.assign(JSON.parse(JSON.stringify(a)),{id:P.seq++,view:v.id}))}});
+  const lv=av&&out.has(av.level)?av.level:lvs[0];return lv!=null?out.get(lv)||null:null}
+const falStock=en=>({name:en?'Fire alarm control panel (FACP)':'ตู้ควบคุมระบบแจ้งเหตุเพลิงไหม้ (FACP)',mark:'FACP',kind:'facp',w:400,d:120,h:500,elev:1100,color:'#c8322b',cost:45000,ma:200,mal:500});
+XC.push(()=>{if(P.falT||!P.types||!Array.isArray(P.types.eequip))return;P.falT=1;const A=P.types.eequip;if(!A.some(x=>x.kind==='facp'))A.push(Object.assign({id:P.seq++},falStock(ui.lang==='en')))});
+/* the standby battery of the panel: {Is, Ia (A), ah (needed), pick (the size to buy), n (devices)} */
+function falBatt(pm){const cur=(e,T,k)=>{const d=FAL_MA[k]||[0,0];return[T.ma!=null&&T.ma!==''?+T.ma:d[0],T.mal!=null&&T.mal!==''?+T.mal:d[1]]};let s=0,a=0,n=0;
+  for(const e of P.els){let k='';if(e.cat==='device'){k=falKind(e);if(!FAL_ALL.includes(k)||(pm&&e.panel!==pm))continue;n++}else if(e.cat==='eequip'&&falKind(e)==='facp'){if(pm&&e.mark!==pm)continue;k='facp'}else continue;
+    const c=cur(e,typ(P,e)||{},k);s+=c[0];a+=c[1]}
+  const Is=s/1000,Ia=a/1000,ah=(Is*24+Ia*5/60)*1.2;return{Is,Ia,ah,pick:FAL_AH.find(x=>x>=ah-1e-9)||Math.ceil(ah),n}}
+/* the type fields: currents of fire alarm devices and of the panel, the sound of a bell */
+{const F=TYPE_FIELDS.device;F.push(['ma','num','mA',0.01],['mal','num','mA',0.1],['dba','num','dB',1]);const E=TYPE_FIELDS.eequip,k=E.find(f=>f[0]==='kind');if(!k[2].includes('facp'))k[2].push('facp');E.push(['ma','num','mA',1],['mal','num','mA',1])}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(!F||!T)return F;if(cat==='device')return F.filter(f=>f[0]==='ma'||f[0]==='mal'?FAL_ALL.includes(T.kind):f[0]==='dba'?T.kind==='bell':true);
+  if(cat==='eequip')return F.filter(f=>f[0]==='ma'||f[0]==='mal'?T.kind==='facp':true);return F}}
+/* in 3D: a red cabinet with a glass door, the display and the lamps behind it */
+{const f0=eequipModel;eequipModel=(K,kind,S,z0,z1,T)=>{if(kind!=='facp')return f0(K,kind,S,z0,z1,T);const W=S.w,D=S.d,H=z1-z0,r=K.part(hex2rgb((T&&T.color)||'#c8322b')),dk=K.part(MC.dark),wt=K.part(MC.white);
+  K.bx(r,0,0,W,D,z0,z1);K.box(K.part(mixc(MC.dark,MC.white,0.15)),-W*0.42,D/2,z0+H*0.06,W*0.42,D/2+3,z1-H*0.06,1);K.box(K.part([0.55,0.75,0.6]),-W*0.3,D/2+3,z1-H*0.3,W*0.3,D/2+4.5,z1-H*0.12,1);
+  const lc=[MC.green,MC.red,MC.yellow,MC.orange];for(let i=0;i<8;i++)K.box(K.part(lc[i%4]),-W*0.3+(i%4)*W*0.18,D/2+3,z1-H*(0.42+0.07*Math.floor(i/4)),-W*0.3+(i%4)*W*0.18+W*0.06,D/2+5,z1-H*(0.39+0.07*Math.floor(i/4)),1);
+  for(let i=0;i<3;i++)K.box(wt,-W*0.3+i*W*0.22,D/2+3,z0+H*0.14,-W*0.3+i*W*0.22+W*0.14,D/2+6,z0+H*0.2,1);K.box(dk,W*0.36,D/2+3,z0+H*0.45,W*0.4,D/2+12,z0+H*0.58,1)}}
+const falShowOk=()=>!!ui.falShow;
+function falScope(){return fsScope()}
+const falOpt=()=>ui.fal||(ui.fal={det:true,mcp:true,bell:true,panel:true,zones:true,repl:false,all:false});
+const falM=x=>x==null?'—':isFinite(x)?x.toFixed(x<10?1:0)+' m':t('fal_nomcp');
+function dlgFal(){const o=falOpt(),S=falSet(),sc=falScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,want=new Set(ids),L=falNow().filter(it=>want.has(it.r.id)),Q=falPlan(ids,o),qm=new Map(Q.rooms.map(x=>[x.it.r.id,x])),CK=falChecks();ui.helpAt='calc';
+  const clsO=(v,auto)=>[['auto',auto],['smoke',t('o_smoke')],['heat',t('o_heat')],['no',t('fal_no')]].map(([k,l])=>`<option value="${k}"${k===v?' selected':''}>${esc(l)}</option>`).join('');
+  const num=(k,st,u)=>`<label><span>${t('fal_'+k)}</span><span><input type="number" data-fl="${k}" value="${S[k]}" step="${st}" min="${FAL_LIM[k][0]}" max="${FAL_LIM[k][1]}"><small>${u}</small></span></label>`,chk=k=>`<label><span>${t('fal_o_'+k)}</span><span><input type="checkbox" data-fo="${k}"${o[k]?' checked':''}></span></label>`;
+  const set=`<div class="ldg pz">${num('sd',0.1,'m')}${num('hd',0.1,'m')}${num('za',100,'m²')}${num('mcp',1,'m')}${num('amb',1,'dBA')}${num('wl',1,'dB')}
+    <label><span>${t('fs_rooms')}</span><span><select data-fo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    ${chk('det')}${chk('mcp')}${chk('bell')}${chk('panel')}${chk('zones')}${chk('repl')}</div>`;
+  const m2=a=>a.toFixed(a<100?1:0)+' m²',db=x=>x==null?'—':isFinite(x.db)?Math.round(x.db)+' / '+Math.round(x.need)+' dBA'+(x.ok?'':' ⚠'):'— / '+Math.round(x.need)+' dBA ⚠';
+  const rows=L.map(it=>{const c=it.c,q=qm.get(it.r.id),k=CK.get(it.r.id)||{},bad=!['ok','no'].includes(c.st)||(k.aud&&!k.aud.ok)||(k.far!=null&&k.far>S.mcp);
+    const now=c.st==='no'?'—':c.n?`${c.n} · ${t('fal_st_'+c.st)}${c.st==='gap'?' '+Math.round(c.gap*100)+'%':''}`:t('fal_st_none');
+    const plan=!q?'':q.st==='new'?`<b>${q.n}</b> · ${(q.sx/1000).toFixed(2)} × ${(q.sy/1000).toFixed(2)} m`:t('fal_q_'+q.st);
+    return`<tr data-id="${it.r.id}"${bad?' class="chg"':''}><td>${esc(fsName(it.r))}</td><td><select data-fdt="${it.r.id}">${clsO(it.r.fdt||'auto',t('fs_auto')+' · '+t(falGuess(it.r)==='no'?'fal_no':'o_'+falGuess(it.r)))}</select></td><td class="n">${m2(c.A)}</td><td class="n">${(it.hc/1000).toFixed(2)} m</td><td class="n">${it.cls?(it.S/1000).toFixed(1)+' m':'—'}</td><td>${now}</td><td class="n">${db(k.aud)}</td><td class="n">${falM(k.far)}${k.far!=null&&k.far>S.mcp?' ⚠':''}</td><td class="n">${plan}</td></tr>`}).join('');
+  const pn=falPanel(),B=falBatt(pn?pn.mark:null),zs=falZones(falNow(),S),zc=new Map();
+  for(const e of P.els)if(e.cat==='device'&&FAL_ALL.includes(falKind(e))&&/^Z\d+$/.test(e.circuit||'')){const z=+e.circuit.slice(1),k=falKind(e),r=zc.get(z)||zc.set(z,{d:0,m:0}).get(z);if(k==='pull')r.m++;else if(k!=='bell')r.d++}
+  const ztab=zs.Z.map(z=>{const r=zc.get(z.n)||{d:0,m:0},L0=lvl(P,z.lv);return`<tr><td>Z${z.n}</td><td>${esc(L0?L0.name:'')}</td><td class="n">${m2(z.A)}${z.A>S.za?' ⚠':''}</td><td class="n">${z.rooms.length}</td><td class="n">${r.d}</td><td class="n">${r.m}</td></tr>`}).join('');
+  const bt=`<p class="note">${t('fal_batt',pn?esc(pn.mark||'FACP'):'—',B.n,(B.Is*1000).toFixed(1),(B.Ia*1000).toFixed(0),B.ah.toFixed(1),B.pick)}</p>`;
+  const nNew=Q.add.length,nSet=Q.set.size,bad=L.filter(it=>{const k=CK.get(it.r.id)||{};return!['ok','no'].includes(it.c.st)||(k.aud&&!k.aud.ok)||(k.far!=null&&k.far>S.mcp)});
+  const body=`<style>.fld td select{max-width:200px}.fld h4{margin:10px 0 4px}</style><div class="fld"><p class="note">${t('fal_intro')}</p>${set}`+(L.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th>${t('fal_cls')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fal_hc')}</th><th class="n">${t('fal_sp')}</th><th>${t('fal_now')}</th><th class="n">${t('fal_aud')}</th><th class="n">${t('fal_far')}</th><th class="n">${t('fal_plan')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+
+    `<h4>${t('fal_zones')}</h4><div class="tblw"><table class="tbl"><thead><tr><th>${t('fal_zone')}</th><th>${t('fal_lv')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fal_nrooms')}</th><th class="n">${t('fal_ndet')}</th><th class="n">${t('fal_nmcp')}</th></tr></thead><tbody>${ztab}</tbody></table></div>${bt}<p class="note">${t('fal_note')}</p></div>`;
+  const what=[Q.add.filter(e=>e.cat==='device').length,Q.nM,Q.nB];
+  openDlg(t('a_fallay'),body,`<button class="btn" data-flx="show">${t(ui.falShow?'fs_hide':'fs_show')}</button><button class="btn" data-flx="bad"${bad.length?'':' disabled'}>${t('fs_selbad',bad.length)}</button><span style="flex:1"></span><button class="btn primary" data-flx="apply"${nNew||nSet?'':' disabled'}>${nNew?t('fal_apply',what[0]-what[1]-what[2],what[1],what[2]):t('fal_applyz',nSet)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.fdt){const r=IDX.get(+el.dataset.fdt);if(r)edit(()=>{if(el.value==='auto')delete r.fdt;else r.fdt=el.value});dlgFal();return}
+       if(el.dataset.fl){const k=el.dataset.fl,v=+el.value;edit(()=>{const f=Object.assign({},P.fal||{});if(el.value===''||!isFinite(v))delete f[k];else f[k]=clamp(v,FAL_LIM[k][0],FAL_LIM[k][1]);P.fal=f;if(!Object.keys(f).length)delete P.fal});dlgFal();return}
+       const k=el.dataset.fo;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgFal()},
+     click(ev){const x=ev.target.closest('[data-flx]');if(x&&ui.dlg){const k=x.dataset.flx;if(k==='apply'&&(nNew||nSet)){const vid=falApply(Q),av=activeView(),v=vid!=null&&viewById(vid);
+           if(v&&av&&av.id!==v.id){showView(v.id);toast(t('fal_donev',nNew,v.name),6000)}else toast(t('fal_done',nNew+nSet));dlgFal();return}
+         if(k==='show'){ui.falShow=!ui.falShow;refresh();dlgFal();return}if(k==='bad'&&bad.length){ui.sel=new Set(bad.map(it=>it.r.id));ui.falShow=true;closeDlg();setTool('modify');return}}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);ui.falShow=true;closeDlg();setTool('modify')}}},'wide')}
+XA.fallay=dlgFal;
+for(const [tab,pn,after] of [['sys','p_elec','device'],['analyze','p_check','@sprlay']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@fallay')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@fallay')}}
+BTN['@fallay']=['device',''];
+/* on the plans while asked for: the reach of every detector and the parts of rooms no detector covers */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!falShowOk()||v.kind!=='plan'||v.draft)return;const L=falNow().filter(it=>it.lv===v.level);if(!L.length)return;const S=falSet();
+  ctx.save();for(const it of L){ctx.strokeStyle='rgba(232,89,12,.6)';ctx.lineWidth=g.lw(0.18);g.dash([1.5,1]);
+    for(const d of it.det){const R=0.7*falSp(S,d.k,it.hc);g.path([...Array(36).keys()].map(i=>[d.e.x+R*Math.cos(i*Math.PI/18),d.e.y+R*Math.sin(i*Math.PI/18)]));ctx.stroke()}g.dash(null);
+    const c=it.c;if(c.miss&&c.miss.length){ctx.fillStyle='rgba(232,89,12,.32)';const s=c.step/2;for(const [x,y] of c.miss){g.path([[x-s,y-s],[x+s,y-s],[x+s,y+s],[x-s,y+s]]);ctx.fill()}}}
+  ctx.restore()});
+/* the detector class in the Properties of a room */
+XP.push((c,els)=>{if(c!=='room')return'';const V=els.every(x=>(x.fdt||'auto')===(els[0].fdt||'auto'))?(els[0].fdt||'auto'):'',g=els.length===1?falGuess(els[0]):'';
+  let h=PR.grp('g_fal')+PR.sel('fdt','fal_cls',V,[['auto',t('fs_auto')+(g?' · '+t(g==='no'?'fal_no':'o_'+g):'')],['smoke',t('o_smoke')],['heat',t('o_heat')],['no',t('fal_no')]]);
+  if(els.length===1){const it=falNow().find(x=>x.r.id===els[0].id);if(it&&it.cls){const C=it.c;h+=PR.ro('fal_now',C.n?C.n+' · '+t('fal_st_'+C.st)+(C.st==='gap'?' '+Math.round(C.gap*100)+'%':''):t('fal_st_none'))}}
+  return h});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||key!=='fdt')return false;if(['smoke','heat','no'].includes(raw))o.fdt=raw;else delete o.fdt;return true});
+/* Check Systems: on a level with fire alarm devices, rooms the detectors do not cover, rooms that do not hear the bells, rooms too far from a call point */
+SCX.push(add=>{const lv=new Set(P.els.filter(e=>e.cat==='device'&&FAL_ALL.includes(falKind(e))).map(e=>e.level));if(!lv.size)return;const S=falSet(),CK=falChecks();
+  for(const it of falNow()){if(!lv.has(it.lv))continue;const c=it.c,k=CK.get(it.r.id)||{},ids=[it.r.id,...it.det.map(d=>d.e.id)];
+    if(c.st!=='ok'&&c.st!=='no')add('sc_fal','pipe',ids,it.r.x,it.r.y,it.lv,fsName(it.r)+' · '+t('fal_st_'+c.st)+(c.st==='gap'?' '+Math.round(c.gap*100)+'%':''));
+    if(k.aud&&!k.aud.ok)add('sc_falaud','pipe',[it.r.id],it.r.x,it.r.y,it.lv,fsName(it.r)+' · '+(isFinite(k.aud.db)?Math.round(k.aud.db):'—')+' / '+Math.round(k.aud.need)+' dBA');
+    if(k.far!=null&&k.far>S.mcp)add('sc_falmcp','pipe',[it.r.id],it.r.x,it.r.y,it.lv,fsName(it.r)+' · '+falM(k.far))}});
+WARN_K.push('sc_fal','sc_falaud','sc_falmcp');
+Object.assign(STR,{
+  a_fallay:['วางระบบแจ้งเหตุเพลิงไหม้และตรวจพื้นที่ครอบคลุม','Fire Alarm Layout and Coverage'],g_fal:['ระบบแจ้งเหตุเพลิงไหม้','Fire Alarm'],o_facp:['ตู้ควบคุมแจ้งเหตุเพลิงไหม้ (FACP)','Fire alarm control panel'],
+  f_ma:['กระแสขณะเฝ้าระวัง','Standby current'],f_mal:['กระแสขณะแจ้งเหตุ','Alarm current'],f_dba:['ความดังที่ 3 ม.','Sound level at 3 m'],
+  fal_intro:['ตาม NFPA 72 (มาตรฐานระบบแจ้งเหตุเพลิงไหม้ของ วสท. ใช้เกณฑ์เดียวกัน): อุปกรณ์ตรวจจับวางเป็นตารางเท่ากันตามแนวผนังที่ยาวที่สุดของห้อง ไม่มีจุดใดบนฝ้าห่างจากอุปกรณ์เกิน 0.7 เท่าของระยะห่าง อุปกรณ์ตรวจจับความร้อนลดระยะห่างตามความสูงฝ้า (ตาราง 17.6.3.5.1) · สถานีแจ้งเหตุด้วยมือวางข้างประตูทางออกทุกบาน (ประตูออกนอกอาคารและประตูเข้าบันได) สูง 1.2 ม. พร้อมกระดิ่งถัดไปตามผนัง และเพิ่มที่ประตูห้องที่ต้องเดินไกลกว่าระยะที่กำหนด · ห้องที่ได้ยินกระดิ่งไม่ถึงเกณฑ์ (ดังกว่าเสียงรบกวน 15 dB ห้องนอนอย่างน้อย 75 dBA) ได้กระดิ่งกลางผนังที่ยาวที่สุด · ตู้ควบคุมวางข้างประตูทางออกแรกของชั้นล่างสุด · แต่ละชั้นเป็นโซน แบ่งตามความยาวให้แต่ละโซนไม่เกินพื้นที่ที่กำหนด',
+    'By NFPA 72 (the EIT fire alarm standard takes the same rules): detectors go on an even grid along the room\'s longest wall with no point of the ceiling farther than 0.7 of the spacing from one; a heat detector\'s spacing is cut by the height of the ceiling (Table 17.6.3.5.1) · a manual call point beside every exit door (doors out and doors into stairs), 1.2 m up, with a bell on along the wall, and one more by the door of a room that walks farther than the limit · a room that does not hear the bells (15 dB over the ambient, 75 dBA in bedrooms) gets a bell in the middle of its longest wall · the panel by the first door out of the lowest level · each level is a zone, cut along its length so that no zone is larger than the limit'],
+  fal_sd:['ระยะห่างอุปกรณ์ตรวจจับควัน','Smoke detector spacing'],fal_hd:['ระยะห่างอุปกรณ์ตรวจจับความร้อน (ฝ้าไม่เกิน 3 ม.)','Heat detector spacing (ceiling up to 3 m)'],fal_za:['พื้นที่สูงสุดต่อโซน','Largest zone'],
+  fal_mcp:['ระยะเดินสูงสุดถึงสถานีแจ้งเหตุ','Longest walk to a call point'],fal_amb:['ระดับเสียงรบกวนในอาคาร','Ambient sound level'],fal_wl:['เสียงลดลงเมื่อผ่านผนังแต่ละชั้น','Sound lost through each wall'],
+  fal_o_det:['วางอุปกรณ์ตรวจจับในห้อง','Place detectors'],fal_o_mcp:['วางสถานีแจ้งเหตุด้วยมือที่ทางออก','Place call points at the exits'],fal_o_bell:['วางกระดิ่งแจ้งเหตุ','Place bells'],
+  fal_o_panel:['วางตู้ควบคุม (ถ้ายังไม่มี)','Place the control panel (if there is none)'],fal_o_zones:['จัดโซนและวงจรให้อุปกรณ์ทั้งหมด','Assign zones and circuits to every device'],fal_o_repl:['แทนที่อุปกรณ์ตรวจจับที่มีอยู่แล้วในห้อง','Replace the detectors already there'],
+  fal_no:['ไม่ติดอุปกรณ์ตรวจจับ','No detectors'],fal_cls:['อุปกรณ์ตรวจจับ (แจ้งเหตุเพลิงไหม้)','Detectors (fire alarm)'],fal_hc:['ความสูงฝ้า','Ceiling'],fal_sp:['ระยะห่าง','Spacing'],
+  fal_now:['อุปกรณ์ตรวจจับที่มี','Detectors there'],fal_aud:['เสียงกระดิ่ง / ต้องการ','Bells heard / needed'],fal_far:['ระยะเดินถึงสถานีแจ้งเหตุ','Walk to a call point'],fal_plan:['วางใหม่ · ระยะห่าง','New layout · spacing'],
+  fal_st_ok:['ครอบคลุมครบ','Covered'],fal_st_none:['ยังไม่มี','None'],fal_st_no:['ไม่ต้องติด','None needed'],fal_st_gap:['มีส่วนที่ไม่ครอบคลุม','Not covered:'],fal_st_wall:['ชิดผนังเกิน 100 มม.','Closer than 100 mm to a wall'],
+  fal_st_diff:['ใกล้หัวจ่ายลมเกิน 0.91 ม.','Closer than 0.91 m to a supply diffuser'],fal_st_high:['ฝ้าสูงเกิน 9.1 ม. สำหรับอุปกรณ์ตรวจจับความร้อน','Ceiling over 9.1 m for heat detectors'],
+  fal_q_has:['มีอยู่แล้ว (ติ๊กแทนที่)','Has detectors (tick Replace)'],fal_q_no:['—','—'],fal_q_small:['ห้องเล็กเกินไป','Too small'],fal_q_notype:['ไม่มีชนิดอุปกรณ์','No device type'],fal_q_skip:['—','—'],
+  fal_zones:['โซนแจ้งเหตุ','Zones'],fal_zone:['โซน','Zone'],fal_nrooms:['ห้อง','Rooms'],fal_ndet:['อุปกรณ์ตรวจจับ','Detectors'],fal_nmcp:['สถานีแจ้งเหตุ','Call points'],
+  fal_batt:['แบตเตอรี่สำรองของตู้ {0}: อุปกรณ์ {1} ตัว · กระแสเฝ้าระวัง {2} mA · กระแสแจ้งเหตุ {3} mA · ต้องการ {4} Ah (เฝ้าระวัง 24 ชม. + แจ้งเหตุ 5 นาที + เผื่อ 20%) → ใช้ {5} Ah',
+    'Standby battery of panel {0}: {1} devices · standby {2} mA · alarm {3} mA · needs {4} Ah (24 h standby + 5 min alarm + 20 %) → use {5} Ah'],
+  fal_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้นบนแปลน · อุปกรณ์ตรวจจับควันห่างหัวจ่ายลมอย่างน้อย 0.91 ม. และทุกตัวห่างผนังอย่างน้อย 100 มม. · ระยะเดินคิดตามทางเดินจริงรอบผนังและเฟอร์นิเจอร์ผ่านประตู · เสียงคิดลดลง 6 dB ทุกครั้งที่ระยะเพิ่มเป็น 2 เท่า และลดตามจำนวนผนังที่ผ่าน · อุปกรณ์ตรวจจับและสถานีแจ้งเหตุได้วงจร Z(โซน) ของตู้ กระดิ่งได้วงจร N(ชั้น) · ระยะห่างตามค่าที่ผู้ผลิตรับรอง (Listed spacing) ใส่ได้เอง',
+    'Click a room to select it on the plan · smoke detectors at least 0.91 m from supply diffusers and every detector 100 mm from walls · the walk follows the way round walls and furniture, through doors · the sound falls 6 dB each time the distance doubles, and at every wall on the way · detectors and call points take the circuit Z(zone) of the panel, bells N(level) · type in the listed spacing of the detectors you use'],
+  fal_apply:['วางอุปกรณ์ตรวจจับ {0} · สถานีแจ้งเหตุ {1} · กระดิ่ง {2}','Place {0} detectors · {1} call points · {2} bells'],fal_applyz:['จัดโซนให้อุปกรณ์ {0} ตัว','Assign zones to {0} devices'],
+  fal_done:['วางระบบแจ้งเหตุเพลิงไหม้แล้ว ({0} รายการ) กดย้อนกลับได้','Fire alarm placed ({0} items) — Undo to go back'],fal_donev:['วางระบบแจ้งเหตุเพลิงไหม้ {0} รายการแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} fire alarm items placed, shown in the plan {1} — Undo to go back'],
+  fal_planv:['แจ้งเหตุเพลิงไหม้','Fire Alarm'],fal_lv:['ชั้น','Level'],fal_nomcp:['ไม่มีสถานีแจ้งเหตุในชั้นนี้','No call point on this level'],
+  sc_fal:['ห้องที่อุปกรณ์ตรวจจับยังไม่ครอบคลุม: {0}','Room not covered by detectors: {0}'],sc_falaud:['ห้องที่ได้ยินกระดิ่งแจ้งเหตุไม่ถึงเกณฑ์: {0}','Room that does not hear the alarm bells: {0}'],sc_falmcp:['ห้องที่เดินถึงสถานีแจ้งเหตุไกลเกินกำหนด: {0}','Room too far from a call point: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -31504,6 +31774,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.171 · [[a_famed]]: ชิ้นส่วนซ้อน (fam ชื่อ x y z มุม W= D= H=) วางชิ้นส่วนอื่นของโครงการไว้ข้างใน รูปทรง เส้นแปลน และจุดต่อของชิ้นข้างในเป็นของชิ้นนี้ ซ้อนได้ 4 ชั้น เลือกจาก ＋ ใส่ชิ้นส่วนซ้อน · ที่ยึด: ติดผนัง (ตอนวางชิดผนังที่ใกล้ที่สุดและหันตามผนัง) หรือ ติดฝ้า (ขอบบนอยู่ที่ฝ้าตรงนั้น) · [[fm_imp]]: อ่านโมเดลจากไฟล์ OBJ หรือ STL เป็นรูปทรงของชิ้นส่วน (ลดจำนวนสามเหลี่ยมให้เบาเอง ยืดตาม W D H แรเงาเรียบพร้อมเส้นขอบคม ในแปลนเห็นเส้นรอบรูป) ใช้ร่วมกับจุดต่อท่อและคลังชิ้นส่วนบริษัทได้
 - V1.172 · แปลนงานระบบที่ระดับรายละเอียด "ละเอียด": ท่อน้ำทุกระบบ ท่อร้อยสายไฟ และท่อลมกลม วาดข้อต่อตามของจริง ข้องอมีรัศมี ข้อต่อแบบสวม เกลียว และเชื่อมด้วยความร้อนกว้างกว่าท่อและมีปากสวม ท่อเหล็กเชื่อมเห็นรอยเชื่อม ข้อลดเป็นกรวย สามทางมีตัวและคอท่อแยก ข้องอที่ขึ้นหรือลงเห็นโค้งจากด้านบน ท่อแยกหยุดที่ผิวท่อเมนและผิวท่อเมนเปิดตรงนั้น ฉนวนหุ้มรอบข้อต่อด้วย · ระดับ "หยาบ" และ "ปานกลาง" เส้นท่อโค้งตามข้องอ · ป้ายชื่อท่อขึ้นครั้งเดียวต่อแนวท่อระบบและขนาดเดียวกัน (และทุกท่อที่ยาวเกิน 80 มม. บนกระดาษ) วางข้างท่อเส้นคู่ ไม่ทับท่อ
 - V1.173 · ท่อลมใน 3D เหมือนของจริง: ท่อลมและข้อต่อเป็นสีเหล็กอาบสังกะสีที่ยังเห็นสีของระบบจาง ๆ ท่อลมเหลี่ยมมีหน้าแปลน (TDC/TDF) ทุกรอยต่อกับข้อต่อหรือท่ออีกท่อน และทุก 1.20 ม. ตามความยาวแผ่นเหล็ก ท่อลมกลมมีข้อต่อสวมทุก 3 ม. · หัวจ่ายลมที่อยู่ใต้ท่อลมมีกล่องลม (Plenum) พร้อมคอต่อ ท่ออ่อนแบบมีลอน และคอแยกบนใต้ท่อลม (Spin-in collar) แทนท่อโค้งทึบ · ท่ออ่อนเป็นสีเงินของแผ่นฟอยล์
+- V1.174 · [[a_fallay]] (แผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_analyze]]): ทุกห้องมีชนิดตัวตรวจจับ (ควัน ความร้อน หรือไม่ต้องมี) ตามการใช้ห้อง วางตัวตรวจจับตามระยะของ NFPA 72 (ลดระยะตามความสูงฝ้า) ห่างผนัง 100 มม. และห่างหัวจ่ายลม 0.91 ม. · จุดแจ้งเหตุข้างทางออกทุกทาง ระยะเดินไม่เกิน 61 ม. วัดตามทางเดินจริง · กระดิ่งให้ดังกว่าเสียงรอบข้าง 15 dB ทุกห้อง (ห้องนอน 75 dB) หักเสียงที่ผ่านผนัง · ตู้ควบคุม (FACP) แบ่งโซนไม่เกิน 2,000 ตร.ม. วงจร Z และ N ให้อุปกรณ์ทุกตัว ขนาดแบตเตอรี่ 24 ชม. + 5 นาที · ส่วนที่ไม่ครอบคลุมแสดงในแปลนและใน [[a_sysck]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -31564,6 +31835,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - [[p_supply]] ในแผงคุณสมบัติของตู้: ตู้ย่อยรับไฟจากตู้ไหน โปรแกรมใส่ [[p_supckt]] ให้ที่ช่องว่างแรก · ตู้ต้นทางนับโหลดของตู้ย่อยทั้งหมดลงไปตามสาย เลือกเบรกเกอร์และสายป้อนให้ และ [[a_ckcheck]] เตือนเมื่อรับไฟวนกลับมาที่ตัวเอง
 - [[p_lay]]: [[pl_two]] หรือ [[pl_one]] · [[p_ways]]: ช่องที่ไม่มีวงจรเป็น [[pnl_space]] · [[a_pnlspare]]: เพิ่มวงจรสำรองที่ช่องใดก็ได้ พร้อมจำนวนขั้วและพิกัดเบรกเกอร์ · วงจรใหม่ได้หมายเลขช่องว่างแรกที่พอสำหรับจำนวนขั้ว
 - [[a_pnlbal]]: ย้ายวงจร 1 ขั้วของตู้ 3 เฟสไปช่องอื่นให้โหลดสามเฟสใกล้กันที่สุด สายและพิกัดเบรกเกอร์ที่พิมพ์ไว้ย้ายตาม (ย้อนกลับได้) · [[a_ckcheck]] เตือนเมื่อตู้ไม่สมดุลเกิน 20% สองวงจรใช้ช่องเดียวกัน หรือใช้ช่องเกินจำนวนช่องของตู้
+- [[a_fallay]]: เลือกห้อง (หรือใช้ห้องในชั้นของมุมมอง) ตรวจชนิดตัวตรวจจับของแต่ละห้องในตาราง แล้วกดวาง ตั้งระยะ ความดังรอบข้าง เสียงที่ผนังลด และระยะเดินถึงจุดแจ้งเหตุได้ · ติ๊กแสดงในแปลนเพื่อดูจุดที่ไม่ครอบคลุม · ผลวางลงแปลน "ชั้น - แจ้งเหตุเพลิงไหม้" กดย้อนกลับได้
 ! ตารางขนาดสายที่มีมาให้เป็นค่าโดยประมาณ ต้องตรวจกับมาตรฐานที่ใช้จริงก่อนนำผลไปใช้
 
 # แสงสว่าง
@@ -31810,6 +32082,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.171 · [[a_famed]]: nested families (fam NAME x y z angle W= D= H=) put other families of the project inside, their solids, plan lines and connectors becoming this family's, four levels deep, picked from ＋ Nest a family · hosts: Wall (placed against the nearest wall, turned to it) or Ceiling (its top at the ceiling there) · [[fm_imp]]: reads a model from an OBJ or STL file as the family's geometry (made lighter by itself, stretched by W D H, shaded smooth with lines at sharp edges, its outline in plans), with connectors and the company library as before
 - V1.172 · system plans at Detail Level Fine: pipes of every system, conduits and round ducts are drawn with their fittings as built — elbows of their radius, socket, threaded and fused fittings a little wider than the pipe with their hubs, welded steel with its seams, reducers as cones, tees with their body and branch neck, an elbow that turns up or down seen from above; a branch stops at the face of the main and the side of the main is open there, and the insulation goes round the fittings · at Coarse and Medium the line of the pipe goes round its bends · a pipe label once per stretch of the same system and size (and on every run longer than 80 mm of paper), beside a pipe drawn with two lines rather than over it
 - V1.173 · ductwork in 3D as it is built: ducts and their fittings in galvanised grey with a hint of their system colour, a flange (TDC/TDF) on a rectangular duct wherever it joins a fitting or another duct and every 1.20 m as the sheets are made, a coupling on a round duct every 3 m · an air terminal below a duct gets a plenum box with its spigot, a ribbed flexible duct and a spin-in collar on the underside of the duct instead of a bent tube · flexible ducts in the silver of their foil
+- V1.174 · [[a_fallay]] (electrical panel of Systems, or the [[tab_analyze]] tab): every room has a detector kind (smoke, heat or none) by its use; detectors are laid out at the NFPA 72 spacing (less under high ceilings), 100 mm off walls and 0.91 m from supply diffusers · a call point beside every exit and no more than 61 m to walk, along the way one really walks · bells 15 dB over the ambient sound in every room (75 dB in bedrooms), less what the walls take · the panel (FACP), zones of no more than 2,000 m², circuits Z and N for every device, the battery for 24 h + 5 min · gaps are shown on the plans and in [[a_sysck]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -31870,6 +32143,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[p_supply]] in the Properties of a panel: the panel it is fed from; the [[p_supckt]] is set to the first free way · the supply panel carries everything downstream, gets a feeder breaker and wire, and [[a_ckcheck]] warns of a panel that feeds itself
 - [[p_lay]]: [[pl_two]] or [[pl_one]] · [[p_ways]]: a way with no circuit is a [[pnl_space]] · [[a_pnlspare]]: a spare on any way, with its poles and breaker · a new circuit takes the first free way that has room for its poles
 - [[a_pnlbal]]: moves the single-pole circuits of a three-phase panel to other ways so that the three phases carry as near the same load as they can; their wires and typed breakers follow (it can be undone) · [[a_ckcheck]] warns of a panel more than 20% out of balance, two circuits on one way, and more ways used than the panel has
+- [[a_fallay]]: select rooms (or take those of the level of the view), check the detector kind of each in the table and place them; the spacing, the ambient sound, what a wall takes and the walk to a call point can be set · show on plans marks what is not covered · what is placed goes on the plan "level - Fire alarm"; Undo goes back
 ! The stock table of wire sizes is an approximation: check it against the standard in force before the results are used
 
 # Lighting
@@ -33766,6 +34040,11 @@ window.PenumBIM.r93={san:()=>sanitize(),libm:id=>{const T=famTypes().find(x=>x.i
   parse:(id,det)=>{const T=famTypes().find(x=>x.id===id);const R=famParse(T,+T.w,+T.d,+T.h,det);return{n:R.n,bad:R.bad,s:R.s.map(q=>q[0]),cn:R.cn.map(c=>[c.k,Math.round(c.u),Math.round(c.v),Math.round(c.z),c.n.map(Math.round).join(',')])}},
   nest:(id,cid)=>{const T=famTypes().find(x=>x.id===id);famNestAdd(T,cid)},look:n=>{const T=famLook(n);return T&&T.id},ids:id=>[...famNestIds(famTypes().find(x=>x.id===id))],
   at:(cat,id,x,y)=>{ui.tool=cat;defs(cat).type=id;const v=activeView(),c=placeAt(v,{x,y},{x,y});const o=newPointEl(cat,v,c);ui.tool='modify';return o},geo:id=>{const T=famTypes().find(x=>x.id===id),R=famParse(T,+T.w,+T.d,+T.h),q=R.s.find(x=>x[0]==='M');if(!q)return null;const g=famMeshGeo(q[1],q[3]);return{t:g.p.length/9,l:g.l.length/6,s:g.s.length}}};
+window.PenumBIM.r94={rooms:()=>falNow().map(it=>({id:it.r.id,lv:it.lv,name:it.r.name,cls:it.cls,hc:it.hc,S:it.S,n:it.det.length,mcp:it.mcp.length,bell:it.bell.length,st:it.c.st,gap:it.c.gap,wall:it.c.wall,diff:it.c.diff})),
+  ck:()=>[...falChecks()].map(([id,k])=>({id,db:k.aud&&k.aud.db,need:k.aud&&k.aud.need,ok:k.aud&&k.aud.ok,far:k.far})),
+  plan:(ids,o)=>{const Q=falPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},falOpt(),o||{}));return{rooms:Q.rooms.map(x=>({id:x.it.r.id,st:x.st,n:x.n})),add:Q.add,del:[...Q.del],set:[...Q.set],nM:Q.nM,nB:Q.nB,zones:Q.zones}},
+  apply:(ids,o)=>falApply(falPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},falOpt(),o||{}))),doors:lv=>{const L=falNow();return falDoors(lv,L.regs.get(lv),L.rmOf.get(lv)).map(x=>({d:x.d.id,k:x.k,c:x.c,n:x.n,ri:x.ri}))},
+  batt:pm=>falBatt(pm),zones:()=>falZones(falNow(),falSet()).Z,fac:falFac,sc:()=>scChecks().filter(c=>/^sc_fal/.test(c.k)).map(c=>c.k+':'+c.a)};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
