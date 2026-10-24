@@ -301,6 +301,25 @@ function qmFitP1(){const el=$('#print'),pg=typeof fitPage==='function'&&fitPage(
     let lo=.66,hi=1;if(!ok(lo))return;for(let i=0;i<7;i++){const m=(lo+hi)/2;if(ok(m))lo=m;else hi=m}
     L[k].style.zoom=lo.toFixed(3);L[k].style.width=(W/lo).toFixed(1)+'mm'})}
 if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.apply(this,arguments);try{qmFitP1()}catch(e){console.error(e)}return r}}
+// 4.28 a short quotation (or ปร. form) fills its sheet (user: "ทำไมไม่เติมหน้า"): empty lines go into the item table above its total row
+// until the page is full, and what is left of the gap goes above the signatures, so they sit at the foot of the page.
+// A page that runs past one sheet is left alone; 4 mm stays free so nothing spills onto a new page.
+function qmFillPages(R){return [...R.querySelectorAll('.qm,.fsg')].flatMap(q=>q.querySelector('.qm-p1')?[...q.querySelectorAll('.qm-p1')]:[q])}
+function qmFillRows(P,n){const t=P.querySelector('table.qm-t,table.gt'),b=t&&t.tBodies[0];if(!b||!n)return;
+  const nc=t.querySelectorAll('colgroup col').length||Math.max(...[...t.rows].map(r=>[...r.cells].reduce((a,c)=>a+(c.colSpan||1),0))),
+    R=[...b.rows];let i=R.length;while(i>1&&/^(tt|t|w|tot)$/.test(R[i-1].className))i--;const at=R[i]||null;
+  for(let i=0;i<n;i++){const r=document.createElement('tr');r.className='qm-bl';r.innerHTML='<td>&nbsp;</td>'.repeat(nc);b.insertBefore(r,at)}}
+function qmFillGap(P,mm){if(mm<1)return;const g=document.createElement('div');g.className='qm-gap';g.style.height=mm.toFixed(1)+'mm';
+  const s=[...P.querySelectorAll('.qm-sg,.sg1,.gs')].pop();if(s)s.parentNode.insertBefore(g,s)}
+function qmFill(){const el=$('#print'),pg=typeof fitPage==='function'&&fitPage();if(!el)return;
+  el.querySelectorAll('.qm-bl,.qm-gap').forEach(x=>x.remove());if(!pg||!el.querySelector('.qm,.fsg'))return;
+  const d=fitFrame(),P0=d.getElementById('print');P0.style.width=pg.w+'mm';P0.innerHTML=el.innerHTML;
+  const R=qmFillPages(el),F=qmFillPages(P0),lim=pg.h-4;
+  F.forEach((f,k)=>{if(!R[k]||R[k].style.zoom)return;const hh=()=>f.getBoundingClientRect().height/MMPX,h0=hh();if(!h0||h0>lim-3)return;
+    let n=0;if(f.querySelector('table.qm-t tbody,table.gt tbody')){qmFillRows(f,1);const dh=hh()-h0;f.querySelectorAll('.qm-bl').forEach(x=>x.remove());
+      if(dh>1){n=Math.min(60,Math.floor((lim-h0)/dh));qmFillRows(f,n);while(n>0&&hh()>lim){f.querySelector('.qm-bl').remove();n--}}}
+    const gap=lim-hh();qmFillRows(R[k],n);qmFillGap(R[k],gap)})}
+if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.apply(this,arguments);try{qmFill()}catch(e){console.error(e)}return r}}
 
 // ---- the service quotation's own parts
 function qmMaCard(Q,t,dt,kv){const m=qmMonths(Q),s=okD(Q.maStart)?Q.maStart:'',e=s?addD(addMon(s,m),-1):'',EN=qmLang(Q)==='en',P=QM_PARTS.find(x=>x[0]===(Q.maParts||''))||QM_PARTS[0];
