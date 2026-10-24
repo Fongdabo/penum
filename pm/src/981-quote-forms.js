@@ -57,13 +57,13 @@ const QM_CSS=`<style>
 #print .qm-m span{color:var(--qg)}
 #print .qm-m b{font-weight:600;word-break:break-word}
 #print .qm-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 7px}
-#print .qm-c{border:1px solid var(--ql);border-radius:12px;padding:5px 12px 6px;font-size:10px;line-height:1.4;break-inside:avoid}
+#print .qm-c{border:1px solid var(--ql);border-radius:12px;padding:4px 10px 5px;font-size:10px;line-height:1.3;break-inside:avoid}
 #print .qm-c h3,#print .qm-tm h3,#print .qm-sc h3{display:flex;align-items:center;gap:6px;margin:0 0 4px;font-size:11px;color:var(--qt);font-weight:700;letter-spacing:.02em}
 #print .qm-c h3:before,#print .qm-tm h3:before,#print .qm-sc h3:before{content:"";width:8px;height:8px;border-radius:2px;background:var(--qt);transform:rotate(45deg)}
 #print .qm-c h3 .en,#print .qm-tm h3 .en,#print .qm-sc h3 .en{display:inline;margin-left:2px}
-#print .qm-c div{display:grid;grid-template-columns:104px 1fr;gap:6px;padding:0}
+#print .qm-c div{display:grid;grid-template-columns:84px 1fr;gap:4px;padding:0}
 #print .qm-c span{color:var(--qg)}
-#print .qm-c .big{font-size:12px;font-weight:700;color:var(--qn)}
+#print .qm-c .big{font-size:11.5px;font-weight:700;color:var(--qn)}
 #print .qm-in{margin:0 0 6px;font-size:10.5px;line-height:1.4}
 #print .qm table.qm-t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:10px;margin:0 0 10px}
 #print .qm table.qm-t th,#print .qm table.qm-t td{border:0;background:none;padding:4px 6px;vertical-align:top;line-height:1.4}
@@ -93,18 +93,18 @@ const QM_CSS=`<style>
 #print .qm-mini .sp{flex:1}
 #print .qm-mini .no{font-size:10px;color:var(--qg);text-align:right;line-height:1.35}
 #print .qm-ft{display:grid;grid-template-columns:1fr 265px;gap:14px;align-items:start;margin:0 0 10px;break-inside:avoid}
-#print .qm-tot{border:1px solid var(--ql);border-radius:12px;overflow:hidden;font-size:10.5px}
-#print .qm-tot div{display:flex;justify-content:space-between;gap:8px;padding:4px 12px;border-top:1px solid #EDF3F4}
+#print .qm-tot{border:1px solid var(--ql);border-radius:10px;overflow:hidden;font-size:10px;line-height:1.3}
+#print .qm-tot div{display:flex;justify-content:space-between;gap:8px;padding:2.5px 10px;border-top:1px solid #EDF3F4}
 #print .qm-tot div:first-child{border:0}
 #print .qm-tot div b{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 #print .qm-tot div.d b{color:#C2410C}
-#print .qm-tot div.gt{background:linear-gradient(110deg,var(--qn),var(--qt));color:#fff;padding:8px 12px;align-items:center}
+#print .qm-tot div.gt{background:linear-gradient(110deg,var(--qn),var(--qt));color:#fff;padding:5px 10px;align-items:center}
 #print .qm-tot div.gt span{font-weight:600}#print .qm-tot div.gt .en{color:#CFEDEF}
-#print .qm-tot div.gt b{font-size:15px;font-weight:700}
-#print .qm-wh{margin-top:6px;font-size:10px}#print .qm-wh div.nt{background:var(--qs);font-weight:600}#print .qm-wh div.nt b{color:var(--qn)}
+#print .qm-tot div.gt b{font-size:13.5px;font-weight:700}
+#print .qm-wh{margin-top:4px;font-size:9.5px}#print .qm-wh div.nt{background:var(--qs);font-weight:600}#print .qm-wh div.nt b{color:var(--qn)}
 #print .qm-tot div.pm{background:var(--qs);color:var(--qn)}
-#print .qm-wd{margin-top:8px;border-radius:10px;background:var(--qs);border-left:4px solid var(--qo);padding:6px 10px;font-size:10.5px}
-#print .qm-wd span{color:var(--qg);font-size:9.5px;display:block}
+#print .qm-wd{margin-top:5px;border-radius:10px;background:var(--qs);border-left:4px solid var(--qo);padding:4px 10px;font-size:10px;line-height:1.3}
+#print .qm-wd span{color:var(--qg);font-size:9px;display:block}
 #print .qm-wd b{color:var(--qn);font-weight:600}
 #print .qm-tm{font-size:10.5px}
 #print .qm-tm>div{margin:0 0 7px;break-inside:avoid}
@@ -209,7 +209,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),
     ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact',1),esc([st.phone,st.email].filter(Boolean).join(' · '))]]:[])];
-  const head=co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${ma?'MAINTENANCE SERVICE QUOTATION':'QUOTATION'}</small>`}<h1>${ma?(EN?'Service Quotation':'ใบเสนอราคาบริการ'):(EN?'Quotation':'ใบเสนอราคา')}${Q._part?`<span class="pt">${Q._part==='eq'?tx('ค่าเครื่อง (สินค้า)','Equipment (goods)'):tx('ค่าติดตั้ง วัสดุ และค่าแรง','Installation, material &amp; labour')}</span>`:''}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
+  const head=co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${ma?'MAINTENANCE SERVICE QUOTATION':'QUOTATION'}</small>`}<h1>${ma?(EN?'Service Quotation':'ใบเสนอราคาบริการ'):(EN?'Quotation':'ใบเสนอราคา')}${Q._part&&!Q._solo?`<span class="pt">${Q._part==='eq'?tx('ค่าเครื่อง (สินค้า)','Equipment (goods)'):tx('ค่าติดตั้ง วัสดุ และค่าแรง','Installation, material &amp; labour')}</span>`:''}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
     <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`;
   const kv=(k,v,cl)=>v?`<div><span>${k}</span><b${cl?` class="${cl}"`:''}>${v}</b></div>`:'';
   const attn=Q.attn||cu.contact||'';
@@ -471,3 +471,6 @@ HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.disc$/);if(!m)return;const 
 // a claim on an งวด with its own retention deducts that, in place of the project's one rate
 {const f=billCalc;billCalc=function(b){const c=f.apply(this,arguments);if(!b||(b.kind||'prog')!=='prog'||P.info.billMode!=='pct')return c;const it=(P.inst||[]).find(x=>x.id===b.inst);
   if(!it||it.rp===undefined)return c;const ret=c.amt*n(it.rp)/100+contract().total*n(it.rx)/100;return Object.assign({},c,{ret,net:c.net+c.ret-ret})}}
+// 4.25 a quotation with แยกค่าเครื่อง ticked but no equipment line prints as an ordinary one: no empty ค่าเครื่อง columns and no
+// "ค่าเครื่อง 0.00" withholding line, printed like the installation sheet without its badge (user: "ปรับให้เล็กลงหน่อย")
+{const f=qmPrint;qmPrint=function(Q){if(Q&&Q.eqSep&&!Q._part&&!qmMa(Q)&&!Q.items.some(qmIsEq))arguments[0]=Object.assign({},Q,{eqSep:false,_part:'svc',_solo:1});return f.apply(this,arguments)}}
