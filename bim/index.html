@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=187,V1_NAME='V1.176';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=191,V1_NAME='V1.180';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30650,6 +30650,387 @@ Object.assign(STR,{a_rsr:['ผังไรเซอร์','Riser Diagram'],br_r
   rsr_fp_sub:['Class {0} · {1} L/min · {2} bar ที่หัวต่อบนสุด · ปั๊ม {3} bar {4} kW','Class {0} · {1} L/min · {2} bar at the top outlet · pump {3} bar, {4} kW'],
   rsr_pl_sub:['ขนาดท่อตามโมเดล · DFU หน่วยระบายน้ำ · FU หน่วยสุขภัณฑ์น้ำประปา (L/s ตามกราฟฮันเตอร์) · ⚠ เล็กกว่าที่คำนวณได้','Sizes as modelled · DFU drainage fixture units · FU supply fixture units (L/s by the Hunter curve) · ⚠ smaller than worked out'],
   rsr_k_smoke:['ตัวตรวจจับควัน','Smoke detector'],rsr_k_heat:['ตัวตรวจจับความร้อน','Heat detector'],rsr_k_pull:['จุดแจ้งเหตุ (MCP)','Manual call point'],rsr_k_bell:['กระดิ่ง','Bell'],rsr_facp:['ตู้ควบคุม (FACP)','Control panel (FACP)']});
+/* ===== 177 Air terminal layout (V1.177; Revit places diffusers and grilles one at a time: here every room gets them from the air it needs, 150).  A room's supply
+   (its cooling load, or what it is given) goes to the fewest diffusers of the type that each carry no more than the type's Max Flow (T.qmax, L/s; left blank: the neck
+   at P.dif.nv m/s, 3.0, for a diffuser, the face less 30 % at P.dif.fv m/s, 2.0, for a grille), on an even grid along the room's longest wall, half a spacing from the
+   walls, no farther apart than P.dif.sp m (4.0).  The throw of a diffuser to 0.25 m/s (T50) is the type's own (T.t50, m at Max Flow, in proportion to its flow) or
+   K·Q ÷ (0.25·√A of the neck) (ASHRAE Fundamentals, ch. 20: K 0.7 for a four-way diffuser, 1.4 for a slot); the grid takes more diffusers while T50 ÷ L, L the distance to
+   the nearest wall or half the way to the next diffuser, is reported where it is outside P.dif.r0 … r1 (0.7 … 1.3: the ADPI selection guide of ASHRAE for ceiling
+   diffusers, ADPI ≥ 80); asked to (o.adpi), the grid takes more diffusers while it is over r1.  Return grilles take the return of the room, exhaust grilles its exhaust
+   (a toilet given none gets P.dif.ach air changes an hour, 10, written to the room), each the same way, then moved
+   to be 1.5 m clear of the supply diffusers.  Diffusers and grilles stay 0.91 m from smoke and heat detectors (NFPA 72 A.17.7.4.1) and clear of lights and sprinkler
+   heads, moved within their cell where they would not be.  At the ceiling where there is one, else 450 mm under the storey above.  Generate Layout (75) can join them
+   to their air handlers in the same step. ===== */
+const DIF_D={sp:4,nv:3,fv:2,r0:0.7,r1:1.3,ach:10},DIF_LIM={sp:[1.5,12],nv:[1,8],fv:[0.5,5],r0:[0.2,2],r1:[0.5,4],ach:[1,60]},DIF_SMK=910,DIF_RS=1500,DIF_VT=0.25,DIF_K={supply:0.7,linear:1.4};
+const DIF_WET=FAL_GUESS[0][1],DIF_C=[['SA','sa',['supply','linear']],['RA','ra',['return']],['EA','ea',['exhaust']]];
+XC.push(()=>{const f=P.dif;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f))for(const k in DIF_LIM){const v=+f[k];if(f[k]!==''&&f[k]!=null&&isFinite(v))o[k]=clamp(v,DIF_LIM[k][0],DIF_LIM[k][1])}
+  if(Object.keys(o).length)P.dif=o;else delete P.dif});
+const difSet=()=>Object.assign({},DIF_D,P.dif||{});
+const difSup=T=>!!T&&(T.kind==='supply'||T.kind==='linear'||!T.kind);
+/* the neck of a type (mm): its own, else about 0.42 of its face (250 for a 600 × 600 diffuser), 200 for a slot */
+const difNeck=T=>+T.neck>0?+T.neck:T.kind==='linear'?200:Math.max(100,Math.min(400,Math.round(Math.min(+T.w||600,+T.d||600)*0.42/25)*25));
+/* the most a terminal of type T carries (L/s) */
+function difMax(T,S){if(+T.qmax>0)return+T.qmax;if(difSup(T)){const r=difNeck(T)/2000;return Math.PI*r*r*S.nv*1000}return(+T.w||600)*(+T.d||600)/1e6*0.7*S.fv*1000}
+/* the throw to 0.25 m/s of a diffuser of type T carrying q L/s (m) */
+function difT50(T,q,S){if(+T.t50>0){const m=difMax(T,S);return m>0?+T.t50*q/m:0}const r=difNeck(T)/2000;return(DIF_K[T.kind]||DIF_K.supply)*(q/1000)/(DIF_VT*Math.sqrt(Math.PI*r*r))}
+const difPer=(q,n)=>{const k=flowK(P);return Math.round(Math.ceil(q*k/n-1e-9)/k*1e4)/1e4};
+/* T50/L of the supply diffusers pts [{x, y, q, T}] of a room: {r (their mean), lo, hi, L [m each], t [m each]}, or null */
+function difAdpi(pts,net,S){const D=pts.filter(p=>p.T&&p.T.kind!=='linear');if(!D.length)return null;let s=0;const L=[],T5=[];
+  for(const p of D){let l=fsEdge(p.x,p.y,net);for(const q of D)if(q!==p)l=Math.min(l,Math.hypot(q.x-p.x,q.y-p.y)/2);l=Math.max(l,300)/1000;const t5=difT50(p.T,p.q,S);L.push(l);T5.push(t5);s+=t5/l}
+  const r=s/D.length;return{r,lo:r<S.r0-1e-9,hi:r>S.r1+1e-9,L,t:T5}}
+/* every room with its region, its airflow row (150) and the terminals in it: [{it (161), row, has {SA, RA, EA: [elements]}, adpi}] */
+let DIFM=null;
+function difNow(){if(DIFM&&DIFM.ver===VER&&DIFM.P===P)return DIFM.L;const S=difSet(),L=[];
+  for(const it of fsRooms(P)){const row=raRow(it.r.id);if(!row)continue;const has={SA:[],RA:[],EA:[]};for(const c of ['SA','RA','EA'])for(const id of row.T[c]||[]){const e=IDX.get(id);if(e)has[c].push(e)}
+    L.push({it,row,has,adpi:difAdpi(has.SA.map(e=>({x:e.x,y:e.y,q:+e.flow||0,T:typ(P,e)||{}})),it.g.net,S)})}
+  DIFM={ver:VER,P,L};return L}
+const difType=(c,pick)=>{const A=(P.types.terminal||[]),ks=DIF_C.find(x=>x[0]===c)[2];if(pick!=='auto'&&pick!=null){const T=A.find(x=>x.id===+pick);if(T)return T}return A.find(T=>T.kind===ks[0])||A.find(T=>ks.includes(T.kind))||null};
+/* what a terminal keeps clear of on a level: [{x, y, r}] */
+function difObs(lv,w){const O=[],h=w/2;for(const e of P.els){if(e.level!==lv)continue;const T=typ(P,e)||{};
+  if(e.cat==='device'&&(T.kind==='smoke'||T.kind==='heat'))O.push({x:e.x,y:e.y,r:DIF_SMK});else if(e.cat==='sprinkler')O.push({x:e.x,y:e.y,r:h+300});
+  else if(e.cat==='light'&&T.kind!=='wall'&&T.kind!=='exit')O.push({x:e.x,y:e.y,r:h+Math.max(+T.w||300,+T.d||300)/2+100})}return O}
+/* a point of grid G moved within its cell (up to f of it) to be clear of H [{x, y, r}] and, if it can be, of Sf as well, inside the room and wall from its edges:
+   {x, y, ok (clear of H)} */
+function difNudge(p,G,H,Sf,net,wall,f){const mg=(L,x,y)=>L.length?Math.min(...L.map(o=>Math.hypot(o.x-x,o.y-y)-o.r)):Infinity,X=(u,v)=>[u*G.c-v*G.s,u*G.s+v*G.c];
+  if(mg(H,p.x,p.y)>=0&&mg(Sf,p.x,p.y)>=0)return{x:p.x,y:p.y,ok:1};const C=[],mu=G.sx*f,mv=G.sy*f;for(let du=-mu;du<=mu+1;du+=100)for(let dv=-mv;dv<=mv+1;dv+=100)C.push([du,dv,Math.hypot(du,dv)]);C.sort((a,b)=>a[2]-b[2]);
+  let best=null;for(const [du,dv] of C){const [x,y]=X(p.u+du,p.v+dv);if(!inPoly(x,y,net)||fsEdge(x,y,net)<wall)continue;const h=mg(H,x,y),s=mg(Sf,x,y);if(h>=0&&s>=0)return{x:Math.round(x),y:Math.round(y),ok:1};
+    const sc=h>=0?1e6+s:h;if(!best||sc>best.sc+50)best={sc,x,y,ok:h>=0?1:0}}
+  if(!best){const h=mg(H,p.x,p.y);return{x:p.x,y:p.y,ok:h>=0?1:0}}return{x:Math.round(best.x),y:Math.round(best.y),ok:best.ok}}
+/* the height of a terminal at a point: the ceiling, else 450 under the storey above */
+function difOff(lv,x,y){const cl=ceilingAt(P,lv,x,y);if(cl)return cl.off;const L=lvl(P,lv),up=levelAbove(P,lv);return Math.max(2400,(L&&up?up.elev-L.elev:3000)-450)}
+/* the layout. o: {sa, ra, ea (what to place), ts, tr, te (types: 'auto' | id), repl, avoid, adpi} -> {rooms [{it, row, SA/RA/EA {st:'new'|'has'|'none'|'unit'|'notype'|'small'|'off', n, T, q, sx, sy, ad}, clash}],
+   add [elements without ids], del Set, ach Map room id -> air changes it is given} */
+function difPlan(ids,o){const S=difSet(),want=new Set(ids),add=[],del=new Set(),rooms=[],ach=new Map();
+  for(const x of difNow()){const {it,row,has}=x;if(!want.has(it.r.id))continue;const R={it,row,clash:0},net=it.g.net,placed=[];rooms.push(R);
+    for(const [c,k] of DIF_C){const on=o[k];let need=c==='SA'?row.sreq:c==='RA'?row.rreq:row.ereq;
+      if(c==='EA'&&on&&!(need>0)&&!row.open&&row.eaf==null&&row.ach==null&&DIF_WET.test(String(it.r.name||''))){need=S.ach*row.vol/3.6;ach.set(it.r.id,S.ach)}
+      if(!on){R[c]={st:'off',n:0};continue}if(!(need>0)||row.open){R[c]={st:'none',n:0};continue}
+      if(c!=='EA'&&row.ss==='u'){R[c]={st:'unit',n:0};continue}if(c==='RA'&&!(R.SA.st==='new'||R.SA.st==='has')){R[c]={st:'none',n:0};continue}
+      if(has[c].length&&!o.repl){R[c]={st:'has',n:has[c].length};if(c==='SA')for(const e of has[c])placed.push({x:e.x,y:e.y});continue}
+      const T=difType(c,o['t'+k[0]]);if(!T){R[c]={st:'notype',n:0};continue}const qm=difMax(T,S),n0=Math.max(1,Math.ceil(need/qm-1e-9)),w=Math.max(+T.w||600,+T.d||600),wall=Math.max(300,w/2+50),SP=S.sp*1000;
+      const G=gridLay(net,(Lu,Lv)=>{let b=null;for(let nx=1;nx<=n0;nx++){const ny=Math.ceil(n0/nx),sc=Math.abs(Math.log((Lu/nx)/(Lv/ny)))+0.35*(nx*ny-n0)/n0;if(!b||sc<b.sc)b={nx,ny,sc}}
+        let {nx,ny}=b;if(c==='SA'){while(Lu/nx>SP&&nx<60)nx++;while(Lv/ny>SP&&ny<60)ny++;
+          if(o.adpi&&T.kind!=='linear')for(let i=0;i<200&&nx*ny<400;i++){const L=Math.max(Math.min(Lu/nx,Lv/ny)/2,300)/1000;if(difT50(T,need/(nx*ny),S)/L<=S.r1+1e-9)break;if(Lu/nx>=Lv/ny)nx++;else ny++}}
+        return{nx,ny}},wall);
+      if(!G.pts.length){R[c]={st:'small',n:0,T};continue}for(const e of has[c])del.add(e.id);
+      const O=o.avoid?difObs(it.lv,w):[],Sf=c==='SA'?[]:placed.map(p=>({x:p.x,y:p.y,r:DIF_RS}));
+      const rot0=Math.round(Math.atan2(G.s,G.c)*1800/Math.PI)/10,rot=T.kind==='linear'?((rot0%180)+180)%180:((rot0%90)+90)%90,q=difPer(need,G.pts.length),pts=[];
+      for(const p of G.pts){const m=O.length||Sf.length?difNudge(p,G,O,Sf,net,wall,c==='SA'?0.3:0.45):{x:p.x,y:p.y,ok:1};if(!m.ok)R.clash++;
+        add.push({cat:'terminal',type:T.id,level:it.lv,x:m.x,y:m.y,rot,off:Math.round(difOff(it.lv,m.x,m.y)),sys:c,flow:q});pts.push({x:m.x,y:m.y,q,T});if(c==='SA')placed.push({x:m.x,y:m.y})}
+      R[c]={st:'new',n:pts.length,T,q,need,sx:G.sx,sy:G.sy,ad:c==='SA'?difAdpi(pts,net,S):null}}}
+  return{rooms,add,del,ach}}
+/* places what the layout planned, and with o.duct the ducts from the air handlers to the new terminals (Generate Layout, its shortest solutions); a level that gets
+   terminals and has no mechanical plan gets one, made from its floor plan -> {vid (the plan of the level of the view, or of the first level), nd (ducts)} */
+function difApply(Q,o){if(!Q.add.length&&!Q.del.size)return null;const lvs=[...new Set(Q.add.map(e=>e.level))],av=activeView(),out=new Map();let nd=0;
+  edit(()=>{for(const [id,a] of Q.ach||[]){const r=IDX.get(id);if(r&&Q.add.some(e=>e.sys==='EA'&&e.level===r.level))r.ach=a}if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));const ids=[];for(const e of Q.add){const n=Object.assign({id:P.seq++},e);P.els.push(n);IDX.set(n.id,n);ids.push(n.id)}
+    if(o&&o.duct){const G=ductLayGroups(P,{only:new Set(ids),br:'round'});nd=ductLayApply(P,G,{}).length}
+    for(const lv of lvs){const pl=P.views.filter(v=>v.kind==="plan"&&v.level===lv&&!v.rcp&&!v.draft&&!v.legend&&v.dep==null),has=pl.find(v=>v.disc==='mech')||pl.find(v=>v.disc==='coord');if(has){out.set(lv,has.id);continue}
+      const src=pl.find(v=>!v.disc||v.disc==='arch')||pl[0];if(!src)continue;const L=lvl(P,lv),v=JSON.parse(JSON.stringify(src));
+      Object.assign(v,{id:P.seq++,name:(L?L.name:'')+' - '+t('disc_mech'),disc:'mech'});delete v.tpl;P.views.push(v);out.set(lv,v.id);
+      for(const a of P.ann.filter(a=>a.view===src.id&&a.cat==='rtag'))P.ann.push(Object.assign(JSON.parse(JSON.stringify(a)),{id:P.seq++,view:v.id}))}});
+  const lv=av&&out.has(av.level)?av.level:lvs[0];return{vid:lv!=null?out.get(lv)||null:null,nd}}
+/* the type fields: Max Flow and the throw at it */
+TYPE_FIELDS.terminal.push(['qmax','num','L/s',1],['t50','num','m',0.1]);
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(!F||!T||cat!=='terminal')return F;return F.filter(f=>f[0]!=='t50'||difSup(T))}}
+const difOpt=()=>ui.dif||(ui.dif={sa:true,ra:true,ea:true,ts:'auto',tr:'auto',te:'auto',repl:false,avoid:true,adpi:false,duct:false,all:false});
+function dlgDif(){const o=difOpt(),S=difSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=difPlan(ids,o),au=airUnit();ui.helpAt='calc';
+  const A=x=>fmtAir(x),tOpt=(c,k)=>{const ks=DIF_C.find(x=>x[0]===c)[2],Ts=(P.types.terminal||[]).filter(T=>ks.includes(T.kind||'supply'));
+    return`<select data-dfo="t${k[0]}"><option value="auto"${o['t'+k[0]]==='auto'?' selected':''}>${t('dif_tauto')}</option>${Ts.map(T=>`<option value="${T.id}"${String(o['t'+k[0]])===String(T.id)?' selected':''}>${esc(T.name||T.mark||'')}</option>`).join('')}</select>`};
+  const num=(k,st,u)=>`<label><span>${t('dif_'+k)}</span><span><input type="number" data-df="${k}" value="${S[k]}" step="${st}" min="${DIF_LIM[k][0]}" max="${DIF_LIM[k][1]}"><small>${u}</small></span></label>`,chk=k=>`<label><span>${t('dif_o_'+k)}</span><span><input type="checkbox" data-dfo="${k}"${o[k]?' checked':''}></span></label>`;
+  const set=`<div class="ldg pz">${chk('sa')}<label><span>${t('dif_ts')}</span><span>${tOpt('SA','sa')}</span></label>${chk('ra')}<label><span>${t('dif_tr')}</span><span>${tOpt('RA','ra')}</span></label>${chk('ea')}<label><span>${t('dif_te')}</span><span>${tOpt('EA','ea')}</span></label>
+    ${num('sp',0.1,'m')}${num('nv',0.1,'m/s')}${num('fv',0.1,'m/s')}${num('r0',0.05,'')}${num('r1',0.05,'')}${num('ach',1,t('u_ach'))}
+    <label><span>${t('fs_rooms')}</span><span><select data-dfo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    ${chk('adpi')}${chk('repl')}${chk('avoid')}${chk('duct')}</div>`;
+  const m2=a=>(a/1e6).toFixed(a<1e8?1:0)+' m²',ad=x=>x?x.r.toFixed(2)+(x.lo||x.hi?' ⚠':''):'—';
+  const cell=(R,c)=>{const z=R[c],nd=z&&z.need!=null?z.need:c==='SA'?R.row.sreq:c==='RA'?R.row.rreq:R.row.ereq,q=nd>0?A(nd):'—';if(!z||z.st==='off')return`<td class="n">${q}</td>`;
+    if(z.st!=='new')return`<td class="n">${q}${z.st==='none'?'':' · '+t('dif_q_'+z.st)+(z.st==='has'?' ('+z.n+')':'')}</td>`;
+    return`<td class="n">${q} → <b>${z.n}</b> × ${esc(z.T.mark||z.T.name||'')} · ${A(z.q)}${c==='SA'?' · '+(z.sx/1000).toFixed(2)+' × '+(z.sy/1000).toFixed(2)+' m':''}</td>`};
+  const bad=[],rows=Q.rooms.map(R=>{const x=difNow().find(y=>y.it.r.id===R.it.r.id),now=x?x.has.SA.length:0,a=R.SA&&R.SA.st==='new'?R.SA.ad:x&&x.adpi,isBad=(a&&(a.lo||a.hi))||R.clash||(R.row.ss==='l'||R.row.ss==='z')&&!(R.SA&&R.SA.st==='new');if(isBad)bad.push(R.it.r.id);
+    return`<tr data-id="${R.it.r.id}"${isBad?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td class="n">${m2(R.it.g.area)}</td><td class="n">${now?now+' · '+A(R.row.sa):'0'}</td>${cell(R,'SA')}<td class="n">${ad(a)}</td>${cell(R,'RA')}${cell(R,'EA')}<td class="n">${R.clash?R.clash+' ⚠':''}</td></tr>`}).join('');
+  const nS=Q.add.filter(e=>e.sys==='SA').length,nR=Q.add.filter(e=>e.sys==='RA').length,nE=Q.add.filter(e=>e.sys==='EA').length;
+  const body=`<style>.dfd td select,.dfd .ldg select{max-width:230px}</style><div class="dfd"><p class="note">${t('dif_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('dif_now')}</th><th class="n">${t('dif_nsa')} (${au})</th><th class="n">T50/L</th><th class="n">${t('dif_nra')} (${au})</th><th class="n">${t('dif_nea')} (${au})</th><th class="n">${t('dif_clash')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+
+    `<p class="note">${t('dif_note')}</p></div>`;
+  openDlg(t('a_diflay'),body,`<button class="btn" data-dfx="show">${t(ui.difShow?'dif_hide':'dif_show')}</button><button class="btn" data-dfx="bad"${bad.length?'':' disabled'}>${t('dif_selbad',bad.length)}</button><span style="flex:1"></span><button class="btn primary" data-dfx="apply"${Q.add.length?'':' disabled'}>${t('dif_apply',nS,nR,nE)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.df){const k=el.dataset.df,v=+el.value;edit(()=>{const f=Object.assign({},P.dif||{});if(el.value===''||!isFinite(v))delete f[k];else f[k]=clamp(v,DIF_LIM[k][0],DIF_LIM[k][1]);P.dif=f;if(!Object.keys(f).length)delete P.dif});dlgDif();return}
+       const k=el.dataset.dfo;if(!k)return;if(k==='all')o.all=el.value==='1';else if(k[0]==='t'&&k.length===2)o[k]=el.value==='auto'?'auto':+el.value;else o[k]=el.checked;dlgDif()},
+     click(ev){const x=ev.target.closest('[data-dfx]');if(x&&ui.dlg){const k=x.dataset.dfx;
+         if(k==='apply'&&Q.add.length){const r=difApply(Q,o),av=activeView(),v=r&&r.vid!=null&&viewById(r.vid),n=Q.add.length;if(v&&av&&av.id!==v.id&&!(av.kind==='plan'&&av.level===v.level&&['mech','coord'].includes(av.disc))){showView(v.id);toast(t('dif_donev',n,v.name,r.nd),7000)}else toast(t('dif_done',n,r?r.nd:0),7000);dlgDif();return}
+         if(k==='show'){ui.difShow=!ui.difShow;refresh();dlgDif();return}if(k==='bad'&&bad.length){ui.sel=new Set(bad);ui.difShow=true;closeDlg();setTool('modify');return}}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);ui.difShow=true;closeDlg();setTool('modify')}}},'wide')}
+XA.diflay=dlgDif;
+for(const [tab,pn,after] of [['sys','p_hvac','terminal'],['analyze','p_rair','@airdist']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@diflay')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@diflay')}}
+BTN['@diflay']=['terminal',''];
+/* on the plans while asked for: the throw of every supply diffuser (T50), and of the rooms whose T50/L is outside the range, the room in orange */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.difShow||v.kind!=='plan'||v.draft)return;const S=difSet(),L=difNow().filter(x=>x.it.lv===v.level);if(!L.length)return;ctx.save();
+  for(const x of L){const a=x.adpi;if(a&&(a.lo||a.hi)){ctx.fillStyle='rgba(232,89,12,.12)';g.path(x.it.g.net);ctx.fill()}
+    for(const e of x.has.SA){const Ty=typ(P,e)||{};if(Ty.kind==='linear')continue;const R=difT50(Ty,+e.flow||0,S)*1000;if(!(R>0))continue;ctx.strokeStyle='rgba(30,120,220,.65)';ctx.lineWidth=g.lw(0.18);g.dash([1.5,1]);
+      g.path([...Array(36).keys()].map(i=>[e.x+R*Math.cos(i*Math.PI/18),e.y+R*Math.sin(i*Math.PI/18)]));ctx.stroke();g.dash(null)}}
+  ctx.restore()});
+/* the throw of a supply diffuser in its Properties */
+XP.push((c,els)=>{if(c!=='terminal'||els.length!==1)return'';const e=els[0],T=typ(P,e)||{};if((e.sys&&SCL(e.sys)!=='SA')||!difSup(T))return'';const S=difSet(),q=+e.flow||0;
+  return PR.ro('dif_max',fmtAir(difMax(T,S))+' '+airUnit())+(T.kind==='linear'?'':PR.ro('dif_t50',(difT50(T,q,S)).toFixed(1)+' m'))});
+Object.assign(STR,{
+  a_diflay:['วางหัวจ่ายลม หน้ากากลมกลับและระบายอากาศอัตโนมัติ','Air Terminal Layout'],f_qmax:['ลมสูงสุดต่อหัว','Max Flow'],f_t50:['ระยะลมพุ่ง T50 ที่ลมสูงสุด','Throw T50 at Max Flow'],
+  dif_intro:['ลมจ่ายที่ห้องต้องการ (จากภาระความเย็น หรือที่กำหนดในคุณสมบัติห้อง) แบ่งให้หัวจ่ายน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว วางเป็นตารางเท่ากันตามแนวผนังที่ยาวที่สุด ห่างผนังครึ่งหนึ่งของระยะห่าง และห่างกันไม่เกินระยะที่กำหนด · ระยะลมพุ่ง (T50 ถึง 0.25 ม./วินาที) เทียบกับระยะ L (ถึงผนังหรือครึ่งทางถึงหัวถัดไป) ตรวจกับเกณฑ์ ADPI ของ ASHRAE (ติ๊กให้เพิ่มหัวจนผ่านได้) · หน้ากากลมกลับและระบายวางตามลมกลับและลมระบายของห้อง ห่างหัวจ่าย 1.5 ม. (ห้องน้ำที่ไม่ได้กำหนดลมระบายใช้ 10 เท่า/ชม.) · ทุกตัวหลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟและหัวสปริงเกลอร์',
+    'The supply a room needs (its cooling load, or what its Properties give) goes to the fewest diffusers that each carry no more than the type\'s Max Flow, on an even grid along the longest wall, half a spacing from the walls and no farther apart than the spacing set · the throw (T50, to 0.25 m/s) over L (to the wall or half the way to the next diffuser) is checked against the ASHRAE ADPI range (tick to add diffusers until it is within it) · return and exhaust grilles take the return and the exhaust of the room, 1.5 m from the diffusers · all keep 0.91 m from smoke detectors and clear of lights and sprinkler heads'],
+  dif_o_sa:['วางหัวจ่ายลม (SA)','Place supply diffusers (SA)'],dif_o_ra:['วางหน้ากากลมกลับ (RA)','Place return grilles (RA)'],dif_o_ea:['วางหน้ากากระบายอากาศ (EA)','Place exhaust grilles (EA)'],
+  dif_ts:['ชนิดหัวจ่าย','Diffuser type'],dif_tr:['ชนิดหน้ากากลมกลับ','Return grille type'],dif_te:['ชนิดหน้ากากระบาย','Exhaust grille type'],dif_tauto:['อัตโนมัติ (ชนิดแรกในโครงการ)','Auto (the first of the project)'],
+  dif_sp:['ระยะห่างหัวจ่ายสูงสุด','Widest diffuser spacing'],dif_nv:['ความเร็วลมที่คอหัวจ่าย','Neck velocity of diffusers'],dif_fv:['ความเร็วลมผ่านหน้ากาก','Face velocity of grilles'],dif_r0:['T50/L ต่ำสุด (ADPI)','Least T50/L (ADPI)'],dif_r1:['T50/L สูงสุด (ADPI)','Most T50/L (ADPI)'],
+  dif_o_repl:['แทนที่หัวที่มีอยู่แล้วในห้อง','Replace the terminals already there'],dif_o_avoid:['หลบอุปกรณ์ตรวจจับควัน โคมไฟ สปริงเกลอร์','Keep clear of detectors, lights and sprinklers'],dif_o_duct:['เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ด้วย (Generate Layout)','Run ducts from the air handlers to them (Generate Layout)'],
+  dif_now:['หัวจ่ายที่มี · ลม','Diffusers there · air'],dif_nsa:['ลมจ่าย → หัวจ่ายใหม่ · ต่อหัว · ระยะห่าง','Supply → new diffusers · each · spacing'],dif_nra:['ลมกลับ → หน้ากากใหม่','Return → new grilles'],
+  dif_nea:['ลมระบาย → หน้ากากใหม่','Exhaust → new grilles'],dif_clash:['หลบไม่ได้','Not clear'],dif_ach:['ลมระบายห้องน้ำที่ไม่ได้กำหนด','Exhaust of toilets given none'],
+  dif_o_adpi:['เพิ่มหัวจ่ายจน T50/L ไม่เกินเกณฑ์','Add diffusers until T50/L is within range'],
+  dif_q_has:['มีอยู่แล้ว (ติ๊กแทนที่)','There already (tick Replace)'],dif_q_none:['—','—'],dif_q_off:['—','—'],dif_q_unit:['ใช้เครื่องในห้อง','Unit in the room'],dif_q_notype:['ไม่มีชนิดหัว','No terminal type'],dif_q_small:['ห้องเล็กเกินไป','Too small'],
+  dif_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้นบนแปลน · ลมสูงสุดและระยะลมพุ่งของหัวใส่ในชนิดหัวจ่ายตามแคตตาล็อก ถ้าไม่ใส่คิดจากขนาดคอและความเร็วลม · T50/L ที่ดีของหัวจ่ายบนฝ้า 0.7–1.3 (ADPI ≥ 80) ต่ำไปลมไม่ทั่วห้อง สูงไปลมโดนคน · ห้องที่ใช้แอร์ติดผนังหรือแคสเซ็ตในห้องไม่วางหัวจ่าย · ห้องน้ำได้หน้ากากระบายตามลมระบาย (ACH) ที่กำหนดในคุณสมบัติห้อง ถ้าไม่ได้กำหนดใช้ค่าที่ตั้งไว้และบันทึกลงห้อง',
+    'Click a room to select it on the plan · type the Max Flow and the throw of a diffuser from its catalogue in its type; left blank they come from its neck and the velocity · T50/L for ceiling diffusers 0.7–1.3 (ADPI ≥ 80): lower, the air does not reach the room; higher, it blows on people · rooms with a unit of their own (wall or cassette) get no diffusers · toilets get exhaust grilles for the exhaust (ACH) set in the room\'s Properties, or the value set here, written to the room'],
+  dif_show:['แสดงระยะลมพุ่งบนแปลน','Show throw on plans'],dif_hide:['ซ่อนระยะลมพุ่ง','Hide throw'],dif_selbad:['เลือกห้องที่ยังไม่ผ่าน ({0})','Select rooms to look at ({0})'],
+  dif_apply:['วางหัวจ่าย {0} · ลมกลับ {1} · ระบาย {2}','Place {0} diffusers · {1} return · {2} exhaust'],
+  dif_done:['วางหัวจ่ายลมและหน้ากาก {0} ตัว ท่อลม {1} เส้นแล้ว กดย้อนกลับได้','{0} air terminals and {1} ducts placed — Undo to go back'],
+  dif_donev:['วางหัวจ่ายลมและหน้ากาก {0} ตัว ท่อลม {2} เส้นแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} air terminals and {2} ducts placed, shown in the plan {1} — Undo to go back'],
+  dif_max:['ลมสูงสุดของหัว','Max Flow'],dif_t50:['ระยะลมพุ่ง T50 (0.25 ม./วินาที)','Throw T50 (0.25 m/s)']});
+/* ===== 178 Receptacles and switches (V1.178; Revit places them one at a time).  Receptacles go along the walls of a room so that no point of the wall line is
+   farther than half the spacing of the room's use from one (NEC 210.52(A): 3.6 m, no point of a wall farther than 1.8 m; an office 3.0 m, a kitchen 1.8 m at
+   1.10 m up over the counters, P.wv.sp sets the spacing of a use, 0 none): the wall line is broken at the doors, and a stretch shorter than 600 mm takes none; each
+   stretch gets the fewest it needs, evenly, clear of the corners.  A toilet gets one beside the washbasin, 1.10 m up.  Every room that has lights gets a switch beside
+   the latch side of its door (the door's leaf opens from the other end), inside, or outside a toilet; a room of two doors or more a three-way switch by each of two
+   of them, the farthest apart (a door into a room that has no other door, a toilet or a closet, is not one of them); clear of the switches there are.  The lights of the room go on the first switch (Switch IDs, 111).  Auto circuits (164) then put them on circuits. ===== */
+const WV_SP={bed:3.6,living:3.6,dining:3.6,kitchen:1.8,office:3,meeting:3.6,class:6,retail:6,lobby:7.2,toilet:0,none:0,other:3.6},WV_KH=1100,WV_MIN=600,WV_CNR=300;
+XC.push(()=>{const f=P.wv;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f)&&f.sp&&typeof f.sp==='object'){const s={};for(const k in WV_SP){const v=+f.sp[k];if(f.sp[k]!==''&&f.sp[k]!=null&&isFinite(v))s[k]=v<=0?0:clamp(v,0.9,30)}if(Object.keys(s).length)o.sp=s}
+  if(Object.keys(o).length)P.wv=o;else delete P.wv});
+const wvSp=u=>{const s=P.wv&&P.wv.sp||{};return s[u]!=null?s[u]:WV_SP[u]!=null?WV_SP[u]:WV_SP.other};
+const wvKind=e=>e&&e.cat==='device'?(typ(P,e)||{}).kind||'':'';
+/* the doors of region i of a level, their normal into it: [X of falDoors, with o: the region on the other side or -1] */
+const wvDoors=(X,i)=>X.filter(x=>x.ri===i||x.rj===i).map(x=>x.ri===i?Object.assign({},x,{o:x.rj!=null?x.rj:-1}):Object.assign({},x,{n:[-x.n[0],-x.n[1]],o:x.ri}));
+/* the stretches of the wall line of a polygon between doors (and the points `away` [x, y, r]): [{len, at(s) -> {x, y, rot}}] */
+function wvRuns(net,D,away){const E=[];let Lp=0;
+  for(let k=0;k<net.length;k++){const p=net[k],q=net[(k+1)%net.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L<1)continue;const u=[(q[0]-p[0])/L,(q[1]-p[1])/L],m=[(p[0]+q[0])/2,(p[1]+q[1])/2];
+    let n=[-u[1],u[0]];if(!inPoly(m[0]+n[0]*60,m[1]+n[1]*60,net))n=[-n[0],-n[1]];E.push({p,u,n,L,s0:Lp});Lp+=L}
+  if(!E.length)return[];const st=50,N=Math.max(1,Math.floor(Lp/st)),pt=s=>{s=((s%Lp)+Lp)%Lp;let e=E[E.length-1];for(const x of E)if(s<x.s0+x.L){e=x;break}const d=s-e.s0;return{x:e.p[0]+e.u[0]*d,y:e.p[1]+e.u[1]*d,n:e.n,cn:Math.min(d,e.L-d)}};
+  const blk=s=>{const q=pt(s);return D.some(X=>{const dx=q.x-X.c[0],dy=q.y-X.c[1];return Math.abs(dx*X.n[0]+dy*X.n[1])<X.th/2+60&&Math.abs(dx*X.u[0]+dy*X.u[1])<X.dw/2+500})||(away||[]).some(a=>Math.hypot(a[0]-q.x,a[1]-q.y)<a[2])};
+  const B=[];for(let i=0;i<N;i++)B.push(blk(i*st));let i0=B.indexOf(true);const R=[];
+  if(i0<0){R.push({s0:0,len:Lp,loop:1})}else{let i=i0,cur=null;for(let k=0;k<=N;k++,i=(i+1)%N){if(!B[i]&&k<N){if(!cur)cur={s0:i*st,len:0};cur.len+=st}else if(cur){R.push(cur);cur=null}}}
+  return R.filter(r=>r.len>=WV_MIN).map(r=>Object.assign(r,{at:s=>{const q=pt(r.s0+s);return{x:Math.round(q.x),y:Math.round(q.y),rot:falRot(q.n),cn:q.cn}}}))}
+/* points spaced along the stretches: the fewest that leave no point farther than sp/2 from one, clear of the corners */
+function wvAlong(R,sp){const out=[];for(const r of R){const n=r.loop?Math.max(1,Math.ceil(r.len/sp-1e-9)):Math.max(1,Math.ceil(r.len/sp-1e-9)),step=r.len/n;
+    for(let i=0;i<n;i++){let s=(i+0.5)*step,q=r.at(s);if(q.cn<WV_CNR){const dir=s<r.len/2?1:-1;for(let k=1;k<=Math.ceil(2*WV_CNR/50)&&q.cn<WV_CNR;k++){const s2=s+dir*k*50;if(s2<0||s2>r.len)break;q=r.at(s2)}}out.push(q)}}
+  return out}
+const wvTypeOf=k=>(P.types.device||[]).find(T=>T.kind===k)||null;
+/* the layout. o: {rec, sw, lav, link, repl} -> {rooms [{it, use, sp, rec {st, n}, sw {st, n, k}, nl (lights)}], add [elements without ids, a switch with _lt: the light ids it turns on], del Set} */
+function wvPlan(ids,o){const want=new Set(ids),add=[],del=new Set(),rooms=[],L=falNow(),tR=wvTypeOf('recep'),t1=wvTypeOf('sw1'),t3=wvTypeOf('sw3')||t1;
+  const dev=(T,lv,p,off,x)=>{const e=Object.assign({cat:'device',type:T.id,level:lv,x:p.x,y:p.y,rot:p.rot||0,off:Math.round(off),panel:'',circuit:''},x||{});add.push(e);return e};
+  const DS=new Map();for(const it of L){if(!want.has(it.r.id))continue;if(!DS.has(it.lv))DS.set(it.lv,falDoors(it.lv,L.regs.get(it.lv),L.rmOf.get(it.lv)))}
+  for(const it of L){if(!want.has(it.r.id))continue;const r=it.r,lv=it.lv,net=it.g.net,use=loadUseOf(r),sp=wvSp(use),X=DS.get(lv)||[],D=wvDoors(X,it.i),R={it,use,sp,nl:0};rooms.push(R);
+    const devs=P.els.filter(e=>e.cat==='device'&&e.level===lv&&(()=>{const q=falPt(e,'pull');return inPoly(q[0],q[1],net)})()),lights=P.els.filter(e=>e.cat==='light'&&e.level===lv&&inPoly(e.x,e.y,net)&&!['exit','emer'].includes((typ(P,e)||{}).kind));R.nl=lights.length;
+    /* receptacles */
+    const recs=devs.filter(e=>wvKind(e)==='recep');
+    if(!o.rec)R.rec={st:'off',n:0};else if(recs.length&&!o.repl)R.rec={st:'has',n:recs.length};else if(!tR)R.rec={st:'notype',n:0};
+    else{for(const e of recs)del.add(e.id);let pts=[],off=+tR.elev||300;
+      if(use==='toilet'){const lav=P.els.find(f=>f.cat==='fixture'&&f.level===lv&&inPoly(f.x,f.y,net)&&(typ(P,f)||{}).kind==='lav');if(o.lav&&lav){const q=falWallAt(net,D,[lav.x,lav.y],600);if(q)pts=[q];off=WV_KH}}
+      else if(sp>0){pts=wvAlong(wvRuns(net,D),sp*1000);if(use==='kitchen')off=WV_KH}
+      for(const p of pts)dev(tR,lv,p,off);R.rec={st:pts.length?'new':sp>0||use==='toilet'?'small':'none',n:pts.length}}
+    /* switches */
+    const sws=P.els.filter(e=>e.cat==='device'&&e.level===lv&&ssyIs(e)&&(inPoly(falPt(e,'pull')[0],falPt(e,'pull')[1],net)||lights.some(l=>l.lsw===e.id)));
+    if(!o.sw)R.sw={st:'off',n:0};else if(!lights.length)R.sw={st:'nolt',n:0};else if(sws.length&&!o.repl)R.sw={st:'has',n:sws.length};else if(!t1)R.sw={st:'notype',n:0};else if(!D.length)R.sw={st:'nodoor',n:0};
+    else{for(const e of sws)del.add(e.id);const dead=j=>j>=0&&wvDoors(X,j).length===1;let ds=D.filter(x=>!dead(x.o));if(!ds.length)ds=D.slice();if(ds.length>2){let b=null;for(let a=0;a<ds.length;a++)for(let c=a+1;c<ds.length;c++){const d=Math.hypot(ds[a].c[0]-ds[c].c[0],ds[a].c[1]-ds[c].c[1]);if(!b||d>b.d)b={d,a,c}}ds=[ds[b.a],ds[b.c]]}
+      const T=ds.length>1?t3:t1,out=use==='toilet';let first=null;
+      for(const x of ds){const lat=x.d.flipH?-1:1,Y=out&&x.o>=0?Object.assign({},x,{n:[-x.n[0],-x.n[1]]}):x,near=q=>add.concat(P.els).some(e=>e.cat==='device'&&e.level===lv&&ssyIsP(P,e)&&!del.has(e.id)&&Math.hypot(e.x-q.x,e.y-q.y)<250);
+        let p=falBeside(Y,150,lat);if(near(p))p=falBeside(Y,450,lat);if(near(p))p=falBeside(Y,150,-lat);
+        const e=dev(T,lv,p,+T.elev||1200);if(!first){first=e;if(o.link)e._lt=lights.filter(l=>o.repl||l.lsw==null||!IDX.get(l.lsw)).map(l=>l.id)}}
+      R.sw={st:'new',n:ds.length,k:T.kind}}}
+  return{rooms,add,del}}
+/* places them; the lights go on their switch -> the number placed */
+function wvApply(Q){if(!Q.add.length&&!Q.del.size)return 0;edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));
+  for(const e of Q.add){const lt=e._lt,n=Object.assign({id:P.seq++},e);delete n._lt;P.els.push(n);IDX.set(n.id,n);if(lt)for(const id of lt){const l=IDX.get(id);if(l)ssyPut(l,n,0)}}});return Q.add.length}
+const wvOpt=()=>ui.wvl||(ui.wvl={rec:true,sw:true,lav:true,link:true,repl:false,all:false});
+function dlgWv(){const o=wvOpt(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=wvPlan(ids,o);ui.helpAt='calc';
+  const uses=[...new Set(Q.rooms.map(R=>R.use))],chk=k=>`<label><span>${t('wv_o_'+k)}</span><span><input type="checkbox" data-wvo="${k}"${o[k]?' checked':''}></span></label>`;
+  const spT=uses.map(u=>`<label><span>${t('use_'+u)}</span><span><input type="number" data-wvp="${u}" value="${wvSp(u)}" step="0.1" min="0" max="30"><small>m</small></span></label>`).join('');
+  const set=`<div class="ldg pz">${chk('rec')}${chk('lav')}${chk('sw')}${chk('link')}${chk('repl')}
+    <label><span>${t('fs_rooms')}</span><span><select data-wvo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label></div>
+    <h4>${t('wv_sp')}</h4><div class="ldg pz">${spT}</div>`;
+  const q=z=>!z||z.st==='off'?'':z.st==='new'?`<b>${z.n}</b>`+(z.k?' × '+esc((wvTypeOf(z.k)||{}).mark||''):''):t('wv_q_'+z.st)+(z.st==='has'?' ('+z.n+')':'');
+  const rows=Q.rooms.map(R=>`<tr data-id="${R.it.r.id}"${R.rec.st==='new'||R.sw.st==='new'?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td>${esc(t('use_'+R.use))}</td><td class="n">${(R.it.g.area/1e6).toFixed(1)} m²</td><td class="n">${R.use==='toilet'?'—':R.sp>0?R.sp+' m':'—'}</td><td class="n">${q(R.rec)}</td><td class="n">${R.nl}</td><td class="n">${q(R.sw)}</td></tr>`).join('');
+  const nR=Q.add.filter(e=>(wvTypeOf('recep')||{}).id===e.type).length,nS=Q.add.length-nR;
+  const body=`<style>.wvd h4{margin:10px 0 4px}</style><div class="wvd"><p class="note">${t('wv_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th>${t('wv_use')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('wv_spc')}</th><th class="n">${t('wv_rec')}</th><th class="n">${t('wv_nl')}</th><th class="n">${t('wv_sw')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+`<p class="note">${t('wv_note')}</p></div>`;
+  openDlg(t('a_wvlay'),body,`<span style="flex:1"></span><button class="btn primary" data-wvx="apply"${Q.add.length?'':' disabled'}>${t('wv_apply',nR,nS)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.wvp){const u=el.dataset.wvp,v=+el.value;edit(()=>{const f=Object.assign({},P.wv||{}),s=Object.assign({},f.sp||{});if(el.value===''||!isFinite(v))delete s[u];else s[u]=v<=0?0:clamp(v,0.9,30);f.sp=s;P.wv=f});dlgWv();return}
+       const k=el.dataset.wvo;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgWv()},
+     click(ev){const x=ev.target.closest('[data-wvx]');if(x&&ui.dlg){if(x.dataset.wvx==='apply'&&Q.add.length){const n=wvApply(Q);toast(t('wv_done',n),6000);dlgWv()}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.wvlay=dlgWv;
+{const A=RIBBON.find(r=>r.id==='sys'),p=A&&A.panels.find(q=>q.t==='p_elec');if(p&&!p.b.includes('@wvlay')){const i=p.b.indexOf('@ltlay');p.b.splice(i<0?p.b.length:i+1,0,'@wvlay')}}
+BTN['@wvlay']=['device',''];
+Object.assign(STR,{
+  a_wvlay:['วางเต้ารับและสวิตช์อัตโนมัติ','Receptacle and Switch Layout'],
+  wv_intro:['เต้ารับวางตามแนวผนังของห้อง ไม่มีจุดใดบนแนวผนังห่างจากเต้ารับเกินครึ่งหนึ่งของระยะห่างตามการใช้ห้อง (NEC 210.52: ทุก 3.6 ม. ไม่มีจุดใดห่างเกิน 1.8 ม.) แนวผนังขาดที่ประตู ช่วงสั้นกว่า 600 มม. ไม่วาง ห่างมุมห้อง 300 มม. · ครัวสูง 1.10 ม. เหนือเคาน์เตอร์ · ห้องน้ำวางข้างอ่างล้างหน้า · ทุกห้องที่มีโคมได้สวิตช์ข้างประตูด้านมือจับ (ห้องน้ำติดนอกห้อง) ห้องที่มีหลายประตูได้สวิตช์สองทางที่สองประตูที่ไกลกันที่สุด · โคมในห้องผูกกับสวิตช์ตัวแรก',
+    'Receptacles go along the walls so that no point of the wall line is farther than half the spacing of the room\'s use from one (NEC 210.52: every 3.6 m, no point farther than 1.8 m); the wall line breaks at the doors, stretches under 600 mm take none, 300 mm from the corners · kitchens 1.10 m up over the counters · toilets one beside the washbasin · every room with lights gets a switch beside the latch side of its door (a toilet outside), a room of several doors three-way switches at the two farthest apart · the room\'s lights go on the first switch'],
+  wv_o_rec:['วางเต้ารับ','Place receptacles'],wv_o_lav:['เต้ารับข้างอ่างล้างหน้าในห้องน้ำ','A receptacle by the washbasin in toilets'],wv_o_sw:['วางสวิตช์ข้างประตู','Place switches by the doors'],wv_o_link:['ผูกโคมในห้องกับสวิตช์','Put the room\'s lights on the switch'],
+  wv_o_repl:['แทนที่เต้ารับ/สวิตช์ที่มีอยู่แล้ว','Replace the receptacles and switches there'],wv_sp:['ระยะห่างเต้ารับตามการใช้ห้อง (0 = ไม่วาง)','Receptacle spacing by room use (0 = none)'],
+  wv_use:['การใช้ห้อง','Use'],wv_spc:['ระยะห่าง','Spacing'],wv_rec:['เต้ารับใหม่','New receptacles'],wv_nl:['โคมในห้อง','Lights'],wv_sw:['สวิตช์ใหม่','New switches'],
+  wv_q_has:['มีอยู่แล้ว (ติ๊กแทนที่)','There already (tick Replace)'],wv_q_none:['—','—'],wv_q_off:['—','—'],wv_q_small:['ไม่มีแนวผนังพอ','No wall to use'],wv_q_notype:['ไม่มีชนิดอุปกรณ์','No device type'],wv_q_nolt:['ไม่มีโคม','No lights'],wv_q_nodoor:['ไม่มีประตู','No door'],
+  wv_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้น · วางโคมก่อน (วางโคมไฟให้ได้ความสว่างตามเกณฑ์) แล้วจึงวางสวิตช์ · การใช้ห้องมาจากชื่อห้องหรือที่ตั้งในคุณสมบัติห้อง · หลังวางแล้วใช้จัดวงจรอัตโนมัติ (Auto circuits) เพื่อเข้าตู้ไฟ',
+    'Click a room to select it · place the lights first (Lighting Layout), then the switches · the use of a room comes from its name or its Properties · after placing, Auto circuits puts them on the panels'],
+  wv_apply:['วางเต้ารับ {0} · สวิตช์ {1}','Place {0} receptacles · {1} switches'],wv_done:['วางเต้ารับและสวิตช์ {0} ตัวแล้ว กดย้อนกลับได้','{0} receptacles and switches placed — Undo to go back']});
+/* ===== 179 Data, TV and CCTV points; floor drains and the least number of fixtures (V1.179; Revit places them one at a time and counts nothing).
+   Data outlets: a work area (TIA-568: about 10 m² of office, two ports in one faceplate) gets one, along the walls as receptacles go (178), by the use of the room
+   (P.tc.wa sets the m² of a work area of a use, 0 none); a bedroom or a living room one, with a TV outlet in the middle of its longest wall; a classroom or a meeting room
+   a TV outlet as well.  CCTV: a dome camera 1.5 m inside every door out of the building (it sees who comes in), and in lobbies and corridors on a grid no wider than
+   P.tc.cc (15 m), at the ceiling.  Floor drains: a toilet, a laundry or a balcony gets one for each 15 m² of floor (P.fdr.a), 600 mm from the shower where
+   there is one, else clear of the fixtures.  The least number of fixtures is IPC Table 403.1 for the occupancy of the project (P.fxc.occ): the occupants are the
+   floor area of the rooms by the density of their use (26), half men and half women; houses and flats one of each for every dwelling (P.fxc.du). ===== */
+const TC_WA={office:10,meeting:20,class:0,bed:0,living:0,dining:0,kitchen:0,retail:50,lobby:0,toilet:0,none:0,other:20},TC_ONE={bed:1,living:1,class:1,meeting:0},TC_TV={bed:1,living:1,class:1,meeting:1},TC_D={cc:15},FDR_D={a:15};
+const FDR_WET=/ห้องน้ำ|สุขา|ส้วม|อาบน้ำ|ซักล้าง|ซักรีด|ซักผ้า|ระเบียง|toilet|bath|shower|\bwc\b|restroom|laundry|balcony/i;
+XC.push(()=>{for(const [k,lim] of [['tc',{cc:[3,50]}],['fdr',{a:[3,100]}],['fxc',{du:[1,2000]}]]){const f=P[k];if(f===undefined)continue;const o={};if(f&&typeof f==='object'&&!Array.isArray(f)){
+    for(const q in lim){const v=+f[q];if(f[q]!==''&&f[q]!=null&&isFinite(v))o[q]=clamp(v,lim[q][0],lim[q][1])}if(k==='tc'&&f.wa&&typeof f.wa==='object'){const s={};for(const u in TC_WA){const v=+f.wa[u];if(f.wa[u]!==''&&f.wa[u]!=null&&isFinite(v))s[u]=v<=0?0:clamp(v,2,500)}if(Object.keys(s).length)o.wa=s}
+    if(k==='fxc'&&FXC_OCC.includes(f.occ))o.occ=f.occ}if(Object.keys(o).length)P[k]=o;else delete P[k]}});
+const tcSet=()=>Object.assign({},TC_D,P.tc||{}),tcWa=u=>{const s=P.tc&&P.tc.wa||{};return s[u]!=null?s[u]:TC_WA[u]!=null?TC_WA[u]:TC_WA.other};
+/* n points spread evenly along the stretches (wvRuns), clear of the corners and of the points `away` [x, y] */
+function tcAlongN(R,n,away){const T=R.reduce((a,r)=>a+r.len,0),out=[];if(!T||n<1)return out;
+  for(let i=0;i<n;i++){let s=(i+0.5)*T/n,r=R[0];for(const x of R){if(s<=x.len){r=x;break}s-=x.len}s=Math.min(s,r.len);let q=null;
+    for(const d of [0,400,-400,800,-800,1200,-1200]){const s2=s+d;if(s2<0||s2>r.len)continue;const c=r.at(s2);if(c.cn<WV_CNR)continue;if((away||[]).some(a=>Math.hypot(a[0]-c.x,a[1]-c.y)<300))continue;q=c;break}
+    out.push(q||r.at(s))}return out}
+/* the height of a camera at a point: under the ceiling, else the type's */
+const tcCamOff=(lv,x,y,T)=>{const cl=ceilingAt(P,lv,x,y),e=+T.elev||2600;return cl?Math.min(cl.off,e+300):e};
+/* the layout. o: {data, tv, cc, repl} -> {rooms [{it, use, n (work areas), data {st, n}, tv {st, n}, cc {st, n}}], add, del} */
+function tcPlan(ids,o){const want=new Set(ids),add=[],del=new Set(),rooms=[],L=falNow(),S=tcSet(),tD=wvTypeOf('data'),tT=wvTypeOf('tv'),tC=wvTypeOf('cctv');
+  const dev=(T,lv,p,off)=>{const e={cat:'device',type:T.id,level:lv,x:p.x,y:p.y,rot:p.rot||0,off:Math.round(off),panel:'',circuit:''};add.push(e);return e};
+  const DS=new Map();for(const it of L){if(want.has(it.r.id)&&!DS.has(it.lv))DS.set(it.lv,falDoors(it.lv,L.regs.get(it.lv),L.rmOf.get(it.lv)))}
+  for(const it of L){if(!want.has(it.r.id))continue;const r=it.r,lv=it.lv,net=it.g.net,use=loadUseOf(r),X=DS.get(lv)||[],D=wvDoors(X,it.i),R={it,use,n:0};rooms.push(R);
+    const devs=P.els.filter(e=>e.cat==='device'&&e.level===lv&&(()=>{const q=falPt(e,'pull');return inPoly(q[0],q[1],net)})()),of=k=>devs.filter(e=>wvKind(e)===k);
+    const away=[...devs,...add.filter(e=>e.level===lv)].map(e=>[e.x,e.y]),runs=wvRuns(net,D),A=it.g.area/1e6,wa=tcWa(use);
+    const one=(k,T,on,pts,off)=>{const has=of(k);if(!on)return{st:'off',n:0};if(has.length&&!o.repl)return{st:'has',n:has.length};if(!T)return{st:'notype',n:0};if(!pts.length)return{st:'none',n:0};
+      for(const e of has)del.add(e.id);for(const p of pts){dev(T,lv,p,off!=null?off(p):+T.elev||300);away.push([p.x,p.y])}return{st:'new',n:pts.length}};
+    /* TV first, in the middle of the longest stretch; the data outlets beside it and along the walls */
+    let tvp=[];if(TC_TV[use]&&runs.length){const r=runs.reduce((a,b)=>b.len>a.len?b:a);tvp=[r.at(r.len/2)]}R.tv=one('tv',tT,o.tv,tvp);
+    R.n=wa>0?Math.max(1,Math.ceil(A/wa-1e-9)):TC_ONE[use]||0;const dp=R.n&&runs.length?tcAlongN(runs,R.n,away):[];
+    R.data=one('data',tD,o.data,dp);
+    /* cameras: by the doors out, and on a grid in lobbies and corridors */
+    let cp=[];if(o.cc){for(const x of D)if(x.k==='out'||x.o<0){const p=[x.c[0]+x.n[0]*1500,x.c[1]+x.n[1]*1500];if(inPoly(p[0],p[1],net))cp.push({x:Math.round(p[0]),y:Math.round(p[1]),rot:falRot([-x.n[0],-x.n[1]])})}
+      if(use==='lobby'){const sp=S.cc*1000,G=gridLay(net,(Lu,Lv)=>({nx:Math.max(1,Math.ceil(Lu/sp-1e-9)),ny:Math.max(1,Math.ceil(Lv/sp-1e-9))}),500);for(const p of G.pts)if(!cp.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<sp/2))cp.push({x:p.x,y:p.y,rot:0})}}
+    R.cc=one('cctv',tC,o.cc,cp,p=>tcCamOff(lv,p.x,p.y,tC||{}))}
+  return{rooms,add,del}}
+function tcApply(Q){if(!Q.add.length&&!Q.del.size)return 0;edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e))});return Q.add.length}
+const tcOpt=()=>ui.tcl||(ui.tcl={data:true,tv:true,cc:true,repl:false,all:false});
+function dlgTc(){const o=tcOpt(),S=tcSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=tcPlan(ids,o);ui.helpAt='calc';
+  const chk=k=>`<label><span>${t('tc_o_'+k)}</span><span><input type="checkbox" data-tco="${k}"${o[k]?' checked':''}></span></label>`,uses=[...new Set(Q.rooms.map(R=>R.use))];
+  const set=`<div class="ldg pz">${chk('data')}${chk('tv')}${chk('cc')}${chk('repl')}<label><span>${t('tc_cc')}</span><span><input type="number" data-tcs="cc" value="${S.cc}" step="1" min="3" max="50"><small>m</small></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-tco="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label></div>
+    <h4>${t('tc_wa')}</h4><div class="ldg pz">${uses.map(u=>`<label><span>${t('use_'+u)}</span><span><input type="number" data-tcw="${u}" value="${tcWa(u)}" step="1" min="0" max="500"><small>m²</small></span></label>`).join('')}</div>`;
+  const q=z=>!z||z.st==='off'?'':z.st==='new'?`<b>${z.n}</b>`:z.st==='none'?'—':t('wv_q_'+z.st)+(z.st==='has'?' ('+z.n+')':'');
+  const rows=Q.rooms.map(R=>`<tr data-id="${R.it.r.id}"${[R.data,R.tv,R.cc].some(z=>z.st==='new')?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td>${esc(t('use_'+R.use))}</td><td class="n">${(R.it.g.area/1e6).toFixed(1)} m²</td><td class="n">${R.n||'—'}</td><td class="n">${q(R.data)}</td><td class="n">${q(R.tv)}</td><td class="n">${q(R.cc)}</td></tr>`).join('');
+  const cnt=k=>Q.add.filter(e=>(wvTypeOf(k)||{}).id===e.type).length;
+  const body=`<style>.tcd h4{margin:10px 0 4px}</style><div class="tcd"><p class="note">${t('tc_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th>${t('wv_use')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('tc_n')}</th><th class="n">${t('tc_data')}</th><th class="n">${t('tc_tv')}</th><th class="n">${t('tc_cam')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+`<p class="note">${t('tc_note')}</p></div>`;
+  openDlg(t('a_tclay'),body,`<span style="flex:1"></span><button class="btn primary" data-tcx="apply"${Q.add.length?'':' disabled'}>${t('tc_apply',cnt('data'),cnt('tv'),cnt('cctv'))}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.tcw||el.dataset.tcs){const v=+el.value;edit(()=>{const f=Object.assign({},P.tc||{});if(el.dataset.tcs){if(el.value===''||!isFinite(v))delete f.cc;else f.cc=clamp(v,3,50)}
+         else{const u=el.dataset.tcw,s=Object.assign({},f.wa||{});if(el.value===''||!isFinite(v))delete s[u];else s[u]=v<=0?0:clamp(v,2,500);f.wa=s}P.tc=f});dlgTc();return}
+       const k=el.dataset.tco;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgTc()},
+     click(ev){const x=ev.target.closest('[data-tcx]');if(x&&ui.dlg){if(Q.add.length){const n=tcApply(Q);toast(t('tc_done',n),6000);dlgTc()}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.tclay=dlgTc;
+/* ---- floor drains and the least number of fixtures ---- */
+const FXC_OCC=['r3','r2','b','e','m','a3'];
+const fdrSet=()=>Object.assign({},FDR_D,P.fdr||{});
+const fdrWet=r=>loadUseOf(r)==='toilet'||FDR_WET.test(String(r.name||''));
+const fdrOpt=()=>ui.fdl||(ui.fdl={repl:false,all:false});
+/* -> {rooms [{it, n, st, has}], add, del} */
+function fdrPlan(ids,o){const want=new Set(ids),add=[],del=new Set(),rooms=[],S=fdrSet(),T=(P.types.fixture||[]).find(x=>x.kind==='fdrain');
+  for(const it of fsRooms(P)){if(!want.has(it.r.id)||!fdrWet(it.r))continue;const net=it.g.net,fx=P.els.filter(e=>e.cat==='fixture'&&e.level===it.lv&&inPoly(e.x,e.y,net)),has=fx.filter(e=>(typ(P,e)||{}).kind==='fdrain'),R={it,has:has.length,n:0};rooms.push(R);
+    if(has.length&&!o.repl){R.st='has';continue}if(!T){R.st='notype';continue}const n=Math.max(1,Math.ceil(it.g.area/1e6/S.a-1e-9)),other=fx.filter(e=>(typ(P,e)||{}).kind!=='fdrain');
+    const sh=other.find(e=>['shower','tub'].includes((typ(P,e)||{}).kind)),pts=[];
+    if(sh){const c=[it.r.x,it.r.y],d=Math.hypot(c[0]-sh.x,c[1]-sh.y)||1,k=Math.min(600,d*0.6);pts.push({x:Math.round(sh.x+(c[0]-sh.x)/d*k),y:Math.round(sh.y+(c[1]-sh.y)/d*k)})}
+    const G=gridLay(net,(Lu,Lv)=>{let b=null;for(let nx=1;nx<=n;nx++){const ny=Math.ceil(n/nx),sc=Math.abs(Math.log((Lu/nx)/(Lv/ny)));if(!b||sc<b.sc)b={nx,ny,sc}}return b},250);
+    const O=other.map(e=>{const Ty=typ(P,e)||{};return{x:e.x,y:e.y,r:Math.max(+Ty.w||400,+Ty.d||400)/2+250}});
+    for(const p of G.pts){if(pts.length>=n)break;const m=difNudge(p,G,O,pts.map(q=>({x:q.x,y:q.y,r:1500})),net,250,0.45);pts.push({x:m.x,y:m.y})}
+    for(const e of has)del.add(e.id);for(const p of pts)add.push({cat:'fixture',type:T.id,level:it.lv,x:p.x,y:p.y,rot:0,off:0});R.st='new';R.n=pts.length}
+  return{rooms,add,del}}
+/* the occupants of the project's rooms (the density of their use, 26) */
+function fxcPeople(){let n=0;for(const it of fsRooms(P)){const u=LOAD_USE[loadUseOf(it.r)];if(u&&u.d>0)n+=it.g.area/1e6/u.d}return n}
+const fxcGuess=()=>{const U=new Set(P.els.filter(e=>e.cat==='room').map(loadUseOf));return U.has('bed')?'r3':U.has('office')||U.has('meeting')?'b':U.has('class')?'e':U.has('retail')?'m':'r3'};
+const fxcOcc=()=>P.fxc&&FXC_OCC.includes(P.fxc.occ)?P.fxc.occ:fxcGuess();
+/* IPC Table 403.1: the fixtures an occupancy needs -> [{k, kinds, need, has}] and the occupants */
+function fxcCheck(){const occ=fxcOcc(),N=fxcPeople(),h=N/2,du=P.fxc&&P.fxc.du||1,C=k=>P.els.filter(e=>e.cat==='fixture'&&k.includes((typ(P,e)||{}).kind)).length,up=x=>Math.ceil(x-1e-9);
+  const step=(x,a,n1,b)=>x<=0?0:x<=n1?up(x/a):up(n1/a)+up((x-n1)/b);let wc,lav,bath=0,sink=0;
+  if(occ==='r3'||occ==='r2'){wc=du;lav=du;bath=du;sink=du}
+  else if(occ==='b'){wc=2*step(h,25,50,50);lav=2*step(h,40,80,80);sink=1}
+  else if(occ==='e'){wc=2*up(h/50);lav=2*up(h/50);sink=1}
+  else if(occ==='m'){wc=2*up(h/500);lav=2*up(h/750);sink=1}
+  else{wc=up(h/125)+up(h/65);lav=2*up(h/200);sink=1}
+  const urin=C(['urinal']),wcHas=C(['wc'])+Math.min(urin,occ==='r3'||occ==='r2'?0:Math.floor(wc/4));
+  return{occ,N,rows:[{k:'wc',need:wc,has:wcHas},{k:'lav',need:lav,has:C(['lav'])},{k:'bath',need:bath,has:C(['shower','tub'])},{k:'sink',need:sink,has:C(['sink'])}]}}
+function dlgFdr(){const o=fdrOpt(),S=fdrSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=fdrPlan(ids,o),F=fxcCheck(),r2=P.fxc&&P.fxc.du||1;ui.helpAt='calc';
+  const set=`<div class="ldg pz"><label><span>${t('fdr_a')}</span><span><input type="number" data-fds="a" value="${S.a}" step="1" min="3" max="100"><small>m²</small></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-fdo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    <label><span>${t('fdr_repl')}</span><span><input type="checkbox" data-fdo="repl"${o.repl?' checked':''}></span></label></div>`;
+  const rows=Q.rooms.map(R=>`<tr data-id="${R.it.r.id}"${R.st==='new'?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td class="n">${(R.it.g.area/1e6).toFixed(1)} m²</td><td class="n">${R.has}</td><td class="n">${R.st==='new'?'<b>'+R.n+'</b>':t('wv_q_'+R.st)}</td></tr>`).join('');
+  const fx=`<h4>${t('fxc_h')}</h4><div class="ldg pz"><label><span>${t('fxc_occ')}</span><span><select data-fxo="occ">${FXC_OCC.map(k=>`<option value="${k}"${k===F.occ?' selected':''}>${esc(t('fxc_'+k))}</option>`).join('')}</select></span></label>
+    ${F.occ==='r3'||F.occ==='r2'?`<label><span>${t('fxc_du')}</span><span><input type="number" data-fxo="du" value="${r2}" step="1" min="1" max="2000"></span></label>`:`<label><span>${t('fxc_n')}</span><span><b>${Math.round(F.N)}</b></span></label>`}</div>
+    <div class="tblw"><table class="tbl"><thead><tr><th>${t('fxc_fix')}</th><th class="n">${t('fxc_need')}</th><th class="n">${t('fxc_has')}</th><th></th></tr></thead><tbody>${F.rows.map(x=>`<tr${x.has<x.need?' class="chg"':''}><td>${t('fxc_k_'+x.k)}</td><td class="n">${x.need}</td><td class="n">${x.has}</td><td>${x.has<x.need?'⚠ '+t('fxc_short',x.need-x.has):'✓'}</td></tr>`).join('')}</tbody></table></div>`;
+  const body=`<style>.fdd h4{margin:10px 0 4px}</style><div class="fdd"><p class="note">${t('fdr_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fdr_has')}</th><th class="n">${t('fdr_new')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note">${t('fdr_none')}</p>`)+fx+`<p class="note">${t('fxc_note')}</p></div>`;
+  openDlg(t('a_fdrlay'),body,`<span style="flex:1"></span><button class="btn primary" data-fdx="apply"${Q.add.length?'':' disabled'}>${t('fdr_apply',Q.add.length)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.fds){const v=+el.value;edit(()=>{const f=Object.assign({},P.fdr||{});if(el.value===''||!isFinite(v))delete f.a;else f.a=clamp(v,3,100);P.fdr=f});dlgFdr();return}
+       if(el.dataset.fxo){const k=el.dataset.fxo;edit(()=>{const f=Object.assign({},P.fxc||{});if(k==='occ')f.occ=el.value;else{const v=Math.round(+el.value);if(isFinite(v)&&v>=1)f.du=clamp(v,1,2000);else delete f.du}P.fxc=f});dlgFdr();return}
+       const k=el.dataset.fdo;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgFdr()},
+     click(ev){const x=ev.target.closest('[data-fdx]');if(x&&ui.dlg){if(Q.add.length){edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e))});toast(t('fdr_done',Q.add.length),6000);dlgFdr()}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.fdrlay=dlgFdr;
+{const A=RIBBON.find(r=>r.id==='sys');const E=A&&A.panels.find(q=>q.t==='p_elec');if(E&&!E.b.includes('@tclay')){const i=E.b.indexOf('@wvlay');E.b.splice(i<0?E.b.length:i+1,0,'@tclay')}
+  const W=A&&A.panels.find(q=>q.t==='p_piping');if(W&&!W.b.includes('@fdrlay')){const i=W.b.indexOf('fixture');W.b.splice(i<0?W.b.length:i+1,0,'@fdrlay')}}
+Object.assign(BTN,{'@tclay':['device',''],'@fdrlay':['fixture','']});
+Object.assign(STR,{
+  a_tclay:['วางจุด LAN ทีวี และกล้องวงจรปิดอัตโนมัติ','Data, TV and CCTV Layout'],a_fdrlay:['วางท่อระบายพื้นและตรวจจำนวนสุขภัณฑ์','Floor Drains and Fixture Count'],
+  tc_intro:['จุด LAN หนึ่งจุดต่อพื้นที่ทำงานหนึ่งที่ (TIA-568: ประมาณ 10 ม.² ของสำนักงาน หน้ากาก 2 ช่อง) วางตามแนวผนังเหมือนเต้ารับ ตามการใช้ห้อง · ห้องนอนและห้องนั่งเล่นได้ LAN 1 จุดและเต้ารับทีวีกลางผนังที่ยาวที่สุด ห้องเรียนและห้องประชุมได้เต้ารับทีวีด้วย · กล้องวงจรปิดโดมเข้ามา 1.5 ม. จากทุกประตูทางออกของอาคาร และในโถงและทางเดินเป็นตารางห่างไม่เกินที่ตั้ง ติดที่ฝ้า',
+    'One data outlet for each work area (TIA-568: about 10 m² of office, a two-port faceplate), along the walls as receptacles go, by the use of the room · bedrooms and living rooms one data outlet and a TV outlet in the middle of the longest wall, classrooms and meeting rooms a TV outlet too · a dome camera 1.5 m inside every door out of the building, and in lobbies and corridors on a grid no wider than the spacing set, at the ceiling'],
+  tc_o_data:['วางจุด LAN','Place data outlets'],tc_o_tv:['วางเต้ารับทีวี','Place TV outlets'],tc_o_cc:['วางกล้องวงจรปิด','Place CCTV cameras'],tc_o_repl:['แทนที่จุดที่มีอยู่แล้ว','Replace the ones there'],tc_cc:['ระยะห่างกล้องในโถง/ทางเดิน','Camera spacing in lobbies and corridors'],
+  tc_wa:['พื้นที่ต่อจุด LAN หนึ่งจุดตามการใช้ห้อง (0 = ไม่วาง ยกเว้นห้องนอน/นั่งเล่น/ห้องเรียนได้ 1 จุด)','m² for each data outlet by room use (0 = none; bedrooms, living rooms and classrooms one)'],
+  tc_n:['พื้นที่ทำงาน','Work areas'],tc_data:['LAN ใหม่','New data'],tc_tv:['ทีวีใหม่','New TV'],tc_cam:['กล้องใหม่','New cameras'],
+  tc_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้น · วางเต้ารับก่อนแล้วจุด LAN จะหลบไปข้างๆ · กล้องดูทางเข้าทุกทางของอาคาร ระยะห่างกล้องในทางเดินตามระยะมองเห็นใบหน้าของกล้องที่ใช้',
+    'Click a room to select it · place the receptacles first and the data outlets keep beside them · cameras watch every way into the building; set the spacing in corridors by the range at which the camera you use sees a face'],
+  tc_apply:['วาง LAN {0} · ทีวี {1} · กล้อง {2}','Place {0} data · {1} TV · {2} cameras'],tc_done:['วางจุดสื่อสารและกล้อง {0} ตัวแล้ว กดย้อนกลับได้','{0} data, TV and camera points placed — Undo to go back'],
+  fdr_intro:['ห้องน้ำ ห้องซักล้าง และระเบียงได้ท่อระบายพื้น 1 จุดต่อพื้นที่ที่ตั้ง (ห่างจากฝักบัว 600 มม. ถ้ามี ไม่เช่นนั้นห่างสุขภัณฑ์) · ตรวจจำนวนสุขภัณฑ์ขั้นต่ำตาม IPC ตาราง 403.1 จากจำนวนคนในอาคาร',
+    'Toilets, laundries and balconies get a floor drain for each area set (600 mm from the shower where there is one, else clear of the fixtures) · the least number of fixtures by IPC Table 403.1 from the occupants of the building'],
+  fdr_a:['พื้นที่ต่อท่อระบายพื้น 1 จุด','Floor area for each floor drain'],fdr_repl:['แทนที่ท่อระบายพื้นที่มีอยู่แล้ว','Replace the floor drains there'],fdr_has:['ท่อระบายที่มี','Drains there'],fdr_new:['วางใหม่','New'],
+  fdr_none:['ไม่มีห้องเปียก (ห้องน้ำ ห้องซักล้าง ระเบียง) ในห้องที่เลือก','No wet rooms (toilets, laundries, balconies) among the rooms'],fdr_apply:['วางท่อระบายพื้น {0} จุด','Place {0} floor drains'],fdr_done:['วางท่อระบายพื้น {0} จุดแล้ว กดย้อนกลับได้','{0} floor drains placed — Undo to go back'],
+  fxc_h:['จำนวนสุขภัณฑ์ขั้นต่ำ (IPC ตาราง 403.1)','Least number of fixtures (IPC Table 403.1)'],fxc_occ:['ประเภทอาคาร','Occupancy'],fxc_du:['จำนวนหน่วยพักอาศัย','Dwelling units'],fxc_n:['จำนวนคน (จากพื้นที่ห้อง)','Occupants (from the rooms)'],
+  fxc_r3:['บ้านเดี่ยว (R-3)','One-family house (R-3)'],fxc_r2:['อาคารชุด/อพาร์ตเมนต์ (R-2)','Flats (R-2)'],fxc_b:['สำนักงาน (B)','Business (B)'],fxc_e:['สถานศึกษา (E)','Educational (E)'],fxc_m:['ร้านค้า (M)','Mercantile (M)'],fxc_a3:['อาคารชุมนุมคน (A-3)','Assembly (A-3)'],
+  fxc_fix:['สุขภัณฑ์','Fixture'],fxc_need:['ต้องมี','Needed'],fxc_has:['ในโมเดล','In the model'],fxc_short:['ขาด {0}','{0} short'],
+  fxc_k_wc:['โถส้วม (รวมโถปัสสาวะทดแทนได้ไม่เกินครึ่งของชาย)','Water closets (urinals for up to half of the men\'s)'],fxc_k_lav:['อ่างล้างหน้า','Lavatories'],fxc_k_bath:['ฝักบัว/อ่างอาบน้ำ','Showers or bathtubs'],fxc_k_sink:['อ่างล้างจาน/อ่างบริการ','Kitchen or service sinks'],
+  fxc_note:['จำนวนคนคิดจากพื้นที่ห้องตามความหนาแน่นของการใช้ห้อง (เดียวกับภาระความเย็น) ชายหญิงอย่างละครึ่ง · สำนักงาน: โถส้วม 1 ต่อ 25 คนสำหรับ 50 คนแรก แล้ว 1 ต่อ 50 อ่างล้างหน้า 1 ต่อ 40 สำหรับ 80 คนแรก แล้ว 1 ต่อ 80 · ตรวจกับกฎหมายควบคุมอาคารของท้องถิ่นด้วย',
+    'Occupants are the floor area of the rooms by the density of their use (as the cooling loads take it), half men and half women · business: water closets 1 per 25 for the first 50, then 1 per 50; lavatories 1 per 40 for the first 80, then 1 per 80 · check the local building code as well']});
+/* ===== 180 Placing MEP components in 3D views, sections and elevations (V1.180; Revit places a component on the face it is over in a 3D view: a face-based family).
+   Air terminals, mechanical and electrical equipment, plumbing fixtures, sprinkler heads, lights and devices go on the face under the pointer: on the underside of a
+   ceiling or a slab they hang from it at its height (equipment with its top there), on a floor or the top of anything they stand on it, on a wall they stand in front
+   of it facing out at the height of their type (as in a plan, 178), and over nothing (or over a run, a terminal or a head) on the work plane of the view at the
+   offset in Properties.  Their level is the
+   storey they are on.  A duct or pipe accessory goes into the duct or pipe it is put on.  Runs were already drawn there (89). ===== */
+const P3_CATS=['terminal','equip','eequip','fixture','sprinkler','light','device','ductacc','pipeacc'],P3_RUNS=['duct','pipe','tray','conduit','riser','ductacc','pipeacc','terminal','sprinkler'];
+/* the level a height belongs to: the highest whose floor is at or under it (for the underside of something, under it) */
+const p3Lv=(z,down)=>{const L=sortedLevels(P);let b=L[0];for(const l of L)if(l.elev<=z+(down?-1:1))b=l;return b};
+/* where component `cat` goes for pointer p: {x, y, rot, off, lv, extra?, k: 'down'|'up'|'wall'|'plane', z (the height of the point picked)} or {need} or null */
+function p3At(pn,v,p,cat){const d=defs(cat),T=(P.types[cat]||[]).find(x=>x.id===d.type)||{},pk=pickAt3(pn,v,p),S=compSize(P,{cat,type:d.type}),def=placeOff(d,T),spin=((d.rot||0)+ui.flip*90)%360;
+  if(cat==='ductacc'||cat==='pipeacc'){const rc=cat==='ductacc'?'duct':'pipe',e=pk&&IDX.get(pk.id);if(!e||e.cat!==rc||!(e.x2!=null))return{need:rc};const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,hl=cat==='ductacc'?(T.len||150)/2:0;
+    const tt=clamp(Math.round(((pk.p[0]-e.x1)*ux+(pk.p[2]-e.y1)*uy)/10)*10,Math.min(hl,L/2),Math.max(L-hl,L/2)),z=runZ(P,e),lv=lvl(P,e.level);
+    return{x:Math.round(e.x1+ux*tt),y:Math.round(e.y1+uy*tt),rot:Math.atan2(uy,ux)*180/Math.PI,lv,k:'run',z:z[0]+(z[1]-z[0])*tt/L+(lv?lv.elev:0),extra:cat==='ductacc'?{w:runW(e),h:runH(P,e),off:e.off||0,sys:e.sys}:{dia:runW(e),off:Math.round(((e.off||0)+(z[1]-z[0])*tt/L)*10)/10,sys:e.sys}}}
+  if(pk&&pk.p&&pk.n&&!P3_RUNS.includes(pk.cat)){const x=pk.p[0],y=pk.p[2],z=pk.p[1],nz=pk.n[1],nx=pk.n[0],ny=pk.n[2],hung=cat==='equip'||cat==='eequip'?(+T.h||S.h||300):0;
+    if(nz<-0.7){const lv=p3Lv(z,true);return{x:Math.round(x),y:Math.round(y),rot:spin,off:Math.round(z-lv.elev-hung),lv,k:'down',z}}
+    if(nz>0.7){const lv=p3Lv(z,false),wm=wallMounted(cat,T);return{x:Math.round(x),y:Math.round(y),rot:spin,off:Math.round(wm&&cat!=='fixture'?def:z-lv.elev),lv,k:'up',z}}
+    const h=Math.hypot(nx,ny)||1,n=[nx/h,ny/h],lv=p3Lv(z,false),dep=cat==='device'?0:cat==='sprinkler'?60:S.d/2;
+    return{x:Math.round(x+n[0]*dep),y:Math.round(y+n[1]*dep),rot:((Math.round(Math.atan2(-n[0],n[1])*1800/Math.PI)/10)%360+360)%360,off:Math.round(wallMounted(cat,T)?def:Math.max(0,z-lv.elev)),lv,k:'wall',z}}
+  if(v.kind!=='3d')return null;const lv=ev3Lv3(v),w=ev3Ray(pn,v,p,lv.elev+def);return w?{x:Math.round(w[0]),y:Math.round(w[1]),rot:spin,off:Math.round(def),lv,k:'plane',z:w[2]}:null}
+const p3Tool={ok:v=>ev3GL(v),
+  click(pn,v,p){const cat=ui.tool,q=p3At(pn,v,p,cat);if(!q){toast(t('p3_none'));return}if(q.need){toast(t('p3_need_'+q.need));return}let id=null;
+    edit(()=>{const o=newPointEl(cat,{level:q.lv.id,rcp:false},{x:q.x,y:q.y,rot:q.rot,extra:q.extra});o.level=q.lv.id;if(q.off!=null&&!q.extra)o.off=q.off;P.els.push(o);id=o.id});ui.sel=new Set([id]);refresh()},
+  draw(pn,ctx,v,nav){if(ui.curPane!==pn.i||!ui.cur)return;const cat=ui.tool,q=p3At(pn,v,ui.cur,cat),sp=ev3Scr(pn,v,nav);if(!q||q.need)return;const d=defs(cat),S=compSize(P,{cat,type:d.type}),a=q.rot*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+    const z=q.extra?q.z:q.lv.elev+q.off+(q.k==='down'&&(cat==='equip'||cat==='eequip')?S.h:0),W=(S.w||300)/2,D=(S.d||300)/2,R=[[-W,-D],[W,-D],[W,D],[-W,D]].map(([u,w])=>sp([q.x+u*c-w*s,q.y+u*s+w*c,z])).filter(Boolean);
+    ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.setLineDash([]);if(R.length===4){ctx.beginPath();R.forEach((r,i)=>i?ctx.lineTo(r[0],r[1]):ctx.moveTo(r[0],r[1]));ctx.closePath();ctx.stroke()}
+    const m=sp([q.x,q.y,z]);if(m){ev3Mark(ctx,m[0],m[1],'pt');ev3Lbl(ctx,m[0],m[1],t('p3_k_'+q.k)+' · '+q.lv.name+' +'+fmtLen(q.extra?q.extra.off||0:q.off)+' '+unitName())}},
+  hint(v){const c=ui.tool;return c==='ductacc'||c==='pipeacc'?t('p3_hrun'):t('p3_h')}};
+for(const k of P3_CATS)if(!XT3[k])XT3[k]=p3Tool;
+Object.assign(STR,{
+  p3_h:['คลิกบนฝ้า ผนัง หรือพื้นในภาพเพื่อวาง: ใต้ฝ้า/พื้นชั้นบนจะแขวนที่ระดับนั้น บนผนังหันออกจากผนังที่ความสูงของชนิด บนพื้นตั้งบนพื้น · ไม่มีอะไรใต้เมาส์วางบนระนาบทำงาน · Space หมุน 90°',
+    'Click a ceiling, a wall or a floor in the view: under a ceiling or a slab it hangs at that height, on a wall it faces out at the height of its type, on a floor it stands on it · over nothing it goes on the work plane · Space turns it 90°'],
+  p3_hrun:['คลิกบนท่อลมหรือท่อน้ำในภาพเพื่อแทรกอุปกรณ์ในท่อ','Click a duct or a pipe in the view to put the accessory in it'],
+  p3_none:['ไม่มีผิวใต้เมาส์: ชี้ที่ฝ้า ผนัง หรือพื้น','Nothing under the pointer: point at a ceiling, a wall or a floor'],p3_need_duct:['คลิกบนท่อลม','Click a duct'],p3_need_pipe:['คลิกบนท่อน้ำ','Click a pipe'],
+  p3_k_down:['ใต้ฝ้า/พื้น','Under'],p3_k_up:['บนพื้น','On top'],p3_k_wall:['บนผนัง','On the wall'],p3_k_plane:['ระนาบทำงาน','Work plane'],p3_k_run:['ในท่อ','In the run']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -32092,6 +32473,10 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.174 · [[a_fallay]] (แผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_analyze]]): ทุกห้องมีชนิดตัวตรวจจับ (ควัน ความร้อน หรือไม่ต้องมี) ตามการใช้ห้อง วางตัวตรวจจับตามระยะของ NFPA 72 (ลดระยะตามความสูงฝ้า) ห่างผนัง 100 มม. และห่างหัวจ่ายลม 0.91 ม. · จุดแจ้งเหตุข้างทางออกทุกทาง ระยะเดินไม่เกิน 61 ม. วัดตามทางเดินจริง · กระดิ่งให้ดังกว่าเสียงรอบข้าง 15 dB ทุกห้อง (ห้องนอน 75 dB) หักเสียงที่ผ่านผนัง · ตู้ควบคุม (FACP) แบ่งโซนไม่เกิน 2,000 ตร.ม. วงจร Z และ N ให้อุปกรณ์ทุกตัว ขนาดแบตเตอรี่ 24 ชม. + 5 นาที · ส่วนที่ไม่ครอบคลุมแสดงในแปลนและใน [[a_sysck]]
 - V1.175 · [[a_fhclay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ตู้ดับเพลิง (FHC) ข้างประตูบันไดทุกแห่ง แล้วเพิ่มจนทุกจุดของชั้นอยู่ในระยะสายฉีด 30 ม. บวกระยะพุ่ง 9 ม. วัดตามทางเดินจริง (NFPA 14) · ถังดับเพลิงไม่เกิน 22.9 ม. (NFPA 10) · ตู้ที่ตรงกันหลายชั้นเป็นท่อยืน: เดินท่อยืนและท่อแยกเข้าตู้ · คำนวณอัตราไหล แรงดันที่หัวบนสุด แรงดันและกำลังปั๊ม และน้ำสำรอง เทียบกับปั๊มในโมเดล · ส่วนที่เข้าไม่ถึงแสดงในแปลนและใน [[a_sysck]]
 - V1.176 · [[a_rsr]] (แผงท่อน้ำและแผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_view]]): ผังไรเซอร์ที่วาดจากโมเดลเองและเปลี่ยนตามทันที: สุขาภิบาล (โสโครก น้ำทิ้ง อากาศ น้ำฝน ประปา น้ำร้อน: ขนาดและ DFU/FU ทุกช่วง สุขภัณฑ์ที่ต่อเข้าแต่ละชั้น ถังหรือปั๊มต้นทาง) · ท่อยืนดับเพลิง (ตู้ FHC ท่อแยกสปริงเกลอร์ ถังดับเพลิงแต่ละชั้น ปั๊ม หัวรับน้ำ) · แจ้งเหตุเพลิงไหม้ (ตู้ควบคุม สายแนวดิ่ง และอุปกรณ์ของทุกโซนในทุกชั้น) · วางบนชีต พิมพ์ และส่งออก DXF ได้
+- V1.177 · [[a_diflay]] (แผงระบบปรับอากาศของงานระบบ หรือแผงลมของห้องในแท็บ [[tab_analyze]]): วางหัวจ่ายลมให้ทุกห้องตามลมที่ห้องต้องการ (จากภาระความเย็นหรือที่กำหนดเอง) จำนวนน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว เป็นตารางเท่ากันตามผนังยาว ระยะห่างไม่เกินที่ตั้ง · ตรวจระยะลมพุ่ง T50/L ตามเกณฑ์ ADPI ของ ASHRAE (0.7–1.3) และเพิ่มหัวเมื่อลมพุ่งแรงเกิน · วางหน้ากากลมกลับและหน้ากากระบาย (ห้องน้ำตาม ACH) ห่างหัวจ่าย 1.5 ม. · หลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟ และสปริงเกลอร์ · เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ได้ในขั้นเดียว (Generate Layout) · ชนิดหัวจ่ายมีช่องลมสูงสุดและระยะลมพุ่งตามแคตตาล็อก
+- V1.178 · [[a_wvlay]] (แผงไฟฟ้าของงานระบบ): วางเต้ารับตามแนวผนังของทุกห้องตามระยะห่างของการใช้ห้อง (NEC 210.52: ทุกจุดของแนวผนังห่างเต้ารับไม่เกิน 1.8 ม.; สำนักงาน 3.0 ม.; ครัว 1.8 ม. สูง 1.10 ม.; แก้ระยะของแต่ละการใช้ห้องได้) ขาดที่ประตูและห่างมุมห้อง · ห้องน้ำได้เต้ารับข้างอ่างล้างหน้า · สวิตช์ข้างประตูด้านมือจับ (ห้องน้ำติดนอกห้อง) ห้องหลายประตูได้สวิตช์สองทาง · ผูกโคมในห้องกับสวิตช์ (Switch ID) ให้เลย
+- V1.179 · [[a_tclay]] (แผงไฟฟ้าของงานระบบ): จุด LAN หนึ่งจุดต่อพื้นที่ทำงาน (TIA-568 ประมาณ 10 ม.² ของสำนักงาน แก้ได้ตามการใช้ห้อง) วางตามแนวผนังและหลบเต้ารับ · ห้องนอน/นั่งเล่นได้ LAN และเต้ารับทีวีกลางผนังยาว · กล้องวงจรปิดที่ทุกทางเข้าอาคารและในโถง/ทางเดินตามระยะห่างที่ตั้ง · [[a_fdrlay]] (แผงท่อน้ำ): ท่อระบายพื้นในห้องน้ำ ห้องซักล้าง ระเบียง ตามพื้นที่ ใกล้ฝักบัวและหลบสุขภัณฑ์ · ตรวจจำนวนสุขภัณฑ์ขั้นต่ำตาม IPC ตาราง 403.1 (บ้าน อาคารชุด สำนักงาน สถานศึกษา ร้านค้า อาคารชุมนุมคน) จากจำนวนคนตามพื้นที่ห้อง
+- V1.180 · วางอุปกรณ์งานระบบในมุมมอง 3D รูปตัด และรูปด้าน: หัวจ่ายลม เครื่องจักร ตู้ไฟ สุขภัณฑ์ สปริงเกลอร์ โคมไฟ และอุปกรณ์ไฟฟ้า วางบนผิวที่เมาส์ชี้ ใต้ฝ้าหรือพื้นชั้นบนจะแขวนที่ระดับนั้น บนผนังหันออกจากผนังที่ความสูงของชนิด บนพื้นตั้งบนพื้น ไม่มีอะไรใต้เมาส์วางบนระนาบทำงาน · อุปกรณ์ในท่อ (แดมเปอร์ วาล์ว) คลิกบนท่อในภาพ 3D เพื่อแทรก · ท่อลม ท่อน้ำ รางเดินสาย ท่อร้อยสาย วาดใน 3D ได้อยู่แล้ว
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -32404,6 +32789,10 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.174 · [[a_fallay]] (electrical panel of Systems, or the [[tab_analyze]] tab): every room has a detector kind (smoke, heat or none) by its use; detectors are laid out at the NFPA 72 spacing (less under high ceilings), 100 mm off walls and 0.91 m from supply diffusers · a call point beside every exit and no more than 61 m to walk, along the way one really walks · bells 15 dB over the ambient sound in every room (75 dB in bedrooms), less what the walls take · the panel (FACP), zones of no more than 2,000 m², circuits Z and N for every device, the battery for 24 h + 5 min · gaps are shown on the plans and in [[a_sysck]]
 - V1.175 · [[a_fhclay]] (piping panel of Systems, or the [[tab_analyze]] tab): a hose cabinet by every stair door, then more until every point of a level is within the 30 m hose plus the 9 m stream, along the way one walks (NFPA 14) · extinguishers no more than 22.9 m away (NFPA 10) · cabinets one above another are a standpipe: the riser and the branch to each cabinet are run · the flow, the pressure at the top outlet, the pump pressure and power and the water to store, compared with the pump in the model · what is out of reach is shown on the plans and in [[a_sysck]]
 - V1.176 · [[a_rsr]] (piping and electrical panels of Systems, or the [[tab_view]] tab): riser diagrams that draw themselves from the model and follow it at once: plumbing (soil, waste, vent, rainwater, cold and hot water: the size and DFU/FU of every length, the fixtures on every branch, the tank or pump a stack starts from) · standpipes (hose cabinets, sprinkler take-offs, extinguishers on every level, the pump, the inlet) · fire alarm (the panel, the cable riser and the devices of every zone on every level) · they go on sheets, print and export to DXF
+- V1.177 · [[a_diflay]] (HVAC panel of Systems, or Space Airflow on the [[tab_analyze]] tab): supply diffusers for every room from the air it needs (its cooling load or its own value): the fewest that each carry no more than the type's Max Flow, on an even grid along the long wall, no farther apart than the spacing set · the throw is checked as T50/L against the ASHRAE ADPI range (0.7–1.3), with more diffusers where it blows too far · return and exhaust grilles (toilets by their ACH), 1.5 m from the diffusers · clear of smoke detectors by 0.91 m, of lights and of sprinkler heads · ducts from the air handlers to the new terminals in the same step (Generate Layout) · air terminal types take a Max Flow and a throw from their catalogue
+- V1.178 · [[a_wvlay]] (electrical panel of Systems): receptacles along the walls of every room at the spacing of its use (NEC 210.52: no point of the wall line farther than 1.8 m from one; offices 3.0 m; kitchens 1.8 m at 1.10 m; the spacing of each use can be changed), broken at the doors and clear of the corners · toilets one beside the washbasin · switches beside the latch side of the doors (toilets outside), three-way switches in rooms with several doors · the room's lights go on the switch (Switch ID)
+- V1.179 · [[a_tclay]] (electrical panel of Systems): a data outlet for each work area (TIA-568, about 10 m² of office, set by room use) along the walls, beside the receptacles · bedrooms and living rooms a data outlet and a TV outlet in the middle of the long wall · CCTV cameras at every way into the building and in lobbies and corridors at the spacing set · [[a_fdrlay]] (piping panel): floor drains in toilets, laundries and balconies by floor area, by the shower and clear of the fixtures · the least number of fixtures by IPC Table 403.1 (house, flats, business, educational, mercantile, assembly) from the occupants of the rooms
+- V1.180 · MEP components placed in 3D views, sections and elevations: air terminals, mechanical and electrical equipment, plumbing fixtures, sprinkler heads, lights and devices go on the face under the pointer: under a ceiling or a slab they hang at its height, on a wall they face out at the height of their type, on a floor they stand on it, over nothing on the work plane · duct and pipe accessories (dampers, valves) go into the run clicked in 3D · ducts, pipes, trays and conduits were already drawn in 3D
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -34376,6 +34765,20 @@ window.PenumBIM.r96={make:(k,s)=>rsrNew(k,s),is:vid=>rsrIs(viewById(vid)),
   lay:vid=>{const v=viewById(vid),L=v&&rsrIs(v)?rsrLay(v):null;return L?{k:L.k,n:L.n,none:L.none,box:L.box,hits:L.hits.map(h=>[...h.slice(0,4).map(x=>Math.round(x*10)/10),h[4]]),stacks:L.stacks,
     texts:L.ops.filter(o=>o.t==='T').map(o=>o.s),nops:L.ops.length}:null},
   at:(vid,x,y)=>{const v=viewById(vid),h=v&&rsrIs(v)?rsrAt(v,{x,y}):null;return h?h[4]:null},dxf:vid=>planDXF(viewById(vid)),stacks:f=>rsrStacks(new Set(f||['D','RL','CW','HW','FP'])).map(s=>({f:s.f,mark:s.mark,ids:s.ids,z0:s.z0,z1:s.z1}))};
+window.PenumBIM.r97={now:()=>difNow().map(x=>({id:x.it.r.id,name:x.it.r.name,lv:x.it.lv,sreq:x.row.sreq,rreq:x.row.rreq,ereq:x.row.ereq,ss:x.row.ss,sa:x.has.SA.length,ra:x.has.RA.length,ea:x.has.EA.length,adpi:x.adpi&&{r:x.adpi.r,lo:x.adpi.lo,hi:x.adpi.hi}})),
+  plan:(ids,o)=>{const Q=difPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},difOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,clash:R.clash,SA:R.SA&&{st:R.SA.st,n:R.SA.n,q:R.SA.q,ad:R.SA.ad&&R.SA.ad.r},RA:R.RA&&{st:R.RA.st,n:R.RA.n},EA:R.EA&&{st:R.EA.st,n:R.EA.n}})),add:Q.add,del:[...Q.del]}},
+  apply:(ids,o)=>{const O=Object.assign({},difOpt(),o||{});return difApply(difPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),O),O)},
+  t50:(tid,q)=>difT50((P.types.terminal||[]).find(T=>T.id===tid),q,difSet()),max:tid=>difMax((P.types.terminal||[]).find(T=>T.id===tid),difSet()),loose:()=>airflow(P).loose.slice()};
+window.PenumBIM.r98={plan:(ids,o)=>{const Q=wvPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},wvOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,use:R.use,sp:R.sp,nl:R.nl,rec:R.rec,sw:R.sw})),add:Q.add.map(e=>Object.assign({},e,{_lt:e._lt&&e._lt.length})),del:[...Q.del]}},
+  apply:(ids,o)=>wvApply(wvPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},wvOpt(),o||{}))),runs:(id,sp)=>{const it=falNow().find(x=>x.r.id===id),L=falNow(),X=falDoors(it.lv,L.regs.get(it.lv),L.rmOf.get(it.lv)),D=wvDoors(X,it.i),R=wvRuns(it.g.net,D);return{runs:R.map(r=>Math.round(r.len)),pts:wvAlong(R,(sp||3.6)*1000)}},
+  lsw:()=>PenumBIM.r61.I().P.els.filter(e=>e.cat==='light').map(e=>[e.id,e.lsw==null?null:e.lsw])};
+window.PenumBIM.r99={tc:(ids,o)=>{const Q=tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,use:R.use,n:R.n,data:R.data,tv:R.tv,cc:R.cc})),add:Q.add,del:[...Q.del]}},
+  tcApply:(ids,o)=>tcApply(tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}))),
+  fdr:(ids,o)=>{const Q=fdrPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},fdrOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,st:R.st,n:R.n,has:R.has})),add:Q.add,del:[...Q.del]}},
+  fxc:()=>fxcCheck(),people:()=>fxcPeople()};
+window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
+  put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
+  pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
