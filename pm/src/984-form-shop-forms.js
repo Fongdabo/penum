@@ -92,7 +92,7 @@ const FS_X=`<style>
 #print .qm .fs-row:last-child{border-bottom:none}
 </style>`;
 // a form's colour over a print made by another function
-const fsTint=(h,hex)=>FS_CSS+FS_X+h.replace('<div class="qm"',`<div class="qm fs-brand" style="${Object.entries(fsVars(hex)).map(([k,v])=>`${k}:${v}`).join(';')}"`);
+const fsTint=(h,hex)=>FS_CSS+FS_X+h.replaceAll('<div class="qm"',`<div class="qm fs-brand" style="${Object.entries(fsVars(hex)).map(([k,v])=>`${k}:${v}`).join(';')}"`);
 
 // ===== service (PM/MA) quotations
 const FS_COVER_IN=['อะไหล่ที่เสื่อมตามการใช้งาน เช่น สายพาน ลูกปืน ฟิลเตอร์ คาปาซิเตอร์','แผงวงจรควบคุมและเซนเซอร์','มอเตอร์พัดลมและปั๊ม','น้ำยาทำความเย็นที่ต้องเติมจากการรั่วซึม','ค่าแรงเปลี่ยนอะไหล่และค่าเดินทาง'];
