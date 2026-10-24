@@ -79,7 +79,7 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
   <p class="xb-p">${E0?`${esc(C.name||'บริษัทฯ')} ขอให้เสนอราคา${esc(Q.title||'')}`:`บริษัทฯมีความยินดีขอเรียนเสนอราคา${esc(Q.title||'')}`}<br>${Q.pname?`สำหรับโครงการ&nbsp;&nbsp;&nbsp; ${esc(Q.pname)}&nbsp;&nbsp;&nbsp; `:''}มีรายละเอียดดังต่อไปนี้.</p>`;
   const sumRows=order.map((g,k)=>`<tr><td class="c">${k+1}</td><td>${gName(g)}</td><td class="c">1</td><td class="c">Lot</td>${sp?M(G[g].m)+M(G[g].m)+M(G[g].l)+M(G[g].l):M(G[g].t)}${M(G[g].t)}${rm}</tr>`).join('');
   const pad=Math.max(0,6-order.length),padRows=Array.from({length:pad},()=>`<tr class="e">${'<td></td>'.repeat(nc)}</tr>`).join('');
-  const mkRow=sep&&Math.abs(c.lines-T.t)>0.005,A=c.adds.filter(a=>a.v||a.name);
+  const mkRow=sep&&Math.abs(c.lines-T.t)>0.005,A=c.adds.filter(a=>a.v);
   const bands=[band('TOTAL',fmt(T.t,2),'',sp?T.m:null,sp?T.l:null),...(mkRow?[band(`OVER HEAD &amp; PROFIT ${fmt(n(Q.mk),2)}%`,fmt(c.lines-T.t,2))]:[]),
     ...A.map(a=>band(esc(a.name||''),fmt(a.v,2))),...(mkRow||A.length?[band('TOTAL',fmt(c.sub,2))]:[]),
     ...(c.disc?[band('DISCOUNT',fmt(c.disc,2),'rd'),band('SUM TOTAL',fmt(c.net,2))]:[]),band('VAT&nbsp; 7%',fmt(c.vat,2)),band('GRAND TOTAL',fmt(c.grand,2))].join('');
