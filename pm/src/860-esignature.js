@@ -144,7 +144,8 @@ ACT.esNone=()=>{ESQ=null;$('#esDlg').close();esNativePrint()};
 ACT.esGo=async()=>{const d=$('#esDlg');if(!d||!ESQ)return;const Q=ESQ,pick=[...d.querySelectorAll('select[data-es]')].map(x=>x.value);
   for(const i of d.querySelectorAll('input[data-pin]')){const s=esStaff(i.dataset.pin);if(!s||!s.pin||await pinHash(s.id,(i.value||'').trim())!==s.pin){toast(`PIN ของ ${s?s.name:''} ไม่ถูกต้อง`);i.value='';i.focus();return}}
   pick.forEach((id,i)=>{const s=id&&esStaff(id),f=d.querySelector(`input[data-esf="${i}"]`);if(f)Q.slots[i].for=f.checked;if(s&&s.sig&&esUse(s))esPut(Q.slots[i],s)});
-  ESQ=null;d.close();setTimeout(esNativePrint,60)};
+  // 4.25 the signatures add height: fit the page again so the document does not spill onto another sheet (user: "กระดาษยังหลุด")
+  ESQ=null;d.close();try{if(typeof fitPrint==='function')fitPrint()}catch(e){}setTimeout(esNativePrint,60)};
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches&&e.target.matches('#esDlg input[data-pin]')){e.preventDefault();ACT.esGo()}});
 document.head.insertAdjacentHTML('beforeend',`<style>
 #esPad{width:100%;max-width:640px;height:auto;aspect-ratio:840/300;border:1px dashed var(--line);border-radius:10px;background:#fff;touch-action:none;display:block}
