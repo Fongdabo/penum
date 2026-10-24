@@ -69,7 +69,7 @@ const FS_CSS=`<style>
   if(F&&F.pr)try{return F.pr(Q,bq)}catch(e){console.error(e)}
   const h=f(id,bq);if(!F||!F.th||h.indexOf('<div class="qm"')<0)return h;
   const st=F.th==='brand'?` style="${Object.entries(fsVars(CO().formColor)).map(([k,v])=>`${k}:${v}`).join(';')}"`:'';
-  return FS_CSS+h.replace('<div class="qm"',`<div class="qm fs-${F.th}"${st}`)}}
+  return FS_CSS+h.replaceAll('<div class="qm"',`<div class="qm fs-${F.th}"${st}`)}}
 
 // ---- a small picture of each form for the gallery
 function fsThumb(F){const C=CO(),b=F.th==='brand'?fsVars(C.formColor):F.col?fsVars(F.col):null;

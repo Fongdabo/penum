@@ -48,6 +48,7 @@ const QM_CSS=`<style>
 #print .qm-ti:before{content:"";position:absolute;right:50px;bottom:-60px;width:110px;height:110px;border-radius:50%;background:rgba(245,158,11,.22)}
 #print .qm-ti small{font-size:10px;letter-spacing:.24em;font-weight:600;color:#BFE7EA}
 #print .qm-ti h1{font-size:25px;line-height:1.2;margin:2px 0 3px;color:#fff;font-weight:700}
+#print .qm-ti h1 .pt{display:inline-block;margin-left:10px;padding:2px 10px;border-radius:999px;background:var(--qo,#F59E0B);color:#fff;font-size:14px;font-weight:600;vertical-align:middle}
 #print .qm-ti p{margin:0;font-size:11.5px;color:#E3F1F3;position:relative;z-index:1}
 #print .qm-m{border:1px solid var(--ql);border-radius:12px;overflow:hidden;font-size:10.5px}
 #print .qm-m div{display:grid;grid-template-columns:92px 1fr;gap:6px;padding:4px 10px;border-top:1px solid #EDF3F4}
@@ -157,11 +158,28 @@ const QM_EQ=/แอร์|split|vrf|vrv|package|rooftop|chiller|ชิลเล�
   QM_ACC=/support|ขาแขวน|bracket|ยางรอง|รางครอบ|duct cover|refnet|branch|รีโมท|remote|drain pump|กาลักน้ำ|controller|ชุดควบคุม|ท่อ|pipe|ฉนวน|สาย|ทดสอบ|ค่าแรง|ติดตั้ง/i;
 const qmIsEq=i=>{if(i.eqp===true||i.eqp===false)return i.eqp;const t=[i.type,i.desc].filter(Boolean).join(' ');return i.g==='eq'&&QM_EQ.test(t)&&!QM_ACC.test(t)};
 const QM_WHT=[['','ค่าวัสดุ + ค่าแรง (ไม่หักเฉพาะค่าเครื่อง)'],['l','ค่าแรงอย่างเดียว'],['none','ไม่แสดง']];
+// 4.17 แยก 2 ใบ (user: "ถ้าแยกใบเลยจะดูง่ายกว่าไหม"): with แยกค่าเครื่อง on and Q.eqDoc not 'one', the print is two quotations from the
+// same data: <no>-1 ค่าเครื่อง (goods only, no withholding) and <no>-2 ค่าติดตั้ง (material + labour, the 3% box). An equipment line's
+// own labour goes to the second one as "ค่าติดตั้ง <name>". Discount and fixed extras are shared in proportion to each part.
+const QM_DOC=[['','แยก 2 ใบ: ใบค่าเครื่อง + ใบค่าติดตั้ง'],['one','ใบเดียว แยก 3 คอลัมน์']];
+const qmTwo=Q=>!!Q&&!!Q.eqSep&&Q.eqDoc!=='one'&&!qmMa(Q);
+function qmParts(Q){const E=[],V=[],r2=v=>Math.round(v*100)/100,EN=qmLang(Q)==='en';
+  Q.items.forEach(i=>{if(!qmIsEq(i)){V.push(i);return}const m=n(i.m),l=n(i.l),sp=n(i.sp)>0?n(i.sp):0;if(!m||!l){E.push(i);return}const r=m/(m+l);
+    E.push(Object.assign({},i,{l:0,t:r2(n(i.q)*m),sp:sp?r2(sp*r):'',eqp:true}));
+    V.push(Object.assign({},i,{id:i.id+'-l',desc:(EN?'Installation of ':'ค่าติดตั้ง ')+(i.desc||''),m:0,t:r2(n(i.q)*l),sp:sp?r2(sp*(1-r)):'',eqp:false}))});
+  if(!E.length||!V.length)return null;
+  const no=k=>Q.no?Q.no+'-'+k:'';
+  const mk=(items,k)=>Object.assign({},Q,{items,_part:k,eqSep:false,eqDoc:'one',no:no(k==='eq'?1:2),_fno:Q.no?no(1)+' / '+no(2):'',ref:[Q.ref,(EN?'with ':'คู่กับ ')+no(k==='eq'?2:1)].filter(Boolean).join(' · '),
+    sow:k==='eq'?[]:Q.sow,qpay:(Q.qpay||[]).slice()});
+  const A=mk(E,'eq'),B=mk(V,'svc'),la=qCalc(Object.assign({},A,{disc:0})).lines,lb=qCalc(Object.assign({},B,{disc:0})).lines,w=la+lb>0?la/(la+lb):0.5;
+  const sh=(P,f)=>{P.disc=r2(n(Q.disc)*f);P.adds=(Q.adds||[]).map(a=>n(a.pct)?a:Object.assign({},a,{amt:r2(n(a.amt)*f)}))};sh(A,w);sh(B,1-w);return [A,B]}
+{const f=qmPrint;qmPrint=function(Q,bq){const P=qmTwo(Q)&&!Q._part&&qmParts(Q);if(!P)return f.apply(this,arguments);
+  return f(P[0],bq)+'<div style="page-break-before:always"></div>'+f(P[1],bq)}}
 PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const f=qForm(Q);
   if(!qmMa(Q)&&(Q.look==='xl'||f==='G'||f==='E'))return PRINT.quoteXl(id,bq);
   try{return qmPrint(Q,bq)}catch(e){console.error(e);return PRINT.quoteXl(id,bq)}};
 
-function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),eqs=!ma&&!!Q.eqSep,sp=!ma&&(qSplit(Q)||eqs),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
+function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),eqs=!ma&&!!Q.eqSep,sv=Q._part==='svc',sp=!ma&&(qSplit(Q)||eqs||sv),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
   // a label in the chosen language; bilingual puts the English under (or beside) the Thai
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
@@ -179,7 +197,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),
     ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact',1),esc([st.phone,st.email].filter(Boolean).join(' · '))]]:[])];
-  const head=co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${ma?'MAINTENANCE SERVICE QUOTATION':'QUOTATION'}</small>`}<h1>${ma?(EN?'Service Quotation':'ใบเสนอราคาบริการ'):(EN?'Quotation':'ใบเสนอราคา')}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
+  const head=co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${ma?'MAINTENANCE SERVICE QUOTATION':'QUOTATION'}</small>`}<h1>${ma?(EN?'Service Quotation':'ใบเสนอราคาบริการ'):(EN?'Quotation':'ใบเสนอราคา')}${Q._part?`<span class="pt">${Q._part==='eq'?tx('ค่าเครื่อง (สินค้า)','Equipment (goods)'):tx('ค่าติดตั้ง วัสดุ และค่าแรง','Installation, material &amp; labour')}</span>`:''}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
     <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`;
   const kv=(k,v,cl)=>v?`<div><span>${k}</span><b${cl?` class="${cl}"`:''}>${v}</b></div>`:'';
   const attn=Q.attn||cu.contact||'';
@@ -226,8 +244,8 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     ${c.disc?tr(t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d')+tr(t('ยอดหลังหักส่วนลด','After discount',1),fmt(c.net,2)):''}${tr(t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2))}
     ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
   // the part the customer withholds 3% on, in proportion to the amount before VAT (after markup, extras and discount)
-  const wb=eqs&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,wy=wb==null?0:c.net*wb/T.t,ww=wy*3/100;
-  const wht=wb==null?'':`<div class="qm-tot qm-wh">${tr(Q.whtB==='l'?t('ค่าเครื่องและค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Equipment &amp; material (no withholding tax)',1):t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
+  const wb=(eqs||sv)&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,wy=wb==null?0:c.net*wb/T.t,ww=wy*3/100;
+  const wht=wb==null?(Q._part==='eq'?`<div class="qm-tot qm-wh"><div class="nt"><span>${t('ค่าเครื่อง (สินค้า) ไม่หัก ณ ที่จ่าย','Equipment (goods): no withholding tax',1)}</span><b></b></div></div>`:''):`<div class="qm-tot qm-wh">${sv&&Q.whtB!=='l'?'':tr(sv?t('ค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Material (no withholding tax)',1):Q.whtB==='l'?t('ค่าเครื่องและค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Equipment &amp; material (no withholding tax)',1):t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):sv?t('ค่าติดตั้ง วัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Installation, material &amp; labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
     ${tr(t('หักภาษี ณ ที่จ่าย 3% (โดยประมาณ)','Withholding tax 3% (approx.)',1),'-'+fmt(ww,2),'d')}${tr(t('ยอดรับสุทธิหลังหัก ณ ที่จ่าย','Net after withholding tax',1),fmt(c.grand-ww,2),'nt')}</div>`;
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
   const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
@@ -245,7 +263,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const signs=`<div class="qm-sg">${sgBox(t('ผู้เสนอราคา','Prepared by'),'',Q.by?`(${esc(Q.by)})`:'( ................................ )')}
     ${sgBox(t('ผู้อนุมัติ','Approved by'),'',Q.signName?`(${esc(Q.signName)})${Q.signPos?`<br><small>${esc(Q.signPos)}</small>`:''}`:'( ................................ )')}
     ${sgBox(t('ลูกค้ายืนยันการสั่งซื้อ','Customer acceptance'),tx('ขอยืนยันการสั่งซื้อตามรายการและเงื่อนไขในใบเสนอราคานี้','We accept this quotation and its terms'),`<small>${tx('ผู้มีอำนาจลงนามพร้อมประทับตรา','Authorised signature &amp; company seal')}</small>`,'ok')}</div>`;
-  const ofoot=`<div class="ofoot"><span>${esc(C.name||'')}${C.email?' · '+esc(C.email):''}</span><span>${esc(Q.no||'')}${C.phone?' · '+tx('โทร ','Tel. ')+esc(C.phone):''}</span></div>`;
+  const ofoot=`<div class="ofoot"><span>${esc(C.name||'')}${C.email?' · '+esc(C.email):''}</span><span>${esc(Q._fno||Q.no||'')}${C.phone?' · '+tx('โทร ','Tel. ')+esc(C.phone):''}</span></div>`;
   const dn=` data-doc-name="${esc([Q.no,ma?(EN?'Service quotation':'ใบเสนอราคาบริการ'):bq?'BOQ':'',[Q.pname,Q.title].filter(Boolean).join(' - ')].filter(Boolean).join(' '))}"`;
   // ---- pages
   if(ma)return QM_CSS+`<div class="qm"${dn}>${head}${cards}${intro}${qmMaTable(Q,t,tx,M)}${qmPlan(Q,t,tx)}${foot}${qmScope(Q,t,tx)}${signs}</div>${ofoot}`;

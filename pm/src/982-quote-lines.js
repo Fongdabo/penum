@@ -79,6 +79,7 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.
 // the print options: "หาจุดติ๊กไม่เจอ")
 const qlEqBar=(Q,b)=>{if(typeof QM_WHT==='undefined')return '';const f0=qForm(Q),off=Q.look==='xl'||f0==='G'||f0==='E';
   return `<div class="ql-eq"><label><input type="checkbox" data-t="chk" data-p="${b}.eqSep"${Q.eqSep?' checked':''}${off?' disabled':''}> <b>แยกค่าเครื่อง</b>ตอนพิมพ์: ค่าเครื่อง / ค่าวัสดุ / ค่าแรง (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%)</label>
+    ${Q.eqSep&&!off&&typeof QM_DOC!=='undefined'?`<label>พิมพ์เป็น<select data-p="${b}.eqDoc">${QM_DOC.map(([x,l])=>`<option value="${x}"${(Q.eqDoc||'')===x?' selected':''}>${l}</option>`).join('')}</select></label>`:''}
     ${Q.eqSep&&!off?`<label>หัก ณ ที่จ่าย 3% คิดจาก<select data-p="${b}.whtB">${QM_WHT.map(([x,l])=>`<option value="${x}"${(Q.whtB||'')===x?' selected':''}>${l}</option>`).join('')}</select></label>`:''}
     <small>${off?'ใช้ได้กับหน้าตาเอกสาร ORIEN Modern ที่ไม่ใช่ BOQ-G (ปร.4) / BOQ-E':'รายการไหนเป็นเครื่อง ติ๊กในช่อง “เครื่อง” ด้านขวาของตาราง'}</small></div>`};
 function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0]),GA=[...new Set([...G0,...Q.items.map(i=>i.g),...L.map(x=>x.g||'')])],D=qlDl(L,GA);let lg=null;
