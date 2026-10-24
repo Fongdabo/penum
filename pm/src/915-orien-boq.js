@@ -8,7 +8,7 @@ async function obLib(){if(!window.orienBoq)await new Promise((ok,no)=>{const s=d
 function obQuoteDoc(Q){const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},{lines}=xbCo();let T=0;
   const items=Q.items.map(i=>{const L=qLine(Q,i),q=n(i.q),base=n(i.m)+n(i.l),u=qUnit(Q,i),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0;T+=L.t;
     return {g:i.g||'',gname:gName(i.g),head:i.head||'',type:i.type||'',desc:i.desc||'',unit:i.unit||'',q,mc,lc,ms:L.mu,ls:L.lu,ims:base?n(i.m)*u/base:u,ils:base?n(i.l)*u/base:0}});
-  const rows=[];if(qSep(Q)&&Math.abs(c.lines-T)>0.005)rows.push({name:`ค่าดำเนินการและกำไร ${fmt(n(Q.mk),2)}%`,v:c.lines-T,mk:1});
+  const rows=[];if(qSep(Q)&&Math.abs(c.lines-T)>0.005)rows.push({name:`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,v:c.lines-T,mk:1});
   c.adds.filter(a=>a.v).forEach(a=>rows.push({name:a.name||'',v:a.v,pct:n(a.pct)||''}));
   return {co:{name:C.name||'',lines},meta:{src:'PENUM PM',title:Q.title||'',pname:Q.pname||'',cust:cu.name||'',no:Q.no||'',date:Q.date||'',site:Q.site||'',ref:Q.ref||'',mk:n(Q.mk),mkSep:!!Q.mkSep,vat:7},items,sum:{rows,disc:c.disc}}}
 ACT.qXl=async b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),I=b.dataset.v==='1';if(!Q)return;if(!Q.items.length){toast('ใบเสนอราคายังไม่มีรายการ');return}
@@ -25,7 +25,7 @@ PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';cons
   if(lg!==null)body.push(obIntSum(G[lg],lg));
   const A=c.adds.filter(a=>a.v),gp=c.net-c.cost,row=(l,v,b)=>`<tr${b?' class="tot"':''}><td>${l}</td><td ${R}>${v}</td></tr>`;
   return `<div class="obi" data-doc-name="${esc((Q.no||'')+' ฉบับภายใน')}"><p class="obi-w">เอกสารภายใน ห้ามส่งลูกค้า</p>
-  <h1>ราคาทุนและกำไร ${esc(Q.no||'')}</h1><p class="muted">${esc(C.name||'')} · ${esc([Q.pname,Q.title].filter(Boolean).join(' - '))}${cu.name?' · ลูกค้า '+esc(cu.name):''} · ${thD(Q.date)}${n(Q.mk)?` · บวกค่าดำเนินการ/กำไร ${fmt(n(Q.mk),2)}%`:''}</p>
+  <h1>ราคาทุนและกำไร ${esc(Q.no||'')}</h1><p class="muted">${esc(C.name||'')} · ${esc([Q.pname,Q.title].filter(Boolean).join(' - '))}${cu.name?' · ลูกค้า '+esc(cu.name):''} · ${thD(Q.date)}${n(Q.mk)?` · บวกค่าดำเนินการ/กำไร ${qMkTxt(Q)}`:''}</p>
   <table><thead><tr><th>รายการ</th><th>หน่วย</th><th ${R}>จำนวน</th><th ${R}>ทุนวัสดุ/หน่วย</th><th ${R}>ทุนค่าแรง/หน่วย</th><th ${R}>รวมทุน</th><th ${R}>ราคาขาย/หน่วย</th><th ${R}>รวมราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>${body.join('')}</tbody></table>
   <table class="obi-s"><tbody>${row('ต้นทุนรวม (วัสดุ + ค่าแรง)',fmt(c.cost,2))}${row('ราคาขายตามรายการ',fmt(c.lines,2))}${A.map(a=>row(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')}
     ${c.disc?row('ส่วนลด','-'+fmt(c.disc,2)):''}${row('ราคาเสนอ ไม่รวม VAT',fmt(c.net,2),1)}${row('กำไรขั้นต้น',`${fmt(gp,2)} (${c.net?fmt(gp*100/c.net,1):0}%)`,1)}${row('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${row('รวมทั้งสิ้น',fmt(c.grand,2))}</tbody></table>

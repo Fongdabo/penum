@@ -98,7 +98,7 @@ function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0])
     <select id="qlS" aria-label="ระบบปรับอากาศ"${gsel==='eq'?'':' style="display:none"'}><option value="" data-dl="${D.id('eq')}" data-n="${D.count('eq')}">ทุกระบบ</option>${QL_SYS.map(([s,l])=>`<option value="${s}" data-dl="${D.id('eq',s)}" data-n="${D.count('eq',s)}"${S.sel.qlS===s?' selected':''}>${esc(l)}</option>`).join('')}</select>
     <input id="qlName" list="${D.id(gsel,gsel==='eq'?S.sel.qlS:'')}" placeholder="${qlPh(D.count(gsel,gsel==='eq'?S.sel.qlS:''))}" aria-label="ชื่อสินค้าหรือรายการ"><input id="qlQ" class="r" inputmode="decimal" value="1" aria-label="จำนวน" style="width:80px">
     <button type="button" class="btn sm pri" data-a="qlAdd" data-id="${Q.id}">+ เพิ่มรายการ</button><label class="chk" style="display:flex;gap:4px;align-items:center;font-size:13px"><input type="checkbox" id="qlAll"${S.sel.qlAll?' checked':''}> ค้นทุกหมวด</label>
-    <span class="hint" style="margin:0">ราคาเสนอว่างไว้ = ต้นทุน (ของ+แรง) บวก ${fmt(n(Q.mk),1)}% · ราคาทุนมาจากคลังราคากลางและรายการที่เคยเสนอ (เพิ่มสินค้าในคลังได้ที่ ประมาณราคา › คลังราคากลาง)</span></div>
+    <span class="hint" style="margin:0">ราคาเสนอว่างไว้ = ต้นทุน (ของ+แรง) บวก ${qMkTxt(Q)} · ราคาทุนมาจากคลังราคากลางและรายการที่เคยเสนอ (เพิ่มสินค้าในคลังได้ที่ ประมาณราคา › คลังราคากลาง)</span></div>
   ${D.html}<style>.ql-t .qlmv{font-size:11px;padding:3px 5px}.ql-t .qlmv:hover{color:var(--accent,#1C8F9B);background:rgba(28,143,155,.12)}.ql-t .qlmv:disabled{opacity:.2;cursor:default;background:none}</style>`}
 const qlFind=s=>{const k=String(s||'').trim();if(!k)return null;const L=qlLib();return L.find(x=>qlLab(x)===k)||L.find(x=>x.name===k)||null};
 // keep the line's cost (i.t) = quantity × cost per unit

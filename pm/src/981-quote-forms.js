@@ -251,7 +251,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
       <tbody>${rows}<tr class="tt"><td></td><td>${t('รวม','Total',1)}</td>${MG.map(k=>`<td class="r">${M(T[k])}</td>`).join('')}<td class="r">${fmt(T.t,2)}</td></tr></tbody></table>`};
   // ---- totals, amount in words, terms
   const tr=(k,v,cl)=>`<div${cl?` class="${cl}"`:''}><span>${k}</span><b>${v}</b></div>`;
-  const totals=`<div class="qm-tot">${tr(t('รวมเป็นเงิน','Subtotal',1),fmt(mk||A.length?T.t:c.sub,2))}${mk?tr(t(`ค่าดำเนินการและกำไร ${fmt(n(Q.mk),2)}%`,`Overhead &amp; profit ${fmt(n(Q.mk),2)}%`,1),fmt(mk,2)):''}
+  const totals=`<div class="qm-tot">${tr(t('รวมเป็นเงิน','Subtotal',1),fmt(mk||A.length?T.t:c.sub,2))}${mk?tr(t(`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,`Overhead &amp; profit ${qMkTxt(Q,1)}`,1),fmt(mk,2)):''}
     ${A.map(a=>tr(esc(a.name||''),fmt(a.v,2))).join('')}${mk||A.length?tr(t('รวม','Total',1),fmt(c.sub,2)):''}
     ${c.disc?tr(t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d')+tr(t('ยอดหลังหักส่วนลด','After discount',1),fmt(c.net,2)):''}${tr(t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2))}
     ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;

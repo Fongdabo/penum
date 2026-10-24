@@ -21,7 +21,14 @@ NEW.leads=()=>({name:'',cust:'',value:0,stage:'lead',prob:'',close:addD(today(),
 const QST=[['draft','ร่าง'],['sent','ส่งลูกค้าแล้ว'],['won','ได้งาน'],['lost','ไม่ได้งาน']];
 NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
 // a negative quantity (work taken out, as in a VO) keeps a positive unit price
-const qUnit=(Q,i)=>i.sp!==''&&i.sp!=null&&n(i.sp)>0?n(i.sp):n(i.t)/(n(i.q)||1e-9)*(1+n(Q.mk)/100);
+// 4.24 markup per part (user: "ควรแยกค่าเครื่อง ค่าของ ค่าแรง ดีไหม"): Q.mkE / Q.mkM / Q.mkL = % on the equipment, the material and the
+// labour of a line; a blank one takes Q.mk, so a quote without them prices as before
+const qMkOn=Q=>['mkE','mkM','mkL'].some(k=>Q[k]!==''&&Q[k]!=null);
+const qMkP=(Q,k)=>{const v=Q['mk'+k];return v===''||v==null?n(Q.mk):n(v)};
+const qMkTxt=(Q,EN)=>!qMkOn(Q)?fmt(n(Q.mk),2)+'%':(EN?['equipment','material','labour']:['เครื่อง','ของ','แรง']).map((w,j)=>w+' '+fmtq(qMkP(Q,'EML'[j]))+'%').join(EN?', ':' ');
+const qUnit=(Q,i)=>{if(i.sp!==''&&i.sp!=null&&n(i.sp)>0)return n(i.sp);const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;
+  if(!qMkOn(Q)||m+l<=0)return u*(1+n(Q.mk)/100);const k=u/(m+l),eq=typeof qmIsEq==='function'&&qmIsEq(i);
+  return k*(m*(1+qMkP(Q,eq?'E':'M')/100)+l*(1+qMkP(Q,'L')/100))};
 // rows added under the total (SAFETY & CLEANING, OVERHEAD & PROFIT…): each a % of the printed total or a fixed amount
 const qAddV=(a,base)=>n(a.pct)?base*n(a.pct)/100:n(a.amt);
 const qAddsOn=Q=>(Q.adds||[]).filter(a=>!a.off);
@@ -66,7 +73,7 @@ function salesQuote(){
     <label>เรียน<input data-p="${b}.attn" value="${esc(sel.attn||'')}" placeholder="ว่าง = ผู้ติดต่อของลูกค้า"></label><label class="w2">กำหนดแล้วเสร็จ<input data-p="${b}.dlv" value="${esc(sel.dlv||'')}" placeholder="เช่น ภายใน 210 วันหลังทำสัญญา"></label>
     <label>ผู้ลงนาม<input data-p="${b}.signName" value="${esc(sel.signName||'')}" placeholder="เช่น นายอาทิตย์ บับภาสิทธิ์"></label><label>ตำแหน่งผู้ลงนาม<input data-p="${b}.signPos" value="${esc(sel.signPos||'')}" placeholder="เช่น กรรมการผู้จัดการ"></label>
     <label>หน้าแรกที่พิมพ์<select data-p="${b}.cover"><option value=""${sel.cover!=='letter'?' selected':''}>แบบตาราง (QUOTATION)</option><option value="letter"${sel.cover==='letter'?' selected':''}>แบบจดหมาย (เรียน … ขอแสดงความนับถือ)</option></select></label>
-    <label>บวกค่าดำเนินการ/กำไร (%)<input data-t="num" data-p="${b}.mk" value="${n(sel.mk)}"></label><!--qdisc--><label>ส่วนลด (บาท)<input data-t="num" data-p="${b}.disc" value="${n(sel.disc)}"></label><!--/qdisc-->
+    <label>บวกค่าดำเนินการ/กำไร (%)<input data-t="num" data-p="${b}.mk" value="${n(sel.mk)}"></label>${[["E","ค่าเครื่อง"],["M","ค่าของ (วัสดุ)"],["L","ค่าแรง"]].map(([k,l])=>`<label>บวกกำไร ${l} (%)<input data-t="num" data-p="${b}.mk${k}" value="${sel["mk"+k]===""||sel["mk"+k]==null?"":n(sel["mk"+k])}" placeholder="ว่าง = ${n(sel.mk)}"></label>`).join("")}<!--qdisc--><label>ส่วนลด (บาท)<input data-t="num" data-p="${b}.disc" value="${n(sel.disc)}"></label><!--/qdisc-->
     <label>แบบฟอร์ม BOQ ที่พิมพ์<select data-p="${b}.lay">${QFORMS.map(([v,c,t])=>`<option value="${v}"${(sel.lay||'')===v?' selected':''}>${c?c+' ':''}${t}</option>`).join('')}</select></label>
     <label>สถานะ<select data-p="${b}.status">${QST.map(([k,l])=>`<option value="${k}"${k===sel.status?' selected':''}>${l}</option>`).join('')}</select></label><label>ผู้เสนอราคา<input data-p="${b}.by" value="${esc(sel.by||'')}"></label>
     <div class="qopts" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 26px;align-items:center"><!--qopts--><label class="chk"><input type="checkbox" data-t="chk" data-p="${b}.mkSep"${sel.mkSep?' checked':''}> แสดงค่าดำเนินการ/กำไรเป็นบรรทัดท้าย (ราคาในรายการเป็นราคาทุน)</label></div>
@@ -89,7 +96,9 @@ const qHasL=Q=>Q.items.some(i=>n(i.l)>0);
 const qForm=Q=>({split:'A',one:'B',sum:'S',gov:'G',empty:'E'})[Q.lay]||(qHasL(Q)?'A':'B');
 const qSplit=Q=>{const f=qForm(Q);return f==='A'||f==='G'||(f!=='B'&&qHasL(Q))};
 function qLine(Q,i){const q=n(i.q),base=n(i.m)+n(i.l),sep=qSep(Q),u=sep?(base||n(i.t)/(q||1e-9)):qUnit(Q,i),k=base?u/base:1;
-  const mu=base?n(i.m)*k:u,lu=base?n(i.l)*k:0;return {q,mu,lu,u,mt:q*mu,lt:q*lu,t:q*u}}
+  let mu=base?n(i.m)*k:u,lu=base?n(i.l)*k:0;
+  if(!sep&&base&&qMkOn(Q)&&!(n(i.sp)>0)){const kt=n(i.t)/(q||1e-9)/base,eq=typeof qmIsEq==='function'&&qmIsEq(i);mu=kt*n(i.m)*(1+qMkP(Q,eq?'E':'M')/100);lu=kt*n(i.l)*(1+qMkP(Q,'L')/100)}
+  return {q,mu,lu,u,mt:q*mu,lt:q*lu,t:q*u}}
 PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=qCalc(Q),cu=CO().customers.find(x=>x.id===Q.cust)||{},sp=qSplit(Q),sep=qSep(Q),G={},R='style="text-align:right"';
   Q.items.forEach(i=>{const L=qLine(Q,i),g=G[i.g]=G[i.g]||{m:0,l:0,t:0};g.m+=L.mt;g.l+=L.lt;g.t+=L.t});
   const T=Object.values(G).reduce((a,g)=>({m:a.m+g.m,l:a.l+g.l,t:a.t+g.t}),{m:0,l:0,t:0});
@@ -97,7 +106,7 @@ PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=
   const cover=`<table><thead><tr><th>#</th><th>หมวดงาน</th>${sp?'<th>ค่าวัสดุ</th><th>ค่าแรง</th>':''}<th>จำนวนเงิน (บาท)</th></tr></thead><tbody>${Object.entries(G).map(([g,v],i)=>`<tr><td>${i+1}</td><td>${gName(g)}</td>${sp?`<td ${R}>${fmt(v.m,2)}</td><td ${R}>${fmt(v.l,2)}</td>`:''}<td ${R}>${fmt(v.t,2)}</td></tr>`).join('')}
   ${(()=>{const mkRow=sep&&Math.abs(c.lines-T.t)>0.005,A=c.adds.filter(a=>a.v);if(!mkRow&&!A.length)return sumRow('รวม',fmt(c.sub,2));
     return `<tr><td></td><td><b>รวม${sp?'ค่าวัสดุและค่าแรง':''}</b></td>${sp?`<td ${R}>${fmt(T.m,2)}</td><td ${R}>${fmt(T.l,2)}</td>`:''}<td ${R}><b>${fmt(T.t,2)}</b></td></tr>`+
-      (mkRow?sumRow(`ค่าดำเนินการและกำไร ${fmt(n(Q.mk),2)}%`,fmt(c.lines-T.t,2)):'')+A.map(a=>sumRow(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')+sumRow('รวม',fmt(c.sub,2))})()}${c.disc?sumRow('ส่วนลด','-'+fmt(c.disc,2))+sumRow('รวมหลังหักส่วนลด',fmt(c.net,2)):''}${sumRow('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${sumRow('รวมทั้งสิ้น',fmt(c.grand,2),1)}</tbody></table>`;
+      (mkRow?sumRow(`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,fmt(c.lines-T.t,2)):'')+A.map(a=>sumRow(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')+sumRow('รวม',fmt(c.sub,2))})()}${c.disc?sumRow('ส่วนลด','-'+fmt(c.disc,2))+sumRow('รวมหลังหักส่วนลด',fmt(c.net,2)):''}${sumRow('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${sumRow('รวมทั้งสิ้น',fmt(c.grand,2),1)}</tbody></table>`;
   // detail table: G numbers the lines and adds a remarks column (ปร.4); E leaves every price cell blank for the other side to fill
   const f=qForm(Q),G4=f==='G',E0=f==='E',B=v=>E0?'':v,nc=(sp?8:5)+(G4?2:0),body=[];let lg=null,lh=null,gi=0,li=0;
   const cells=(a,b)=>`${G4?`<td>${a}</td>`:''}`,rm=G4?'<td></td>':'';
