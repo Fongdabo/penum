@@ -50,7 +50,7 @@ function xbLetter(Q,c,G,order,mk,A,pay,notes,cu){const {C}=xbCo(),d=okD(Q.date)?
   <div class="kv">${kv('เลขที่ :',esc(Q.no||''))}${kv('Ref :',esc(Q.ref||''))}${kv('วันที่ :',d?`${d.getDate()} ${TH[d.getMonth()]} ${d.getFullYear()+543}`:'')}</div>
   <div class="kv">${kv('เรื่อง :','เสนอราคา'+esc(Q.title||''))}${kv('โครงการ :',esc(Q.pname||''))}${kv('เรียน :',esc(Q.attn||[cu.contact,cu.name].filter(Boolean).join(' ')))}</div>
   <p class="in">บริษัทฯ ขอเสนอราคา${esc(Q.title||'')}${Q.pname?` สำหรับโครงการ ${esc(Q.pname)}`:''} มีรายละเอียดดังต่อไปนี้</p>
-  <table class="am">${order.map(g=>row('ค่า'+gName(g).replace(/^(ค่า|หมวด)/,''),G[g].t)).join('')}${mk?row(`ค่าดำเนินการและกำไร ${fmt(n(Q.mk),2)}%`,mk,0,1):''}${A.map(a=>row(esc(a.name||''),a.v,0,1)).join('')}
+  <table class="am">${order.map(g=>row('ค่า'+gName(g).replace(/^(ค่า|หมวด)/,''),G[g].t)).join('')}${mk?row(`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,mk,0,1):''}${A.map(a=>row(esc(a.name||''),a.v,0,1)).join('')}
     ${tot('รวมเป็นเงิน',c.sub)}${c.disc?tot('ส่วนลด',-c.disc)+tot('รวมหลังหักส่วนลด',c.net):''}${tot('ภาษีมูลค่าเพิ่ม 7 %',c.vat)}${tot('รวมเป็นเงินทั้งสิ้น',c.grand,1)}</table>
   <p class="bt">(${esc(bahtText(c.grand))})</p>
   <div class="tm"><u>กำหนดยืนราคา</u><div>ภายใน ${n(Q.valid)} วันหลังเสนอราคา</div>${Q.dlv?`<u>กำหนดแล้วเสร็จ</u><div>${esc(Q.dlv)}</div>`:''}${pay.length?`<u>การชำระเงิน</u><div>${pay.map(x=>`${fmt(x.pct,0)}% ${esc(x.desc||'')}`).join('<br>')}</div>`:''}</div>
@@ -80,7 +80,7 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
   const sumRows=order.map((g,k)=>`<tr><td class="c">${k+1}</td><td>${gName(g)}</td><td class="c">1</td><td class="c">Lot</td>${sp?M(G[g].m)+M(G[g].m)+M(G[g].l)+M(G[g].l):M(G[g].t)}${M(G[g].t)}${rm}</tr>`).join('');
   const pad=Math.max(0,6-order.length),padRows=Array.from({length:pad},()=>`<tr class="e">${'<td></td>'.repeat(nc)}</tr>`).join('');
   const mkRow=sep&&Math.abs(c.lines-T.t)>0.005,A=c.adds.filter(a=>a.v);
-  const bands=[band('TOTAL',fmt(T.t,2),'',sp?T.m:null,sp?T.l:null),...(mkRow?[band(`OVER HEAD &amp; PROFIT ${fmt(n(Q.mk),2)}%`,fmt(c.lines-T.t,2))]:[]),
+  const bands=[band('TOTAL',fmt(T.t,2),'',sp?T.m:null,sp?T.l:null),...(mkRow?[band(`OVER HEAD &amp; PROFIT ${qMkTxt(Q)}`,fmt(c.lines-T.t,2))]:[]),
     ...A.map(a=>band(esc(a.name||''),fmt(a.v,2))),...(mkRow||A.length?[band('TOTAL',fmt(c.sub,2))]:[]),
     ...(c.disc?[band('DISCOUNT',fmt(c.disc,2),'rd'),band('SUM TOTAL',fmt(c.net,2))]:[]),band('VAT&nbsp; 7%',fmt(c.vat,2)),band('GRAND TOTAL',fmt(c.grand,2))].join('');
   const summary=`<table class="sumt">${xbCols(sp,G4)}<thead>${xbThead(sp,G4)}</thead><tbody>${empty}${sumRows}${padRows}${E0?'':bands}</tbody></table>`;
