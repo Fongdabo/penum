@@ -171,8 +171,18 @@ function qmParts(Q){const E=[],V=[],r2=v=>Math.round(v*100)/100,EN=qmLang(Q)==='
   const no=k=>Q.no?Q.no+'-'+k:'';
   const mk=(items,k)=>Object.assign({},Q,{items,_part:k,eqSep:false,eqDoc:'one',no:no(k==='eq'?1:2),_fno:Q.no?no(1)+' / '+no(2):'',ref:[Q.ref,(EN?'with ':'คู่กับ ')+no(k==='eq'?2:1)].filter(Boolean).join(' · '),
     sow:k==='eq'?[]:Q.sow,qpay:((k==='eq'?Q.qpayE:Q.qpay)||[]).slice()});
-  const A=mk(E,'eq'),B=mk(V,'svc'),la=qCalc(Object.assign({},A,{disc:0})).lines,lb=qCalc(Object.assign({},B,{disc:0})).lines,w=la+lb>0?la/(la+lb):0.5;
-  const sh=(P,f)=>{P.disc=r2(n(Q.disc)*f);P.adds=(Q.adds||[]).map(a=>n(a.pct)?a:Object.assign({},a,{amt:r2(n(a.amt)*f)}))};sh(A,w);sh(B,1-w);return [A,B]}
+  // 4.20 extras (SAFETY & CLEANING, OVERHEAD & PROFIT…) belong to the installation part unless ticked คิดรวมค่าเครื่อง (a.eqIn,
+  // user: "ค่าเครื่องจะไม่มี SAFETY & CLEANING และ OVERHEAD & PROFIT"); such a ticked extra goes on both parts, a fixed amount shared
+  // by their size. The discount is then shared by each part's total with its extras.
+  const A=mk(E,'eq'),B=mk(V,'svc'),bs=P=>qCalc(Object.assign({},P,{adds:[],disc:0})).base,bA=bs(A),bB=bs(B),wb=bA+bB>0?bA/(bA+bB):0.5,
+    part=(a,f)=>n(a.pct)?a:Object.assign({},a,{amt:r2(n(a.amt)*f)});
+  A.adds=(Q.adds||[]).filter(a=>a.eqIn).map(a=>part(a,wb));B.adds=(Q.adds||[]).map(a=>a.eqIn?part(a,1-wb):a);
+  const sA=qCalc(Object.assign({},A,{disc:0})).sub,sB=qCalc(Object.assign({},B,{disc:0})).sub,w=sA+sB>0?sA/(sA+sB):0.5;
+  A.disc=r2(n(Q.disc)*w);B.disc=r2(n(Q.disc)*(1-w));return [A,B]}
+// the quotation's own totals follow: an extra that is not คิดรวมค่าเครื่อง is a % of everything but the equipment
+{const f=qCalc;qCalc=function(Q){const c=f.apply(this,arguments);if(!Q||Q._part||!Q.eqSep||qmMa(Q)||!(Q.adds||[]).some(a=>!a.eqIn&&(n(a.pct)||n(a.amt))))return c;
+  const P=qmParts(Q);if(!P)return c;const a=f(P[0]),b=f(P[1]),sub=a.sub+b.sub,net=sub-c.disc,vat=net*7/100,v=id=>[...a.adds,...b.adds].filter(x=>x.id===id).reduce((s,x)=>s+x.v,0);
+  return Object.assign({},c,{sub,net,vat,grand:net+vat,adds:(Q.adds||[]).map(x=>Object.assign({},x,{v:v(x.id)}))})}}
 {const f=qmPrint;qmPrint=function(Q,bq){const P=qmTwo(Q)&&!Q._part&&qmParts(Q);if(!P)return f.apply(this,arguments);
   return f(P[0],bq)+'<div style="page-break-before:always"></div>'+f(P[1],bq)}}
 PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const f=qForm(Q);
@@ -244,7 +254,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     ${c.disc?tr(t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d')+tr(t('ยอดหลังหักส่วนลด','After discount',1),fmt(c.net,2)):''}${tr(t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2))}
     ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
   // the part the customer withholds 3% on, in proportion to the amount before VAT (after markup, extras and discount)
-  const wb=(eqs||sv)&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,wy=wb==null?0:c.net*wb/T.t,ww=wy*3/100;
+  const wb=(eqs||sv)&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,PW=eqs&&wb!=null&&qmParts(Q),wy=PW?qCalc(PW[1]).net*qmWhtShare(PW[1]):wb==null?0:c.net*wb/T.t,ww=wy*3/100;
   const wht=wb==null?(Q._part==='eq'?`<div class="qm-tot qm-wh"><div class="nt"><span>${t('ค่าเครื่อง (สินค้า) ไม่หัก ณ ที่จ่าย','Equipment (goods): no withholding tax',1)}</span><b></b></div></div>`:''):`<div class="qm-tot qm-wh">${sv&&Q.whtB!=='l'?'':tr(sv?t('ค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Material (no withholding tax)',1):Q.whtB==='l'?t('ค่าเครื่องและค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Equipment &amp; material (no withholding tax)',1):t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):sv?t('ค่าติดตั้ง วัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Installation, material &amp; labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
     ${tr(t('หักภาษี ณ ที่จ่าย 3% (โดยประมาณ)','Withholding tax 3% (approx.)',1),'-'+fmt(ww,2),'d')}${tr(t('ยอดรับสุทธิหลังหัก ณ ที่จ่าย','Net after withholding tax',1),fmt(c.grand-ww,2),'nt')}</div>`;
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
@@ -384,7 +394,7 @@ if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ปร�
 
 // 4.14 a won quote with ค่าเครื่อง split: the new project's withholding rate covers only the withheld part (3% × its share of the
 // price), so its claims and invoices deduct the right amount
-const qmWhtShare=Q=>{let a=0,w=0;Q.items.forEach(i=>{const x=qLine(Q,i);a+=x.t;w+=Q.whtB==='l'?x.lt:(qmIsEq(i)?0:x.mt)+x.lt});return a>0?w/a:1};
+const qmWhtShare=Q=>{const P=Q.eqSep&&!Q._part&&!qmMa(Q)&&qmParts(Q),N=P&&qCalc(Q).net;if(P&&N>0)return qCalc(P[1]).net*qmWhtShare(P[1])/N;let a=0,w=0;Q.items.forEach(i=>{const x=qLine(Q,i);a+=x.t;w+=Q.whtB==='l'?x.lt:(qmIsEq(i)?0:x.mt)+x.lt});return a>0?w/a:1};
 {const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);
   if(!Q||had||!Q.eqSep||Q.whtB==='none'||qmMa(Q))return;const p=Q.pj&&DB.projects[Q.pj];if(!p)return;
   p.info.wht=Math.round(3*qmWhtShare(Q)*1000)/1000;save();toast(`หัก ณ ที่จ่ายของโครงการ ${fmt(p.info.wht,3)}% (3% เฉพาะส่วนที่ไม่ใช่ค่าเครื่อง)`)}}
