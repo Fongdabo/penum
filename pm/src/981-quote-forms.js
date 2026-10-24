@@ -36,35 +36,35 @@ const QM_CSS=`<style>
 #print .qm *{box-sizing:border-box}
 #print .qm .en{display:block;font-style:normal;font-size:.78em;color:var(--qg);font-weight:400;line-height:1.25;letter-spacing:.01em}
 #print .qm .en.il{display:inline;margin-left:4px}
-#print .qm-bar{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--qn) 0%,var(--qt) 55%,#5CC6C9 82%,var(--qo) 100%);margin:0 0 10px}
-#print .qm-h{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:0 0 10px}
-#print .qm-h img{height:62px;width:auto;max-width:300px;margin:0;border:0;object-fit:contain}
+#print .qm-bar{height:5px;border-radius:3px;background:linear-gradient(90deg,var(--qn) 0%,var(--qt) 55%,#5CC6C9 82%,var(--qo) 100%);margin:0 0 7px}
+#print .qm-h{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:0 0 7px}
+#print .qm-h img{height:46px;width:auto;max-width:300px;margin:0;border:0;object-fit:contain}
 #print .qm-h .nm{font-size:20px;font-weight:700;color:var(--qn)}
-#print .qm-co{text-align:right;font-size:10px;color:#4A5D66;line-height:1.55}
-#print .qm-co b{display:block;font-size:13.5px;color:var(--qn)}
-#print .qm-tt{display:grid;grid-template-columns:1fr 250px;gap:12px;margin:0 0 10px}
-#print .qm-ti{position:relative;border-radius:12px;padding:12px 16px 12px 20px;background:linear-gradient(120deg,var(--qn) 0%,#1F5A73 58%,var(--qt) 100%);color:#fff;overflow:hidden;display:flex;flex-direction:column;justify-content:center}
+#print .qm-co{text-align:right;font-size:9.5px;color:#4A5D66;line-height:1.45}
+#print .qm-co b{display:block;font-size:12.5px;color:var(--qn)}
+#print .qm-tt{display:grid;grid-template-columns:1fr 240px;gap:10px;margin:0 0 7px}
+#print .qm-ti{position:relative;border-radius:12px;padding:7px 14px 7px 18px;background:linear-gradient(120deg,var(--qn) 0%,#1F5A73 58%,var(--qt) 100%);color:#fff;overflow:hidden;display:flex;flex-direction:column;justify-content:center}
 #print .qm-ti:after{content:"";position:absolute;right:-30px;top:-40px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.08)}
 #print .qm-ti:before{content:"";position:absolute;right:50px;bottom:-60px;width:110px;height:110px;border-radius:50%;background:rgba(245,158,11,.22)}
-#print .qm-ti small{font-size:10px;letter-spacing:.24em;font-weight:600;color:#BFE7EA}
-#print .qm-ti h1{font-size:25px;line-height:1.2;margin:2px 0 3px;color:#fff;font-weight:700}
-#print .qm-ti h1 .pt{display:inline-block;margin-left:10px;padding:2px 10px;border-radius:999px;background:var(--qo,#F59E0B);color:#fff;font-size:14px;font-weight:600;vertical-align:middle}
-#print .qm-ti p{margin:0;font-size:11.5px;color:#E3F1F3;position:relative;z-index:1}
-#print .qm-m{border:1px solid var(--ql);border-radius:12px;overflow:hidden;font-size:10.5px}
-#print .qm-m div{display:grid;grid-template-columns:92px 1fr;gap:6px;padding:4px 10px;border-top:1px solid #EDF3F4}
+#print .qm-ti small{font-size:8.5px;letter-spacing:.24em;font-weight:600;color:#BFE7EA}
+#print .qm-ti h1{font-size:20px;line-height:1.2;margin:1px 0 2px;color:#fff;font-weight:700}
+#print .qm-ti h1 .pt{display:inline-block;margin-left:10px;padding:2px 10px;border-radius:999px;background:var(--qo,#F59E0B);color:#fff;font-size:12px;font-weight:600;vertical-align:middle}
+#print .qm-ti p{margin:0;font-size:10.5px;color:#E3F1F3;position:relative;z-index:1}
+#print .qm-m{border:1px solid var(--ql);border-radius:12px;overflow:hidden;font-size:10px;line-height:1.35}
+#print .qm-m div{display:grid;grid-template-columns:88px 1fr;gap:6px;padding:2px 10px;border-top:1px solid #EDF3F4}
 #print .qm-m div:first-child{border:0;background:var(--qs)}
-#print .qm-m div:first-child b{color:var(--qn);font-size:13px}
+#print .qm-m div:first-child b{color:var(--qn);font-size:12px}
 #print .qm-m span{color:var(--qg)}
 #print .qm-m b{font-weight:600;word-break:break-word}
-#print .qm-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 10px}
-#print .qm-c{border:1px solid var(--ql);border-radius:12px;padding:8px 12px;font-size:10.5px;break-inside:avoid}
+#print .qm-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 7px}
+#print .qm-c{border:1px solid var(--ql);border-radius:12px;padding:5px 12px 6px;font-size:10px;line-height:1.4;break-inside:avoid}
 #print .qm-c h3,#print .qm-tm h3,#print .qm-sc h3{display:flex;align-items:center;gap:6px;margin:0 0 4px;font-size:11px;color:var(--qt);font-weight:700;letter-spacing:.02em}
 #print .qm-c h3:before,#print .qm-tm h3:before,#print .qm-sc h3:before{content:"";width:8px;height:8px;border-radius:2px;background:var(--qt);transform:rotate(45deg)}
 #print .qm-c h3 .en,#print .qm-tm h3 .en,#print .qm-sc h3 .en{display:inline;margin-left:2px}
-#print .qm-c div{display:grid;grid-template-columns:118px 1fr;gap:6px;padding:1px 0}
+#print .qm-c div{display:grid;grid-template-columns:104px 1fr;gap:6px;padding:0}
 #print .qm-c span{color:var(--qg)}
-#print .qm-c .big{font-size:12.5px;font-weight:700;color:var(--qn)}
-#print .qm-in{margin:2px 0 8px;font-size:11.5px}
+#print .qm-c .big{font-size:12px;font-weight:700;color:var(--qn)}
+#print .qm-in{margin:0 0 6px;font-size:10.5px;line-height:1.4}
 #print .qm table.qm-t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:10px;margin:0 0 10px}
 #print .qm table.qm-t th,#print .qm table.qm-t td{border:0;background:none;padding:4px 6px;vertical-align:top;line-height:1.4}
 #print .qm table.qm-t thead tr.ch th{background:var(--qn);color:#fff;font-weight:600;text-align:center;vertical-align:middle;padding:5px 6px;border-right:1px solid rgba(255,255,255,.18);font-size:10px}
@@ -115,14 +115,14 @@ const QM_CSS=`<style>
 #print .qm-tm table.pay td,#print .qm-tm table.pay th{border:0;border-bottom:1px solid #E6EEF0;padding:2px 4px;background:none;font-weight:400;text-align:left}
 #print .qm-tm table.pay th{color:var(--qg);font-size:9px}
 #print .qm-tm table.pay td.r,#print .qm-tm table.pay th.r{text-align:right;white-space:nowrap}
-#print .qm-sg{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;break-inside:avoid;text-align:center;font-size:10px}
+#print .qm-sg{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px;break-inside:avoid;text-align:center;font-size:10px}
 #print .qm-sg>div{border:1px solid var(--ql);border-radius:12px;padding:8px 10px 8px;display:flex;flex-direction:column}
 #print .qm-sg>div.ok{border:1.5px solid var(--qt);background:linear-gradient(180deg,var(--qs),#fff 60%)}
 #print .qm-sg h4{margin:0;font-size:10.5px;color:var(--qn)}
 #print .qm-sg h4 .en{display:inline;margin-left:3px}
 #print .qm-sg .q{font-size:9px;color:#4A5D66;margin-top:2px;line-height:1.35}
 #print .qm-sg .ln{border-top:1px solid #8FA3AA;margin:auto 6px 4px;padding-top:0;min-height:0}
-#print .qm-sg .sp{height:44px;flex:none}
+#print .qm-sg .sp{height:34px;flex:none}
 #print .qm-sg .who{font-weight:600;min-height:15px}
 #print .qm-sg .dt{color:var(--qg);font-size:9.5px;margin-top:2px}
 #print .qm-lt{font-size:12px;line-height:1.75}
@@ -273,7 +273,19 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     p1=`${head}<div class="qm-lt">${to}${intro}${one||S0?detail(false):summary()}${foot}<p>${close}</p><div class="sg1">${t('ขอแสดงความนับถือ','Yours faithfully')}<div class="ln"></div>(${esc(Q.signName||Q.by||'')})<br>${esc(Q.signPos||st.role||'')}</div></div>`}
   else p1=`${head}${cards}${intro}${one||S0?detail(false):summary()}${foot}${signs}`;
   const p2=one||S0?'':`<div style="page-break-before:always"></div>${detail(true)}`;
-  return QM_CSS+`<div class="qm"${dn}>${p1}${p2}${sowPrint(Q)}</div>${ofoot}`}
+  return QM_CSS+`<div class="qm"${dn}><div class="qm-p1">${p1}</div>${p2}${sowPrint(Q)}</div>${ofoot}`}
+
+// 4.18 page 1 on one sheet (user: "หัวกระดาษใหญ่ไป มันเลยทำให้เป็น 2 หน้า"): a quotation whose first page runs up to half a page
+// over is shrunk just enough to fit, page by page, so the totals and signatures stay with the lines. Whole-document fitting
+// (780-print-fit.js) skips documents with their own page breaks, such as the two-document equipment / installation print.
+function qmFitP1(){const el=$('#print'),pg=typeof fitPage==='function'&&fitPage();if(!pg||!el||!el.querySelector('.qm-p1'))return;
+  const L=[...el.querySelectorAll('.qm-p1')];L.forEach(x=>{x.style.zoom='';x.style.width=''});
+  const d=fitFrame(),P0=d.getElementById('print');P0.style.width=pg.w+'mm';P0.innerHTML=el.innerHTML;
+  [...P0.querySelectorAll('.qm-p1')].forEach((f,k)=>{const W=f.getBoundingClientRect().width/MMPX,hh=()=>f.getBoundingClientRect().height/MMPX,h=hh();
+    if(!W||h<=pg.h||h>pg.h*1.5)return;const ok=z=>{f.style.zoom=z;f.style.width=(W/z)+'mm';return hh()<=pg.h-2};
+    let lo=.66,hi=1;if(!ok(lo))return;for(let i=0;i<7;i++){const m=(lo+hi)/2;if(ok(m))lo=m;else hi=m}
+    L[k].style.zoom=lo.toFixed(3);L[k].style.width=(W/lo).toFixed(1)+'mm'})}
+if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.apply(this,arguments);try{qmFitP1()}catch(e){console.error(e)}return r}}
 
 // ---- the service quotation's own parts
 function qmMaCard(Q,t,dt,kv){const m=qmMonths(Q),s=okD(Q.maStart)?Q.maStart:'',e=s?addD(addMon(s,m),-1):'',EN=qmLang(Q)==='en',P=QM_PARTS.find(x=>x[0]===(Q.maParts||''))||QM_PARTS[0];
