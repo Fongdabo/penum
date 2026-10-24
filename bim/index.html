@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=185,V1_NAME='V1.174';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=186,V1_NAME='V1.175';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30335,6 +30335,150 @@ Object.assign(STR,{
   fal_done:['วางระบบแจ้งเหตุเพลิงไหม้แล้ว ({0} รายการ) กดย้อนกลับได้','Fire alarm placed ({0} items) — Undo to go back'],fal_donev:['วางระบบแจ้งเหตุเพลิงไหม้ {0} รายการแล้ว ดูได้ในแปลน {1} กดย้อนกลับได้','{0} fire alarm items placed, shown in the plan {1} — Undo to go back'],
   fal_planv:['แจ้งเหตุเพลิงไหม้','Fire Alarm'],fal_lv:['ชั้น','Level'],fal_nomcp:['ไม่มีสถานีแจ้งเหตุในชั้นนี้','No call point on this level'],
   sc_fal:['ห้องที่อุปกรณ์ตรวจจับยังไม่ครอบคลุม: {0}','Room not covered by detectors: {0}'],sc_falaud:['ห้องที่ได้ยินกระดิ่งแจ้งเหตุไม่ถึงเกณฑ์: {0}','Room that does not hear the alarm bells: {0}'],sc_falmcp:['ห้องที่เดินถึงสถานีแจ้งเหตุไกลเกินกำหนด: {0}','Room too far from a call point: {0}']});
+/* ===== 175 Standpipes, fire hose cabinets and fire extinguishers (V1.175; Revit places them one at a time and checks none of them: NFPA 14 and NFPA 10, which the EIT
+   fire code follows).  Coverage is the way one walks, not a circle: every point of a level must be within the length of the hose and the reach of its stream
+   (P.fhc.hl 30 m and P.fhc.sr 9 m: the 39.7 m of NFPA 14 for 1½" hose) of a hose cabinet along the grid of route analysis (146), and within P.fhc.ft (22.9 m, the 75 ft
+   of NFPA 10 for class A) of an extinguisher.  The layout puts a cabinet by the door of every stair (on the side it is reached from), then, while some point is out of
+   reach, one more on the wall nearest the place nine tenths of the reach along the way from that point back to the cabinets; an extinguisher beside each new cabinet
+   and more the same way.  Cabinets one above the other on two levels or more are a standpipe: a riser beside the lowest one, a branch over each cabinet's inlet.
+   The standpipe calculation (NFPA 14): Class I and III take 1,893 L/min for the first standpipe and 946 L/min for each other one, to no more than 4,731 L/min (3,785 L/min
+   in a building with sprinklers), 6.9 bar at the topmost outlet; Class II 379 L/min at 4.5 bar.  At the pump: that pressure, the height and the friction of the standpipe
+   by Hazen-Williams (with 20 % for its fittings); its power at 65 % efficiency and the water for P.fhc.dur minutes (30).  P.fhc: {cls, hl, sr, ft, dur, C} ===== */
+const FHC_D={cls:'III',hl:30,sr:9,ft:22.9,dur:30,C:120},FHC_LIM={hl:[10,60],sr:[0,15],ft:[5,60],dur:[10,120],C:[80,150]},FHC_CLS=['I','II','III'];
+XC.push(()=>{const f=P.fhc;if(f===undefined)return;const o={};if(f&&typeof f==='object'&&!Array.isArray(f)){if(FHC_CLS.includes(f.cls))o.cls=f.cls;for(const k in FHC_LIM){const v=+f[k];if(f[k]!==''&&f[k]!=null&&isFinite(v))o[k]=clamp(v,FHC_LIM[k][0],FHC_LIM[k][1])}}
+  if(Object.keys(o).length)P.fhc=o;else delete P.fhc});
+const fhcSet=()=>Object.assign({},FHC_D,P.fhc||{});
+const fhcOf=k=>P.els.filter(e=>e.cat==='equip'&&equipKind(typ(P,e)||{})===k);
+/* the point a cabinet or an extinguisher is reached at: in front of it */
+const fhcPt=e=>{const a=(e.rot||0)*Math.PI/180,d=(compSize(P,e).d||250)/2+150;return[e.x-Math.sin(a)*d,e.y+Math.cos(a)*d]};
+/* the points of a level that must be reached: a grid over its regions (a region no point of which can be walked to, a shaft, is left out) */
+function fhcSamples(lv){const L=falNow(),regs=L.regs.get(lv)||[],A=regs.reduce((s,g)=>s+g.area,0);if(!A)return[];const step=Math.max(800,Math.sqrt(A/3000)),out=[];
+  regs.forEach((g,i)=>{if(g.area<4e6)return;const net=g.net;let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const [x,y] of net){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+    for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step)if(inPoly(x,y,net)&&fsEdge(x,y,net)>150)out.push({x,y,i})});
+  out.step=step;return out}
+/* the walk (m) from the nearest source to a point, Infinity when it cannot be walked to */
+function fhcD(T,x,y){const G=T.G,i=Math.floor((x-G.x0)/G.cs),j=Math.floor((y-G.y0)/G.cs);let d=Infinity;for(let b=j-2;b<=j+2;b++)for(let a=i-2;a<=i+2;a++)if(a>=0&&b>=0&&a<G.W&&b<G.H)d=Math.min(d,T.D[b*G.W+a]);return d*G.cs/1000}
+/* the coverage of a level by sources at pts within reach (m): {tot, miss [{x, y, d}], far (m), gap} or null without a plan to walk on */
+function fhcCover(lv,pts,reach){const S=fhcSamples(lv);if(!S.length)return{tot:0,miss:[],far:0,gap:0,step:1000};if(!pts.length)return{tot:S.length,miss:S.map(p=>({x:p.x,y:p.y,d:Infinity})),far:Infinity,gap:1,step:S.step};
+  const T=falTravel(lv,pts);if(!T)return null;const R=S.map(p=>fhcD(T,p.x,p.y));
+  const miss=[];let far=0,tot=0;S.forEach((p,k)=>{const d=R[k];if(!isFinite(d))return;tot++;far=Math.max(far,d);if(d>reach)miss.push({x:p.x,y:p.y,d})});          // a point no one can stand on (a stair, a cupboard) is left out
+  return{tot,miss,far,gap:tot?miss.length/tot:0,step:S.step}}
+/* the place nine tenths of `go` along the way from the point p back to the nearest source: [x, y] */
+function fhcBack(T,p,go){const G=T.G,D=T.D,W=G.W;let i=Math.floor((p.x-G.x0)/G.cs),j=Math.floor((p.y-G.y0)/G.cs),c=-1,bd=Infinity;
+  for(let b=j-2;b<=j+2;b++)for(let a=i-2;a<=i+2;a++)if(a>=0&&b>=0&&a<W&&b<G.H&&D[b*W+a]<bd){bd=D[b*W+a];c=b*W+a}if(c<0||!isFinite(bd))return null;
+  let acc=0;for(let n=0;n<200000&&D[c]>0&&acc*G.cs<go;n++){const x=c%W,y=(c/W)|0;let nb=-1,nd=D[c];
+    for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){const xx=x+a,yy=y+b;if(xx<0||yy<0||xx>=W||yy>=G.H)continue;const k=yy*W+xx;if(D[k]<nd){nd=D[k];nb=k}}
+    if(nb<0)break;acc+=Math.hypot((nb%W)-x,((nb/W)|0)-y);c=nb}
+  return raXY(G,c)}
+/* adds sources on a level until every point is reached (at most n): place(at) -> {x, y} or null.  -> the new points */
+function fhcFill(lv,pts,reach,n,place){const out=[];for(let k=0;k<n;k++){const C=fhcCover(lv,[...pts,...out.map(q=>q.pt)],reach);if(!C||!C.miss.length)break;
+    const T=falTravel(lv,[...pts,...out.map(q=>q.pt)]);let p=null;for(const m of C.miss)if(isFinite(m.d)&&(!p||m.d>p.d))p=m;
+    if(!p){if(pts.length+out.length)break;p=C.miss[0]}const at=T&&pts.length+out.length?fhcBack(T,p,reach*0.9*1000):[p.x,p.y];if(!at)break;
+    const q=place(at);if(!q||[...pts,...out.map(o=>o.pt)].some(z=>Math.hypot(z[0]-q.pt[0],z[1]-q.pt[1])<800))break;out.push(q)}
+  return out}
+/* the standpipes: cabinets of two levels or more one above the other (within 1.5 m): [{cabs (lowest first), x, y}] */
+function fhcStacks(cabs){const out=[],used=new Set(),lvE=e=>elev(P,e.level);const C=cabs.slice().sort((a,b)=>lvE(a)-lvE(b));
+  for(const c of C){if(used.has(c))continue;const st=[c];used.add(c);for(const d of C)if(!used.has(d)&&d.level!==c.level&&!st.some(s=>s.level===d.level)&&Math.hypot(d.x-c.x,d.y-c.y)<1500){st.push(d);used.add(d)}
+    if(new Set(st.map(e=>e.level)).size>1)out.push({cabs:st})}
+  return out}
+/* where the riser of a stack stands: beside its lowest cabinet, 100 mm off the wall; the inlet of a cabinet */
+const fhcRiserAt=e=>{const S=compSize(P,e),a=(e.rot||0)*Math.PI/180,u=[Math.cos(a),Math.sin(a)],n=[-Math.sin(a),Math.cos(a)],o=S.w/2+200,b=-S.d/2+100;return[Math.round(e.x+u[0]*o+n[0]*b),Math.round(e.y+u[1]*o+n[1]*b)]};
+const fhcInlet=e=>{const S=compSize(P,e),a=(e.rot||0)*Math.PI/180,u=S.w/2*0.55,v=-S.d/2*0.2;return[Math.round(e.x+u*Math.cos(a)-v*Math.sin(a)),Math.round(e.y+u*Math.sin(a)+v*Math.cos(a))]};
+/* the standpipe calculation: {cls, n standpipes, spr, q1, Qt (L/min), d (mm), H (m from the pump to the top outlet), Lh, hf, pres, pump (bar), head (m), kw, store (m³), pumpEl} */
+function fhcCalc(){const S=fhcSet(),cabs=fhcOf('fhc'),stacks=fhcStacks(cabs),spr=P.els.some(e=>e.cat==='sprinkler'),cl=S.cls,n=Math.max(cabs.length?1:0,stacks.length);
+  const q1=cl==='II'?379:1893,Qt=cl==='II'?379:Math.min(q1+946*Math.max(0,n-1),spr?3785:4731),pres=cl==='II'?4.5:6.9;
+  const pumps=P.els.filter(e=>e.cat==='equip'&&equipKind(typ(P,e)||{})==='fpump'),pm=pumps[0]||null,low=sortedLevels(P)[0],z0=pm?zRange(P,pm)[0]+(compSize(P,pm).h||900)/2:(low?low.elev:0)+500;
+  let top=null;for(const c of cabs){const z=zRange(P,c)[0]+(compSize(P,c).h||1200)*0.6;if(!top||z>top.z)top={z,c}}const Hm=top?Math.max(0,(top.z-z0)/1000):0;
+  const st=stacks.find(s=>s.cabs.includes(top&&top.c))||stacks[0],d=cl==='II'?(Hm>15.2?65:50):spr&&cabs.length?150:100,Lh=pm&&st?Math.hypot(st.cabs[0].x-pm.x,st.cabs[0].y-pm.y)/1000:0;
+  const hf=fhHW(cl==='II'?Qt:q1,d,S.C)*(Hm+Lh)*1.2+(Lh&&n>1?fhHW(Qt,d,S.C)*Lh*0.2:0),pump=pres+Hm*FH_BAR+hf,head=pump/FH_BAR,kw=Qt/60000*pump*1e5/0.65/1000;
+  return{cls:cl,n,spr,q1,Qt,pres,d,H:Hm,Lh,hf,pump,head,kw,store:Qt*S.dur/1000,pm,rated:pm?+(typ(P,pm)||{}).kw||0:0,stacks:stacks.length,cabs:cabs.length}}
+/* the coverage of every level with rooms: Map level -> {hose, ext} (null when there is no cabinet / extinguisher in the project) */
+let FHCM=null;
+function fhcNow(){if(FHCM&&FHCM.ver===VER&&FHCM.P===P)return FHCM.M;const S=fhcSet(),M=new Map(),cab=fhcOf('fhc'),ext=fhcOf('fext');
+  for(const lv of falNow().regs.keys()){const a=cab.filter(e=>e.level===lv).map(fhcPt),b=ext.filter(e=>e.level===lv).map(fhcPt);
+    M.set(lv,{hose:cab.length?fhcCover(lv,a,S.hl+S.sr):null,ext:ext.length?fhcCover(lv,b,S.ft):null,nc:a.length,ne:b.length})}
+  FHCM={ver:VER,P,M};return M}
+/* the layout. o: {cab, ext, sp} -> {lv: Map level -> {nc, ne}, add [elements without ids], nP} */
+function fhcPlan(lvs,o){const S=fhcSet(),L=falNow(),add=[],per=new Map(),ET=P.types.equip||[],tC=ET.find(T=>equipKind(T)==='fhc'),tE=ET.find(T=>equipKind(T)==='fext');
+  const marks=new Set(P.els.map(e=>e.mark).filter(Boolean)),mk=T=>{const b=T.mark||'FP';let n=1;while(marks.has(b+'-'+n))n++;marks.add(b+'-'+n);return b+'-'+n};          // FHC-1, FE-1 …: a mark may not repeat
+  const eq=(T,lv,p,elevD)=>{const D=+T.d||250,e={cat:'equip',type:T.id,level:lv,x:Math.round(p.x+p.n[0]*D/2),y:Math.round(p.y+p.n[1]*D/2),rot:p.rot,off:+T.elev||elevD,mark:''};add.push(e);return e};
+  for(const lv of lvs){const regs=L.regs.get(lv);if(!regs)continue;const X=falDoors(lv,regs,L.rmOf.get(lv)),r={nc:0,ne:0};per.set(lv,r);
+    const away=()=>[...P.els.filter(e=>e.level===lv&&(e.cat==='device'||e.cat==='equip'||e.cat==='eequip'||e.cat==='riser')),...add.filter(e=>e.level===lv&&e.x!=null)].map(e=>[e.x,e.y,e.cat==='device'?0:(compSize(P,e).w||0)/2]);
+    const cabs=fhcOf('fhc').filter(e=>e.level===lv),newC=[];
+    const placeAt=(T,at,w)=>{const i=regionAt(regs,at[0],at[1]),j=i>=0?i:regs.reduce((b,g,k)=>{const d=fsEdge(at[0],at[1],g.net);return!b||d<b.d?{k,d}:b},null).k,p=falWallAt(regs[j].net,X,at,0,w,away());return p};
+    if(o.cab&&tC){const W=+tC.w||800;
+      for(const x of X){if(x.k!=='stair')continue;if([...cabs,...newC].some(e=>Math.hypot(e.x-x.c[0],e.y-x.c[1])<x.dw/2+3000))continue;const p=falNear(x,regs[x.ri].net,{w:W,away:away(),max:3000});if(p){const e=eq(tC,lv,p,300);newC.push(e);r.nc++;if(o.sp){const q=fhcRiserAt(e);add.push({cat:'_spot',level:lv,x:q[0],y:q[1]})}}}
+      const more=fhcFill(lv,[...cabs,...newC].map(fhcPt),S.hl+S.sr,12,at=>{const p=placeAt(tC,at,W);if(!p)return null;const e=eq(tC,lv,p,300);add.pop();return{pt:fhcPt(e),e}});
+      for(const q of more){add.push(q.e);newC.push(q.e);r.nc++}}
+    if(o.ext&&tE){const ex=fhcOf('fext').filter(e=>e.level===lv),newE=[],w=+tE.w||200;
+      for(const c of newC){const i=regionAt(regs,...fhcPt(c));if(i<0)continue;const a=(c.rot||0)*Math.PI/180,o=(compSize(P,c).w||800)/2+350,p=falWallAt(regs[i].net,X,[c.x-Math.cos(a)*o,c.y-Math.sin(a)*o],0,w,away());/* on the side away from the standpipe */if(p){newE.push(eq(tE,lv,p,900));r.ne++}}
+      const more=fhcFill(lv,[...ex,...newE].map(fhcPt),S.ft,30,at=>{const p=placeAt(tE,at,w);if(!p)return null;const e=eq(tE,lv,p,900);add.pop();return{pt:fhcPt(e),e}});
+      for(const q of more){add.push(q.e);r.ne++}}}
+  for(let i=add.length-1;i>=0;i--)if(add[i].cat==='_spot')add.splice(i,1);for(const e of add)if(e.cat==='equip')e.mark=mk(typ(P,e)||{});
+  let nP=0;
+  if(o.sp){const C=fhcCalc(),RT=(P.types.riser||[]).find(T=>T.kind==='pipe'),PT=P.types.pipe||[],pt=(PT.find(T=>T.mark==='BSP')||PT.find(T=>T.seg==='sch40')||PT[0]||{}).id,cabs=[...fhcOf('fhc'),...add.filter(e=>e.type===(tC&&tC.id))];
+    const have=P.els.filter(e=>e.cat==='riser'&&SCL(e.sys||'')==='FP');
+    if(RT&&pt!=null)for(const s of fhcStacks(cabs)){const lo=s.cabs[0],at=fhcRiserAt(lo);if(have.some(r=>Math.hypot(r.x-at[0],r.y-at[1])<600))continue;
+      const zb=c=>elev(P,c.level)+(c.off||0)+(compSize(P,c).h||1200)+300,z0=zb(lo)-300,z1=Math.max(...s.cabs.map(zb)),bl=lvl(P,lo.level),d=C.cls==='II'?C.d:Math.max(C.d,100);
+      add.push({cat:'riser',type:RT.id,level:lo.level,x:at[0],y:at[1],rot:0,baseOff:Math.round(z0-elev(P,lo.level)),top:0,topOff:0,height:Math.round(z1-z0),w:d,h:d,sys:'FP',flow:0});nP++;
+      for(const c of s.cabs){const q=fhcInlet(c);add.push({cat:'pipe',type:pt,level:c.level,x1:at[0],y1:at[1],x2:q[0],y2:q[1],dia:C.cls==='II'?40:65,off:Math.round(zb(c)-elev(P,c.level)),sys:'FP',slope:0,flow:0});nP++}}}
+  return{lv:per,add,nP}}
+/* places what the layout planned; a level that gets cabinets and has no fire protection plan gets one, as the sprinkler layout makes it (161) -> that plan's id */
+function fhcApply(Q){if(!Q.add.length)return null;const lvs=[...new Set(Q.add.filter(e=>e.cat==='equip').map(e=>e.level))],av=activeView(),out=new Map();
+  edit(()=>{for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e));
+    for(const lv of lvs){const pl=P.views.filter(v=>v.kind==="plan"&&v.level===lv&&!v.rcp&&!v.draft&&!v.legend&&v.dep==null),has=pl.find(v=>v.disc==='fire');if(has){out.set(lv,has.id);continue}
+      const src=pl.find(v=>v.disc==='plumb')||pl.find(v=>!v.disc||v.disc==='arch')||pl[0];if(!src)continue;const L=lvl(P,lv),v=JSON.parse(JSON.stringify(src));
+      Object.assign(v,{id:P.seq++,name:(L?L.name:'')+' - '+t('disc_fire'),disc:'fire'});delete v.tpl;P.views.push(v);out.set(lv,v.id);
+      for(const a of P.ann.filter(a=>a.view===src.id&&a.cat==='rtag'))P.ann.push(Object.assign(JSON.parse(JSON.stringify(a)),{id:P.seq++,view:v.id}))}});
+  const lv=av&&out.has(av.level)?av.level:lvs[0];return lv!=null?out.get(lv)||null:null}
+const fhcOpt=()=>ui.fhcl||(ui.fhcl={cab:true,ext:true,sp:true,all:true});
+function dlgFhc(){if(!(P.types.equip||[]).some(T=>equipKind(T)==='fhc'))edit(()=>fpAdd(P,ui.lang==='en'));const S=fhcSet(),o=fhcOpt(),L=falNow(),av=activeView(),lvs=[...L.regs.keys()].filter(lv=>o.all||!av||av.level==null||lv===av.level),M=fhcNow(),Q=fhcPlan(lvs,o),C=fhcCalc();ui.helpAt='calc';
+  const num=(k,st,u)=>`<label><span>${t('fhc_'+k)}</span><span><input type="number" data-fc="${k}" value="${S[k]}" step="${st}" min="${FHC_LIM[k][0]}" max="${FHC_LIM[k][1]}"><small>${u}</small></span></label>`,chk=k=>`<label><span>${t('fhc_o_'+k)}</span><span><input type="checkbox" data-fq="${k}"${o[k]?' checked':''}></span></label>`;
+  const set=`<div class="ldg pz"><label><span>${t('fhc_cls')}</span><span><select data-fc="cls">${FHC_CLS.map(k=>`<option value="${k}"${k===S.cls?' selected':''}>${t('fhc_c'+k)}</option>`).join('')}</select></span></label>
+    ${num('hl',1,'m')}${num('sr',0.1,'m')}${num('ft',0.1,'m')}${num('dur',5,t('u_min'))}${num('C',5,'')}
+    <label><span>${t('fal_lv')}</span><span><select data-fq="all"><option value="0"${o.all?'':' selected'}>${t('fhc_thislv')}</option><option value="1"${o.all?' selected':''}>${t('fhc_alllv',L.regs.size)}</option></select></span></label>${chk('cab')}${chk('ext')}${chk('sp')}</div>`;
+  const pc=c=>!c?'—':c.tot?(c.gap?Math.round(c.gap*100)+'% ⚠':t('fhc_all')):'—',fm=c=>!c?'—':falM(c.far);
+  const rows=[...L.regs.keys()].sort((a,b)=>elev(P,a)-elev(P,b)).map(lv=>{const m=M.get(lv)||{},q=Q.lv.get(lv)||{nc:0,ne:0},Lv=lvl(P,lv),A=(L.regs.get(lv)||[]).reduce((s,g)=>s+g.area,0)/1e6,bad=(m.hose&&m.hose.gap)||(m.ext&&m.ext.gap);
+    return`<tr${bad?' class="chg"':''}><td>${esc(Lv?Lv.name:'')}</td><td class="n">${A.toFixed(0)} m²</td><td class="n">${m.nc||0}${q.nc?' <b>+'+q.nc+'</b>':''}</td><td class="n">${fm(m.hose)}</td><td class="n">${pc(m.hose)}</td><td class="n">${m.ne||0}${q.ne?' <b>+'+q.ne+'</b>':''}</td><td class="n">${fm(m.ext)}</td><td class="n">${pc(m.ext)}</td></tr>`}).join('');
+  const f1=x=>x.toFixed(1),sp=C.cabs?`<table class="tbl"><tbody>${[['fhc_r_n',C.n+' ('+t('fhc_r_stk',C.stacks)+')'],['fhc_r_q',Math.round(C.Qt)+' L/min ('+f1(C.Qt/60)+' L/s)'+(C.spr&&C.cls!=='II'?' · '+t('fhc_r_spr'):'')],['fhc_r_d','Ø'+C.d+' mm'],['fhc_r_h',f1(C.H)+' m'],
+    ['fhc_r_f',C.hf.toFixed(2)+' bar'+(C.Lh?' · '+t('fhc_r_lh',f1(C.Lh)):'')],['fhc_r_res',f1(C.pres)+' bar'],['fhc_r_p','<b>'+f1(C.pump)+' bar · '+Math.round(C.head)+' m</b>'],['fhc_r_kw',f1(C.kw)+' kW'+(C.pm?' · '+t(C.rated>=C.kw-0.05?'fhc_r_ok':'fhc_r_low',esc(C.pm.mark||'FP'),f1(C.rated)):' · '+t('fhc_r_nopump'))],
+    ['fhc_r_st',Math.round(C.store)+' m³ ('+S.dur+' '+t('u_min')+')']].map(([k,v])=>`<tr><td>${t(k)}</td><td class="n">${v}</td></tr>`).join('')}</tbody></table>`:`<p class="note">${t('fhc_nocab')}</p>`;
+  const nC=Q.add.filter(e=>e.cat==='equip'&&equipKind(typ(P,e)||{})==='fhc').length,nE=Q.add.filter(e=>e.cat==='equip').length-nC;
+  const body=`<div class="fhd"><p class="note">${t('fhc_intro')}</p>${set}<div class="tblw"><table class="tbl"><thead><tr><th>${t('fal_lv')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fhc_h_c')}</th><th class="n">${t('fhc_h_far')}</th><th class="n">${t('fhc_h_out')}</th><th class="n">${t('fhc_h_e')}</th><th class="n">${t('fhc_h_far')}</th><th class="n">${t('fhc_h_out')}</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <h4 style="margin:10px 0 4px">${t('fhc_sp')}</h4>${sp}<p class="note">${t('fhc_note')}</p></div>`;
+  openDlg(t('a_fhclay'),body,`<button class="btn" data-fhx="show">${t(ui.fhcShow?'fs_hide':'fs_show')}</button><span style="flex:1"></span><button class="btn primary" data-fhx="apply"${Q.add.length?'':' disabled'}>${t('fhc_apply',nC,nE,Q.nP)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.fc){const k=el.dataset.fc;edit(()=>{const f=Object.assign({},P.fhc||{});if(k==='cls')f.cls=el.value;else{const v=+el.value;if(el.value===''||!isFinite(v))delete f[k];else f[k]=clamp(v,FHC_LIM[k][0],FHC_LIM[k][1])}P.fhc=f});dlgFhc();return}
+       const k=el.dataset.fq;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgFhc()},
+     click(ev){const x=ev.target.closest('[data-fhx]');if(!x||!ui.dlg)return;const k=x.dataset.fhx;if(k==='show'){ui.fhcShow=!ui.fhcShow;refresh();dlgFhc();return}
+       if(k==='apply'&&Q.add.length){const vid=fhcApply(Q),av=activeView(),v=vid!=null&&viewById(vid);if(v&&av&&av.id!==v.id){showView(v.id);toast(t('fhc_donev',Q.add.length,v.name),6000)}else toast(t('fhc_done',Q.add.length));dlgFhc()}}},'wide')}
+XA.fhclay=dlgFhc;
+for(const [tab,pn,after] of [['sys','p_piping','@fpequip'],['analyze','p_check','@fallay']]){const A=RIBBON.find(r=>r.id===tab),p=A&&A.panels.find(q=>q.t===pn);if(p&&!p.b.includes('@fhclay')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@fhclay')}}
+BTN['@fhclay']=['sprinkler',''];
+/* on the plans while asked for: the points out of reach of the hoses (red) and of the extinguishers (orange) */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||!ui.fhcShow||v.kind!=='plan'||v.draft)return;const m=fhcNow().get(v.level);if(!m)return;ctx.save();
+  for(const [c,f,k] of [[m.hose,'rgba(224,49,49,.30)',0.5],[m.ext,'rgba(247,103,7,.55)',0.18]]){if(!c||!c.miss.length)continue;ctx.fillStyle=f;const s=c.step*k;for(const p of c.miss){g.path([[p.x-s,p.y-s],[p.x+s,p.y-s],[p.x+s,p.y+s],[p.x-s,p.y+s]]);ctx.fill()}}
+  ctx.restore()});
+/* Check Systems: parts of a level out of reach of the hoses or the extinguishers */
+SCX.push(add=>{if(!fhcOf('fhc').length&&!fhcOf('fext').length)return;for(const [lv,m] of fhcNow()){const L0=lvl(P,lv),nm=L0?L0.name:'';
+  for(const [c,k] of [[m.hose,'sc_fhc'],[m.ext,'sc_fext']])if(c&&c.miss.length){const p=c.miss[0];add(k,'pipe',[],p.x,p.y,lv,nm+' · '+Math.round(c.gap*100)+'%')}}});
+WARN_K.push('sc_fhc','sc_fext');
+Object.assign(STR,{
+  a_fhclay:['ตู้ดับเพลิง ถังดับเพลิง และท่อยืน','Hose Cabinets, Extinguishers and Standpipes'],u_min:['นาที','min'],
+  fhc_intro:['ตาม NFPA 14 และ NFPA 10 (มาตรฐานการป้องกันอัคคีภัยของ วสท. ใช้เกณฑ์เดียวกัน): ทุกจุดในชั้นต้องอยู่ในระยะสายฉีดบวกระยะพุ่งของน้ำจากตู้ดับเพลิง (FHC) และในระยะเดินจากถังดับเพลิง วัดตามทางเดินจริงรอบผนังผ่านประตู ไม่ใช่วงกลม · วางตู้ข้างประตูบันไดทุกชั้นก่อน แล้วเพิ่มตู้ตรงจุดที่ยังเข้าไม่ถึง · ถังดับเพลิงข้างตู้ใหม่ทุกตู้และเพิ่มจนครบระยะ · ตู้ที่ตรงกันหลายชั้นเป็นท่อยืน (Standpipe) คำนวณอัตราไหล ขนาดท่อ และแรงดันปั๊ม',
+    'By NFPA 14 and NFPA 10 (the EIT fire code takes the same rules): every point of a level must be within the hose length plus the stream reach of a hose cabinet, and within the travel distance of an extinguisher, measured along the way round walls and through doors — not as circles · cabinets go by every stair door first, then more where a point is still out of reach · an extinguisher beside each new cabinet, and more until all is reached · cabinets one above the other are a standpipe: its flow, size and the fire pump pressure are worked out'],
+  fhc_cls:['ประเภทระบบท่อยืน','Standpipe class'],fhc_cI:['Class I (หัวต่อ 2½" สำหรับพนักงานดับเพลิง)','Class I (2½" outlets for the fire service)'],fhc_cII:['Class II (สายฉีด 1½" สำหรับผู้อยู่ในอาคาร)','Class II (1½" hose for occupants)'],fhc_cIII:['Class III (ทั้ง 2½" และสาย 1½")','Class III (2½" outlets and 1½" hose)'],
+  fhc_hl:['ความยาวสายฉีด','Hose length'],fhc_sr:['ระยะพุ่งของน้ำ','Stream reach'],fhc_ft:['ระยะเดินถึงถังดับเพลิง','Travel distance to an extinguisher'],fhc_dur:['เวลาสำรองน้ำ','Water for'],fhc_C:['ค่า C ของท่อ (Hazen-Williams)','Pipe C (Hazen-Williams)'],
+  fhc_thislv:['ชั้นของมุมมองนี้','Level of this view'],fhc_alllv:['ทุกชั้น ({0})','Every level ({0})'],fhc_o_cab:['วางตู้ดับเพลิง (FHC)','Place hose cabinets'],fhc_o_ext:['วางถังดับเพลิง','Place extinguishers'],fhc_o_sp:['เดินท่อยืนและท่อแยกเข้าตู้','Run standpipes and branches'],
+  fhc_h_c:['ตู้ FHC','Cabinets'],fhc_h_e:['ถังดับเพลิง','Extinguishers'],fhc_h_far:['ระยะไกลสุด','Farthest'],fhc_h_out:['ส่วนที่เข้าไม่ถึง','Out of reach'],fhc_all:['ครบ','All reached'],
+  fhc_sp:['ท่อยืนและปั๊มดับเพลิง (NFPA 14)','Standpipes and fire pump (NFPA 14)'],fhc_r_n:['จำนวนท่อยืน','Standpipes'],fhc_r_stk:['ตู้ตรงกัน {0} แนว','{0} stacks of cabinets'],fhc_r_q:['อัตราไหลออกแบบ','Design flow'],fhc_r_spr:['อาคารมีสปริงเกลอร์ จำกัด 3,785 L/min','sprinklered: no more than 3,785 L/min'],
+  fhc_r_d:['ขนาดท่อยืน','Standpipe size'],fhc_r_h:['ความสูงจากปั๊มถึงหัวต่อบนสุด','Height from the pump to the top outlet'],fhc_r_f:['แรงดันสูญเสียในท่อ (รวมข้อต่อ 20%)','Friction (with 20 % for fittings)'],fhc_r_lh:['ท่อแนวนอนจากปั๊ม {0} ม.','{0} m of main from the pump'],
+  fhc_r_res:['แรงดันที่หัวต่อบนสุด','Pressure at the top outlet'],fhc_r_p:['แรงดันที่ปั๊ม','Pump pressure'],fhc_r_kw:['กำลังปั๊ม (ประสิทธิภาพ 65%)','Pump power (65 % efficiency)'],fhc_r_ok:['ปั๊ม {0} ในแบบ {1} kW พอ','pump {0} in the model, {1} kW, is enough'],
+  fhc_r_low:['ปั๊ม {0} ในแบบ {1} kW ไม่พอ','pump {0} in the model, {1} kW, is too small'],fhc_r_nopump:['ยังไม่มีปั๊มดับเพลิงในแบบ (คิดที่ชั้นล่างสุด)','no fire pump in the model yet (taken at the lowest level)'],fhc_r_st:['น้ำสำรองดับเพลิง','Water to store'],
+  fhc_nocab:['ยังไม่มีตู้ดับเพลิง: กดวางเพื่อให้โปรแกรมวางและคำนวณ','No hose cabinets yet: place them and the standpipes are worked out'],
+  fhc_note:['Class I/III: ท่อยืนแรก 1,893 L/min ท่อถัดไปท่อละ 946 L/min ไม่เกิน 4,731 L/min (มีสปริงเกลอร์ 3,785) แรงดันหัวบนสุด 6.9 bar ขนาดท่ออย่างน้อย 100 มม. (ร่วมกับสปริงเกลอร์ 150 มม.) · Class II: 379 L/min ที่ 4.5 bar · ถังดับเพลิงตาม NFPA 10 เพลิงประเภท A ระยะเดินไม่เกิน 22.9 ม. · ต่อท่อเมนจากปั๊มเข้าที่โคนท่อยืนเอง',
+    'Class I/III: 1,893 L/min for the first standpipe and 946 L/min for each other, no more than 4,731 L/min (3,785 with sprinklers), 6.9 bar at the top outlet, at least 100 mm (150 mm combined with sprinklers) · Class II: 379 L/min at 4.5 bar · extinguishers by NFPA 10 for class A fires: no more than 22.9 m to walk · join the main from the pump to the foot of each standpipe yourself'],
+  fhc_apply:['วางตู้ {0} · ถัง {1} · ท่อ {2}','Place {0} cabinets · {1} extinguishers · {2} pipes'],fhc_done:['วางแล้ว {0} รายการ กดย้อนกลับได้','{0} items placed — Undo to go back'],fhc_donev:['วางแล้ว {0} รายการ ดูได้ในแปลน {1} กดย้อนกลับได้','{0} items placed, shown in the plan {1} — Undo to go back'],
+  sc_fhc:['บางส่วนของชั้นอยู่นอกระยะสายฉีดดับเพลิง: {0}','Part of a level out of reach of the fire hoses: {0}'],sc_fext:['บางส่วนของชั้นอยู่ไกลถังดับเพลิงเกินกำหนด: {0}','Part of a level too far from an extinguisher: {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -31775,6 +31919,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.172 · แปลนงานระบบที่ระดับรายละเอียด "ละเอียด": ท่อน้ำทุกระบบ ท่อร้อยสายไฟ และท่อลมกลม วาดข้อต่อตามของจริง ข้องอมีรัศมี ข้อต่อแบบสวม เกลียว และเชื่อมด้วยความร้อนกว้างกว่าท่อและมีปากสวม ท่อเหล็กเชื่อมเห็นรอยเชื่อม ข้อลดเป็นกรวย สามทางมีตัวและคอท่อแยก ข้องอที่ขึ้นหรือลงเห็นโค้งจากด้านบน ท่อแยกหยุดที่ผิวท่อเมนและผิวท่อเมนเปิดตรงนั้น ฉนวนหุ้มรอบข้อต่อด้วย · ระดับ "หยาบ" และ "ปานกลาง" เส้นท่อโค้งตามข้องอ · ป้ายชื่อท่อขึ้นครั้งเดียวต่อแนวท่อระบบและขนาดเดียวกัน (และทุกท่อที่ยาวเกิน 80 มม. บนกระดาษ) วางข้างท่อเส้นคู่ ไม่ทับท่อ
 - V1.173 · ท่อลมใน 3D เหมือนของจริง: ท่อลมและข้อต่อเป็นสีเหล็กอาบสังกะสีที่ยังเห็นสีของระบบจาง ๆ ท่อลมเหลี่ยมมีหน้าแปลน (TDC/TDF) ทุกรอยต่อกับข้อต่อหรือท่ออีกท่อน และทุก 1.20 ม. ตามความยาวแผ่นเหล็ก ท่อลมกลมมีข้อต่อสวมทุก 3 ม. · หัวจ่ายลมที่อยู่ใต้ท่อลมมีกล่องลม (Plenum) พร้อมคอต่อ ท่ออ่อนแบบมีลอน และคอแยกบนใต้ท่อลม (Spin-in collar) แทนท่อโค้งทึบ · ท่ออ่อนเป็นสีเงินของแผ่นฟอยล์
 - V1.174 · [[a_fallay]] (แผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_analyze]]): ทุกห้องมีชนิดตัวตรวจจับ (ควัน ความร้อน หรือไม่ต้องมี) ตามการใช้ห้อง วางตัวตรวจจับตามระยะของ NFPA 72 (ลดระยะตามความสูงฝ้า) ห่างผนัง 100 มม. และห่างหัวจ่ายลม 0.91 ม. · จุดแจ้งเหตุข้างทางออกทุกทาง ระยะเดินไม่เกิน 61 ม. วัดตามทางเดินจริง · กระดิ่งให้ดังกว่าเสียงรอบข้าง 15 dB ทุกห้อง (ห้องนอน 75 dB) หักเสียงที่ผ่านผนัง · ตู้ควบคุม (FACP) แบ่งโซนไม่เกิน 2,000 ตร.ม. วงจร Z และ N ให้อุปกรณ์ทุกตัว ขนาดแบตเตอรี่ 24 ชม. + 5 นาที · ส่วนที่ไม่ครอบคลุมแสดงในแปลนและใน [[a_sysck]]
+- V1.175 · [[a_fhclay]] (แผงท่อน้ำของงานระบบ หรือแท็บ [[tab_analyze]]): ตู้ดับเพลิง (FHC) ข้างประตูบันไดทุกแห่ง แล้วเพิ่มจนทุกจุดของชั้นอยู่ในระยะสายฉีด 30 ม. บวกระยะพุ่ง 9 ม. วัดตามทางเดินจริง (NFPA 14) · ถังดับเพลิงไม่เกิน 22.9 ม. (NFPA 10) · ตู้ที่ตรงกันหลายชั้นเป็นท่อยืน: เดินท่อยืนและท่อแยกเข้าตู้ · คำนวณอัตราไหล แรงดันที่หัวบนสุด แรงดันและกำลังปั๊ม และน้ำสำรอง เทียบกับปั๊มในโมเดล · ส่วนที่เข้าไม่ถึงแสดงในแปลนและใน [[a_sysck]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -31823,6 +31968,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 8. [[a_pslope]]: เลือกท่อระบายเส้นใดเส้นหนึ่งหรือหลายเส้น เลือกค่าความลาด (หรือน้อยสุดตามขนาดท่อ) และเลือกว่าจะปรับเฉพาะที่เลือกหรือทั้งระบบ · ปลายต่ำสุดของระบบอยู่ที่เดิม ท่ออื่นไล่ระดับขึ้นไปจากจุดนั้น
 9. [[a_sprlay]]: เลือกห้อง (หรือใช้ห้องในชั้นของมุมมอง) ตรวจประเภทอันตรายของแต่ละห้องในตาราง แล้วกดวางหัว · ห้องที่มีหัวแล้วจะไม่ถูกแตะ เว้นแต่ติ๊กแทนที่ · ปุ่มแสดงพื้นที่ครอบคลุมวาดวงระยะของแต่ละหัวและระบายสีส่วนที่ไม่มีหัวครอบคลุม
 10. [[a_sprhyd]]: ต่อหัวสปริงเกลอร์เข้ากับท่อดับเพลิง (ระบบ FP) ที่ต้นทางเป็นปั๊มดับเพลิง ท่อแนวดิ่ง หรือปลายท่อที่เปิดไว้ แล้วเปิดคำสั่งนี้ · เลือกค่า K แรงดันต่ำสุด และค่า C ของท่อได้ · ปุ่มเลือกหัวในพื้นที่ออกแบบและท่อเส้นทางวิกฤตแสดงให้เห็นบนแปลน · ใส่ Rated Flow และ Rated Head ในชนิดปั๊มเพื่อตรวจว่าปั๊มพอ
+11. [[a_fhclay]]: เลือกประเภทท่อยืน (Class I II III) ความยาวสาย ระยะพุ่ง ระยะเดินถึงถัง และเวลาสำรองน้ำ ตารางบอกระยะไกลสุดและส่วนที่เข้าไม่ถึงของแต่ละชั้น · กดวางเพื่อวางตู้ ถัง และท่อยืน ลงแปลน "ชั้น - ดับเพลิง" · ท่อเมนจากปั๊มถึงโคนท่อยืนต้องเดินเอง
 
 # ภาระทำความเย็น ((LO))
 [[a_loads]]: ประมาณภาระของแต่ละห้องจากโมเดล (ผนังและกระจกด้านนอกตามทิศ หลังคา คน ไฟ อุปกรณ์ อากาศภายนอก) ได้ BTU/h ตันความเย็น ลมจ่ายที่ต้องการ และขนาดเครื่องถัดไป ต้องวางห้อง ((RM)) ก่อน ทุกค่าปรับได้ · [[a_loadsched]] เปิดผลเป็นตาราง
@@ -32083,6 +32229,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.172 · system plans at Detail Level Fine: pipes of every system, conduits and round ducts are drawn with their fittings as built — elbows of their radius, socket, threaded and fused fittings a little wider than the pipe with their hubs, welded steel with its seams, reducers as cones, tees with their body and branch neck, an elbow that turns up or down seen from above; a branch stops at the face of the main and the side of the main is open there, and the insulation goes round the fittings · at Coarse and Medium the line of the pipe goes round its bends · a pipe label once per stretch of the same system and size (and on every run longer than 80 mm of paper), beside a pipe drawn with two lines rather than over it
 - V1.173 · ductwork in 3D as it is built: ducts and their fittings in galvanised grey with a hint of their system colour, a flange (TDC/TDF) on a rectangular duct wherever it joins a fitting or another duct and every 1.20 m as the sheets are made, a coupling on a round duct every 3 m · an air terminal below a duct gets a plenum box with its spigot, a ribbed flexible duct and a spin-in collar on the underside of the duct instead of a bent tube · flexible ducts in the silver of their foil
 - V1.174 · [[a_fallay]] (electrical panel of Systems, or the [[tab_analyze]] tab): every room has a detector kind (smoke, heat or none) by its use; detectors are laid out at the NFPA 72 spacing (less under high ceilings), 100 mm off walls and 0.91 m from supply diffusers · a call point beside every exit and no more than 61 m to walk, along the way one really walks · bells 15 dB over the ambient sound in every room (75 dB in bedrooms), less what the walls take · the panel (FACP), zones of no more than 2,000 m², circuits Z and N for every device, the battery for 24 h + 5 min · gaps are shown on the plans and in [[a_sysck]]
+- V1.175 · [[a_fhclay]] (piping panel of Systems, or the [[tab_analyze]] tab): a hose cabinet by every stair door, then more until every point of a level is within the 30 m hose plus the 9 m stream, along the way one walks (NFPA 14) · extinguishers no more than 22.9 m away (NFPA 10) · cabinets one above another are a standpipe: the riser and the branch to each cabinet are run · the flow, the pressure at the top outlet, the pump pressure and power and the water to store, compared with the pump in the model · what is out of reach is shown on the plans and in [[a_sysck]]
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -32131,6 +32278,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 8. [[a_pslope]]: select one or more drains, choose the slope (or the least for the size) and whether only those or their whole networks change · the lowest open end of the network stays put and the rest is raised from there
 9. [[a_sprlay]]: select rooms (or take those of the level of the view), check the hazard class of each in the table and place the heads · rooms that have heads are left alone unless Replace is ticked · Show coverage draws the reach of every head and shades what no head covers
 10. [[a_sprhyd]]: join the heads to fire pipes (system FP) that start at a fire pump, a riser or an open end, then open this · K-factor, least pressure and pipe C can be chosen · Select the design area and Select the critical path show them on the plans · give the pump type a rated flow and head to check it
+11. [[a_fhclay]]: choose the standpipe class (I, II, III), the hose length, the stream reach, the walk to an extinguisher and the time to store water for; the table gives the farthest point and what is out of reach on every level · place puts the cabinets, extinguishers and standpipes on the plan "level - Fire protection" · run the main from the pump to the foot of each standpipe yourself
 
 # Cooling loads ((LO))
 [[a_loads]]: the load of each room, estimated from the model (outside walls and glass by orientation, roof, people, lights, equipment, outdoor air), as BTU/h, tons, the supply air needed and the next unit size. Rooms ((RM)) must be placed first. Every value can be changed · [[a_loadsched]] opens the result as a schedule
@@ -34045,6 +34193,10 @@ window.PenumBIM.r94={rooms:()=>falNow().map(it=>({id:it.r.id,lv:it.lv,name:it.r.
   plan:(ids,o)=>{const Q=falPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},falOpt(),o||{}));return{rooms:Q.rooms.map(x=>({id:x.it.r.id,st:x.st,n:x.n})),add:Q.add,del:[...Q.del],set:[...Q.set],nM:Q.nM,nB:Q.nB,zones:Q.zones}},
   apply:(ids,o)=>falApply(falPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},falOpt(),o||{}))),doors:lv=>{const L=falNow();return falDoors(lv,L.regs.get(lv),L.rmOf.get(lv)).map(x=>({d:x.d.id,k:x.k,c:x.c,n:x.n,ri:x.ri}))},
   batt:pm=>falBatt(pm),zones:()=>falZones(falNow(),falSet()).Z,fac:falFac,sc:()=>scChecks().filter(c=>/^sc_fal/.test(c.k)).map(c=>c.k+':'+c.a)};
+window.PenumBIM.r95={now:()=>[...fhcNow()].map(([lv,m])=>({lv,nc:m.nc,ne:m.ne,hose:m.hose&&{tot:m.hose.tot,miss:m.hose.miss.length,far:m.hose.far,gap:m.hose.gap},ext:m.ext&&{tot:m.ext.tot,miss:m.ext.miss.length,far:m.ext.far,gap:m.ext.gap}})),
+  plan:(lvs,o)=>{const Q=fhcPlan(lvs||[...falNow().regs.keys()],Object.assign({cab:true,ext:true,sp:true},o||{}));return{lv:[...Q.lv],add:Q.add,nP:Q.nP}},apply:(lvs,o)=>{fpAdd(P,ui.lang==='en');const Q=fhcPlan(lvs||[...falNow().regs.keys()],Object.assign({cab:true,ext:true,sp:true},o||{}));return fhcApply(Q)},
+  calc:()=>{const C=fhcCalc();return Object.assign({},C,{pm:C.pm&&C.pm.id})},stacks:()=>fhcStacks(fhcOf('fhc')).map(s=>s.cabs.map(c=>c.id)),sc:()=>scChecks().filter(c=>c.k==='sc_fhc'||c.k==='sc_fext').map(c=>c.k+':'+c.a),
+  water:()=>{const W=waterNow();return W.nets.filter(n=>n.kind==='fire').map(n=>({n:n.n,ids:(n.ids||[]).length,root:n.root&&n.root.id,flow:n.flow}))}};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
