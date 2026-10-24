@@ -20,7 +20,8 @@ NEW.customers=()=>({name:'',contact:'',phone:'',email:'',tax:'',addr:'',credit:3
 NEW.leads=()=>({name:'',cust:'',value:0,stage:'lead',prob:'',close:addD(today(),30),owner:'',note:''});
 const QST=[['draft','ร่าง'],['sent','ส่งลูกค้าแล้ว'],['won','ได้งาน'],['lost','ไม่ได้งาน']];
 NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
-const qUnit=(Q,i)=>i.sp!==''&&i.sp!=null&&n(i.sp)>0?n(i.sp):n(i.t)/Math.max(1e-9,n(i.q))*(1+n(Q.mk)/100);
+// a negative quantity (work taken out, as in a VO) keeps a positive unit price
+const qUnit=(Q,i)=>i.sp!==''&&i.sp!=null&&n(i.sp)>0?n(i.sp):n(i.t)/(n(i.q)||1e-9)*(1+n(Q.mk)/100);
 // rows added under the total (SAFETY & CLEANING, OVERHEAD & PROFIT…): each a % of the printed total or a fixed amount
 const qAddV=(a,base)=>n(a.pct)?base*n(a.pct)/100:n(a.amt);
 function qCalc(Q){const lines=sum(Q.items,i=>n(i.q)*qUnit(Q,i)),base=qSep(Q)?sum(Q.items,i=>qLine(Q,i).t):lines,adds=(Q.adds||[]).map(a=>Object.assign({},a,{v:qAddV(a,base)})),
@@ -86,7 +87,7 @@ const QFORMS=[['','','อัตโนมัติ (A เมื่อมีค่
 const qHasL=Q=>Q.items.some(i=>n(i.l)>0);
 const qForm=Q=>({split:'A',one:'B',sum:'S',gov:'G',empty:'E'})[Q.lay]||(qHasL(Q)?'A':'B');
 const qSplit=Q=>{const f=qForm(Q);return f==='A'||f==='G'||(f!=='B'&&qHasL(Q))};
-function qLine(Q,i){const q=n(i.q),base=n(i.m)+n(i.l),sep=qSep(Q),u=sep?(base||n(i.t)/Math.max(1e-9,q)):qUnit(Q,i),k=base?u/base:1;
+function qLine(Q,i){const q=n(i.q),base=n(i.m)+n(i.l),sep=qSep(Q),u=sep?(base||n(i.t)/(q||1e-9)):qUnit(Q,i),k=base?u/base:1;
   const mu=base?n(i.m)*k:u,lu=base?n(i.l)*k:0;return {q,mu,lu,u,mt:q*mu,lt:q*lu,t:q*u}}
 PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=qCalc(Q),cu=CO().customers.find(x=>x.id===Q.cust)||{},sp=qSplit(Q),sep=qSep(Q),G={},R='style="text-align:right"';
   Q.items.forEach(i=>{const L=qLine(Q,i),g=G[i.g]=G[i.g]||{m:0,l:0,t:0};g.m+=L.mt;g.l+=L.lt;g.t+=L.t});
