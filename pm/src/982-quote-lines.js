@@ -124,9 +124,12 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(q|m|l|
   if(n(i.m)+n(i.l))qlCost(i);else if(m[3]==='q'&&i._uc){i.t=Math.round(i._uc*n(i.q)*100)/100;delete i._uc}});
 {const f=salesQuote;salesQuote=function(){const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(Q&&qlHs(Q))save();let h=f.apply(this,arguments);
   if(!Q||(typeof qmMa==='function'&&qmMa(Q)))return h;
-  const a=h.indexOf('<div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>รายการ</th>'),e0='<p class="empty">ยังไม่มีรายการ ดึงจาก PENUM MEP หรือนำเข้าจากไฟล์</p>';
-  if(a>=0){const z=h.indexOf('</tbody></table></div>',a);if(z>0)h=h.slice(0,a)+qlTable(Q)+h.slice(z+'</tbody></table></div>'.length)}
-  else if(h.includes(e0))h=h.replace(e0,qlTable(Q));
+  const t0='<div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>รายการ</th>',e0='<p class="empty">ยังไม่มีรายการ ดึงจาก PENUM MEP หรือนำเข้าจากไฟล์</p>';
+  // 4.21 the extras, the discount and the totals follow the last line, under the add bar (user: "เอามาต่อหัวข้อสุดท้าย")
+  const cut=k=>{const i=h.indexOf(`<!--${k}-->`),j=h.indexOf(`<!--/${k}-->`);if(i<0||j<i)return '';const x=h.slice(i,j+k.length+8);h=h.slice(0,i)+h.slice(j+k.length+8);return x};
+  const ad=cut('qadds'),ds=cut('qdisc'),sm=cut('qsum'),end=`<div class="ql-end">${ad}${Q.eqSep?'':ds.replace('<label>','<label class="ql-disc">')}${sm}</div>`;
+  const a=h.indexOf(t0);if(a>=0){const z=h.indexOf('</tbody></table></div>',a);if(z>0)h=h.slice(0,a)+qlTable(Q)+end+h.slice(z+'</tbody></table></div>'.length)}
+  else if(h.includes(e0))h=h.replace(e0,qlTable(Q)+end);
   return h}}
 // 4.15 "Hanger Support and Accessory" at the end of every section of a draft quote (user: "อยากให้เพิ่มหัวข้อนี้ไว้ทุกงาน ถ้าไม่เอาให้ติ๊กออกได้").
 // One Lot line per section (i.hs), priced at Q.hsp[g] % (default QL_HS_P) of the section's material and labour without the
@@ -162,6 +165,8 @@ document.head.insertAdjacentHTML('beforeend',`<style>.ql-t td input{width:100%;m
 .ql-eq{display:flex;gap:10px 18px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:10px 14px;border:1px solid rgba(28,143,155,.35);border-radius:12px;background:rgba(28,143,155,.07)}
 .ql-eq label{display:flex;flex-direction:row;gap:8px;align-items:center;margin:0;cursor:pointer}.ql-eq input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;width:18px;height:18px;margin:0;accent-color:var(--accent,#1C8F9B)}
 .ql-eq select{width:auto;max-width:280px}.ql-eq small{opacity:.75;flex-basis:100%}
+.ql-end{margin-top:12px;display:flex;flex-direction:column;gap:12px}.ql-end .qadds{background:var(--surface)}.ql-end dl.stats{margin:0!important}.ql-end .qm-split{margin:0!important}
+.ql-disc{display:flex;align-items:center;gap:10px;justify-content:flex-end;font-weight:600;font-size:13.5px}.ql-disc input{width:180px;text-align:right}
 .ql-add select{max-width:230px}.ql-add #qlName{flex:1;min-width:240px}.ql-add .hint{flex-basis:100%}</style>`);
 if(typeof SBKW==='object')SBKW['co.sales.quote']=(SBKW['co.sales.quote']||'')+' เพิ่มรายการ สินค้า พิมพ์รายการเอง คลังราคา';
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ทุกระบบ':'All systems','ชื่อลูกค้า (อังกฤษ)':'Customer name (English)','ที่อยู่ (อังกฤษ)':'Address (English)','+ เพิ่มรายการ':'+ Add line','เครื่อง':'Equip.','ค่าเครื่อง':'Equipment','เลื่อนขึ้น':'Move up','เลื่อนลง':'Move down','ค่าของ/หน่วย':'Material/unit','ค่าแรง/หน่วย':'Labour/unit','ราคาเสนอ/หน่วย':'Price/unit','วัสดุก่อสร้างทั่วไป':'General building materials','งานระบบแจ้งเหตุเพลิงไหม้':'Fire alarm system','งานระบบสื่อสาร':'Communication system','งานระบบกล้องวงจรปิด (CCTV)':'CCTV system','งานระบบควบคุมการเข้า-ออก':'Access control system','งานระบบเสียงประกาศ':'Public address system','งานระบบควบคุมอาคารอัตโนมัติ (BMS)':'Building management system (BMS)','งานระบบป้องกันฟ้าผ่าและสายดิน':'Lightning protection & earthing','งานเครื่องกำเนิดไฟฟ้าและ UPS':'Generator & UPS','งานระบบโซลาร์เซลล์':'Solar PV system','งานระบบบำบัดน้ำเสีย':'Wastewater treatment','งานระบบก๊าซทางการแพทย์':'Medical gas system'});

@@ -176,13 +176,15 @@ function qmParts(Q){const E=[],V=[],r2=v=>Math.round(v*100)/100,EN=qmLang(Q)==='
   // by their size. The discount is then shared by each part's total with its extras.
   const A=mk(E,'eq'),B=mk(V,'svc'),bs=P=>qCalc(Object.assign({},P,{adds:[],disc:0})).base,bA=bs(A),bB=bs(B),wb=bA+bB>0?bA/(bA+bB):0.5,
     part=(a,f)=>n(a.pct)?a:Object.assign({},a,{amt:r2(n(a.amt)*f)});
-  A.adds=(Q.adds||[]).filter(a=>a.eqIn).map(a=>part(a,wb));B.adds=(Q.adds||[]).map(a=>a.eqIn?part(a,1-wb):a);
+  A.adds=qAddsOn(Q).filter(a=>a.eqIn).map(a=>part(a,wb));B.adds=qAddsOn(Q).map(a=>a.eqIn?part(a,1-wb):a);
   const sA=qCalc(Object.assign({},A,{disc:0})).sub,sB=qCalc(Object.assign({},B,{disc:0})).sub,w=sA+sB>0?sA/(sA+sB):0.5;
-  A.disc=r2(n(Q.disc)*w);B.disc=r2(n(Q.disc)*(1-w));return [A,B]}
+  if(qmDiscSplit(Q)){A.disc=n(Q.discE);B.disc=n(Q.discS)}else{A.disc=r2(n(Q.disc)*w);B.disc=r2(n(Q.disc)*(1-w))}return [A,B]}
+// 4.21 a discount typed per part (Q.discE / Q.discS); Q.disc keeps their sum for everything else
+const qmDiscSplit=Q=>!!Q&&(Q.discE!=null&&Q.discE!==''||Q.discS!=null&&Q.discS!=='');
 // the quotation's own totals follow: an extra that is not คิดรวมค่าเครื่อง is a % of everything but the equipment
-{const f=qCalc;qCalc=function(Q){const c=f.apply(this,arguments);if(!Q||Q._part||!Q.eqSep||qmMa(Q)||!(Q.adds||[]).some(a=>!a.eqIn&&(n(a.pct)||n(a.amt))))return c;
+{const f=qCalc;qCalc=function(Q){const c=f.apply(this,arguments);if(!Q||Q._part||!Q.eqSep||qmMa(Q)||!qAddsOn(Q).some(a=>!a.eqIn&&(n(a.pct)||n(a.amt))))return c;
   const P=qmParts(Q);if(!P)return c;const a=f(P[0]),b=f(P[1]),sub=a.sub+b.sub,net=sub-c.disc,vat=net*7/100,v=id=>[...a.adds,...b.adds].filter(x=>x.id===id).reduce((s,x)=>s+x.v,0);
-  return Object.assign({},c,{sub,net,vat,grand:net+vat,adds:(Q.adds||[]).map(x=>Object.assign({},x,{v:v(x.id)}))})}}
+  return Object.assign({},c,{sub,net,vat,grand:net+vat,adds:qAddsOn(Q).map(x=>Object.assign({},x,{v:v(x.id)}))})}}
 {const f=qmPrint;qmPrint=function(Q,bq){const P=qmTwo(Q)&&!Q._part&&qmParts(Q);if(!P)return f.apply(this,arguments);
   return f(P[0],bq)+'<div style="page-break-before:always"></div>'+f(P[1],bq)}}
 PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const f=qForm(Q);
@@ -196,7 +198,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const dt=s=>{if(!okD(s))return '';const d=pd(s);return EN?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)};
   const cu=C.customers.find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'',cuA=EN&&cu.addrEn||cu.addr||'',biE=(th,en)=>L==='bi'&&en&&en!==th?`<i class="en">${esc(en)}</i>`:'',st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
   const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={e:0,m:0,l:0,t:0};order.push(i.g)}const g=G[i.g],e=eqs&&qmIsEq(i);g.e+=e?x.mt:0;g.m+=e?0:x.mt;g.l+=x.lt;g.t+=x.t});
-  const T=order.reduce((a,k)=>({e:a.e+G[k].e,m:a.m+G[k].m,l:a.l+G[k].l,t:a.t+G[k].t}),{e:0,m:0,l:0,t:0}),mk=sep&&Math.abs(c.lines-T.t)>0.005?c.lines-T.t:0,A=c.adds.filter(a=>a.v||a.name);
+  const T=order.reduce((a,k)=>({e:a.e+G[k].e,m:a.m+G[k].m,l:a.l+G[k].l,t:a.t+G[k].t}),{e:0,m:0,l:0,t:0}),mk=sep&&Math.abs(c.lines-T.t)>0.005?c.lines-T.t:0,A=c.adds.filter(a=>a.v);
   const M=v=>Math.abs(v)<0.005?'<span class="dash">–</span>':fmt(v,2);
   const ttl=ma?t('ใบเสนอราคาบริการบำรุงรักษา','Maintenance Service Quotation'):t('ใบเสนอราคา','Quotation');
   // ---- header: colour bar, logo, company; title band and the number box
@@ -333,8 +335,9 @@ function qmScope(Q,t,tx){if(typeof pmGuess!=='function'||typeof pmSysGet!=='func
   const xl=Q.look==='xl',f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
   const opts=`<label>ประเภทใบเสนอราคา${sel('kind',QM_KIND,Q.kind)}</label><label>หน้าตาเอกสาร${sel('look',QM_LOOK,Q.look)}</label><label>ภาษาในเอกสาร${sel('lang',QM_LANG,Q.lang)}</label>
     <label class="chk" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="${b}.one"${Q.one?' checked':''}${xl||qmMa(Q)?' disabled':''}> ใบสั้น: รายการทั้งหมดอยู่หน้าเดียวกับยอดรวมและลายเซ็น (ไม่แยกแผ่น BOQ)</label>
-    ${fixed&&!xl?'<small class="hint" style="flex-basis:100%;margin:0">BOQ-G (ปร.4) และ BOQ-E พิมพ์แบบ Excel เดิมเสมอ เพราะรูปแบบกำหนดไว้แล้ว</small>':''}${xl?'<small class="hint" style="flex-basis:100%;margin:0">แบบ Excel เดิมพิมพ์ภาษาไทยตามต้นฉบับ ภาษาและใบสั้นใช้กับแบบ ORIEN Modern</small>':''}`;
-  h=h.replace(`<label>แบบฟอร์ม BOQ ที่พิมพ์`,opts+`<label>แบบฟอร์ม BOQ ที่พิมพ์`);
+    ${fixed&&!xl?'<small class="hint" style="flex-basis:100%;grid-column:1/-1;margin:0">BOQ-G (ปร.4) และ BOQ-E พิมพ์แบบ Excel เดิมเสมอ เพราะรูปแบบกำหนดไว้แล้ว</small>':''}${xl?'<small class="hint" style="flex-basis:100%;grid-column:1/-1;margin:0">แบบ Excel เดิมพิมพ์ภาษาไทยตามต้นฉบับ ภาษาและใบสั้นใช้กับแบบ ORIEN Modern</small>':''}`;
+  const cut=opts.indexOf('<label class="chk"');h=h.replace(`<label>แบบฟอร์ม BOQ ที่พิมพ์`,opts.slice(0,cut)+`<label>แบบฟอร์ม BOQ ที่พิมพ์`);
+  h=h.includes('<!--qopts-->')?h.replace('<!--qopts-->',opts.slice(cut)):h.replace(`<label>แบบฟอร์ม BOQ ที่พิมพ์`,opts.slice(cut)+`<label>แบบฟอร์ม BOQ ที่พิมพ์`);
   if(qmMa(Q)){h=h.replace(/(<button type="button" class="btn sm pri" data-a=")(?:qWonDlg|qWon)(" data-id="[^"]+">)[^<]*(<\/button>)/,(_,a,c,d)=>`${a}qmaWon${c}${Q.svc&&C.svc.some(s=>s.id===Q.svc)?'เปิดสัญญาบริการ':'ได้งาน → สร้างสัญญาบริการ'}${d}`);
     const card=qmaCard(Q,b),i=h.indexOf('<dl class="stats" style="margin-bottom:12px">');h=i<0?h+card:h.slice(0,i)+card+h.slice(i)}
   return h}}
@@ -427,4 +430,29 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.eqSep$/);if(!m||!v)retu
 // a claim on an งวด with its own withholding rate deducts that rate
 {const f=billCalc;billCalc=function(b){const c=f.apply(this,arguments);if(!b||(b.kind||'prog')!=='prog'||P.info.billMode!=='pct')return c;const it=(P.inst||[]).find(x=>x.id===b.inst);
   if(!it||it.wp===undefined||it.wp==='')return c;const wht=c.base*n(it.wp)/100;return Object.assign({},c,{wht,net:c.net+c.wht-wht})}}
+
+// 4.21 the price cards by part (user: "ควรแยกด้วยไหม ใส่ส่วนลดไม่ถูกเลย"): with แยกค่าเครื่อง on, a table under the four cards shows
+// ค่าเครื่อง and ค่าติดตั้ง each with its cost, price before discount, discount, net price, margin and total with VAT. The discount
+// is typed per part, or the net price wanted, and the discount is worked back from it. A discount typed in the whole-quote box
+// goes back to sharing in proportion.
+function qmSplitCard(Q){const P=qmParts(Q);if(!P)return '';const r2=v=>Math.round(v*100)/100;
+  const row=(k,X,lab)=>{const z=qCalc(Object.assign({},X,{disc:0})),d=n(X.disc),net=z.sub-d,cost=z.cost,g=net-cost,pc=net?g*100/net:0;
+    return `<tr><th>${lab}</th><td class="r">${fmt(cost,2)}</td><td class="r">${fmt(z.sub,2)}</td>
+      <td><input class="r qmDisc" inputmode="decimal" data-id="${Q.id}" data-k="${k}" data-f="d" data-sub="${r2(z.sub)}" value="${d?r2(d):''}" placeholder="0" aria-label="ส่วนลด${lab}"></td>
+      <td><input class="r qmDisc" inputmode="decimal" data-id="${Q.id}" data-k="${k}" data-f="t" data-sub="${r2(z.sub)}" value="${fmt(net,2)}" aria-label="ราคาหลังส่วนลด${lab}"></td>
+      <td class="r" style="color:${g>=0?'var(--good)':'var(--danger)'}">${fmt(g,2)} <small>${fmt(pc,1)}%</small></td><td class="r">${fmt(net*1.07,2)}</td></tr>`};
+  const c=qCalc(Q),g=c.net-c.cost;
+  return `<div class="tw qm-split" style="margin:-4px 0 12px"><table><thead><tr><th>แยกค่าเครื่อง</th><th class="r">ต้นทุน (ของ+แรง)</th><th class="r">ราคาก่อนส่วนลด</th><th class="r">ส่วนลด (บาท)</th><th class="r">ราคาหลังส่วนลด (ไม่รวม VAT)</th><th class="r">กำไรขั้นต้น</th><th class="r">รวม VAT 7%</th></tr></thead>
+    <tbody>${row('E',P[0],'ค่าเครื่อง (สินค้า)')}${row('S',P[1],'ค่าติดตั้ง วัสดุ และค่าแรง')}
+    <tr class="tot"><th>รวม</th><td class="r">${fmt(c.cost,2)}</td><td class="r">${fmt(c.sub,2)}</td><td class="r">${fmt(c.disc,2)}</td><td class="r">${fmt(c.net,2)}</td><td class="r">${fmt(g,2)} <small>${c.net?fmt(g*100/c.net,1)+'%':''}</small></td><td class="r">${fmt(c.grand,2)}</td></tr></tbody></table>
+    <p class="hint" style="margin:4px 0 0">ใส่ส่วนลดของแต่ละส่วน หรือพิมพ์ราคาหลังส่วนลดที่ต้องการ แล้วโปรแกรมคิดส่วนลดให้${qmDiscSplit(Q)?'':' · ตอนนี้ส่วนลดรวมแบ่งตามสัดส่วนของแต่ละส่วน'}</p></div>
+    <style>.qm-split td input{width:100%;min-width:90px}.qm-split tr.tot th,.qm-split tr.tot td{font-weight:700;border-top:2px solid var(--line)}.qm-split th:first-child{white-space:nowrap}</style>`}
+{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes[C.quotes.length-1];
+  if(!Q||!Q.eqSep||qmMa(Q))return h;const k=h.indexOf('<dl class="stats" style="margin-bottom:12px">'),e=k<0?-1:h.indexOf('</dl>',k);if(e<0)return h;
+  return h.slice(0,e+5)+qmSplitCard(Q)+h.slice(e+5)}}
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('qmDisc'))return;const Q=CO().quotes.find(q=>q.id===t.dataset.id);if(!Q)return;
+  const P=qmParts(Q);if(!P)return;const r2=v=>Math.round(v*100)/100,raw=String(t.value).replace(/,/g,'').trim(),v=raw===''?0:n(raw);
+  if(!qmDiscSplit(Q)){Q.discE=r2(n(P[0].disc));Q.discS=r2(n(P[1].disc))}
+  const d=t.dataset.f==='t'?r2(n(t.dataset.sub)-v):r2(v);Q['disc'+t.dataset.k]=d;Q.disc=r2(n(Q.discE)+n(Q.discS));save();render()});
+HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.disc$/);if(!m)return;const Q=CO().quotes.find(q=>q.id===m[1]);if(Q){delete Q.discE;delete Q.discS}});
 
