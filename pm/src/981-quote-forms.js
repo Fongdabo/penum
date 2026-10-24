@@ -157,7 +157,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
   const dt=s=>{if(!okD(s))return '';const d=pd(s);return EN?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)};
-  const cu=C.customers.find(x=>x.id===Q.cust)||{},st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
+  const cu=C.customers.find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'',cuA=EN&&cu.addrEn||cu.addr||'',biE=(th,en)=>L==='bi'&&en&&en!==th?`<i class="en">${esc(en)}</i>`:'',st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
   const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={m:0,l:0,t:0};order.push(i.g)}const g=G[i.g];g.m+=x.mt;g.l+=x.lt;g.t+=x.t});
   const T=order.reduce((a,k)=>({m:a.m+G[k].m,l:a.l+G[k].l,t:a.t+G[k].t}),{m:0,l:0,t:0}),mk=sep&&Math.abs(c.lines-T.t)>0.005?c.lines-T.t:0,A=c.adds.filter(a=>a.v||a.name);
   const M=v=>Math.abs(v)<0.005?'<span class="dash">–</span>':fmt(v,2);
@@ -166,7 +166,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const co=`<div class="qm-bar"></div><div class="qm-h"><div>${C.logo?`<img src="${C.logo}" alt="">`:`<span class="nm">${esc(C.name||'')}</span>`}</div>
     <div class="qm-co"><b>${esc(EN&&C.nameEn||C.name||'')}</b>${!EN&&C.nameEn?esc(C.nameEn)+'<br>':''}${esc(EN&&C.addrEn||C.addr||'')}${C.addr||C.addrEn?'<br>':''}${[C.phone?tx('โทร ','Tel. ')+esc(C.phone):'',esc(C.email||'')].filter(Boolean).join(' · ')}
     ${C.tax?`<br>${tx('เลขประจำตัวผู้เสียภาษี ','Tax ID ')}${esc(C.tax)}${C.branch?' ('+esc(C.branch)+')':''}`:''}</div></div>`;
-  const sub=ma?[Q.title,cu.name].filter(Boolean).join(' · '):[Q.title,Q.pname].filter(Boolean).join(' · ');
+  const sub=ma?[Q.title,cuN].filter(Boolean).join(' · '):[Q.title,Q.pname].filter(Boolean).join(' · ');
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),
     ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact',1),esc([st.phone,st.email].filter(Boolean).join(' · '))]]:[])];
@@ -174,7 +174,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`;
   const kv=(k,v,cl)=>v?`<div><span>${k}</span><b${cl?` class="${cl}"`:''}>${v}</b></div>`:'';
   const attn=Q.attn||cu.contact||'';
-  const cards=`<div class="qm-2"><div class="qm-c"><h3>${t('ลูกค้า','Customer')}</h3>${kv(t('ชื่อ','Name',1),esc(cu.name||''),'big')}${kv(t('เรียน','Attn.',1),esc(attn))}${kv(t('ที่อยู่','Address',1),esc(cu.addr||''))}
+  const cards=`<div class="qm-2"><div class="qm-c"><h3>${t('ลูกค้า','Customer')}</h3>${kv(t('ชื่อ','Name',1),cuN?esc(cuN)+biE(cuN,cu.nameEn):'','big')}${kv(t('เรียน','Attn.',1),esc(attn))}${kv(t('ที่อยู่','Address',1),cuA?esc(cuA)+biE(cuA,cu.addrEn):'')}
       ${kv(t('เลขผู้เสียภาษี','Tax ID',1),esc(cu.tax||''))}${kv(t('โทร','Tel.',1),esc([cu.phone,cu.email].filter(Boolean).join(' · ')))}</div>
     ${ma?qmMaCard(Q,t,dt,kv):`<div class="qm-c"><h3>${t('โครงการ','Project')}</h3>${kv(t('โครงการ','Project',1),esc(Q.pname||''),'big')}${kv(t('งาน','Work',1),esc(Q.title||''))}${kv(t('สถานที่','Site',1),esc(Q.site||''))}${kv(t('แล้วเสร็จ','Completion',1),esc(Q.dlv||''))}</div>`}</div>`;
   const what=esc(Q.title||''),pj=esc(Q.pname||'');
@@ -236,7 +236,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   // ---- pages
   if(ma)return QM_CSS+`<div class="qm"${dn}>${head}${cards}${intro}${qmMaTable(Q,t,tx,M)}${qmPlan(Q,t,tx)}${foot}${qmScope(Q,t,tx)}${signs}</div>${ofoot}`;
   let p1;
-  if(lt){const to=`<div class="to"><span>${t('เรื่อง','Subject',1)}</span><b>${tx('เสนอราคา','Quotation for ')}${what}</b>${pj?`<span>${t('โครงการ','Project',1)}</span><div>${pj}</div>`:''}<span>${t('เรียน','Attn.',1)}</span><div>${esc([attn,cu.name].filter(Boolean).join(' · '))}</div>${one||S0?'':`<span>${t('สิ่งที่ส่งมาด้วย','Enclosure',1)}</span><div>${tx('บัญชีแสดงปริมาณงานและราคา (BOQ)','Bill of Quantities (BOQ)')}</div>`}</div>`;
+  if(lt){const to=`<div class="to"><span>${t('เรื่อง','Subject',1)}</span><b>${tx('เสนอราคา','Quotation for ')}${what}</b>${pj?`<span>${t('โครงการ','Project',1)}</span><div>${pj}</div>`:''}<span>${t('เรียน','Attn.',1)}</span><div>${esc([attn,cuN].filter(Boolean).join(' · '))}</div>${one||S0?'':`<span>${t('สิ่งที่ส่งมาด้วย','Enclosure',1)}</span><div>${tx('บัญชีแสดงปริมาณงานและราคา (BOQ)','Bill of Quantities (BOQ)')}</div>`}</div>`;
     const close=L!=='en'?'จึงเรียนมาเพื่อโปรดพิจารณา บริษัทฯ หวังเป็นอย่างยิ่งว่าจะได้รับความไว้วางใจจากท่านในเร็ววันนี้':'We look forward to the opportunity of working with you.';
     p1=`${head}<div class="qm-lt">${to}${intro}${one||S0?detail(false):summary()}${foot}<p>${close}</p><div class="sg1">${t('ขอแสดงความนับถือ','Yours faithfully')}<div class="ln"></div>(${esc(Q.signName||Q.by||'')})<br>${esc(Q.signPos||st.role||'')}</div></div>`}
   else p1=`${head}${cards}${intro}${one||S0?detail(false):summary()}${foot}${signs}`;
