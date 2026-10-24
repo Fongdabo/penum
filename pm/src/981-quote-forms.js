@@ -227,7 +227,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
   // the part the customer withholds 3% on, in proportion to the amount before VAT (after markup, extras and discount)
   const wb=eqs&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,wy=wb==null?0:c.net*wb/T.t,ww=wy*3/100;
-  const wht=wb==null?'':`<div class="qm-tot qm-wh">${tr(t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
+  const wht=wb==null?'':`<div class="qm-tot qm-wh">${tr(Q.whtB==='l'?t('ค่าเครื่องและค่าวัสดุ (ไม่หัก ณ ที่จ่าย)','Equipment &amp; material (no withholding tax)',1):t('ค่าเครื่อง (ไม่หัก ณ ที่จ่าย)','Equipment (no withholding tax)',1),fmt(c.net-wy,2))}${tr(Q.whtB==='l'?t('ค่าแรง (หัก ณ ที่จ่าย 3%)','Labour (3% withholding)',1):t('ค่าวัสดุและค่าแรง (หัก ณ ที่จ่าย 3%)','Material &amp; labour (3% withholding)',1),fmt(wy,2))}
     ${tr(t('หักภาษี ณ ที่จ่าย 3% (โดยประมาณ)','Withholding tax 3% (approx.)',1),'-'+fmt(ww,2),'d')}${tr(t('ยอดรับสุทธิหลังหัก ณ ที่จ่าย','Net after withholding tax',1),fmt(c.grand-ww,2),'nt')}</div>`;
   const words=`<div class="qm-wd"><span>${t('จำนวนเงินตัวอักษร','Amount in words',1)}</span>${L!=='en'?`<b>(${esc(bahtText(c.grand))})</b>`:''}${L!=='th'?`<b style="display:block${L==='bi'?';font-weight:400;font-size:9.5px;color:#4A5D66':''}">${qmWords(c.grand)}</b>`:''}</div>`;
   const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
@@ -290,8 +290,6 @@ function qmScope(Q,t,tx){if(typeof pmGuess!=='function'||typeof pmSysGet!=='func
   const xl=Q.look==='xl',f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
   const opts=`<label>ประเภทใบเสนอราคา${sel('kind',QM_KIND,Q.kind)}</label><label>หน้าตาเอกสาร${sel('look',QM_LOOK,Q.look)}</label><label>ภาษาในเอกสาร${sel('lang',QM_LANG,Q.lang)}</label>
     <label class="chk" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="${b}.one"${Q.one?' checked':''}${xl||qmMa(Q)?' disabled':''}> ใบสั้น: รายการทั้งหมดอยู่หน้าเดียวกับยอดรวมและลายเซ็น (ไม่แยกแผ่น BOQ)</label>
-    <label class="chk" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="${b}.eqSep"${Q.eqSep?' checked':''}${xl||qmMa(Q)||fixed?' disabled':''}> แยกค่าเครื่อง: พิมพ์ ค่าเครื่อง / ค่าวัสดุ / ค่าแรง แยกกัน (ติ๊กว่ารายการไหนเป็นเครื่องได้ในตารางรายการ)</label>
-    ${Q.eqSep&&!xl?`<label>หัก ณ ที่จ่าย 3% คิดจาก${sel('whtB',QM_WHT,Q.whtB)}</label>`:''}
     ${fixed&&!xl?'<small class="hint" style="flex-basis:100%;margin:0">BOQ-G (ปร.4) และ BOQ-E พิมพ์แบบ Excel เดิมเสมอ เพราะรูปแบบกำหนดไว้แล้ว</small>':''}${xl?'<small class="hint" style="flex-basis:100%;margin:0">แบบ Excel เดิมพิมพ์ภาษาไทยตามต้นฉบับ ภาษาและใบสั้นใช้กับแบบ ORIEN Modern</small>':''}`;
   h=h.replace(`<label>แบบฟอร์ม BOQ ที่พิมพ์`,opts+`<label>แบบฟอร์ม BOQ ที่พิมพ์`);
   if(qmMa(Q)){h=h.replace(/(<button type="button" class="btn sm pri" data-a=")(?:qWonDlg|qWon)(" data-id="[^"]+">)[^<]*(<\/button>)/,(_,a,c,d)=>`${a}qmaWon${c}${Q.svc&&C.svc.some(s=>s.id===Q.svc)?'เปิดสัญญาบริการ':'ได้งาน → สร้างสัญญาบริการ'}${d}`);
