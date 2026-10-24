@@ -6,13 +6,49 @@
    quantity or the costs keeps i.t = quantity × cost per unit. Service (PM/MA) quotes keep their own card (981). */
 const QL_G=()=>[...Object.entries(BOQ_G),['mat','วัสดุก่อสร้างทั่วไป']];
 const qlLab=x=>[x.name,x.br].filter(Boolean).join(' · ');
-// what can be picked: the price library (or MEP's sample rates while it is empty), then lines sold on earlier quotations
+// 4.3 sample products with assumed prices (material, labour per unit, excl. VAT) for the sections MEP has no rates for; ORIEN
+// should replace them with real prices. They also go into the price library with "ราคาตัวอย่าง".
+const QL_SEED=[
+ ['cctv','กล้อง IP Dome 2MP','ตัว',1800,350],['cctv','กล้อง IP Bullet 4MP','ตัว',2900,400],['cctv','กล้อง IP PTZ 4MP','ตัว',18500,1500],['cctv','เครื่องบันทึก NVR 8 ช่อง','เครื่อง',4800,800],
+ ['cctv','เครื่องบันทึก NVR 16 ช่อง','เครื่อง',8500,1000],['cctv','เครื่องบันทึก NVR 32 ช่อง','เครื่อง',18000,1500],['cctv','ฮาร์ดดิสก์สำหรับกล้อง 4TB','ลูก',3600,100],['cctv','ฮาร์ดดิสก์สำหรับกล้อง 8TB','ลูก',7200,100],
+ ['cctv','PoE Switch 8 พอร์ต','ตัว',2900,300],['cctv','PoE Switch 16 พอร์ต','ตัว',6500,400],['cctv','จอแสดงผล 32 นิ้ว','เครื่อง',5500,500],['cctv','สาย LAN CAT6 (กล้อง)','ม.',16,12],['cctv','ท่อ EMT / ท่อร้อยสายกล้อง','ม.',35,40],
+ ['cctv','ตู้ Rack 9U','ตู้',3500,800],['cctv','UPS 1 kVA','เครื่อง',3200,300],['cctv','ตั้งค่าระบบและดูผ่านมือถือ','ระบบ',0,3500],
+ ['fa','ตู้ควบคุมแจ้งเหตุเพลิงไหม้ Conventional 4 โซน','ตู้',18000,3000],['fa','ตู้ควบคุมแจ้งเหตุเพลิงไหม้ Addressable 1 Loop','ตู้',85000,8000],['fa','อุปกรณ์ตรวจจับควัน (Smoke Detector)','ตัว',650,250],
+ ['fa','อุปกรณ์ตรวจจับความร้อน (Heat Detector)','ตัว',550,250],['fa','อุปกรณ์แจ้งเหตุด้วยมือ (Manual Station)','ตัว',900,250],['fa','กระดิ่งแจ้งเหตุ (Fire Bell)','ตัว',1100,300],['fa','เสียงและแสงแจ้งเหตุ (Horn/Strobe)','ตัว',1800,300],
+ ['fa','สายทนไฟ FRC 2C × 1.5 sq.mm','ม.',38,25],['fa','แบตเตอรี่สำรองตู้แจ้งเหตุ 12V 7Ah','ลูก',650,50],
+ ['com','จุดเต้ารับ LAN CAT6 (Outlet)','จุด',450,350],['com','สาย LAN CAT6','ม.',16,12],['com','Patch Panel 24 พอร์ต CAT6','ชุด',2800,800],['com','Switch 24 พอร์ต Gigabit','ตัว',5500,500],
+ ['com','จุดกระจายสัญญาณ Wi-Fi (Access Point)','ตัว',3900,600],['com','ตู้ Rack 27U','ตู้',12000,1500],['com','สายใยแก้วนำแสง (Fiber Optic) 6 Core','ม.',28,20],['com','จุดเต้ารับโทรศัพท์','จุด',250,250],
+ ['com','จุดเต้ารับทีวี (MATV Outlet)','จุด',300,300],['com','เครื่องขยายสัญญาณทีวี (MATV Amplifier)','ชุด',6500,1500],['com','สายนำสัญญาณ RG6','ม.',12,10],
+ ['acc','เครื่องสแกนใบหน้า / ลายนิ้วมือ','เครื่อง',6500,800],['acc','เครื่องอ่านบัตร (Key Card Reader)','เครื่อง',2500,500],['acc','กลอนแม่เหล็กไฟฟ้า (Magnetic Lock) 600 lbs','ชุด',2200,800],
+ ['acc','สวิตช์ออก (Exit Switch)','ตัว',350,200],['acc','ชุดควบคุมประตู (Door Controller)','ชุด',4500,800],['acc','บัตร Key Card','ใบ',25,0],['acc','ประตูหมุน (Turnstile)','ชุด',65000,8000],
+ ['pa','เครื่องขยายเสียงพร้อมมิกเซอร์ 240W','เครื่อง',9500,1000],['pa','ลำโพงฝังฝ้า 6 นิ้ว','ตัว',650,250],['pa','ลำโพงฮอร์น 30W','ตัว',1200,350],['pa','ไมโครโฟนประกาศ (Paging Microphone)','ตัว',3500,300],['pa','สายลำโพง 2 × 1.5 sq.mm','ม.',15,12],
+ ['bms','ชุดควบคุม DDC Controller','ชุด',35000,5000],['bms','เซนเซอร์อุณหภูมิและความชื้น','ตัว',3500,600],['bms','ซอฟต์แวร์และคอมพิวเตอร์ควบคุม BMS','ระบบ',150000,20000],['bms','ตั้งโปรแกรมและทดสอบระบบ BMS','จุด',0,800],
+ ['lp','หัวล่อฟ้า ESE','ชุด',38000,6000],['lp','เสาล่อฟ้าพร้อมขาจับ','ชุด',6500,2500],['lp','สายตัวนำลงดิน ทองแดงเปลือย 50 sq.mm','ม.',320,80],['lp','หลักดินทองแดง 5/8" × 10 ฟุต','ต้น',650,350],
+ ['lp','กล่องทดสอบค่าความต้านทานดิน (Test Box)','ชุด',1500,300],['lp','วัดค่าความต้านทานดินพร้อมรายงาน','ครั้ง',0,3500],
+ ['genr','เครื่องกำเนิดไฟฟ้าดีเซล 100 kVA พร้อมตู้เก็บเสียง','ชุด',650000,35000],['genr','ตู้สลับไฟอัตโนมัติ (ATS) 200A','ตู้',85000,8000],['genr','UPS 10 kVA','เครื่อง',95000,5000],['genr','UPS 3 kVA','เครื่อง',22000,2000],
+ ['sol','แผงโซลาร์เซลล์ 550W','แผง',3200,600],['sol','อินเวอร์เตอร์ On-Grid 10 kW','เครื่อง',48000,5000],['sol','โครงยึดแผงบนหลังคา','kWp',2500,1500],['sol','สายไฟ DC และอุปกรณ์ป้องกัน','kWp',1800,800],['sol','ขออนุญาตขนานไฟกับการไฟฟ้า','งาน',0,15000],
+ ['wwt','ถังบำบัดน้ำเสียสำเร็จรูป 1,600 ลิตร','ถัง',12000,4000],['wwt','ถังบำบัดน้ำเสียสำเร็จรูป 3,000 ลิตร','ถัง',22000,6000],['wwt','ปั๊มจุ่มน้ำเสีย 0.75 kW','ตัว',9500,2000],['wwt','เครื่องเติมอากาศ (Air Blower)','เครื่อง',8500,1500],
+ ['mg','จุดจ่ายก๊าซออกซิเจน (Outlet O2)','จุด',6500,1500],['mg','จุดสุญญากาศ (Vacuum Outlet)','จุด',6500,1500],['mg','จุดจ่ายอากาศอัด (Medical Air Outlet)','จุด',6500,1500],['mg','ตู้วาล์วควบคุมโซน (Zone Valve Box)','ชุด',28000,4000],
+ ['mg','สัญญาณเตือนแรงดันก๊าซ (Area Alarm)','ชุด',35000,3000],['mg','ท่อทองแดงทางการแพทย์ 1/2"','ม.',380,250]];
+const qlSeedRows=()=>QL_SEED.map(([g,name,unit,m,l],k)=>({key:'ql:'+g+k,g,name,unit,m,l}));
+{const f=ACT.plSeed;if(f)ACT.plSeed=()=>{try{plMerge(qlSeedRows(),{src:'ราคาสมมติ (ตัวอย่าง ORIEN)',sk:'demo',keep:1})}catch(e){}return f()}}
+// what can be picked: the price library (or MEP's sample rates while it is empty), sample products not in it yet, then lines sold on
+// earlier quotations; each keeps its section (g) so the list follows the section chosen
 const qlLib=()=>{let L=[];try{L=typeof plCfg==='function'?plCfg():[];if(!L.length&&typeof plSeedRows==='function')L=plSeedRows()}catch(e){L=[]}
-  const seen=new Set(L.map(x=>qlLab(x))),R=L.slice();
-  CO().quotes.slice().reverse().forEach(q=>(q.items||[]).forEach(i=>{const k=String(i.desc||'').trim();if(!k||seen.has(k)||!(n(i.m)+n(i.l)))return;seen.add(k);R.push({name:k,unit:i.unit||'',m:n(i.m),l:n(i.l),past:1})}));return R};
-function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib();let lg=null;
+  const seen=new Set(L.map(x=>qlLab(x))),R=L.slice();qlSeedRows().forEach(x=>{if(!seen.has(x.name)){seen.add(x.name);R.push(Object.assign(x,{seed:1}))}});
+  CO().quotes.slice().reverse().forEach(q=>(q.items||[]).forEach(i=>{const k=String(i.desc||'').trim();if(!k||seen.has(k)||!(n(i.m)+n(i.l)))return;seen.add(k);R.push({name:k,g:i.g,unit:i.unit||'',m:n(i.m),l:n(i.l),past:1})}));return R};
+// one datalist per section (and one with everything); ids by position, since a section key can be any text
+const qlDl=(L,gs)=>{const ix={},o=x=>`<option value="${esc(qlLab(x))}">${esc([x.unit,n(x.m)+n(x.l)?fmt(n(x.m)+n(x.l),2):'',x.seed?'ราคาตัวอย่าง':x.past?'เคยเสนอ':''].filter(Boolean).join(' · '))}</option>`;
+  gs.forEach((g,k)=>ix[g]='qlL'+k);return {id:g=>S.sel.qlAll?'qlLall':ix[g]||'qlLall',html:gs.map(g=>`<datalist id="${ix[g]}">${L.filter(x=>(x.g||'')===g).slice(0,1500).map(o).join('')}</datalist>`).join('')+`<datalist id="qlLall">${L.slice(0,3000).map(o).join('')}</datalist>`,
+    count:g=>S.sel.qlAll?L.length:L.filter(x=>(x.g||'')===g).length}};
+const qlPh=k=>k?`พิมพ์ชื่อสินค้า หรือเลือกจากรายการ${S.sel.qlAll?'ทุกหมวด':'ของหมวดนี้'} (${fmt(k)} รายการ)`:'หมวดนี้ยังไม่มีสินค้าในคลัง พิมพ์ชื่อเองได้ หรือติ๊ก “ค้นทุกหมวด”';
+// the section picker switches the suggestions without redrawing the page
+document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.id!=='qlAll'))return;
+  if(t.id==='qlAll'){S.sel.qlAll=t.checked;render();return}S.sel.qlG=t.value;
+  const o=t.selectedOptions&&t.selectedOptions[0],i=$('#qlName');if(i&&o&&o.dataset.dl){i.setAttribute('list',o.dataset.dl);i.placeholder=qlPh(+o.dataset.n)}});
+function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0]),GA=[...new Set([...G0,...Q.items.map(i=>i.g),...L.map(x=>x.g||'')])],D=qlDl(L,GA);let lg=null;
   const rows=Q.items.map(i=>{const h=i.g!==lg?`<tr class="grp"><td colspan="9">${esc(gName(i.g))}</td></tr>`:'';lg=i.g;const u=qUnit(Q,i),pre=[i.head,i.type].filter(Boolean).join(' · ');
-    return h+`<tr><td style="min-width:240px">${pre?`<small class="muted" style="display:block">${esc(pre)}</small>`:''}<input data-p="${b}.items.${i.id}.desc" value="${esc(i.desc||'')}" list="qlLib" placeholder="ชื่อสินค้า / รายการ" aria-label="รายการ"></td>
+    return h+`<tr><td style="min-width:240px">${pre?`<small class="muted" style="display:block">${esc(pre)}</small>`:''}<input data-p="${b}.items.${i.id}.desc" value="${esc(i.desc||'')}" list="${D.id(i.g)}" placeholder="ชื่อสินค้า / รายการ" aria-label="รายการ"></td>
     <td style="width:86px"><input data-p="${b}.items.${i.id}.unit" value="${esc(i.unit||'')}" aria-label="หน่วย"></td><td style="width:86px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.q" value="${n(i.q)}" aria-label="จำนวน"></td>
     <td style="width:110px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.m" value="${n(i.m)||''}" placeholder="0" aria-label="ค่าของต่อหน่วย"></td><td style="width:100px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.l" value="${n(i.l)||''}" placeholder="0" aria-label="ค่าแรงต่อหน่วย"></td>
     <td style="width:120px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.sp" value="${i.sp||''}" placeholder="${fmt(u,2)}" aria-label="ราคาเสนอต่อหน่วย"></td><td class="r" style="white-space:nowrap">${fmt(n(i.q)*u,2)}</td>
@@ -20,11 +56,11 @@ function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib();let lg=null;
   const gs=QL_G(),last=Q.items.length?Q.items[Q.items.length-1].g:(S.sel.qlG||'eq'),gsel=S.sel.qlG||last;
   return `<div class="tw" style="max-height:620px;overflow:auto"><table class="ql-t"><thead><tr><th>รายการ</th><th>หน่วย</th><th class="r">จำนวน</th><th class="r">ค่าของ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">ราคาเสนอ/หน่วย</th><th class="r">รวม</th><th></th></tr></thead>
     <tbody>${rows||'<tr><td colspan="8" class="empty">ยังไม่มีรายการ พิมพ์หรือเลือกสินค้าในช่องด้านล่าง แล้วกด “+ เพิ่มรายการ”</td></tr>'}</tbody></table></div>
-  <div class="ql-add"><select id="qlG" aria-label="หมวด">${gs.map(([k,l])=>`<option value="${k}"${k===gsel?' selected':''}>${esc(l)}</option>`).join('')}${Q.items.some(i=>!BOQ_G[i.g]&&i.g!=='mat')?[...new Set(Q.items.map(i=>i.g).filter(g=>!BOQ_G[g]&&g!=='mat'))].map(g=>`<option value="${esc(g)}"${g===gsel?' selected':''}>${esc(gName(g))}</option>`).join(''):''}</select>
-    <input id="qlName" list="qlLib" placeholder="พิมพ์ชื่อสินค้า หรือเลือกจากคลังราคา (${fmt(L.length)} รายการ)" aria-label="ชื่อสินค้าหรือรายการ"><input id="qlQ" class="r" inputmode="decimal" value="1" aria-label="จำนวน" style="width:80px">
-    <button type="button" class="btn sm pri" data-a="qlAdd" data-id="${Q.id}">+ เพิ่มรายการ</button>
+  <div class="ql-add"><select id="qlG" aria-label="หมวด">${gs.map(([k,l])=>`<option value="${k}" data-dl="${D.id(k)}" data-n="${D.count(k)}"${k===gsel?' selected':''}>${esc(l)}</option>`).join('')}${Q.items.some(i=>!BOQ_G[i.g]&&i.g!=='mat')?[...new Set(Q.items.map(i=>i.g).filter(g=>!BOQ_G[g]&&g!=='mat'))].map(g=>`<option value="${esc(g)}" data-dl="${D.id(g)}" data-n="${D.count(g)}"${g===gsel?' selected':''}>${esc(gName(g))}</option>`).join(''):''}</select>
+    <input id="qlName" list="${D.id(gsel)}" placeholder="${qlPh(D.count(gsel))}" aria-label="ชื่อสินค้าหรือรายการ"><input id="qlQ" class="r" inputmode="decimal" value="1" aria-label="จำนวน" style="width:80px">
+    <button type="button" class="btn sm pri" data-a="qlAdd" data-id="${Q.id}">+ เพิ่มรายการ</button><label class="chk" style="display:flex;gap:4px;align-items:center;font-size:13px"><input type="checkbox" id="qlAll"${S.sel.qlAll?' checked':''}> ค้นทุกหมวด</label>
     <span class="hint" style="margin:0">ราคาเสนอว่างไว้ = ต้นทุน (ของ+แรง) บวก ${fmt(n(Q.mk),1)}% · ราคาทุนมาจากคลังราคากลางและรายการที่เคยเสนอ (เพิ่มสินค้าในคลังได้ที่ ประมาณราคา › คลังราคากลาง)</span></div>
-  <datalist id="qlLib">${L.slice(0,3000).map(x=>`<option value="${esc(qlLab(x))}">${esc([x.unit,n(x.m)+n(x.l)?fmt(n(x.m)+n(x.l),2):''].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>`}
+  ${D.html}`}
 const qlFind=s=>{const k=String(s||'').trim();if(!k)return null;const L=qlLib();return L.find(x=>qlLab(x)===k)||L.find(x=>x.name===k)||null};
 // keep the line's cost (i.t) = quantity × cost per unit
 const qlCost=i=>{const u=n(i.m)+n(i.l);if(u)i.t=Math.round(n(i.q)*u*100)/100};
@@ -34,7 +70,7 @@ ACT.qlAdd=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;cons
   // a new line goes after the last line of its section, so sections stay together on the printout
   let k=-1;Q.items.forEach((i,j)=>{if(i.g===g)k=j});if(k<0)Q.items.push(it);else Q.items.splice(k+1,0,it);
   S.sel.qlG=g;save();render();setTimeout(()=>{const e=$('#qlName');if(e)e.focus()},30);
-  toast(x?`เพิ่ม “${it.desc}” ราคาทุนจากคลังราคา${it.m+it.l?'':' (ยังไม่มีราคา ใส่ได้ในตาราง)'}`:`เพิ่ม “${it.desc}” แล้ว ใส่หน่วยและราคาในตาราง`)};
+  toast(x?`เพิ่ม “${it.desc}” ${x.seed?'ราคาตัวอย่าง แก้เป็นราคาจริงได้ในตาราง':x.past?'ราคาทุนตามที่เคยเสนอ':'ราคาทุนจากคลังราคา'}${it.m+it.l?'':' (ยังไม่มีราคา ใส่ได้ในตาราง)'}`:`เพิ่ม “${it.desc}” แล้ว ใส่หน่วยและราคาในตาราง`)};
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&(e.target.id==='qlName'||e.target.id==='qlQ')){e.preventDefault();const b=document.querySelector('[data-a="qlAdd"]');if(b)ACT.qlAdd(b)}});
 // cost per unit of a line that has only a total (imported lump sums): remembered when its quantity box gets focus
 document.addEventListener('focusin',e=>{const p=e.target.dataset&&e.target.dataset.p,m=p&&p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.q$/);if(!m)return;
