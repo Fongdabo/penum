@@ -76,14 +76,14 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.
   let o=t.selectedOptions&&t.selectedOptions[0];const i=$('#qlName'),sy=$('#qlS');
   if(t.id==='qlS')S.sel.qlS=t.value;else{S.sel.qlG=t.value;if(sy){sy.style.display=t.value==='eq'?'':'none';if(t.value==='eq')o=sy.selectedOptions[0]}}if(i&&o&&o.dataset.dl){i.setAttribute('list',o.dataset.dl);i.placeholder=qlPh(+o.dataset.n)}});
 function qlTable(Q){const b=`co.quotes.${Q.id}`,L=qlLib(),G0=QL_G().map(x=>x[0]),GA=[...new Set([...G0,...Q.items.map(i=>i.g),...L.map(x=>x.g||'')])],D=qlDl(L,GA);let lg=null;
-  let lh=null;const nb=(k,d)=>{const i=Q.items[k];for(let j=k+d;j>=0&&j<Q.items.length;j+=d){const x=Q.items[j];if(x.g!==i.g||(x.head||'')!==(i.head||''))return -1;return j}return -1},
+  let lh=null;const nb=(k,d)=>{const i=Q.items[k];if(i.hs)return -1;for(let j=k+d;j>=0&&j<Q.items.length;j+=d){const x=Q.items[j];if(x.hs||x.g!==i.g||(x.head||'')!==(i.head||''))return -1;return j}return -1},
     mv=(i,k,d)=>`<button type="button" class="x qlmv" data-a="qlMv" data-id="${Q.id}" data-i="${i.id}" data-d="${d}" aria-label="${d<0?'เลื่อนขึ้น':'เลื่อนลง'}" title="${d<0?'เลื่อนขึ้น':'เลื่อนลง'}"${nb(k,d)<0?' disabled':''}>${d<0?'▲':'▼'}</button>`;
-  const rows=Q.items.map((i,k)=>{const ng=i.g!==lg,h=(ng?`<tr class="grp"><td colspan="9">${esc(gName(i.g))}</td></tr>`:'')+(i.head&&(ng||i.head!==lh)?`<tr class="grp"><td colspan="9" style="padding-left:24px;font-weight:600;opacity:.85">${esc(i.head)}</td></tr>`:'');lg=i.g;lh=i.head||'';const u=qUnit(Q,i),pre=i.type||'';
+  const rows=Q.items.map((i,k)=>{const ng=i.g!==lg,h=(ng?`<tr class="grp"><td colspan="9">${esc(gName(i.g))}${qlHsBox(Q,i.g)}</td></tr>`:'')+(i.head&&(ng||i.head!==lh)?`<tr class="grp"><td colspan="9" style="padding-left:24px;font-weight:600;opacity:.85">${esc(i.head)}</td></tr>`:'');lg=i.g;lh=i.head||'';const u=qUnit(Q,i),pre=i.hs?(i.hsm?'ราคาที่พิมพ์เอง (ลบราคาออก = คิดอัตโนมัติ)':`คิดอัตโนมัติ ${fmtq(qlHsP(Q,i.g))}% ของค่าวัสดุ + ค่าแรงในหมวด (ไม่รวมค่าเครื่อง)`):i.type||'';
     return h+`<tr><td style="min-width:240px">${pre?`<small class="muted" style="display:block">${esc(pre)}</small>`:''}<input data-p="${b}.items.${i.id}.desc" value="${esc(i.desc||'')}" list="${D.id(i.g)}" placeholder="ชื่อสินค้า / รายการ" aria-label="รายการ"></td>
     <td style="width:86px"><input data-p="${b}.items.${i.id}.unit" value="${esc(i.unit||'')}" aria-label="หน่วย"></td><td style="width:86px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.q" value="${n(i.q)}" aria-label="จำนวน"></td>
     <td style="width:110px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.m" value="${n(i.m)||''}" placeholder="0" aria-label="ค่าของต่อหน่วย"></td><td style="width:100px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.l" value="${n(i.l)||''}" placeholder="0" aria-label="ค่าแรงต่อหน่วย"></td>
     <td style="width:120px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.sp" value="${i.sp||''}" placeholder="${fmt(u,2)}" aria-label="ราคาเสนอต่อหน่วย"></td><td class="r" style="white-space:nowrap">${fmt(n(i.q)*u,2)}</td>
-    <td class="c"><input type="checkbox" data-t="chk" data-p="${b}.items.${i.id}.eqp"${typeof qmIsEq==='function'&&qmIsEq(i)?' checked':''} aria-label="ค่าเครื่อง"></td><td style="white-space:nowrap">${mv(i,k,-1)}${mv(i,k,1)}<button type="button" class="x" data-a="delRow" data-c="${b}.items" data-id="${i.id}" aria-label="ลบ">✕</button></td></tr>`}).join('');
+    <td class="c"><input type="checkbox" data-t="chk" data-p="${b}.items.${i.id}.eqp"${typeof qmIsEq==='function'&&qmIsEq(i)?' checked':''} aria-label="ค่าเครื่อง"></td><td style="white-space:nowrap">${i.hs?'':mv(i,k,-1)+mv(i,k,1)}<button type="button" class="x" data-a="delRow" data-c="${b}.items" data-id="${i.id}" aria-label="ลบ">✕</button></td></tr>`}).join('');
   const gs=QL_G(),last=Q.items.length?Q.items[Q.items.length-1].g:(S.sel.qlG||'eq'),gsel=S.sel.qlG||last;
   return `<div class="tw" style="max-height:620px;overflow:auto"><table class="ql-t"><thead><tr><th>รายการ</th><th>หน่วย</th><th class="r">จำนวน</th><th class="r">ค่าของ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">ราคาเสนอ/หน่วย</th><th class="r">รวม</th><th class="c" title="ติ๊ก = ค่าเครื่อง (ไม่โดนหัก ณ ที่จ่าย 3% เมื่อเลือกแยกค่าเครื่องตอนพิมพ์)">เครื่อง</th><th></th></tr></thead>
     <tbody>${rows||'<tr><td colspan="9" class="empty">ยังไม่มีรายการ พิมพ์หรือเลือกสินค้าในช่องด้านล่าง แล้วกด “+ เพิ่มรายการ”</td></tr>'}</tbody></table></div>
@@ -115,14 +115,43 @@ document.addEventListener('focusin',e=>{const p=e.target.dataset&&e.target.datas
 HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(q|m|l|desc)$/);if(!m)return;const Q=CO().quotes.find(q=>q.id===m[1]),i=Q&&Q.items.find(x=>x.id===m[2]);if(!i)return;
   if(m[3]==='desc'){const x=qlFind(v);if(x&&!(n(i.m)+n(i.l))&&!n(i.t)){i.unit=i.unit||x.unit||'';i.m=n(x.m);i.l=n(x.l);qlCost(i)}return}
   if(n(i.m)+n(i.l))qlCost(i);else if(m[3]==='q'&&i._uc){i.t=Math.round(i._uc*n(i.q)*100)/100;delete i._uc}});
-{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];
+{const f=salesQuote;salesQuote=function(){const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(Q&&qlHs(Q))save();let h=f.apply(this,arguments);
   if(!Q||(typeof qmMa==='function'&&qmMa(Q)))return h;
   const a=h.indexOf('<div class="tw" style="max-height:520px;overflow:auto"><table><thead><tr><th>รายการ</th>'),e0='<p class="empty">ยังไม่มีรายการ ดึงจาก PENUM MEP หรือนำเข้าจากไฟล์</p>';
   if(a>=0){const z=h.indexOf('</tbody></table></div>',a);if(z>0)h=h.slice(0,a)+qlTable(Q)+h.slice(z+'</tbody></table></div>'.length)}
   else if(h.includes(e0))h=h.replace(e0,qlTable(Q));
   return h}}
+// 4.15 "Hanger Support and Accessory" at the end of every section of a draft quote (user: "อยากให้เพิ่มหัวข้อนี้ไว้ทุกงาน ถ้าไม่เอาให้ติ๊กออกได้").
+// One Lot line per section (i.hs), priced at Q.hsp[g] % (default QL_HS_P) of the section's material and labour without the
+// equipment, until a price is typed on it (i.hsm). The tick on the section row takes it out (Q.noHs[g]); deleting the line does too.
+// Quotes no longer in draft keep their lines and prices as they are.
+const QL_HS='Hanger Support and Accessory',QL_HS_P=5;
+const qlHsOk=Q=>!!Q&&(!Q.status||Q.status==='draft')&&!(typeof qmMa==='function'&&qmMa(Q));
+const qlHsP=(Q,g)=>{const v=(Q.hsp||{})[g];return v===''||v==null?QL_HS_P:n(v)};
+const qlHs=Q=>{if(!qlHsOk(Q)||!Array.isArray(Q.items))return false;const was=JSON.stringify(Q.items),off=Q.noHs||{},hs={},R=[];
+  Q.items.forEach(i=>{if(i.hs){if(!hs[i.g])hs[i.g]=i}else R.push(i)});
+  const gs=[...new Set(R.map(i=>i.g))];
+  gs.forEach(g=>{if(off[g])return;let x=hs[g];if(!x)x={id:uid(),g,head:'',type:'',desc:QL_HS,unit:'Lot',q:1,m:0,l:0,t:0,sp:'',hs:1};
+    if(!x.hsm){let m=0,l=0;R.forEach(i=>{if(i.g!==g||(typeof qmIsEq==='function'&&qmIsEq(i)))return;const q=n(i.q),a=n(i.m)*q,b=n(i.l)*q;if(a+b){m+=a;l+=b}else m+=n(i.t)});
+      const p=qlHsP(Q,g)/100;x.q=n(x.q)||1;x.m=Math.round(m*p/x.q*100)/100;x.l=Math.round(l*p/x.q*100)/100;x.t=Math.round(x.q*(x.m+x.l)*100)/100}
+    let k=-1;R.forEach((i,j)=>{if(i.g===g)k=j});R.splice(k+1,0,x)});
+  Q.items.splice(0,Q.items.length,...R);return JSON.stringify(Q.items)!==was};
+const qlHsBox=(Q,g)=>qlHsOk(Q)?`<span class="qlhs"><label><input type="checkbox" class="qlHsT" data-id="${Q.id}" data-g="${esc(g)}"${(Q.noHs||{})[g]?'':' checked'}> ${QL_HS}</label>${(Q.noHs||{})[g]?'':`<input class="qlHsP r" inputmode="decimal" data-id="${Q.id}" data-g="${esc(g)}" value="${qlHsP(Q,g)}" aria-label="เปอร์เซ็นต์ ${QL_HS}"> %`}</span>`:'';
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!(t.classList.contains('qlHsT')||t.classList.contains('qlHsP')))return;
+  const Q=CO().quotes.find(q=>q.id===t.dataset.id),g=t.dataset.g;if(!Q)return;
+  if(t.classList.contains('qlHsT')){Q.noHs=Q.noHs||{};if(t.checked)delete Q.noHs[g];else Q.noHs[g]=1}
+  else{Q.hsp=Q.hsp||{};Q.hsp[g]=t.value.trim()===''?'':n(t.value);const x=Q.items.find(i=>i.hs&&i.g===g);if(x)delete x.hsm}
+  qlHs(Q);save();render()});
+// a price typed on the line keeps it; clearing the price goes back to the automatic one
+HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(q|m|l)$/);if(!m)return;const Q=CO().quotes.find(q=>q.id===m[1]),i=Q&&Q.items.find(x=>x.id===m[2]);
+  if(!i||!i.hs||m[3]==='q')return;if(n(i.m)+n(i.l))i.hsm=1;else delete i.hsm});
+// deleting the line (✕) takes it out of that section, so it does not come back by itself
+{const f=ACT.delRow;ACT.delRow=(b,e)=>{const m=String(b.dataset.c||'').match(/^co\.quotes\.([^.]+)\.items$/),Q=m&&CO().quotes.find(q=>q.id===m[1]),x=Q&&Q.items.find(i=>i.id===b.dataset.id&&i.hs);
+  f(b,e);if(x&&!Q.items.includes(x)){Q.noHs=Q.noHs||{};Q.noHs[x.g]=1;save();render()}}}
+{const f=PRINT.quote;PRINT.quote=function(id){const Q=CO().quotes.find(q=>q.id===id);if(Q&&qlHs(Q))save();return f.apply(this,arguments)}}
 document.head.insertAdjacentHTML('beforeend',`<style>.ql-t td input{width:100%;min-width:0}.ql-t td{vertical-align:middle}
 .ql-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;padding:10px;border:1px dashed var(--line);border-radius:12px;background:var(--sunk)}
+.ql-t tr.grp .qlhs{float:right;display:flex;gap:6px;align-items:center;font-weight:400;font-size:12.5px}.ql-t tr.grp .qlhs label{display:flex;gap:4px;align-items:center;cursor:pointer}.ql-t tr.grp .qlhs input.qlHsP{width:56px;padding:2px 6px}
 .ql-add select{max-width:230px}.ql-add #qlName{flex:1;min-width:240px}.ql-add .hint{flex-basis:100%}</style>`);
 if(typeof SBKW==='object')SBKW['co.sales.quote']=(SBKW['co.sales.quote']||'')+' เพิ่มรายการ สินค้า พิมพ์รายการเอง คลังราคา';
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ทุกระบบ':'All systems','ชื่อลูกค้า (อังกฤษ)':'Customer name (English)','ที่อยู่ (อังกฤษ)':'Address (English)','+ เพิ่มรายการ':'+ Add line','เครื่อง':'Equip.','ค่าเครื่อง':'Equipment','เลื่อนขึ้น':'Move up','เลื่อนลง':'Move down','ค่าของ/หน่วย':'Material/unit','ค่าแรง/หน่วย':'Labour/unit','ราคาเสนอ/หน่วย':'Price/unit','วัสดุก่อสร้างทั่วไป':'General building materials','งานระบบแจ้งเหตุเพลิงไหม้':'Fire alarm system','งานระบบสื่อสาร':'Communication system','งานระบบกล้องวงจรปิด (CCTV)':'CCTV system','งานระบบควบคุมการเข้า-ออก':'Access control system','งานระบบเสียงประกาศ':'Public address system','งานระบบควบคุมอาคารอัตโนมัติ (BMS)':'Building management system (BMS)','งานระบบป้องกันฟ้าผ่าและสายดิน':'Lightning protection & earthing','งานเครื่องกำเนิดไฟฟ้าและ UPS':'Generator & UPS','งานระบบโซลาร์เซลล์':'Solar PV system','งานระบบบำบัดน้ำเสีย':'Wastewater treatment','งานระบบก๊าซทางการแพทย์':'Medical gas system'});
