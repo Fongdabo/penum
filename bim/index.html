@@ -14584,7 +14584,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=189,V1_NAME='V1.178';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=190,V1_NAME='V1.179';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -30871,6 +30871,131 @@ Object.assign(STR,{
   wv_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้น · วางโคมก่อน (วางโคมไฟให้ได้ความสว่างตามเกณฑ์) แล้วจึงวางสวิตช์ · การใช้ห้องมาจากชื่อห้องหรือที่ตั้งในคุณสมบัติห้อง · หลังวางแล้วใช้จัดวงจรอัตโนมัติ (Auto circuits) เพื่อเข้าตู้ไฟ',
     'Click a room to select it · place the lights first (Lighting Layout), then the switches · the use of a room comes from its name or its Properties · after placing, Auto circuits puts them on the panels'],
   wv_apply:['วางเต้ารับ {0} · สวิตช์ {1}','Place {0} receptacles · {1} switches'],wv_done:['วางเต้ารับและสวิตช์ {0} ตัวแล้ว กดย้อนกลับได้','{0} receptacles and switches placed — Undo to go back']});
+/* ===== 179 Data, TV and CCTV points; floor drains and the least number of fixtures (V1.179; Revit places them one at a time and counts nothing).
+   Data outlets: a work area (TIA-568: about 10 m² of office, two ports in one faceplate) gets one, along the walls as receptacles go (178), by the use of the room
+   (P.tc.wa sets the m² of a work area of a use, 0 none); a bedroom or a living room one, with a TV outlet in the middle of its longest wall; a classroom or a meeting room
+   a TV outlet as well.  CCTV: a dome camera 1.5 m inside every door out of the building (it sees who comes in), and in lobbies and corridors on a grid no wider than
+   P.tc.cc (15 m), at the ceiling.  Floor drains: a toilet, a laundry or a balcony gets one for each 15 m² of floor (P.fdr.a), 600 mm from the shower where
+   there is one, else clear of the fixtures.  The least number of fixtures is IPC Table 403.1 for the occupancy of the project (P.fxc.occ): the occupants are the
+   floor area of the rooms by the density of their use (26), half men and half women; houses and flats one of each for every dwelling (P.fxc.du). ===== */
+const TC_WA={office:10,meeting:20,class:0,bed:0,living:0,dining:0,kitchen:0,retail:50,lobby:0,toilet:0,none:0,other:20},TC_ONE={bed:1,living:1,class:1,meeting:0},TC_TV={bed:1,living:1,class:1,meeting:1},TC_D={cc:15},FDR_D={a:15};
+const FDR_WET=/ห้องน้ำ|สุขา|ส้วม|อาบน้ำ|ซักล้าง|ซักรีด|ซักผ้า|ระเบียง|toilet|bath|shower|\bwc\b|restroom|laundry|balcony/i;
+XC.push(()=>{for(const [k,lim] of [['tc',{cc:[3,50]}],['fdr',{a:[3,100]}],['fxc',{du:[1,2000]}]]){const f=P[k];if(f===undefined)continue;const o={};if(f&&typeof f==='object'&&!Array.isArray(f)){
+    for(const q in lim){const v=+f[q];if(f[q]!==''&&f[q]!=null&&isFinite(v))o[q]=clamp(v,lim[q][0],lim[q][1])}if(k==='tc'&&f.wa&&typeof f.wa==='object'){const s={};for(const u in TC_WA){const v=+f.wa[u];if(f.wa[u]!==''&&f.wa[u]!=null&&isFinite(v))s[u]=v<=0?0:clamp(v,2,500)}if(Object.keys(s).length)o.wa=s}
+    if(k==='fxc'&&FXC_OCC.includes(f.occ))o.occ=f.occ}if(Object.keys(o).length)P[k]=o;else delete P[k]}});
+const tcSet=()=>Object.assign({},TC_D,P.tc||{}),tcWa=u=>{const s=P.tc&&P.tc.wa||{};return s[u]!=null?s[u]:TC_WA[u]!=null?TC_WA[u]:TC_WA.other};
+/* n points spread evenly along the stretches (wvRuns), clear of the corners and of the points `away` [x, y] */
+function tcAlongN(R,n,away){const T=R.reduce((a,r)=>a+r.len,0),out=[];if(!T||n<1)return out;
+  for(let i=0;i<n;i++){let s=(i+0.5)*T/n,r=R[0];for(const x of R){if(s<=x.len){r=x;break}s-=x.len}s=Math.min(s,r.len);let q=null;
+    for(const d of [0,400,-400,800,-800,1200,-1200]){const s2=s+d;if(s2<0||s2>r.len)continue;const c=r.at(s2);if(c.cn<WV_CNR)continue;if((away||[]).some(a=>Math.hypot(a[0]-c.x,a[1]-c.y)<300))continue;q=c;break}
+    out.push(q||r.at(s))}return out}
+/* the height of a camera at a point: under the ceiling, else the type's */
+const tcCamOff=(lv,x,y,T)=>{const cl=ceilingAt(P,lv,x,y),e=+T.elev||2600;return cl?Math.min(cl.off,e+300):e};
+/* the layout. o: {data, tv, cc, repl} -> {rooms [{it, use, n (work areas), data {st, n}, tv {st, n}, cc {st, n}}], add, del} */
+function tcPlan(ids,o){const want=new Set(ids),add=[],del=new Set(),rooms=[],L=falNow(),S=tcSet(),tD=wvTypeOf('data'),tT=wvTypeOf('tv'),tC=wvTypeOf('cctv');
+  const dev=(T,lv,p,off)=>{const e={cat:'device',type:T.id,level:lv,x:p.x,y:p.y,rot:p.rot||0,off:Math.round(off),panel:'',circuit:''};add.push(e);return e};
+  const DS=new Map();for(const it of L){if(want.has(it.r.id)&&!DS.has(it.lv))DS.set(it.lv,falDoors(it.lv,L.regs.get(it.lv),L.rmOf.get(it.lv)))}
+  for(const it of L){if(!want.has(it.r.id))continue;const r=it.r,lv=it.lv,net=it.g.net,use=loadUseOf(r),X=DS.get(lv)||[],D=wvDoors(X,it.i),R={it,use,n:0};rooms.push(R);
+    const devs=P.els.filter(e=>e.cat==='device'&&e.level===lv&&(()=>{const q=falPt(e,'pull');return inPoly(q[0],q[1],net)})()),of=k=>devs.filter(e=>wvKind(e)===k);
+    const away=[...devs,...add.filter(e=>e.level===lv)].map(e=>[e.x,e.y]),runs=wvRuns(net,D),A=it.g.area/1e6,wa=tcWa(use);
+    const one=(k,T,on,pts,off)=>{const has=of(k);if(!on)return{st:'off',n:0};if(has.length&&!o.repl)return{st:'has',n:has.length};if(!T)return{st:'notype',n:0};if(!pts.length)return{st:'none',n:0};
+      for(const e of has)del.add(e.id);for(const p of pts){dev(T,lv,p,off!=null?off(p):+T.elev||300);away.push([p.x,p.y])}return{st:'new',n:pts.length}};
+    /* TV first, in the middle of the longest stretch; the data outlets beside it and along the walls */
+    let tvp=[];if(TC_TV[use]&&runs.length){const r=runs.reduce((a,b)=>b.len>a.len?b:a);tvp=[r.at(r.len/2)]}R.tv=one('tv',tT,o.tv,tvp);
+    R.n=wa>0?Math.max(1,Math.ceil(A/wa-1e-9)):TC_ONE[use]||0;const dp=R.n&&runs.length?tcAlongN(runs,R.n,away):[];
+    R.data=one('data',tD,o.data,dp);
+    /* cameras: by the doors out, and on a grid in lobbies and corridors */
+    let cp=[];if(o.cc){for(const x of D)if(x.k==='out'||x.o<0){const p=[x.c[0]+x.n[0]*1500,x.c[1]+x.n[1]*1500];if(inPoly(p[0],p[1],net))cp.push({x:Math.round(p[0]),y:Math.round(p[1]),rot:falRot([-x.n[0],-x.n[1]])})}
+      if(use==='lobby'){const sp=S.cc*1000,G=gridLay(net,(Lu,Lv)=>({nx:Math.max(1,Math.ceil(Lu/sp-1e-9)),ny:Math.max(1,Math.ceil(Lv/sp-1e-9))}),500);for(const p of G.pts)if(!cp.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<sp/2))cp.push({x:p.x,y:p.y,rot:0})}}
+    R.cc=one('cctv',tC,o.cc,cp,p=>tcCamOff(lv,p.x,p.y,tC||{}))}
+  return{rooms,add,del}}
+function tcApply(Q){if(!Q.add.length&&!Q.del.size)return 0;edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e))});return Q.add.length}
+const tcOpt=()=>ui.tcl||(ui.tcl={data:true,tv:true,cc:true,repl:false,all:false});
+function dlgTc(){const o=tcOpt(),S=tcSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=tcPlan(ids,o);ui.helpAt='calc';
+  const chk=k=>`<label><span>${t('tc_o_'+k)}</span><span><input type="checkbox" data-tco="${k}"${o[k]?' checked':''}></span></label>`,uses=[...new Set(Q.rooms.map(R=>R.use))];
+  const set=`<div class="ldg pz">${chk('data')}${chk('tv')}${chk('cc')}${chk('repl')}<label><span>${t('tc_cc')}</span><span><input type="number" data-tcs="cc" value="${S.cc}" step="1" min="3" max="50"><small>m</small></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-tco="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label></div>
+    <h4>${t('tc_wa')}</h4><div class="ldg pz">${uses.map(u=>`<label><span>${t('use_'+u)}</span><span><input type="number" data-tcw="${u}" value="${tcWa(u)}" step="1" min="0" max="500"><small>m²</small></span></label>`).join('')}</div>`;
+  const q=z=>!z||z.st==='off'?'':z.st==='new'?`<b>${z.n}</b>`:z.st==='none'?'—':t('wv_q_'+z.st)+(z.st==='has'?' ('+z.n+')':'');
+  const rows=Q.rooms.map(R=>`<tr data-id="${R.it.r.id}"${[R.data,R.tv,R.cc].some(z=>z.st==='new')?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td>${esc(t('use_'+R.use))}</td><td class="n">${(R.it.g.area/1e6).toFixed(1)} m²</td><td class="n">${R.n||'—'}</td><td class="n">${q(R.data)}</td><td class="n">${q(R.tv)}</td><td class="n">${q(R.cc)}</td></tr>`).join('');
+  const cnt=k=>Q.add.filter(e=>(wvTypeOf(k)||{}).id===e.type).length;
+  const body=`<style>.tcd h4{margin:10px 0 4px}</style><div class="tcd"><p class="note">${t('tc_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th>${t('wv_use')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('tc_n')}</th><th class="n">${t('tc_data')}</th><th class="n">${t('tc_tv')}</th><th class="n">${t('tc_cam')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note warn">${t('fs_norooms')}</p>`)+`<p class="note">${t('tc_note')}</p></div>`;
+  openDlg(t('a_tclay'),body,`<span style="flex:1"></span><button class="btn primary" data-tcx="apply"${Q.add.length?'':' disabled'}>${t('tc_apply',cnt('data'),cnt('tv'),cnt('cctv'))}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.tcw||el.dataset.tcs){const v=+el.value;edit(()=>{const f=Object.assign({},P.tc||{});if(el.dataset.tcs){if(el.value===''||!isFinite(v))delete f.cc;else f.cc=clamp(v,3,50)}
+         else{const u=el.dataset.tcw,s=Object.assign({},f.wa||{});if(el.value===''||!isFinite(v))delete s[u];else s[u]=v<=0?0:clamp(v,2,500);f.wa=s}P.tc=f});dlgTc();return}
+       const k=el.dataset.tco;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgTc()},
+     click(ev){const x=ev.target.closest('[data-tcx]');if(x&&ui.dlg){if(Q.add.length){const n=tcApply(Q);toast(t('tc_done',n),6000);dlgTc()}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.tclay=dlgTc;
+/* ---- floor drains and the least number of fixtures ---- */
+const FXC_OCC=['r3','r2','b','e','m','a3'];
+const fdrSet=()=>Object.assign({},FDR_D,P.fdr||{});
+const fdrWet=r=>loadUseOf(r)==='toilet'||FDR_WET.test(String(r.name||''));
+const fdrOpt=()=>ui.fdl||(ui.fdl={repl:false,all:false});
+/* -> {rooms [{it, n, st, has}], add, del} */
+function fdrPlan(ids,o){const want=new Set(ids),add=[],del=new Set(),rooms=[],S=fdrSet(),T=(P.types.fixture||[]).find(x=>x.kind==='fdrain');
+  for(const it of fsRooms(P)){if(!want.has(it.r.id)||!fdrWet(it.r))continue;const net=it.g.net,fx=P.els.filter(e=>e.cat==='fixture'&&e.level===it.lv&&inPoly(e.x,e.y,net)),has=fx.filter(e=>(typ(P,e)||{}).kind==='fdrain'),R={it,has:has.length,n:0};rooms.push(R);
+    if(has.length&&!o.repl){R.st='has';continue}if(!T){R.st='notype';continue}const n=Math.max(1,Math.ceil(it.g.area/1e6/S.a-1e-9)),other=fx.filter(e=>(typ(P,e)||{}).kind!=='fdrain');
+    const sh=other.find(e=>['shower','tub'].includes((typ(P,e)||{}).kind)),pts=[];
+    if(sh){const c=[it.r.x,it.r.y],d=Math.hypot(c[0]-sh.x,c[1]-sh.y)||1,k=Math.min(600,d*0.6);pts.push({x:Math.round(sh.x+(c[0]-sh.x)/d*k),y:Math.round(sh.y+(c[1]-sh.y)/d*k)})}
+    const G=gridLay(net,(Lu,Lv)=>{let b=null;for(let nx=1;nx<=n;nx++){const ny=Math.ceil(n/nx),sc=Math.abs(Math.log((Lu/nx)/(Lv/ny)));if(!b||sc<b.sc)b={nx,ny,sc}}return b},250);
+    const O=other.map(e=>{const Ty=typ(P,e)||{};return{x:e.x,y:e.y,r:Math.max(+Ty.w||400,+Ty.d||400)/2+250}});
+    for(const p of G.pts){if(pts.length>=n)break;const m=difNudge(p,G,O,pts.map(q=>({x:q.x,y:q.y,r:1500})),net,250,0.45);pts.push({x:m.x,y:m.y})}
+    for(const e of has)del.add(e.id);for(const p of pts)add.push({cat:'fixture',type:T.id,level:it.lv,x:p.x,y:p.y,rot:0,off:0});R.st='new';R.n=pts.length}
+  return{rooms,add,del}}
+/* the occupants of the project's rooms (the density of their use, 26) */
+function fxcPeople(){let n=0;for(const it of fsRooms(P)){const u=LOAD_USE[loadUseOf(it.r)];if(u&&u.d>0)n+=it.g.area/1e6/u.d}return n}
+const fxcGuess=()=>{const U=new Set(P.els.filter(e=>e.cat==='room').map(loadUseOf));return U.has('bed')?'r3':U.has('office')||U.has('meeting')?'b':U.has('class')?'e':U.has('retail')?'m':'r3'};
+const fxcOcc=()=>P.fxc&&FXC_OCC.includes(P.fxc.occ)?P.fxc.occ:fxcGuess();
+/* IPC Table 403.1: the fixtures an occupancy needs -> [{k, kinds, need, has}] and the occupants */
+function fxcCheck(){const occ=fxcOcc(),N=fxcPeople(),h=N/2,du=P.fxc&&P.fxc.du||1,C=k=>P.els.filter(e=>e.cat==='fixture'&&k.includes((typ(P,e)||{}).kind)).length,up=x=>Math.ceil(x-1e-9);
+  const step=(x,a,n1,b)=>x<=0?0:x<=n1?up(x/a):up(n1/a)+up((x-n1)/b);let wc,lav,bath=0,sink=0;
+  if(occ==='r3'||occ==='r2'){wc=du;lav=du;bath=du;sink=du}
+  else if(occ==='b'){wc=2*step(h,25,50,50);lav=2*step(h,40,80,80);sink=1}
+  else if(occ==='e'){wc=2*up(h/50);lav=2*up(h/50);sink=1}
+  else if(occ==='m'){wc=2*up(h/500);lav=2*up(h/750);sink=1}
+  else{wc=up(h/125)+up(h/65);lav=2*up(h/200);sink=1}
+  const urin=C(['urinal']),wcHas=C(['wc'])+Math.min(urin,occ==='r3'||occ==='r2'?0:Math.floor(wc/4));
+  return{occ,N,rows:[{k:'wc',need:wc,has:wcHas},{k:'lav',need:lav,has:C(['lav'])},{k:'bath',need:bath,has:C(['shower','tub'])},{k:'sink',need:sink,has:C(['sink'])}]}}
+function dlgFdr(){const o=fdrOpt(),S=fdrSet(),sc=fsScope(),ids=o.all?P.els.filter(e=>e.cat==='room').map(e=>e.id):sc.ids,Q=fdrPlan(ids,o),F=fxcCheck(),r2=P.fxc&&P.fxc.du||1;ui.helpAt='calc';
+  const set=`<div class="ldg pz"><label><span>${t('fdr_a')}</span><span><input type="number" data-fds="a" value="${S.a}" step="1" min="3" max="100"><small>m²</small></span></label>
+    <label><span>${t('fs_rooms')}</span><span><select data-fdo="all"><option value="0"${o.all?'':' selected'}>${t(sc.k==='sel'?'fs_sel':sc.k==='level'?'fs_level':'fs_allr',sc.ids.length)}</option><option value="1"${o.all?' selected':''}>${t('fs_allr',P.els.filter(e=>e.cat==='room').length)}</option></select></span></label>
+    <label><span>${t('fdr_repl')}</span><span><input type="checkbox" data-fdo="repl"${o.repl?' checked':''}></span></label></div>`;
+  const rows=Q.rooms.map(R=>`<tr data-id="${R.it.r.id}"${R.st==='new'?' class="chg"':''}><td>${esc(fsName(R.it.r))}</td><td class="n">${(R.it.g.area/1e6).toFixed(1)} m²</td><td class="n">${R.has}</td><td class="n">${R.st==='new'?'<b>'+R.n+'</b>':t('wv_q_'+R.st)}</td></tr>`).join('');
+  const fx=`<h4>${t('fxc_h')}</h4><div class="ldg pz"><label><span>${t('fxc_occ')}</span><span><select data-fxo="occ">${FXC_OCC.map(k=>`<option value="${k}"${k===F.occ?' selected':''}>${esc(t('fxc_'+k))}</option>`).join('')}</select></span></label>
+    ${F.occ==='r3'||F.occ==='r2'?`<label><span>${t('fxc_du')}</span><span><input type="number" data-fxo="du" value="${r2}" step="1" min="1" max="2000"></span></label>`:`<label><span>${t('fxc_n')}</span><span><b>${Math.round(F.N)}</b></span></label>`}</div>
+    <div class="tblw"><table class="tbl"><thead><tr><th>${t('fxc_fix')}</th><th class="n">${t('fxc_need')}</th><th class="n">${t('fxc_has')}</th><th></th></tr></thead><tbody>${F.rows.map(x=>`<tr${x.has<x.need?' class="chg"':''}><td>${t('fxc_k_'+x.k)}</td><td class="n">${x.need}</td><td class="n">${x.has}</td><td>${x.has<x.need?'⚠ '+t('fxc_short',x.need-x.has):'✓'}</td></tr>`).join('')}</tbody></table></div>`;
+  const body=`<style>.fdd h4{margin:10px 0 4px}</style><div class="fdd"><p class="note">${t('fdr_intro')}</p>${set}`+(Q.rooms.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('cat_room')}</th><th class="n">${t('fs_area')}</th><th class="n">${t('fdr_has')}</th><th class="n">${t('fdr_new')}</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="note">${t('fdr_none')}</p>`)+fx+`<p class="note">${t('fxc_note')}</p></div>`;
+  openDlg(t('a_fdrlay'),body,`<span style="flex:1"></span><button class="btn primary" data-fdx="apply"${Q.add.length?'':' disabled'}>${t('fdr_apply',Q.add.length)}</button><button class="btn" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target;if(!ui.dlg)return;if(el.dataset.fds){const v=+el.value;edit(()=>{const f=Object.assign({},P.fdr||{});if(el.value===''||!isFinite(v))delete f.a;else f.a=clamp(v,3,100);P.fdr=f});dlgFdr();return}
+       if(el.dataset.fxo){const k=el.dataset.fxo;edit(()=>{const f=Object.assign({},P.fxc||{});if(k==='occ')f.occ=el.value;else{const v=Math.round(+el.value);if(isFinite(v)&&v>=1)f.du=clamp(v,1,2000);else delete f.du}P.fxc=f});dlgFdr();return}
+       const k=el.dataset.fdo;if(!k)return;if(k==='all')o.all=el.value==='1';else o[k]=el.checked;dlgFdr()},
+     click(ev){const x=ev.target.closest('[data-fdx]');if(x&&ui.dlg){if(Q.add.length){edit(()=>{if(Q.del.size)P.els=P.els.filter(e=>!Q.del.has(e.id));for(const e of Q.add)P.els.push(Object.assign({id:P.seq++},e))});toast(t('fdr_done',Q.add.length),6000);dlgFdr()}return}
+       const tr=ev.target.closest('tr[data-id]');if(tr&&!ev.target.closest('select,button,input')){ui.sel=new Set([+tr.dataset.id]);closeDlg();setTool('modify')}}},'wide')}
+XA.fdrlay=dlgFdr;
+{const A=RIBBON.find(r=>r.id==='sys');const E=A&&A.panels.find(q=>q.t==='p_elec');if(E&&!E.b.includes('@tclay')){const i=E.b.indexOf('@wvlay');E.b.splice(i<0?E.b.length:i+1,0,'@tclay')}
+  const W=A&&A.panels.find(q=>q.t==='p_piping');if(W&&!W.b.includes('@fdrlay')){const i=W.b.indexOf('fixture');W.b.splice(i<0?W.b.length:i+1,0,'@fdrlay')}}
+Object.assign(BTN,{'@tclay':['device',''],'@fdrlay':['fixture','']});
+Object.assign(STR,{
+  a_tclay:['วางจุด LAN ทีวี และกล้องวงจรปิดอัตโนมัติ','Data, TV and CCTV Layout'],a_fdrlay:['วางท่อระบายพื้นและตรวจจำนวนสุขภัณฑ์','Floor Drains and Fixture Count'],
+  tc_intro:['จุด LAN หนึ่งจุดต่อพื้นที่ทำงานหนึ่งที่ (TIA-568: ประมาณ 10 ม.² ของสำนักงาน หน้ากาก 2 ช่อง) วางตามแนวผนังเหมือนเต้ารับ ตามการใช้ห้อง · ห้องนอนและห้องนั่งเล่นได้ LAN 1 จุดและเต้ารับทีวีกลางผนังที่ยาวที่สุด ห้องเรียนและห้องประชุมได้เต้ารับทีวีด้วย · กล้องวงจรปิดโดมเข้ามา 1.5 ม. จากทุกประตูทางออกของอาคาร และในโถงและทางเดินเป็นตารางห่างไม่เกินที่ตั้ง ติดที่ฝ้า',
+    'One data outlet for each work area (TIA-568: about 10 m² of office, a two-port faceplate), along the walls as receptacles go, by the use of the room · bedrooms and living rooms one data outlet and a TV outlet in the middle of the longest wall, classrooms and meeting rooms a TV outlet too · a dome camera 1.5 m inside every door out of the building, and in lobbies and corridors on a grid no wider than the spacing set, at the ceiling'],
+  tc_o_data:['วางจุด LAN','Place data outlets'],tc_o_tv:['วางเต้ารับทีวี','Place TV outlets'],tc_o_cc:['วางกล้องวงจรปิด','Place CCTV cameras'],tc_o_repl:['แทนที่จุดที่มีอยู่แล้ว','Replace the ones there'],tc_cc:['ระยะห่างกล้องในโถง/ทางเดิน','Camera spacing in lobbies and corridors'],
+  tc_wa:['พื้นที่ต่อจุด LAN หนึ่งจุดตามการใช้ห้อง (0 = ไม่วาง ยกเว้นห้องนอน/นั่งเล่น/ห้องเรียนได้ 1 จุด)','m² for each data outlet by room use (0 = none; bedrooms, living rooms and classrooms one)'],
+  tc_n:['พื้นที่ทำงาน','Work areas'],tc_data:['LAN ใหม่','New data'],tc_tv:['ทีวีใหม่','New TV'],tc_cam:['กล้องใหม่','New cameras'],
+  tc_note:['คลิกชื่อห้องเพื่อเลือกห้องนั้น · วางเต้ารับก่อนแล้วจุด LAN จะหลบไปข้างๆ · กล้องดูทางเข้าทุกทางของอาคาร ระยะห่างกล้องในทางเดินตามระยะมองเห็นใบหน้าของกล้องที่ใช้',
+    'Click a room to select it · place the receptacles first and the data outlets keep beside them · cameras watch every way into the building; set the spacing in corridors by the range at which the camera you use sees a face'],
+  tc_apply:['วาง LAN {0} · ทีวี {1} · กล้อง {2}','Place {0} data · {1} TV · {2} cameras'],tc_done:['วางจุดสื่อสารและกล้อง {0} ตัวแล้ว กดย้อนกลับได้','{0} data, TV and camera points placed — Undo to go back'],
+  fdr_intro:['ห้องน้ำ ห้องซักล้าง และระเบียงได้ท่อระบายพื้น 1 จุดต่อพื้นที่ที่ตั้ง (ห่างจากฝักบัว 600 มม. ถ้ามี ไม่เช่นนั้นห่างสุขภัณฑ์) · ตรวจจำนวนสุขภัณฑ์ขั้นต่ำตาม IPC ตาราง 403.1 จากจำนวนคนในอาคาร',
+    'Toilets, laundries and balconies get a floor drain for each area set (600 mm from the shower where there is one, else clear of the fixtures) · the least number of fixtures by IPC Table 403.1 from the occupants of the building'],
+  fdr_a:['พื้นที่ต่อท่อระบายพื้น 1 จุด','Floor area for each floor drain'],fdr_repl:['แทนที่ท่อระบายพื้นที่มีอยู่แล้ว','Replace the floor drains there'],fdr_has:['ท่อระบายที่มี','Drains there'],fdr_new:['วางใหม่','New'],
+  fdr_none:['ไม่มีห้องเปียก (ห้องน้ำ ห้องซักล้าง ระเบียง) ในห้องที่เลือก','No wet rooms (toilets, laundries, balconies) among the rooms'],fdr_apply:['วางท่อระบายพื้น {0} จุด','Place {0} floor drains'],fdr_done:['วางท่อระบายพื้น {0} จุดแล้ว กดย้อนกลับได้','{0} floor drains placed — Undo to go back'],
+  fxc_h:['จำนวนสุขภัณฑ์ขั้นต่ำ (IPC ตาราง 403.1)','Least number of fixtures (IPC Table 403.1)'],fxc_occ:['ประเภทอาคาร','Occupancy'],fxc_du:['จำนวนหน่วยพักอาศัย','Dwelling units'],fxc_n:['จำนวนคน (จากพื้นที่ห้อง)','Occupants (from the rooms)'],
+  fxc_r3:['บ้านเดี่ยว (R-3)','One-family house (R-3)'],fxc_r2:['อาคารชุด/อพาร์ตเมนต์ (R-2)','Flats (R-2)'],fxc_b:['สำนักงาน (B)','Business (B)'],fxc_e:['สถานศึกษา (E)','Educational (E)'],fxc_m:['ร้านค้า (M)','Mercantile (M)'],fxc_a3:['อาคารชุมนุมคน (A-3)','Assembly (A-3)'],
+  fxc_fix:['สุขภัณฑ์','Fixture'],fxc_need:['ต้องมี','Needed'],fxc_has:['ในโมเดล','In the model'],fxc_short:['ขาด {0}','{0} short'],
+  fxc_k_wc:['โถส้วม (รวมโถปัสสาวะทดแทนได้ไม่เกินครึ่งของชาย)','Water closets (urinals for up to half of the men\'s)'],fxc_k_lav:['อ่างล้างหน้า','Lavatories'],fxc_k_bath:['ฝักบัว/อ่างอาบน้ำ','Showers or bathtubs'],fxc_k_sink:['อ่างล้างจาน/อ่างบริการ','Kitchen or service sinks'],
+  fxc_note:['จำนวนคนคิดจากพื้นที่ห้องตามความหนาแน่นของการใช้ห้อง (เดียวกับภาระความเย็น) ชายหญิงอย่างละครึ่ง · สำนักงาน: โถส้วม 1 ต่อ 25 คนสำหรับ 50 คนแรก แล้ว 1 ต่อ 50 อ่างล้างหน้า 1 ต่อ 40 สำหรับ 80 คนแรก แล้ว 1 ต่อ 80 · ตรวจกับกฎหมายควบคุมอาคารของท้องถิ่นด้วย',
+    'Occupants are the floor area of the rooms by the density of their use (as the cooling loads take it), half men and half women · business: water closets 1 per 25 for the first 50, then 1 per 50; lavatories 1 per 40 for the first 80, then 1 per 80 · check the local building code as well']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -32315,6 +32440,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.176 · [[a_rsr]] (แผงท่อน้ำและแผงไฟฟ้าของงานระบบ หรือแท็บ [[tab_view]]): ผังไรเซอร์ที่วาดจากโมเดลเองและเปลี่ยนตามทันที: สุขาภิบาล (โสโครก น้ำทิ้ง อากาศ น้ำฝน ประปา น้ำร้อน: ขนาดและ DFU/FU ทุกช่วง สุขภัณฑ์ที่ต่อเข้าแต่ละชั้น ถังหรือปั๊มต้นทาง) · ท่อยืนดับเพลิง (ตู้ FHC ท่อแยกสปริงเกลอร์ ถังดับเพลิงแต่ละชั้น ปั๊ม หัวรับน้ำ) · แจ้งเหตุเพลิงไหม้ (ตู้ควบคุม สายแนวดิ่ง และอุปกรณ์ของทุกโซนในทุกชั้น) · วางบนชีต พิมพ์ และส่งออก DXF ได้
 - V1.177 · [[a_diflay]] (แผงระบบปรับอากาศของงานระบบ หรือแผงลมของห้องในแท็บ [[tab_analyze]]): วางหัวจ่ายลมให้ทุกห้องตามลมที่ห้องต้องการ (จากภาระความเย็นหรือที่กำหนดเอง) จำนวนน้อยที่สุดที่แต่ละหัวไม่เกินลมสูงสุดของชนิดหัว เป็นตารางเท่ากันตามผนังยาว ระยะห่างไม่เกินที่ตั้ง · ตรวจระยะลมพุ่ง T50/L ตามเกณฑ์ ADPI ของ ASHRAE (0.7–1.3) และเพิ่มหัวเมื่อลมพุ่งแรงเกิน · วางหน้ากากลมกลับและหน้ากากระบาย (ห้องน้ำตาม ACH) ห่างหัวจ่าย 1.5 ม. · หลบอุปกรณ์ตรวจจับควัน 0.91 ม. โคมไฟ และสปริงเกลอร์ · เดินท่อลมจากเครื่องส่งลมไปหัวใหม่ได้ในขั้นเดียว (Generate Layout) · ชนิดหัวจ่ายมีช่องลมสูงสุดและระยะลมพุ่งตามแคตตาล็อก
 - V1.178 · [[a_wvlay]] (แผงไฟฟ้าของงานระบบ): วางเต้ารับตามแนวผนังของทุกห้องตามระยะห่างของการใช้ห้อง (NEC 210.52: ทุกจุดของแนวผนังห่างเต้ารับไม่เกิน 1.8 ม.; สำนักงาน 3.0 ม.; ครัว 1.8 ม. สูง 1.10 ม.; แก้ระยะของแต่ละการใช้ห้องได้) ขาดที่ประตูและห่างมุมห้อง · ห้องน้ำได้เต้ารับข้างอ่างล้างหน้า · สวิตช์ข้างประตูด้านมือจับ (ห้องน้ำติดนอกห้อง) ห้องหลายประตูได้สวิตช์สองทาง · ผูกโคมในห้องกับสวิตช์ (Switch ID) ให้เลย
+- V1.179 · [[a_tclay]] (แผงไฟฟ้าของงานระบบ): จุด LAN หนึ่งจุดต่อพื้นที่ทำงาน (TIA-568 ประมาณ 10 ม.² ของสำนักงาน แก้ได้ตามการใช้ห้อง) วางตามแนวผนังและหลบเต้ารับ · ห้องนอน/นั่งเล่นได้ LAN และเต้ารับทีวีกลางผนังยาว · กล้องวงจรปิดที่ทุกทางเข้าอาคารและในโถง/ทางเดินตามระยะห่างที่ตั้ง · [[a_fdrlay]] (แผงท่อน้ำ): ท่อระบายพื้นในห้องน้ำ ห้องซักล้าง ระเบียง ตามพื้นที่ ใกล้ฝักบัวและหลบสุขภัณฑ์ · ตรวจจำนวนสุขภัณฑ์ขั้นต่ำตาม IPC ตาราง 403.1 (บ้าน อาคารชุด สำนักงาน สถานศึกษา ร้านค้า อาคารชุมนุมคน) จากจำนวนคนตามพื้นที่ห้อง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -32629,6 +32755,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.176 · [[a_rsr]] (piping and electrical panels of Systems, or the [[tab_view]] tab): riser diagrams that draw themselves from the model and follow it at once: plumbing (soil, waste, vent, rainwater, cold and hot water: the size and DFU/FU of every length, the fixtures on every branch, the tank or pump a stack starts from) · standpipes (hose cabinets, sprinkler take-offs, extinguishers on every level, the pump, the inlet) · fire alarm (the panel, the cable riser and the devices of every zone on every level) · they go on sheets, print and export to DXF
 - V1.177 · [[a_diflay]] (HVAC panel of Systems, or Space Airflow on the [[tab_analyze]] tab): supply diffusers for every room from the air it needs (its cooling load or its own value): the fewest that each carry no more than the type's Max Flow, on an even grid along the long wall, no farther apart than the spacing set · the throw is checked as T50/L against the ASHRAE ADPI range (0.7–1.3), with more diffusers where it blows too far · return and exhaust grilles (toilets by their ACH), 1.5 m from the diffusers · clear of smoke detectors by 0.91 m, of lights and of sprinkler heads · ducts from the air handlers to the new terminals in the same step (Generate Layout) · air terminal types take a Max Flow and a throw from their catalogue
 - V1.178 · [[a_wvlay]] (electrical panel of Systems): receptacles along the walls of every room at the spacing of its use (NEC 210.52: no point of the wall line farther than 1.8 m from one; offices 3.0 m; kitchens 1.8 m at 1.10 m; the spacing of each use can be changed), broken at the doors and clear of the corners · toilets one beside the washbasin · switches beside the latch side of the doors (toilets outside), three-way switches in rooms with several doors · the room's lights go on the switch (Switch ID)
+- V1.179 · [[a_tclay]] (electrical panel of Systems): a data outlet for each work area (TIA-568, about 10 m² of office, set by room use) along the walls, beside the receptacles · bedrooms and living rooms a data outlet and a TV outlet in the middle of the long wall · CCTV cameras at every way into the building and in lobbies and corridors at the spacing set · [[a_fdrlay]] (piping panel): floor drains in toilets, laundries and balconies by floor area, by the shower and clear of the fixtures · the least number of fixtures by IPC Table 403.1 (house, flats, business, educational, mercantile, assembly) from the occupants of the rooms
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -34608,6 +34735,10 @@ window.PenumBIM.r97={now:()=>difNow().map(x=>({id:x.it.r.id,name:x.it.r.name,lv:
 window.PenumBIM.r98={plan:(ids,o)=>{const Q=wvPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},wvOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,use:R.use,sp:R.sp,nl:R.nl,rec:R.rec,sw:R.sw})),add:Q.add.map(e=>Object.assign({},e,{_lt:e._lt&&e._lt.length})),del:[...Q.del]}},
   apply:(ids,o)=>wvApply(wvPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},wvOpt(),o||{}))),runs:(id,sp)=>{const it=falNow().find(x=>x.r.id===id),L=falNow(),X=falDoors(it.lv,L.regs.get(it.lv),L.rmOf.get(it.lv)),D=wvDoors(X,it.i),R=wvRuns(it.g.net,D);return{runs:R.map(r=>Math.round(r.len)),pts:wvAlong(R,(sp||3.6)*1000)}},
   lsw:()=>PenumBIM.r61.I().P.els.filter(e=>e.cat==='light').map(e=>[e.id,e.lsw==null?null:e.lsw])};
+window.PenumBIM.r99={tc:(ids,o)=>{const Q=tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,use:R.use,n:R.n,data:R.data,tv:R.tv,cc:R.cc})),add:Q.add,del:[...Q.del]}},
+  tcApply:(ids,o)=>tcApply(tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}))),
+  fdr:(ids,o)=>{const Q=fdrPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},fdrOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,st:R.st,n:R.n,has:R.has})),add:Q.add,del:[...Q.del]}},
+  fxc:()=>fxcCheck(),people:()=>fxcPeople()};
 window.PenumBIM.r61={I:()=>({P,ui,undoN:undoS.length,redoN:redoS.length}),t:(k,...a)=>t(k,...a),cur:k=>boCur(k).id,list:k=>boList(k).map(S=>({id:S.id,n:boName(S),st:!!S.st})),
   build:(k,S)=>{const B=boBuild(k,S||boCur(k)),go=F=>F.fold?F.fold.map(f=>({l:f.label,n:f.n,id:f.id,k:go(f.kids)})):F.items.map(v=>v.id);return{n:B.n,r:go(B.root)}},
   params:k=>boCtx(k).list.map(q=>({p:q.p,l:q.l,kind:q.kind})),val:(k,p,id)=>{const Q=boCtx(k).par(p),v=viewById(id);return Q&&v?Q.val(v):null},
