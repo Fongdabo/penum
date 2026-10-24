@@ -23,7 +23,7 @@ function fsCtx(Q){const C=CO(),L=qmLang(Q),EN=L==='en';
     return co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${cap}</small>`}<h1>${EN?en:th}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
       <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`};
   const attn=Q.attn||cu.contact||'';
-  const custCard=()=>`<div class="qm-c"><h3>${t('ลูกค้า','Customer')}</h3>${kv(t('ชื่อ','Name',1),esc(cu.name||''),'big')}${kv(t('เรียน','Attn.',1),esc(attn))}${kv(t('ที่อยู่','Address',1),esc(cu.addr||''))}
+  const custCard=()=>`<div class="qm-c"><h3>${t('ลูกค้า','Customer')}</h3>${kv(t('ชื่อ','Name',1),esc(EN&&cu.nameEn||cu.name||''),'big')}${kv(t('เรียน','Attn.',1),esc(attn))}${kv(t('ที่อยู่','Address',1),esc(EN&&cu.addrEn||cu.addr||''))}
     ${kv(t('เลขผู้เสียภาษี','Tax ID',1),esc(cu.tax||''))}${kv(t('โทร','Tel.',1),esc([cu.phone,cu.email].filter(Boolean).join(' · ')))}</div>`;
   const card=(h,rows)=>`<div class="qm-c"><h3>${h}</h3>${rows}</div>`;
   const tot=rows=>`<div class="qm-tot">${rows.filter(Boolean).map(([k,v,cl])=>`<div${cl?` class="${cl}"`:''}><span>${k}</span><b>${v}</b></div>`).join('')}</div>`;
