@@ -1,4 +1,4 @@
-/* ---------- 4.3 แบบฟอร์มใบเสนอราคา / BOQ: pick a form from a gallery (ORIEN form shop, part 1) ----------
+/* ---------- 4.4 แบบฟอร์มใบเสนอราคา / BOQ: pick a form from a gallery (ORIEN form shop, part 1) ----------
    ORIEN sells form styles to the contractors who rent PENUM PM (user, 2026-10-24: 20 forms, a shop, buyers' own logo on every form).
    One quotation's data prints in any form: a form is a set of print settings (Q.look, Q.one, Q.lay, Q.kind) plus a colour theme
    that this file lays over the ORIEN Modern print (981-quote-forms.js) as a class on div.qm. The quotation keeps its pick in Q.form.
