@@ -99,8 +99,15 @@ function esPut(sl,s){const im=document.createElement('img');im.src=s.sig;im.alt=
   while((n=tw.nextNode()))T.push(n);
   T.forEach(t=>{let v=t.nodeValue;if(!named&&/\(\s*[._]{6,}\s*\)/.test(v)){v=v.replace(/\(\s*[._]{6,}\s*\)/,`(${name})`);named=true}
     v=v.replace(/(วันที่\s*)[._]{3,}\s*\/\s*[._]{3,}\s*\/\s*[._]{3,}/,(m,a)=>a+thD(today()));if(v!==t.nodeValue)t.nodeValue=v});
-  if(!named){const d=document.createElement('span');d.className='esig-n';d.textContent=`(${name})${s.role&&!sl.box.textContent.includes(s.role)?' '+s.role:''}`;
-    (sl.kind==='i'?sl.box.querySelector('p')||sl.box:sl.box).appendChild(d)}}
+  const at=sl.kind==='i'?sl.box.querySelector('p')||sl.box:sl.box,oth=esOther(sl.box,name),fr=sl.for===undefined?!!oth&&!named:sl.for,
+    role=s.role&&!sl.box.textContent.includes(s.role)?' '+s.role:'',line=(c,t)=>{const d=document.createElement('span');d.className=c;d.textContent=t;at.appendChild(d)};
+  // 4.23 someone signs for the person named in the box (user: "ในกรณีคนเซ็นไม่อยู่ให้เขียนว่าแทน"): the box keeps that person's name and says who signed for them
+  if(fr&&!named)line('esig-n esig-for',`ลงนามแทนโดย ${name}${s.role?' '+s.role:''}`);
+  else{if(!named)line('esig-n',`(${name})${role}`);if(fr)line('esig-n esig-for',`ลงนามแทน${oth?' '+oth:''}`)}}
+// the person a box is already made out to, other than the one signing: a staff name in it, or a titled name in brackets
+function esOther(box,name){const t=String(box.textContent||'').replace(/\s+/g,' '),me=String(name||'').trim();
+  const s=CO().staff.find(x=>{const k=String(x.name||'').trim();return k&&k!==me&&t.includes(k)});if(s)return String(s.name).trim()+(s.role&&t.includes(s.role)?' '+s.role:'');
+  const m=t.match(/\(\s*((?:นาย|นางสาว|นาง|น\.ส\.|ดร\.|คุณ|Mr\.?|Mrs\.?|Ms\.?|Miss)\s*[^)]{2,60}?)\s*\)/);return m&&(!me||!m[1].includes(me))?m[1].trim():''}
 
 /* print: when the page has signature places and someone has a signature, ask first */
 const esNativePrint=window.print.bind(window);let ESQ=null;
@@ -114,11 +121,13 @@ window.print=function(){const root=$('#print');
   let d=$('#esDlg');if(!d){d=document.createElement('dialog');d.id='esDlg';document.body.appendChild(d)}
   d.innerHTML=`<div class="hd"><h2>ใส่ลายเซ็นบนเอกสาร</h2><button type="button" class="x" data-a="esCancel" aria-label="ปิด">✕</button></div>
   <div class="bd"><p class="hint" style="margin:0">เลือกลายเซ็นสำหรับแต่ละช่อง ช่องที่ไม่เลือกจะพิมพ์เป็นช่องว่างให้เซ็นด้วยปากกาเหมือนเดิม</p>
-  <div class="es-sl">${slots.map((sl,i)=>`${sl.head&&(!i||slots[i-1].head!==sl.head)?`<h3>${esc(sl.head)}</h3>`:''}<label><span>${esc(sl.label)}</span><select data-es="${i}"><option value="">ไม่ใส่ลายเซ็น</option>${people.map(opt).join('').replace(`value="${pre(sl)}"`,`value="${pre(sl)}" selected`)}</select></label>`).join('')}</div>
+  <div class="es-sl">${slots.map((sl,i)=>`${sl.head&&(!i||slots[i-1].head!==sl.head)?`<h3>${esc(sl.head)}</h3>`:''}<div class="es-r"><span>${esc(sl.label)}</span><span class="es-sel"><select data-es="${i}"><option value="">ไม่ใส่ลายเซ็น</option>${people.map(opt).join('').replace(`value="${pre(sl)}"`,`value="${pre(sl)}" selected`)}</select><label class="es-for" title="คนเซ็นไม่ใช่คนที่มีชื่อในช่องนี้: พิมพ์คำว่า ลงนามแทน ใต้ลายเซ็น"><input type="checkbox" data-esf="${i}"${esForAuto(sl,pre(sl))?' checked':''}> ลงนามแทน</label></span></div>`).join('')}</div>
   <div id="esPins"></div>
   <label class="ck"><input type="checkbox" id="esAskCk" checked> ถามเรื่องลายเซ็นทุกครั้งที่กดพิมพ์ (เครื่องนี้)</label></div>
   <div class="ft"><button type="button" class="btn" data-a="esNone">พิมพ์โดยไม่ใส่ลายเซ็น</button><button type="button" class="btn pri" data-a="esGo">พิมพ์</button></div>`;
   esPins();if(!d.open)d.showModal()};
+// tick ลงนามแทน by itself when the box is made out to someone other than the person picked
+const esForAuto=(sl,id)=>{const s=id&&esStaff(id);if(!s)return false;const nm=String(s.name||'').trim();return !!esOther(sl.box,nm)&&!(nm&&sl.box.textContent.includes(nm))};
 // people picked who need their PIN get a PIN box
 function esPins(){const d=$('#esDlg'),box=$('#esPins');if(!d||!box||!ESQ)return;
   const ids=[...new Set([...d.querySelectorAll('select[data-es]')].map(x=>x.value).filter(Boolean))].filter(id=>esUse(esStaff(id))==='pin');
@@ -128,20 +137,21 @@ function esPins(){const d=$('#esDlg'),box=$('#esPins');if(!d||!box||!ESQ)return;
   box.innerHTML=ids.map(id=>done(id)?`<p class="es-pin">${esc(staffName(id))} <span class="ok">✓ สแกนแล้ว</span></p>`:`<label class="es-pin">PIN ของ ${esc(staffName(id))}<input type="password" inputmode="numeric" autocomplete="off" data-pin="${id}" value="${esc(keep[id]||'')}">${bio(id)?`<button type="button" class="btn sm" data-a="bioSig" data-id="${id}">สแกนแทน PIN</button>`:''}</label>`).join('')}
 document.addEventListener('change',e=>{const t=e.target;if(!(t.matches&&t.matches('#esDlg select[data-es]')))return;
   if(t.value&&ESQ){const L=ESQ.slots[+t.dataset.es].label;$('#esDlg').querySelectorAll('select[data-es]').forEach(x=>{if(x!==t&&!x.value&&ESQ.slots[+x.dataset.es].label===L)x.value=t.value})}
+  if(ESQ)$('#esDlg').querySelectorAll('select[data-es]').forEach(x=>{const f=$('#esDlg').querySelector(`input[data-esf="${x.dataset.es}"]`);if(f)f.checked=esForAuto(ESQ.slots[+x.dataset.es],x.value)});
   esPins()});
 ACT.esCancel=()=>{ESQ=null;const d=$('#esDlg');if(d)d.close()};
 ACT.esNone=()=>{ESQ=null;$('#esDlg').close();esNativePrint()};
 ACT.esGo=async()=>{const d=$('#esDlg');if(!d||!ESQ)return;const Q=ESQ,pick=[...d.querySelectorAll('select[data-es]')].map(x=>x.value);
   for(const i of d.querySelectorAll('input[data-pin]')){const s=esStaff(i.dataset.pin);if(!s||!s.pin||await pinHash(s.id,(i.value||'').trim())!==s.pin){toast(`PIN ของ ${s?s.name:''} ไม่ถูกต้อง`);i.value='';i.focus();return}}
-  pick.forEach((id,i)=>{const s=id&&esStaff(id);if(s&&s.sig&&esUse(s))esPut(Q.slots[i],s)});
+  pick.forEach((id,i)=>{const s=id&&esStaff(id),f=d.querySelector(`input[data-esf="${i}"]`);if(f)Q.slots[i].for=f.checked;if(s&&s.sig&&esUse(s))esPut(Q.slots[i],s)});
   ESQ=null;d.close();setTimeout(esNativePrint,60)};
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches&&e.target.matches('#esDlg input[data-pin]')){e.preventDefault();ACT.esGo()}});
 document.head.insertAdjacentHTML('beforeend',`<style>
 #esPad{width:100%;max-width:640px;height:auto;aspect-ratio:840/300;border:1px dashed var(--line);border-radius:10px;background:#fff;touch-action:none;display:block}
 .es-cur{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.es-cur img,.es-th{height:44px;max-width:180px;object-fit:contain;background:#fff;border:1px solid var(--line-2,var(--line));border-radius:6px;padding:2px 6px}
-.es-sl{display:flex;flex-direction:column;gap:8px}.es-sl label{display:grid;grid-template-columns:1fr minmax(180px,240px);gap:10px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:8px}
-.es-sl label span{font-size:13px;line-height:1.4}.es-pin{display:flex;gap:10px;align-items:center;margin-top:6px}.es-pin input{width:140px;letter-spacing:4px}
-@media (max-width:560px){.es-sl label{grid-template-columns:1fr}}
+.es-sl{display:flex;flex-direction:column;gap:8px}.es-sl .es-r{display:grid;grid-template-columns:1fr minmax(180px,240px);gap:10px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:8px}
+.es-sl .es-r>span:first-child{font-size:13px;line-height:1.4}.es-pin{display:flex;gap:10px;align-items:center;margin-top:6px}.es-pin input{width:140px;letter-spacing:4px}
+@media (max-width:560px){.es-sl .es-r{grid-template-columns:1fr}}
 #print .esig-h{position:relative}
 #print img.esig{position:absolute;left:50%;transform:translateX(-50%);height:40px;max-width:92%;width:auto;object-fit:contain;pointer-events:none;border:0}
 #print img.esig-top{bottom:calc(100% + 1px)}
@@ -149,7 +159,8 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 #print img.esig-in{bottom:-4px;height:54px}
 #print .esig-at{display:inline-block}#print img.esig-at{bottom:0;height:40px;max-width:210px}
 #print .sgp img.esig-i{position:static;transform:none}
-#print .esig-n{display:block;font-size:.92em;margin-top:2px}
+#print .esig-n{display:block;font-size:.92em;margin-top:2px}#print .esig-for{font-weight:600}
+.es-sel{display:flex;flex-direction:column;gap:4px}.es-sl label.es-for{display:flex;gap:6px;font-size:12.5px;color:var(--muted);align-items:center}.es-for input{width:auto}
 #print .sign.esig-room{margin-top:48px}
 .es-sl h3{font-size:13px;margin:6px 0 0;color:var(--muted)}
 </style>`);
