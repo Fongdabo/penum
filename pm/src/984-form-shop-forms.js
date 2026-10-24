@@ -2,7 +2,8 @@
    Each form prints the quotation's own data. Forms built on the ORIEN Modern print (981) add their parts to it; the others have their
    own layout here but keep its classes (QM_CSS), so they read as one family and take a colour from fsVars().
    Service (PM/MA) quotations: สัญญารายปี ผ่อนรายเดือน, อัตราค่าบริการต่อครั้ง, เหมารวมอะไหล่.
-   Installation quotations: งานต่อเติม / รีโนเวท, Design & Build, งานเพิ่ม-ลด (VO). */
+   Installation quotations: งานต่อเติม / รีโนเวท, Design & Build, งานเพิ่ม-ลด (VO); government ปร.4, ปร.5 (ก), ปร.5 (ข), ปร.6;
+   building systems: แอร์, ไฟฟ้า, ประปา-สุขาภิบาล, ดับเพลิง, รวมทุกระบบแยกหมวด. */
 
 // ---- the parts every form here uses: labels in the quotation's language, header, cards, totals, signatures
 function fsCtx(Q){const C=CO(),L=qmLang(Q),EN=L==='en';
@@ -77,6 +78,18 @@ const FS_X=`<style>
 #print .qm .fs-sc .fs-gh{display:flex;justify-content:space-between;gap:10px;font-weight:700;color:var(--qn);font-size:11.5px}
 #print .qm .fs-sc ul{margin:3px 0 0;padding-left:18px}#print .qm .fs-sc li{display:flex;justify-content:space-between;gap:10px}
 #print .qm .fs-sc li span{color:var(--qg);white-space:nowrap}
+#print .qm .fs-kpi small{display:block;font-size:9px;color:var(--qg)}#print .qm .fs-kpi>div.hi small{color:var(--qe,#E3F1F3)}
+#print .qm .fs-sec b.fs-lh{display:block;margin:4px 0 1px;color:var(--qn)}
+#print .qm table.fs-sys{width:100%;border-collapse:collapse;font-size:10.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#print .qm table.fs-sys th{text-align:left;color:var(--qg);font-weight:600;border:none;border-bottom:1px solid var(--ql);padding:3px 4px;background:none}
+#print .qm table.fs-sys td{padding:4px;border:none;border-bottom:1px solid #EDF3F4;background:none}
+#print .qm table.fs-sys .r{text-align:right;font-variant-numeric:tabular-nums}
+#print .qm table.fs-sys td i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#print .qm table.fs-sys .bar{display:inline-block;width:80px;height:7px;border-radius:4px;background:#EDF2F4;vertical-align:middle;overflow:hidden;margin-right:4px}
+#print .qm table.fs-sys .bar span{display:block;height:100%;border-radius:4px}
+#print .qm table.fs-sys tr.tt td{font-weight:700;border-top:1.5px solid var(--qn);border-bottom:none}
+#print .qm .fs-row{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:4px 0;border-bottom:1px solid #EDF3F4;break-inside:avoid}
+#print .qm .fs-row:last-child{border-bottom:none}
 </style>`;
 // a form's colour over a print made by another function
 const fsTint=(h,hex)=>FS_CSS+FS_X+h.replace('<div class="qm"',`<div class="qm fs-brand" style="${Object.entries(fsVars(hex)).map(([k,v])=>`${k}:${v}`).join(';')}"`);
@@ -169,3 +182,194 @@ FS_FORMS.push(
       const body=X.head('ใบเสนอราคางานเพิ่ม-ลด','Variation Order Quotation','VARIATION ORDER',[Q.voNo,Q.title,Q.pname].filter(Boolean).join(' · '))+`<div class="qm-2">${X.custCard()}${ctr}</div>${kpi}${why}${tb}
         <div class="qm-ft">${X.terms()}<div>${tt}${X.words(Math.abs(after+vat))}</div></div>${X.signs([[t('ผู้เสนอราคา','Prepared by'),'',X.by],[t('ผู้ควบคุมงาน / ที่ปรึกษา','Supervisor / consultant'),tx('ตรวจสอบปริมาณงานและราคาแล้ว','Quantities and prices checked'),''],[t('ผู้ว่าจ้างอนุมัติ','Client approval'),tx('อนุมัติงานเพิ่ม-ลดตามรายการนี้','We approve this variation'),'',1]])}`;
       return fsTint(X.doc('VO',body),'#1D4ED8')}});
+
+// ===== government forms: ปร.4, ปร.5 (ก), ปร.5 (ข), ปร.6. Thai only, black on white, laid out as the agencies ask; the company's logo and name sit small on top.
+// ค่างานต้นทุน is a line before the mark-up; Factor F turns it into the price. With no Factor F typed, the form uses the one that gives this quotation's own total.
+// ครุภัณฑ์จัดซื้อ (equipment bought in) takes VAT only (ปร.5 (ข)): the sections whose name says ครุภัณฑ์, or the section numbers typed in govEq.
+const FS_GOV=`<style>
+#print .fsg{font-size:11px;color:#000;line-height:1.45;font-family:"Sarabun","TH Sarabun New","IBM Plex Sans Thai",Tahoma,sans-serif}
+#print .fsg .gtop{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;font-size:10.5px;margin-bottom:2px}
+#print .fsg .gtop .gco{display:flex;align-items:center;gap:6px;color:#333}#print .fsg .gtop img{max-height:26px;max-width:110px}
+#print .fsg .gtop .gfm{text-align:right;white-space:nowrap}#print .fsg .gtop .gfm b{font-size:12px;border:1.2px solid #000;padding:1px 8px;margin-left:8px}
+#print .fsg h1{text-align:center;font-size:15px;margin:4px 0 6px;font-weight:700;color:#000}
+#print .fsg table{width:100%;border-collapse:collapse}
+#print .fsg table.gk{margin:0 0 6px}#print .fsg table.gk td{border:none;padding:1px 4px;vertical-align:bottom;background:none}
+#print .fsg table.gk td.k{width:1%;white-space:nowrap;padding-left:0}#print .fsg table.gk td.v{border-bottom:1px dotted #000}
+#print .fsg table.gt th,#print .fsg table.gt td{border:1px solid #000;padding:3px 5px;background:#fff;color:#000;vertical-align:top}
+#print .fsg table.gt th{font-weight:700;text-align:center;vertical-align:middle}
+#print .fsg table.gt td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}#print .fsg table.gt td.c{text-align:center}
+#print .fsg table.gt tr.g td{font-weight:700}#print .fsg table.gt tr.s td{font-weight:700;background:#F2F2F2}
+#print .fsg table.gt tr.t td{font-weight:700;border-top:2px solid #000}#print .fsg table.gt tr.w td{text-align:center;font-weight:700}
+#print .fsg .gn{margin:6px 0;font-size:10.5px}
+#print .fsg .gs{display:grid;gap:14px;margin-top:22px;break-inside:avoid}
+#print .fsg .gs>div{text-align:center;font-size:10.5px}#print .fsg .gs .ln{margin-top:26px}#print .fsg .gs small{display:block;color:#444}
+</style>`;
+const fsGovEq=(Q,g,k)=>{const L=String(Q.govEq||'').split(/[\s,]+/).filter(Boolean);return L.length?L.includes(String(k+1)):/ครุภัณฑ์|equipment/i.test(gName(g))};
+// a line's cost before the mark-up, split into material and labour when the line has them
+function fsCost(Q,i){const q=n(i.q),m=n(i.m),l=n(i.l),b=q*(m+l),t=n(i.t)||b||qLine(Q,i).t,k=b?t/b:0;return {t,sp:!!b,mu:m*k,lu:l*k,mt:q*m*k,lt:q*l*k}}
+// sections with their cost and price (the quotation's discount and added rows spread over them), split into building work and equipment
+function fsGov(Q){const c=qCalc(Q),G=fsGroups(Q),all=sum(G,g=>g.t),s=all?c.net/all:1;
+  G.forEach((g,k)=>{g.k=k;g.eq=fsGovEq(Q,g.g,k);g.cost=sum(g.items,i=>fsCost(Q,i).t);g.price=g.t*s});
+  let A=G.filter(g=>!g.eq),B=G.filter(g=>g.eq);if(!A.length){A=B;B=[]}
+  const cA=sum(A,g=>g.cost),pA=sum(A,g=>g.price),pB=sum(B,g=>g.price),own=n(Q.govF)>0,F=own?n(Q.govF):cA?Math.round(pA*1.07/cA*10000)/10000:1;
+  return {s,G,A,B,cA,F,own,tA:cA*F,pB,vB:pB*0.07,tB:pB*1.07,tot:cA*F+pB*1.07}}
+const fsGv=v=>v===''||v==null?'......':fmtq(v);
+function fsGovHead(Q,form,title,rows){const C=CO(),cu=C.customers.find(x=>x.id===Q.cust)||{};
+  const R=[['ชื่อโครงการ / งานก่อสร้าง',Q.pname||Q.title],['สถานที่ก่อสร้าง',Q.site],['หน่วยงานเจ้าของโครงการ',Q.govOrg||cu.name],...(rows||[])];
+  return `<div class="gtop"><div class="gco">${C.logo?`<img src="${C.logo}" alt="">`:''}<span>${esc(C.name||'')}</span></div><div class="gfm">แผ่นที่ ...... / ......<b>แบบ ${form}</b></div></div>
+    <h1>${title}</h1><table class="gk"><tbody>${R.map(([k,v])=>`<tr><td class="k">${k}</td><td class="v">${esc(v==null?'':String(v))||'&nbsp;'}</td></tr>`).join('')}</tbody></table>`}
+// who signs: the names typed in govCom ("name | role" a line), else the company's estimator, checker and bidder
+function fsGovSigns(Q){const L=String(Q.govCom||'').split('\n').map(x=>x.trim()).filter(Boolean).map(x=>{const [a,b]=x.split('|').map(y=>y.trim());return [a,b||'กรรมการ']});
+  const B=L.length?L:[[Q.by||'','ผู้ประมาณราคา'],['','ผู้ตรวจสอบ'],[Q.signName||'','ผู้เสนอราคา'+(Q.signPos?' · '+Q.signPos:''),'ประทับตราบริษัท (ถ้ามี)']];
+  return `<div class="gs" style="grid-template-columns:repeat(${Math.min(B.length,4)},1fr)">${B.map(([nm,ro,x])=>`<div><div class="ln">(ลงชื่อ) ......................................</div><div>( ${esc(nm||'')||'......................................'} )</div><div>${esc(ro)}</div>${x?`<small>${x}</small>`:''}</div>`).join('')}</div>`}
+const fsGovDoc=(Q,name,land,body)=>FS_GOV+(land?'<style>@page{size:A4 landscape;margin:10mm}</style>':'')+`<div class="fsg" data-doc-name="${esc([Q.no,name,Q.pname||Q.title].filter(Boolean).join(' '))}">${body}</div>`;
+const fsGovBy=Q=>['ประมาณราคาโดย',[CO().name,Q.by].filter(Boolean).join(' · ')],fsGovDt=Q=>['ประมาณราคาเมื่อวันที่',okD(Q.date)?thDL(Q.date):''];
+const FS_GI={govOrg:['govOrg','หน่วยงานเจ้าของโครงการ (ว่าง = ชื่อลูกค้า)'],govDrw:['govDrw','แบบเลขที่'],govF:['govF','Factor F (ว่าง = คิดจากราคาในใบเสนอราคา)','num'],
+  govAdv:['govAdv','เงินล่วงหน้าจ่าย (%)','num'],govRet:['govRet','เงินประกันผลงานหัก (%)','num'],govInt:['govInt','ดอกเบี้ยเงินกู้ (% ต่อปี)','num'],govDays:['govDays','ระยะเวลาดำเนินการ (วัน)','num'],
+  govEq:['govEq','หมวดครุภัณฑ์จัดซื้อ (ลำดับหมวด เช่น 4)','','ว่าง = หมวดที่ชื่อมีคำว่า ครุภัณฑ์'],
+  govCom:['govCom','ผู้ลงนาม (ว่าง = ผู้ประมาณราคา ผู้ตรวจสอบ ผู้เสนอราคา)','area','หรือคณะกรรมการ บรรทัดละคน ชื่อ | ตำแหน่ง เช่น\nนายสมชาย ใจดี | ประธานกรรมการ']};
+const fsGI=a=>a.map(k=>FS_GI[k]);
+const fsGovSmp=it=>({title:'ปรับปรุงระบบไฟฟ้าและปรับอากาศ อาคารเรียน 2',pname:'ปรับปรุงระบบไฟฟ้าและปรับอากาศ อาคารเรียน 2',site:'โรงเรียนตัวอย่าง จ.นครปฐม',govOrg:'สำนักงานเขตพื้นที่การศึกษาตัวอย่าง',
+  govDrw:'ฟฟ.01–ฟฟ.12, ปอ.01–ปอ.08',govDays:120,govAdv:0,govRet:0,govInt:7,mk:25,qpay:[],terms:'',
+  items:[it('งานระบบไฟฟ้า','ตู้ไฟฟ้าย่อย LP 24 ช่อง พร้อมเบรกเกอร์','ตู้',4,14500,2500),it('งานระบบไฟฟ้า','สายไฟฟ้า THW 2.5 ตร.มม. ร้อยท่อ EMT','ม.',1800,28,22),it('งานระบบไฟฟ้า','โคมไฟ LED แบบตะแกรง 2x18W','ชุด',96,850,150),
+    it('งานระบบปรับอากาศ','เครื่องปรับอากาศแบบแยกส่วน 36,000 BTU/hr','ชุด',8,36500,4500),it('งานระบบปรับอากาศ','ท่อน้ำยาทองแดงพร้อมฉนวน','ม.',160,380,160),
+    it('ครุภัณฑ์จัดซื้อ','เครื่องฟอกอากาศ ขนาดห้อง 40 ตร.ม.','เครื่อง',8,6900,0),it('ครุภัณฑ์จัดซื้อ','พัดลมติดผนัง 16 นิ้ว','ตัว',24,1150,0)]});
+const fsGovM=v=>Math.abs(v)<0.005?'–':fmt(v,2);
+FS_FORMS.push(
+  {id:'gov-pr4',g:'gov',k:'boq',n:'ปร.4 รายการปริมาณงานและราคา',d:'แบบแสดงรายการ ปริมาณงาน และราคา แยกค่าวัสดุ ค่าแรงงาน รวมทุกหมวด กระดาษแนวนอน',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
+    inp:fsGI(['govOrg','govDrw','govF','govEq','govCom']),
+    pr:Q=>{const V=fsGov(Q),M=fsGovM;let tm=0,tl=0,tt=0;
+      const rows=V.G.map((g,k)=>{let m=0,l=0,t=0;const b=g.items.map((i,j)=>{const x=fsCost(Q,i);m+=x.mt;l+=x.lt;t+=x.t;
+          return `<tr><td class="c">${k+1}.${j+1}</td><td>${fsDesc(i)}</td><td class="r">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td><td class="r">${x.sp?M(x.mu):''}</td><td class="r">${x.sp?M(x.mt):''}</td><td class="r">${x.sp?M(x.lu):''}</td><td class="r">${x.sp?M(x.lt):''}</td><td class="r">${M(x.t)}</td><td></td></tr>`}).join('');
+        tm+=m;tl+=l;tt+=t;
+        return `<tr class="g"><td class="c">${k+1}</td><td colspan="8">${esc(gName(g.g))}</td><td>${g.eq&&V.B.length?'ครุภัณฑ์ ปร.5 (ข)':''}</td></tr>${b}<tr class="s"><td></td><td style="text-align:right">รวม${esc(gName(g.g))}</td><td colspan="3"></td><td class="r">${M(m)}</td><td></td><td class="r">${M(l)}</td><td class="r">${M(t)}</td><td></td></tr>`}).join('');
+      const tb=`<table class="gt"><colgroup>${[5,26,7,6,9,10,9,10,11,7].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th rowspan="2">ลำดับ</th><th rowspan="2">รายการ</th><th rowspan="2">จำนวน</th><th rowspan="2">หน่วย</th><th colspan="2">ราคาค่าวัสดุ</th><th colspan="2">ราคาค่าแรงงาน</th><th rowspan="2">รวมค่าวัสดุและค่าแรงงาน</th><th rowspan="2">หมายเหตุ</th></tr>
+        <tr><th>ราคาต่อหน่วย</th><th>จำนวนเงิน</th><th>ราคาต่อหน่วย</th><th>จำนวนเงิน</th></tr></thead><tbody>${rows}
+        <tr class="t"><td></td><td style="text-align:right">รวมค่างานต้นทุนทั้งหมด</td><td colspan="3"></td><td class="r">${M(tm)}</td><td></td><td class="r">${M(tl)}</td><td class="r">${M(tt)}</td><td></td></tr></tbody></table>`;
+      const note=`<div class="gn">ราคาในแบบนี้เป็นค่างานต้นทุน ยังไม่รวมค่าอำนวยการ กำไร ดอกเบี้ย และภาษี · แบบ ปร.5 (ก) คูณ Factor F ${fmt(V.F,4)}${V.own?'':' (คิดจากราคาในใบเสนอราคานี้)'}${V.B.length?' · หมวดครุภัณฑ์คิดภาษีมูลค่าเพิ่มอย่างเดียวในแบบ ปร.5 (ข)':''}</div>`;
+      return fsGovDoc(Q,'ปร.4',1,fsGovHead(Q,'ปร.4','แบบแสดงรายการ ปริมาณงาน และราคา',[['แบบเลขที่',Q.govDrw],fsGovBy(Q),fsGovDt(Q)])+tb+note+fsGovSigns(Q))}},
+  {id:'gov-pr5a',g:'gov',k:'boq',n:'ปร.5 (ก) สรุปค่าก่อสร้าง',d:'สรุปค่างานต้นทุนทีละหมวด คูณ Factor F เป็นค่าก่อสร้าง พร้อมเงื่อนไขเงินล่วงหน้า ประกันผลงาน ดอกเบี้ย',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
+    inp:fsGI(['govOrg','govDrw','govF','govAdv','govRet','govInt','govDays','govEq','govCom']),
+    pr:Q=>{const V=fsGov(Q);
+      const rows=V.A.map((g,k)=>`<tr><td class="c">${k+1}</td><td>${esc(gName(g.g))}</td><td class="r">${fmt(g.cost,2)}</td><td class="c">${fmt(V.F,4)}</td><td class="r">${fmt(g.cost*V.F,2)}</td><td></td></tr>`).join('');
+      const tb=`<table class="gt"><colgroup>${[7,39,16,10,16,12].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th>ลำดับ</th><th>รายการ</th><th>ค่างานต้นทุน<br>(บาท)</th><th>Factor F</th><th>ค่าก่อสร้าง<br>(บาท)</th><th>หมายเหตุ</th></tr></thead><tbody>${rows}
+        <tr class="t"><td></td><td style="text-align:right">รวมค่าก่อสร้างทั้งหมด</td><td class="r">${fmt(V.cA,2)}</td><td></td><td class="r">${fmt(V.tA,2)}</td><td></td></tr>
+        <tr class="w"><td colspan="6">(${esc(bahtText(V.tA))})</td></tr></tbody></table>`;
+      const cond=`<div class="gn"><b>เงื่อนไขที่ใช้คำนวณ Factor F</b> เงินล่วงหน้าจ่าย ${fsGv(Q.govAdv)} % · เงินประกันผลงานหัก ${fsGv(Q.govRet)} % · ดอกเบี้ยเงินกู้ ${fsGv(Q.govInt)} % ต่อปี · ภาษีมูลค่าเพิ่ม 7 %
+        ${V.own?'':'<br>Factor F นี้คิดจากราคาในใบเสนอราคา (ราคารวมภาษีมูลค่าเพิ่ม ÷ ค่างานต้นทุน) พิมพ์ค่าจากตาราง Factor F ของกรมบัญชีกลางในช่อง Factor F แทนได้'}
+        ${V.B.length?`<br>ค่าครุภัณฑ์จัดซื้อ ${fmt(V.tB,2)} บาท (รวมภาษีมูลค่าเพิ่ม) อยู่ในแบบ ปร.5 (ข) และรวมไว้ในแบบ ปร.6`:''}</div>`;
+      return fsGovDoc(Q,'ปร.5 (ก)',0,fsGovHead(Q,'ปร.5 (ก)','แบบสรุปค่าก่อสร้าง',[['แบบเลขที่',Q.govDrw],['ประมาณราคาตามแบบ ปร.4',`${V.A.length} หมวด`],['ระยะเวลาดำเนินการ',n(Q.govDays)?`${fmtq(Q.govDays)} วัน`:''],fsGovBy(Q),fsGovDt(Q)])+tb+cond+fsGovSigns(Q))}},
+  {id:'gov-pr5b',g:'gov',k:'boq',n:'ปร.5 (ข) สรุปค่าครุภัณฑ์จัดซื้อ',d:'ครุภัณฑ์และของที่ซื้อมาติดตั้ง ไม่คูณ Factor F คิดภาษีมูลค่าเพิ่ม 7% อย่างเดียว แยกตามหมวด',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
+    inp:fsGI(['govOrg','govEq','govCom']),
+    pr:Q=>{const V=fsGov(Q),B=V.B.length?V.B:V.G,pB=sum(B,g=>g.price);
+      const rows=B.map((g,k)=>`<tr class="g"><td class="c">${k+1}</td><td colspan="5">${esc(gName(g.g))}</td></tr>`+g.items.map((i,j)=>{const L=qLine(Q,i);
+          return `<tr><td class="c">${k+1}.${j+1}</td><td>${fsDesc(i)}</td><td class="r">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td><td class="r">${fmt(L.u*V.s,2)}</td><td class="r">${fmt(L.t*V.s,2)}</td></tr>`}).join('')
+        +`<tr class="s"><td></td><td style="text-align:right">รวม${esc(gName(g.g))}</td><td colspan="3"></td><td class="r">${fmt(g.price,2)}</td></tr>`).join('');
+      const tb=`<table class="gt"><colgroup>${[8,44,10,9,14,15].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th>ลำดับ</th><th>รายการ</th><th>จำนวน</th><th>หน่วย</th><th>ราคาต่อหน่วย<br>(บาท)</th><th>จำนวนเงิน<br>(บาท)</th></tr></thead><tbody>${rows}
+        <tr class="t"><td></td><td style="text-align:right">รวมค่าครุภัณฑ์ ไม่รวมภาษีมูลค่าเพิ่ม</td><td colspan="3"></td><td class="r">${fmt(pB,2)}</td></tr>
+        <tr><td></td><td style="text-align:right">ภาษีมูลค่าเพิ่ม 7 %</td><td colspan="3"></td><td class="r">${fmt(pB*0.07,2)}</td></tr>
+        <tr class="t"><td></td><td style="text-align:right">รวมค่าครุภัณฑ์จัดซื้อทั้งสิ้น</td><td colspan="3"></td><td class="r">${fmt(pB*1.07,2)}</td></tr>
+        <tr class="w"><td colspan="6">(${esc(bahtText(pB*1.07))})</td></tr></tbody></table>`;
+      return fsGovDoc(Q,'ปร.5 (ข)',0,fsGovHead(Q,'ปร.5 (ข)','แบบสรุปค่าครุภัณฑ์จัดซื้อ',[fsGovBy(Q),fsGovDt(Q)])+tb+`<div class="gn">ค่าครุภัณฑ์จัดซื้อไม่คูณ Factor F คิดภาษีมูลค่าเพิ่มอย่างเดียว</div>`+fsGovSigns(Q))}},
+  {id:'gov-pr6',g:'gov',k:'boq',n:'ปร.6 สรุปราคากลาง',d:'หน้าสรุปรวมค่าก่อสร้างจาก ปร.5 (ก) กับค่าครุภัณฑ์จาก ปร.5 (ข) เป็นราคาเดียว พร้อมช่องลงนามคณะกรรมการ',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
+    inp:fsGI(['govOrg','govF','govDays','govEq','govCom']),
+    pr:Q=>{const V=fsGov(Q),R=[[`ค่าก่อสร้าง${Q.title?' '+Q.title:''} (ตามแบบ ปร.5 (ก))`,V.tA,`Factor F ${fmt(V.F,4)}`],...(V.B.length?[['ค่าครุภัณฑ์จัดซื้อ (ตามแบบ ปร.5 (ข))',V.tB,'รวมภาษีมูลค่าเพิ่ม 7 %']]:[])];
+      const tb=`<table class="gt"><colgroup>${[8,56,18,18].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th>ลำดับ</th><th>รายการ</th><th>ค่าก่อสร้าง<br>(บาท)</th><th>หมายเหตุ</th></tr></thead><tbody>
+        ${R.map(([k,v,x],j)=>`<tr><td class="c">${j+1}</td><td>${esc(k)}</td><td class="r">${fmt(v,2)}</td><td>${esc(x)}</td></tr>`).join('')}
+        <tr class="t"><td></td><td style="text-align:right">สรุปราคาค่าก่อสร้างเป็นเงินทั้งสิ้น</td><td class="r">${fmt(V.tot,2)}</td><td></td></tr>
+        <tr class="w"><td colspan="4">(${esc(bahtText(V.tot))})</td></tr></tbody></table>`;
+      const att=`ปร.4 ${V.G.length} หมวด · ปร.5 (ก)${V.B.length?' · ปร.5 (ข)':''}`;
+      return fsGovDoc(Q,'ปร.6',0,fsGovHead(Q,'ปร.6','แบบสรุปราคากลางงานก่อสร้าง',[['แบบที่แนบ',att],['ระยะเวลาดำเนินการ',n(Q.govDays)?`${fmtq(Q.govDays)} วัน`:''],fsGovBy(Q),fsGovDt(Q)])+tb+fsGovSigns(Q))}});
+
+// ===== building-systems forms: the ORIEN Modern print in the system's colour, its key numbers on top, its standards, tests, exclusions and warranty before the signatures.
+// The lists are ORIEN's defaults; a quotation can type its own (std_<system>, ex_<system>).
+const fsCnt=(Q,re,u)=>sum(Q.items.filter(i=>n(i.q)>0&&re.test([i.type,i.desc].join(' '))&&(!u||u.test(String(i.unit||'').trim()))),i=>n(i.q));
+const fsNum=(v,th,en,EN)=>v?`${fmtq(v)} ${EN?en:th}`:'–';
+const FS_SYS={
+  hvac:{n:'ระบบปรับอากาศและระบายอากาศ',en:'Air conditioning and ventilation',col:'#0284C7',re:/ปรับอากาศ|แอร์|ระบายอากาศ|hvac|air.?con|ventil|chiller|ท่อลม|duct|fcu|ahu|vrf|split|น้ำยา|btu/i,
+    std:['มาตรฐานระบบปรับอากาศและระบายอากาศ วสท. 3003','ASHRAE 62.1 การระบายอากาศเพื่อคุณภาพอากาศภายในอาคาร','ASHRAE 90.1 และเกณฑ์อาคารประหยัดพลังงาน (BEC)','SMACNA งานท่อลม'],
+    stdEn:['EIT 3003 air conditioning and ventilation standard','ASHRAE 62.1 ventilation for indoor air quality','ASHRAE 90.1 and the Building Energy Code (BEC)','SMACNA ductwork'],
+    test:['ทดสอบรอยรั่วท่อน้ำยาด้วยไนโตรเจน และทำสุญญากาศก่อนเติมน้ำยา','วัดอุณหภูมิลมจ่าย ลมกลับ แรงดันน้ำยา และกระแสไฟของทุกเครื่อง','ปรับสมดุลลม (TAB) และทดสอบการระบายน้ำทิ้ง'],
+    testEn:['Nitrogen leak test and vacuum before charging refrigerant','Supply and return air temperature, refrigerant pressure and current of every unit','Air balancing (TAB) and condensate drain test'],
+    ex:['งานรื้อถอนและซ่อมแซมฝ้า ผนัง ที่ไม่ได้ระบุในรายการ','งานไฟฟ้าก่อนถึงสวิตช์ตัดตอนของเครื่อง','งานโครงสร้างรองรับเครื่องขนาดใหญ่'],
+    exEn:['Ceiling and wall removal or repair not listed','Power supply up to each unit\'s isolator','Structural supports for large equipment'],
+    warr:'งานติดตั้ง 1 ปี · เครื่องและคอมเพรสเซอร์ตามเงื่อนไขผู้ผลิต',warrEn:'Installation 1 year · units and compressors as the maker\'s warranty',
+    kpi:(Q,EN)=>{let b=0,u=0;Q.items.forEach(i=>{const m=String([i.type,i.desc].join(' ')).match(/([\d,]+(?:\.\d+)?)\s*btu/i);if(m&&n(i.q)>0){b+=n(i.q)*n(m[1].replace(/,/g,''));u+=n(i.q)}});
+      return [['ขนาดทำความเย็นรวม','Total cooling',b?fmt(b/12000,1)+' TR':'–',b?fmt(b,0)+' BTU/h':''],['เครื่องปรับอากาศ','Units',fsNum(u,'เครื่อง','units',EN)]]}},
+  elec:{n:'ระบบไฟฟ้าและแสงสว่าง',en:'Electrical and lighting',col:'#CA8A04',re:/ไฟฟ้า|elec|แสงสว่าง|light|ตู้ไฟ|สายไฟ|cable|panel|mdb|โคม|ปลั๊ก|เต้ารับ|เบรกเกอร์|breaker|หม้อแปลง|transformer|ups|generator|สายดิน/i,
+    std:['มาตรฐานการติดตั้งทางไฟฟ้าสำหรับประเทศไทย วสท. 2001','ข้อกำหนดของการไฟฟ้านครหลวง / การไฟฟ้าส่วนภูมิภาค','สายไฟฟ้าตาม มอก. 11 · ตู้สวิตช์บอร์ดตาม IEC 61439','ค่าความส่องสว่างตามมาตรฐานสมาคมไฟฟ้าแสงสว่างแห่งประเทศไทย (TIEA)'],
+    stdEn:['EIT 2001 Thai electrical installation code','MEA / PEA requirements','Cables to TIS 11 · switchboards to IEC 61439','Lighting levels to TIEA'],
+    test:['วัดค่าความเป็นฉนวนของสายไฟ (Megger) ทุกวงจร','วัดค่าความต้านทานหลักดิน ไม่เกิน 5 โอห์ม','ทดสอบเบรกเกอร์ เครื่องตัดไฟรั่ว และวัดค่าความส่องสว่าง'],
+    testEn:['Insulation resistance (Megger) of every circuit','Earth electrode resistance not over 5 ohms','Breakers, RCDs and lighting levels'],
+    ex:['ค่าธรรมเนียมขอขยายเขตและติดตั้งมิเตอร์ของการไฟฟ้า','หม้อแปลงและงานไฟฟ้าแรงสูงที่ไม่ได้ระบุในรายการ','ดวงโคมตกแต่งที่เจ้าของจัดหาเอง'],
+    exEn:['Utility fees for supply extension and meters','Transformers and high-voltage work not listed','Decorative fittings supplied by the owner'],
+    warr:'งานติดตั้ง 1 ปี · อุปกรณ์ตามเงื่อนไขผู้ผลิต',warrEn:'Installation 1 year · equipment as the maker\'s warranty',
+    kpi:(Q,EN)=>[['ดวงโคม','Light fittings',fsNum(fsCnt(Q,/โคม|หลอด|lamp|light|led|luminaire/i),'ชุด','sets',EN)],['เต้ารับ','Outlets',fsNum(fsCnt(Q,/เต้ารับ|ปลั๊ก|socket|outlet|receptacle/i),'จุด','points',EN)],
+      ['ตู้ไฟฟ้า','Panels',fsNum(fsCnt(Q,/ตู้|mdb|\blp\b|\bdb\b|switchboard|consumer unit/i),'ตู้','panels',EN)]]},
+  plumb:{n:'ระบบประปาและสุขาภิบาล',en:'Plumbing and sanitary',col:'#2563EB',re:/ประปา|สุขาภิบาล|plumb|sanit|น้ำดี|น้ำเสีย|น้ำทิ้ง|สุขภัณฑ์|โถ|อ่าง|ก๊อก|drain|ท่อน้ำ|pp-?r|pvc|บำบัด|ปั๊มน้ำ|ถังเก็บน้ำ|water/i,
+    std:['มาตรฐานระบบประปาและสุขาภิบาลในอาคาร วสท.','ท่อ PVC ตาม มอก. 17 · ท่อ PP-R ตาม DIN 8077/8078','กฎหมายควบคุมอาคารเรื่องระบบระบายน้ำและบำบัดน้ำเสีย'],
+    stdEn:['EIT plumbing and sanitary standard','PVC pipe to TIS 17 · PP-R pipe to DIN 8077/8078','Building control law on drainage and waste-water treatment'],
+    test:['ทดสอบแรงดันท่อน้ำดี 1.5 เท่าของแรงดันใช้งาน ไม่น้อยกว่า 2 ชั่วโมง','ทดสอบการไหลและการรั่วซึมของท่อน้ำทิ้ง ท่อน้ำเสีย ท่อระบายอากาศ','ล้างท่อก่อนใช้งาน ทดสอบเครื่องสูบน้ำและสวิตช์ลูกลอย'],
+    testEn:['Water pipes pressure-tested at 1.5 times working pressure for at least 2 hours','Flow and leak test of waste, soil and vent pipes','Pipe flushing, pump and float switch tests'],
+    ex:['ค่าธรรมเนียมขอใช้น้ำประปาและค่ามาตรวัดน้ำ','งานขุดเจาะถนนหรือพื้นที่นอกเขตอาคาร','สุขภัณฑ์และอุปกรณ์ที่เจ้าของจัดหาเอง'],
+    exEn:['Water authority fees and meters','Road or site digging outside the building','Sanitary ware supplied by the owner'],
+    warr:'งานติดตั้ง 1 ปี · เครื่องสูบน้ำและสุขภัณฑ์ตามเงื่อนไขผู้ผลิต',warrEn:'Installation 1 year · pumps and sanitary ware as the maker\'s warranty',
+    kpi:(Q,EN)=>[['สุขภัณฑ์','Fixtures',fsNum(fsCnt(Q,/โถ|อ่าง|ก๊อก|ฝักบัว|สุขภัณฑ์|\bwc\b|lavatory|sink|urinal|faucet|shower/i),'ชุด','sets',EN)],['เครื่องสูบน้ำ','Pumps',fsNum(fsCnt(Q,/ปั๊ม|pump/i),'ชุด','sets',EN)],
+      ['ท่อรวม','Pipe length',fsNum(fsCnt(Q,/ท่อ|pipe/i,/^(ม|ม\.|เมตร|m)$/i),'ม.','m',EN)]]},
+  fire:{n:'ระบบป้องกันอัคคีภัย',en:'Fire protection',col:'#DC2626',re:/ดับเพลิง|อัคคีภัย|fire|sprinkler|สปริงเกอร์|หัวกระจาย|alarm|แจ้งเหตุ|smoke|detector|ตรวจจับ|fhc|standpipe|hose/i,
+    std:['มาตรฐานการป้องกันอัคคีภัย วสท. 3002','NFPA 13 ระบบหัวกระจายน้ำดับเพลิง · NFPA 14 ระบบท่อยืน','NFPA 20 เครื่องสูบน้ำดับเพลิง · NFPA 72 ระบบแจ้งเหตุเพลิงไหม้','กฎกระทรวงฉบับที่ 33 (อาคารสูงและอาคารขนาดใหญ่พิเศษ)'],
+    stdEn:['EIT 3002 fire protection standard','NFPA 13 sprinklers · NFPA 14 standpipes','NFPA 20 fire pumps · NFPA 72 fire alarm','Ministerial Regulation No. 33 (high-rise and large buildings)'],
+    test:['ทดสอบแรงดันท่อ 200 psi นาน 2 ชั่วโมง (NFPA 13)','ทดสอบเครื่องสูบน้ำดับเพลิงที่อัตราไหลและแรงดันที่กำหนด (NFPA 20)','ทดสอบอุปกรณ์ตรวจจับ อุปกรณ์แจ้งเหตุ และเสียงเตือนทุกจุด (NFPA 72)'],
+    testEn:['Hydrostatic test at 200 psi for 2 hours (NFPA 13)','Fire pump test at rated flow and pressure (NFPA 20)','Every detector, call point and sounder tested (NFPA 72)'],
+    ex:['ค่าธรรมเนียมขออนุญาตและค่าตรวจรับจากหน่วยงานราชการ','ถังเก็บน้ำสำรองดับเพลิงที่เป็นงานโครงสร้าง','งานอุดช่องเปิดทนไฟ (Fire stop) ที่ไม่ได้ระบุในรายการ'],
+    exEn:['Permit and inspection fees','Fire water tanks built as structure','Fire stopping not listed'],
+    warr:'งานติดตั้ง 1 ปี · เครื่องสูบน้ำและตู้ควบคุมตามเงื่อนไขผู้ผลิต',warrEn:'Installation 1 year · pumps and panels as the maker\'s warranty',
+    kpi:(Q,EN)=>[['หัวกระจายน้ำดับเพลิง','Sprinkler heads',fsNum(fsCnt(Q,/sprinkler|สปริงเกอร์|หัวกระจาย/i),'หัว','heads',EN)],['อุปกรณ์ตรวจจับ','Detectors',fsNum(fsCnt(Q,/detector|ตรวจจับ|smoke|heat|ควัน/i),'ตัว','pcs',EN)],
+      ['ตู้และถังดับเพลิง','Hose cabinets and extinguishers',fsNum(fsCnt(Q,/ถังดับเพลิง|extinguisher|fhc|ตู้ดับเพลิง|hose/i),'ชุด','sets',EN)]]},
+  com:{n:'ระบบสื่อสารและความปลอดภัย',en:'Communication and security',col:'#7C3AED',re:/สื่อสาร|cctv|กล้อง|\blan\b|network|โทรศัพท์|matv|ทีวี|access|comm/i,
+    std:['TIA-568 ระบบสายสัญญาณสื่อสาร'],stdEn:['TIA-568 structured cabling'],test:['ทดสอบสายสัญญาณทุกจุด และการทำงานของกล้องและอุปกรณ์'],testEn:['Every cable link and device tested']}};
+// a line's system: from its section's name first, then from its own text
+const FS_SK=['fire','hvac','com','elec','plumb'];
+const fsSysOf=i=>{const a=gName(i.g)+' '+(i.head||''),b=[i.type,i.desc].join(' ');return FS_SK.find(k=>FS_SYS[k].re.test(a))||FS_SK.find(k=>FS_SYS[k].re.test(b))||'oth'};
+const fsKpi=(X,R)=>`<div class="fs-kpi" style="grid-template-columns:repeat(${R.length},1fr)">${R.map(([th,en,v,sub,hi])=>`<div${hi?' class="hi"':''}><span>${X.t(th,en,1)}</span><b>${v}</b>${sub?`<small>${sub}</small>`:''}</div>`).join('')}</div>`;
+const fsOwnList=(Q,k)=>String(Q[k]||'').split('\n').map(x=>x.trim()).filter(Boolean);
+const fsUl=a=>`<ul>${a.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`;
+function fsMep(Q,key){const X=fsCtx(Q),{t,EN}=X,S=FS_SYS[key],std=fsOwnList(Q,'std_'+key),ex=fsOwnList(Q,'ex_'+key);
+  const kpi=fsKpi(X,[...S.kpi(Q,EN),['ราคารวมทั้งสิ้น (รวม VAT)','Grand total (incl. VAT)',fmt(X.c.grand,2),'',1]]);
+  const sec=`<div class="fs-sec"><h3>${t('มาตรฐาน การทดสอบ และการรับประกัน','Standards, tests and warranty')}</h3><div class="fs-2c"><div><b class="fs-lh">${t('มาตรฐานที่ใช้','Standards')}</b>${fsUl(std.length?std:EN?S.stdEn:S.std)}
+      <b class="fs-lh">${t('การทดสอบก่อนส่งมอบ','Tests before handover')}</b>${fsUl(EN?S.testEn:S.test)}</div>
+    <div class="no"><b class="fs-lh">${t('ไม่รวมในราคานี้','Not included')}</b>${fsUl(ex.length?ex:EN?S.exEn:S.ex)}<b class="fs-lh">${t('การรับประกัน','Warranty')}</b><div>${esc(Q.warr||(EN?S.warrEn:S.warr))}</div></div></div></div>`;
+  return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,sec),kpi),S.col)}
+const fsMepInp=k=>[['std_'+k,'มาตรฐานที่ใช้ (บรรทัดละข้อ, ว่าง = ตามแบบ)','area',FS_SYS[k].std.join('\n')],['ex_'+k,'ไม่รวมในราคานี้ (บรรทัดละข้อ, ว่าง = ตามแบบ)','area',FS_SYS[k].ex.join('\n')],['warr','การรับประกัน','',FS_SYS[k].warr]];
+const FS_MEP_SMP={
+  elec:it=>({title:'งานระบบไฟฟ้าและแสงสว่าง',items:[it('งานตู้ไฟฟ้า','ตู้ MDB 400A พร้อมเบรกเกอร์ป้องกัน','ตู้',1,185000,15000),it('งานตู้ไฟฟ้า','ตู้ไฟฟ้าย่อย LP 24 ช่อง','ตู้',6,12500,2500),
+    it('งานสายไฟฟ้าและท่อร้อยสาย','สาย NYY 4x50 ตร.มม.','ม.',180,820,120),it('งานสายไฟฟ้าและท่อร้อยสาย','สาย THW 2.5 ตร.มม. ร้อยท่อ EMT','ม.',2400,28,22),
+    it('งานดวงโคมและเต้ารับ','โคมไฟ LED Panel 36W','ชุด',240,950,180),it('งานดวงโคมและเต้ารับ','เต้ารับคู่ มีขั้วสายดิน','จุด',160,180,220),it('งานระบบสายดิน','หลักดินทองแดง 5/8" ยาว 3 ม. พร้อมบ่อตรวจ','ชุด',3,2800,1200)]}),
+  plumb:it=>({title:'งานระบบประปาและสุขาภิบาล',items:[it('งานท่อน้ำดี','ท่อ PP-R PN20 ขนาด 1"','ม.',240,160,90),it('งานท่อน้ำดี','ท่อ PP-R PN20 ขนาด 3/4"','ม.',320,95,70),
+    it('งานท่อน้ำทิ้งและท่อน้ำเสีย','ท่อ PVC ชั้น 8.5 ขนาด 4"','ม.',120,210,110),it('งานท่อน้ำทิ้งและท่อน้ำเสีย','ท่อ PVC ชั้น 8.5 ขนาด 2"','ม.',180,75,60),
+    it('งานสุขภัณฑ์','โถสุขภัณฑ์ชักโครก พร้อมฝารองนั่ง','ชุด',24,5200,800),it('งานสุขภัณฑ์','อ่างล้างหน้า พร้อมก๊อกน้ำ','ชุด',20,2800,600),
+    it('งานเครื่องสูบน้ำและถังบำบัด','ปั๊มน้ำแรงดันคงที่ (Booster pump) 2 ตัว','ชุด',1,68000,8000),it('งานเครื่องสูบน้ำและถังบำบัด','ถังบำบัดน้ำเสียสำเร็จรูป 5,000 ลิตร','ถัง',1,42000,9000)]}),
+  fire:it=>({title:'งานระบบป้องกันอัคคีภัย',items:[it('งานระบบหัวกระจายน้ำดับเพลิง','หัวกระจายน้ำดับเพลิง (Sprinkler) 68°C','หัว',420,380,220),it('งานระบบหัวกระจายน้ำดับเพลิง','ท่อเหล็กดำ SCH40 ขนาด 4"','ม.',160,1250,450),
+    it('งานเครื่องสูบน้ำดับเพลิง','เครื่องสูบน้ำดับเพลิง 750 GPM พร้อม Jockey pump และตู้ควบคุม','ชุด',1,1450000,120000),
+    it('งานตู้ดับเพลิงและถังดับเพลิง','ตู้ดับเพลิง (FHC) พร้อมสายฉีด','ตู้',12,18500,3500),it('งานตู้ดับเพลิงและถังดับเพลิง','ถังดับเพลิงเคมีแห้ง 15 ปอนด์','ถัง',30,2200,0),
+    it('งานระบบแจ้งเหตุเพลิงไหม้','ตู้ควบคุมแจ้งเหตุเพลิงไหม้ (FACP) 8 โซน','ตู้',1,85000,12000),it('งานระบบแจ้งเหตุเพลิงไหม้','อุปกรณ์ตรวจจับควัน (Smoke detector)','ตัว',180,1450,350)]}),
+  all:it=>({title:'งานระบบอาคารสำนักงาน 5 ชั้น',items:[it('งานระบบปรับอากาศ','เครื่องปรับอากาศแบบแยกส่วน 36,000 BTU/hr','ชุด',6,38000,4500),it('งานระบบปรับอากาศ','ท่อน้ำยาทองแดงพร้อมฉนวน','ม.',120,420,180),
+    it('งานระบบไฟฟ้า','ตู้ไฟฟ้าย่อย LP 24 ช่อง','ตู้',6,12500,2500),it('งานระบบไฟฟ้า','โคมไฟ LED Panel 36W','ชุด',240,950,180),
+    it('งานระบบประปาสุขาภิบาล','ท่อ PP-R PN20 ขนาด 1"','ม.',240,160,90),it('งานระบบประปาสุขาภิบาล','โถสุขภัณฑ์ชักโครก พร้อมฝารองนั่ง','ชุด',24,5200,800),
+    it('งานระบบดับเพลิง','หัวกระจายน้ำดับเพลิง (Sprinkler) 68°C','หัว',120,380,220),it('งานระบบดับเพลิง','อุปกรณ์ตรวจจับควัน (Smoke detector)','ตัว',60,1450,350),
+    it('งานระบบกล้องวงจรปิด','กล้อง CCTV IP 4MP พร้อมสาย','ตัว',24,3200,800)]})};
+FS_FORMS.push(
+  {id:'mep-hvac',g:'mep',k:'boq',n:'งานระบบปรับอากาศ',d:'ขนาดทำความเย็นรวม (TR) จำนวนเครื่อง มาตรฐาน วสท./ASHRAE การทดสอบ และสิ่งที่ไม่รวมในราคา',p:690,col:FS_SYS.hvac.col,inp:fsMepInp('hvac'),pr:Q=>fsMep(Q,'hvac')},
+  {id:'mep-elec',g:'mep',k:'boq',n:'งานระบบไฟฟ้า',d:'จำนวนดวงโคม เต้ารับ ตู้ไฟฟ้า มาตรฐาน วสท. 2001 การวัดฉนวนและหลักดินก่อนส่งมอบ',p:690,col:FS_SYS.elec.col,inp:fsMepInp('elec'),smp:FS_MEP_SMP.elec,pr:Q=>fsMep(Q,'elec')},
+  {id:'mep-plumb',g:'mep',k:'boq',n:'งานระบบประปา-สุขาภิบาล',d:'จำนวนสุขภัณฑ์ เครื่องสูบน้ำ ความยาวท่อ มาตรฐานท่อ การทดสอบแรงดันและการรั่วซึม',p:690,col:FS_SYS.plumb.col,inp:fsMepInp('plumb'),smp:FS_MEP_SMP.plumb,pr:Q=>fsMep(Q,'plumb')},
+  {id:'mep-fire',g:'mep',k:'boq',n:'งานระบบดับเพลิง',d:'จำนวนหัวกระจายน้ำ อุปกรณ์ตรวจจับ ตู้และถังดับเพลิง มาตรฐาน NFPA และการทดสอบตามข้อกำหนด',p:690,col:FS_SYS.fire.col,inp:fsMepInp('fire'),smp:FS_MEP_SMP.fire,pr:Q=>fsMep(Q,'fire')},
+  {id:'mep-all',g:'mep',k:'boq',n:'รวมทุกระบบ แยกหมวด',d:'สรุปราคาแยกตามระบบพร้อมสัดส่วน แล้วรายการทั้งหมด และมาตรฐานการทดสอบของแต่ละระบบที่มีในงาน',p:690,col:'#334155',smp:FS_MEP_SMP.all,
+    pr:Q=>{const X=fsCtx(Q),{t,tx,EN}=X,B={};Q.items.forEach(i=>{const k=fsSysOf(i),L=qLine(Q,i),b=B[k]=B[k]||{k,m:0,l:0,t:0};b.m+=L.mt;b.l+=L.lt;b.t+=L.t});
+      const R=Object.values(B).sort((a,b)=>(a.k==='oth')-(b.k==='oth')),T=sum(R,r=>r.t),sp=qSplit(Q),col=k=>k==='oth'?'#94A3B8':FS_SYS[k].col;
+      const nm=k=>k==='oth'?tx('งานอื่น ๆ','Other work'):EN?FS_SYS[k].en:FS_SYS[k].n;
+      const tb=`<div class="fs-sec"><h3>${t('สรุปราคาแยกตามระบบ','Price by system')}</h3><table class="fs-sys"><thead><tr><th>${t('ระบบ','System',1)}</th>${sp?`<th class="r">${t('ค่าวัสดุ','Material',1)}</th><th class="r">${t('ค่าแรง','Labour',1)}</th>`:''}<th class="r">${t('จำนวนเงิน','Amount',1)}</th><th>${t('สัดส่วน','Share',1)}</th></tr></thead><tbody>
+        ${R.map(r=>{const p=T?r.t*100/T:0;return `<tr><td><i style="background:${col(r.k)}"></i>${esc(nm(r.k))}</td>${sp?`<td class="r">${fmt(r.m,2)}</td><td class="r">${fmt(r.l,2)}</td>`:''}<td class="r"><b>${fmt(r.t,2)}</b></td><td><span class="bar"><span style="width:${Math.max(0,p).toFixed(1)}%;background:${col(r.k)}"></span></span>${fmt(p,1)}%</td></tr>`}).join('')}
+        <tr class="tt"><td>${t('รวมทุกระบบ','All systems',1)}</td>${sp?`<td class="r">${fmt(sum(R,r=>r.m),2)}</td><td class="r">${fmt(sum(R,r=>r.l),2)}</td>`:''}<td class="r">${fmt(T,2)}</td><td>100%</td></tr></tbody></table></div>`;
+      const S=R.filter(r=>r.k!=='oth'),std=S.length?`<div class="fs-sec"><h3>${t('มาตรฐานและการทดสอบของแต่ละระบบ','Standards and tests by system')}</h3>${S.map(r=>{const Y=FS_SYS[r.k];
+        return `<div class="fs-row"><b style="color:${Y.col}">${esc(nm(r.k))}</b><div>${esc((EN?Y.stdEn:Y.std).join(' · '))}<br><span style="color:var(--qg)">${tx('ทดสอบ: ','Tests: ')}${esc((EN?Y.testEn:Y.test).join(' · '))}</span></div></div>`}).join('')}</div>`:'';
+      return fsTint(fsTop(fsBefore(qmPrint(Q),fsSigns,std),tb),'#334155')}});

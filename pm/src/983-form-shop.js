@@ -129,9 +129,10 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset.fsc)re
    ORIEN ฝ่ายขาย ticks the forms on the customer and approves, the new code (payload fm) reaches the company by itself. */
 const fsPlan=k=>(Array.isArray(PLANS.forms)?PLANS.forms:[]).find(x=>x&&x.k===k);
 const fsPrice=F=>{const x=fsPlan(F.id);return x&&x.price!=null?n(x.price):n(F.p)};
-const fsSold=()=>FS_FORMS.filter(F=>F.p);
+// sold forms in the shop's order (by group)
+const fsSold=()=>FS_FORMS.filter(F=>F.p).sort((a,b)=>FS_GRP.findIndex(g=>g[0]===a.g)-FS_GRP.findIndex(g=>g[0]===b.g));
 // ซื้อทั้งชุด: every form not bought yet at one price; the code still lists each form, so forms added later are sold on their own
-const fsAllPrice=()=>{const x=fsPlan('all');return x&&x.price!=null?n(x.price):3490};
+const fsAllPrice=()=>{const x=fsPlan('all');return x&&x.price!=null?n(x.price):4900};
 const FS_CART=[];
 // the fields a form needs beyond the quotation's own, under the gallery
 function fsInputs(F,Q){if(!F||!F.inp)return '';const b=`co.quotes.${Q.id}`;
@@ -142,26 +143,29 @@ function fsShopTile(Q){const m=fsSold().filter(F=>!fsOwn(F)&&fsFits(F,Q)).length
 
 // ---- preview: the form printed with the quotation open now (or a sample), on screen; a form not bought carries a watermark
 // a form not bought shows the sample, which has what the form is for (design lines, work taken out); one bought shows the open quotation
-function fsSample(ma,own){const C=CO(),L=C.quotes.filter(q=>!!qmMa(q)===!!ma);const Q=L.find(q=>q.id===S.sel.quote)||L[L.length-1];if(own&&Q&&Q.items.length)return JSON.parse(JSON.stringify(Q));
+function fsSample(ma,own,F){const C=CO(),L=C.quotes.filter(q=>!!qmMa(q)===!!ma);const Q=L.find(q=>q.id===S.sel.quote)||L[L.length-1];if(own&&Q&&Q.items.length)return JSON.parse(JSON.stringify(Q));
   const it=(g,desc,unit,q,m,l)=>({id:uid(),g,head:'',type:'',desc,unit,q,m,l,t:q*(m+l),sp:''});
   const cust=(C.customers[0]||{}).id||'';
-  return ma?{cust,no:'QT-ตัวอย่าง',date:today(),valid:30,title:'บำรุงรักษาเครื่องปรับอากาศ',kind:'ma',maMonths:12,maVisits:4,maStart:today(),maResp:'เข้าตรวจภายใน 24 ชั่วโมง',maHours:'จันทร์–เสาร์ 08:00–17:00',mk:0,disc:0,terms:'',by:'',
+  const R=ma?{cust,no:'QT-ตัวอย่าง',date:today(),valid:30,title:'บำรุงรักษาเครื่องปรับอากาศ',kind:'ma',maMonths:12,maVisits:4,maStart:today(),maResp:'เข้าตรวจภายใน 24 ชั่วโมง',maHours:'จันทร์–เสาร์ 08:00–17:00',mk:0,disc:0,terms:'',by:'',
       items:[it(QM_G,'เครื่องปรับอากาศแบบแยกส่วน 18,000–36,000 BTU','เครื่อง',12,0,0),it(QM_G,'เครื่องส่งลมเย็น AHU','เครื่อง',2,0,0),it(QM_G,'ปั๊มน้ำและระบบท่อ','ระบบ',1,0,0)].map((i,k)=>Object.assign(i,{sp:[4800,18000,9600][k]})),adds:[],qpay:[]}
     :{cust,no:'QT-ตัวอย่าง',date:today(),valid:30,title:'ติดตั้งระบบปรับอากาศ',pname:'อาคารสำนักงานตัวอย่าง',site:'กรุงเทพฯ',mk:15,disc:0,terms:'ราคานี้รวมค่าขนส่งและติดตั้ง',by:'',adds:[],
       qpay:[{no:'1',desc:'เงินล่วงหน้าเมื่อลงนามสัญญา',pct:30},{no:'2',desc:'เมื่อติดตั้งแล้วเสร็จ',pct:60},{no:'3',desc:'เมื่อทดสอบและส่งมอบงาน',pct:10}],
       items:[it('ค่าออกแบบ','ออกแบบงานระบบปรับอากาศและเขียนแบบ','งาน',1,0,45000),it('งานเครื่องปรับอากาศ','Split Type 36,000 BTU/hr','ชุด',6,38000,4500),it('งานเครื่องปรับอากาศ','Split Type 24,000 BTU/hr','ชุด',4,26000,3500),
-        it('งานท่อน้ำยาและท่อน้ำทิ้ง','ท่อทองแดงพร้อมฉนวน 5/8"','ม.',120,420,180),it('งานท่อน้ำยาและท่อน้ำทิ้ง','ถอดเครื่องเดิม (งานลด)','ชุด',-2,0,1500)]}}
-function fsPreview(F){const C=CO(),Q=Object.assign(fsSample(F.k==='ma',fsOwn(F)),{id:'fs-pv'},F.set||{},{form:F.id});if(F.k==='boq')delete Q.kind;if(F.th==='brand'&&!fsRgb(C.formColor))C.formColor='#1c8f9b';
+        it('งานท่อน้ำยาและท่อน้ำทิ้ง','ท่อทองแดงพร้อมฉนวน 5/8"','ม.',120,420,180),it('งานท่อน้ำยาและท่อน้ำทิ้ง','ถอดเครื่องเดิม (งานลด)','ชุด',-2,0,1500)]};
+  // a form can bring its own sample work (F.smp), so the preview shows what it is made for
+  return F&&F.smp?Object.assign(R,F.smp(it)):R}
+function fsPreview(F){const C=CO(),Q=Object.assign(fsSample(F.k==='ma',fsOwn(F),F),{id:'fs-pv'},F.set||{},{form:F.id});if(F.k==='boq')delete Q.kind;if(F.th==='brand'&&!fsRgb(C.formColor))C.formColor='#1c8f9b';
   FS_PV=true;C.quotes.push(Q);let h='';try{h=PRINT.quote('fs-pv')}catch(e){console.error(e)}finally{C.quotes.splice(C.quotes.indexOf(Q),1);FS_PV=false}
   const wm=fsOwn(F)?'':`<div class="fs-wm" aria-hidden="true">${'<span>ตัวอย่าง · ร้านฟอร์ม ORIEN</span>'.repeat(12)}</div>`;
   let bar=$('#fsPvb');if(!bar){bar=document.createElement('div');bar.id='fsPvb';bar.className='fs-pvb';document.body.appendChild(bar)}
   bar.innerHTML=`<b>${esc(F.n)}</b><small>${fsOwn(F)?'ตัวอย่างจากใบเสนอราคาของคุณ':'ตัวอย่าง ยังไม่ได้ซื้อ (มีลายน้ำ)'}</small><span style="flex:1"></span>
     ${fsOwn(F)?'':`<button type="button" class="btn sm pri" data-a="fsCart" data-v="${F.id}">${FS_CART.includes(F.id)?'✓ อยู่ในตะกร้า':'ใส่ตะกร้า · '+fmt(fsPrice(F))+' บาท'}</button>`}<button type="button" class="btn sm" data-a="fsPvClose">ปิด</button>`;
-  const p=$('#print');p.innerHTML=`<div class="fs-paper">${h}${wm}</div>`;fillPhotos(p);document.body.classList.add('fs-pv');p.scrollTop=0}
+  const p=$('#print');p.innerHTML=`<div class="fs-paper${/size:A4 landscape/.test(h)?' land':''}">${h}${wm}</div>`;fillPhotos(p);document.body.classList.add('fs-pv');p.scrollTop=0}
 document.head.insertAdjacentHTML('beforeend',`<style>
 body.fs-pv{overflow:hidden}
 body.fs-pv #print{display:block;position:fixed;inset:0;z-index:9000;overflow:auto;background:#56626B;padding:64px 12px 24px}
 body.fs-pv #print>*{max-width:216mm;margin:0 auto;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+body.fs-pv #print>.fs-paper.land{max-width:303mm}
 .fs-pvb{position:fixed;top:0;left:0;right:0;z-index:9001;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:#1F2A31;color:#fff}
 .fs-pvb small{color:#C9D3D8}.fs-pvb .btn:not(.pri){background:#fff;color:#1F2A31}
 .fs-paper{position:relative;padding:8mm;color:#1F2E36;overflow:hidden}
