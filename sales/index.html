@@ -97,14 +97,20 @@ const PLAN={pilot:['ทดลองใช้ฟรี',0,10],starter:['เริ
 // PM is priced by package (PLAN), MEP and BIM per month, all three together less the bundle discount (ราคาสมมติ, from pm/files/plans.json)
 const APN={pm:'PENUM PM',mep:'PENUM MEP',bim:'PENUM BIM'};
 let APPR={mep:1490,bim:1990,off:20};
+// ร้านฟอร์ม ORIEN: forms a customer bought (payload fm), names and prices from pm/files/plans.json "forms" (k all = the whole set)
+let FORMS=[['gov-pr4','ปร.4 รายการปริมาณงานและราคา',990],['gov-pr5a','ปร.5 (ก) สรุปค่าก่อสร้าง',990],['gov-pr5b','ปร.5 (ข) สรุปค่าครุภัณฑ์จัดซื้อ',990],['gov-pr6','ปร.6 สรุปราคากลาง',990],['mep-hvac','งานระบบปรับอากาศ',690],['mep-elec','งานระบบไฟฟ้า',690],['mep-plumb','งานระบบประปา-สุขาภิบาล',690],['mep-fire','งานระบบดับเพลิง',690],['mep-all','รวมทุกระบบ แยกหมวด',690],['ma-year','สัญญารายปี ผ่อนรายเดือน',690],['ma-visit','อัตราค่าบริการต่อครั้ง',690],['ma-all','เหมารวมอะไหล่',690],['sp-reno','งานต่อเติม / รีโนเวท',490],['sp-db','Design & Build',990],['sp-vo','งานเพิ่ม-ลด (VO)',990]];
+const fmOf=x=>Array.isArray(x&&x.fm)?x.fm:[];
+const fmName=k=>(FORMS.find(f=>f[0]===k)||[k,k])[1];
+const fmBox=(fm,id)=>`<div class="aps" id="${id}"><span class="mut">แบบฟอร์มที่ซื้อจากร้านฟอร์ม ORIEN (จ่ายครั้งเดียว ติ๊กไว้ทุกครั้งที่ต่ออายุ)</span><div class="row">${FORMS.map(([k,v,pr])=>`<label class="ck"><input type="checkbox" value="${k}"${fm.includes(k)?' checked':''}> ${esc(v)} <span class="mut">${pr} บาท</span></label>`).join('')}</div></div>`;
 fetch('https://fongdabo.github.io/penum/pm/files/plans.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(!j)return;
-  (j.apps||[]).forEach(a=>{if(a&&a.k in APPR&&a.price!=null)APPR[a.k]=+a.price});if(j.bundle&&j.bundle.off!=null)APPR.off=+j.bundle.off}).catch(()=>{});
+  (j.apps||[]).forEach(a=>{if(a&&a.k in APPR&&a.price!=null)APPR[a.k]=+a.price});if(Array.isArray(j.forms)){const F=j.forms.filter(f=>f&&f.k&&f.k!=='all').map(f=>[f.k,f.name||f.k,+f.price||0]);if(F.length)FORMS=F}if(j.bundle&&j.bundle.off!=null)APPR.off=+j.bundle.off}).catch(()=>{});
 const apOf=x=>Array.isArray(x&&x.ap)&&x.ap.length?x.ap:['pm'];
 function priceOf(ap,pl){if(pl==='pilot')return 0;const s=(ap.includes('pm')?(PLAN[pl]||[0,0])[1]:0)+(ap.includes('mep')?APPR.mep:0)+(ap.includes('bim')?APPR.bim:0);
   return ap.length===3?Math.round(s*(100-APPR.off)/100):s}
 // what a customer (or one of its codes) has: "แพ็กรวม · PM มาตรฐาน 30 คน + MEP + BIM"
 function pkgTxt(x,c){const ap=apOf(x),pl=x.pl||(c&&c.pl),P=PLAN[pl],mx=x.mx||(c&&c.mx);
-  return (pl==='pilot'?'ทดลองใช้ฟรี · ':ap.length===3?'แพ็กรวม · ':'')+ap.map(a=>a==='pm'?`PM ${pl!=='pilot'&&P?P[0]+' ':''}${mx} คน`:APN[a].replace('PENUM ','')).join(' + ')}
+  const fm=fmOf(x).length?fmOf(x):fmOf(c);
+  return (pl==='pilot'?'ทดลองใช้ฟรี · ':ap.length===3?'แพ็กรวม · ':'')+ap.map(a=>a==='pm'?`PM ${pl!=='pilot'&&P?P[0]+' ':''}${mx} คน`:APN[a].replace('PENUM ','')).join(' + ')+(fm.length?` + ฟอร์ม ${fm.length} แบบ`:'')}
 const apBox=(ap,id)=>`<div class="aps" id="${id}"><span class="mut">โปรแกรมที่เช่า (รหัสเดียวเปิดได้ทุกโปรแกรมที่เลือก · ครบ 3 โปรแกรมลดราคาแพ็กรวม)</span><div class="row">${Object.entries(APN).map(([k,v])=>`<label class="ck"><input type="checkbox" value="${k}"${ap.includes(k)?' checked':''}> ${v}</label>`).join('')}</div></div>`;
 const apRead=id=>[...document.querySelectorAll('#'+id+' input:checked')].map(x=>x.value);
 // แพ็กเกจ: PENUM PM's tiers when PM is ticked, otherwise ทดลองใช้ฟรี or เช่ารายเดือน (rent)
@@ -202,14 +208,14 @@ const ub64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.s
 async function issue(c){
   // one serial number per customer; a renewal or package change keeps it and adds -R1, -R2 … so each code can still be told apart
   let id=snOf(c);if(!id)id=newCustId();c.sn=id;const no=newSerial();
-  const ap=apOf(c),p={v:1,id,no,co:c.co,...(c.en?{en:c.en}:{}),...(c.tax?{tx:c.tax}:{}),...(c.phone?{ph:c.phone}:{}),an:c.an,em:c.em.toLowerCase(),pl:c.pl,mx:ap.includes('pm')?+c.mx||1:0,exp:c.exp,iat:today(),ap};
+  const ap=apOf(c),p={v:1,id,no,co:c.co,...(c.en?{en:c.en}:{}),...(c.tax?{tx:c.tax}:{}),...(c.phone?{ph:c.phone}:{}),an:c.an,em:c.em.toLowerCase(),pl:c.pl,mx:ap.includes('pm')?+c.mx||1:0,exp:c.exp,iat:today(),ap,...(fmOf(c).length?{fm:fmOf(c)}:{})};
   const k=await crypto.subtle.importKey('jwk',PRI,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const body=b64u(new TextEncoder().encode(JSON.stringify(p))),msg=new TextEncoder().encode('PNM1.'+body);
   const sig=new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},k,msg));
   const pub=Object.assign({},PRI);delete pub.d;pub.key_ops=['verify'];
   const kp=await crypto.subtle.importKey('jwk',pub,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
   if(!await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},kp,sig,msg))throw new Error('ตรวจรหัสไม่ผ่าน');
-  const code='PNM1.'+body+'.'+b64u(sig);c.lics=c.lics||[];c.lics.push({id:p.id,no,ts:Date.now(),iat:p.iat,exp:p.exp,mx:p.mx,pl:p.pl,ap,price:+c.price||0,code});save();return code}
+  const code='PNM1.'+body+'.'+b64u(sig);c.lics=c.lics||[];c.lics.push({id:p.id,no,ts:Date.now(),iat:p.iat,exp:p.exp,mx:p.mx,pl:p.pl,ap,...(p.fm?{fm:p.fm}:{}),price:+c.price||0,code});save();return code}
 // ---- the signing key lives only on this device, encrypted with the seller's PIN ----
 const kdf=async(pin,salt)=>{const b=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:250000,hash:'SHA-256'},b,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])};
@@ -380,13 +386,13 @@ function custForm(c){const n=!c;c=c||{id:'',co:'',en:'',tax:'',addr:'',an:'',em:
 function renewForm(c){$('#dlgT').textContent='อนุมัติ ต่ออายุ / เปลี่ยนแพ็กเกจหรือโปรแกรม: '+c.co;const base=c.exp&&days(c.exp)>0?c.exp:today(),pm=apOf(c).includes('pm');
   $('#dlgB').innerHTML=`${apBox(apOf(c),'rAp')}<div class="g"><label>แพ็กเกจ<select id="rPl">${plOpts(pm,plFit(pm,c.pl))}</select></label>
   <label>จำนวนผู้ใช้ PENUM PM สูงสุด<input id="rMx" type="number" min="1" value="${c.mx}"${pm?'':' disabled'}></label><label>ราคาต่อเดือน<input id="rPr" type="number" value="${c.price}"></label>
-  <label>ใช้ได้ถึง<input id="rEx" type="date" value="${addM(base,12)}"></label></div>
+  <label>ใช้ได้ถึง<input id="rEx" type="date" value="${addM(base,12)}"></label></div>${fmBox(fmOf(c),'rFm')}
   <div class="row"><span class="mut">ต่อจากวันหมดอายุเดิม:</span><button class="sm" data-m="1">1 เดือน</button><button class="sm" data-m="3">3 เดือน</button><button class="sm" data-m="6">6 เดือน</button><button class="sm" data-m="12">1 ปี</button></div>`;
   $('#dlgB').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>$('#rEx').value=addM(base,+b.dataset.m));
   pkgWire('r');
   $('#dlgF').innerHTML='';const b=document.createElement('button');b.className='pri';b.textContent='อนุมัติและส่งให้ลูกค้า';
   b.onclick=async()=>{const ap=apRead('rAp');if(!ap.length){toast('เลือกโปรแกรมที่ลูกค้าเช่าอย่างน้อย 1 โปรแกรม');return}
-    c.ap=ap;c.pl=$('#rPl').value;c.mx=Math.max(1,+$('#rMx').value||1);c.price=+$('#rPr').value||0;c.exp=$('#rEx').value;if(b.disabled)return;b.disabled=true;await issue(c);dlg.close();render();approveAsk(c)};
+    c.ap=ap;c.fm=apRead('rFm');c.pl=$('#rPl').value;c.mx=Math.max(1,+$('#rMx').value||1);c.price=+$('#rPr').value||0;c.exp=$('#rEx').value;if(b.disabled)return;b.disabled=true;await issue(c);dlg.close();render();approveAsk(c)};
   $('#dlgF').append(b);dlgOpen()}
 
 const CH=['โทรศัพท์','LINE','อีเมล','นัดเข้าไปหา','กล่องในโปรแกรม','อื่นๆ'];
@@ -396,7 +402,7 @@ let TF={st:'act',cat:'',cid:''};
 const cName=id=>{const c=DB.cust.find(x=>x.id===id);return c?c.co:'(ลบแล้ว)'};
 function tixForm(t,cid){const n=!t;t=t||{id:'',cid:cid||'',date:today(),ch:'โทรศัพท์',who:'',cat:'how',title:'',detail:'',ver:'',st:'open',ans:'',closed:''};
   $('#dlgT').textContent=n?'บันทึกเรื่องจากลูกค้า':'เรื่อง '+t.id;
-  $('#dlgB').innerHTML=(n?`<label>วางข้อความคำขอจาก PENUM PM (ถ้ามี ระบบจะกรอกให้)<textarea id="tPaste" rows="2" placeholder="วางอีเมลหรือข้อความ LINE ที่มีบรรทัด [PENUM-PLAN] …"></textarea></label>`:'')+`<div class="g"><label>ลูกค้า *<select id="tC"><option value="">เลือกบริษัท</option>${DB.cust.map(c=>`<option value="${c.id}"${c.id===t.cid?' selected':''}>${esc(c.co)}</option>`).join('')}</select></label>
+  $('#dlgB').innerHTML=(n?`<label>วางข้อความคำขอจาก PENUM PM (ถ้ามี ระบบจะกรอกให้)<textarea id="tPaste" rows="2" placeholder="วางอีเมลหรือข้อความ LINE ที่มีบรรทัด [PENUM-PLAN] หรือ [PENUM-FORM] …"></textarea></label>`:'')+`<div class="g"><label>ลูกค้า *<select id="tC"><option value="">เลือกบริษัท</option>${DB.cust.map(c=>`<option value="${c.id}"${c.id===t.cid?' selected':''}>${esc(c.co)}</option>`).join('')}</select></label>
   <label>วันที่แจ้ง<input id="tD" type="date" value="${t.date}"></label><label>ช่องทาง<select id="tCh">${CH.map(x=>`<option${x===t.ch?' selected':''}>${x}</option>`).join('')}</select></label>
   <label>ผู้แจ้ง (ชื่อ ตำแหน่ง)<input id="tW" value="${esc(t.who)}"></label><label>ประเภท<select id="tCa">${Object.entries(CAT).map(([k,v])=>`<option value="${k}"${k===t.cat?' selected':''}>${v}</option>`).join('')}</select></label>
   <label>รุ่นโปรแกรม (ดูที่มุมเมนู เช่น 3.46)<input id="tV" value="${esc(t.ver)}"></label></div>
@@ -404,7 +410,12 @@ function tixForm(t,cid){const n=!t;t=t||{id:'',cid:cid||'',date:today(),ch:'โ�
   <label>รายละเอียดที่ลูกค้าเล่า<textarea id="tDe">${esc(t.detail)}</textarea></label>
   <div class="g"><label>สถานะ<select id="tS">${Object.entries(TST).map(([k,v])=>`<option value="${k}"${k===t.st?' selected':''}>${v[0]}</option>`).join('')}</select></label></div>
   <label>วิธีแก้ / คำตอบที่ให้ลูกค้า<textarea id="tA">${esc(t.ans)}</textarea></label>`;
-  const tp=$('#tPaste');if(tp)tp.oninput=()=>{const v=tp.value,m=v.match(/\[PENUM-PLAN\]\s+(\S+)\s+(\S+)\s+(\w*)>(\w*)(?:\s+\+([\w,]+))?/);if(!m)return;
+  const tp=$('#tPaste');if(tp)tp.addEventListener('input',()=>{const v=tp.value,m=v.match(/\[PENUM-FORM\]\s+(\S+)\s+(\S+)\s+\+([\w,-]+)/);if(!m)return;
+    const c=DB.cust.find(c=>snOf(c)===m[1])||DB.cust.find(c=>(c.lics||[]).some(l=>lk(l)===m[2]));if(c)$('#tC').value=c.id;
+    $('#tCh').value=/\n\s*เรียน|subject|อีเมล/i.test(v)?'อีเมล':'LINE';$('#tCa').value='bill';$('#tT').value='ขอซื้อแบบฟอร์ม: '+m[3].split(',').map(fmName).join(', ');
+    $('#tDe').value=v.replace(/\n*\[PENUM-FORM\][^\n]*/,'').trim()+'\n\nอนุมัติ: ลูกค้า › ต่ออายุ › ติ๊กแบบฟอร์มที่ซื้อ › อนุมัติและส่งให้ลูกค้า';$('#tS').value=Object.keys(TST)[0];
+    toast(c?'กรอกให้แล้ว ตรวจแล้วกด บันทึก':'ไม่พบรหัสลูกค้า '+m[1]+' เลือกลูกค้าเอง')});
+if(tp)tp.oninput=()=>{const v=tp.value,m=v.match(/\[PENUM-PLAN\]\s+(\S+)\s+(\S+)\s+(\w*)>(\w*)(?:\s+\+([\w,]+))?/);if(!m)return;
     const c=DB.cust.find(c=>snOf(c)===m[1])||DB.cust.find(c=>(c.lics||[]).some(l=>lk(l)===m[2]));if(c)$('#tC').value=c.id;
     $('#tCh').value=/\n\s*เรียน|subject|อีเมล/i.test(v)?'อีเมล':'LINE';$('#tCa').value='acc';
     const add=(m[5]||'').split(',').filter(a=>APN[a]).map(a=>APN[a]).join(', '),chg=`ขอเปลี่ยนแพ็กเกจ ${(PLAN[m[3]]||[m[3]])[0]} → ${(PLAN[m[4]]||[m[4]])[0]}`;
