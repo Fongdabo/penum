@@ -84,7 +84,7 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
     ...A.map(a=>band(esc(a.name||''),fmt(a.v,2))),...(mkRow||A.length?[band('TOTAL',fmt(c.sub,2))]:[]),
     ...(c.disc?[band('DISCOUNT',fmt(c.disc,2),'rd'),band('SUM TOTAL',fmt(c.net,2))]:[]),band('VAT&nbsp; 7%',fmt(c.vat,2)),band('GRAND TOTAL',fmt(c.grand,2))].join('');
   const summary=`<table class="sumt">${xbCols(sp,G4)}<thead>${xbThead(sp,G4)}</thead><tbody>${empty}${sumRows}${padRows}${E0?'':bands}</tbody></table>`;
-  const pay=qEnsure(Q).qpay||[],notes=String(Q.terms||'').split(/\n| · /).map(x=>x.trim()).filter(Boolean);
+  const pay=qEnsure(Q).qpay||[],notes=qTerms(Q);
   const terms=`<div class="xb-n">${E0?'':`<b>กำหนดยืนราคา /Validity</b><div>${n(Q.valid)} วันหลังเสนอราคา</div>`}${Q.dlv&&!E0?`<b>กำหนดแล้วเสร็จ /Delivery</b><div>${esc(Q.dlv)}</div>`:''}
     ${pay.length&&!E0?`<b>การชำระเงิน /Payment term</b><div>${pay.map(x=>`${fmt(x.pct,0)}% ${esc(x.desc||'')}`).join('<br>')}</div>`:''}
     ${notes.length?`<b style="margin-top:12px">หมายเหตุ /Note</b><div style="margin-top:12px">${notes.map(esc).join('<br>')}</div>`:''}</div>`;
