@@ -79,7 +79,7 @@ const QM_CSS=`<style>
 #print .qm table.qm-t td.n{text-align:center;color:var(--qg)}
 #print .qm table.qm-t tr.g td{background:var(--qs)!important;color:var(--qn);font-weight:700;border-bottom:1px solid #C8DFE3}
 #print .qm table.qm-t tr.g td.n{color:var(--qt)}
-#print .qm table.qm-t tr.h td{font-weight:600;color:#2C4A5A}
+#print .qm table.qm-t tr.h td{font-weight:600;color:#2C4A5A}.qm-t tr.hs td{font-weight:600;color:var(--qn);border-top:1px dashed var(--qt);background:#fff!important}
 #print .qm table.qm-t tr.s td{background:#fff!important;font-weight:700;color:var(--qn);border-top:1.5px solid var(--qt);border-bottom:1.5px solid var(--qt)}
 #print .qm table.qm-t tr.tt td{background:var(--qn)!important;color:#fff;font-weight:700;border:0}
 #print .qm table.qm-t tr.tt td:first-child{border-radius:0 0 0 8px}#print .qm table.qm-t tr.tt td:last-child{border-radius:0 0 8px 0}
@@ -230,16 +230,20 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const thS=`<tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th>${MG.map(k=>`<th>${lab[k]}</th>`).join('')}<th>${t('จำนวนเงิน','Amount')}</th></tr>`;
   const emp=k=>'<td></td>'.repeat(k);
   // detail lines: a section row, sub-heads from "head" (two levels split by " · "), the lines, and a subtotal per section
-  const det=()=>{const body=[];let lg=null,lh=null,ls=null,gi=0,hi=0,li=0;
+  // 4.32 a subtotal under each sub-heading (Q.hsub, new quotes) when its section has more than one block
+  const det=()=>{const body=[];let lg=null,lh=null,ls=null,gi=0,hi=0,li=0,hn='',HA=null;
+    const hOn=g=>{if(!Q.hsub||S0)return false;const I=Q.items.filter(i=>i.g===g),H=new Set(I.map(i=>String(i.head||'').split(' · ')[0]).filter(Boolean));return H.size>1||(H.size===1&&I.some(i=>!String(i.head||'').trim()))};
+    const sumH=()=>{if(!HA||!lh||!hOn(lg))return;body.push(`<tr class="hs"><td></td><td>${tx('รวม','Subtotal')} ${esc(hn)}</td>${emp(2)}${MG.length?MG.map(k=>`<td></td><td class="r">${M(HA[k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(HA.t,2)}</td></tr>`)};
     const sumG=(g)=>`<tr class="s"><td></td><td>${tx('รวม','Subtotal')} ${esc(gN(g))}${L==='bi'?'<i class="en il">Subtotal</i>':''}</td>${emp(2)}${MG.length?MG.map(k=>`<td></td><td class="r">${M(G[g][k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(G[g].t,2)}</td></tr>`;
-    Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
+    Q.items.forEach(i=>{if(i.g!==lg){sumH();HA=null;if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
-      if(h1!==lh){lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
+      if(h1!==lh){sumH();HA=null;lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h1);HA={e:0,m:0,l:0,t:0};body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
       if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
       li++;const x=qLine(Q,i),E=eqs&&qmIsEq(i),V={e:[E?x.mu:0,E?x.mt:0],m:[E?0:x.mu,E?0:x.mt],l:[x.lu,x.lt]};let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
+      if(HA){HA.e+=V.e[1];HA.m+=V.m[1];HA.l+=V.l[1];HA.t+=x.t}
       if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi}
       body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):MG.length?MG.map(k=>`<td class="r">${M(V[k][0])}</td><td class="r">${M(V[k][1])}</td>`).join(''):`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
-    if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));
+    sumH();if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));
     body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${S0?MG.map(k=>`<td class="r">${M(T[k])}</td>`).join(''):MG.length?MG.map(k=>`<td></td><td class="r">${M(T[k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
     return body.join('')};
   const mini=`<tr class="rh"><th colspan="${nc}"><div class="qm-mini">${C.logo?`<img src="${C.logo}" alt="">`:`<b>${esc(C.name||'')}</b>`}<div><b>${t('บัญชีแสดงปริมาณงานและราคา','Bill of Quantities',1)}</b></div><span class="sp"></span><div class="no">${esc(Q.no||'')}${Q.ref?' · '+esc(Q.ref):''}<br>${esc([Q.pname,Q.title].filter(Boolean).join(' · '))}</div></div></th></tr>`;

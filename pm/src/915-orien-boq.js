@@ -17,25 +17,41 @@ ACT.qXl=async b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),I=b.dataset.v
   catch(e){toast(e.message||'ทำไฟล์ Excel ไม่สำเร็จ')}};
 
 /* ---- print: ฉบับภายใน (cost, price and profit of every line) ----
-   Ten columns: printed on a landscape A4 so the item name keeps a third of the width and nothing runs off the right edge. */
-PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},R='class="r"';
-  const G={},order=[];let lg=null;const body=[];
-  Q.items.forEach(i=>{const q=n(i.q),base=n(i.m)+n(i.l),cu_=base||(q?n(i.t)/q:0),u=qUnit(Q,i),ct=q*cu_,st=q*u,g=G[i.g]=G[i.g]||{c:0,s:0};g.c+=ct;g.s+=st;
-    if(i.g!==lg){if(lg!==null)body.push(obIntSum(G[lg],lg));lg=i.g;order.push(i.g);body.push(`<tr class="obg"><td colspan="10">${esc(gName(i.g))}</td></tr>`)}
-    body.push(`<tr><td>${esc(itemName(i))}</td><td>${esc(i.unit||'')}</td><td ${R}>${fmtq(q)}</td><td ${R}>${fmt(n(i.m),2)}</td><td ${R}>${fmt(n(i.l),2)}</td><td ${R}>${fmt(ct,2)}</td><td ${R}>${fmt(u,2)}</td><td ${R}>${fmt(st,2)}</td><td ${R}>${fmt(st-ct,2)}</td><td ${R}>${st?fmt((st-ct)*100/st,1)+'%':''}</td></tr>`)});
-  if(lg!==null)body.push(obIntSum(G[lg],lg));
+   Printed on a landscape A4. 4.33 it follows the quotation (user: "แยกตามใบเสนอราคาดีกว่าไหม"): sections numbered 1, 2,
+   sub-headings 1.1, 1.2 with a subtotal each when a section has more than one block, the selling price split into material and
+   labour like the lines table, and when the equipment is split out, a table of cost / price / profit for ค่าเครื่อง, ค่าวัสดุ
+   and ค่าแรง. */
+PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},R='class="r"',NC=12;
+  const QS=qSep(Q)?Object.assign({},Q,{mkSep:false}):Q,isEq=i=>typeof qmIsEq==='function'&&qmIsEq(i),hd=i=>String(i.head||'').split(' · ')[0].trim();
+  const P={e:{c:0,s:0},m:{c:0,s:0},l:{c:0,s:0}},body=[],z=()=>({c:0,s:0});let lg=null,lh=null,gi=0,hi=0,G=null,H=null,hn='';
+  const multi=g=>{const I=Q.items.filter(i=>i.g===g),S=new Set(I.map(hd).filter(Boolean));return S.size>1||(S.size===1&&I.some(i=>!hd(i)))};
+  const pc=(a,b)=>b?fmt((b-a)*100/b,1)+'%':'';
+  const sumRow=(cl,l,x)=>`<tr class="${cl}"><td></td><td colspan="5">${l}</td><td ${R}>${fmt(x.c,2)}</td><td colspan="2"></td><td ${R}>${fmt(x.s,2)}</td><td ${R}>${fmt(x.s-x.c,2)}</td><td ${R}>${pc(x.c,x.s)}</td></tr>`;
+  const endH=()=>{if(H&&lh&&multi(lg))body.push(sumRow('obh','รวม '+esc(hn),H));H=null};
+  Q.items.forEach(i=>{const q=n(i.q),base=n(i.m)+n(i.l),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0,L=qLine(QS,i),u=qUnit(Q,i),ct=q*(mc+lc),st=q*u,E=isEq(i);
+    if(i.g!==lg){endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));lg=i.g;lh=null;gi++;hi=0;G=z();body.push(`<tr class="obg"><td class="n">${gi}</td><td colspan="${NC-1}">${esc(gName(i.g))}</td></tr>`)}
+    const h=hd(i);if(h!==lh){endH();lh=h;if(h){hi++;const m=h.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h);H=z();body.push(`<tr class="obhh"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${NC-1}">${esc(m?m[2]:h)}</td></tr>`)}}
+    let num='';if(!lh){hi++;num=gi+'.'+hi}
+    G.c+=ct;G.s+=st;if(H){H.c+=ct;H.s+=st}
+    P[E?'e':'m'].c+=q*mc;P[E?'e':'m'].s+=q*L.mu;P.l.c+=q*lc;P.l.s+=q*L.lu;
+    body.push(`<tr><td class="n">${num}</td><td>${lh?'– ':''}${esc([i.type,i.desc].filter(Boolean).join(' '))}${E?' <small class="obe">เครื่อง</small>':''}</td><td>${esc(i.unit||'')}</td><td ${R}>${fmtq(q)}</td><td ${R}>${fmt(mc,2)}</td><td ${R}>${fmt(lc,2)}</td><td ${R}>${fmt(ct,2)}</td><td ${R}>${fmt(L.mu,2)}</td><td ${R}>${fmt(L.lu,2)}</td><td ${R}>${fmt(st,2)}</td><td ${R}>${fmt(st-ct,2)}</td><td ${R}>${pc(ct,st)}</td></tr>`)});
+  endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));
+  const T={c:P.e.c+P.m.c+P.l.c,s:P.e.s+P.m.s+P.l.s};body.push(sumRow('obt','รวมทุกรายการ',T));
+  const parts=Q.eqSep&&!(typeof qmMa==='function'&&qmMa(Q))&&Q.items.some(isEq)?`<div class="obi-pw"><h2>แยกส่วนตามใบเสนอราคา (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%)</h2><table class="obi-p"><thead><tr><th>ส่วน</th><th ${R}>ทุน</th><th ${R}>ราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>
+    ${[['e','ค่าเครื่อง (ค่าของของรายการที่ติ๊ก “เครื่อง”)'],['m','ค่าวัสดุ'],['l','ค่าแรง']].map(([k,l])=>`<tr><td>${l}</td><td ${R}>${fmt(P[k].c,2)}</td><td ${R}>${fmt(P[k].s,2)}</td><td ${R}>${fmt(P[k].s-P[k].c,2)}</td><td ${R}>${pc(P[k].c,P[k].s)}</td></tr>`).join('')}
+    <tr class="tot"><td>รวม</td><td ${R}>${fmt(T.c,2)}</td><td ${R}>${fmt(T.s,2)}</td><td ${R}>${fmt(T.s-T.c,2)}</td><td ${R}>${pc(T.c,T.s)}</td></tr></tbody></table></div>`:'';
   const A=c.adds.filter(a=>a.v),gp=c.net-c.cost,row=(l,v,b)=>`<tr${b?' class="tot"':''}><td>${l}</td><td ${R}>${v}</td></tr>`;
   return `<div class="obi" data-doc-name="${esc((Q.no||'')+' ฉบับภายใน')}"><p class="obi-w">เอกสารภายใน ห้ามส่งลูกค้า</p>
-  <h1>ราคาทุนและกำไร ${esc(Q.no||'')}</h1><p class="muted">${esc(C.name||'')} · ${esc([Q.pname,Q.title].filter(Boolean).join(' - '))}${cu.name?' · ลูกค้า '+esc(cu.name):''} · ${thD(Q.date)}${n(Q.mk)?` · บวกค่าดำเนินการ/กำไร ${qMkTxt(Q)}`:''}</p>
-  <table><thead><tr><th>รายการ</th><th>หน่วย</th><th ${R}>จำนวน</th><th ${R}>ทุนวัสดุ/หน่วย</th><th ${R}>ทุนค่าแรง/หน่วย</th><th ${R}>รวมทุน</th><th ${R}>ราคาขาย/หน่วย</th><th ${R}>รวมราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>${body.join('')}</tbody></table>
-  <table class="obi-s"><tbody>${row('ต้นทุนรวม (วัสดุ + ค่าแรง)',fmt(c.cost,2))}${row('ราคาขายตามรายการ',fmt(c.lines,2))}${A.map(a=>row(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')}
-    ${c.disc?row('ส่วนลด','-'+fmt(c.disc,2)):''}${row('ราคาเสนอ ไม่รวม VAT',fmt(c.net,2),1)}${row('กำไรขั้นต้น',`${fmt(gp,2)} (${c.net?fmt(gp*100/c.net,1):0}%)`,1)}${row('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${row('รวมทั้งสิ้น',fmt(c.grand,2))}</tbody></table>
-  <style>@page{size:A4 landscape;margin:10mm}#print .obi{font-size:11px}#print .obi table:not(.obi-s) th:first-child{width:30%}#print .obi table:not(.obi-s) td:first-child{word-break:normal;overflow-wrap:anywhere}#print .obi h1{font-size:17px;margin:4px 0}#print .obi-w{border:2px solid #b42318;color:#b42318;font-weight:700;text-align:center;padding:3px;margin:0 0 6px;font-size:12.5px}
-  #print .obi table{width:100%;border-collapse:collapse;margin-top:8px}#print .obi th,#print .obi td{border:1px solid #999;padding:2px 5px}#print .obi td.r,#print .obi th.r{text-align:right;white-space:nowrap}
-  #print .obi tr.obg td{background:#eef2f1;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print .obi tr.obs td{font-weight:700;background:#fafafa}
-  #print .obi table.obi-s{width:55%;margin-left:auto}#print .obi tr.tot td{font-weight:700}</style></div>`};
-const obIntSum=(g,k)=>`<tr class="obs"><td colspan="5">รวม${esc(gName(k))}</td><td class="r">${fmt(g.c,2)}</td><td></td><td class="r">${fmt(g.s,2)}</td><td class="r">${fmt(g.s-g.c,2)}</td><td class="r">${g.s?fmt((g.s-g.c)*100/g.s,1)+'%':''}</td></tr>`;
-
+  <h1>ราคาทุนและกำไร ${esc(Q.no||'')}</h1><p class="muted">${esc(C.name||'')} · ${esc([Q.pname,Q.title].filter(Boolean).join(' - '))}${cu.name?' · ลูกค้า '+esc(cu.name):''} · ${thD(Q.date)}${n(Q.mk)||(typeof qMkOn==='function'&&qMkOn(Q))?` · บวกค่าดำเนินการ/กำไร ${qMkTxt(Q)}`:''}</p>
+  <table class="obi-t"><thead><tr><th rowspan="2">ลำดับ</th><th rowspan="2">รายการ</th><th rowspan="2">หน่วย</th><th rowspan="2" ${R}>จำนวน</th><th colspan="3" class="c">ต้นทุน</th><th colspan="3" class="c obsell">ราคาขาย</th><th rowspan="2" ${R}>กำไร</th><th rowspan="2" ${R}>% ของ<br>ราคาขาย</th></tr>
+    <tr><th ${R}>ของ/หน่วย</th><th ${R}>แรง/หน่วย</th><th ${R}>รวมทุน</th><th ${R} class="obsell">ของ/หน่วย</th><th ${R} class="obsell">แรง/หน่วย</th><th ${R} class="obsell">รวมราคาขาย</th></tr></thead><tbody>${body.join('')}</tbody></table>
+  <div class="obi-b">${parts}<table class="obi-s"><tbody>${row('ต้นทุนรวม (วัสดุ + ค่าแรง)',fmt(c.cost,2))}${row('ราคาขายตามรายการ',fmt(c.lines,2))}${A.map(a=>row(esc(a.name||'')+(n(a.pct)?` ${fmt(n(a.pct),2)}%`:''),fmt(a.v,2))).join('')}
+    ${c.disc?row('ส่วนลด','-'+fmt(c.disc,2)):''}${row('ราคาเสนอ ไม่รวม VAT',fmt(c.net,2),1)}${row('กำไรขั้นต้น',`${fmt(gp,2)} (${c.net?fmt(gp*100/c.net,1):0}%)`,1)}${row('ภาษีมูลค่าเพิ่ม 7%',fmt(c.vat,2))}${row('รวมทั้งสิ้น',fmt(c.grand,2))}</tbody></table></div>
+  <style>@page{size:A4 landscape;margin:10mm}#print .obi{font-size:10.5px}#print .obi table.obi-t thead tr:first-child th:nth-child(2){width:30%}#print .obi table.obi-t td:nth-child(2){word-break:normal;overflow-wrap:anywhere}#print .obi h1{font-size:17px;margin:4px 0}#print .obi h2{font-size:12.5px;margin:10px 0 0}#print .obi-w{border:2px solid #b42318;color:#b42318;font-weight:700;text-align:center;padding:3px;margin:0 0 6px;font-size:12.5px}
+  #print .obi table{width:100%;border-collapse:collapse;margin-top:8px}#print .obi th,#print .obi td{border:1px solid #999;padding:2px 5px}#print .obi td.r,#print .obi th.r{text-align:right;white-space:nowrap}#print .obi th.c{text-align:center}#print .obi td.n{text-align:center;white-space:nowrap;width:34px}
+  #print .obi tr.obg td{background:#eef2f1;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print .obi tr.obhh td{font-weight:600;color:#2C4A5A}#print .obi tr.obh td{font-weight:600;font-style:italic;border-top:1px dashed #777}#print .obi tr.obs td{font-weight:700;background:#fafafa}
+  #print .obi tr.obt td{font-weight:700;background:#e8eef0;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print .obi .obsell{background:#eef7f8;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print .obi small.obe{border:1px solid #888;border-radius:6px;padding:0 4px;font-size:9px}
+  #print .obi-b{display:flex;gap:16px;align-items:flex-start;justify-content:flex-end;break-inside:avoid}#print .obi-pw{width:52%}#print .obi table.obi-p{margin-top:4px}#print .obi table.obi-s{width:42%;margin-left:auto}#print .obi tr.tot td{font-weight:700}</style></div>`};
 // buttons beside พิมพ์ใบเสนอราคา
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments);return h.replace(/(<button type="button" class="btn sm" data-a="print" data-k="quote" data-id="([^"]+)">พิมพ์ใบเสนอราคา<\/button>)/,
   (m,b,id)=>`${b}<button type="button" class="btn sm" data-a="print" data-k="quoteCost" data-id="${id}" title="ราคาทุน ราคาขาย และกำไรทุกรายการ สำหรับใช้ในบริษัท">พิมพ์ฉบับภายใน</button><button type="button" class="btn sm" data-a="qXl" data-id="${id}" data-v="0" title="ไฟล์ Excel ตามแบบฟอร์ม BOQ มาตรฐาน ORIEN: หน้าสรุป และ BOQ แยกค่าวัสดุ/ค่าแรง">Excel แบบ ORIEN</button><button type="button" class="btn sm" data-a="qXl" data-id="${id}" data-v="1" title="เพิ่มชีตราคาทุน ราคาขาย และกำไรต่อรายการ อย่าส่งให้ลูกค้า">Excel ฉบับภายใน</button>`)}}
