@@ -55,8 +55,9 @@ function ohead(title,sub,extra){const C=CO(),t=String(title),en=(DOC_EN.find(([r
   let th=t.replace(/\s*\([A-Za-z&\s]+\)/,''),no='';const m=th.match(/\s([A-Z][A-Z0-9]*-[\w-]+(?:\s+Rev\.\S+)?)\s*$/);if(m){no=m[1];th=th.slice(0,m.index)}
   const rows=[...(no?[['เลขที่',no]]:[]),...extra,...String(sub||'').split(/<br\s*\/?>/i).map(x=>x.trim()).filter(Boolean).map(x=>{const k=x.indexOf(' ');return k>0&&k<22?[x.slice(0,k),x.slice(k+1)]:['',x]}),['พิมพ์',thDL(today())]];
   return `<div class="oh"><div>${C.logo?`<img src="${C.logo}" alt="">`:''}</div><div class="oh-c"><b>${esc(C.name||'')}</b>${C.nameEn?`<br><small>${esc(C.nameEn)}</small>`:''}${C.addr?`<br>${esc(C.addr)}`:''}<br>${[C.phone?'โทร '+esc(C.phone):'',esc(C.email||''),C.tax?'เลขประจำตัวผู้เสียภาษี '+esc(C.tax)+(C.branch?' ('+esc(C.branch)+')':''):''].filter(Boolean).join(' · ')}</div></div>
-  <div class="ot"><div class="ot-t">${en?`<small>${en}</small>`:''}<h1>${th}</h1></div><div class="ot-m">${rows.map(([k,v])=>`<div><span>${k}</span>${v}</div>`).join('')}</div></div>
+  <div class="ot"><div class="ot-t">${en?`<small>${en}</small>`:''}<h1${th.length>40?' class="ot-xl"':th.length>24?' class="ot-l"':''}>${th}</h1></div><div class="ot-m">${rows.map(([k,v])=>`<div><span>${k}</span>${v}</div>`).join('')}</div></div>
   <div class="ofoot"><span>${esc(C.name||'')}${C.email?' · '+esc(C.email):''}</span><span>${C.phone?'โทร '+esc(C.phone):''}</span></div>`}
 cphead=(t,s)=>ohead(t,s,[]);
-phead=(t,s)=>{const I=P.info;return ohead(t,s,[['โครงการ',esc(P.name)],...(I.client?[['ลูกค้า',esc(I.client)]]:[])])};
+// "โครงการ - งาน" names (3.99) print as two rows
+phead=(t,s)=>{const I=P.info,nm=String(P.name||'').trim(),k=nm.indexOf(' - ');return ohead(t,s,[...(k>0?[['โครงการ',esc(nm.slice(0,k).trim())],['งาน',esc(nm.slice(k+3).trim())]]:[['โครงการ',esc(nm)]]),...(I.client?[['ลูกค้า',esc(I.client)]]:[])])};
 
