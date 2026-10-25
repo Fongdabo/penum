@@ -25,16 +25,17 @@ HOOK.push((p,v)=>{let m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(wq|wp|wa
   m=p.match(/^co\.quotes\.([^.]+)\.wp$/);if(m){const Q=CO().quotes.find(q=>q.id===m[1]);if(Q)qwAll(Q)}});
 // lines added later (picked, imported, from PENUM MEP) take the default too
 {const r=render;render=function(){try{const C=CO(),Q=S.sel.quote&&C.quotes&&C.quotes.find(q=>q.id===S.sel.quote);if(Q&&(n(Q.wp)||(Q.items||[]).some(i=>qwOwn(i)||qwHasA(i)||qwHas(i)))&&qwAll(Q))save()}catch(e){}return r.apply(this,arguments)}}
-// the จำนวน and เผื่อ % cells of the lines table (982)
+// the จำนวน and เผื่อ cells of the lines table (982). 4.54 (user: "อยากให้ %ไว้ด้านซ้าย +ไว้ด้านขวา เอาไว้ใต้คำว่าเผื่อ (เพิ่มชื่อ เผื่อปริมาณ)"):
+// two cells side by side under เผื่อปริมาณ, % on the left and + (amount) on the right, the quoted quantity under the + box
 const qwCells=(Q,i,b)=>{const a=qwAdd(Q,i),on=a>0,net=qwNet(i),u=esc(i.unit||''),ph=v=>fmtq(Math.round(v*100)/100),
     pp=qwHasA(i)?(net?n(i.wa)*100/net:0):qwMeas(i)&&n(Q.wp)&&!qwOwn(i)?n(Q.wp):0;
-  return `<td style="width:80px;min-width:64px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.${on?'wq':'q'}" value="${on?net:n(i.q)}" aria-label="จำนวน"${on?' title="จำนวนสุทธิ ก่อนเผื่อ"':''}></td>
-    <td class="qw" style="width:76px;min-width:70px">${i.hs?'':`<label class="qmk-l"><small>%</small><input class="r${qwOwn(i)?' own':''}" data-t="num" data-p="${b}.items.${i.id}.wp" value="${qwOwn(i)?n(i.wp):''}" placeholder="${ph(pp)}" aria-label="เผื่อปริมาณ (%)" title="เผื่อเป็นเปอร์เซ็นต์"></label>
-      <label class="qmk-l"><small>+${u?'':'จน.'}</small><input class="r${qwHasA(i)?' own':''}" data-t="num" data-p="${b}.items.${i.id}.wa" value="${qwHasA(i)?n(i.wa):''}" placeholder="${ph(on?n(i.q)-net:0)}" aria-label="เผื่อปริมาณ (จำนวน)" title="เผื่อเป็นจำนวน${u?' ('+u+')':''} เช่น สำรอง 2 ตัว"></label>
+  return `<td class="qq" style="width:72px;min-width:56px"><input class="r" data-t="num" data-p="${b}.items.${i.id}.${on?'wq':'q'}" value="${on?net:n(i.q)}" aria-label="จำนวน"${on?' title="จำนวนสุทธิ ก่อนเผื่อ"':''}></td>
+    <td class="qw qwp">${i.hs?'':`<input class="r${qwOwn(i)?' own':''}" data-t="num" data-p="${b}.items.${i.id}.wp" value="${qwOwn(i)?n(i.wp):''}" placeholder="${ph(pp)}" aria-label="เผื่อปริมาณ (%)" title="เผื่อเป็นเปอร์เซ็นต์">`}</td>
+    <td class="qw qwa">${i.hs?'':`<input class="r${qwHasA(i)?' own':''}" data-t="num" data-p="${b}.items.${i.id}.wa" value="${qwHasA(i)?n(i.wa):''}" placeholder="${ph(on?n(i.q)-net:0)}" aria-label="เผื่อปริมาณ (จำนวน)" title="เผื่อเป็นจำนวน${u?' ('+u+')':''} เช่น สำรอง 2 ตัว">
       ${on?`<small class="qw-f" title="จำนวนที่เสนอ (พิมพ์ในใบเสนอราคา)">= ${fmtq(i.q)} ${u}</small>`:''}`}</td>`};
 // the default in the markup row (932)
 const qwStrip=(Q,b)=>!n(Q.wp)&&!(Q.items||[]).some(i=>!i.hs&&qwMeas(i))?'<th class="qw"></th>':`<th class="qw"><label class="qms-f qms-v" title="เผื่อปริมาณให้ทุกบรรทัดที่เป็นหน่วยความยาว พื้นที่ หรือน้ำหนัก (สายไฟ ท่อ) ที่ไม่ได้ใส่เผื่อเอง">เผื่อ %<input class="r" data-t="num" data-p="${b}.wp" value="${n(Q.wp)||''}" placeholder="0" aria-label="เผื่อปริมาณ (%)"></label></th>`;
 // the internal cost sheet (915): net, %, quoted
 const qwNote=(Q,i)=>{if(!qwHas(i)||!(qwAdd(Q,i)>0))return '';const a=n(i.q)-n(i.wq),p=qwHasA(i)?'':` (${fmtq(qwP(Q,i))}%)`;return `<br><small style="color:#666">สุทธิ ${fmtq(i.wq)} + เผื่อ ${fmtq(Math.round(a*100)/100)}${p}</small>`};
-document.head.insertAdjacentHTML('beforeend',`<style>.ql-t th.qw,.ql-t td.qw{background:rgba(110,90,200,.06)}.ql-t td.qw input{width:100%}.ql-t .qw-f{display:block;text-align:right;font-size:11.5px;color:var(--accent,#1C8F9B);font-weight:600;margin-top:2px}</style>`);
-if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'เผื่อ %':'Allow. %','เผื่อ':'Allowance'});
+document.head.insertAdjacentHTML('beforeend',`<style>.ql-t th.qw,.ql-t td.qw{background:rgba(110,90,200,.06)}.ql-t td.qw{width:54px;min-width:48px;padding-left:3px;padding-right:3px}.ql-t td.qw input{width:100%;min-width:0;padding:4px 5px}.ql-t td.qw input.own{font-weight:700;color:var(--accent,#1C8F9B)}.ql-t th.qw.qp,.ql-t th.qw.qa{text-align:center}.ql-t .qw-f{display:block;text-align:right;font-size:11.5px;color:var(--accent,#1C8F9B);font-weight:600;margin-top:2px}</style>`);
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'เผื่อ %':'Allow. %','เผื่อ':'Allowance','เผื่อปริมาณ':'Qty allowance'});
