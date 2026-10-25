@@ -27,7 +27,8 @@ const qhOrder=(Q,g,L)=>{const I=Q.items.filter(i=>i.g===g&&!i.hs),hs=Q.items.fil
   const at=Q.items.findIndex(i=>i.g===g);const rest=Q.items.filter(i=>i.g!==g);rest.splice(Math.max(0,Math.min(at,rest.length)),0,...R,...hs);Q.items=rest};
 const qhQ=b=>CO().quotes.find(q=>q.id===b.dataset.id);
 // ---- what the lines table shows
-const qhSecL=(Q,g,gi)=>`<b class="qh-n">${gi}</b> ${esc(gName(g))} ${qhTotH(Q,g,null)} <button type="button" class="btn ghost sm qh-add" data-a="qhNew" data-id="${Q.id}" data-g="${esc(g)}" title="เพิ่มหัวข้อย่อยในหมวดนี้ เช่น 1.1 กล้อง, 1.2 สายและท่อ">+ หัวข้อย่อย</button>`;
+// 4.53 no “+ หัวข้อย่อย” button on the section row (user: “เอาคำว่าหัวข้อย่อยออก เพราะมี + อยู่แล้ว”): ⇥ on a line starts one (936)
+const qhSecL=(Q,g,gi)=>`<b class="qh-n">${gi}</b> ${esc(gName(g))} ${qhTotH(Q,g,null)}`;
 const qhRow=(Q,g,h,gi,hi,cols,empty)=>{const L=qhList(Q,g),k=L.indexOf(h),bt=(a,l,t,d,x)=>`<button type="button" class="x${a==='qhMv'?' qlmv':''}" data-a="${a}" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}"${d!=null?` data-d="${d}"`:''} title="${t}" aria-label="${t}"${x?' disabled':''}>${l}</button>`;
   return `<tr class="grp qh-r"><td colspan="${cols}"><div class="qh-in"><b class="qh-n">${gi}.${hi}</b><input class="qhName" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}" value="${esc(h)}" aria-label="ชื่อหัวข้อย่อย">
     ${empty?'<small class="muted">ยังไม่มีรายการ กด “＋ รายการ” หรือ “เลือกรายการเข้าหัวข้อนี้”</small>':qhTotH(Q,g,h)}<span class="sp"></span>${typeof qoHeadBtn==='function'?qoHeadBtn(Q,g,h):''}
