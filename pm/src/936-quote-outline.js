@@ -29,6 +29,8 @@ ACT.qoInsH=b=>{const Q=qoQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h,x=q
 // + หัวข้อย่อย on a section row: the row appears at once, its name selected to type over
 ACT.qhNew=b=>{const Q=qoQ(b);if(!Q)return;const g=b.dataset.g,h=qoName(Q,g);qhSubs(Q,g,[...qhList(Q,g),h]);S.sel.qlG=g;S.sel.qlH=h;save();render();qoHead(h);
   toast('พิมพ์ชื่อหัวข้อย่อยทับได้เลย แล้วกด “＋ รายการ” หรือกด ⇥ ที่รายการที่จะให้อยู่ใต้หัวข้อนี้')};
-document.head.insertAdjacentHTML('beforeend',`<style>.ql-t .qo-b{display:inline-block;width:66px;text-align:center;line-height:1.1;white-space:normal}.ql-t .qo-b .x{padding:1px 3px;min-width:0}.ql-t .qo-b .x[disabled]{opacity:.25}.ql-t thead tr:last-child th{white-space:normal;line-height:1.25;vertical-align:bottom}</style>`);
+// the two header rows (982) both stick: the second sits under the first
+{const r=render;render=function(){const x=r.apply(this,arguments);requestAnimationFrame(()=>document.querySelectorAll('.ql-t').forEach(t=>{const a=t.querySelector('tr.qh1 th.qg'),h=a?a.offsetHeight:0;t.querySelectorAll('tr.qh2 th').forEach(th=>th.style.top=h+'px')}));return x}}
+document.head.insertAdjacentHTML('beforeend',`<style>.ql-t .qo-b{display:inline-block;width:60px;text-align:center;line-height:1.1;white-space:normal}.ql-t .qo-b .x{padding:1px 3px;min-width:0}.ql-t .qo-b .x[disabled]{opacity:.25}.ql-t thead th{vertical-align:bottom}.ql-t thead tr.qh1 th.qg{text-align:center;border-bottom:1px solid var(--line);padding-bottom:3px}.ql-t thead tr.qh2 th{padding-top:3px}</style>`);
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'＋ รายการ':'＋ Line','เพิ่มรายการใหม่ใต้หัวข้อนี้':'Add a line under this sub-heading','แทรกรายการใหม่ใต้แถวนี้':'Insert a line below',
-  'เอาออกจากหัวข้อย่อย':'Take out of the sub-heading','ตั้งหัวข้อย่อยใหม่ตั้งแต่แถวนี้ลงไป':'Start a sub-heading from this line down'});
+  'เอาออกจากหัวข้อย่อย':'Take out of the sub-heading','ตั้งหัวข้อย่อยใหม่ตั้งแต่แถวนี้ลงไป':'Start a sub-heading from this line down','ของ/หน่วย':'Material/unit','แรง/หน่วย':'Labour/unit','ยอดรวม':'Total','บวกกำไร %':'Markup %','ของ':'Material','แรง':'Labour'});
