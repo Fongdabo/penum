@@ -19,7 +19,7 @@ const LPROB={lead:10,survey:20,quote:30,sent:40,nego:60,won:100,lost:0};
 NEW.customers=()=>({name:'',contact:'',phone:'',email:'',tax:'',addr:'',credit:30});
 NEW.leads=()=>({name:'',cust:'',value:0,stage:'lead',prob:'',close:addD(today(),30),owner:'',note:''});
 const QST=[['draft','ร่าง'],['sent','ส่งลูกค้าแล้ว'],['won','ได้งาน'],['lost','ไม่ได้งาน']];
-NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,rnd:'1',disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
+NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,rnd:'1',whtN:'1',disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
 // a negative quantity (work taken out, as in a VO) keeps a positive unit price
 // 4.24 markup per part (user: "ควรแยกค่าเครื่อง ค่าของ ค่าแรง ดีไหม"): Q.mkE / Q.mkM / Q.mkL = % on the equipment, the material and the
 // labour of a line; a blank one takes Q.mk, so a quote without them prices as before
