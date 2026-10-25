@@ -10,6 +10,10 @@ const qhHd=i=>String(i.head||'').trim();
 const qhList=(Q,g)=>{const L=[];Q.items.forEach(i=>{const h=qhHd(i);if(i.g===g&&!i.hs&&h&&!L.includes(h))L.push(h)});((Q.subs||{})[g]||[]).forEach(h=>{if(h&&!L.includes(h))L.push(h)});return L};
 const qhSubs=(Q,g,L)=>{Q.subs=Q.subs||{};if(L.length)Q.subs[g]=L;else delete Q.subs[g]};
 const qhSell=(Q,g,h)=>Q.items.reduce((s,i)=>i.g===g&&!i.hs&&qhHd(i)===h?s+n(i.q)*qUnit(Q,i):s,0);
+// 4.42 cost, selling price and profit of a sub-heading (h) or a whole section (h null), shown on its row while editing
+const qhTot=(Q,g,h)=>{let c=0,v=0;Q.items.forEach(i=>{if(i.g!==g||(h!=null&&(i.hs||qhHd(i)!==h)))return;const q=n(i.q);c+=q*(n(i.m)+n(i.l)||(q?n(i.t)/q:0));v+=q*qUnit(Q,i)});return {c,v}};
+const qhTotH=(Q,g,h)=>{const T=qhTot(Q,g,h),pr=T.v-T.c,pc=T.v?pr*100/T.v:0,cl=pr<0?'loss':pc<10?'low':'ok';
+  return `<small class="qh-tot">ทุน ${fmt(T.c,2)} · ขาย <b>${fmt(T.v,2)}</b> · กำไร <span class="qh-p ${cl}">${fmt(pr,2)} (${fmt(pc,1)}%)</span></small>`};
 // a line goes after the last line of its new sub-heading (or the section's last line), so blocks stay together
 const qhPut=(Q,i,h)=>{const k0=Q.items.indexOf(i);if(k0<0)return;Q.items.splice(k0,1);i.head=h;let k=-1,kh=-1;
   Q.items.forEach((x,j)=>{if(x.g===i.g&&!x.hs){k=j;if(qhHd(x)===h)kh=j}});if(kh>=0)k=kh;if(k<0)Q.items.splice(Math.min(k0,Q.items.length),0,i);else Q.items.splice(k+1,0,i)};
@@ -18,10 +22,10 @@ const qhOrder=(Q,g,L)=>{const I=Q.items.filter(i=>i.g===g&&!i.hs),hs=Q.items.fil
   const at=Q.items.findIndex(i=>i.g===g);const rest=Q.items.filter(i=>i.g!==g);rest.splice(Math.max(0,Math.min(at,rest.length)),0,...R,...hs);Q.items=rest};
 const qhQ=b=>CO().quotes.find(q=>q.id===b.dataset.id);
 // ---- what the lines table shows
-const qhSecL=(Q,g,gi)=>`<b class="qh-n">${gi}</b> ${esc(gName(g))} <button type="button" class="btn ghost sm qh-add" data-a="qhNew" data-id="${Q.id}" data-g="${esc(g)}" title="เพิ่มหัวข้อย่อยในหมวดนี้ เช่น 1.1 กล้อง, 1.2 สายและท่อ">+ หัวข้อย่อย</button>`;
+const qhSecL=(Q,g,gi)=>`<b class="qh-n">${gi}</b> ${esc(gName(g))} ${qhTotH(Q,g,null)} <button type="button" class="btn ghost sm qh-add" data-a="qhNew" data-id="${Q.id}" data-g="${esc(g)}" title="เพิ่มหัวข้อย่อยในหมวดนี้ เช่น 1.1 กล้อง, 1.2 สายและท่อ">+ หัวข้อย่อย</button>`;
 const qhRow=(Q,g,h,gi,hi,cols,empty)=>{const L=qhList(Q,g),k=L.indexOf(h),bt=(a,l,t,d,x)=>`<button type="button" class="x${a==='qhMv'?' qlmv':''}" data-a="${a}" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}"${d!=null?` data-d="${d}"`:''} title="${t}" aria-label="${t}"${x?' disabled':''}>${l}</button>`;
   return `<tr class="grp qh-r"><td colspan="${cols}"><div class="qh-in"><b class="qh-n">${gi}.${hi}</b><input class="qhName" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}" value="${esc(h)}" aria-label="ชื่อหัวข้อย่อย">
-    ${empty?'<small class="muted">ยังไม่มีรายการ เลือกหัวข้อนี้ในช่อง “หัวข้อย่อย” ตอนเพิ่มรายการ</small>':`<small class="muted">รวม ${fmt(qhSell(Q,g,h),2)}</small>`}<span class="sp"></span>
+    ${empty?'<small class="muted">ยังไม่มีรายการ เลือกหัวข้อนี้ในช่อง “หัวข้อย่อย” ตอนเพิ่มรายการ</small>':qhTotH(Q,g,h)}<span class="sp"></span>
     <button type="button" class="btn ghost sm qh-pk" data-a="qhPickBtn" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}" title="ติ๊กรายการที่มีอยู่แล้วเพื่อย้ายเข้าหัวข้อนี้">เลือกรายการเข้าหัวข้อนี้</button>    ${bt('qhMv','▲','เลื่อนหัวข้อขึ้น (ย้ายรายการไปด้วย)',-1,k<=0)}${bt('qhMv','▼','เลื่อนหัวข้อลง (ย้ายรายการไปด้วย)',1,k<0||k>=L.length-1)}${bt('qhDel','✕','ลบหัวข้อย่อย (รายการยังอยู่ในหมวด)')}</div></td></tr>`};
 const qhEmpty=(Q,g,gi,cols)=>{const L=qhList(Q,g),used=new Set(Q.items.filter(i=>i.g===g&&!i.hs).map(qhHd));return L.map(h=>used.has(h)?'':qhRow(Q,g,h,gi,'–',cols,1)).join('')};
 const qhSel=(Q,i)=>{if(i.hs)return '';const L=qhList(Q,i.g),h=qhHd(i);if(!L.length)return '';
@@ -58,6 +62,7 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList)retu
 const qhSubTick=(Q,b)=>`<label class="qh-tick"><input type="checkbox" data-t="chk" data-p="${b}.hsub"${Q.hsub?' checked':''}> พิมพ์ยอดรวมใต้หัวข้อย่อยแต่ละหัวข้อ</label>`;
 document.head.insertAdjacentHTML('beforeend',`<style>.ql-t .qh-n{display:inline-block;min-width:30px;color:var(--accent,#1C8F9B)}.ql-t .qh-add{font-size:11.5px;padding:1px 8px;margin-left:6px;font-weight:400}
 .ql-t tr.qh-r td{padding-left:22px;background:rgba(28,143,155,.05)}.qh-in{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.qh-in input.qhName{width:auto;min-width:220px;max-width:420px;font-weight:600;padding:3px 8px;border:1px dashed var(--line,#c5d2db);background:var(--card,#fff)}.qh-in .sp{flex:1}
+.ql-t .qh-tot{font-weight:400;color:var(--muted,#567080);margin:0 6px;white-space:nowrap}.ql-t .qh-tot b{color:var(--ink,inherit)}.qh-p.ok{color:var(--good,#1e8e5a)}.qh-p.low{color:var(--warn-c,#b7791f)}.qh-p.loss{color:var(--danger,#c0392b);font-weight:700}
 .qh-pl{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto;min-width:min(520px,80vw);border:1px solid var(--line,#d5dee5);border-radius:8px;padding:8px 10px}.qh-pl label{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:14px}.qh-pl small{font-size:11.5px}.qh-pa{display:flex;gap:8px;align-items:center;margin:0 0 6px;font-weight:600}.ql-t .qh-pk{font-size:11.5px;padding:1px 8px}
 .ql-t select.qhSel{display:block;font-size:11px;padding:1px 4px;margin-bottom:3px;max-width:100%;width:auto;color:var(--muted,#567080)}#qlH{max-width:220px}.qh-tick{display:flex;gap:6px;align-items:center;font-size:13px;margin:4px 0}</style>`);
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'+ หัวข้อย่อย':'+ Sub-heading','— ไม่อยู่ในหัวข้อย่อย —':'— No sub-heading —','หัวข้อย่อย: ตามระบบที่เลือก':'Sub-heading: by system',
