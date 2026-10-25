@@ -696,5 +696,5 @@ async function dump(prog){if(!CFG)return {err:'nolic'};const T=await team();if(T
   for(const a of ['mep','bim']){const r=await lst(a,1);if(r.err)return r;r.rows.forEach(x=>L.push(Object.assign({},x,{app:a})))}
   const out=[];for(const x of L){const g=await get(T,x.p);out.push({app:x.app,p:x.p,m:x.m,at:x.at,off:x.off,d:g?g.d:null});if(prog)prog(out.length,L.length)}
   return {rows:out,co:T.co}}
-window.penumTeam={attach,soon,tick,on,live,flush,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,apps:APPS};
+window.penumTeam={attach,soon,tick,on,live,flush,render,refresh,state:()=>ST,name,shown,me,chip,userBox,signIn,signOut,ro,roNote,pmPut,reqs,decide,hash:hs,dump,list:lst,apps:APPS};
 })();
