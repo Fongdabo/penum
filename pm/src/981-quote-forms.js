@@ -79,7 +79,7 @@ const QM_CSS=`<style>
 #print .qm table.qm-t td.n{text-align:center;color:var(--qg)}
 #print .qm table.qm-t tr.g td{background:var(--qs)!important;color:var(--qn);font-weight:700;border-bottom:1px solid #C8DFE3}
 #print .qm table.qm-t tr.g td.n{color:var(--qt)}
-#print .qm table.qm-t tr.h td{font-weight:600;color:#2C4A5A}.qm-t tr.hs td{font-weight:600;color:var(--qn);border-top:1px dashed var(--qt);background:#fff!important}
+#print .qm table.qm-t tr.h td{font-weight:600;color:#2C4A5A}#print .qm table.qm-t tr.h.h2 td{font-style:italic;font-weight:500}#print .qm .in2{display:inline-block;width:14px}.qm-t tr.hs td{font-weight:600;color:var(--qn);border-top:1px dashed var(--qt);background:#fff!important}
 #print .qm table.qm-t tr.s td{background:#fff!important;font-weight:700;color:var(--qn);border-top:1.5px solid var(--qt);border-bottom:1.5px solid var(--qt)}
 #print .qm table.qm-t tr.tt td{background:var(--qn)!important;color:#fff;font-weight:700;border:0}
 #print .qm table.qm-t tr.tt td:first-child{border-radius:0 0 0 8px}#print .qm table.qm-t tr.tt td:last-child{border-radius:0 0 8px 0}
@@ -238,11 +238,11 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     Q.items.forEach(i=>{if(i.g!==lg){sumH();HA=null;if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
       if(h1!==lh){sumH();HA=null;lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h1);HA={e:0,m:0,l:0,t:0};body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
-      if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
+      if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h h2"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
       li++;const x=qLine(Q,i),E=eqs&&qmIsEq(i),V={e:[E?x.mu:0,E?x.mt:0],m:[E?0:x.mu,E?0:x.mt],l:[x.lu,x.lt]};let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
       if(HA){HA.e+=V.e[1];HA.m+=V.m[1];HA.l+=V.l[1];HA.t+=x.t}
       if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi}
-      body.push(`<tr><td class="n">${num}</td><td>${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):MG.length?MG.map(k=>`<td class="r">${M(V[k][0])}</td><td class="r">${M(V[k][1])}</td>`).join(''):`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
+      body.push(`<tr><td class="n">${num}</td><td>${ls&&!own?'<span class="in2"></span>':''}${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):MG.length?MG.map(k=>`<td class="r">${M(V[k][0])}</td><td class="r">${M(V[k][1])}</td>`).join(''):`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
     sumH();if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));
     body.push(`<tr class="tt"><td></td><td>${t('รวมทั้งหมด','Total',1)}</td>${emp(2)}${S0?MG.map(k=>`<td class="r">${M(T[k])}</td>`).join(''):MG.length?MG.map(k=>`<td></td><td class="r">${M(T[k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(T.t,2)}</td></tr>`);
     return body.join('')};
