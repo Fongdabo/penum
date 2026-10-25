@@ -1,5 +1,5 @@
 /* ---------- 4.60 ทำใบ / ตัวอย่างใบ: the quotation as it prints, beside the work (user: "ทำเป็น 2 แท็บ แท็บแรกเราทำงาน แท็บ 2 รายการทุกอย่างอัปเดตฟอร์มไปด้วย") ----------
-   Under the quotation's title row: ✎ ทำใบ (the page as before), 🖨 ตัวอย่างใบ (only the printed quotation) and, on a wide screen,
+   On top of the open quotation's card, shaped like the title bar's project tabs (shared/titlebar.js .pdt): ✎ ทำใบ (the page as before), 🖨 ตัวอย่างใบ (only the printed quotation) and, on a wide screen,
    ◫ แบ่งจอ (the work on the left, the printed quotation on the right, redrawn with every change). The preview is PRINT.quote itself in a
    shadow root, with the page's own styles and its print rules switched on, framed like 720's page frame (A4, 10 mm sides), so it reads
    as the printout does; forced page breaks show as a grey gap. The choice is kept per computer (penum.pm.qtab). */
@@ -9,7 +9,7 @@ const qtabMode=()=>QTAB==='split'&&!qtabW()?'pv':QTAB;
 ACT.qtab=b=>{QTAB=b.dataset.v||'edit';try{localStorage.setItem(QTAB_K,QTAB)}catch(e){}render();const t=$('.qtab');if(t&&QTAB!=='edit'){const r=t.getBoundingClientRect();if(r.top<0||r.top>innerHeight*.6)t.scrollIntoView({block:'start'})}};
 function qtabBar(Q){const m=qtabMode(),bt=(v,t,tip)=>`<button type="button" role="tab" class="${m===v?'on':''}" aria-selected="${m===v}" data-a="qtab" data-v="${v}" title="${tip}">${t}</button>`;
   return `<div class="qtab" role="tablist">${bt('edit','✎ ทำใบ','กรอกรายการ ราคา และตั้งค่าใบ')}${bt('pv','🖨 ตัวอย่างใบ','หน้าตาใบที่จะพิมพ์ออกมาจริง')}${qtabW()?bt('split','◫ แบ่งจอ','ทำใบด้านซ้าย ตัวอย่างใบด้านขวา เปลี่ยนตามทันทีที่แก้'):''}
-    <small>ตัวอย่างใบ = หน้าตาจริงตอนพิมพ์ แก้ที่ ทำใบ แล้วตัวอย่างเปลี่ยนตามทันที</small></div><div class="qpv" data-id="${Q.id}"></div>`}
+    <small>ตัวอย่างใบ = หน้าตาจริงตอนพิมพ์ แก้ที่ ทำใบ แล้วตัวอย่างเปลี่ยนตามทันที</small></div>`}
 // the page's styles for the preview: every sheet in order, print rules made to apply on screen, @page left out; rebuilt when sheets change
 let QPV_SH=null,QPV_N=-1;
 function qpvSheet(){const L=[...document.styleSheets];if(QPV_SH&&QPV_N===L.length)return QPV_SH;const out=[];
@@ -31,20 +31,23 @@ function qpvFill(el){const Q=CO().quotes.find(q=>q.id===el.dataset.id);if(!Q)ret
   let first=true;c.querySelectorAll('*').forEach(x=>{const b=getComputedStyle(x).breakBefore;if(b==='page'||b==='always'){if(!first||x.getBoundingClientRect().top-c.getBoundingClientRect().top>4)x.insertAdjacentHTML('beforebegin','<div class="qpv-brk" aria-hidden="true"></div>')}first=false});
   // fit the paper to the space: smaller in แบ่งจอ, never larger than real size
   const W=el.clientWidth-20,pw=P.offsetWidth;P.style.zoom=pw>W&&W>0?(W/pw).toFixed(3):''}
-// salesQuote is wrapped by 981 and 983 after this file: add the tabs at render time, under the open quotation's title row
+// salesQuote is wrapped by 981 and 983 after this file: add the tabs at render time, on top of the open quotation's card
 let qtabOn=false;const qtabWrap=()=>{if(qtabOn||typeof salesQuote!=='function')return;qtabOn=true;const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments);
   const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
-  const a=h.indexOf('<div class="fsg">');if(a<0)return h;const e=h.lastIndexOf('</h2>',a);if(e<0)return h;
-  return h.slice(0,e+5)+qtabBar(Q)+h.slice(e+5)}};
+  const a=h.indexOf('<div class="fsg">');if(a<0)return h;const e=h.lastIndexOf('</h2>',a),s0=h.lastIndexOf('<h2',e);if(e<0||s0<0)return h;
+  // the tabs on top of the card, like the project tabs in the title bar; the preview under the title row (its print buttons stay in both tabs)
+  return h.slice(0,s0)+qtabBar(Q)+h.slice(s0,e+5)+`<div class="qpv" data-id="${Q.id}"></div>`+h.slice(e+5)}};
 {const r=render;render=function(){try{qtabWrap()}catch(e){}const x=r.apply(this,arguments);
   try{const t=$('.qtab');if(t){const s=t.parentElement,m=qtabMode();s.classList.add('qtab-s');s.classList.toggle('qtab-pv',m==='pv');s.classList.toggle('qtab-sp',m==='split');if(m!=='edit')qpvFill(s.querySelector('.qpv'))}}catch(e){console.error(e)}
   return x}}
 // แบ่งจอ appears and goes with the window width
 {let t;window.addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(()=>{if($('.qtab'))render()},250)})}
-document.head.insertAdjacentHTML('beforeend',`<style>.qtab{display:flex;align-items:center;flex-wrap:wrap;gap:6px 4px;margin:0 0 12px;padding:0 0 0;border-bottom:1px solid var(--line)}
-.qtab button{appearance:none;border:1px solid transparent;border-bottom:0;margin-bottom:-1px;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:600;padding:8px 16px;border-radius:10px 10px 0 0;cursor:pointer}
-.qtab button:hover{color:var(--ink)}.qtab button.on{color:var(--accent,#1C8F9B);background:var(--surface);border-color:var(--line);box-shadow:inset 0 3px 0 var(--accent,#1C8F9B)}
-.qtab small{margin-left:auto;color:var(--muted);font-size:12px;padding:0 4px 6px}
+document.head.insertAdjacentHTML('beforeend',`<style>.qtab{display:flex;align-items:flex-end;gap:2px;height:34px;margin:-4px 0 12px;padding:0 6px;background:var(--sunk);border:1px solid var(--line);border-radius:10px 10px 0 0}
+.qtab button{appearance:none;display:flex;align-items:center;gap:6px;flex:none;height:30px;margin:0;padding:0 16px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;user-select:none}
+.qtab button:hover{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink)}
+.qtab button:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent,#1C8F9B)}
+.qtab button.on{height:31px;margin-bottom:-1px;background:var(--surface);color:var(--ink);font-weight:600;border-color:var(--line);box-shadow:inset 0 2px 0 var(--accent,#1C8F9B)}
+.qtab small{margin-left:auto;align-self:center;color:var(--muted);font-size:12px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .qpv{display:none}
 section.qtab-pv>*:not(h2):not(.qtab):not(.qpv):not(style){display:none!important}
 section.qtab-pv>.qpv{display:block;border-radius:10px;overflow:auto;max-height:calc(100vh - 150px)}
