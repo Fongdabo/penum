@@ -5,7 +5,10 @@
    section); each line has a small box to move it under another sub-heading; the add bar picks the sub-heading for a new line.
    A sub-heading with no lines yet is kept in Q.subs[g] so it shows until lines go in. New quotes print a subtotal under each
    sub-heading (Q.hsub, 981 det); older quotes print as before unless ticked. The lines table (982 qlTable) calls these. */
-const qhHd=i=>String(i.head||'').trim();
+// 4.51 a head can carry a third level after " · " ("Split Type · Ducted Type", as PENUM MEP and imported BOQs write it): qhHd is the
+// sub-heading (1.1), qhH2 the group under it, shown in italics with its lines indented further (user: "รายการกรณีที่มีหัวข้อย่อย อยากให้เป็นแบบนี้")
+const qhHd=i=>String(i.head||'').split(' · ')[0].trim();
+const qhH2=i=>{const s=String(i.head||''),j=s.indexOf(' · ');return j<0?'':s.slice(j+3).trim()};
 // sub-headings of a section: those on its lines (in order), then empty ones kept in Q.subs
 const qhList=(Q,g)=>{const L=[];Q.items.forEach(i=>{const h=qhHd(i);if(i.g===g&&!i.hs&&h&&!L.includes(h))L.push(h)});((Q.subs||{})[g]||[]).forEach(h=>{if(h&&!L.includes(h))L.push(h)});return L};
 const qhSubs=(Q,g,L)=>{Q.subs=Q.subs||{};if(L.length)Q.subs[g]=L;else delete Q.subs[g]};
@@ -18,7 +21,9 @@ const qhTotH=(Q,g,h)=>{const T=qhTot(Q,g,h),pr=T.v-T.c,pc=T.v?pr*100/T.v:0,cl=pr
 const qhPut=(Q,i,h)=>{const k0=Q.items.indexOf(i);if(k0<0)return;Q.items.splice(k0,1);i.head=h;let k=-1,kh=-1;
   Q.items.forEach((x,j)=>{if(x.g===i.g&&!x.hs){k=j;if(qhHd(x)===h)kh=j}});if(kh>=0)k=kh;if(k<0)Q.items.splice(Math.min(k0,Q.items.length),0,i);else Q.items.splice(k+1,0,i)};
 // the lines of a section in the order of its sub-heading list: lines without one first, then each block
-const qhOrder=(Q,g,L)=>{const I=Q.items.filter(i=>i.g===g&&!i.hs),hs=Q.items.filter(i=>i.g===g&&i.hs),R=[...I.filter(i=>!qhHd(i)),...L.flatMap(h=>I.filter(i=>qhHd(i)===h)),...I.filter(i=>qhHd(i)&&!L.includes(qhHd(i)))];
+// inside a sub-heading, lines without a group come first, then each group in the order it first appears
+const qhGrp=A=>{const G=[];A.forEach(i=>{const s=qhH2(i);if(!G.includes(s))G.push(s)});G.sort((a,b)=>(a?1:0)-(b?1:0));return G.flatMap(s=>A.filter(i=>qhH2(i)===s))};
+const qhOrder=(Q,g,L)=>{const I=Q.items.filter(i=>i.g===g&&!i.hs),hs=Q.items.filter(i=>i.g===g&&i.hs),R=[...I.filter(i=>!qhHd(i)),...L.flatMap(h=>qhGrp(I.filter(i=>qhHd(i)===h))),...I.filter(i=>qhHd(i)&&!L.includes(qhHd(i)))];
   const at=Q.items.findIndex(i=>i.g===g);const rest=Q.items.filter(i=>i.g!==g);rest.splice(Math.max(0,Math.min(at,rest.length)),0,...R,...hs);Q.items=rest};
 const qhQ=b=>CO().quotes.find(q=>q.id===b.dataset.id);
 // ---- what the lines table shows
@@ -44,6 +49,13 @@ ACT.qhPickGo=b=>{const Q=qhQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h,o
   Q.items.filter(i=>i.g===g&&!i.hs).forEach(i=>{const c=qhHd(i);if(on.has(i.id)&&c!==h){i.head=h;k++}else if(!on.has(i.id)&&c===h){i.head='';k++}});
   qhOrder(Q,g,qhList(Q,g));$('#dlg').close();S.sel.qlH=h;save();render();toast(k?`ย้าย ${k} รายการแล้ว (กด ↶ ย้อนกลับได้)`:'ไม่มีรายการที่เปลี่ยน')};
 document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.qhAll)document.querySelectorAll('#dlg .qhPk').forEach(x=>x.checked=t.checked)});
+// 4.51 the group row (third level): an italic name to type over, its totals, ✕ puts its lines back under the sub-heading
+const qhTotX=(Q,g,full)=>{let c=0,v=0;Q.items.forEach(i=>{if(i.g!==g||i.hs||String(i.head||'').trim()!==full)return;const q=n(i.q);c+=q*(n(i.m)+n(i.l)||(q?n(i.t)/q:0));v+=q*qUnit(Q,i)});const pr=v-c,pc=v?pr*100/v:0;
+  return `<small class="qh-tot">ทุน ${fmt(c,2)} · ขาย <b>${fmt(v,2)}</b> · กำไร <span class="qh-p ${pr<0?'loss':pc<10?'low':'ok'}">${fmt(pr,2)} (${fmt(pc,1)}%)</span></small>`};
+const qhGRow=(Q,g,h1,h2,cols)=>`<tr class="grp qh-gr"><td colspan="${cols}"><div class="qh-in"><input class="qhGName" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h1)}" data-s="${esc(h2)}" value="${esc(h2)}" aria-label="ชื่อกลุ่มย่อย">${qhTotX(Q,g,h1+' · '+h2)}<span class="sp"></span><button type="button" class="x" data-a="qhGDel" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h1)}" data-s="${esc(h2)}" title="ลบกลุ่มย่อย (รายการยังอยู่ในหัวข้อ)" aria-label="ลบกลุ่มย่อย">✕</button></div></td></tr>`;
+ACT.qhGDel=b=>{const Q=qhQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h,full=h+' · '+b.dataset.s;Q.items.forEach(i=>{if(i.g===g&&String(i.head||'').trim()===full)i.head=h});qhOrder(Q,g,qhList(Q,g));save();render();toast(`ลบกลุ่มย่อย “${b.dataset.s}” แล้ว รายการยังอยู่ใน “${h}” (กด ↶ ย้อนกลับได้)`)};
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('qhGName'))return;const Q=qhQ(t);if(!Q)return;const g=t.dataset.g,h=t.dataset.h,o=t.dataset.s,v=t.value.trim().replace(/ · /g,' - ');
+  if(!v||v===o){t.value=o;return}Q.items.forEach(i=>{if(i.g===g&&String(i.head||'').trim()===h+' · '+o)i.head=h+' · '+v});qhOrder(Q,g,qhList(Q,g));save();render()});
 // ---- actions
 ACT.qhNew=b=>{const Q=qhQ(b);if(!Q)return;const g=b.dataset.g,h=qhAsk(Q,g);if(!h)return;S.sel.qlG=g;S.sel.qlH=h;save();render();toast(`เพิ่มหัวข้อย่อย “${h}” แล้ว เลือกไว้ในช่องเพิ่มรายการให้แล้ว`)};
 ACT.qhMv=b=>{const Q=qhQ(b);if(!Q)return;const g=b.dataset.g,L=qhList(Q,g),k=L.indexOf(b.dataset.h),j=k+ +b.dataset.d;if(k<0||j<0||j>=L.length)return;[L[k],L[j]]=[L[j],L[k]];
@@ -53,7 +65,7 @@ ACT.qhDel=b=>{const Q=qhQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h;Q.it
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList)return;
   if(t.classList.contains('qhName')){const Q=qhQ(t);if(!Q)return;const g=t.dataset.g,o=t.dataset.h,v=t.value.trim();if(!v||v===o){t.value=o;return}
     const L=qhList(Q,g);if(L.includes(v)&&!confirm(`มีหัวข้อ “${v}” อยู่แล้ว รวมรายการเข้าด้วยกันไหม`)){t.value=o;return}
-    Q.items.forEach(i=>{if(i.g===g&&qhHd(i)===o)i.head=v});qhSubs(Q,g,[...new Set(L.map(x=>x===o?v:x))]);qhOrder(Q,g,qhList(Q,g));if(S.sel.qlH===o)S.sel.qlH=v;save();render();return}
+    Q.items.forEach(i=>{if(i.g===g&&qhHd(i)===o)i.head=v+(qhH2(i)?' · '+qhH2(i):'')});qhSubs(Q,g,[...new Set(L.map(x=>x===o?v:x))]);qhOrder(Q,g,qhList(Q,g));if(S.sel.qlH===o)S.sel.qlH=v;save();render();return}
   if(t.classList.contains('qhSel')){const Q=qhQ(t),i=Q&&Q.items.find(x=>x.id===t.dataset.i);if(!i)return;qhPut(Q,i,t.value);save();render();return}
   if(t.id==='qlH'){const Q=qhQ(t);if(!Q)return;if(t.value==='__new'){const g=($('#qlG')||{}).value||'eq',h=qhAsk(Q,g);S.sel.qlH=h;if(h)save();t.innerHTML=qhAddOpts(Q,g);t.value=h;return}S.sel.qlH=t.value;return}
   if(t.id==='qlG'){const h=$('#qlH'),Q=h&&qhQ(h);if(!Q)return;S.sel.qlH='';h.innerHTML=qhAddOpts(Q,t.value)}});
