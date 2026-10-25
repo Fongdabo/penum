@@ -122,7 +122,8 @@ const qlFind=s=>{const k=String(s||'').trim();if(!k)return null;const L=qlLib();
 // keep the line's cost (i.t) = quantity × cost per unit
 const qlCost=i=>{const u=n(i.m)+n(i.l);if(u)i.t=Math.round(n(i.q)*u*100)/100};
 ACT.qlAdd=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;const nm=($('#qlName')||{}).value||'',g=($('#qlG')||{}).value||'eq',q=n(($('#qlQ')||{}).value)||1,x=qlFind(nm);
-  if(!nm.trim()){toast('พิมพ์ชื่อสินค้าหรือรายการก่อน');const e=$('#qlName');if(e)e.focus();return}
+  // 4.42 no product but a sub-heading picked: set up the sub-heading and tick lines already in the table into it
+  if(!nm.trim()){const hh=($('#qlH')||{}).value;if(hh&&hh!=='__new'&&typeof qhPick==='function'){qhPick(Q,g,hh);return}toast('พิมพ์ชื่อสินค้าหรือรายการก่อน (หรือเลือกหัวข้อย่อย แล้วกดเพิ่มเพื่อเลือกรายการที่มีอยู่เข้าหัวข้อ)');const e=$('#qlName');if(e)e.focus();return}
   const sy=g==='eq'?(S.sel.qlS||qlSys(x||{name:nm})):'',hp=S.sel.qlH&&typeof qhList==='function'&&qhList(Q,g).includes(S.sel.qlH)?S.sel.qlH:'';
   const it={id:uid(),g,head:hp||qlSysL(sy),type:'',desc:x?qlLab(x):nm.trim(),unit:x?x.unit||'':'',q,m:x?n(x.m):0,l:x?n(x.l):0,t:0,sp:''};qlCost(it);
   // a new line goes after the last line of its section, so sections stay together on the printout
