@@ -23,20 +23,21 @@ ACT.qXl=async b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),I=b.dataset.v
    and ค่าแรง. */
 PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},R='class="r"',NC=12;
   const QS=qSep(Q)?Object.assign({},Q,{mkSep:false}):Q,isEq=i=>typeof qmIsEq==='function'&&qmIsEq(i),hd=i=>String(i.head||'').split(' · ')[0].trim();
-  const P={e:{c:0,s:0},m:{c:0,s:0},l:{c:0,s:0}},body=[],z=()=>({c:0,s:0});let lg=null,lh=null,gi=0,hi=0,G=null,H=null,hn='';
+  const P={e:{c:0,s:0},m:{c:0,s:0},l:{c:0,s:0}},body=[],z=()=>({c:0,s:0,cm:0,cl:0,sm:0,sl:0});let lg=null,lh=null,gi=0,hi=0,G=null,H=null,hn='';
   const multi=g=>{const I=Q.items.filter(i=>i.g===g),S=new Set(I.map(hd).filter(Boolean));return S.size>1||(S.size===1&&I.some(i=>!hd(i)))};
   const pc=(a,b)=>b?fmt((b-a)*100/b,1)+'%':'';
-  const sumRow=(cl,l,x)=>`<tr class="${cl}"><td></td><td colspan="5">${l}</td><td ${R}>${fmt(x.c,2)}</td><td colspan="2"></td><td ${R}>${fmt(x.s,2)}</td><td ${R}>${fmt(x.s-x.c,2)}</td><td ${R}>${pc(x.c,x.s)}</td></tr>`;
+  // 4.37 a totals row also shows total material and total labour (qty × unit) under the per-unit columns, cost and sell (user: "คิดรวม แยกค่าแรงค่าของด้วย")
+  const sumRow=(cl,l,x)=>`<tr class="${cl}"><td></td><td colspan="3">${l}</td><td ${R}>${fmt(x.cm,2)}</td><td ${R}>${fmt(x.cl,2)}</td><td ${R}>${fmt(x.c,2)}</td><td ${R}>${fmt(x.sm,2)}</td><td ${R}>${fmt(x.sl,2)}</td><td ${R}>${fmt(x.s,2)}</td><td ${R}>${fmt(x.s-x.c,2)}</td><td ${R}>${pc(x.c,x.s)}</td></tr>`;
   const endH=()=>{if(H&&lh&&multi(lg))body.push(sumRow('obh','รวม '+esc(hn),H));H=null};
   Q.items.forEach(i=>{const q=n(i.q),base=n(i.m)+n(i.l),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0,L=qLine(QS,i),u=qUnit(Q,i),ct=q*(mc+lc),st=q*u,E=isEq(i);
     if(i.g!==lg){endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));lg=i.g;lh=null;gi++;hi=0;G=z();body.push(`<tr class="obg"><td class="n">${gi}</td><td colspan="${NC-1}">${esc(gName(i.g))}</td></tr>`)}
     const h=hd(i);if(h!==lh){endH();lh=h;if(h){hi++;const m=h.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h);H=z();body.push(`<tr class="obhh"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${NC-1}">${esc(m?m[2]:h)}</td></tr>`)}}
     let num='';if(!lh){hi++;num=gi+'.'+hi}
-    G.c+=ct;G.s+=st;if(H){H.c+=ct;H.s+=st}
+    [G,H].forEach(x=>{if(!x)return;x.c+=ct;x.s+=st;x.cm+=q*mc;x.cl+=q*lc;x.sm+=q*L.mu;x.sl+=q*L.lu});
     P[E?'e':'m'].c+=q*mc;P[E?'e':'m'].s+=q*L.mu;P.l.c+=q*lc;P.l.s+=q*L.lu;
     body.push(`<tr><td class="n">${num}</td><td>${lh?'– ':''}${esc([i.type,i.desc].filter(Boolean).join(' '))}${E?' <small class="obe">เครื่อง</small>':''}</td><td>${esc(i.unit||'')}</td><td ${R}>${fmtq(q)}</td><td ${R}>${fmt(mc,2)}</td><td ${R}>${fmt(lc,2)}</td><td ${R}>${fmt(ct,2)}</td><td ${R}>${fmt(L.mu,2)}</td><td ${R}>${fmt(L.lu,2)}</td><td ${R}>${fmt(st,2)}</td><td ${R}>${fmt(st-ct,2)}</td><td ${R}>${pc(ct,st)}</td></tr>`)});
   endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));
-  const T={c:P.e.c+P.m.c+P.l.c,s:P.e.s+P.m.s+P.l.s};body.push(sumRow('obt','รวมทุกรายการ',T));
+  const T={c:P.e.c+P.m.c+P.l.c,s:P.e.s+P.m.s+P.l.s,cm:P.e.c+P.m.c,cl:P.l.c,sm:P.e.s+P.m.s,sl:P.l.s};body.push(sumRow('obt','รวมทุกรายการ',T));
   const parts=Q.eqSep&&!(typeof qmMa==='function'&&qmMa(Q))&&Q.items.some(isEq)?`<div class="obi-pw"><h2>แยกส่วนตามใบเสนอราคา (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%)</h2><table class="obi-p"><thead><tr><th>ส่วน</th><th ${R}>ทุน</th><th ${R}>ราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>
     ${[['e','ค่าเครื่อง (ค่าของของรายการที่ติ๊ก “เครื่อง”)'],['m','ค่าวัสดุ'],['l','ค่าแรง']].map(([k,l])=>`<tr><td>${l}</td><td ${R}>${fmt(P[k].c,2)}</td><td ${R}>${fmt(P[k].s,2)}</td><td ${R}>${fmt(P[k].s-P[k].c,2)}</td><td ${R}>${pc(P[k].c,P[k].s)}</td></tr>`).join('')}
     <tr class="tot"><td>รวม</td><td ${R}>${fmt(T.c,2)}</td><td ${R}>${fmt(T.s,2)}</td><td ${R}>${fmt(T.s-T.c,2)}</td><td ${R}>${pc(T.c,T.s)}</td></tr></tbody></table></div>`:'';
