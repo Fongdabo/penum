@@ -10,17 +10,18 @@ const MOC_CODE=/^\d{10,16}$/;
 {const f=pbParse;pbParse=function(txt){const L=f.apply(this,arguments);if(!L.length)return L;const R=tsvRows(txt),W=Math.max(...R.map(r=>r.length));
   let cj=-1;for(let j=0;j<W&&cj<0;j++)if(R.filter(r=>MOC_CODE.test(r[j]||'')).length>=R.length*.4)cj=j;if(cj<0)return L;
   // the file also has a category name column, which the guess in 530 can take for the unit: a header หน่วย decides
-  const H=R.find(r=>r.some(c=>c==='หน่วย')),uj=H?H.indexOf('หน่วย'):-1,by=new Map();
-  R.forEach(r=>{const c=r[cj];if(!MOC_CODE.test(c||''))return;const N=r.map(numOf).filter(v=>v!=null),u=uj>=0?r[uj]||'':null;
-    r.forEach(v=>{if(v&&numOf(v)==null)N.forEach(p=>{const k=v+'|'+p;if(!by.has(k))by.set(k,{c,u})})})});
-  L.forEach(i=>{const x=by.get(i.name+'|'+i.price);if(x){i.code=x.c;if(x.u!=null)i.unit=x.u}});return L}}
+  // the items are the table's rows in order, so walk both (two items can share a name and price)
+  const H=R.find(r=>r.some(c=>c==='หน่วย')),uj=H?H.indexOf('หน่วย'):-1;let j=0;
+  L.forEach(i=>{for(;j<R.length;j++){const r=R[j];if(r.includes(i.name)&&r.some(c=>numOf(c)===i.price)){
+    if(MOC_CODE.test(r[cj]||'')){i.code=r[cj];if(uj>=0&&r[uj])i.unit=r[uj]}j++;break}}});return L}}
 // code → the starter line's key and how its unit comes from the สนค. unit (976: [k, g, name, unit, m, l, r, [code, note]])
 function mocCodeMap(){const M=new Map(),S=window.PENUM_GOV_PRICES;
   if(S&&Array.isArray(S.rows))S.rows.forEach(r=>{const mo=r[7];if(!mo||!mo[0])return;const a=String(mo[1]||'').match(/ม้วน ([\d.,]+) ตร\.ม\./);
     M.set(String(mo[0]),{key:'gov:'+r[0],m2:a?numOf(a[1]):0})});
   plCfg().forEach(x=>{const m=/^moc:(\d+)$/.exec(x.key||'');if(m&&!M.has(m[1]))M.set(m[1],{key:x.key,m2:0})});return M}
 // the price per library unit: per metre from a roll or a pipe of a stated length, per m² from a roll of stated area
-function mocUnitPrice(x,it,t){const p=mocPer([it.code,String(it.name).replace(/\s+/g,' '),String(it.unit).trim(),it.price]);// the file spaces words twice: ยาว  4  เมตรif(t.m2>0)return {m:Math.round(it.price/t.m2*100)/100,note:` (${fmt(it.price,2)} บาท/${it.unit} ${fmt(t.m2)} ตร.ม.)`};
+// (the downloaded file spaces words twice: ยาว  4  เมตร)
+function mocUnitPrice(x,it,t){const p=mocPer([it.code,String(it.name).replace(/\s+/g,' '),String(it.unit).trim(),it.price]);if(t.m2>0)return {m:Math.round(it.price/t.m2*100)/100,note:` (${fmt(it.price,2)} บาท/${it.unit} ${fmt(t.m2)} ตร.ม.)`};
   if(/^(m|ม\.?|เมตร)$/i.test(String(x.unit||'').trim()))return p?{m:p.p,note:` (${fmt(it.price,2)} บาท/${it.unit} ${fmt(p.len)} ม.)`}:null;
   return {m:it.price,note:''}}
 const MOC_SOFT=['gov','offm','moc','est','offl','demo'];
@@ -28,15 +29,17 @@ const MOC_SOFT=['gov','offm','moc','est','offl','demo'];
 function mocMonthly(pb){const M=mocCodeMap(),L=plCfg(),kx=new Map(L.filter(x=>x.key).map(x=>[x.key,x])),used=new Set(),t={add:0,upd:0,same:0,off:0},G={};
   const d=pb.month?pb.month+'-01':today(),mon=`สนค. ${pb.prov} ${thYM(pb.month)}`;
   pb.items.forEach(it=>{const tg=it.code&&M.get(it.code),x=tg&&kx.get(tg.key);if(!x)return;const u=mocUnitPrice(x,it,tg);if(!u)return;used.add(it.id);
+    if(Math.abs(u.m-n(x.m))<.005&&String(d)<=String(x.date||'')){t.same++;return}// the same month again: nothing new to compare either
     const soft=MOC_SOFT.includes(x.sk||'hand')&&!x.pin,sk=soft?(x.sk==='gov'||x.sk==='offm'?x.sk:x.sk==='offl'?'gov':'moc'):'moc';
     const lab=soft&&sk!=='moc'?(x.src||'').split(' · ').filter(s=>/ค่าแรง|ว 480/.test(s)).join(' · '):'';
     (G[sk+(soft?'':'|o')]=G[sk+(soft?'':'|o')]||[]).push({key:x.key,name:x.name,unit:x.unit,br:x.br,m:u.m,date:d,src:`${mon} รหัส ${it.code}${u.note}${lab?' · '+lab:''}`})});
   Object.entries(G).forEach(([k,R])=>{const [sk,o]=k.split('|'),r=plMerge(R,{sk,mOnly:1,newer:1,noAdd:1,offer:o?1:0});Object.keys(t).forEach(z=>t[z]+=r[z]||0)});
   return {t,used}}
-// เติมราคา › ใช้บัญชีนี้: coded items first, the rest by name and size as before (960)
-ACT.plMoc=()=>{const pb=pbCfg().find(x=>x.id===$('#plPb')?.value);if(!pb)return;const add=$('#plPbAdd')?.checked,T=mocMonthly(pb);
+// เติมราคา › ใช้บัญชีนี้: coded items first, the rest by name and size as before (960); a line kept by its สนค. code takes no
+// other item's price by a close name
+ACT.plMoc=()=>{const pb=pbCfg().find(x=>x.id===$('#plPb')?.value);if(!pb)return;const add=$('#plPbAdd')?.checked,T=mocMonthly(pb),C=new Set([...mocCodeMap().values()].map(v=>v.key)),fz=plFz();
   const rest=pb.items.filter(x=>!T.used.has(x.id)),r=rest.length?plMerge(rest.map(x=>({name:x.name,unit:x.unit,m:x.price})),{src:`พณ. ${pb.prov} ${thYM(pb.month)}`,sk:'moc',mOnly:1,g:'mat',
-    date:pb.month?pb.month+'-01':today(),noAdd:!add,fuzzy:plFz()}):{add:0,upd:0,same:0,off:0};
+    date:pb.month?pb.month+'-01':today(),noAdd:!add,fuzzy:r=>{const x=fz(r);return x&&C.has(x.key)?null:x}}):{add:0,upd:0,same:0,off:0};
   $('#dlg').close();plSay({add:r.add,upd:r.upd+T.t.upd,same:r.same+T.t.same,off:(r.off||0)+T.t.off},`บัญชีราคาพาณิชย์ ${pb.prov}`)};
 // a whole สนค. list is thousands of lines: by default it only updates the lines already in the library
 const MOC_BIG=500;
