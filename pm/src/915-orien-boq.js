@@ -37,7 +37,7 @@ PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';cons
     let num='';if(!lh){hi++;num=gi+'.'+hi}
     [G,H].forEach(x=>{if(!x)return;x.c+=ct;x.s+=st;x.cm+=q*mc;x.cl+=q*lc;x.sm+=q*L.mu;x.sl+=q*L.lu});
     P[E?'e':'m'].c+=q*mc;P[E?'e':'m'].s+=q*L.mu;P.l.c+=q*lc;P.l.s+=q*L.lu;
-    body.push(`<tr><td class="n">${num}</td><td>${lh?'– ':''}${esc([i.type,i.desc].filter(Boolean).join(' '))}${E?' <small class="obe">เครื่อง</small>':''}</td><td>${esc(i.unit||'')}</td><td ${R}>${fmtq(q)}</td>${C3('obc',mc,lc,ct)}${C3('obsell',L.mu,L.lu,st)}${PF(ct,st)}</tr>`)});
+    body.push(`<tr><td class="n">${num}</td><td>${lh?'– ':''}${esc([i.type,i.desc].filter(Boolean).join(' '))}${E?' <small class="obe">เครื่อง</small>':''}</td><td>${esc(i.unit||'')}</td><td ${R}>${fmtq(q)}${typeof qwNote==='function'?qwNote(Q,i):''}</td>${C3('obc',mc,lc,ct)}${C3('obsell',L.mu,L.lu,st)}${PF(ct,st)}</tr>`)});
   endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));
   const T={c:P.e.c+P.m.c+P.l.c,s:P.e.s+P.m.s+P.l.s,cm:P.e.c+P.m.c,cl:P.l.c,sm:P.e.s+P.m.s,sl:P.l.s};body.push(sumRow('obt','รวมทุกรายการ',T));
   const parts=Q.eqSep&&!(typeof qmMa==='function'&&qmMa(Q))&&Q.items.some(isEq)?`<div class="obi-pw"><h2>แยกส่วนตามใบเสนอราคา (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%)</h2><table class="obi-p"><thead><tr><th>ส่วน</th><th ${R}>ทุน</th><th ${R}>ราคาขาย</th><th ${R}>กำไร</th><th ${R}>% ของราคาขาย</th></tr></thead><tbody>

@@ -18,6 +18,8 @@ const QC_CAB=/สาย\s*(ไฟ|lan|ลำโพง|นำสัญญาณ|�
   QC_ACC=/ข้อต่อ|ข้องอ|ข้อลด|สามทาง|วาล์ว|valve|elbow|\btee\b|fitting|ฝาครอบ|\bcap\b|แคล้ม|clamp|ขาแขวน|ขายึด|hanger|support|กล่อง|\bbox\b|เทป|tape|กาว|หัวต่อ|ปลายสาย|หางปลา|lug|connector|gland|เข้าหัว|ติดตั้ง/i;
 const QC_LENI={test:s=>(QC_CAB.test(s)||QC_PIPE.test(s))&&!QC_ACC.test(s)};
 const QC_MACH=/แอร์|เครื่อง(ปรับ|ทำ|กำเนิด|บันทึก|ขยาย|สแกน|อ่าน|เติม)|ปั๊ม|pump|พัดลม|\bfan\b|chiller|\bfcu\b|\bahu\b|กล้อง|camera|ตู้(?!.*ท่อ)|ups|inverter|อินเวอร์เตอร์/i;
+// 4.47 one name per unit, so ม. and เมตร are not told apart
+const qcUn=u=>{const k=qcNorm(u).replace(/ /g,'');return /^(ม|เมตร|m|meter|metre|lm)$/.test(k)?'m':/^(ตรม|ตารางเมตร|sqm|m2|m²)$/.test(k)?'m2':/^(ลบม|ลูกบาศก์เมตร|cum|m3|m³)$/.test(k)?'m3':/^(กก|กิโลกรัม|kg)$/.test(k)?'kg':/^(ชิ้น|pcs?|ea)$/.test(k)?'pc':k};
 const QC_AREA=/^(ตร\.?ม\.?|ตารางเมตร|sq\.?\s?m|m2|m²)$/i;
 // what the names are checked against: the price library and sample products, plus lines on the company's OTHER quotations
 let qcLibC=null;
@@ -45,7 +47,8 @@ function qcLine(Q,i,k){const W=[],lib=qcLib(Q),b=`co.quotes.${Q.id}.items.${i.id
   const sl=d&&qcSpell(lib,d);
   if(sl&&sl.t==='name')W.push({lv:'w',t:`ชื่อคล้าย “${sl.r.lab}” พิมพ์ผิดหรือเปล่า`,fx:fx(b+'.desc',sl.r.lab,'ใช้ชื่อนี้')});
   if(sl&&sl.t==='word')W.push({lv:'w',t:`“${sl.w}” อาจสะกดผิด หมายถึง “${sl.fix}”`,fx:fx(b+'.desc',d.replace(sl.w,sl.fix),'แก้คำนี้')});
-  const lx=d&&(lib.by.get(qcNorm(d))||null);
+  // 4.47 a unit the user chose for this item (934 qcuGet) is the reference instead of the library or older quotations
+  const mem=typeof qcuGet==='function'&&qcuGet(d),lx=mem?{x:{unit:mem.u,m:n(mem.m),l:n(mem.l),mem:1}}:d&&(lib.by.get(qcNorm(d))||null),src=x=>x.mem?'ที่บันทึกไว้':x.past?'ที่เคยเสนอ':'คลังราคา';
   if(!q)W.push({lv:'e',t:'จำนวนเป็น 0'});
   else if(QC_CNT.test(u)&&Math.abs(q-Math.round(q))>1e-9)W.push({lv:'w',t:`จำนวน ${fmtq(q)} มีทศนิยม แต่หน่วยเป็น “${u}”`});
   else if(QC_CNT.test(u)&&q>=1000)W.push({lv:'w',t:`จำนวน ${fmt(q)} ${u} เยอะผิดปกติ`});
@@ -54,9 +57,10 @@ function qcLine(Q,i,k){const W=[],lib=qcLib(Q),b=`co.quotes.${Q.id}.items.${i.id
   if(!cu&&!(n(i.sp)>0))W.push({lv:'e',t:'ยังไม่มีราคา'});
   else if(q&&sp<cu-1e-6)W.push({lv:'e',t:`ราคาขาย ${fmt(sp,2)} ต่ำกว่าทุน ${fmt(cu,2)} (ขาดทุน)`});
   const lc=lx&&n(lx.x.m)+n(lx.x.l),own=n(i.m)+n(i.l);
-  if(lc&&own&&(own/lc>=2||own/lc<=.5))W.push({lv:'w',t:`ทุน/หน่วย ${fmt(own,2)} ห่างจาก${lx.x.past?'ที่เคยเสนอ':'คลังราคา'} ${fmt(lc,2)} มาก (${own>lc?'สูงกว่า':'ต่ำกว่า'} ${fmt(own>lc?own/lc:lc/own,1)} เท่า)`});
+  // prices are compared only in the same unit: a Lot price says nothing about a price per ตัว
+  if(lc&&own&&(!lx.x.unit||!u||qcUn(lx.x.unit)===qcUn(u))&&(own/lc>=2||own/lc<=.5))W.push({lv:'w',t:`ทุน/หน่วย ${fmt(own,2)} ห่างจาก${src(lx.x)} ${fmt(lc,2)} มาก (${own>lc?'สูงกว่า':'ต่ำกว่า'} ${fmt(own>lc?own/lc:lc/own,1)} เท่า)`,fx:typeof qcuBtns==='function'?qcuBtns(Q,i,0):''});
   if(!u)W.push({lv:'w',t:'ยังไม่ได้ใส่หน่วย'});
-  else if(lx&&lx.x.unit&&qcNorm(lx.x.unit)!==qcNorm(u))W.push({lv:'w',t:`${lx.x.past?'ที่เคยเสนอ':'คลังราคา'}ใช้หน่วย “${lx.x.unit}” ไม่ใช่ “${u}”`,fx:fx(b+'.unit',lx.x.unit,'ใช้ '+esc(lx.x.unit))});
+  else if(lx&&lx.x.unit&&qcUn(lx.x.unit)!==qcUn(u))W.push({lv:'w',t:`${src(lx.x)}ใช้หน่วย “${lx.x.unit}” ไม่ใช่ “${u}”`,fx:fx(b+'.unit',lx.x.unit,'ใช้ '+esc(lx.x.unit))+(typeof qcuBtns==='function'?qcuBtns(Q,i,1,lx.x.unit):'')});
   else if(QC_LENI.test(d)&&(QC_CNT.test(u)||(QC_AREA.test(u)&&QC_CAB.test(d))))W.push({lv:'w',t:`หน่วย “${u}” ไม่น่าเข้ากับสาย/ท่อ ปกติคิดเป็นเมตร`,fx:fx(b+'.unit','ม.','ใช้ ม.')});
   else if(!QC_LENI.test(d)&&QC_MACH.test(d)&&(/^(ม\.?|เมตร|m\.?)$/i.test(u)||QC_AREA.test(u)))W.push({lv:'w',t:`หน่วย “${u}” ไม่น่าเข้ากับเครื่อง/อุปกรณ์ ปกติคิดเป็นชุดหรือเครื่อง`,fx:fx(b+'.unit','ชุด','ใช้ ชุด')});
   const kd=qcNorm(d);if(kd){const j=Q.items.findIndex((x,m)=>m<k&&!x.hs&&x.g===i.g&&(x.head||'')===(i.head||'')&&qcNorm(x.desc)===kd);
