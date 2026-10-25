@@ -19,16 +19,21 @@ const LPROB={lead:10,survey:20,quote:30,sent:40,nego:60,won:100,lost:0};
 NEW.customers=()=>({name:'',contact:'',phone:'',email:'',tax:'',addr:'',credit:30});
 NEW.leads=()=>({name:'',cust:'',value:0,stage:'lead',prob:'',close:addD(today(),30),owner:'',note:''});
 const QST=[['draft','ร่าง'],['sent','ส่งลูกค้าแล้ว'],['won','ได้งาน'],['lost','ไม่ได้งาน']];
-NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
+NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',valid:30,items:[],mk:0,rnd:'1',disc:0,status:'draft',pj:'',note:'',terms:CO().terms||'',by:''});
 // a negative quantity (work taken out, as in a VO) keeps a positive unit price
 // 4.24 markup per part (user: "ควรแยกค่าเครื่อง ค่าของ ค่าแรง ดีไหม"): Q.mkE / Q.mkM / Q.mkL = % on the equipment, the material and the
 // labour of a line; a blank one takes Q.mk, so a quote without them prices as before
 const qMkOn=Q=>['mkE','mkM','mkL'].some(k=>Q[k]!==''&&Q[k]!=null);
 const qMkP=(Q,k)=>{const v=Q['mk'+k];return v===''||v==null?n(Q.mk):n(v)};
 const qMkTxt=(Q,EN)=>!qMkOn(Q)?fmt(n(Q.mk),2)+'%':(EN?['equipment','material','labour']:['เครื่อง','ของ','แรง']).map((w,j)=>w+' '+fmtq(qMkP(Q,'EML'[j]))+'%').join(EN?', ':' ');
-const qUnit=(Q,i)=>{if(i.sp!==''&&i.sp!=null&&n(i.sp)>0)return n(i.sp);const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;
-  if(!qMkOn(Q)||m+l<=0)return u*(1+n(Q.mk)/100);const k=u/(m+l),eq=typeof qmIsEq==='function'&&qmIsEq(i);
-  return k*(m*(1+qMkP(Q,eq?'E':'M')/100)+l*(1+qMkP(Q,'L')/100))};
+// 4.34 the selling price per unit of each part rounded up (user: "จำนวนเงินปัดขึ้นเป็นจำนวนเต็ม ดีไหม"): Q.rnd 1 / 10 / 100 baht,
+// blank = not rounded (quotes before 4.34). Material and labour are rounded apart, so the line's price is their sum; a typed price stays.
+const qRnd=(Q,v)=>{const r=n(Q&&Q.rnd);return r>0&&v>0?Math.ceil(v/r-1e-6)*r:v};
+// the selling price per unit of a line's material and labour before rounding
+const qParts0=(Q,i)=>{const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;if(m+l<=0)return {mu:u*(1+n(Q.mk)/100),lu:0};const k=u/(m+l);
+  if(!qMkOn(Q))return {mu:k*m*(1+n(Q.mk)/100),lu:k*l*(1+n(Q.mk)/100)};const eq=typeof qmIsEq==='function'&&qmIsEq(i);
+  return {mu:k*m*(1+qMkP(Q,eq?'E':'M')/100),lu:k*l*(1+qMkP(Q,'L')/100)}};
+const qUnit=(Q,i)=>{if(i.sp!==''&&i.sp!=null&&n(i.sp)>0)return n(i.sp);const p=qParts0(Q,i);return qRnd(Q,p.mu)+qRnd(Q,p.lu)};
 // rows added under the total (SAFETY & CLEANING, OVERHEAD & PROFIT…): each a % of the printed total or a fixed amount
 const qAddV=(a,base)=>n(a.pct)?base*n(a.pct)/100:n(a.amt);
 const qAddsOn=Q=>(Q.adds||[]).filter(a=>!a.off);
@@ -73,7 +78,7 @@ function salesQuote(){
     <label>เรียน<input data-p="${b}.attn" value="${esc(sel.attn||'')}" placeholder="ว่าง = ผู้ติดต่อของลูกค้า"></label><label class="w2">กำหนดแล้วเสร็จ<input data-p="${b}.dlv" value="${esc(sel.dlv||'')}" placeholder="เช่น ภายใน 210 วันหลังทำสัญญา"></label>
     <label>ผู้ลงนาม<input data-p="${b}.signName" value="${esc(sel.signName||'')}" placeholder="เช่น นายอาทิตย์ บับภาสิทธิ์"></label><label>ตำแหน่งผู้ลงนาม<input data-p="${b}.signPos" value="${esc(sel.signPos||'')}" placeholder="เช่น กรรมการผู้จัดการ"></label>
     <label>หน้าแรกที่พิมพ์<select data-p="${b}.cover"><option value=""${sel.cover!=='letter'?' selected':''}>แบบตาราง (QUOTATION)</option><option value="letter"${sel.cover==='letter'?' selected':''}>แบบจดหมาย (เรียน … ขอแสดงความนับถือ)</option></select></label>
-    <label>บวกค่าดำเนินการ/กำไร (%)<input data-t="num" data-p="${b}.mk" value="${n(sel.mk)}"></label>${[["E","ค่าเครื่อง"],["M","ค่าของ (วัสดุ)"],["L","ค่าแรง"]].map(([k,l])=>`<label>บวกกำไร ${l} (%)<input data-t="num" data-p="${b}.mk${k}" value="${sel["mk"+k]===""||sel["mk"+k]==null?"":n(sel["mk"+k])}" placeholder="ว่าง = ${n(sel.mk)}"></label>`).join("")}<!--qdisc--><label>ส่วนลด (บาท)<input data-t="num" data-p="${b}.disc" value="${n(sel.disc)}"></label><!--/qdisc-->
+    <label>บวกค่าดำเนินการ/กำไร (%)<input data-t="num" data-p="${b}.mk" value="${n(sel.mk)}"></label>${[["E","ค่าเครื่อง"],["M","ค่าของ (วัสดุ)"],["L","ค่าแรง"]].map(([k,l])=>`<label>บวกกำไร ${l} (%)<input data-t="num" data-p="${b}.mk${k}" value="${sel["mk"+k]===""||sel["mk"+k]==null?"":n(sel["mk"+k])}" placeholder="ว่าง = ${n(sel.mk)}"></label>`).join("")}<label>ปัดราคาขาย/หน่วย<select data-p="${b}.rnd" title="ปัดราคาขายต่อหน่วยของค่าของและค่าแรงขึ้น ราคาที่พิมพ์เองไม่ถูกปัด">${[['','ไม่ปัด (ทศนิยม 2 ตำแหน่ง)'],['1','ปัดขึ้นเป็นจำนวนเต็มบาท'],['10','ปัดขึ้นหลักสิบ'],['100','ปัดขึ้นหลักร้อย']].map(([k,l])=>`<option value="${k}"${String(sel.rnd||'')===k?' selected':''}>${l}</option>`).join('')}</select></label><!--qdisc--><label>ส่วนลด (บาท)<input data-t="num" data-p="${b}.disc" value="${n(sel.disc)}"></label><!--/qdisc-->
     <label>แบบฟอร์ม BOQ ที่พิมพ์<select data-p="${b}.lay">${QFORMS.map(([v,c,t])=>`<option value="${v}"${(sel.lay||'')===v?' selected':''}>${c?c+' ':''}${t}</option>`).join('')}</select></label>
     <label>สถานะ<select data-p="${b}.status">${QST.map(([k,l])=>`<option value="${k}"${k===sel.status?' selected':''}>${l}</option>`).join('')}</select></label><label>ผู้เสนอราคา<input data-p="${b}.by" value="${esc(sel.by||'')}"></label>
     <div class="qopts" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 26px;align-items:center"><!--qopts--><label class="chk"><input type="checkbox" data-t="chk" data-p="${b}.mkSep"${sel.mkSep?' checked':''}> แสดงค่าดำเนินการ/กำไรเป็นบรรทัดท้าย (ราคาในรายการเป็นราคาทุน)</label></div>
@@ -97,7 +102,7 @@ const qForm=Q=>({split:'A',one:'B',sum:'S',gov:'G',empty:'E'})[Q.lay]||(qHasL(Q)
 const qSplit=Q=>{const f=qForm(Q);return f==='A'||f==='G'||(f!=='B'&&qHasL(Q))};
 function qLine(Q,i){const q=n(i.q),base=n(i.m)+n(i.l),sep=qSep(Q),u=sep?(base||n(i.t)/(q||1e-9)):qUnit(Q,i),k=base?u/base:1;
   let mu=base?n(i.m)*k:u,lu=base?n(i.l)*k:0;
-  if(!sep&&base&&qMkOn(Q)&&!(n(i.sp)>0)){const kt=n(i.t)/(q||1e-9)/base,eq=typeof qmIsEq==='function'&&qmIsEq(i);mu=kt*n(i.m)*(1+qMkP(Q,eq?'E':'M')/100);lu=kt*n(i.l)*(1+qMkP(Q,'L')/100)}
+  if(!sep&&base&&(qMkOn(Q)||n(Q.rnd)>0)&&!(n(i.sp)>0)){const p=qParts0(Q,i);mu=qRnd(Q,p.mu);lu=qRnd(Q,p.lu)}
   return {q,mu,lu,u,mt:q*mu,lt:q*lu,t:q*u}}
 PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=qCalc(Q),cu=CO().customers.find(x=>x.id===Q.cust)||{},sp=qSplit(Q),sep=qSep(Q),G={},R='style="text-align:right"';
   Q.items.forEach(i=>{const L=qLine(Q,i),g=G[i.g]=G[i.g]||{m:0,l:0,t:0};g.m+=L.mt;g.l+=L.lt;g.t+=L.t});
