@@ -8,17 +8,20 @@
    4.68: the user sent ว 480 itself: 120 lines now carry its official labour and load as sk 'offl'; material is still estimated.
    The user also sent the Budget Bureau standard prices (Dec 2568, revision Feb 2569, supplement Apr 2569): 51 whole lines, sk 'bb'.
    And the สนค. material prices for ส่วนกลาง, September 2569: 51 lines take its material price, sk 'gov' (with ว 480 labour) or 'offm'.
-   The whole สนค. list is searched in 977-moc-list.js. */
+   The whole สนค. list is searched in 977-moc-list.js.
+   4.70: two rates per TR / kVA worked out from the Budget Bureau lines (sk 'bbc') fill PENUM MEP's sample lines 'Split ติดผนัง/แขวน'
+   and 'เครื่องกำเนิดไฟฟ้า' (found by name and unit); the old sample price goes into the line's history. */
 PL_SK.est=['ประมาณการ','warn'];
 // 4.68 a line whose labour is the official ว 480 rate (the material is still an estimate)
 PL_SK.offl=['ค่าแรง ว 480 · วัสดุประมาณการ','info'];
 // 4.68 official on both halves (สนค. material, ว 480 labour), or the material only
-PL_SK.gov=['ราคาทางการ สนค. + ว 480','ok'];PL_SK.offm=['ค่าวัสดุ สนค. · ค่าแรงประมาณการ','info'];
+PL_SK.gov=['ราคาทางการ สนค. + ว 480','ok'];PL_SK.bbc=['สำนักงบฯ (คำนวณต่อ TR/kVA)','info'];PL_SK.offm=['ค่าวัสดุ สนค. · ค่าแรงประมาณการ','info'];
 if(!PL_ORD.includes('est'))PL_ORD.splice(PL_ORD.indexOf('demo'),0,'offm','offl','est');
 if(!PL_ORD.includes('gov'))PL_ORD.splice(PL_ORD.indexOf('moc')+1,0,'gov');
+if(!PL_ORD.includes('bbc'))PL_ORD.splice(PL_ORD.indexOf('bb')+1,0,'bbc');
 // 4.69 the freshness card (975) also follows the starter set's kinds: สนค. material monthly, ว 480 labour yearly
-Object.assign(PL_EVERY,{gov:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offm:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offl:[365,'ปีละครั้ง (ค่าแรง ว 480)']});
-PL_URL.gov=PL_URL.offm='https://index.tpso.go.th';PL_URL.offl=PL_URL.cgd;
+Object.assign(PL_EVERY,{bbc:[365,'ปีละครั้ง'],gov:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offm:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offl:[365,'ปีละครั้ง (ค่าแรง ว 480)']});
+PL_URL.gov=PL_URL.offm='https://index.tpso.go.th';PL_URL.bbc=PL_URL.bb;PL_URL.offl=PL_URL.cgd;
 const govSet=()=>window.PENUM_GOV_PRICES&&Array.isArray(window.PENUM_GOV_PRICES.rows)?window.PENUM_GOV_PRICES:null;
 // the rows as shared/prices.js reads them (sk 'gov', 'offm', 'offl', 'est' or 'bb', the source line)
 const govRows=()=>govSet()&&window.penumPrices&&penumPrices.govRows?penumPrices.govRows():[];
@@ -26,13 +29,14 @@ const govRows=()=>govSet()&&window.penumPrices&&penumPrices.govRows?penumPrices.
 function govFind(r){const L=plCfg(),u=plKey(r.unit||''),k=plKey(r.name);
   return L.find(i=>i.key&&i.key===r.key)||L.find(i=>plKey(i.name)===k&&(!u||!i.unit||plKey(i.unit)===u)&&!plKey(i.br||''))||null}
 ACT.plGov=()=>{const R=govRows();if(!R.length){toast('ไม่พบราคากลางชุดเริ่มต้นในโปรแกรมนี้');return}
-  // a placeholder line, or a line still as this set loaded it (a Budget Bureau line too), takes the set's price
-  const soft=(x,r)=>!x||x.sk==='demo'||x.sk==='est'||x.sk==='offl'||x.sk==='offm'||x.key===r.key&&x.sk===r.sk&&x.src===r.src,go=R.filter(r=>soft(govFind(r),r)),keep=R.filter(r=>!soft(govFind(r),r)),t={add:0,upd:0,same:0,off:0};
-  ['bb','gov','offm','offl','est'].forEach(sk=>{const G=go.filter(r=>r.sk===sk),K=keep.filter(r=>r.sk===sk);
+  // a placeholder line, or a line still as this set loaded it (a Budget Bureau line too, or a sample line it filled, which keeps its own key), takes the set's price
+  const soft=(x,r)=>!x||x.sk==='demo'||x.sk==='est'||x.sk==='offl'||x.sk==='offm'||x.sk===r.sk&&x.src===r.src,go=R.filter(r=>soft(govFind(r),r)),keep=R.filter(r=>!soft(govFind(r),r)),t={add:0,upd:0,same:0,off:0};
+  ['bb','bbc','gov','offm','offl','est'].forEach(sk=>{const G=go.filter(r=>r.sk===sk),K=keep.filter(r=>r.sk===sk);
     [G.length&&plMerge(G,{sk,g:'oth'}),K.length&&plMerge(K,{sk,offer:1,noAdd:1})].forEach(r=>r&&Object.keys(t).forEach(k=>t[k]+=r[k]||0))});
   $('#dlg').open&&$('#dlg').close();plSay(t,'ราคากลางชุดเริ่มต้น')};
 const govNote=()=>{const S=govSet();return S?`${S.rows.length} รายการ งานไฟฟ้า สุขาภิบาล ดับเพลิง แจ้งเหตุเพลิงไหม้ สื่อสาร ท่อน้ำยา ท่อลม น้ำเย็น เครื่องปรับอากาศ เครื่องกำเนิดไฟฟ้า และโซลาร์เซลล์ ค่าวัสดุและค่าแรงต่อหน่วย ไม่รวม VAT ราคาวันที่ ${thD(S.date)}`+
   (S.moc?` · <b>ค่าวัสดุ ${S.rows.filter(r=>r[7]).length} รายการเป็นราคาทางการ สนค. ส่วนกลาง ก.ย. 2569 (เงินสด ไม่รวม VAT และค่าขนส่ง ราคาต่อหน่วยหารจากม้วนหรือท่อน)</b>`:'')+
+  (S.bbc?` · <b>ราคาต่อ TR ของ Split และต่อ kVA ของเครื่องกำเนิดไฟฟ้า (แถวราคาตัวอย่างที่ PENUM MEP ใช้ออกแบบ) คำนวณจากราคาสำนักงบฯ</b>`:'')+
   (S.cgd?` · <b>ค่าแรง ${S.rows.filter(r=>/^\d/.test(r[6])).length} รายการเป็นตัวเลขทางการของกรมบัญชีกลาง ว 480 (${thD(S.cgd.date)})</b>`:'')+
   (S.bb?` · <b>ราคา ${S.rows.filter(r=>/^bb:/.test(r[6])).length} รายการ (แอร์ เครื่องกำเนิดไฟฟ้า โซลาร์เซลล์) ทั้งบรรทัดจากบัญชีราคามาตรฐานครุภัณฑ์ สำนักงบประมาณ ธ.ค. 2568 ฉบับปรับปรุง ก.พ. 2569 และเพิ่มเติม เม.ย. 2569 (หัก VAT 7%)</b>`:'')+
   (S.est?` · <b>ค่าวัสดุรายการอื่นยังเป็นราคาประมาณการ</b> ตามรูปแบบราคากระทรวงพาณิชย์ ก่อนยื่นงานราชการให้วางบัญชีราคาวัสดุจริงทับ`:'')+
@@ -46,5 +50,5 @@ const govNote=()=>{const S=govSet();return S?`${S.rows.length} รายกา�
   return h.replace('<button type="button" class="btn pri" data-a="plSeed">',`<button type="button" class="btn pri" data-a="plGov" title="${esc(govNote().replace(/<[^>]+>/g,''))}">ใส่ราคากลางชุดเริ่มต้น ${govSet().rows.length} รายการ (สนค. + ว 480 + สำนักงบฯ)</button><button type="button" class="btn" data-a="plSeed">`).replace('เริ่มได้ 3 ทาง','เริ่มได้ 4 ทาง')}}
 
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{
-  'ประมาณการ':'Estimate','ค่าแรง ว 480':'CGD labour','ค่าวัสดุอื่นประมาณการ':'Other material estimated','ครุภัณฑ์ สำนักงบฯ':'Budget Bureau equipment','ค่าแรง ว 480 · วัสดุประมาณการ':'CGD labour · est. material','ค่าวัสดุ สนค.':'TPSO material','ราคาทางการ สนค. + ว 480':'Official: TPSO + CGD labour','ค่าวัสดุ สนค. · ค่าแรงประมาณการ':'TPSO material · est. labour','ราคากลางชุดเริ่มต้น (มีในโปรแกรม)':'Starter reference prices (built in)','ใส่ราคากลางชุดเริ่มต้น':'Load the starter reference prices',
+  'ประมาณการ':'Estimate','ค่าแรง ว 480':'CGD labour','ค่าวัสดุอื่นประมาณการ':'Other material estimated','ครุภัณฑ์ สำนักงบฯ':'Budget Bureau equipment','ค่าแรง ว 480 · วัสดุประมาณการ':'CGD labour · est. material','ค่าวัสดุ สนค.':'TPSO material','ราคาทางการ สนค. + ว 480':'Official: TPSO + CGD labour','ค่าวัสดุ สนค. · ค่าแรงประมาณการ':'TPSO material · est. labour','สำนักงบฯ (คำนวณต่อ TR/kVA)':'Budget Bureau (per TR/kVA)','ราคากลางชุดเริ่มต้น (มีในโปรแกรม)':'Starter reference prices (built in)','ใส่ราคากลางชุดเริ่มต้น':'Load the starter reference prices',
   'เริ่มได้ 4 ทาง':'Four ways to start','ทุกเดือน (ค่าวัสดุ สนค.)':'Monthly (TPSO material)','ปีละครั้ง (ค่าแรง ว 480)':'Yearly (CGD ว 480 labour)','ยังเป็นราคาสมมติ / ประมาณการ':'Assumed / estimated prices'});
