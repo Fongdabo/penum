@@ -8,13 +8,13 @@
 const qbNorm=s=>String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
 const qbProj=Q=>Q&&Q.pj&&DB.projects&&DB.projects[Q.pj]||null;
 const qbMc=i=>{const q=n(i.q),base=n(i.m)+n(i.l);return base?n(i.m):(q?n(i.t)/q:0)};
-function qbData(Q){const p=qbProj(Q);if(!p||!(p.pos||[]).length)return null;
+function qbData(Q){const p=qbProj(Q);if(!p)return null;
   const B=(p.boq&&p.boq.items)||[],used=new Set(),map={},byB={},byName={};
   // the k-th quote line with a key takes the k-th BOQ line with that key, so two lines with one name stay apart
   Q.items.forEach(i=>{if(i.hs)return;const k=bKey(i),b=B.find(x=>!used.has(x.id)&&bKey(x)===k);if(b){used.add(b.id);map[i.id]=b.id;byB[b.id]=i.id}});
   Q.items.forEach(i=>{if(!map[i.id])return;[i.desc,itemName(i),[i.type,i.desc].filter(Boolean).join(' ')].forEach(s=>{const k=qbNorm(s);if(k&&!byName[k])byName[k]=i.id})});
   const R={},un=[];
-  p.pos.forEach(po=>(po.items||[]).forEach(l=>{if(l.qbx||!(n(l.q)*n(l.p)))return;let qi=l.bid&&byB[l.bid];if(!qi&&!l.bid)qi=byName[qbNorm(l.desc)];
+  (p.pos||[]).forEach(po=>(po.items||[]).forEach(l=>{if(l.qbx||!(n(l.q)*n(l.p)))return;let qi=l.bid&&byB[l.bid];if(!qi&&!l.bid)qi=byName[qbNorm(l.desc)];
     if(!qi){un.push({po,l});return}const r=R[qi]=R[qi]||{q:0,t:0,no:[]};r.q+=n(l.q);r.t+=n(l.q)*n(l.p);if(!r.no.includes(po.no))r.no.push(po.no)}));
   let est=0,bt=0,df=0;Q.items.forEach(i=>{if(i.hs)return;const mc=qbMc(i);est+=n(i.q)*mc;const r=R[i.id];if(r){bt+=r.t;df+=r.t-r.q*mc}});
   return {p,map,R,un,est,bt,df}}
@@ -25,24 +25,26 @@ function qbRows(Q,D,only){const L=[];let gi=0,lg=null;Q.items.forEach(i=>{if(i.g
   L.push(`<tr${r?'':' class="qb-no"'}><td>${esc([i.type,i.desc].filter(Boolean).join(' '))}</td><td>${esc(i.unit||'')}</td><td class="r">${fmtq(n(i.q))}</td><td class="r">${r?fmtq(r.q)+(over?' <small class="qb-ov" title="ซื้อมากกว่าจำนวนในใบเสนอราคา">เกิน</small>':''):'<small class="muted">ยังไม่ซื้อ</small>'}</td>
     <td class="r">${fmt(mc,2)}</td><td class="r">${r?fmt(ap,2):''}</td><td class="r">${r?fmt(r.t,2):''}</td><td class="r">${r?qbDf(r.t-r.q*mc):''}</td><td class="qb-po">${r?esc(r.no.join(', ')):''}</td></tr>`)});return L.join('')}
 const qbHead=`<thead><tr><th>รายการ</th><th>หน่วย</th><th class="r">จำนวนในใบ</th><th class="r">ซื้อแล้ว</th><th class="r" title="ทุนค่าของต่อหน่วยที่ประมาณไว้ในใบเสนอราคา">ทุนของ/หน่วย</th><th class="r" title="ราคาซื้อเฉลี่ยจากใบสั่งซื้อ ไม่รวม VAT">ซื้อจริง/หน่วย</th><th class="r">ซื้อจริงรวม</th><th class="r" title="ซื้อจริงรวม − (ซื้อแล้ว × ทุนของ/หน่วย) บวก = แพงกว่าที่ประมาณ">ต่างจากทุน</th><th>PO</th></tr></thead>`;
-function qbSum(Q,D){const c=qCalc(Q),gp=c.net-c.cost,ga=gp-D.df,pc=v=>c.net?` (${fmt(v*100/c.net,1)}%)`:'';
+// 922 replaces this with the whole project's actual costs (labour, other costs)
+let qbSum=(Q,D)=>{const c=qCalc(Q),gp=c.net-c.cost,ga=gp-D.df,pc=v=>c.net?` (${fmt(v*100/c.net,1)}%)`:'';
   return `<div class="qb-s"><div><span>ทุนค่าของที่ประมาณ (ทุกรายการ)</span><b>${fmt(D.est,2)}</b></div><div><span>สั่งซื้อแล้วตาม PO</span><b>${fmt(D.bt,2)}</b></div>
   <div><span>ต่างจากทุน (เฉพาะที่สั่งแล้ว)</span><b>${qbDf(D.df)}</b></div><div><span>กำไรขั้นต้นคาดการณ์</span><b>${fmt(gp,2)}${pc(gp)}</b></div>
-  <div class="qb-g ${ga<gp-0.005?'up':''}"><span>กำไรขั้นต้นหลังคิดราคาซื้อจริง</span><b>${fmt(ga,2)}${pc(ga)}</b></div></div>`}
-// the card on the quote page
+  <div class="qb-g ${ga<gp-0.005?'up':''}"><span>กำไรขั้นต้นหลังคิดราคาซื้อจริง</span><b>${fmt(ga,2)}${pc(ga)}</b></div></div>`};
+// the card on the quote page, above the comments
+const qbIns=(h,x)=>{if(!x)return h;const k=h.lastIndexOf('<section class="card cm-card"');return k<0?h+x:h.slice(0,k)+x+h.slice(k)};
 function qbCard(Q){if(!qbProj(Q))return '';const p=qbProj(Q),D=qbData(Q);
-  if(!D)return `<section class="card qb"><h2><span>ซื้อจริงจากจัดซื้อ</span></h2><p class="hint">ยังไม่มีใบสั่งซื้อ (PO) ในโครงการ “${esc(p.name)}” เมื่อจัดซื้อออก PO ราคาที่ซื้อจริงจะขึ้นที่นี่ เทียบกับทุนที่ประมาณไว้</p></section>`;
+  const none=!(p.pos||[]).length?`<p class="hint">ยังไม่มีใบสั่งซื้อ (PO) ในโครงการ “${esc(p.name)}” เมื่อจัดซื้อออก PO ราคาที่ซื้อจริงจะขึ้นในตารางนี้ เทียบกับทุนที่ประมาณไว้</p>`:'';
   const opts=Q.items.filter(i=>D.map[i.id]).map(i=>`<option value="${i.id}">${esc([i.type,i.desc].filter(Boolean).join(' ').slice(0,70))}</option>`).join('');
   const un=D.un.length?`<h3 class="qb-h">รายการใน PO ที่ยังจับคู่ไม่ได้ (${D.un.length})</h3><p class="hint">เลือกว่าเป็นของรายการไหนในใบเสนอราคา หรือเลือก “ไม่นับ” ถ้าไม่ใช่ของในใบนี้</p><div class="tw"><table class="qb-t"><thead><tr><th>PO</th><th>รายการใน PO</th><th class="r">จำนวน</th><th class="r">ราคา/หน่วย</th><th>เป็นของรายการ</th></tr></thead><tbody>
     ${D.un.map(({po,l})=>`<tr><td>${esc(po.no)}</td><td>${esc(l.desc||'')}</td><td class="r">${fmtq(n(l.q))} ${esc(l.unit||'')}</td><td class="r">${fmt(n(l.p),2)}</td><td><select class="qbMatch" data-id="${Q.id}" data-po="${po.id}" data-l="${l.id}" aria-label="จับคู่กับรายการในใบเสนอราคา"><option value="">— เลือกรายการ —</option>${opts}<option value="__x">ไม่นับ (ไม่ใช่ของในใบนี้)</option></select></td></tr>`).join('')}</tbody></table></div>`:'';
   return `<section class="card qb"><h2><span>ซื้อจริงจากจัดซื้อ</span><small>จากใบสั่งซื้อ (PO) ของโครงการ “${esc(p.name)}” ราคาไม่รวม VAT</small><span class="sp"></span><button type="button" class="btn sm" data-a="qbOpen" data-id="${Q.id}">ไปหน้าใบสั่งซื้อ</button></h2>
-  ${qbSum(Q,D)}<div class="tw" style="max-height:480px;overflow:auto"><table class="qb-t">${qbHead}<tbody>${qbRows(Q,D,0)}</tbody></table></div>${un}</section>`}
+  ${qbSum(Q,D)}${none||`<div class="tw" style="max-height:480px;overflow:auto"><table class="qb-t">${qbHead}<tbody>${qbRows(Q,D,0)}</tbody></table></div>`}${un}</section>`}
 ACT.qbOpen=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q||!qbProj(Q))return;ACT.go({dataset:{m:'pj',k:'buy',p:Q.pj}});S.sub.buy='po';render()};
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('qbMatch')||!t.value)return;
   const Q=CO().quotes.find(q=>q.id===t.dataset.id),D=Q&&qbData(Q),po=D&&D.p.pos.find(x=>x.id===t.dataset.po),l=po&&po.items.find(x=>x.id===t.dataset.l);if(!l)return;
   if(t.value==='__x'){l.qbx=1;toast('ไม่นับรายการนี้แล้ว')}else{const bid=D.map[t.value];if(!bid)return;l.bid=bid;const b=D.p.boq.items.find(x=>x.id===bid);if(b&&!l.g)l.g=b.g;toast('จับคู่แล้ว หน้าจัดซื้อจะนับว่าสั่งแล้วด้วย')}
   save();render()});
-{const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];return Q?h+qbCard(Q):h}}
+{const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];return Q?qbIns(h,qbCard(Q)):h}}
 // the internal cost print: the lines bought, before the totals
 {const f=PRINT.quoteCost;PRINT.quoteCost=function(id){let h=f.apply(this,arguments);const Q=CO().quotes.find(q=>q.id===id),D=Q&&qbData(Q);if(!h||!D||!Object.keys(D.R).length)return h;
   const left=Q.items.filter(i=>!i.hs&&D.map[i.id]&&!D.R[i.id]&&qbMc(i)>0),lv=sum(left,i=>n(i.q)*qbMc(i));
