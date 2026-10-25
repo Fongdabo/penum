@@ -14,7 +14,7 @@ const qcDice=(a,b)=>{let c=0,na=0,nb=0;a.forEach(v=>na+=v);b.forEach(v=>nb+=v);i
 const qcLev=(a,b,mx)=>{if(Math.abs(a.length-b.length)>mx)return mx+1;let p=Array.from({length:b.length+1},(_,j)=>j);
   for(let i=1;i<=a.length;i++){const c=[i];let lo=i;for(let j=1;j<=b.length;j++){c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));if(c[j]<lo)lo=c[j]}if(lo>mx)return mx+1;p=c}return p[b.length]};
 const QC_CNT=/^(ตัว|เครื่อง|ตู้|ลูก|จุด|แผง|ใบ|หลอด|โคม|ชิ้น|อัน|ต้น|ถัง|หัว|ห้อง|คัน|set|pcs?|ea|unit|nos?\.?)$/i;
-const QC_CAB=/สาย(ไฟ|lan|ลำโพง|นำสัญญาณ|ทนไฟ|ตัวนำ|ใยแก้ว|ดิน|สัญญาณ|เคเบิล)|cable(?! tray)|\bwire\b/i,QC_PIPE=/ท่อ(?!.*(ม้วน|coil|ตู้|ปั๊ม))|รางครอบ|รางเดินสาย|wireway|cable tray|duct cover/i,
+const QC_CAB=/สาย\s*(ไฟ|lan|ลำโพง|นำสัญญาณ|ทนไฟ|ตัวนำ|ใยแก้ว|ดิน|สัญญาณ|เคเบิล)|cable(?! tray)|\bwire\b/i,QC_PIPE=/ท่อ(?!.*(ม้วน|coil|ตู้|ปั๊ม))|รางครอบ|รางเดินสาย|wireway|cable tray|duct cover/i,
   QC_ACC=/ข้อต่อ|ข้องอ|ข้อลด|สามทาง|วาล์ว|valve|elbow|\btee\b|fitting|ฝาครอบ|\bcap\b|แคล้ม|clamp|ขาแขวน|ขายึด|hanger|support|กล่อง|\bbox\b|เทป|tape|กาว|หัวต่อ|ปลายสาย|หางปลา|lug|connector|gland|เข้าหัว|ติดตั้ง/i;
 const QC_LENI={test:s=>(QC_CAB.test(s)||QC_PIPE.test(s))&&!QC_ACC.test(s)};
 const QC_MACH=/แอร์|เครื่อง(ปรับ|ทำ|กำเนิด|บันทึก|ขยาย|สแกน|อ่าน|เติม)|ปั๊ม|pump|พัดลม|\bfan\b|chiller|\bfcu\b|\bahu\b|กล้อง|camera|ตู้(?!.*ท่อ)|ups|inverter|อินเวอร์เตอร์/i;
