@@ -32,9 +32,11 @@ const qMkTxt=(Q,EN)=>!qMkOn(Q)?fmt(n(Q.mk),2)+'%':(EN?['equipment','material','l
 const qRndS=Q=>!Q?0:Q.rnd==null?((!Q.status||Q.status==='draft')?1:0):n(Q.rnd);
 const qRnd=(Q,v)=>{const r=qRndS(Q);return r>0&&v>0?Math.ceil(v/r-1e-6)*r:v};
 // the selling price per unit of a line's material and labour before rounding
-const qParts0=(Q,i)=>{const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;if(m+l<=0)return {mu:u*(1+n(Q.mk)/100),lu:0};const k=u/(m+l);
-  if(!qMkOn(Q))return {mu:k*m*(1+n(Q.mk)/100),lu:k*l*(1+n(Q.mk)/100)};const eq=typeof qmIsEq==='function'&&qmIsEq(i);
-  return {mu:k*m*(1+qMkP(Q,eq?'E':'M')/100),lu:k*l*(1+qMkP(Q,'L')/100)}};
+// 4.48 a line's own markup (i.mkM on its material or equipment, i.mkL on its labour) wins over the quote's (user: "บวกกำไรทำแบบนี้ดีกว่าไหม")
+const qLnMk=i=>['mkM','mkL'].some(k=>i[k]!==''&&i[k]!=null);
+const qMkI=(Q,i,k,eq)=>{const v=i[k==='L'?'mkL':'mkM'];if(v!==''&&v!=null)return n(v);return qMkOn(Q)?qMkP(Q,k==='L'?'L':eq?'E':'M'):n(Q.mk)};
+const qParts0=(Q,i)=>{const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;if(m+l<=0){const v=i.mkM;return {mu:u*(1+(v!==''&&v!=null?n(v):n(Q.mk))/100),lu:0}}const k=u/(m+l);
+  const eq=typeof qmIsEq==='function'&&qmIsEq(i);return {mu:k*m*(1+qMkI(Q,i,'M',eq)/100),lu:k*l*(1+qMkI(Q,i,'L',eq)/100)}};
 const qUnit=(Q,i)=>{if(i.sp!==''&&i.sp!=null&&n(i.sp)>0)return n(i.sp);const p=qParts0(Q,i);return qRnd(Q,p.mu)+qRnd(Q,p.lu)};
 // rows added under the total (SAFETY & CLEANING, OVERHEAD & PROFIT…): each a % of the printed total or a fixed amount
 const qAddV=(a,base)=>n(a.pct)?base*n(a.pct)/100:n(a.amt);
@@ -96,7 +98,7 @@ function salesQuote(){
 }
 // quotation lines as printed: unit prices include the markup, split into material and labour in proportion; with
 // "markup on its own line" the lines show cost and the markup is one row in the summary (as many contractors' BOQs do)
-const qSep=Q=>!!Q.mkSep&&!Q.items.some(i=>i.sp!==''&&i.sp!=null&&n(i.sp)>0);
+const qSep=Q=>!!Q.mkSep&&!Q.items.some(i=>(i.sp!==''&&i.sp!=null&&n(i.sp)>0)||qLnMk(i));
 // BOQ forms: value stored in Q.lay, code printed on the page
 const QFORMS=[['','','อัตโนมัติ (A เมื่อมีค่าแรง ไม่มีใช้ B)'],['split','BOQ-A','แยกค่าวัสดุ / ค่าแรง'],['one','BOQ-B','ราคารวมต่อหน่วย'],['sum','BOQ-S','สรุปตามหมวด (ไม่แสดงราคารายบรรทัด)'],['gov','BOQ-G','แบบราชการ ปร.4 / ปร.5'],['empty','BOQ-E','ใบปริมาณงานเปล่า (ให้ผู้รับเหมาช่วง/ร้านค้ากรอกราคา)']];
 const qHasL=Q=>Q.items.some(i=>n(i.l)>0);
@@ -104,7 +106,7 @@ const qForm=Q=>({split:'A',one:'B',sum:'S',gov:'G',empty:'E'})[Q.lay]||(qHasL(Q)
 const qSplit=Q=>{const f=qForm(Q);return f==='A'||f==='G'||(f!=='B'&&qHasL(Q))};
 function qLine(Q,i){const q=n(i.q),base=n(i.m)+n(i.l),sep=qSep(Q),u=sep?(base||n(i.t)/(q||1e-9)):qUnit(Q,i),k=base?u/base:1;
   let mu=base?n(i.m)*k:u,lu=base?n(i.l)*k:0;
-  if(!sep&&base&&(qMkOn(Q)||qRndS(Q)>0)&&!(n(i.sp)>0)){const p=qParts0(Q,i);mu=qRnd(Q,p.mu);lu=qRnd(Q,p.lu)}
+  if(!sep&&base&&(qMkOn(Q)||qRndS(Q)>0||qLnMk(i))&&!(n(i.sp)>0)){const p=qParts0(Q,i);mu=qRnd(Q,p.mu);lu=qRnd(Q,p.lu)}
   return {q,mu,lu,u,mt:q*mu,lt:q*lu,t:q*u}}
 PRINT.quote=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';const c=qCalc(Q),cu=CO().customers.find(x=>x.id===Q.cust)||{},sp=qSplit(Q),sep=qSep(Q),G={},R='style="text-align:right"';
   Q.items.forEach(i=>{const L=qLine(Q,i),g=G[i.g]=G[i.g]||{m:0,l:0,t:0};g.m+=L.mt;g.l+=L.lt;g.t+=L.t});

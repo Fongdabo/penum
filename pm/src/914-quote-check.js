@@ -77,7 +77,7 @@ function qcQuote(Q){const C=CO(),A=[],add=(lv,t,go)=>A.push({lv,t,go}),c=qCalc(Q
   if(!String(Q.signName||'').trim())add('w','ยังไม่ได้ใส่ชื่อผู้ลงนาม','signName');
   if(!(Q.items||[]).length)add('e','ยังไม่มีรายการ');
   if(n(Q.disc)>c.sub&&c.sub>0)add('e',`ส่วนลด ${fmt(n(Q.disc))} มากกว่ายอดรวม`,'disc');else if(c.sub&&n(Q.disc)/c.sub>.15)add('w',`ส่วนลด ${fmt(n(Q.disc)*100/c.sub,1)}% ของยอดรวม ตรวจว่าใส่ถูกไหม`,'disc');
-  if(!ma&&(Q.items||[]).length&&!n(Q.mk)&&!(typeof qMkOn==='function'&&qMkOn(Q))&&!Q.items.some(i=>n(i.sp)>0))add('w','ยังไม่ได้ตั้ง % บวกกำไร ราคาขายจึงเท่ากับทุน','mk');
+  if(!ma&&(Q.items||[]).length&&!n(Q.mk)&&!(typeof qMkOn==='function'&&qMkOn(Q))&&!Q.items.some(i=>n(i.sp)>0||(typeof qLnMk==='function'&&qLnMk(i))))add('w','ยังไม่ได้ตั้ง % บวกกำไร ราคาขายจึงเท่ากับทุน','mk');
   if(c.net&&c.cost){const g=(c.net-c.cost)*100/c.net;if(g<0)add('e',`กำไรรวมติดลบ ${fmt(g,1)}%`);else if(g<5)add('w',`กำไรรวมแค่ ${fmt(g,1)}%`)}
   [['qpay',''],['qpayE',' (ค่าเครื่อง)']].forEach(([k,l])=>{const P=Q[k]||[];if(!P.length||(k==='qpayE'&&!Q.eqSep))return;const s=P.reduce((a,x)=>a+n(x.pct),0);if(Math.abs(s-100)>.01)add('w',`งวดชำระเงิน${l}รวม ${fmtq(s)}% ไม่ครบ 100%`)});
   if(Q.eqSep&&!ma&&!(Q.items||[]).some(i=>typeof qmIsEq==='function'&&qmIsEq(i)))add('w','เลือกแยกค่าเครื่องไว้ แต่ยังไม่มีรายการไหนติ๊ก “เครื่อง”');
