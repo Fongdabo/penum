@@ -8,8 +8,8 @@ The full guide (layout, link keys between apps, commands) is `docs/apps.md` (Tha
 
 - The page is every file in `pm/src/` (`NNN-what.html|css|js`) joined in name order. There is no `pm/index.html`; never
   recreate or commit one (it is in .gitignore and the build ignores it).
-- Find code with `grep -rn "name" pm/src`. `230-skills-data.js`, `400-thai-address-data.js`, `430-skill-items-data.js` and
-  `640-i18n-en.js` are single huge data lines: do not read them whole.
+- Find code with `grep -rn "name" pm/src`. `230-skills-data.js`, `400-thai-address-data.js`, `430-skill-items-data.js`,
+  `640-i18n-en.js` and `928-factor-f-data.js` are single huge data lines: do not read them whole.
 - Order matters: later files often wrap functions from earlier ones (`{const f=render;render=()=>…}`).
   A new feature goes in a new file numbered 911–989, before `990-start.js`, so parallel work does not collide.
 - Every `pm/src/*.js` file must parse on its own, and each file's first line must not also appear in the file before it.

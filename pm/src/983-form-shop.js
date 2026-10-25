@@ -137,7 +137,8 @@ const fsAllPrice=()=>{const x=fsPlan('all');return x&&x.price!=null?n(x.price):4
 const FS_CART=[];
 // the fields a form needs beyond the quotation's own, under the gallery
 function fsInputs(F,Q){if(!F||!F.inp)return '';const b=`co.quotes.${Q.id}`;
-  return `<div class="form" style="margin-top:10px">${F.inp.map(([k,l,ty,ph])=>ty==='area'?`<label class="w2">${esc(l)}<textarea data-p="${b}.${k}" rows="3" placeholder="${esc(ph||'')}">${esc(Q[k]||'')}</textarea></label>`
+  return `<div class="form" style="margin-top:10px">${F.inp.map(([k,l,ty,ph])=>ty==='sel'?`<label>${esc(l)}<select data-p="${b}.${k}">${(typeof ph==='function'?ph():ph||[]).map(([v,t])=>`<option value="${esc(v)}"${String(Q[k]??'')===String(v)?' selected':''}>${esc(t)}</option>`).join('')}</select></label>`
+    :ty==='area'?`<label class="w2">${esc(l)}<textarea data-p="${b}.${k}" rows="3" placeholder="${esc(ph||'')}">${esc(Q[k]||'')}</textarea></label>`
     :`<label>${esc(l)}<input${ty==='num'?' data-t="num"':''} data-p="${b}.${k}" value="${esc(Q[k]==null?'':Q[k])}" placeholder="${esc(ph||'')}"></label>`).join('')}</div>`}
 function fsShopTile(Q){const m=fsSold().filter(F=>!fsOwn(F)&&fsFits(F,Q)).length;if(!m)return '';
   return `<button type="button" data-a="go" data-m="co" data-k="shop" style="justify-content:center;align-items:center;text-align:center;border-style:dashed"><span style="font-size:30px;line-height:1">🛒</span><b>ร้านฟอร์ม ORIEN</b><small>อีก ${m} แบบสำหรับใบเสนอราคา${qmMa(Q)?'บริการ':'นี้'} ดูตัวอย่างได้ก่อนซื้อ</small></button>`}

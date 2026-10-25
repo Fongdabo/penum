@@ -211,8 +211,8 @@ function fsCost(Q,i){const q=n(i.q),m=n(i.m),l=n(i.l),b=q*(m+l),t=n(i.t)||b||qLi
 function fsGov(Q){const c=qCalc(Q),G=fsGroups(Q),all=sum(G,g=>g.t),s=all?c.net/all:1;
   G.forEach((g,k)=>{g.k=k;g.eq=fsGovEq(Q,g.g,k);g.cost=sum(g.items,i=>fsCost(Q,i).t);g.price=g.t*s});
   let A=G.filter(g=>!g.eq),B=G.filter(g=>g.eq);if(!A.length){A=B;B=[]}
-  const cA=sum(A,g=>g.cost),pA=sum(A,g=>g.price),pB=sum(B,g=>g.price),own=n(Q.govF)>0,F=own?n(Q.govF):cA?Math.round(pA*1.07/cA*10000)/10000:1;
-  return {s,G,A,B,cA,F,own,tA:cA*F,pB,vB:pB*0.07,tB:pB*1.07,tot:cA*F+pB*1.07}}
+  const cA=sum(A,g=>g.cost),pA=sum(A,g=>g.price),pB=sum(B,g=>g.price),own=n(Q.govF)>0,ft=own?null:ffGov(Q,cA),F=own?n(Q.govF):ft?ft.F:cA?Math.round(pA*1.07/cA*10000)/10000:1;
+  return {s,G,A,B,cA,F,own,ft,tA:cA*F,pB,vB:pB*0.07,tB:pB*1.07,tot:cA*F+pB*1.07}}
 const fsGv=v=>v===''||v==null?'......':fmtq(v);
 function fsGovHead(Q,form,title,rows){const C=CO(),cu=C.customers.find(x=>x.id===Q.cust)||{};
   const R=[['ชื่อโครงการ / งานก่อสร้าง',Q.pname||Q.title],['สถานที่ก่อสร้าง',Q.site],['หน่วยงานเจ้าของโครงการ',Q.govOrg||cu.name],...(rows||[])];
@@ -224,20 +224,20 @@ function fsGovSigns(Q){const L=String(Q.govCom||'').split('\n').map(x=>x.trim())
   return `<div class="gs" style="grid-template-columns:repeat(${Math.min(B.length,4)},1fr)">${B.map(([nm,ro,x])=>`<div><div class="ln">(ลงชื่อ) ......................................</div><div>( ${esc(nm||'')||'......................................'} )</div><div>${esc(ro)}</div>${x?`<small>${x}</small>`:''}</div>`).join('')}</div>`}
 const fsGovDoc=(Q,name,land,body)=>FS_GOV+(land?'<style>@page{size:A4 landscape;margin:10mm}</style>':'')+`<div class="fsg" data-doc-name="${esc([Q.no,name,Q.pname||Q.title].filter(Boolean).join(' '))}">${body}</div>`;
 const fsGovBy=Q=>['ประมาณราคาโดย',[CO().name,Q.by].filter(Boolean).join(' · ')],fsGovDt=Q=>['ประมาณราคาเมื่อวันที่',okD(Q.date)?thDL(Q.date):''];
-const FS_GI={govOrg:['govOrg','หน่วยงานเจ้าของโครงการ (ว่าง = ชื่อลูกค้า)'],govDrw:['govDrw','แบบเลขที่'],govF:['govF','Factor F (ว่าง = คิดจากราคาในใบเสนอราคา)','num'],
+const FS_GI={govOrg:['govOrg','หน่วยงานเจ้าของโครงการ (ว่าง = ชื่อลูกค้า)'],govDrw:['govDrw','แบบเลขที่'],govF:['govF','Factor F (ว่าง = เปิดจากตารางตามประเภทงาน)','num'],govW:['govW','Factor F ตามตารางกรมบัญชีกลาง','sel',()=>FF_GOVW],
   govAdv:['govAdv','เงินล่วงหน้าจ่าย (%)','num'],govRet:['govRet','เงินประกันผลงานหัก (%)','num'],govInt:['govInt','ดอกเบี้ยเงินกู้ (% ต่อปี)','num'],govDays:['govDays','ระยะเวลาดำเนินการ (วัน)','num'],
   govEq:['govEq','หมวดครุภัณฑ์จัดซื้อ (ลำดับหมวด เช่น 4)','','ว่าง = หมวดที่ชื่อมีคำว่า ครุภัณฑ์'],
   govCom:['govCom','ผู้ลงนาม (ว่าง = ผู้ประมาณราคา ผู้ตรวจสอบ ผู้เสนอราคา)','area','หรือคณะกรรมการ บรรทัดละคน ชื่อ | ตำแหน่ง เช่น\nนายสมชาย ใจดี | ประธานกรรมการ']};
 const fsGI=a=>a.map(k=>FS_GI[k]);
 const fsGovSmp=it=>({title:'ปรับปรุงระบบไฟฟ้าและปรับอากาศ อาคารเรียน 2',pname:'ปรับปรุงระบบไฟฟ้าและปรับอากาศ อาคารเรียน 2',site:'โรงเรียนตัวอย่าง จ.นครปฐม',govOrg:'สำนักงานเขตพื้นที่การศึกษาตัวอย่าง',
-  govDrw:'ฟฟ.01–ฟฟ.12, ปอ.01–ปอ.08',govDays:120,govAdv:0,govRet:0,govInt:7,mk:25,qpay:[],terms:'',
+  govDrw:'ฟฟ.01–ฟฟ.12, ปอ.01–ปอ.08',govDays:120,govAdv:0,govRet:0,govInt:6,govW:'bld',mk:25,qpay:[],terms:'',
   items:[it('งานระบบไฟฟ้า','ตู้ไฟฟ้าย่อย LP 24 ช่อง พร้อมเบรกเกอร์','ตู้',4,14500,2500),it('งานระบบไฟฟ้า','สายไฟฟ้า THW 2.5 ตร.มม. ร้อยท่อ EMT','ม.',1800,28,22),it('งานระบบไฟฟ้า','โคมไฟ LED แบบตะแกรง 2x18W','ชุด',96,850,150),
     it('งานระบบปรับอากาศ','เครื่องปรับอากาศแบบแยกส่วน 36,000 BTU/hr','ชุด',8,36500,4500),it('งานระบบปรับอากาศ','ท่อน้ำยาทองแดงพร้อมฉนวน','ม.',160,380,160),
     it('ครุภัณฑ์จัดซื้อ','เครื่องฟอกอากาศ ขนาดห้อง 40 ตร.ม.','เครื่อง',8,6900,0),it('ครุภัณฑ์จัดซื้อ','พัดลมติดผนัง 16 นิ้ว','ตัว',24,1150,0)]});
 const fsGovM=v=>Math.abs(v)<0.005?'–':fmt(v,2);
 FS_FORMS.push(
   {id:'gov-pr4',g:'gov',k:'boq',n:'ปร.4 รายการปริมาณงานและราคา',d:'แบบแสดงรายการ ปริมาณงาน และราคา แยกค่าวัสดุ ค่าแรงงาน รวมทุกหมวด กระดาษแนวนอน',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
-    inp:fsGI(['govOrg','govDrw','govF','govEq','govCom']),
+    inp:fsGI(['govOrg','govDrw','govW','govAdv','govRet','govF','govEq','govCom']),
     pr:Q=>{const V=fsGov(Q),M=fsGovM;let tm=0,tl=0,tt=0;
       const rows=V.G.map((g,k)=>{let m=0,l=0,t=0;const b=g.items.map((i,j)=>{const x=fsCost(Q,i);m+=x.mt;l+=x.lt;t+=x.t;
           return `<tr><td class="c">${k+1}.${j+1}</td><td>${fsDesc(i)}</td><td class="r">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td><td class="r">${x.sp?M(x.mu):''}</td><td class="r">${x.sp?M(x.mt):''}</td><td class="r">${x.sp?M(x.lu):''}</td><td class="r">${x.sp?M(x.lt):''}</td><td class="r">${M(x.t)}</td><td></td></tr>`}).join('');
@@ -246,17 +246,17 @@ FS_FORMS.push(
       const tb=`<table class="gt"><colgroup>${[5,26,7,6,9,10,9,10,11,7].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th rowspan="2">ลำดับ</th><th rowspan="2">รายการ</th><th rowspan="2">จำนวน</th><th rowspan="2">หน่วย</th><th colspan="2">ราคาค่าวัสดุ</th><th colspan="2">ราคาค่าแรงงาน</th><th rowspan="2">รวมค่าวัสดุและค่าแรงงาน</th><th rowspan="2">หมายเหตุ</th></tr>
         <tr><th>ราคาต่อหน่วย</th><th>จำนวนเงิน</th><th>ราคาต่อหน่วย</th><th>จำนวนเงิน</th></tr></thead><tbody>${rows}
         <tr class="t"><td></td><td style="text-align:right">รวมค่างานต้นทุนทั้งหมด</td><td colspan="3"></td><td class="r">${M(tm)}</td><td></td><td class="r">${M(tl)}</td><td class="r">${M(tt)}</td><td></td></tr></tbody></table>`;
-      const note=`<div class="gn">ราคาในแบบนี้เป็นค่างานต้นทุน ยังไม่รวมค่าอำนวยการ กำไร ดอกเบี้ย และภาษี · แบบ ปร.5 (ก) คูณ Factor F ${fmt(V.F,4)}${V.own?'':' (คิดจากราคาในใบเสนอราคานี้)'}${V.B.length?' · หมวดครุภัณฑ์คิดภาษีมูลค่าเพิ่มอย่างเดียวในแบบ ปร.5 (ข)':''}</div>`;
+      const note=`<div class="gn">ราคาในแบบนี้เป็นค่างานต้นทุน ยังไม่รวมค่าอำนวยการ กำไร ดอกเบี้ย และภาษี · แบบ ปร.5 (ก) คูณ Factor F ${fmt(V.F,4)}${V.own?'':V.ft?` (ตาราง${ffW(V.ft.T.w)} ${V.ft.T.ref||''})`:' (คิดจากราคาในใบเสนอราคานี้)'}${V.B.length?' · หมวดครุภัณฑ์คิดภาษีมูลค่าเพิ่มอย่างเดียวในแบบ ปร.5 (ข)':''}</div>`;
       return fsGovDoc(Q,'ปร.4',1,fsGovHead(Q,'ปร.4','แบบแสดงรายการ ปริมาณงาน และราคา',[['แบบเลขที่',Q.govDrw],fsGovBy(Q),fsGovDt(Q)])+tb+note+fsGovSigns(Q))}},
   {id:'gov-pr5a',g:'gov',k:'boq',n:'ปร.5 (ก) สรุปค่าก่อสร้าง',d:'สรุปค่างานต้นทุนทีละหมวด คูณ Factor F เป็นค่าก่อสร้าง พร้อมเงื่อนไขเงินล่วงหน้า ประกันผลงาน ดอกเบี้ย',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
-    inp:fsGI(['govOrg','govDrw','govF','govAdv','govRet','govInt','govDays','govEq','govCom']),
+    inp:fsGI(['govOrg','govDrw','govW','govF','govAdv','govRet','govInt','govDays','govEq','govCom']),
     pr:Q=>{const V=fsGov(Q);
       const rows=V.A.map((g,k)=>`<tr><td class="c">${k+1}</td><td>${esc(gName(g.g))}</td><td class="r">${fmt(g.cost,2)}</td><td class="c">${fmt(V.F,4)}</td><td class="r">${fmt(g.cost*V.F,2)}</td><td></td></tr>`).join('');
       const tb=`<table class="gt"><colgroup>${[7,39,16,10,16,12].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th>ลำดับ</th><th>รายการ</th><th>ค่างานต้นทุน<br>(บาท)</th><th>Factor F</th><th>ค่าก่อสร้าง<br>(บาท)</th><th>หมายเหตุ</th></tr></thead><tbody>${rows}
         <tr class="t"><td></td><td style="text-align:right">รวมค่าก่อสร้างทั้งหมด</td><td class="r">${fmt(V.cA,2)}</td><td></td><td class="r">${fmt(V.tA,2)}</td><td></td></tr>
         <tr class="w"><td colspan="6">(${esc(bahtText(V.tA))})</td></tr></tbody></table>`;
       const cond=`<div class="gn"><b>เงื่อนไขที่ใช้คำนวณ Factor F</b> เงินล่วงหน้าจ่าย ${fsGv(Q.govAdv)} % · เงินประกันผลงานหัก ${fsGv(Q.govRet)} % · ดอกเบี้ยเงินกู้ ${fsGv(Q.govInt)} % ต่อปี · ภาษีมูลค่าเพิ่ม 7 %
-        ${V.own?'':'<br>Factor F นี้คิดจากราคาในใบเสนอราคา (ราคารวมภาษีมูลค่าเพิ่ม ÷ ค่างานต้นทุน) พิมพ์ค่าจากตาราง Factor F ของกรมบัญชีกลางในช่อง Factor F แทนได้'}
+        ${V.own?'':V.ft?`<br>Factor F ตามตาราง${esc(ffW(V.ft.T.w))} ${esc(V.ft.T.ref||'')} · ${esc(ffHow(V.ft))}`:'<br>Factor F นี้คิดจากราคาในใบเสนอราคา (ราคารวมภาษีมูลค่าเพิ่ม ÷ ค่างานต้นทุน) เลือกประเภทงานในช่อง “Factor F ตามตารางกรมบัญชีกลาง” เพื่อเปิดค่าจากตารางแทน'}
         ${V.B.length?`<br>ค่าครุภัณฑ์จัดซื้อ ${fmt(V.tB,2)} บาท (รวมภาษีมูลค่าเพิ่ม) อยู่ในแบบ ปร.5 (ข) และรวมไว้ในแบบ ปร.6`:''}</div>`;
       return fsGovDoc(Q,'ปร.5 (ก)',0,fsGovHead(Q,'ปร.5 (ก)','แบบสรุปค่าก่อสร้าง',[['แบบเลขที่',Q.govDrw],['ประมาณราคาตามแบบ ปร.4',`${V.A.length} หมวด`],['ระยะเวลาดำเนินการ',n(Q.govDays)?`${fmtq(Q.govDays)} วัน`:''],fsGovBy(Q),fsGovDt(Q)])+tb+cond+fsGovSigns(Q))}},
   {id:'gov-pr5b',g:'gov',k:'boq',n:'ปร.5 (ข) สรุปค่าครุภัณฑ์จัดซื้อ',d:'ครุภัณฑ์และของที่ซื้อมาติดตั้ง ไม่คูณ Factor F คิดภาษีมูลค่าเพิ่ม 7% อย่างเดียว แยกตามหมวด',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
@@ -272,7 +272,7 @@ FS_FORMS.push(
         <tr class="w"><td colspan="6">(${esc(bahtText(pB*1.07))})</td></tr></tbody></table>`;
       return fsGovDoc(Q,'ปร.5 (ข)',0,fsGovHead(Q,'ปร.5 (ข)','แบบสรุปค่าครุภัณฑ์จัดซื้อ',[fsGovBy(Q),fsGovDt(Q)])+tb+`<div class="gn">ค่าครุภัณฑ์จัดซื้อไม่คูณ Factor F คิดภาษีมูลค่าเพิ่มอย่างเดียว</div>`+fsGovSigns(Q))}},
   {id:'gov-pr6',g:'gov',k:'boq',n:'ปร.6 สรุปราคากลาง',d:'หน้าสรุปรวมค่าก่อสร้างจาก ปร.5 (ก) กับค่าครุภัณฑ์จาก ปร.5 (ข) เป็นราคาเดียว พร้อมช่องลงนามคณะกรรมการ',p:990,col:'#1F2937',th:'mono',smp:fsGovSmp,
-    inp:fsGI(['govOrg','govF','govDays','govEq','govCom']),
+    inp:fsGI(['govOrg','govW','govF','govAdv','govRet','govInt','govDays','govEq','govCom']),
     pr:Q=>{const V=fsGov(Q),R=[[`ค่าก่อสร้าง${Q.title?' '+Q.title:''} (ตามแบบ ปร.5 (ก))`,V.tA,`Factor F ${fmt(V.F,4)}`],...(V.B.length?[['ค่าครุภัณฑ์จัดซื้อ (ตามแบบ ปร.5 (ข))',V.tB,'รวมภาษีมูลค่าเพิ่ม 7 %']]:[])];
       const tb=`<table class="gt"><colgroup>${[8,56,18,18].map(w=>`<col style="width:${w}%">`).join('')}</colgroup><thead><tr><th>ลำดับ</th><th>รายการ</th><th>ค่าก่อสร้าง<br>(บาท)</th><th>หมายเหตุ</th></tr></thead><tbody>
         ${R.map(([k,v,x],j)=>`<tr><td class="c">${j+1}</td><td>${esc(k)}</td><td class="r">${fmt(v,2)}</td><td>${esc(x)}</td></tr>`).join('')}
