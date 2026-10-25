@@ -77,12 +77,14 @@ document.addEventListener('change',e=>{const t=e.target;if(!t||(t.id!=='qlG'&&t.
   if(t.id==='qlS')S.sel.qlS=t.value;else{S.sel.qlG=t.value;if(sy){sy.style.display=t.value==='eq'?'':'none';if(t.value==='eq')o=sy.selectedOptions[0]}}if(i&&o&&o.dataset.dl){i.setAttribute('list',o.dataset.dl);i.placeholder=qlPh(+o.dataset.n)}});
 // 4.16 the แยกค่าเครื่อง tick sits right above the lines table, next to the เครื่อง column it works with (user could not find it among
 // the print options: "หาจุดติ๊กไม่เจอ")
-const qlEqBar=(Q,b)=>{if(typeof QM_WHT==='undefined')return '';const f0=qForm(Q),off=Q.look==='xl'||f0==='G'||f0==='E';
-  return `<div class="ql-eq"><label><input type="checkbox" data-t="chk" data-p="${b}.eqSep"${Q.eqSep?' checked':''}${off?' disabled':''}> <b>แยกค่าเครื่อง</b>ตอนพิมพ์: ค่าเครื่อง / ค่าวัสดุ / ค่าแรง (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%)</label>
+// 4.57 one compact line (user: "ดูแล้วมันใหญ่ยังไงไม่รู้"): [☐ แยกค่าเครื่อง ⓘ] หัก ณ ที่จ่าย 3% [short choice]; the explanations moved into ⓘ
+const qlEqBar=(Q,b)=>{if(typeof QM_WHT==='undefined')return '';const f0=qForm(Q),off=Q.look==='xl'||f0==='G'||f0==='E',
+    tip='ตอนพิมพ์แยกเป็น ค่าเครื่อง / ค่าวัสดุ / ค่าแรง (ค่าเครื่องไม่โดนหัก ณ ที่จ่าย 3%) · รายการไหนเป็นเครื่อง ติ๊กในช่อง “เครื่อง” ด้านขวาของตาราง'+(off?' · ใช้ได้กับหน้าตาเอกสาร ORIEN Modern ที่ไม่ใช่ BOQ-G (ปร.4) / BOQ-E':''),
+    wb={'':'ของ + แรง','l':'ค่าแรงเท่านั้น','none':'ไม่แสดง'},wn=String(Q.whtN||'')==='1';
+  return `<div class="ql-eq"><label title="${tip}"><input type="checkbox" data-t="chk" data-p="${b}.eqSep"${Q.eqSep?' checked':''}${off?' disabled':''}> <b>แยกค่าเครื่อง</b></label><span class="qms-i" title="${tip}" aria-label="${tip}" tabindex="0">ⓘ</span>
     ${Q.eqSep&&!off&&typeof QM_DOC!=='undefined'?`<label>พิมพ์เป็น<select data-p="${b}.eqDoc">${QM_DOC.map(([x,l])=>`<option value="${x}"${(Q.eqDoc||'')===x?' selected':''}>${l}</option>`).join('')}</select></label>`:''}
-    ${!Q.eqSep?`<label>หัก ณ ที่จ่าย 3%<select data-p="${b}.whtN"><option value="1"${String(Q.whtN||'')==='1'?' selected':''}>แสดงในใบ: หัก 3% ของยอดก่อน VAT</option><option value=""${String(Q.whtN||'')==='1'?'':' selected'}>ไม่แสดง (เช่น ลูกค้าบุคคลธรรมดา)</option></select></label>`:''}
-    ${Q.eqSep&&!off?`<label>หัก ณ ที่จ่าย 3% คิดจาก<select data-p="${b}.whtB">${QM_WHT.map(([x,l])=>`<option value="${x}"${(Q.whtB||'')===x?' selected':''}>${l}</option>`).join('')}</select></label>`:''}
-    <small>${off?'ใช้ได้กับหน้าตาเอกสาร ORIEN Modern ที่ไม่ใช่ BOQ-G (ปร.4) / BOQ-E':'รายการไหนเป็นเครื่อง ติ๊กในช่อง “เครื่อง” ด้านขวาของตาราง'}</small></div>`};
+    ${!Q.eqSep?`<label title="แสดง = หัก 3% ของยอดก่อน VAT ในใบเสนอราคา · ไม่แสดง เช่น ลูกค้าบุคคลธรรมดา">หัก ณ ที่จ่าย 3%<select data-p="${b}.whtN"><option value="1"${wn?' selected':''}>แสดง</option><option value=""${wn?'':' selected'}>ไม่แสดง</option></select></label>`:''}
+    ${Q.eqSep&&!off?`<label title="หัก ณ ที่จ่าย 3% คิดจากส่วนไหน (ค่าเครื่องไม่โดนหัก)">หัก ณ ที่จ่าย 3% จาก<select data-p="${b}.whtB">${QM_WHT.map(([x,l])=>`<option value="${x}" title="${l}"${(Q.whtB||'')===x?' selected':''}>${wb[x]||l}</option>`).join('')}</select></label>`:''}</div>`};
 // 4.29 the selling price of every line, in plain view next to its cost (user: "ตอนนี้เราเห็นแต่ต้นทุน ไม่เห็นราคาแต่ละรายการ เห็นแค่ตอนปริ้น").
 // 4.30 split into material and labour selling prices, worked out from cost + markup and locked (user: "แยกเป็นค่าของค่าแรง … ล็อกไม่ต้องให้พิมพ์").
 // A price typed on a line before 4.30 (i.sp) still counts and is marked, with ⟲ to go back to the worked-out price.
@@ -182,7 +184,7 @@ HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.items\.([^.]+)\.(q|m|l)$/);
 document.head.insertAdjacentHTML('beforeend',`<style>.ql-t td input{width:100%;min-width:0}.ql-t .qsell{background:rgba(28,143,155,.07)}.ql-t th.qsell{color:var(--accent,#1C8F9B)}.ql-t td.qcost,.ql-t th.qcost{background:rgba(214,158,46,.09)}.ql-t th.qcost{color:#9a6a12}.ql-t td.qprof.ok{background:rgba(30,142,90,.08)}.ql-t td.qprof.low{background:rgba(237,137,24,.12)}.ql-t td.qprof.loss{background:rgba(192,57,43,.12);font-weight:700}.ql-t th.qprof{color:var(--good,#1e8e5a)}.ql-t .qsp-t{display:block;text-align:right;font-size:10.5px;opacity:.7;line-height:1.2}.ql-t .qsp-t .x{font-size:11px;padding:0 4px}.ql-t td{vertical-align:middle}
 .ql-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;padding:10px;border:1px dashed var(--line);border-radius:12px;background:var(--sunk)}
 .ql-t tr.grp .qlhs{float:right;display:flex;gap:6px;align-items:center;font-weight:400;font-size:12.5px}.ql-t tr.grp .qlhs label{display:flex;gap:4px;align-items:center;cursor:pointer}.ql-t tr.grp .qlhs input.qlHsP{width:56px;padding:2px 6px}
-.ql-eq{display:flex;gap:10px 18px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:10px 14px;border:1px solid rgba(28,143,155,.35);border-radius:12px;background:rgba(28,143,155,.07)}
+.ql-eq{display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center;margin:0 0 8px;padding:2px 2px;font-size:13px}.ql-eq .qms-i{margin-left:-10px;cursor:help;color:var(--muted)}.ql-eq select{height:30px;padding:0 26px 0 8px;font-size:13px}
 .ql-eq label{display:flex;flex-direction:row;gap:8px;align-items:center;margin:0;cursor:pointer}.ql-eq input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;width:18px;height:18px;margin:0;accent-color:var(--accent,#1C8F9B)}
 .ql-eq select{width:auto;max-width:280px}.ql-eq small{opacity:.75;flex-basis:100%}
 .ql-end{margin-top:12px;display:flex;flex-direction:column;gap:12px}.ql-end .qadds{background:var(--surface)}.ql-end dl.stats{margin:0!important}.ql-end .qm-split{margin:0!important}
