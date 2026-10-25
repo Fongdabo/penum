@@ -1,15 +1,15 @@
-/* ---------- 4.60 ทำใบ / ตัวอย่างใบ: the quotation as it prints, beside the work (user: "ทำเป็น 2 แท็บ แท็บแรกเราทำงาน แท็บ 2 รายการทุกอย่างอัปเดตฟอร์มไปด้วย") ----------
-   On top of the open quotation's card, shaped like the title bar's project tabs (shared/titlebar.js .pdt): ✎ ทำใบ (the page as before), 🖨 ตัวอย่างใบ (only the printed quotation) and, on a wide screen,
-   ◫ แบ่งจอ (the work on the left, the printed quotation on the right, redrawn with every change). The preview is PRINT.quote itself in a
+/* ---------- 4.60 แบ่งจอ: the quotation as it prints, beside the work (user: "แท็บ 2 รายการทุกอย่างอัปเดตฟอร์มไปด้วย"; 4.61 kept only แบ่งจอ) ----------
+   ◫ แบ่งจอ in the open quotation's title row: the work on the left, the printed quotation on the right, redrawn with every change
+   (a narrow window gets the full-screen preview instead). The preview is PRINT.quote itself in a
    shadow root, with the page's own styles and its print rules switched on, framed like 720's page frame (A4, 10 mm sides), so it reads
    as the printout does; forced page breaks show as a grey gap. The choice is kept per computer (penum.pm.qtab). */
-const QTAB_K='penum.pm.qtab',qtabW=()=>window.innerWidth>=1600;
-let QTAB=(()=>{try{return localStorage.getItem(QTAB_K)||'edit'}catch(e){return 'edit'}})();
-const qtabMode=()=>QTAB==='split'&&!qtabW()?'pv':QTAB;
-ACT.qtab=b=>{QTAB=b.dataset.v||'edit';try{localStorage.setItem(QTAB_K,QTAB)}catch(e){}render();const t=$('.qtab');if(t&&QTAB!=='edit'){const r=t.getBoundingClientRect();if(r.top<0||r.top>innerHeight*.6)t.scrollIntoView({block:'start'})}};
-function qtabBar(Q){const m=qtabMode(),bt=(v,t,tip)=>`<button type="button" role="tab" class="${m===v?'on':''}" aria-selected="${m===v}" data-a="qtab" data-v="${v}" title="${tip}">${t}</button>`;
-  return `<div class="qtab" role="tablist">${bt('edit','✎ ทำใบ','กรอกรายการ ราคา และตั้งค่าใบ')}${bt('pv','🖨 ตัวอย่างใบ','หน้าตาใบที่จะพิมพ์ออกมาจริง')}${qtabW()?bt('split','◫ แบ่งจอ','ทำใบด้านซ้าย ตัวอย่างใบด้านขวา เปลี่ยนตามทันทีที่แก้'):''}
-    <small>ตัวอย่างใบ = หน้าตาจริงตอนพิมพ์ แก้ที่ ทำใบ แล้วตัวอย่างเปลี่ยนตามทันที</small></div>`}
+const QTAB_K='penum.pm.qtab',qtabW=()=>window.innerWidth>=1100;
+let QTAB=(()=>{try{return localStorage.getItem(QTAB_K)==='split'?'split':'edit'}catch(e){return 'edit'}})();
+const qtabMode=()=>QTAB==='split'&&qtabW()?'split':'edit';
+// 4.61 (user: "2 แท็บเอาออกเลย เหลือไว้แค่แบ่งจอพอ"): one ◫ แบ่งจอ button in the title row; on a narrow window it opens the preview full screen (937, ปิด / Esc)
+ACT.qsplit=b=>{if(!qtabW()){if(typeof ACT.qfsPv==='function')ACT.qfsPv({dataset:{id:b.dataset.id}});return}
+  QTAB=QTAB==='split'?'edit':'split';try{localStorage.setItem(QTAB_K,QTAB)}catch(e){}render()};
+const qtabBtn=Q=>{const on=qtabMode()==='split';return `<button type="button" class="btn sm qsp-b${on?' on':''}" data-a="qsplit" data-id="${Q.id}" aria-pressed="${on}" title="${on?'ปิดแบ่งจอ':'ทำใบด้านซ้าย ตัวอย่างใบด้านขวา หน้าตาจริงตอนพิมพ์ เปลี่ยนตามทันทีที่แก้'}">◫ ${on?'ปิดแบ่งจอ':'แบ่งจอ'}</button>`};
 // the page's styles for the preview: every sheet in order, print rules made to apply on screen, @page left out; rebuilt when sheets change
 let QPV_SH=null,QPV_N=-1;
 function qpvSheet(){const L=[...document.styleSheets];if(QPV_SH&&QPV_N===L.length)return QPV_SH;const out=[];
@@ -34,26 +34,18 @@ function qpvFill(el){const Q=CO().quotes.find(q=>q.id===el.dataset.id);if(!Q)ret
 // salesQuote is wrapped by 981 and 983 after this file: add the tabs at render time, on top of the open quotation's card
 let qtabOn=false;const qtabWrap=()=>{if(qtabOn||typeof salesQuote!=='function')return;qtabOn=true;const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments);
   const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
-  const a=h.indexOf('<div class="fsg">');if(a<0)return h;const e=h.lastIndexOf('</h2>',a),s0=h.lastIndexOf('<h2',e);if(e<0||s0<0)return h;
-  // the tabs on top of the card, like the project tabs in the title bar; the preview under the title row (its print buttons stay in both tabs)
-  return h.slice(0,s0)+qtabBar(Q)+h.slice(s0,e+5)+`<div class="qpv" data-id="${Q.id}"></div>`+h.slice(e+5)}};
+  const a=h.indexOf('<div class="fsg">');if(a<0)return h;const e=h.lastIndexOf('</h2>',a);if(e<0)return h;
+  // the แบ่งจอ button at the end of the title row, the preview right after it (in the right-hand column when split)
+  return h.slice(0,e)+qtabBtn(Q)+'</h2>'+`<div class="qpv" data-id="${Q.id}"></div>`+h.slice(e+5)}};
 {const r=render;render=function(){try{qtabWrap()}catch(e){}const x=r.apply(this,arguments);
-  try{const t=$('.qtab');if(t){const s=t.parentElement,m=qtabMode();s.classList.add('qtab-s');s.classList.toggle('qtab-pv',m==='pv');s.classList.toggle('qtab-sp',m==='split');if(m!=='edit')qpvFill(s.querySelector('.qpv'))}}catch(e){console.error(e)}
+  try{const v=$('.qpv[data-id]');if(v){const s=v.parentElement,sp=qtabMode()==='split';s.classList.toggle('qtab-sp',sp);if(sp)qpvFill(v)}}catch(e){console.error(e)}
   return x}}
-// แบ่งจอ appears and goes with the window width
-{let t;window.addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(()=>{if($('.qtab'))render()},250)})}
-document.head.insertAdjacentHTML('beforeend',`<style>.qtab{display:flex;align-items:flex-end;gap:2px;height:34px;margin:-4px 0 12px;padding:0 6px;background:var(--sunk);border:1px solid var(--line);border-radius:10px 10px 0 0}
-.qtab button{appearance:none;display:flex;align-items:center;gap:6px;flex:none;height:30px;margin:0;padding:0 16px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;user-select:none}
-.qtab button:hover{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink)}
-.qtab button:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--accent,#1C8F9B)}
-.qtab button.on{height:31px;margin-bottom:-1px;background:var(--surface);color:var(--ink);font-weight:600;border-color:var(--line);box-shadow:inset 0 2px 0 var(--accent,#1C8F9B)}
-.qtab small{margin-left:auto;align-self:center;color:var(--muted);font-size:12px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+// แบ่งจอ turns on and off with the window width
+{let t;window.addEventListener('resize',()=>{clearTimeout(t);t=setTimeout(()=>{if(QTAB==='split'&&$('.qpv[data-id]'))render()},250)})}
+document.head.insertAdjacentHTML('beforeend',`<style>.qsp-b.on{background:var(--accent,#1C8F9B);color:#fff;border-color:var(--accent,#1C8F9B)}
 .qpv{display:none}
-section.qtab-pv>*:not(h2):not(.qtab):not(.qpv):not(style){display:none!important}
-section.qtab-pv>.qpv{display:block;border-radius:10px;overflow:auto;max-height:calc(100vh - 150px)}
-section.qtab-sp{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,38%);column-gap:16px;align-items:start}
-section.qtab-sp>*{grid-column:1;min-width:0}section.qtab-sp>h2,section.qtab-sp>.qtab{grid-column:1/-1}
-section.qtab-sp>.qpv{display:block;grid-column:2;grid-row:3/span 99;position:sticky;top:96px;max-height:calc(100vh - 116px);overflow:auto;border-radius:10px}
+section.qtab-sp{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,40%);column-gap:16px;align-items:start}
+section.qtab-sp>*{grid-column:1;min-width:0}section.qtab-sp>h2{grid-column:1/-1}
+section.qtab-sp>.qpv{display:block;grid-column:2;grid-row:2/span 99;position:sticky;top:96px;max-height:calc(100vh - 116px);overflow:auto;border-radius:10px}
 @media print{.qpv{display:none!important}}</style>`);
-if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'✎ ทำใบ':'✎ Edit','🖨 ตัวอย่างใบ':'🖨 Preview','◫ แบ่งจอ':'◫ Split','ตัวอย่างใบ':'Preview',
-  'ตัวอย่างใบ = หน้าตาจริงตอนพิมพ์ แก้ที่ ทำใบ แล้วตัวอย่างเปลี่ยนตามทันที':'Preview = the printout as it will look; changes made under Edit show at once'});
+if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'◫ แบ่งจอ':'◫ Split','◫ ปิดแบ่งจอ':'◫ Close split','ตัวอย่างใบ':'Preview'});

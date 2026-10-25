@@ -1,13 +1,13 @@
 /* ---------- 4.60 which form the quotation prints in, shown while typing the lines (user: "เวลาใส่ราคาหรือรายการ ไม่รู้ว่าเราเลือกฟอร์มอะไร") ----------
    A compact line above the lines table names the chosen look (983) and lines table (937), with เปลี่ยน (goes to the แบบฟอร์มเอกสาร panel)
-   and ตัวอย่างใบ (941's preview tab). The ราคาขาย columns say what of them prints in that table: BOQ-B prints one unit price, BOQ-S prints
+   and ตัวอย่างใบ (941: แบ่งจอ, or full screen on a narrow window). The ราคาขาย columns say what of them prints in that table: BOQ-B prints one unit price, BOQ-S prints
    only section totals, BOQ-E prints no prices; those cells are dimmed and their header carries a small tag. Cost, markup and profit never print. */
 const QFC_LAY={A:'แยกของ / แรง',B:'ราคาเดียว',S:'ยอดหมวด',G:'ราชการ ปร.4',E:'ใบขอราคาเปล่า'};
 function qfcBar(Q){const k=qForm(Q),fx=k==='G'||k==='E',F=typeof fsCur==='function'&&fsForm(fsCur(Q)),look=fx?'แบบ Excel':(F?F.n:'ORIEN Modern');
   const note={A:'ราคาขายพิมพ์ครบทุกช่อง',B:'ของ/หน่วย กับ แรง/หน่วย พิมพ์รวมเป็นราคาเดียว',S:'พิมพ์จำนวนทุกรายการ ราคาพิมพ์เฉพาะยอดหมวด',G:'ราคาขายพิมพ์ครบทุกช่อง',E:'ไม่พิมพ์ราคา ให้ผู้รับใบกรอกเอง'}[k];
   return `<div class="qfc"><span class="qfc-i" aria-hidden="true">🖨</span><span>พิมพ์เป็น <b>${esc(look)}</b></span><span class="qfc-d">·</span><span>ตาราง <b>BOQ-${k} ${QFC_LAY[k]}</b>${Q.lay?'':' <small>(อัตโนมัติ)</small>'}</span>
     <small class="qfc-n" title="ช่องต้นทุน บวกกำไร กำไร และเครื่อง ใช้ในบริษัทเท่านั้น ไม่พิมพ์">${note} · ต้นทุนและกำไรไม่พิมพ์</small><span style="flex:1"></span>
-    <button type="button" class="btn sm" data-a="qfcGo">เปลี่ยน</button><button type="button" class="btn sm pri" data-a="qtab" data-v="pv">ตัวอย่างใบ</button></div>`}
+    <button type="button" class="btn sm" data-a="qfcGo">เปลี่ยน</button><button type="button" class="btn sm pri" data-a="qsplit" data-id="${Q.id}" title="ตัวอย่างใบด้านขวา (แบ่งจอ)">ตัวอย่างใบ</button></div>`}
 // เปลี่ยน: to the แบบฟอร์มเอกสาร panel, with a short highlight
 ACT.qfcGo=()=>{const g=$('.fsg');if(!g)return;g.scrollIntoView({behavior:'smooth',block:'start'});g.classList.remove('qfc-hi');void g.offsetWidth;g.classList.add('qfc-hi')};
 const qfcTag=t=>`<span class="qfc-t">${t}</span>`;
