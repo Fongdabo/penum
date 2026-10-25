@@ -14,11 +14,11 @@ const qmsHead=(Q,h)=>{const b=`co.quotes.${Q.id}`,eq=(Q.mkE!==''&&Q.mkE!=null)||
     .replace(/(<th class="r qmk"[^>]*>)แรง(<\/th>)/,(m,a,c)=>a+'แรง'+qmsIn(Q,b,'L','บวกกำไร ค่าแรง ทั้งใบ (%)')+c)
     .replace(/(<th colspan="2" class="c qmk qg"[^>]*>)บวกกำไร %(<\/th>)/,(m,a,c)=>a+`บวกกำไร % <span class="qms-i" title="${qmsHelp}" aria-label="${qmsHelp}" tabindex="0">ⓘ</span>`
       +(n(Q.mk)?` <label class="qmh qmh-i" title="ใบเก่าที่ตั้งบวกกำไรรวมไว้ ใช้กับส่วนที่ปล่อยว่าง ลบเป็น 0 ได้"><small>ทุกส่วน</small><input class="r" data-t="num" data-p="${b}.mk" value="${n(Q.mk)}" aria-label="บวกค่าดำเนินการ/กำไร (%)"></label>`:'')+c)
-    .replace(/(<th rowspan="2" class="r qw"[^>]*>)เผื่อ(<\/th>)/,(m,a,c)=>a+'เผื่อ'+(wp?qmsIn(Q,b,'W','เผื่อปริมาณทั้งใบ (%) ใช้กับบรรทัดที่เป็นหน่วยความยาว พื้นที่ หรือน้ำหนัก (สายไฟ ท่อ) ที่ไม่ได้ใส่เผื่อเอง','0'):'')+c)
+    .replace(/(<th class="c qw qp"[^>]*>)%(<\/th>)/,(m,a,c)=>a+'%'+(wp?qmsIn(Q,b,'W','เผื่อปริมาณทั้งใบ (%) ใช้กับบรรทัดที่เป็นหน่วยความยาว พื้นที่ หรือน้ำหนัก (สายไฟ ท่อ) ที่ไม่ได้ใส่เผื่อเอง','0'):'')+c)
     .replace(/(<th rowspan="2" class="c"[^>]*>)เครื่อง(<\/th>)/,(m,a,c)=>a+'เครื่อง'+(eq?qmsIn(Q,b,'E','บวกกำไร ค่าเครื่องทั้งใบ (%) ใช้กับรายการที่ติ๊กช่องเครื่อง'):'')+c)};
 // the รวมทั้งใบ row: cost, selling price and profit of the whole quotation (what the strip's กำไรรวม showed)
 const qmsAll=Q=>{const T=qmsTot(Q),pr=T.v-T.c,pc=T.v?pr*100/T.v:0;
-  return `<tr class="ql-gt ql-all"><td colspan="6">รวมทั้งใบ</td><td class="r qcost">${fmt(T.c,2)}</td><td colspan="4"></td><td class="r qsell">${fmt(T.v,2)}</td><td class="r qprof ${pr<0?'loss':pc<10?'low':'ok'}">${fmt(pr,0)}<small style="display:block">${fmt(pc,1)}%</small></td><td colspan="2"></td></tr>`};
+  return `<tr class="ql-gt ql-all"><td colspan="7">รวมทั้งใบ</td><td class="r qcost">${fmt(T.c,2)}</td><td colspan="4"></td><td class="r qsell">${fmt(T.v,2)}</td><td class="r qprof ${pr<0?'loss':pc<10?'low':'ok'}">${fmt(pr,0)}<small style="display:block">${fmt(pc,1)}%</small></td><td colspan="2"></td></tr>`};
 // 4.48 the row's own markup (200 qMkI): top = material (or equipment on a ticked line), bottom = labour; blank shows the default in grey
 const qmkCell=(Q,i,b)=>{const eq=typeof qmIsEq==='function'&&qmIsEq(i),v=k=>i['mk'+k]===''||i['mk'+k]==null?'':n(i['mk'+k]),
     dm=qMkOn(Q)?qMkP(Q,eq?'E':'M'):n(Q.mk),dl=qMkOn(Q)?qMkP(Q,'L'):n(Q.mk),

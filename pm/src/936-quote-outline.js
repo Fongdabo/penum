@@ -32,7 +32,7 @@ ACT.qoOut=b=>{const L=qoLine(b);if(!L)return;const {Q,i}=L,g=i.g,h=qhHd(i),s=qhH
   qhSubs(Q,g,qhList(Q,g));i.head='';qhOrder(Q,g,qhList(Q,g));save();render();toast(`เอาออกจาก “${h}” แล้ว รายการอยู่ด้านบนของหมวด (กด ↶ ย้อนกลับได้)`)};
 // 4.51 the รวม row at the end of each section (982): cost under รวมทุน, selling price under ยอดรวม, profit under กำไร
 const qlGTot=(Q,g)=>{const T=qhTot(Q,g,null),pr=T.v-T.c,pc=T.v?pr*100/T.v:0;
-  return `<tr class="ql-gt"><td colspan="6">รวม${esc(gName(g))}</td><td class="r qcost">${fmt(T.c,2)}</td><td colspan="4"></td><td class="r qsell">${fmt(T.v,2)}</td><td class="r qprof ${pr<0?'loss':pc<10?'low':'ok'}">${fmt(pr,0)}<small style="display:block">${fmt(pc,1)}%</small></td><td colspan="2"></td></tr>`};
+  return `<tr class="ql-gt"><td colspan="7">รวม${esc(gName(g))}</td><td class="r qcost">${fmt(T.c,2)}</td><td colspan="4"></td><td class="r qsell">${fmt(T.v,2)}</td><td class="r qprof ${pr<0?'loss':pc<10?'low':'ok'}">${fmt(pr,0)}<small style="display:block">${fmt(pc,1)}%</small></td><td colspan="2"></td></tr>`};
 // ＋ รายการ on a sub-heading row: a blank line at the end of that sub-heading
 const qoHeadBtn=(Q,g,h)=>`<button type="button" class="btn ghost sm" data-a="qoInsH" data-id="${Q.id}" data-g="${esc(g)}" data-h="${esc(h)}" title="เพิ่มรายการใหม่ใต้หัวข้อนี้">＋ รายการ</button>`;
 ACT.qoInsH=b=>{const Q=qoQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h,x=qoBlank(g,h);let k=-1;Q.items.forEach((i,j)=>{if(i.g===g&&!i.hs)k=j});
@@ -49,5 +49,17 @@ document.head.insertAdjacentHTML('beforeend',`<style>.ql-t .qo-b{display:inline-
 .ql-t .ql-di{display:flex;align-items:center;gap:6px}.ql-t .ql-dash{color:var(--muted);font-weight:600}.ql-t td.ql-dc.l1{padding-left:8px}.ql-t td.ql-dc.l2{padding-left:20px}.ql-t .ql-di input{min-width:0;flex:1 1 auto}
 .ql-t tr.qh-gr td{padding-left:34px;background:transparent}.ql-t tr.qh-gr .qhGName{font-style:italic;font-weight:600;width:auto;field-sizing:content;min-width:200px;max-width:520px;background:transparent;border-color:transparent}.ql-t tr.qh-gr .qhGName:hover{border-color:var(--line)}
 .ql-t td.qct,.ql-t td.qsell,.ql-t td.qprof,.ql-t tr.ql-gt td.qcost{font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap}.ql-t tr.qh-r .qhName{font-weight:700}.ql-t tr.ql-gt td{font-weight:700;border-top:2px solid var(--line);background:var(--sunk)}</style>`);
+// 4.54 every box in a line alike (user: "ดูแล้วช่องมันไม่เข้าพวก"): one height, padding, corner and font; numbers right, text left; every cell
+// centred on the row; the row buttons a 3 × 2 grid (＋ ⇤ ⇥ / ▲ ▼ ✕)
+document.head.insertAdjacentHTML('beforeend',`<style>.ql-t tbody td{vertical-align:middle}
+.ql-t tbody td input:not([type=checkbox]),.ql-t tbody td select:not(.qhSel):not(.qc-us){height:32px;box-sizing:border-box;padding:0 8px;border-radius:8px;font-size:13.5px;line-height:30px;background:var(--sunk);border:1px solid transparent;color:var(--ink);box-shadow:none;vertical-align:middle}
+.ql-t tbody td input.r,.ql-t tbody td.qmk input,.ql-t tbody td.qw input{padding:0 7px;text-align:right;font-weight:500}
+.ql-t tbody td input:not([type=checkbox])::placeholder{color:var(--muted);opacity:.75;font-weight:400}
+.ql-t tbody td.qmk input.own,.ql-t tbody td.qw input.own{font-weight:700;color:var(--accent,#1C8F9B);border-color:transparent}
+.ql-t tbody td input:not([type=checkbox]):hover{border-color:var(--line)}.ql-t tbody td input:not([type=checkbox]):focus{border-color:var(--accent,#1C8F9B);background:var(--surface);outline:none}
+.ql-t tbody tr.qh-gr td .qhGName{background:transparent}
+.ql-t .qo-b{display:grid;grid-template-columns:repeat(3,20px);gap:2px 3px;width:auto;justify-content:center}.ql-t .qo-b br{display:none}
+.ql-t .qo-b .x{width:20px;height:20px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:13px;line-height:1}
+.ql-t tbody td.qcost,.ql-t tbody td.qmk,.ql-t tbody td.qq{padding-left:4px;padding-right:4px}.ql-t tbody td input.r{font-size:13px;padding:0 6px}.ql-t tbody tr:not(.grp):not(.ql-gt)>td:last-child{padding-left:4px;padding-right:4px}.ql-t tbody tr:not(.grp):not(.ql-gt)>td:nth-last-child(2){padding-left:4px;padding-right:4px}.ql-t thead th.qp .qmh{flex-direction:column;align-items:stretch;gap:1px}.ql-t thead th.qp .qmh small{text-align:center}.ql-t thead th.qp .qmh input{width:100%}</style>`);
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'＋ รายการ':'＋ Line','เพิ่มรายการใหม่ใต้หัวข้อนี้':'Add a line under this sub-heading','แทรกรายการใหม่ใต้แถวนี้':'Insert a line below',
   'เอาออกจากหัวข้อย่อย':'Take out of the sub-heading','เอาออกจากกลุ่มย่อย':'Take out of the group','ตั้งกลุ่มย่อยตั้งแต่แถวนี้ลงไป':'Start a group from this line down','อยู่ชั้นลึกสุดแล้ว':'Already at the deepest level','ตั้งหัวข้อย่อยใหม่ตั้งแต่แถวนี้ลงไป':'Start a sub-heading from this line down','ของ/หน่วย':'Material/unit','แรง/หน่วย':'Labour/unit','ยอดรวม':'Total','บวกกำไร %':'Markup %','ของ':'Material','แรง':'Labour'});
