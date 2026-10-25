@@ -6,8 +6,8 @@ async function obLib(){if(!window.orienBoq)await new Promise((ok,no)=>{const s=d
 // a quotation as the form's data: prices per unit exactly as the printed BOQ shows them (cost when the markup is its own
 // line), and for the internal sheet the real selling price of each line with its markup
 function obQuoteDoc(Q){const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.cust)||{},{lines}=xbCo();let T=0;
-  const items=Q.items.map(i=>{const L=qLine(Q,i),q=n(i.q),base=n(i.m)+n(i.l),u=qUnit(Q,i),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0;T+=L.t;
-    return {g:i.g||'',gname:gName(i.g),head:i.head||'',type:i.type||'',desc:i.desc||'',unit:i.unit||'',q,mc,lc,ms:L.mu,ls:L.lu,ims:base?n(i.m)*u/base:u,ils:base?n(i.l)*u/base:0}});
+  const QS=qSep(Q)?Object.assign({},Q,{mkSep:false}):Q,items=Q.items.map(i=>{const L=qLine(Q,i),IS=qLine(QS,i),q=n(i.q),base=n(i.m)+n(i.l),u=qUnit(Q,i),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0;T+=L.t;
+    return {g:i.g||'',gname:gName(i.g),head:i.head||'',type:i.type||'',desc:i.desc||'',unit:i.unit||'',q,mc,lc,ms:L.mu,ls:L.lu,ims:IS.mu,ils:IS.lu}});
   const rows=[];if(qSep(Q)&&Math.abs(c.lines-T)>0.005)rows.push({name:`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,v:c.lines-T,mk:1});
   c.adds.filter(a=>a.v).forEach(a=>rows.push({name:a.name||'',v:a.v,pct:n(a.pct)||''}));
   return {co:{name:C.name||'',lines},meta:{src:'PENUM PM',title:Q.title||'',pname:Q.pname||'',cust:cu.name||'',no:Q.no||'',date:Q.date||'',site:Q.site||'',ref:Q.ref||'',mk:n(Q.mk),mkSep:!!Q.mkSep,vat:7},items,sum:{rows,disc:c.disc}}}
