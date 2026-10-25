@@ -15,7 +15,8 @@ function plCfg(){const C=CO();if(!Array.isArray(C.prices))C.prices=[];return C.p
 // the same thing spelt in Thai or in English letters (the ministry writes ท่อพีวีซี, a BOQ often ท่อ PVC)
 const PL_SYN=[[/ยูพีวีซี/g,'upvc'],[/พีวีซี/g,'pvc'],[/พีพีอาร์/g,'ppr'],[/เอชดีพีอี/g,'hdpe'],[/พีอี/g,'pe'],[/สแตนเลส|สเตนเลส/g,'stainless'],[/ตร\.?\s*ม\.?|ตารางเมตร/g,'m²'],[/ม\.ม\.|มม\./g,'mm'],[/เมตร/g,'m']];
 const plSyn=s=>PL_SYN.reduce((t,[re,to])=>t.replace(re,to),String(s||''));
-const plKey=s=>pbNorm(plSyn(s)).replace(/[\s.,·\-–()\/:]+/g,'');
+// a decimal point stays (THW 2.5 is not THW 25)
+const plKey=s=>pbNorm(plSyn(s)).replace(/(\d)\.(?=\d)/g,'$1d').replace(/[\s.,·\-–()\/:]+/g,'');
 const plOld=i=>!i.date||(Date.now()-pd(i.date).getTime())/864e5>PL_OLD;
 const plFz=()=>{const W={};return r=>{const b=plKey(r.br||''),w=W[b]||(W[b]={items:plCfg().filter(x=>plKey(x.br||'')===b).map(x=>({id:x.id,name:plSyn(x.name),unit:x.unit,x}))});
   const c=pbCands(w,{desc:plSyn(r.name),unit:r.unit})[0];return c&&c.s>=.8?c.x.x:null}};
@@ -41,7 +42,7 @@ function plMerge(rows,o){const L=plCfg(),ix=new Map(),kx=new Map();let add=0,upd
     if(o.keep){same++;return}
     const src=r.src||o.src,d=r.date||o.date||today();plOffSeed(x);plOffer(x,o.sk,src,o.mOnly?r.m:r.m??0,o.mOnly?0:r.l??0,d);
     if(o.offer||x.pin&&x.pin!==plOK(o.sk,src)){off++;return}
-    if(o.newer&&x.sk!=='demo'&&x.date&&r.date&&r.date<x.date){same++;return}
+    if(o.newer&&x.sk!=='demo'&&x.sk!=='est'&&x.date&&r.date&&r.date<x.date){same++;return}
     const m=r.m==null?n(x.m):n(r.m),l=o.mOnly||r.l==null?n(x.l):n(r.l);
     if(m===n(x.m)&&l===n(x.l)){same++;return}
     plHist(x);x.m=m;x.l=l;x.src=src;x.sk=o.sk;x.date=d;if(!x.unit&&r.unit)x.unit=String(r.unit).trim();upd++});
@@ -161,7 +162,7 @@ function plView(){const L=plCfg(),R=plList(),N=Math.max(100,+S.sel.plN||200),G=P
   const last=L.reduce((a,i)=>String(i.date||'')>a?String(i.date):a,'');
   TABLES.plib={rows:()=>plList(),cols:[{k:'name',h:'รายการ'},{k:'br',h:'ยี่ห้อ / รุ่น'},{k:'unit',h:'หน่วย'},{k:'m',h:'ค่าวัสดุ/หน่วย'},{k:'l',h:'ค่าแรง/หน่วย'},{h:'รวม/หน่วย',t:'calc',f:i=>n(i.m)+n(i.l)},{h:'หมวด',t:'calc',f:i=>plGName(i.g)},{k:'src',h:'ที่มา'},{k:'date',h:'วันที่ราคา'}]};
   const head=`<dl class="stats"><div><dt>รายการในคลัง</dt><dd>${fmt(L.length)}</dd></div><div><dt>ราคาพาณิชย์ / ซื้อจริง</dt><dd>${fmt(by('moc'))} / ${fmt(by('po'))}</dd></div>
-    <div><dt>ยังเป็นราคาสมมติ</dt><dd style="color:${by('demo')?'var(--crit)':''}">${fmt(by('demo'))}</dd></div><div><dt>ราคาเก่ากว่า 6 เดือน</dt><dd style="color:${old?'var(--danger)':''}">${fmt(old)}</dd></div><div><dt>อัปเดตล่าสุด</dt><dd>${last?thD(last):'–'}</dd></div></dl>`;
+    <div><dt>ยังเป็นราคาสมมติ / ประมาณการ</dt><dd style="color:${by('demo')+by('est')?'var(--crit)':''}">${fmt(by('demo')+by('est'))}</dd></div><div><dt>ราคาเก่ากว่า 6 เดือน</dt><dd style="color:${old?'var(--danger)':''}">${fmt(old)}</dd></div><div><dt>อัปเดตล่าสุด</dt><dd>${last?thD(last):'–'}</dd></div></dl>`;
   if(!L.length)return head+`<section class="card"><h2><span>คลังราคากลาง</span><small>ราคาเดียวที่ PENUM PM, MEP และ BIM ใช้ร่วมกัน</small></h2>
     <p>คลังยังว่าง เริ่มได้ 3 ทาง</p><div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn pri" data-a="plSeed">เริ่มจากราคาตัวอย่าง 120 รายการ</button><button type="button" class="btn" data-a="plFill">วางจาก Excel หรือบัญชีพาณิชย์</button><button type="button" class="btn" data-a="plOpen">เปิดไฟล์คลังราคา</button></div>
     <p class="hint">ราคาทุกรายการไม่รวม VAT แยกค่าวัสดุและค่าแรง และจำว่ามาจากไหน วันที่เท่าไร เมื่อเติมราคาใหม่ ราคาเดิมจะเก็บไว้ในประวัติ</p></section>`;
