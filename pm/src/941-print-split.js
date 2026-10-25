@@ -34,6 +34,10 @@ function qpvFill(el,h){const R=el.shadowRoot||el.attachShadow({mode:'open'}),sh=
   if(typeof fmStamp==='function')try{fmStamp(P)}catch(e){}
   if(typeof fillPhotos==='function')fillPhotos(P);
   let first=true;c.querySelectorAll('*').forEach(x=>{const b=getComputedStyle(x).breakBefore;if(b==='page'||b==='always'){if(!first||x.getBoundingClientRect().top-c.getBoundingClientRect().top>4)x.insertAdjacentHTML('beforebegin','<div class="qpv-brk" aria-hidden="true"></div>')}first=false});
+  // 4.64 a landscape block inside a portrait document (the claim set's Progress Payment on its named landscape page) is wider
+  // than this paper: shrink it to the paper's width so nothing sits outside the white page
+  {const cs=getComputedStyle(c),W=c.getBoundingClientRect().width-(parseFloat(cs.paddingLeft)||0)-(parseFloat(cs.paddingRight)||0);if(W>0)c.querySelectorAll('.sub-pp,.pgc>*').forEach(x=>{const r=x.getBoundingClientRect().width,w=Math.max(r,x.offsetWidth?x.scrollWidth*r/x.offsetWidth:0);
+    if(w>W+1)x.style.zoom=((parseFloat(x.style.zoom)||1)*W/w).toFixed(3)})}
   // fit the paper to the space, never larger than real size
   const W=el.clientWidth-20,pw=P.offsetWidth;P.style.zoom=pw>W&&W>0?(W/pw).toFixed(3):''}
 // after each render: ◫ แบ่งจอ beside the first พิมพ์ in each card's title row; the card being split gets the preview column

@@ -51,11 +51,16 @@ CVIEWS.org=()=>{const {cur,html}=subTabs('org',[['chart','ผังองค์�
 
 /* --- printouts in the ORIEN layout: logo and company at the top, a dark title band with the number and dates beside it --- */
 const DOC_EN=[[/ใบเสนอราคา/,'QUOTATION'],[/ใบแจ้งหนี้|ใบกำกับภาษี/,'INVOICE / TAX INVOICE'],[/ใบเสร็จรับเงิน/,'RECEIPT'],[/ใบสั่งซื้อ/,'PURCHASE ORDER'],[/ใบขอซื้อ/,'PURCHASE REQUEST'],[/ใบเบิกเงิน/,'PROGRESS BILLING'],[/ประจำวัน/,'DAILY REPORT'],[/RFI|ขอข้อมูล/,'REQUEST FOR INFORMATION'],[/งานเพิ่ม-ลด/,'VARIATION ORDER'],[/Transmittal|นำส่งเอกสาร/,'TRANSMITTAL'],[/ส่งอนุมัติ/,'SUBMITTAL REGISTER'],[/Punch/,'PUNCH LIST'],[/Commissioning|ทดสอบ/,'TESTING & COMMISSIONING'],[/TAB/,'TEST, ADJUST & BALANCE'],[/แผนงาน/,'PROJECT SCHEDULE'],[/ใบงานบริการ/,'SERVICE REPORT'],[/ความปลอดภัย/,'SAFETY INSPECTION'],[/ใบอนุญาตทำงาน/,'WORK PERMIT'],[/ประเมินทักษะ/,'SKILL ASSESSMENT'],[/ภาษีขาย|ภาษีซื้อ/,'VAT REPORT'],[/ผังองค์กร/,'ORGANISATION CHART']];
+// 4.64 header boxes top and bottom: the title band across the page, then the details, long ones (โครงการ, งาน, ลูกค้า…) on a row
+// of their own first and the short ones (เลขที่, วันที่, พิมพ์…) three to a row
+const OT_LONG=/^(โครงการ|งาน|ลูกค้า|ผู้ว่าจ้าง|ผู้รับจ้าง|ผู้ขาย|ผู้รับเหมา|ส่งถึง|เรียน|ที่อยู่|เรื่อง)$/;
+function otRows(rows){const L=rows.map(([k,v])=>({k,v,w:OT_LONG.test(String(k).trim())||String(v).replace(/<[^>]*>/g,'').length>30}));
+  return [...L.filter(x=>x.w),...L.filter(x=>!x.w)].map(x=>`<div${x.w?' class="w"':''}><span>${x.k}</span>${x.v}</div>`).join('')}
 function ohead(title,sub,extra){const C=CO(),t=String(title),en=(DOC_EN.find(([r])=>r.test(t))||[0,''])[1];
   let th=t.replace(/\s*\([A-Za-z&\s]+\)/,''),no='';const m=th.match(/\s([A-Z][A-Z0-9]*-[\w-]+(?:\s+Rev\.\S+)?)\s*$/);if(m){no=m[1];th=th.slice(0,m.index)}
   const rows=[...(no?[['เลขที่',no]]:[]),...extra,...String(sub||'').split(/<br\s*\/?>/i).map(x=>x.trim()).filter(Boolean).map(x=>{const k=x.indexOf(' ');return k>0&&k<22?[x.slice(0,k),x.slice(k+1)]:['',x]}),['พิมพ์',thDL(today())]];
   return `<div class="oh"><div>${C.logo?`<img src="${C.logo}" alt="">`:''}</div><div class="oh-c"><b>${esc(C.name||'')}</b>${C.nameEn?`<br><small>${esc(C.nameEn)}</small>`:''}${C.addr?`<br>${esc(C.addr)}`:''}<br>${[C.phone?'โทร '+esc(C.phone):'',esc(C.email||''),C.tax?'เลขประจำตัวผู้เสียภาษี '+esc(C.tax)+(C.branch?' ('+esc(C.branch)+')':''):''].filter(Boolean).join(' · ')}</div></div>
-  <div class="ot"><div class="ot-t">${en?`<small>${en}</small>`:''}<h1${th.length>40?' class="ot-xl"':th.length>24?' class="ot-l"':''}>${th}</h1></div><div class="ot-m">${rows.map(([k,v])=>`<div><span>${k}</span>${v}</div>`).join('')}</div></div>
+  <div class="ot"><div class="ot-t">${en?`<small>${en}</small>`:''}<h1${th.length>40?' class="ot-xl"':th.length>24?' class="ot-l"':''}>${th}</h1></div><div class="ot-m">${otRows(rows)}</div></div>
   <div class="ofoot"><span>${esc(C.name||'')}${C.email?' · '+esc(C.email):''}</span><span>${C.phone?'โทร '+esc(C.phone):''}</span></div>`}
 cphead=(t,s)=>ohead(t,s,[]);
 // "โครงการ - งาน" names (3.99) print as two rows
