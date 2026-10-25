@@ -16,6 +16,9 @@ PL_SK.offl=['ค่าแรง ว 480 · วัสดุประมาณก�
 PL_SK.gov=['ราคาทางการ สนค. + ว 480','ok'];PL_SK.offm=['ค่าวัสดุ สนค. · ค่าแรงประมาณการ','info'];
 if(!PL_ORD.includes('est'))PL_ORD.splice(PL_ORD.indexOf('demo'),0,'offm','offl','est');
 if(!PL_ORD.includes('gov'))PL_ORD.splice(PL_ORD.indexOf('moc')+1,0,'gov');
+// 4.69 the freshness card (975) also follows the starter set's kinds: สนค. material monthly, ว 480 labour yearly
+Object.assign(PL_EVERY,{gov:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offm:[45,'ทุกเดือน (ค่าวัสดุ สนค.)'],offl:[365,'ปีละครั้ง (ค่าแรง ว 480)']});
+PL_URL.gov=PL_URL.offm='https://index.tpso.go.th';PL_URL.offl=PL_URL.cgd;
 const govSet=()=>window.PENUM_GOV_PRICES&&Array.isArray(window.PENUM_GOV_PRICES.rows)?window.PENUM_GOV_PRICES:null;
 // the rows as shared/prices.js reads them (sk 'gov', 'offm', 'offl', 'est' or 'bb', the source line)
 const govRows=()=>govSet()&&window.penumPrices&&penumPrices.govRows?penumPrices.govRows():[];
@@ -44,4 +47,4 @@ const govNote=()=>{const S=govSet();return S?`${S.rows.length} รายกา�
 
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{
   'ประมาณการ':'Estimate','ค่าแรง ว 480':'CGD labour','ค่าวัสดุอื่นประมาณการ':'Other material estimated','ครุภัณฑ์ สำนักงบฯ':'Budget Bureau equipment','ค่าแรง ว 480 · วัสดุประมาณการ':'CGD labour · est. material','ค่าวัสดุ สนค.':'TPSO material','ราคาทางการ สนค. + ว 480':'Official: TPSO + CGD labour','ค่าวัสดุ สนค. · ค่าแรงประมาณการ':'TPSO material · est. labour','ราคากลางชุดเริ่มต้น (มีในโปรแกรม)':'Starter reference prices (built in)','ใส่ราคากลางชุดเริ่มต้น':'Load the starter reference prices',
-  'เริ่มได้ 4 ทาง':'Four ways to start','ยังเป็นราคาสมมติ / ประมาณการ':'Assumed / estimated prices'});
+  'เริ่มได้ 4 ทาง':'Four ways to start','ทุกเดือน (ค่าวัสดุ สนค.)':'Monthly (TPSO material)','ปีละครั้ง (ค่าแรง ว 480)':'Yearly (CGD ว 480 labour)','ยังเป็นราคาสมมติ / ประมาณการ':'Assumed / estimated prices'});
