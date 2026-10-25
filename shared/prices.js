@@ -208,7 +208,8 @@ function when(s){const d=new Date(s);if(!s||isNaN(d))return '–';const ms=Date.
   return d.toLocaleString(EN()?'en-GB':'th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
 const thD=s=>{const d=new Date(s);return !s||isNaN(d)?'–':d.toLocaleDateString(EN()?'en-GB':'th-TH',{day:'numeric',month:'short',year:'2-digit'})};
 const fmt=v=>num(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const isOld=x=>!x.date||(Date.now()-new Date(x.date))/864e5>180;
+// a yearly government list (สำนักงบประมาณ, กรมบัญชีกลาง ว 480) stays current for a year after its date, as in PENUM PM (960 PL_OLD_SK)
+const OLD_YR={bb:1,bbc:1,cgd:1,offl:1},isOld=x=>!x.date||(Date.now()-new Date(x.date))/864e5>(OLD_YR[x.sk]?365:180);
 function stLine(){const s=ST.st;if(s==='run')return t('sRun');if(s==='ok')return ST.at?t('sOk',when(ST.at)):t('sOk',t('just'));if(s==='nolic')return t('sNolic');if(s==='offline')return t('sOff');if(s==='nosql')return t('sNosql');if(s==='bad')return t('sBad');return ''}
 function render(el){if(!el)return;VIEWS.add(el);el.classList.add('ppl');if(!el._pplOn){el._pplOn=1;
     el.addEventListener('click',ev=>click(el,ev));el.addEventListener('change',ev=>change(el,ev));
