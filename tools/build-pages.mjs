@@ -28,7 +28,8 @@ const LINK = readFileSync(join(SHARED, 'link.js'), 'utf8').replaceAll('</script'
 // โครงการของบริษัท: apps with "team": true in app.json (MEP, BIM) carry shared/team.js in <head>, the company's shared project list
 const TEAM = readFileSync(join(SHARED, 'team.js'), 'utf8').replaceAll('</script', '<\\/script');
 // คลังราคากลาง: apps with "prices": true in app.json (PM, MEP, BIM) carry shared/prices.js in <head>, the company's one price list
-const PRICES = readFileSync(join(SHARED, 'prices.js'), 'utf8').replaceAll('</script', '<\\/script');
+// with the starter reference prices (shared/gov-prices.js) just before it
+const PRICES = (readFileSync(join(SHARED, 'gov-prices.js'), 'utf8') + '\n' + readFileSync(join(SHARED, 'prices.js'), 'utf8')).replaceAll('</script', '<\\/script');
 // บันทึกลงเครื่อง: apps with "files": true in app.json carry shared/files.js in <head>, to save each project as a file in a folder the customer picks
 const FILES = readFileSync(join(SHARED, 'files.js'), 'utf8').replaceAll('</script', '<\\/script');
 // แถบบน + แท็บชื่องาน: apps with "titlebar": true in app.json carry shared/titlebar.js in <head>, the AutoCAD-style title bar and project tabs

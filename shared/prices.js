@@ -9,7 +9,7 @@
      encryption as shared/team.js; a row under 'mep' marked k:'prices', which the project list leaves out). A few seconds after a
      change, on start, when the window comes back and every 3 minutes the device merges its list with the company's and sends the
      result: per line the newest edit wins (u), a deletion wins over older edits, and the price it replaced goes into the history.
-   window.penumPrices: attach(cfg) · items() · put(rows, opt) · set(id, field, value) · remove(id) · on(fn) · sync() · open() the
+   window.penumPrices: attach(cfg) · items() · put(rows, opt) · set(id, field, value) · remove(id) · on(fn) · sync() · gov() load the starter reference prices (shared/gov-prices.js) · open() the
    library window · render(el) · find(row) · state() · rowSync(name, o) another company list kept the same way. cfg: app 'pm'|'mep'|'bim' · code() the licence code or '' · cid() the customer
    id · co() company name · who() the user's name · off() true while nothing may be written (a sample, read-only) · seed() rows to
    start an empty list from. PM keeps its own fuller page (pm/src/960–985); MEP and BIM open this window from their menus. */
@@ -19,7 +19,7 @@ const SOON=6e3,EVERY=180e3,HMAX=8,DEL_KEEP=180*864e5,PAGE=200;
 const EN=()=>!/^th/i.test(document.documentElement.lang||'th');
 const T={
   title:['คลังราคากลาง','Price library'],sub:['ราคาเดียวที่ PENUM PM, MEP และ BIM ของบริษัทใช้ร่วมกัน · ไม่รวม VAT','One price list for your company\'s PENUM PM, MEP and BIM · excluding VAT'],
-  close:['ปิด','Close'],n:['รายการในคลัง','Items'],demo:['ยังเป็นราคาสมมติ','Assumed prices'],old:['ราคาเก่ากว่า 6 เดือน','Over 6 months old'],last:['แก้ล่าสุด','Last change'],
+  close:['ปิด','Close'],n:['รายการในคลัง','Items'],demo:['ยังเป็นราคาสมมติ / ประมาณการ','Assumed / estimated prices'],old:['ราคาเก่ากว่า 6 เดือน','Over 6 months old'],last:['แก้ล่าสุด','Last change'],
   q:['ค้นหารายการ ยี่ห้อ หรือที่มา','Search item, brand or source'],allG:['ทุกหมวด','All groups'],add:['+ เพิ่มรายการ','+ Add item'],paste:['วางจาก Excel','Paste from Excel'],
   fOpen:['เปิดไฟล์คลังราคา','Open library file'],fSave:['บันทึกไฟล์คลังราคา','Save library file'],seed:['เริ่มจากราคาตัวอย่าง','Start from sample prices'],
   cName:['รายการ','Item'],cBr:['ยี่ห้อ / รุ่น','Brand / model'],cUnit:['หน่วย','Unit'],cM:['ค่าวัสดุ/หน่วย','Material/unit'],cL:['ค่าแรง/หน่วย','Labour/unit'],cT:['รวม/หน่วย','Total/unit'],
@@ -42,14 +42,16 @@ const T={
   hand:['แก้เอง','Typed'],newItem:['รายการใหม่','New item'],by:['แก้โดย {0}','Edited by {0}'],ro:['ดูได้อย่างเดียว','Read only'],
   sk_demo:['ราคาสมมติ','Assumed'],sk_moc:['พาณิชย์','Commerce Ministry'],sk_po:['ซื้อจริง','Purchase'],sk_mep:['PENUM MEP','PENUM MEP'],sk_bim:['PENUM BIM','PENUM BIM'],sk_xls:['Excel','Excel'],
   sk_file:['ไฟล์','File'],sk_hand:['แก้เอง','Typed'],sk_sup:['ใบเสนอราคาผู้ขาย','Supplier quote'],sk_dealer:['ผู้แทนจำหน่าย','Dealer'],sk_bb:['สำนักงบประมาณ','Budget Bureau'],
-  sk_cgd:['กรมบัญชีกลาง','Comptroller General'],sk_egp:['e-GP','e-GP'],sk_shop:['ร้านออนไลน์','Online shop'],sk_td:['งานประมูล','Bid'],sk_qt:['ใบเสนอราคาของเรา','Our quotation']};
+  sk_cgd:['กรมบัญชีกลาง','Comptroller General'],sk_est:['ประมาณการ','Estimate'],
+  gov:['ราคากลางชุดเริ่มต้น','Starter reference prices'],govDone:['ราคากลางชุดเริ่มต้น: เพิ่ม {0} · อัปเดต {1} · ราคาที่มีอยู่แล้วไม่ทับ {2} รายการ','Starter prices: {0} added · {1} updated · {2} prices you already had kept'],
+  govTip:['ราคาประมาณการงานระบบ ต.ค. 2569 ตามรูปแบบราคาวัสดุกระทรวงพาณิชย์และค่าแรงกรมบัญชีกลาง ว 480 ยังไม่ใช่ตัวเลขทางการ ไม่ทับราคาที่มีอยู่แล้ว','Estimated MEP prices, Oct 2026, laid out like the Commerce Ministry material prices and CGD labour list ว 480; not the official numbers; never replaces a price you already have'],sk_egp:['e-GP','e-GP'],sk_shop:['ร้านออนไลน์','Online shop'],sk_td:['งานประมูล','Bid'],sk_qt:['ใบเสนอราคาของเรา','Our quotation']};
 const t=(k,...a)=>(T[k]?T[k][EN()?1:0]:k).replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const G={eq:['งานเครื่องปรับอากาศ','Air conditioning'],pipe:['งานท่อน้ำยาและท่อน้ำทิ้ง','Refrigerant & drain pipes'],duct:['งานท่อลมและอุปกรณ์','Ductwork'],chw:['งานระบบน้ำเย็น','Chilled water'],
   el:['งานไฟฟ้าระบบปรับอากาศ','A/C electrical'],smk:['งานระบบควบคุมควันไฟ','Smoke control'],fp:['งานระบบดับเพลิง','Fire protection'],elb:['งานระบบไฟฟ้าอาคาร','Building electrical'],
   fa:['งานระบบแจ้งเหตุเพลิงไหม้','Fire alarm'],com:['งานระบบสื่อสาร','Communication'],cctv:['งานระบบกล้องวงจรปิด (CCTV)','CCTV'],acc:['งานระบบควบคุมการเข้า-ออก','Access control'],pa:['งานระบบเสียงประกาศ','Public address'],bms:['งานระบบควบคุมอาคารอัตโนมัติ (BMS)','BMS'],lp:['งานระบบป้องกันฟ้าผ่าและสายดิน','Lightning protection & earthing'],genr:['งานเครื่องกำเนิดไฟฟ้าและ UPS','Generator & UPS'],sol:['งานระบบโซลาร์เซลล์','Solar PV'],wwt:['งานระบบบำบัดน้ำเสีย','Wastewater treatment'],mg:['งานระบบก๊าซทางการแพทย์','Medical gas'],plb:['งานระบบสุขาภิบาล','Plumbing'],civ:['งานโยธาที่เกี่ยวข้อง','Civil & building'],oth:['งานทดสอบและอื่นๆ','Testing & others'],mat:['วัสดุก่อสร้างทั่วไป','General materials']};
 const gName=g=>(G[g]||G.oth)[EN()?1:0];
-const SKC={demo:'warn',moc:'info',po:'ok',sup:'ok',dealer:'ok',bb:'info',cgd:'info',egp:'info'};
+const SKC={demo:'warn',est:'warn',moc:'info',po:'ok',sup:'ok',dealer:'ok',bb:'info',cgd:'info',egp:'info'};
 
 // --- crypto and the company key: the same as shared/team.js (MEP and BIM load both; PM loads only this file) ---
 const te=new TextEncoder(),td=new TextDecoder();
@@ -92,7 +94,7 @@ const r2=v=>Math.round(num(v)*100)/100;
 const day=d=>{d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const nid=()=>'k'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
 const SYN=[[/ยูพีวีซี/g,'upvc'],[/พีวีซี/g,'pvc'],[/พีพีอาร์/g,'ppr'],[/เอชดีพีอี/g,'hdpe'],[/สแตนเลส|สเตนเลส/g,'stainless'],[/ตร\.?\s*ม\.?|ตารางเมตร/g,'m²'],[/เมตร|ม\./g,'m'],[/ตัน/g,'tr']];
-const nk=s=>SYN.reduce((x,[re,to])=>x.replace(re,to),String(s||'').normalize('NFC').toLowerCase()).replace(/[\s.,·\-–()\/:'"]+/g,'');
+const nk=s=>SYN.reduce((x,[re,to])=>x.replace(re,to),String(s||'').normalize('NFC').toLowerCase()).replace(/(\d)\.(?=\d)/g,'$1d').replace(/[\s.,·\-–()\/:'"]+/g,'');// a decimal point stays (THW 2.5 is not THW 25)
 const ident=r=>nk(r.name)+'|'+nk(r.unit)+'|'+nk(r.br);
 const F=['g','name','br','unit','m','l','src','sk','date','key'];
 // read once per change: the programs ask for prices for every row they draw
@@ -121,11 +123,18 @@ function upsert(L,r0,opt,u,ix){const r=clean(r0);opt=opt||{};let x=r.id&&L.items
   if(!x){if(opt.noAdd||!r.name||!(num(r.m)>0||num(r.l)>0))return 'skip';
     const it=Object.assign({id:r.id||nid(),g:opt.g||'oth',br:'',unit:'',m:0,l:0,src:opt.src||'',sk:opt.sk||'hand',date:opt.date||day()},r,{u,by:opt.by||who()});
     if(!G[it.g])it.g='oth';if(!it.key)delete it.key;L.items.push(it);delete L.del[it.id];if(ix)ix.set(ident(it),it);return 'add'}
-  if(opt.keepNewer&&r.date&&x.date&&r.date<x.date)return 'same';
+  if(opt.keepNewer&&!SOFT(x)&&r.date&&x.date&&r.date<x.date)return 'same';
   const nx=Object.assign({},x,r,{id:x.id});if(!r.src&&opt.src)nx.src=opt.src;if(!r.sk&&opt.sk)nx.sk=opt.sk;if(!r.date&&opt.date)nx.date=opt.date;
   if(F.every(f=>String(nx[f]??'')===String(x[f]??'')))return 'same';
   if(num(nx.m)!==num(x.m)||num(nx.l)!==num(x.l))hpush(x);
   Object.assign(x,nx,{u,by:opt.by||who()});return 'upd'}
+// sample and starter-set lines are only placeholders: any other price replaces them
+const SOFT=x=>x.sk==='demo'||x.sk==='est';
+// ราคากลางชุดเริ่มต้น (shared/gov-prices.js): fills new, sample and starter lines; a line with a price of the company's own stays as it is
+function govRows(){const S=window.PENUM_GOV_PRICES;if(!S||!Array.isArray(S.rows))return [];const L=EN()?1:0;
+  return S.rows.map(([k,g,name,unit,m,l,r])=>({key:'gov:'+k,g,name,unit,m,l,date:S.date,src:S.name[L]+' · '+((S.ref[r]||S.ref.m)[L])}))}
+function gov(){const R=govRows();if(!R.length||off())return null;const go=[],kept=[];R.forEach(r=>{const x=find(r);(!x||SOFT(x)?go:kept).push(r)});
+  const r=put(go,{sk:'est'});r.kept=kept.length;return r}
 function put(rows,opt){if(off())return {add:0,upd:0,same:0,skip:0};const o=rd(),L=lib(o),u=Date.now(),ix=new Map(L.items.map(i=>[ident(i),i])),R={add:0,upd:0,same:0,skip:0};
   (rows||[]).forEach(r=>{R[upsert(L,r,opt,u,ix)]++});if(R.add||R.upd){L.at=u;wr(o);changed('here')}R.u=u;return R}
 function set(id,f,v){if(off()||!F.includes(f))return;const o=rd(),L=lib(o),x=L.items.find(i=>i.id===id);if(!x)return;const nv=f==='m'||f==='l'?r2(v):String(v??'').trim();
@@ -205,12 +214,12 @@ function paint(el){const L=items(),ro=off(),q=String(el._q||'').trim().toLowerCa
   const inp=(x,f,w,numb)=>ro?`<span>${esc(numb?fmt(x[f]):x[f]||'')}</span>`:`<input data-ppl="${esc(x.id)}" data-f="${f}" value="${esc(numb?num(x[f]):x[f]||'')}"${numb?' inputmode="decimal" class="r"':''} aria-label="${esc(t({name:'cName',br:'cBr',unit:'cUnit',m:'cM',l:'cL'}[f]))}" style="width:${w}px">`;
   const st=stLine();
   el.innerHTML=`<div class="ppl-st"><span>${esc(st)}</span>${CFG&&ST.st!=='nolic'&&ST.st!=='run'?`<button type="button" class="ppl-b sm" data-ppla="sync">${esc(t('sNow'))}</button>`:''}${ro?`<b>${esc(t('ro'))}</b>`:''}</div>
-  <div class="ppl-stats"><div><small>${esc(t('n'))}</small><b>${L.length}</b></div><div><small>${esc(t('demo'))}</small><b class="${L.some(x=>x.sk==='demo')?'warn':''}">${L.filter(x=>x.sk==='demo').length}</b></div>
+  <div class="ppl-stats"><div><small>${esc(t('n'))}</small><b>${L.length}</b></div><div><small>${esc(t('demo'))}</small><b class="${L.some(SOFT)?'warn':''}">${L.filter(SOFT).length}</b></div>
     <div><small>${esc(t('old'))}</small><b>${L.filter(isOld).length}</b></div><div><small>${esc(t('last'))}</small><b>${last?esc(when(last)):'–'}</b></div></div>
   <div class="ppl-bar"><input type="search" data-pplq placeholder="${esc(t('q'))}" value="${esc(el._q||'')}" aria-label="${esc(t('q'))}">
     <select data-pplg aria-label="${esc(t('cG'))}"><option value="">${esc(t('allG'))}</option>${gs.map(k=>`<option value="${k}"${k===g?' selected':''}>${esc(gName(k))}</option>`).join('')}</select>
     ${ro?'':`<button type="button" class="ppl-b pri" data-ppla="add">${esc(t('add'))}</button><button type="button" class="ppl-b" data-ppla="paste">${esc(t('paste'))}</button><button type="button" class="ppl-b" data-ppla="open">${esc(t('fOpen'))}</button>`}
-    <button type="button" class="ppl-b" data-ppla="save">${esc(t('fSave'))}</button>${!ro&&!L.length&&CFG&&CFG.seed?`<button type="button" class="ppl-b" data-ppla="seed">${esc(t('seed'))}</button>`:''}</div>
+    <button type="button" class="ppl-b" data-ppla="save">${esc(t('fSave'))}</button>${!ro&&window.PENUM_GOV_PRICES?`<button type="button" class="ppl-b" data-ppla="gov" title="${esc(t('govTip'))}">${esc(t('gov'))}</button>`:''}${!ro&&!L.length&&CFG&&CFG.seed?`<button type="button" class="ppl-b" data-ppla="seed">${esc(t('seed'))}</button>`:''}</div>
   ${L.length?`<div class="ppl-tw"><table><thead><tr><th>${esc(t('cName'))}</th><th>${esc(t('cBr'))}</th><th>${esc(t('cUnit'))}</th><th class="r">${esc(t('cM'))}</th><th class="r">${esc(t('cL'))}</th><th class="r">${esc(t('cT'))}</th><th>${esc(t('cG'))}</th><th>${esc(t('cSrc'))}</th><th>${esc(t('cD'))}</th><th></th></tr></thead><tbody>
   ${R.slice(0,N).map(x=>`<tr${x.id===el._new?' class="new"':''}><td>${inp(x,'name',230)}</td><td>${inp(x,'br',110)}</td><td>${inp(x,'unit',80)}</td><td class="r">${inp(x,'m',100,1)}</td><td class="r">${inp(x,'l',90,1)}</td>
     <td class="r">${fmt(num(x.m)+num(x.l))}</td><td>${ro?esc(gName(x.g)):`<select data-ppl="${esc(x.id)}" data-f="g" aria-label="${esc(t('cG'))}">${Object.keys(G).map(k=>`<option value="${k}"${k===x.g?' selected':''}>${esc(gName(k))}</option>`).join('')}</select>`}</td>
@@ -234,6 +243,7 @@ async function click(el,ev){const b=ev.target.closest&&ev.target.closest('[data-
   else if(a==='paste')pasteBox();
   else if(a==='save')saveFile();
   else if(a==='open')openFile();
+  else if(a==='gov'){const R=gov();if(R)toast(t('govDone',R.add,R.upd,R.kept))}
   else if(a==='seed'&&CFG.seed){const R=put(CFG.seed(),{sk:'demo',src:t('sk_demo'),date:day()});toast(t('done',R.add,R.upd))}}
 function dlg(title,html,btns){return new Promise(res=>{const d=document.createElement('dialog');d.className='ppl-dlg';
   d.innerHTML=`<h3>${esc(title)}</h3><div class="ppl-db">${html}</div><div class="ppl-df">${btns.map(([k,l,p])=>`<button type="button" class="ppl-b${p?' pri':''}" value="${esc(k)}">${esc(l)}</button>`).join('')}</div>`;
@@ -292,5 +302,5 @@ const CSS=`.ppl-win{width:min(1500px,calc(100vw - 16px));max-width:none;height:c
 @media(max-width:640px){.ppl-body{padding:10px}.ppl-top{padding:10px 12px}.ppl-tw{max-height:none}}`;
 const st=document.createElement('style');st.textContent=CSS;(document.head||document.documentElement).appendChild(st);
 const deleted=()=>Object.assign({},lib(rd()).del);
-window.penumPrices={attach,items,deleted,put,set,remove,on,sync,open,render,find,state,merge,parse,rowSync,_rd:rd};
+window.penumPrices={attach,items,deleted,put,gov,govRows,set,remove,on,sync,open,render,find,state,merge,parse,rowSync,_rd:rd};
 })();
