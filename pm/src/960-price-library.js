@@ -18,7 +18,7 @@ const plSyn=s=>PL_SYN.reduce((t,[re,to])=>t.replace(re,to),String(s||''));
 // a decimal point stays (THW 2.5 is not THW 25)
 const plKey=s=>pbNorm(plSyn(s)).replace(/(\d)\.(?=\d)/g,'$1d').replace(/[\s.,·\-–()\/:]+/g,'');
 // a yearly government list (สำนักงบประมาณ, กรมบัญชีกลาง ว 480) stays current for a year after its date
-const PL_OLD_SK={bb:365,cgd:365,offl:365};
+const PL_OLD_SK={bb:365,bbc:365,cgd:365,offl:365};
 const plOld=i=>!i.date||(Date.now()-pd(i.date).getTime())/864e5>(PL_OLD_SK[i.sk]||PL_OLD);
 const plFz=()=>{const W={};return r=>{const b=plKey(r.br||''),w=W[b]||(W[b]={items:plCfg().filter(x=>plKey(x.br||'')===b).map(x=>({id:x.id,name:plSyn(x.name),unit:x.unit,x}))});
   const c=pbCands(w,{desc:plSyn(r.name),unit:r.unit})[0];return c&&c.s>=.8?c.x.x:null}};

@@ -15,8 +15,10 @@
    Such a line loads with sk 'gov' (official material and ว 480 labour) or 'offm' (official material, labour still estimated).
    The whole list is pm/files/moc/ (PM searches it).
    To swap in verified prices: keep each key, change m or l, set the source, bump v.
+   Lines with r 'bbc:<k>' (v5) are rates per TR / per kVA worked out from those Budget Bureau lines (sk 'bbc'): they fill PENUM MEP's
+   composite sample lines of the same name and unit, which the design BOQ prices by.
    rows: [key (the line's key is 'gov:'+key), g (BOQ group), name, unit, m (material/unit), l (labour/unit), r, [MOC code, note]] */
-window.PENUM_GOV_PRICES={v:4,date:'2026-10-01',est:true,cgd:{no:'กค 0433.2/ว 480',date:'2026-06-26'},
+window.PENUM_GOV_PRICES={v:5,date:'2026-10-01',est:true,cgd:{no:'กค 0433.2/ว 480',date:'2026-06-26'},
   moc:{date:'2026-09-30',name:['สนค. ส่วนกลาง ก.ย. 2569 รหัส {0} {1}','TPSO Bangkok Sep 2026 material price, code {0} {1}'],
     wl:['ค่าแรง ว 480 ข้อ {0}','CGD ว 480 labour item {0}'],el:['ค่าแรงประมาณการ','estimated labour']},
   // r 'bb:<list>:<item>': the whole line is a Budget Bureau standard price (บัญชีราคามาตรฐานครุภัณฑ์), its 7% VAT taken off;
@@ -24,6 +26,11 @@ window.PENUM_GOV_PRICES={v:4,date:'2026-10-01',est:true,cgd:{no:'กค 0433.2/�
   bb:{dec:{date:'2025-12-04',name:['บัญชีราคามาตรฐานครุภัณฑ์ สำนักงบประมาณ ธ.ค. 2568 ข้อ {0} (หัก VAT 7%)','Budget Bureau standard equipment prices Dec 2025, item {0} (VAT taken off)']},
     rev:{date:'2026-02-27',name:['บัญชีราคามาตรฐานครุภัณฑ์ ฉบับปรับปรุง 27 ก.พ. 2569 (นร 0719.1/ว 127) ข้อ {0} (หัก VAT 7%)','Budget Bureau standard prices, revision 27 Feb 2026, item {0} (VAT taken off)']},
     apr:{date:'2026-04-30',name:['บัญชีราคามาตรฐานครุภัณฑ์ สำนักงบประมาณ เพิ่มเติม 21 รายการ เม.ย. 2569 ข้อ {0} (หัก VAT 7%)','Budget Bureau standard prices, Apr 2026 supplement, item {0} (VAT taken off)']}},
+  // r 'bbc:<k>': a rate per TR or per kVA worked out from the Budget Bureau lines above (the median over the sizes), for the
+  // composite rates PENUM MEP designs with (its sample lines 'Split ติดผนัง/แขวน' บาท/TR and 'เครื่องกำเนิดไฟฟ้า' บาท/kVA)
+  bbc:{date:'2025-12-04',
+    split:['สำนักงบฯ (คำนวณต่อ TR) ธ.ค. 2568 ข้อ 10.6.1–10.6.4: ค่ากลางของแอร์ติดผนังและตั้งพื้น/แขวน 27 รุ่น 12,000–50,000 BTU (ไม่รวมเบอร์ 5 ห้าดาว) ราคา ÷ (BTU ÷ 12,000) ค่าแรง = ค่าติดตั้งข้อ 10.6 (8) ÷ TR หัก VAT 7%','Budget Bureau Dec 2025 items 10.6.1–10.6.4, per TR: median of 27 wall and floor/ceiling split units 12,000–50,000 BTU (not the five-star models), price ÷ (BTU ÷ 12,000); labour = item 10.6 (8) installation ÷ TR; VAT taken off'],
+    gen:['สำนักงบฯ (คำนวณต่อ kVA) ธ.ค. 2568 ข้อ 7.2: ค่ากลางของเครื่องกำเนิดไฟฟ้าดีเซล 10 ขนาด 5–500 kW (kVA = kW ÷ 0.8, ช่วง 4,624–14,305 บาท/kVA) หัก VAT 7% · ราคาสำนักงบฯ ไม่รวมติดตั้ง ค่าแรงยังเป็นราคาสมมติเดิม','Budget Bureau Dec 2025 item 7.2, per kVA: median of 10 diesel generators 5–500 kW (kVA = kW ÷ 0.8, range 4,624–14,305 baht/kVA), VAT taken off; the list excludes installation, so the labour is still the old assumed rate']},
   name:['ชุดเริ่มต้น ต.ค. 2569','Starter set Oct 2026'],
   // what to check each line against (shown after the name): the Commerce Ministry material prices or the Budget Bureau standard prices, and CGD ว 480 labour
   ref:{m:['ตรวจกับ พณ. + ว 480','check: MOC + CGD ว 480'],b:['ตรวจกับ สำนักงบฯ + ว 480','check: Budget Bureau + CGD ว 480'],
@@ -134,6 +141,8 @@ window.PENUM_GOV_PRICES={v:4,date:'2026-10-01',est:true,cgd:{no:'กค 0433.2/�
 ['bbgen100','genr','เครื่องกำเนิดไฟฟ้าดีเซล 100 kW (ราคามาตรฐาน ไม่รวมติดตั้ง)','เครื่อง',748598.13,0,'bb:dec:7.2.6'],['bbgen200','genr','เครื่องกำเนิดไฟฟ้าดีเซล 200 kW (ราคามาตรฐาน ไม่รวมติดตั้ง)','เครื่อง',1323364.49,0,'bb:dec:7.2.7'],
 ['bbgen300','genr','เครื่องกำเนิดไฟฟ้าดีเซล 300 kW (ราคามาตรฐาน ไม่รวมติดตั้ง)','เครื่อง',1949532.71,0,'bb:dec:7.2.8'],['bbgen400','genr','เครื่องกำเนิดไฟฟ้าดีเซล 400 kW (ราคามาตรฐาน ไม่รวมติดตั้ง)','เครื่อง',2312149.53,0,'bb:dec:7.2.9'],
 ['bbgen500','genr','เครื่องกำเนิดไฟฟ้าดีเซล 500 kW (ราคามาตรฐาน ไม่รวมติดตั้ง)','เครื่อง',3457943.93,0,'bb:dec:7.2.10'],['bbsol1','sol','ระบบโซลาร์รูฟท็อป 1 เฟส 3 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',120560.75,0,'bb:dec:7.3.1'],
+// ราคาต่อ TR / kVA ที่ PENUM MEP ใช้ออกแบบ คำนวณจากราคาสำนักงบฯ ข้างบน (r 'bbc:<k>')
+['split-tr','eq','Split ติดผนัง/แขวน','TR',14019,1725,'bbc:split'],['gen-kva','elb','เครื่องกำเนิดไฟฟ้า','kVA',7159,400,'bbc:gen'],
 ['bbsol2','sol','ระบบโซลาร์รูฟท็อป 1 เฟส 5 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',175700.93,0,'bb:dec:7.3.2'],['bbsol3','sol','ระบบโซลาร์รูฟท็อป 3 เฟส 5 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',193457.94,0,'bb:dec:7.3.3'],
 ['bbsol4','sol','ระบบโซลาร์รูฟท็อป 3 เฟส 10 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',283177.57,0,'bb:dec:7.3.4'],['bbsol5','sol','ระบบโซลาร์รูฟท็อป 3 เฟส 15 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',388785.05,0,'bb:dec:7.3.5'],
 ['bbsol6','sol','ระบบโซลาร์รูฟท็อป 3 เฟส 20 kW (ราคามาตรฐาน รวมติดตั้ง)','ระบบ',442056.07,0,'bb:dec:7.3.6']
