@@ -42,16 +42,17 @@ const T={
   hand:['แก้เอง','Typed'],newItem:['รายการใหม่','New item'],by:['แก้โดย {0}','Edited by {0}'],ro:['ดูได้อย่างเดียว','Read only'],
   sk_demo:['ราคาสมมติ','Assumed'],sk_moc:['พาณิชย์','Commerce Ministry'],sk_po:['ซื้อจริง','Purchase'],sk_mep:['PENUM MEP','PENUM MEP'],sk_bim:['PENUM BIM','PENUM BIM'],sk_xls:['Excel','Excel'],
   sk_file:['ไฟล์','File'],sk_hand:['แก้เอง','Typed'],sk_sup:['ใบเสนอราคาผู้ขาย','Supplier quote'],sk_dealer:['ผู้แทนจำหน่าย','Dealer'],sk_bb:['สำนักงบประมาณ','Budget Bureau'],
-  sk_cgd:['กรมบัญชีกลาง','Comptroller General'],sk_est:['ประมาณการ','Estimate'],
+  sk_cgd:['กรมบัญชีกลาง','Comptroller General'],sk_est:['ประมาณการ','Estimate'],sk_offl:['ค่าแรง ว 480 · วัสดุประมาณการ','CGD labour · est. material'],
+  sk_gov:['ราคาทางการ สนค. + ว 480','Official: TPSO + CGD ว 480'],sk_offm:['ค่าวัสดุ สนค. · ค่าแรงประมาณการ','TPSO material · est. labour'],
   gov:['ราคากลางชุดเริ่มต้น','Starter reference prices'],govDone:['ราคากลางชุดเริ่มต้น: เพิ่ม {0} · อัปเดต {1} · ราคาที่มีอยู่แล้วไม่ทับ {2} รายการ','Starter prices: {0} added · {1} updated · {2} prices you already had kept'],
-  govTip:['ราคาประมาณการงานระบบ ต.ค. 2569 ตามรูปแบบราคาวัสดุกระทรวงพาณิชย์และค่าแรงกรมบัญชีกลาง ว 480 ยังไม่ใช่ตัวเลขทางการ ไม่ทับราคาที่มีอยู่แล้ว','Estimated MEP prices, Oct 2026, laid out like the Commerce Ministry material prices and CGD labour list ว 480; not the official numbers; never replaces a price you already have'],sk_egp:['e-GP','e-GP'],sk_shop:['ร้านออนไลน์','Online shop'],sk_td:['งานประมูล','Bid'],sk_qt:['ใบเสนอราคาของเรา','Our quotation']};
+  govTip:['ราคางานระบบ: ค่าวัสดุ 51 รายการจาก สนค. ส่วนกลาง ก.ย. 2569 ค่าแรง 120 รายการจากกรมบัญชีกลาง ว 480 (26 มิ.ย. 2569) แอร์ เครื่องกำเนิดไฟฟ้า และโซลาร์เซลล์ 51 รายการจากบัญชีราคามาตรฐานครุภัณฑ์ สำนักงบประมาณ ค่าวัสดุรายการอื่นยังเป็นประมาณการ ไม่ทับราคาที่มีอยู่แล้ว','MEP prices: material on 51 lines from TPSO Bangkok Sep 2026, labour on 120 lines from CGD ว 480 (26 Jun 2026); 51 air conditioners, generators and solar systems from the Budget Bureau standard prices; other material prices are estimates; never replaces a price you already have'],sk_egp:['e-GP','e-GP'],sk_shop:['ร้านออนไลน์','Online shop'],sk_td:['งานประมูล','Bid'],sk_qt:['ใบเสนอราคาของเรา','Our quotation']};
 const t=(k,...a)=>(T[k]?T[k][EN()?1:0]:k).replace(/\{(\d)\}/g,(m,i)=>a[i]);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const G={eq:['งานเครื่องปรับอากาศ','Air conditioning'],pipe:['งานท่อน้ำยาและท่อน้ำทิ้ง','Refrigerant & drain pipes'],duct:['งานท่อลมและอุปกรณ์','Ductwork'],chw:['งานระบบน้ำเย็น','Chilled water'],
   el:['งานไฟฟ้าระบบปรับอากาศ','A/C electrical'],smk:['งานระบบควบคุมควันไฟ','Smoke control'],fp:['งานระบบดับเพลิง','Fire protection'],elb:['งานระบบไฟฟ้าอาคาร','Building electrical'],
   fa:['งานระบบแจ้งเหตุเพลิงไหม้','Fire alarm'],com:['งานระบบสื่อสาร','Communication'],cctv:['งานระบบกล้องวงจรปิด (CCTV)','CCTV'],acc:['งานระบบควบคุมการเข้า-ออก','Access control'],pa:['งานระบบเสียงประกาศ','Public address'],bms:['งานระบบควบคุมอาคารอัตโนมัติ (BMS)','BMS'],lp:['งานระบบป้องกันฟ้าผ่าและสายดิน','Lightning protection & earthing'],genr:['งานเครื่องกำเนิดไฟฟ้าและ UPS','Generator & UPS'],sol:['งานระบบโซลาร์เซลล์','Solar PV'],wwt:['งานระบบบำบัดน้ำเสีย','Wastewater treatment'],mg:['งานระบบก๊าซทางการแพทย์','Medical gas'],plb:['งานระบบสุขาภิบาล','Plumbing'],civ:['งานโยธาที่เกี่ยวข้อง','Civil & building'],oth:['งานทดสอบและอื่นๆ','Testing & others'],mat:['วัสดุก่อสร้างทั่วไป','General materials']};
 const gName=g=>(G[g]||G.oth)[EN()?1:0];
-const SKC={demo:'warn',est:'warn',moc:'info',po:'ok',sup:'ok',dealer:'ok',bb:'info',cgd:'info',egp:'info'};
+const SKC={demo:'warn',est:'warn',offl:'info',offm:'info',gov:'ok',moc:'info',po:'ok',sup:'ok',dealer:'ok',bb:'info',cgd:'info',egp:'info'};
 
 // --- crypto and the company key: the same as shared/team.js (MEP and BIM load both; PM loads only this file) ---
 const te=new TextEncoder(),td=new TextDecoder();
@@ -128,12 +129,17 @@ function upsert(L,r0,opt,u,ix){const r=clean(r0);opt=opt||{};let x=r.id&&L.items
   if(F.every(f=>String(nx[f]??'')===String(x[f]??'')))return 'same';
   if(num(nx.m)!==num(x.m)||num(nx.l)!==num(x.l))hpush(x);
   Object.assign(x,nx,{u,by:opt.by||who()});return 'upd'}
-// sample and starter-set lines are only placeholders: any other price replaces them
-const SOFT=x=>x.sk==='demo'||x.sk==='est';
+// sample and starter-set lines are only placeholders: any other price replaces them (a 'gov' line is official on both halves, so it is not)
+const SOFT=x=>x.sk==='demo'||x.sk==='est'||x.sk==='offl'||x.sk==='offm';
 // ราคากลางชุดเริ่มต้น (shared/gov-prices.js): fills new, sample and starter lines; a line with a price of the company's own stays as it is
 function govRows(){const S=window.PENUM_GOV_PRICES;if(!S||!Array.isArray(S.rows))return [];const L=EN()?1:0;
-  return S.rows.map(([k,g,name,unit,m,l,r])=>({key:'gov:'+k,g,name,unit,m,l,date:S.date,src:S.name[L]+' · '+((S.ref[r]||S.ref.m)[L])}))}
-function gov(){const R=govRows();if(!R.length||off())return null;const go=[],kept=[];R.forEach(r=>{const x=find(r);(!x||SOFT(x)?go:kept).push(r)});
+  // r an item of ว 480: the labour is the official rate (sk 'offl'), the material still an estimate; r 'bb:<list>:<item>' a Budget Bureau price (sk 'bb');
+  // mo [code, note]: the material is the สนค. price (sk 'gov' with ว 480 labour, 'offm' with estimated labour)
+  return S.rows.map(([k,g,name,unit,m,l,r,mo])=>{const w=/^\d/.test(r)&&S.ref.w,b=/^bb:/.test(r)&&S.bb&&S.bb[r.split(':')[1]],c=mo&&S.moc;
+    if(b)return {key:'gov:'+k,g,name,unit,m,l,date:b.date,sk:'bb',src:b.name[L].replace('{0}',r.split(':')[2])};
+    if(c)return {key:'gov:'+k,g,name,unit,m,l,date:c.date,sk:w?'gov':'offm',src:c.name[L].replace('{0}',mo[0]).replace('{1}',mo[1])+' · '+(w?c.wl[L].replace('{0}',r):c.el[L])};
+    return {key:'gov:'+k,g,name,unit,m,l,date:S.date,sk:w?'offl':'est',src:S.name[L]+' · '+(w?w[L].replace('{0}',r).replace('{1}',S.ref[g==='eq'?'wb':'wm'][L]):(S.ref[r]||S.ref.m)[L])}})}
+function gov(){const R=govRows();if(!R.length||off())return null;const go=[],kept=[];R.forEach(r=>{const x=find(r);(!x||SOFT(x)||x.key===r.key&&x.sk===r.sk&&x.src===r.src?go:kept).push(r)});
   const r=put(go,{sk:'est'});r.kept=kept.length;return r}
 function put(rows,opt){if(off())return {add:0,upd:0,same:0,skip:0};const o=rd(),L=lib(o),u=Date.now(),ix=new Map(L.items.map(i=>[ident(i),i])),R={add:0,upd:0,same:0,skip:0};
   (rows||[]).forEach(r=>{R[upsert(L,r,opt,u,ix)]++});if(R.add||R.upd){L.at=u;wr(o);changed('here')}R.u=u;return R}
