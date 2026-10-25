@@ -40,8 +40,8 @@ ACT.qoInsH=b=>{const Q=qoQ(b);if(!Q)return;const g=b.dataset.g,h=b.dataset.h,x=q
 // + หัวข้อย่อย on a section row: the row appears at once, its name selected to type over
 ACT.qhNew=b=>{const Q=qoQ(b);if(!Q)return;const g=b.dataset.g,h=qoName(Q,g);qhSubs(Q,g,[...qhList(Q,g),h]);S.sel.qlG=g;S.sel.qlH=h;save();render();qoHead(h);
   toast('พิมพ์ชื่อหัวข้อย่อยทับได้เลย แล้วกด “＋ รายการ” หรือกด ⇥ ที่รายการที่จะให้อยู่ใต้หัวข้อนี้')};
-// the two header rows (982) both stick: the second sits under the first
-{const r=render;render=function(){const x=r.apply(this,arguments);requestAnimationFrame(()=>document.querySelectorAll('.ql-t').forEach(t=>{const a=t.querySelector('tr.qh1 th.qg'),h=a?a.offsetHeight:0;t.querySelectorAll('tr.qh2 th').forEach(th=>th.style.top=h+'px')}));return x}}
+// the header rows (982, 932) all stick: the second under the first, the ทั้งใบ row (4.55) under the second
+{const r=render;render=function(){const x=r.apply(this,arguments);requestAnimationFrame(()=>document.querySelectorAll('.ql-t').forEach(t=>{const a=t.querySelector('tr.qh1 th.qg'),h=a?a.offsetHeight:0;t.querySelectorAll('tr.qh2 th').forEach(th=>th.style.top=h+'px');const b2=t.querySelector('tr.qh2 th'),h2=h+(b2?b2.offsetHeight:0);t.querySelectorAll('tr.qh3 th').forEach(th=>th.style.top=h2+'px')}));return x}}
 document.head.insertAdjacentHTML('beforeend',`<style>.ql-t .qo-b{display:inline-block;width:60px;text-align:center;line-height:1.1;white-space:normal}.ql-t .qo-b .x{padding:1px 3px;min-width:0}.ql-t .qo-b .x[disabled]{opacity:.25}.ql-t thead th{vertical-align:bottom}.ql-t thead tr.qh1 th.qg{text-align:center;border-bottom:1px solid var(--line);padding-bottom:3px}.ql-t thead tr.qh2 th{padding-top:3px}
 .ql-t td input:not([type=checkbox]),.ql-t td select,.ql-t tr.qms input{background:var(--sunk);border:1px solid transparent;border-radius:8px;padding:5px 8px;box-shadow:none;color:var(--ink)}
 .ql-t td input:not([type=checkbox]):hover,.ql-t td select:hover{border-color:var(--line)}.ql-t td input:not([type=checkbox]):focus,.ql-t td select:focus,.ql-t tr.qms input:focus{border-color:var(--accent,#1C8F9B);background:var(--surface);outline:none}
