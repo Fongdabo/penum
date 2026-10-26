@@ -25,7 +25,7 @@ NEW.quotes=arr=>({no:nextNo('QT-',arr),date:today(),cust:'',title:'',site:'',val
 // labour of a line; a blank one takes Q.mk, so a quote without them prices as before
 const qMkOn=Q=>['mkE','mkM','mkL'].some(k=>Q[k]!==''&&Q[k]!=null);
 const qMkP=(Q,k)=>{const v=Q['mk'+k];return v===''||v==null?n(Q.mk):n(v)};
-const qMkTxt=(Q,EN)=>!qMkOn(Q)?fmt(n(Q.mk),2)+'%':(EN?['equipment','material','labour']:['เครื่อง','ของ','แรง']).map((w,j)=>w+' '+fmtq(qMkP(Q,'EML'[j]))+'%').join(EN?', ':' ');
+const qMkTxt=(Q,EN)=>(!qMkOn(Q)?fmt(n(Q.mk),2)+'%':(EN?['equipment','material','labour']:['เครื่อง','ของ','แรง']).map((w,j)=>w+' '+fmtq(qMkP(Q,'EML'[j]))+'%').join(EN?', ':' '))+(Q&&Q.mkDiv?(EN?' (margin on price)':' (แบบหาร)'):'');
 // 4.34 the selling price per unit of each part rounded up (user: "จำนวนเงินปัดขึ้นเป็นจำนวนเต็ม ดีไหม"): Q.rnd 1 / 10 / 100 baht,
 // blank = not rounded (quotes before 4.34). Material and labour are rounded apart, so the line's price is their sum; a typed price stays.
 // 4.36 a draft that never chose (made before 4.34) rounds to whole baht too; quotes already sent keep their prices (919 stores it)
@@ -35,8 +35,10 @@ const qRnd=(Q,v)=>{const r=qRndS(Q);return r>0&&v>0?Math.ceil(v/r-1e-6)*r:v};
 // 4.48 a line's own markup (i.mkM on its material or equipment, i.mkL on its labour) wins over the quote's (user: "บวกกำไรทำแบบนี้ดีกว่าไหม")
 const qLnMk=i=>['mkM','mkL'].some(k=>i[k]!==''&&i[k]!=null);
 const qMkI=(Q,i,k,eq)=>{const v=i[k==='L'?'mkL':'mkM'];if(v!==''&&v!=null)return n(v);return qMkOn(Q)?qMkP(Q,k==='L'?'L':eq?'E':'M'):n(Q.mk)};
-const qParts0=(Q,i)=>{const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;if(m+l<=0){const v=i.mkM;return {mu:u*(1+(v!==''&&v!=null?n(v):n(Q.mk))/100),lu:0}}const k=u/(m+l);
-  const eq=typeof qmIsEq==='function'&&qmIsEq(i);return {mu:k*m*(1+qMkI(Q,i,'M',eq)/100),lu:k*l*(1+qMkI(Q,i,'L',eq)/100)}};
+// 4.78 Q.mkDiv: the % is the profit on the selling price, price = cost ÷ (1 − %) (951-quote-margin-divide.js); otherwise cost × (1 + %)
+const qMkA=(Q,v,p)=>Q&&Q.mkDiv&&p<100?v*100/(100-p):v*(1+p/100);
+const qParts0=(Q,i)=>{const q=n(i.q)||1e-9,m=n(i.m),l=n(i.l),u=n(i.t)/q;if(m+l<=0){const v=i.mkM;return {mu:qMkA(Q,u,v!==''&&v!=null?n(v):n(Q.mk)),lu:0}}const k=u/(m+l);
+  const eq=typeof qmIsEq==='function'&&qmIsEq(i);return {mu:qMkA(Q,k*m,qMkI(Q,i,'M',eq)),lu:qMkA(Q,k*l,qMkI(Q,i,'L',eq))}};
 const qUnit=(Q,i)=>{if(i.sp!==''&&i.sp!=null&&n(i.sp)>0)return n(i.sp);const p=qParts0(Q,i);return qRnd(Q,p.mu)+qRnd(Q,p.lu)};
 // rows added under the total (SAFETY & CLEANING, OVERHEAD & PROFIT…): each a % of the printed total or a fixed amount
 const qAddV=(a,base)=>n(a.pct)?base*n(a.pct)/100:n(a.amt);
