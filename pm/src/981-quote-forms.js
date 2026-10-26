@@ -112,6 +112,7 @@ const QM_CSS=`<style>
 #print .qm-tm .row2{display:grid;grid-template-columns:110px 1fr;gap:6px}
 #print .qm-tm .row2>span{color:var(--qg)}
 #print .qm-tm ol{margin:0;padding-left:16px}
+#print .qm-ntw{margin:-4px 0 10px;break-inside:avoid}
 #print .qm-tm table.pay{width:100%;border-collapse:collapse;font-size:10px}
 #print .qm-tm table.pay td,#print .qm-tm table.pay th{border:0;border-bottom:1px solid #E6EEF0;padding:2px 4px;background:none;font-weight:400;text-align:left}
 #print .qm-tm table.pay th{color:var(--qg);font-size:9px}
@@ -278,8 +279,10 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
     ${r2(t('ยืนราคา','Validity'),n(Q.valid)?(EN?`${n(Q.valid)} days from the quotation date`:`${n(Q.valid)} วันนับจากวันที่เสนอราคา`):'')}
     ${ma?'':r2(t('กำหนดแล้วเสร็จ','Completion'),esc(Q.dlv||''))}
     ${PE?payT(Q.qpayE,qCalc(PE[0]).grand,t('การชำระเงิน ค่าเครื่อง','Payment: equipment',1))+payT(pay,qCalc(PE[1]).grand,t('การชำระเงิน ค่าติดตั้ง','Payment: installation',1)):payT(pay,c.grand,t('การชำระเงิน','Payment',1))}
-    ${notes.length?`<div><span style="color:var(--qg)">${t('หมายเหตุ','Notes',1)}</span><ol>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:''}</div>`;
-  const foot=`<div class="qm-ft">${terms}<div>${totals}${wht}${words}</div></div>`;
+    </div>`;
+  // 4.84 the notes under the terms and totals, the full width of the page (user: "5กับ6 ทำข้อความยาวเลยได้ไหม", "พื้นที่ยังพอเหลือ")
+  const ntw=notes.length?`<div class="qm-tm qm-ntw"><span style="color:var(--qg)">${t('หมายเหตุ','Notes',1)}</span><ol>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:'';
+  const foot=`<div class="qm-ft">${terms}<div>${totals}${wht}${words}</div></div>${ntw}`;
   // ---- signatures: empty div.ln is where an e-signature goes
   const blank=EN?'Date ........ / ........ / ........':'วันที่ ........ / ........ / ........';
   const sgBox=(h,q,who,cl)=>`<div${cl?` class="${cl}"`:''}><h4>${h}</h4>${q?`<div class="q">${q}</div>`:''}<div class="sp"></div><div class="ln"></div><div class="who">${who}</div><div class="dt">${blank}</div></div>`;
