@@ -96,13 +96,18 @@ function qvfShow(Q,F){const T=qvfTable(Q,F,true,QVF_IN);
     <button type="button" class="btn sm" data-a="qvfIn" data-id="${Q.id}|${F.id}" style="margin-left:8px">${QVF_IN?'ซ่อนราคาทุน':'แสดงราคาทุนและราคาทางการ'}</button></p>${T.sum}${T.ins}<div class="tw qvf-w">${T.rows}</div></div>`,
     qvfPrBtns(Q,F));const d=$('#dlg');if(d){d.classList.add('dlg-wide','qvf-dlg');d.addEventListener('close',()=>d.classList.remove('dlg-wide','qvf-dlg'),{once:true})}}
 // ---- the old file comes in through the import dialog
-ACT.qvfAdd=b=>{ACT.impFile({dataset:{t:'qv',id:b.dataset.id}});const g=$('#impGoBtn');if(g)g.textContent='เทียบกับใบนี้';
-  const p=document.querySelector('#dlg .hint');if(p)p.insertAdjacentHTML('afterend','<p class="hint">เลือกไฟล์ BOQ หรือใบเสนอราคาฉบับเก่า (เช่น R1) ระบบจะเทียบทีละรายการกับใบนี้ ใบนี้ไม่ถูกแก้ ตรวจว่าคอลัมน์ราคาเป็นราคาขายที่ลูกค้าเห็น</p>')};
+// 4.80 data-to = a saved file: the new file's lines join it (R1 sent as one file per system: ประปา, ดับเพลิง)
+ACT.qvfAdd=b=>{const to=b.dataset.to||'',x=to&&qvfGet(b.dataset.id+'|'+to);ACT.impFile({dataset:{t:'qv',id:b.dataset.id}});if(x)IMP.to=to;
+  const g=$('#impGoBtn');if(g)g.textContent=x?'รวมเข้าใบเทียบ':'เทียบกับใบนี้';
+  const p=document.querySelector('#dlg .hint');if(p)p.insertAdjacentHTML('afterend',x?`<p class="hint">เลือกไฟล์ที่จะรวมเข้ากับ “${esc(x.F.nm)}” เช่น BOQ ฉบับเดียวกันของอีกระบบ รายการทั้งสองไฟล์จะเทียบกับใบนี้รวมกัน</p>`:
+    '<p class="hint">เลือกไฟล์ BOQ หรือใบเสนอราคาฉบับเก่า (เช่น R1) ระบบจะเทียบทีละรายการกับใบนี้ ใบนี้ไม่ถูกแก้ ตรวจว่าคอลัมน์ราคาเป็นราคาขายที่ลูกค้าเห็น ถ้าฉบับเก่าแยกเป็นหลายไฟล์ เลือกไฟล์แรกก่อน แล้วกด “+ รวมไฟล์” ที่ชื่อไฟล์นั้น</p>')};
 {const f=impTarget;impTarget=function(){if(IMP.t==='qv'){const Q=CO().quotes.find(x=>x.id===IMP.id);return Q&&{has:0,o:Q}}return f.apply(this,arguments)}}
 {const f=ACT.impGo;ACT.impGo=function(b){if(IMP.t!=='qv')return f.apply(this,arguments);const Q=CO().quotes.find(x=>x.id===IMP.id);if(!Q)return;
   const L=(IMP.rows||[]).filter(r=>r.on&&impTxt(r.desc)).map(r=>({g:impTxt(r.g),head:impTxt(r.head),desc:impTxt(r.desc),unit:impTxt(r.unit),q:n(r.q),m:n(r.m),l:n(r.l)}));
   if(!L.length){toast('ไม่มีรายการที่เลือกไว้');return}const E=IMP.ex||{};
-  const F={id:uid(),nm:String(IMP.name||'ไฟล์เดิม').replace(/\.[a-z0-9]+$/i,''),at:new Date().toISOString(),items:L,ex:{extra:Math.round(n(E.extra)*100)/100,disc:Math.round(n(E.disc)*100)/100}};
+  const nm=String(IMP.name||'ไฟล์เดิม').replace(/\.[a-z0-9]+$/i,''),ex={extra:Math.round(n(E.extra)*100)/100,disc:Math.round(n(E.disc)*100)/100},F0=IMP.to&&(Q.vf||[]).find(f=>f.id===IMP.to);
+  if(F0){F0.items.push(...L);F0.nm+=' + '+nm;const r2=v=>Math.round(v*100)/100;F0.ex={extra:r2(n((F0.ex||{}).extra)+ex.extra),disc:r2(n((F0.ex||{}).disc)+ex.disc)};save();render();qvfShow(Q,F0);toast(`รวม ${L.length} รายการจาก “${nm}” เข้าใบเทียบแล้ว`);return}
+  const F={id:uid(),nm,at:new Date().toISOString(),items:L,ex};
   Q.vf=[...(Q.vf||[]),F].slice(-QVF_MAX);save();render();qvfShow(Q,F)}}
 ACT.qvfIn=b=>{QVF_IN=QVF_IN?0:1;const x=qvfGet(b.dataset.id);if(x)qvfShow(x.Q,x.F)};
 // the พิมพ์ button by a saved file asks which copy
@@ -113,13 +118,14 @@ ACT.qvfDel=b=>{const x=qvfGet(b.dataset.id);if(!x||!confirm(`ลบไฟล์�
 // ---- on the quote page, inside the Rev. card (923)
 {const f=qrvCard;qrvCard=function(Q){const h=f.apply(this,arguments);if(!h||!Q)return h;const V=Q.vf||[];
   const box=`<div class="qvf-c"><b>เทียบกับไฟล์ฉบับเก่า</b> <small class="muted">เช่น BOQ R1 ที่ส่งลูกค้าไปแล้ว ดูว่าอะไรเพิ่ม ตัด หรือเปลี่ยน แล้วพิมพ์ให้ลูกค้าเช็คได้</small>
-    ${V.map(F=>`<span class="qvf-f"><button type="button" class="btn sm" data-a="qvfOpen" data-id="${Q.id}|${F.id}">${esc(F.nm)}</button><button type="button" class="btn sm" data-a="qvfPr" data-id="${Q.id}|${F.id}" title="พิมพ์ตารางเทียบ ฉบับลูกค้าหรือฉบับภายใน">พิมพ์…</button><button type="button" class="x" data-a="qvfDel" data-id="${Q.id}|${F.id}" title="ลบไฟล์เทียบนี้" aria-label="ลบไฟล์เทียบนี้">✕</button></span>`).join('')}
+    ${V.map(F=>`<span class="qvf-f"><button type="button" class="btn sm" data-a="qvfOpen" data-id="${Q.id}|${F.id}">${esc(F.nm)}</button><button type="button" class="btn sm" data-a="qvfPr" data-id="${Q.id}|${F.id}" title="พิมพ์ตารางเทียบ ฉบับลูกค้าหรือฉบับภายใน">พิมพ์…</button><button type="button" class="btn sm" data-a="qvfAdd" data-id="${Q.id}" data-to="${F.id}" title="รวมไฟล์ฉบับเก่าอีกไฟล์ (เช่น อีกระบบ) เข้าใบเทียบนี้">+ รวมไฟล์</button><button type="button" class="x" data-a="qvfDel" data-id="${Q.id}|${F.id}" title="ลบไฟล์เทียบนี้" aria-label="ลบไฟล์เทียบนี้">✕</button></span>`).join('')}
     <button type="button" class="btn sm pri" data-a="qvfAdd" data-id="${Q.id}">${V.length?'+ ไฟล์อื่น':'เลือกไฟล์ฉบับเก่า…'}</button></div>`;
   const k=h.lastIndexOf('</section>');return k<0?h:h.slice(0,k)+box+h.slice(k)}}
 document.head.insertAdjacentHTML('beforeend',`<style>${QVF_CSS}.qvf{min-width:min(1100px,90vw)}#dlg.qvf-dlg{width:min(1440px,97vw)}.qvf-w{max-height:58vh;overflow:auto}.qvf-c{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line,#cfd8dc)}
 .qvf-f{display:inline-flex;gap:3px;align-items:center}.qvf-t thead th{position:sticky;top:0}.qvf-t thead tr+tr th{top:25px}</style>`);
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'เทียบกับไฟล์ฉบับเก่า':'Compare with an older file','เลือกไฟล์ฉบับเก่า…':'Choose the older file…','+ ไฟล์อื่น':'+ Another file','พิมพ์ให้ลูกค้า':'Print for the customer',
   'เทียบกับใบนี้':'Compare with this quote','เพิ่มใหม่':'Added','ตัดออก':'Removed','เพิ่มปริมาณ':'More','ลดปริมาณ':'Less','ราคาเปลี่ยน':'Price changed','เท่าเดิม':'Same','ต่างกัน':'Difference','สถานะ':'Status','เดิม':'Old','ใหม่':'New','ต่าง':'Change','รวมรายการ':'Lines total','ยอดก่อน VAT':'Before VAT','รวม VAT 7%':'With VAT 7%',
+  'รวมเข้าใบเทียบ':'Add to this comparison','+ รวมไฟล์':'+ Add a file',
   'พิมพ์ฉบับภายใน':'Print internal copy','ซ่อนราคาทุน':'Hide costs','แสดงราคาทุนและราคาทางการ':'Show costs and official prices','พิมพ์ใบเทียบฉบับไหน':'Which copy to print',
   'ราคาทุน/หน่วย (ภายใน)':'Cost per unit (internal)','ใบนี้':'This quote','คลังราคากลาง':'Price library','ราคาทางการ':'Official price','ต่างจากทางการ':'vs official','ไม่มีในคลัง':'Not in library',
   'ฉบับภายใน มีราคาทุน ห้ามส่งให้ลูกค้า':'Internal copy with costs: do not send to the customer'});
