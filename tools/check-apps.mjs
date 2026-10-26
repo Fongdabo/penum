@@ -8,7 +8,7 @@
 //  - the apps its header buttons open in their own window (app.json "opens") still have those buttons
 //  - the feedback box copy matches shared/feedback.js (run node tools/sync-feedback.mjs after editing it)
 //  - for an app with "licence" (MEP, BIM): the storage keys it names are still in the source, so the check still guards the work
-// And once: shared/licence.js, shared/link.js, shared/files.js, shared/team.js, shared/titlebar.js, shared/prices.js and shared/gov-prices.js parse, and licence.js, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
+// And once: shared/licence.js, shared/link.js, shared/live.js, shared/files.js, shared/team.js, shared/titlebar.js, shared/prices.js and shared/gov-prices.js parse, and licence.js, PENUM PM and ORIEN ฝ่ายขาย hold the same public key for the licence codes.
 // For an app split into files (<app>/src, PENUM PM) also:
 //  - every file is named NNN-what.html|css|js, is not empty and ends with a line break
 //  - every .js file parses on its own, so an error names the file and line
@@ -77,6 +77,7 @@ try { new Script(LICJS, { filename: 'shared/licence.js' }); } catch (e) { errors
 try { new Script(readFileSync(join(root, 'shared', 'link.js'), 'utf8'), { filename: 'shared/link.js' }); } catch (e) { errors.push(`shared/link.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'files.js'), 'utf8'), { filename: 'shared/files.js' }); } catch (e) { errors.push(`shared/files.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'team.js'), 'utf8'), { filename: 'shared/team.js' }); } catch (e) { errors.push(`shared/team.js:${errLine(e)} does not parse: ${e.message}`); }
+try { new Script(readFileSync(join(root, 'shared', 'live.js'), 'utf8'), { filename: 'shared/live.js' }); } catch (e) { errors.push(`shared/live.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'titlebar.js'), 'utf8'), { filename: 'shared/titlebar.js' }); } catch (e) { errors.push(`shared/titlebar.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'prices.js'), 'utf8'), { filename: 'shared/prices.js' }); } catch (e) { errors.push(`shared/prices.js:${errLine(e)} does not parse: ${e.message}`); }
 try { new Script(readFileSync(join(root, 'shared', 'gov-prices.js'), 'utf8'), { filename: 'shared/gov-prices.js' }); } catch (e) { errors.push(`shared/gov-prices.js:${errLine(e)} does not parse: ${e.message}`); }

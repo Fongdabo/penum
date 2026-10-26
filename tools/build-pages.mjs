@@ -24,7 +24,8 @@ const UPD = readFileSync(join(SHARED, 'update.js'), 'utf8').replaceAll('</script
 // รหัสเปิดใช้งาน: apps with "licence" in app.json (MEP, BIM) carry shared/licence.js in <head>, before the app, with their own settings
 const LIC = readFileSync(join(SHARED, 'licence.js'), 'utf8').replaceAll('</script', '<\\/script');
 // รหัสเชื่อมโครงการ: apps with "cloud": true in app.json (MEP, PM, BIM) carry shared/link.js in <head>, to pass a project's data across computers
-const LINK = readFileSync(join(SHARED, 'link.js'), 'utf8').replaceAll('</script', '<\\/script');
+// รับงานสด (shared/live.js) rides along with it: projects sent into the program while the customer watches
+const LINK = (readFileSync(join(SHARED, 'link.js'), 'utf8') + '\n' + readFileSync(join(SHARED, 'live.js'), 'utf8')).replaceAll('</script', '<\\/script');
 // โครงการของบริษัท: apps with "team": true in app.json (MEP, BIM) carry shared/team.js in <head>, the company's shared project list
 const TEAM = readFileSync(join(SHARED, 'team.js'), 'utf8').replaceAll('</script', '<\\/script');
 // คลังราคากลาง: apps with "prices": true in app.json (PM, MEP, BIM) carry shared/prices.js in <head>, the company's one price list
