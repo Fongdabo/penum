@@ -56,6 +56,7 @@ const QM_CSS=`<style>
 #print .qm-m div:first-child b{color:var(--qn);font-size:12px}
 #print .qm-m span{color:var(--qg)}
 #print .qm-m b{font-weight:600;word-break:break-word}
+#print .qm-m b .qm-em{word-break:normal;overflow-wrap:normal;font-size:.95em}
 #print .qm-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 7px}
 #print .qm-c{border:1px solid var(--ql);border-radius:12px;padding:4px 10px 5px;font-size:10px;line-height:1.3;break-inside:avoid}
 #print .qm-c h3,#print .qm-tm h3,#print .qm-sc h3{display:flex;align-items:center;gap:6px;margin:0 0 4px;font-size:11px;color:var(--qt);font-weight:700;letter-spacing:.02em}
@@ -208,7 +209,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const sub=ma?[Q.title,cuN].filter(Boolean).join(' · '):[Q.title,Q.pname].filter(Boolean).join(' · ');
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),
-    ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact',1),esc([st.phone,st.email].filter(Boolean).join(' · '))]]:[])];
+    ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone?[[t('ติดต่อ','Contact',1),esc(st.phone)]]:[]),...(st.email?[[t('อีเมล','Email',1),`<span class="qm-em">${esc(st.email).replace('@','@<wbr>')}</span>`]]:[])];
   const head=co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${ma?'MAINTENANCE SERVICE QUOTATION':'QUOTATION'}</small>`}<h1>${ma?(EN?'Service Quotation':'ใบเสนอราคาบริการ'):(EN?'Quotation':'ใบเสนอราคา')}${Q._part&&!Q._solo?`<span class="pt">${Q._part==='eq'?tx('ค่าเครื่อง (สินค้า)','Equipment (goods)'):tx('ค่าติดตั้ง วัสดุ และค่าแรง','Installation, material &amp; labour')}</span>`:''}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
     <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`;
   const kv=(k,v,cl)=>v?`<div><span>${k}</span><b${cl?` class="${cl}"`:''}>${v}</b></div>`:'';
