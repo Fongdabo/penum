@@ -142,8 +142,10 @@ function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const
   return out.filter(i=>!S.includes(i)).map(i=>i.sys&&i.sec?{...i,g:i.sys,head:[i.sec,i.head].filter(Boolean).join(' · '),desc:/^\d+\.\d+$/.test(i.no)?i.no+' '+i.desc:i.desc}:i)}
 // below-the-line rows anywhere in the file (often on the summary page): overhead/profit, discount, and the totals to check against
 // overhead / discount count only below a TOTAL line: a side box ("OVERHEAD & PROJECT MANAGEMENT  1,105,683") above the table is not one
-function impExtras(sheets,lines){const ex={},dc={},tot=new Set();Object.values(sheets||{}).forEach(rows=>{let below=false;rows.forEach((r,i)=>{const lab=impTxt(r.find(c=>impTxt(c)&&!impIsNum(c))),nums=r.filter(impIsNum).map(impNum).filter(v=>v>0);
-    if(!lab)return;if(/^(total|รวม|มูลค่ารวม|toltal|sum\b)/i.test(lab))below=true;if(IMPEXTRA.test(lab)&&nums.length){if(below)ex[lab]=nums[nums.length-1]}else if(IMPDISC.test(lab)&&nums.length){if(below)dc[lab]=nums[nums.length-1]}
+function impExtras(sheets,lines){const ex={},dc={},tot=new Set();Object.values(sheets||{}).forEach(rows=>{let below=false;rows.forEach((r,i)=>{const li=r.findIndex(c=>impTxt(c)&&!impIsNum(c)),lab=impTxt(r[li]),nums=r.filter(impIsNum).map(impNum).filter(v=>v>0),
+      // an amount sits right of its label; a number left of it is the line's item number ("4 | ค่าขนส่ง" is a heading, not 4 baht)
+      amt=r.slice(li+1).filter(impIsNum).map(impNum).filter(v=>v>0);
+    if(!lab)return;if(/^(total|รวม|มูลค่ารวม|toltal|sum\b)/i.test(lab))below=true;if(IMPEXTRA.test(lab)&&amt.length){if(below)ex[lab]=amt[amt.length-1]}else if(IMPDISC.test(lab)&&amt.length){if(below)dc[lab]=amt[amt.length-1]}
     else if(/^(รวม|ยอดรวม|มูลค่ารวม|toltal|total|sub ?total|sum\b|รวมเป็นเงิน|รวมทั้งหมด)/i.test(lab)&&!/vat|ภาษี/i.test(lab)){const N=nums.length?nums:(rows[i+1]||[]).every(c=>!impTxt(c)||impIsNum(c))?(rows[i+1]||[]).filter(impIsNum).map(impNum):[];N.forEach(v=>tot.add(Math.round(v*100)/100))}})});
   return {extra:Object.values(ex).reduce((a,b)=>a+b,0),disc:Object.values(dc).reduce((a,b)=>a+b,0),labs:[...Object.keys(ex),...Object.keys(dc)],rows:Object.entries(ex),tot:[...tot],...impPay(lines?{...sheets,'':lines.map(l=>[l])}:sheets)}}
 // payment terms ("10% Down Payment With PO", "20% เมื่อ…") and the validity days, wherever they sit in the file
@@ -153,14 +155,16 @@ function impPay(sheets){let pay=[],valid=0;Object.values(sheets||{}).forEach(row
     for(let k=i;k<Math.min(rows.length,i+15);k++){const x=impTxt(rows[k].join(' ')),m=(k===i?x.match(/(\d{1,3}(?:\.\d+)?)\s*%\s*(.+)$/):x.match(/^(\d{1,3}(?:\.\d+)?)\s*%\s*(.+)$/));if(!m){if(L.length)break;continue}L.push({pct:+m[1],desc:m[2].slice(0,120)})}
     if(L.length&&Math.abs(L.reduce((a,b)=>a+b.pct,0)-100)<0.01)pay=L})});return {pay,valid}}
 // the letter part of the file: subject, project, addressee, delivery, remarks and who signs ("(นายอาทิตย์ บับภาสิทธิ์)" / กรรมการผู้จัดการ)
-function impMeta(lines){const M={},L=(lines||[]).map(impTxt).filter(Boolean),val=(re,t)=>{const m=t.match(re);return m?impTxt(m[1]).replace(/\s{2,}.*$/,''):''};
+function impMeta(lines){const M={},
+    // cells of a row are joined by two spaces: keep that gap (impTxt would close it) so a value stops at the next cell ("เรื่อง : งาน…  เลขที่เอกสาร : …")
+    L=(lines||[]).map(t=>String(t??'').split(/\s{2,}/).map(impTxt).filter(Boolean).join('  ')).filter(Boolean),val=(re,t)=>{const m=t.match(re);return m?impTxt(m[1].replace(/\s{2,}.*$/,'')):''};
   L.forEach((t,i)=>{const set=(k,v)=>{if(v&&v!=='-'&&!M[k])M[k]=v.slice(0,160)};
     set('ref',val(/^ref\s*\.?\s*:\s*(.+)/i,t));set('title',val(/^เรื่?อง\s*:\s*(.+)/,t).replace(/^(เสนอราคา|ขอเสนอราคา)\s*/,''));
     set('pname',val(/^โครงการ\s*:?\s+(.+)/,t));set('attn',val(/^เรียน\s*:?\s*(.+)/,t));set('site',val(/^(?:ที่อยู่|สถานที่)\s*:\s*(.+)/,t));
     set('dlv',val(/^(?:กำหนดแล้วเสร็จ|กำหนดส่งมอบ|ระยะเวลาดำเนินการ|delivery)[^:]*?:?\s+(.+)/i,t));
     if(/^\((นาย|นาง|นางสาว|น\.ส\.|mr\.?|ms\.?|mrs\.?)\s*[^)]+\)$/i.test(t)&&!M.sign){M.sign=t.slice(1,-1).trim();if(L[i+1]&&L[i+1].length<40&&!/^\(/.test(L[i+1]))M.signPos=L[i+1]}
     if(!M.notes&&/^(หมายเหตุ|remark|note)/i.test(t)){const N=[],first=t.replace(/^(หมายเหตุ|remarks?|note)\s*[/:]*\s*(not\w*\s*)?/i,'').trim();if(/^[-•]/.test(first))N.push(first);
-      for(let k=i+1;k<Math.min(L.length,i+12);k++){if(/^[-•]/.test(L[k]))N.push(L[k]);else if(N.length)break}if(N.length)M.notes=N.map(x=>x.replace(/^[-•]\s*/,'- '))}});
+      for(let k=i+1;k<Math.min(L.length,i+12);k++){if(/^[-•]/.test(L[k]))N.push(L[k]);else if(N.length)break}if(N.length)M.notes=N.map(x=>impTxt(x).replace(/^[-•]\s*/,'- '))}});
   M.letter=L.some(t=>/ขอแสดงความนับถือ|จึงเรียนมาเพื่อ/.test(t));return M}
 const IMPMETA=[['title','เรื่อง'],['pname','โครงการ'],['attn','เรียน'],['site','ที่อยู่'],['ref','Ref'],['dlv','กำหนดแล้วเสร็จ'],['sign','ผู้ลงนาม']];
 // ---- the dialog ----
@@ -228,6 +232,9 @@ ACT.impGo=()=>{const tg=impTarget();if(!tg)return;const add=($('#impMode')||{}).
   if(!L.length){toast('ไม่มีรายการที่เลือกไว้');return}
   const E=IMP.ex||{},useEx=!!($('#impEx')||{}).checked,S0=sum(L,i=>i.t);
   if(IMP.t==='q'){const Q=tg.o,old=add?Q.items:[];qFill(Q,[...old,...L],{src});if(add)Q.items.splice(0,old.length,...old);
+    // a priced BOQ file has its own hanger lines (or none on purpose): no automatic 5% Hanger Support line (982) on its sections,
+    // or the quote ends up above the file's total; the tick on the section row still adds it
+    Q.noHs=Q.noHs||{};L.forEach(i=>{Q.noHs[i.g]=1});
     // each overhead row stays its own named row under the total, as a % when the file's amount is a whole % of it
     if(useEx&&S0){Q.mk=0;Q.mkSep=false;Q.adds=(E.rows||[]).map(([name,v])=>{const pc=Math.round(v/S0*1e4)/100;return Math.abs(S0*pc/100-v)<0.01?{id:uid(),name,pct:pc,amt:''}:{id:uid(),name,pct:'',amt:v}});Q.disc=Math.round(n(E.disc)*100)/100}
     if(($('#impPayOn')||{}).checked&&E.pay&&E.pay.length){qEnsure(Q).qpay=E.pay.map((x,k)=>({id:uid(),no:String(k+1),desc:x.desc,pct:x.pct}));if(E.valid)Q.valid=E.valid}
