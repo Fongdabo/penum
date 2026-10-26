@@ -1,6 +1,7 @@
 // รับงานสด: send projects into a customer's open program (shared/live.js), from a file of that program.
 //   node tools/live-send.mjs <code> <file> [--app pm|mep|bim] [--only <project id>]
-// A PM file may also carry quotes:[…] of those projects (q.pj = the project id); they go into the company's quotes.
+// A PM file may also carry quotes:[…] and tenders:[…] of those projects (q.pj / t.pj = the project id); they go into the
+// company's quotes and bids (ทำราคาประมูล, ปร.4 / ปร.5).
 // <code> is the รหัสรับงานสด the customer's program shows (เมนู › รับงานสด…). <file> is a .penpm (PM; its photos go too),
 // or for MEP/BIM a JSON {projects:{id:{name,data}}}. The customer says yes to each project once in their program.
 import { readFileSync } from 'node:fs';
@@ -25,6 +26,8 @@ if (app === 'pm') {
   if (o.photos) extra.photos = o.photos;
   // quotes of these projects (q.pj), from a file that carries them: {…, quotes:[…]}
   if (Array.isArray(o.quotes)) extra.quotes = o.quotes.filter(q => projects[q.pj]);
+  // bids (ทำราคาประมูล: ปร.4 / ปร.5) of these projects (t.pj), from a file that carries them: {…, tenders:[…]}
+  if (Array.isArray(o.tenders)) extra.tenders = o.tenders.filter(t => projects[t.pj]);
 } else {
   for (const [id, v] of Object.entries(o.projects || {})) if (!only || id === only) projects[id] = v;
 }
