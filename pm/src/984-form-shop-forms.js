@@ -19,7 +19,7 @@ function fsCtx(Q){const C=CO(),L=qmLang(Q),EN=L==='en';
     ${C.tax?`<br>${tx('เลขประจำตัวผู้เสียภาษี ','Tax ID ')}${esc(C.tax)}${C.branch?' ('+esc(C.branch)+')':''}`:''}</div></div>`;
   // title band: small English caps, the title, a line under it; the box beside it holds the number, date and the form's own rows
   const head=(th,en,cap,sub,more)=>{const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),
-      ...(more||[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact',1),esc([st.phone,st.email].filter(Boolean).join(' · '))]]:[])];
+      ...(more||[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone?[[t('ติดต่อ','Contact',1),esc(st.phone)]]:[]),...(st.email?[[t('อีเมล','Email',1),`<span class="qm-em">${esc(st.email).replace('@','@<wbr>')}</span>`]]:[])];
     return co+`<div class="qm-tt"><div class="qm-ti">${EN?'':`<small>${cap}</small>`}<h1>${EN?en:th}</h1>${sub?`<p>${esc(sub)}</p>`:''}</div>
       <div class="qm-m">${meta.map(([k,v])=>`<div><span>${k}</span><b>${v||'&nbsp;'}</b></div>`).join('')}</div></div>`};
   const attn=Q.attn||cu.contact||'';

@@ -20,7 +20,7 @@ function oqCover(Q,logo){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),eqs=!ma
   const rv=(Q.revs||[]).length&&typeof qrvCur==='function'?qrvCur(Q).n:0,no=(Q.no||'')+(Q.no&&rv>0?' Rev.'+rv:'');
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const info=[[t('เลขที่','No.'),no],[t('วันที่','Date'),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until'),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.'),Q.ref]]:[]),
-    ...(Q.by?[[t('ผู้เสนอราคา','Sales'),Q.by]]:[]),...(st.phone||st.email?[[t('ติดต่อ','Contact'),[st.phone,st.email].filter(Boolean).join(' · ')]]:[])];
+    ...(Q.by?[[t('ผู้เสนอราคา','Sales'),Q.by]]:[]),...(st.phone?[[t('ติดต่อ','Contact'),st.phone]]:[]),...(st.email?[[t('อีเมล','Email'),st.email]]:[])];
   const kv=(k,v,b)=>v?[k,v,b]:null,attn=Q.attn||cu.contact||'';
   const cards=[{h:t('ลูกค้า','Customer'),rows:[kv(t('ชื่อ','Name'),bi(cuN,cu.nameEn),1),kv(t('เรียน','Attn.'),attn),kv(t('ที่อยู่','Address'),bi(cuA,cu.addrEn)),kv(t('เลขผู้เสียภาษี','Tax ID'),cu.tax||''),
       kv(t('โทร','Tel.'),[cu.phone,cu.email].filter(Boolean).join(' · '))].filter(Boolean)},
