@@ -311,6 +311,9 @@ if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.
 // 4.28 a short quotation (or ปร. form) fills its sheet (user: "ทำไมไม่เติมหน้า"): empty lines go into the item table above its total row
 // until the page is full, and what is left of the gap goes above the signatures, so they sit at the foot of the page.
 // A page that runs past one sheet is left alone; 4 mm stays free so nothing spills onto a new page.
+// 4.73 a few work headings make a short table (user: "ถ้าหัวข้องานไม่เยอะก็ลดช่องจะสวยไหม"): ORIEN Modern and its colour forms add at most
+// QM_BL_MAX empty lines, the rest of the gap goes above the signatures; Excel-style grids (table.gt, ปร. forms) still fill the page.
+const QM_BL_MAX=2;
 function qmFillPages(R){return [...R.querySelectorAll('.qm,.fsg')].flatMap(q=>q.querySelector('.qm-p1')?[...q.querySelectorAll('.qm-p1')]:[q])}
 function qmFillRows(P,n){const t=P.querySelector('table.qm-t,table.gt'),b=t&&t.tBodies[0];if(!b||!n)return;
   const nc=t.querySelectorAll('colgroup col').length||Math.max(...[...t.rows].map(r=>[...r.cells].reduce((a,c)=>a+(c.colSpan||1),0))),
@@ -324,7 +327,7 @@ function qmFill(){const el=$('#print'),pg=typeof fitPage==='function'&&fitPage()
   const R=qmFillPages(el),F=qmFillPages(P0),lim=pg.h-4;
   F.forEach((f,k)=>{if(!R[k]||R[k].style.zoom)return;const hh=()=>f.getBoundingClientRect().height/MMPX,h0=hh();if(!h0||h0>lim-3)return;
     let n=0;if(f.querySelector('table.qm-t tbody,table.gt tbody')){qmFillRows(f,1);const dh=hh()-h0;f.querySelectorAll('.qm-bl').forEach(x=>x.remove());
-      if(dh>1){n=Math.min(60,Math.floor((lim-h0)/dh));qmFillRows(f,n);while(n>0&&hh()>lim){f.querySelector('.qm-bl').remove();n--}}}
+      if(dh>1){n=Math.min(f.querySelector('table.qm-t')?QM_BL_MAX:60,Math.floor((lim-h0)/dh));qmFillRows(f,n);while(n>0&&hh()>lim){f.querySelector('.qm-bl').remove();n--}}}
     const gap=lim-hh();qmFillRows(R[k],n);qmFillGap(R[k],gap)})}
 if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.apply(this,arguments);try{qmFill()}catch(e){console.error(e)}return r}}
 
