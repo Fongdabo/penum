@@ -158,9 +158,10 @@ function boqStyle(kind,col,num,o,zebra){const c=col===0||col===2||col===3,sz=9;s
   case 'type':return {font:{i:true,sz,c:GREY}};
   case 'item':return merge(zebra?{fill:ZEB}:{},{font:{sz,c:col===0?GREY:INK},bd:{b:['thin',HAIR]},al:{h:c?'center':num?'right':undefined,v:'top',wrap:col===1},nf:num&&!c?(o.pct||[]).includes(col)?164:4:0});
   case 'tot':return {font:{b:true,sz,c:NAVY},bd:{t:['thin',TEAL],b:['thin',TEAL]},nf:num?(o.pct||[]).includes(col)?164:4:0,al:num?{h:'right'}:{}};
+  case 'htot':return {font:{b:true,sz,c:DK},bd:{t:['dashed',TEAL],b:['thin',HAIR]},nf:num?(o.pct||[]).includes(col)?164:4:0,al:num?{h:'right'}:{}};
   case 'grand':return {fill:NAVY,font:{b:true,sz:9.5,c:'FFFFFF'},nf:num?(o.pct||[]).includes(col)?164:4:0,al:num?{h:'right'}:{}};
   case '':return {font:{sz:8.5,c:GREY}};default:return {}}}
-function polish(xml,o,S,foot){const n=o.n,box=['hdr','sec','head','type','item','tot','grand','title'];let z=0;
+function polish(xml,o,S,foot){const n=o.n,box=['hdr','sec','head','type','item','tot','htot','grand','title'];let z=0;
   xml=xml.replace(/<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g,(m,r,a,body)=>{const kind=o.k[r-1]||'',cells={};if(kind==='item')z++;else if(kind!=='type'&&kind!=='head')z=0;
     body.replace(/<c r="([A-Z]+)\d+"([^>]*?)(\/>|>[\s\S]*?<\/c>)/g,(c,col,at,rest)=>{cells[col]={at:at.replace(/\s*s="\d+"/,''),rest};return ''});
     const keys=box.includes(kind)?[...new Set([...AZ.slice(0,n),...Object.keys(cells)])]:Object.keys(cells);keys.sort((x,y)=>x.length-y.length||(x<y?-1:1));

@@ -36,14 +36,20 @@ function build(X,doc,internal){
       :['ลำดับ','รายการ','จำนวน','หน่วย','ค่าวัสดุ/หน่วย','รวมค่าวัสดุ','ค่าแรง/หน่วย','รวมค่าแรง','รวมเป็นเงิน','หมายเหตุ','PENUM'];
     rows.push(H);const mc=H.length-1,secTot=[];let s0=0,cur=null,lt='';
     const pad=(a,mark)=>{while(a.length<mc)a.push('');a[mc]=mark;return a};
-    const close=()=>{if(!cur)return;const a=rows.length+1,s=s0,e=rows.length;const S=c=>`SUM(${c}${s}:${c}${e})`,v=f=>cur.v[f];
+    // a subtotal under each heading (meta.hsub, as the quotation prints it) when its section has more than one block; the section
+    // total then adds only the lines (SUMIF on the marker column), so the subtotals are not counted twice
+    const ML=String.fromCharCode(65+mc),multi=g=>{const I=its.filter(i=>i.g===g),H=new Set(I.map(i=>i.head||'').filter(Boolean));return !!M.hsub&&(H.size>1||H.size===1&&I.some(i=>!i.head))};
+    let hc=null;const endH=()=>{if(!hc)return;const s=hc.s,e=rows.length,S=c=>`SUM(${c}${s}:${c}${e})`,v=hc.v,a=rows.length+1;
+      rows.push(pad(I?['','รวม '+hc.no+' '+hc.txt,'','','','',F(S('G'),v.c),'','',F(S('J'),v.s),F(S('K'),v.s-v.c),F(`IF(J${a}=0,0,K${a}/J${a})`,v.s?(v.s-v.c)/v.s:0,'0.0%')]
+        :['','รวม '+hc.no+' '+hc.txt,'','','',F(S('F'),v.m),'',F(S('H'),v.l),F(S('I'),v.m+v.l)],'T'));cur.ht=1;hc=null};
+    const close=()=>{endH();if(!cur)return;const a=rows.length+1,s=s0,e=rows.length;const S=c=>cur.ht?`SUMIF(${ML}${s}:${ML}${e},"I",${c}${s}:${c}${e})`:`SUM(${c}${s}:${c}${e})`,v=f=>cur.v[f];
       rows.push(pad(I?['','รวมหมวด '+cur.no+' '+cur.name,'','','','',F(S('G'),v('c')),'','',F(S('J'),v('s')),F(S('K'),v('s')-v('c')),F(`IF(J${a}=0,0,K${a}/J${a})`,v('s')?(v('s')-v('c'))/v('s'):0,'0.0%')]
         :['','รวมหมวด '+cur.no+' '+cur.name,'','','',F(S('F'),v('m')),'',F(S('H'),v('l')),F(S('I'),v('m')+v('l'))],'T'));secTot.push(Object.assign({row:a},cur));rows.push([]);cur=null};
     its.forEach((i,k)=>{const n=N[k],q=+i.q||0;
       if(n.sec){close();cur={no:n.sec,name:i.gname||i.g||'',g:i.g,v:{m:0,l:0,c:0,s:0}};rows.push(pad([n.sec,cur.name],'S|'+(i.g||'')));s0=rows.length+1;lt=''}
-      if(n.head){rows.push(pad([n.head,n.headTxt],'H|'+i.head));lt=''}
+      if(n.head||(!i.head&&hc)){endH();if(n.head){rows.push(pad([n.head,n.headTxt],'H|'+i.head));lt='';if(multi(i.g))hc={no:n.head,txt:n.headTxt,s:rows.length+1,v:{m:0,l:0,c:0,s:0}}}}
       if((i.type||'')!==lt){lt=i.type||'';if(lt)rows.push(pad(['','  '+lt],'Y|'+lt))}
-      const r=rows.length+1,ms=+(I&&i.ims!=null?i.ims:i.ms)||0,ls=+(I&&i.ils!=null?i.ils:i.ls)||0,mc_=+i.mc||0,lc=+i.lc||0;cur.v.m+=q*ms;cur.v.l+=q*ls;cur.v.c+=q*(mc_+lc);cur.v.s+=q*(ms+ls);
+      const r=rows.length+1,ms=+(I&&i.ims!=null?i.ims:i.ms)||0,ls=+(I&&i.ils!=null?i.ils:i.ls)||0,mc_=+i.mc||0,lc=+i.lc||0;[cur.v,hc&&hc.v].forEach(x=>{if(!x)return;x.m+=q*ms;x.l+=q*ls;x.c+=q*(mc_+lc);x.s+=q*(ms+ls)});
       const d=(i.head?'- ':'')+(n.desc||'');
       rows.push(pad(I?[n.no,d,cell(q,ZQ),i.unit||'',cell(mc_),cell(lc),F(`C${r}*(E${r}+F${r})`,q*(mc_+lc)),cell(ms),cell(ls),F(`C${r}*(H${r}+I${r})`,q*(ms+ls)),F(`J${r}-G${r}`,q*(ms+ls-mc_-lc)),F(`IF(J${r}=0,0,K${r}/J${r})`,ms+ls?(ms+ls-mc_-lc)/(ms+ls):0,'0.0%')]
         :[n.no,d,cell(q,ZQ),i.unit||'',cell(ms),F(`C${r}*E${r}`,q*ms),cell(ls),F(`C${r}*G${r}`,q*ls),F(`F${r}+H${r}`,q*(ms+ls)),i.rm||''],'I'))});
@@ -53,7 +59,7 @@ function build(X,doc,internal){
       :['','รวมทุกหมวด','','','',F(SS('F'),T('m')),'',F(SS('H'),T('l')),F(SS('I'),T('m')+T('l'))],'T'));
     const ws=X.utils.aoa_to_sheet(rows);
     ws['!cols']=(I?[8,48,9,8,13,13,14,13,13,14,13,8]:[8,52,9,8,13,14,13,14,15,18]).map(w=>({wch:w})).concat([{wch:4,hidden:true}]);
-    ws['!merges']=rows.map((r,k)=>r.length===1&&r[0]!==''?{s:{r:k,c:0},e:{r:k,c:mc-1}}:null).filter(Boolean);
+    ws['!merges']=rows.map((r,k)=>r.length===1&&r[0]!==''?{s:{r:k,c:0},e:{r:k,c:mc-1}}:/^[SHY]/.test(String(r[mc]||''))?{s:{r:k,c:1},e:{r:k,c:I?mc-1:mc-2}}:null).filter(Boolean);
     return {ws,secTot,total:a,rows,mc}}
   const B=lines('boq');
   // ---- summary page: one row per section from the BOQ sheet, then the lines under the total, VAT and the amount in words
@@ -74,7 +80,7 @@ function build(X,doc,internal){
   // what each row is, for the borders, bold totals and print setup added in bytes()
   const nh=1+(co.lines||[]).filter(Boolean).length,kinds=(R,mc)=>R.map((r,k)=>{if(k<nh)return k?'':'co';if(k===nh)return 'title';if(k<nh+3)return '';
     if(r[0]==='ลำดับ')return 'hdr';const m=mc!=null?String(r[mc]||'').charAt(0):'',d=String(r[1]||'');
-    if(mc!=null)return m==='S'?'sec':m==='H'?'head':m==='Y'?'type':m==='I'?'item':m==='T'?(/^รวมทุกหมวด/.test(d)?'grand':'tot'):'';
+    if(mc!=null)return m==='S'?'sec':m==='H'?'head':m==='Y'?'type':m==='I'?'item':m==='T'?(/^รวมทุกหมวด/.test(d)?'grand':/^รวมหมวด/.test(d)?'tot':'htot'):'';
     return typeof r[0]==='number'?'item':/^รวมเป็นเงินทั้งสิ้น/.test(d)?'grand':/^\(/.test(d)?'words':/^รวม/.test(d)?'tot':r.length>1?'item':''});
   wb.__ob={[SHEET.sum]:{k:kinds(rows),n:5,land:0},[SHEET.boq]:{k:kinds(B.rows,B.mc),n:B.mc,land:1,hr:B.rows.findIndex(r=>r[0]==='ลำดับ')}};
   if(IN)wb.__ob[SHEET.int]={k:kinds(IN.rows,IN.mc),n:IN.mc,land:1,pct:[11],hr:IN.rows.findIndex(r=>r[0]==='ลำดับ'),warn:1};
@@ -114,9 +120,9 @@ const STY=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 const COLS=n=>Array.from({length:n},(_,i)=>String.fromCharCode(65+i));
 function styleOf(kind,col,num,o){const pc=(o.pct||[]).includes(col);switch(kind){
   case 'co':return col?0:10;case 'title':return col?0:o.warn?11:9;case 'hdr':return 4;case 'sec':return 5;case 'head':return num?2:15;case 'type':return 16;
-  case 'item':return pc?7:col===0||col===2&&o.land||col===3&&o.land?3:num?2:1;case 'tot':return pc?8:num?6:5;case 'grand':return pc?8:num?12:13;case 'words':return 14;default:return 0}}
+  case 'item':return pc?7:col===0||col===2&&o.land||col===3&&o.land?3:num?2:1;case 'tot':case 'htot':return pc?8:num?6:5;case 'grand':return pc?8:num?12:13;case 'words':return 14;default:return 0}}
 function polish(xml,o){const L=COLS(o.n);
-  xml=xml.replace(/<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g,(m,r,a,body)=>{const kind=o.k[r-1]||'',box=['hdr','sec','head','type','item','tot','grand'].includes(kind);const cells={};
+  xml=xml.replace(/<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g,(m,r,a,body)=>{const kind=o.k[r-1]||'',box=['hdr','sec','head','type','item','tot','htot','grand'].includes(kind);const cells={};
     body.replace(/<c r="([A-Z]+)\d+"([^>]*?)(\/>|>[\s\S]*?<\/c>)/g,(c,col,at,rest)=>{cells[col]={at:at.replace(/\s*s="\d+"/,''),rest};return ''});
     const keys=box?[...new Set([...L,...Object.keys(cells)])]:Object.keys(cells);keys.sort((x,y)=>x.length-y.length||(x<y?-1:1));
     return `<row r="${r}"${a}>`+keys.map(col=>{const c=cells[col],ci=col.charCodeAt(0)-65;if(ci>=o.n)return c?`<c r="${col}${r}"${c.at}${c.rest}`:'';
