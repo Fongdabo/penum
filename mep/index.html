@@ -6705,7 +6705,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=147,MEP_NAME='v147';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=147,MEP_NAME='v148';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -7388,6 +7388,22 @@ async function tmCopy(text,mt,keep){if(pjNo())return;const Q=tmParse(text);if(!Q
 async function tmLocals(){if(!PJ.ok)return [];return pjLive().filter(m=>m.lid&&m.pid!==P.pid&&m.sum&&m.sum.rooms&&!(m.from&&m.from.k==='sample')).map(m=>({id:m.lid,name:m.name,client:m.client,code:m.code,sum:m.sum,
   text:async()=>{const Q=tmParse(await pjData(m.pid));return Q&&!Q.smp&&!pjBlank(Q)?tmText(Q):''}}))}
 const tmSum=s=>[s.rooms?fmt(s.rooms)+' '+uiT('ห้อง'):'',s.tr?fmt(s.tr,1)+' TR':'',s.boq?'BOQ '+fmt(s.boq):''].filter(Boolean).join(' · ');
+/* v148 รับงานสด (shared/live.js): projects sent into MEP while the customer watches (user 2026-10-26, "ทำได้ทั้ง 3 โปรแกรม").
+   A project is known by its link code (lid). The customer says yes once: a new one opens like a company project (tmOpen);
+   later sends replace it by themselves, in place when it is open (tmApply), else in the list (pjPut). Nothing else is touched. */
+const LV_K='penum.mep.live',LV_busy=()=>{const a=document.activeElement;return !!document.querySelector('dialog[open]:not(#pnlDlg)')||!!(a&&a.matches&&a.matches('input,textarea,select,[contenteditable]'))};
+async function lvPut(m,Q){Q.pid=m.pid;Q.lid=m.lid;const sum=pjSumOf(Q),s=JSON.stringify(Q),x=pjMeta(Q,s,sum,null);x.at=Date.now();await pjPut(x,s);pjSet(x);if(view==='projects')pjCards();projHead()}
+if(window.penumLive)penumLive.init({app:'mep',
+  get:()=>{try{return JSON.parse(localStorage.getItem(LV_K)||'null')}catch(e){return null}},
+  set:s=>{try{localStorage.setItem(LV_K,JSON.stringify(s))}catch(e){}},
+  list:()=>PJ.ok?pjRows().filter(m=>m.lid&&!m.del).map(m=>({id:m.lid,name:m.name})):[],
+  ok:()=>pjRO()?uiT('โปรแกรมเป็นแบบอ่านอย่างเดียว ต่ออายุรหัสเปิดใช้งานก่อน'):!PJ.ok?uiT('ยังเปิดรายการโครงการไม่ได้ ลองใหม่อีกครั้ง'):'',
+  busy:()=>LV_busy()||!!PJ.busy,
+  apply:(id,data,extra,nm,first)=>{const Q=tmParse(JSON.stringify(data));if(!Q)return false;
+    const m=pjRows().find(x=>x.lid===id&&!x.del);
+    if(m&&P&&P.pid===m.pid){tmApply(JSON.stringify(Q));return true}
+    if(m){lvPut(m,Q).then(()=>{if(first)pjOpen(m.pid)}).catch(()=>{});return true}
+    tmOpen(JSON.stringify(Q),{id});return true}});
 if(TM_ON){penumTeam.attach({app:'mep',cur:tmCur,apply:tmApply,has:tmHas,openLocal:tmOpenLocal,open:tmOpen,copy:(x,m)=>tmCopy(x,m,0),keep:x=>tmCopy(x,{},1),locals:tmLocals,sumTxt:tmSum});
   {const m=$('moreMenu');if(m)m.parentNode.insertBefore(penumTeam.chip('btn onband'),m)}          // ผู้ใช้งาน: who colleagues see, like PENUM PM's user box
   {const s=save;save=function(){if(penumTeam.ro()){penumTeam.roNote();return}s.apply(this,arguments);if(!SBX)penumTeam.soon()}}
@@ -7480,7 +7496,7 @@ if(window.penumBar&&PJ.ok&&location.hash.indexOf('#v3d=')!==0){
   {const m=$('moreMenu').querySelector('summary');m.classList.remove('btn','onband');m.classList.add('ptb-bx')}
   const bar=penumBar.mount({app:'mep',appName:'PENUM MEP',key:'penum.mep.tabs',tag:'MEP',ver:'PENUM MEP '+MEP_NAME,accent:'#0B7F8C',logo:document.querySelector('header .brand svg'),
     dark:()=>document.documentElement.dataset.theme==='dark',note:m=>pjSnack(m),
-    menu:()=>[{t:uiT('โครงการใหม่'),ic:I('new'),run:()=>pjNew()},{t:uiT('เปิดไฟล์โครงการ…'),ic:I('open'),run:pjOpenFile},...(PJ_F&&PJ_F.ok?[{t:uiT('เปิดจากโฟลเดอร์'),ic:I('open'),run:pjOpenDir}]:[]),
+    menu:()=>[{t:uiT('โครงการใหม่'),ic:I('new'),run:()=>pjNew()},{t:uiT('เปิดไฟล์โครงการ…'),ic:I('open'),run:pjOpenFile},...(window.penumLive?[{t:uiT('รับงานสด…'),ic:I('open'),run:()=>penumLive.open()}]:[]),...(PJ_F&&PJ_F.ok?[{t:uiT('เปิดจากโฟลเดอร์'),ic:I('open'),run:pjOpenDir}]:[]),
       ...(tbCl()?[{t:uiT('บันทึกขึ้นคลาวด์'),ic:I('save'),kbd:'Ctrl+S',run:tbCloud},{t:uiT('บันทึกลงเครื่อง'),ic:I('save'),run:()=>tbSave(P.pid)}]:[{t:uiT('บันทึกลงเครื่อง'),ic:I('save'),kbd:'Ctrl+S',run:()=>tbSave(P.pid)}]),{t:uiT('บันทึกเป็น…'),ic:I('saveas'),kbd:'Ctrl+Shift+S',run:tbSaveAs},{t:uiT('บันทึกทุกโครงการลงเครื่อง'),ic:I('save'),run:pjSaveAll},
       {t:uiT('ชุดพิมพ์'),ic:I('print'),run:tbPrint},{t:uiT('แชร์'),ic:I('share'),run:tbShare},'-',
       {t:uiT('หน้าเริ่มต้น'),run:()=>{pjsShow();penumBar.refresh()}},{t:uiT('โครงการทั้งหมด'),run:tbAll},'-',
