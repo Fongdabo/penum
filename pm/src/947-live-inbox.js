@@ -15,7 +15,7 @@ if(window.penumLive){
     apply:(id,data,extra,nm,first)=>{if(liveWhy()||!data||!data.info)return false;
       const p=migrate(JSON.parse(JSON.stringify(data)));p.id=id;
       for(const [k,v] of Object.entries((extra&&extra.photos)||{}))IDB.put(k,v).catch(()=>{});
-      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);
+      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);
       if(first){DB.cur=id;P=p;S.mode='pj';S.tab='dash';S.sel={}}          // just accepted: open it, so the customer watches it fill
       save(true);render();return true}});
   // quotes are the company's (DB.co.quotes): only ones for this project (q.pj), new ones get the next free number here,
@@ -30,6 +30,12 @@ if(window.penumLive){
     for(const src of L){if(!src||!src.id||src.pj!==pid)continue;const t=Object.assign(NEW.tenders(T),JSON.parse(JSON.stringify(src))),i=T.findIndex(x=>x.id===t.id);
       if(i>=0){if(!got[t.id])continue;t.no=T[i].no;T[i]=t}
       else{if(!t.no||T.some(x=>x.no===t.no))t.no=nextNo('TD-',T);T.push(t);got[t.id]=1}}}
+  // 4.93: a patch to a bid that came in this way, which keeps everything the customer set since (mark-up, adjustments,
+  // Factor F, rounding ...) and only fills each line's measured quantity and allowance (958), lines matched by group + name + unit
+  function liveTPatch(pid,L){const T=DB.co.tenders||[],got=((DB.co.live||{}).t)||{},key=i=>[i.g||'',String(i.desc||'').trim(),String(i.unit||'').trim()].join('|');
+    for(const src of L){if(!src||!src.id||src.pj!==pid||!got[src.id])continue;const t=T.find(x=>x.id===src.id);if(!t)continue;
+      const M={};(src.items||[]).forEach(i=>M[key(i)]=i);
+      t.items.forEach(i=>{const x=M[key(i)];if(!x)return;i.q0=n(x.q0);i.xp=n(x.xp);if(i.q0>0&&typeof tdAllowQ==='function')i.q=tdAllowQ(i)})}}
   ACT.liveOpen=()=>{const w=liveWhy();if(w){toast(w);return}penumLive.open()};
   {const m=document.querySelector('#moreMenu .menu [data-a="pfOpen"]');if(m)m.insertAdjacentHTML('afterend','<button type="button" data-a="liveOpen">รับงานสด…</button>')}
   {const r=render;render=function(){const x=r.apply(this,arguments);try{const bk=$('[data-a="backup"]'),e=$('#moreMenu [data-a="liveOpen"]');if(e&&bk)e.hidden=bk.hidden}catch(e){}return x}}

@@ -28,6 +28,8 @@ if (app === 'pm') {
   if (Array.isArray(o.quotes)) extra.quotes = o.quotes.filter(q => projects[q.pj]);
   // bids (ทำราคาประมูล: ปร.4 / ปร.5) of these projects (t.pj), from a file that carries them: {…, tenders:[…]}
   if (Array.isArray(o.tenders)) extra.tenders = o.tenders.filter(t => projects[t.pj]);
+  // a patch to a bid sent before (PM 4.93): {…, tpatch:[{id, pj, items:[{g, desc, unit, q0, xp}]}]}, keeps the customer's settings
+  if (Array.isArray(o.tpatch)) extra.tpatch = o.tpatch.filter(t => projects[t.pj]);
 } else {
   for (const [id, v] of Object.entries(o.projects || {})) if (!only || id === only) projects[id] = v;
 }
