@@ -88,7 +88,7 @@ function obRead(S){const m=S&&S.PENUM;if(!m||impTxt((m[0]||[])[0])!==OB_ID)retur
     if(!add){Q.mk=I?n(M.mk):0;Q.mkSep=I&&!!M.mkSep;Q.adds=XR.map(x=>I&&n(x.pct)?{id:uid(),name:x.name,pct:n(x.pct),amt:''}:{id:uid(),name:x.name,pct:'',amt:n(x.v)});Q.disc=disc;
       ['title','pname','site','ref'].forEach(k=>{if(M[k]&&!Q[k])Q[k]=M[k]})}
     // a line sold at its own price (not cost + the quotation's %) keeps that price
-    if(I)Q.items.slice(old.length).forEach((it,k)=>{const s=L[k].sell,base=n(it.m)+n(it.l);if(s>0&&Math.abs(s-base*(1+n(Q.mk)/100))>0.005)it.sp=Math.round(s*100)/100})}
+    if(I)Q.items.slice(old.length).forEach((it,k)=>{const s=L[k].sell,base=n(it.m)+n(it.l);if(s>0&&Math.abs(s-qMkA(Q,base,n(Q.mk)))>0.005)it.sp=Math.round(s*100)/100})}
   else if(IMP.t==='td'){const T=tg.o,old=add?(T.items||[]):[];tdFill(T,L,src);if(add)T.items=[...old,...T.items]}
   else{const items=[...(add?P.boq.items:[]),...L.map(({t,sell,...x})=>x)],sub=sum(items,boqCost),sell=I?sum(L,i=>i.q*i.sell)-sum(L,i=>i.t):0,
       ohp=add?n(P.boq.ohp):Math.round((sell+sum(XR,x=>n(x.v))-disc)*100)/100;setBoq(items,{src,sub,ohp,vat:(sub+ohp)*0.07,grand:(sub+ohp)*1.07})}
