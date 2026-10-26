@@ -10,7 +10,7 @@ function obQuoteDoc(Q){const C=CO(),c=qCalc(Q),cu=C.customers.find(x=>x.id===Q.c
     return {g:i.g||'',gname:gName(i.g),head:i.head||'',type:i.type||'',desc:i.desc||'',unit:i.unit||'',q,mc,lc,ms:L.mu,ls:L.lu,ims:IS.mu,ils:IS.lu}});
   const rows=[];if(qSep(Q)&&Math.abs(c.lines-T)>0.005)rows.push({name:`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,v:c.lines-T,mk:1});
   c.adds.filter(a=>a.v).forEach(a=>rows.push({name:a.name||'',v:a.v,pct:n(a.pct)||''}));
-  return {co:{name:C.name||'',lines},meta:{src:'PENUM PM',title:Q.title||'',pname:Q.pname||'',cust:cu.name||'',no:Q.no||'',date:Q.date||'',site:Q.site||'',ref:Q.ref||'',mk:n(Q.mk),mkSep:!!Q.mkSep,vat:7},items,sum:{rows,disc:c.disc}}}
+  return {co:{name:C.name||'',lines},meta:{src:'PENUM PM',title:Q.title||'',pname:Q.pname||'',cust:cu.name||'',no:Q.no||'',date:Q.date||'',site:Q.site||'',ref:Q.ref||'',mk:n(Q.mk),mkSep:!!Q.mkSep,vat:7,hsub:!!Q.hsub&&qForm(Q)!=='S'},items,sum:{rows,disc:c.disc}}}
 ACT.qXl=async b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),I=b.dataset.v==='1';if(!Q)return;if(!Q.items.length){toast('ใบเสนอราคายังไม่มีรายการ');return}
   try{const X=await obLib(),wb=orienBoq.build(X,obQuoteDoc(Q),I),nm=`PENUM-BOQ-${String(Q.no||'quote').replace(/[^\w.-]+/g,'-')}${I?'-internal':''}.xlsx`;
     toast(await download(nm,orienBoq.bytes(X,wb),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')?(I?'ดาวน์โหลด Excel ฉบับภายในแล้ว มีราคาทุน อย่าส่งให้ลูกค้า':'ดาวน์โหลด Excel แบบ ORIEN แล้ว ส่งให้ลูกค้าได้เลย'):'ดาวน์โหลดไม่สำเร็จ')}
