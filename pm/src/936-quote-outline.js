@@ -7,7 +7,7 @@ const qoQ=b=>CO().quotes.find(q=>q.id===b.dataset.id);
 const qoName=(Q,g)=>{const L=qhList(Q,g);let k=L.length+1,h;do{h='หัวข้อย่อย '+k++}while(L.includes(h));return h};
 const qoFocus=sel=>setTimeout(()=>{const e=document.querySelector(sel);if(!e)return;e.scrollIntoView({block:'center'});e.focus();if(e.select)e.select()},40);
 const qoBlank=(g,h)=>({id:uid(),g,head:h||'',type:'',desc:'',unit:'',q:1,m:0,l:0,t:0,sp:''});
-const qoDesc=(Q,x)=>qoFocus(`.ql-t input[data-p="co.quotes.${Q.id}.items.${x.id}.desc"]`);
+const qoDesc=(Q,x)=>qoFocus(`.ql-t :is(input,textarea)[data-p="co.quotes.${Q.id}.items.${x.id}.desc"]`);
 const qoHead=h=>qoFocus(`.ql-t input.qhName[data-h="${CSS.escape(h)}"]`);
 // the row buttons (982): k = the line's index in Q.items. 4.51 three levels: ⇥ on a line in a sub-heading starts a group (third
 // level) from it down; ⇤ takes a line out of its group, or out of its sub-heading

@@ -110,7 +110,7 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.status$/);if(!m||v!=='s
 const qcSug=document.createElement('div');qcSug.className='qc-sug';qcSug.hidden=true;document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(qcSug));
 if(document.body)document.body.appendChild(qcSug);
 let qcSugEl=null;const qcSugHide=()=>{qcSug.hidden=true;qcSugEl=null};
-document.addEventListener('input',e=>{const t=e.target;if(!t||!(t.id==='qlName'||(t.matches&&t.matches('.ql-t input[data-p$=".desc"]'))))return;
+document.addEventListener('input',e=>{const t=e.target;if(!t||!(t.id==='qlName'||(t.matches&&t.matches('.ql-t :is(input,textarea)[data-p$=".desc"]'))))return;
   const v=t.value.trim(),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(v.length<3||!Q){qcSugHide();return}
   const lib=qcLib(Q),lv=v.toLowerCase();if(lib.R.some(r=>r.lab.toLowerCase().includes(lv))){qcSugHide();return}
   const N=qcNear(lib,v,6);if(!N.length){qcSugHide();return}
