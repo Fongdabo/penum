@@ -1,4 +1,4 @@
-/* ---------- 4.94 the whole item name in a quote's lines table (user, 2026-10-28 Aster CT quote: "ชื่อไม่เต็ม") ----------
+/* ---------- 4.95 the whole item name in a quote's lines table (user, 2026-10-28 Aster CT quote: "ชื่อไม่เต็ม") ----------
    The รายการ box was one line, so long names (Butterfly Valve "Tozen" ขนาด 6" (แบบพวงมาลัย)) showed cut off. After each render a line
    that has a name gets a box that wraps onto as many lines as the name needs, with the same data-p, so saving, undo and the
    typo check (914) work as before. An empty line keeps the one-line box with its list of names from the price library; once a
