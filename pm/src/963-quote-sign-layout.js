@@ -9,8 +9,18 @@
    the first measurement used a fallback font: on Windows (Leelawadee UI / Tahoma, taller lines) the page looked fuller than it
    is, the gap above the signatures came out too small and the bottom of the sheet stayed empty. fitPrint now runs again once
    the frame has the fonts the page uses; the e-signature dialog waits for them before it fits and prints, and the frame is
-   warmed up shortly after the program opens. */
+   warmed up shortly after the program opens.
+   4.99 (user: "ขอบไม่เท่ากัน", "ตัวหนังสือเกือบหลุดขอบ"): the BOQ page's running header (.qm-mini: logo, title, then the quote
+   number and "project · work" on the right) sits in a table header cell that does not wrap, so a long project/work name made it
+   wider than the sheet. Chrome then shrinks the whole printout to the widest line: page 1 came out narrower with a wide right
+   margin, and the header itself still ran off the right edge. The right block now wraps inside the page and takes the room
+   the logo leaves. */
 document.head.insertAdjacentHTML('beforeend',`<style>
+#print .qm .qm-mini{min-width:0;max-width:100%}
+#print .qm tr.rh>th{white-space:normal}
+#print .qm .qm-mini .no{white-space:normal;min-width:0;flex:0 1 auto;max-width:60%;overflow-wrap:anywhere}
+#print .qm .qm-mini>div:not(.no){flex:none;white-space:nowrap}
+#print .qm .qm-mini img{max-width:28%;object-fit:contain;object-position:left center}
 #print .qm .qm-sg{align-items:stretch}
 #print .qm .qm-sg>div{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 25px 46px auto auto auto;align-content:start}
 #print .qm .qm-sg>div>h4{grid-row:1}
