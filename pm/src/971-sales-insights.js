@@ -54,5 +54,5 @@ function siWork(Q){const M=new Map();Q.forEach(q=>{const k=siWt(q),c=qCalc(q),x=
   try{ins=`<div class="si">${siPrice(Q)}${siAR()}${siOpen(Q)}${siWork(Q)}</div>`}catch(e){ins=`<p class="hint">วิเคราะห์ไม่ได้: ${esc(e.message)}</p>`}
   return h.replace(/<section class="card"><h2><span>ใบเสนอราคา<\/span>/,ins+'$&')}}
 document.head.insertAdjacentHTML('beforeend',`<style>.si-t{font-size:13px}.si-t td,.si-t th{padding:7px 7px}.si-t td{white-space:nowrap}.si-t th{white-space:normal;vertical-align:bottom}.si-t td:first-child,.si-t td:nth-child(3){white-space:normal;min-width:120px}.si-sub{display:block}.si-t tr.tot td,.si-t tfoot td{font-weight:700;border-top:2px solid var(--line)}
-.si-t tr.si-best td{background:color-mix(in srgb,var(--ok-c,#16a34a) 8%,transparent)}.si h2 small{font-weight:400}</style>`);
+.si-t tr.si-best td{background:color-mix(in srgb,var(--good) 8%,transparent)}.si h2 small{font-weight:400}</style>`);
 Object.assign(SBKW,{'co.sales.quote':(SBKW['co.sales.quote']||'')+' วิเคราะห์ ลูกหนี้ลูกค้า จ่ายช้า ใบเสนอราคาค้าง ตามปิดงาน ประเภทงาน กำไรตามประเภท ต่อราคา บานปลาย'});

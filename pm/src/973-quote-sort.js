@@ -75,7 +75,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')qcmClose()});
 document.head.insertAdjacentHTML('beforeend',`<style>
 .q-ths{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
 .q-ths span{font-size:11px;opacity:.55}
-.qcm{position:fixed;z-index:1000;background:var(--card,#fff);color:var(--text,inherit);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:6px;width:270px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;gap:2px;font-size:14px}
+.qcm{position:fixed;z-index:1000;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:6px;width:270px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;gap:2px;font-size:14px}
 .qcm>button{background:none;border:0;color:inherit;font:inherit;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer}.qcm>button:hover,.qcm>button.on{background:var(--surface-2,rgba(127,127,127,.12))}.qcm>button.on{font-weight:600}
 .qcm hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}.qcm-q{margin:2px 4px 4px;width:auto!important}
 .qcm label{display:flex;gap:8px;align-items:flex-start;padding:4px 8px;cursor:pointer;line-height:1.35}.qcm label input{margin-top:3px;flex:0 0 auto}
