@@ -11,8 +11,8 @@ function qgStats(L,by){const M=new Map();L.forEach(q=>{const nm=by==='c'?custNam
     if(q.status==='won'){const pr=qgProfit(q,c);g.won++;g.wval+=c.net;g.gp+=pr.v}else if(q.status==='lost')g.lost++});
   return [...M.values()].sort((a,b)=>(a.k==='~')-(b.k==='~')||b.wval-a.wval||b.val-a.val)}
 const qgVw=()=>['c','p'].includes(S.qView)?S.qView:'';
-function qgSwitch(){const v=qgVw(),b=(k,l)=>`<button type="button" class="btn sm${v===k?' pri':''}" data-a="qgView" data-k="${k}" aria-pressed="${v===k}">${l}</button>`;
-  return `<span class="qg-sw"><small class="muted">ดูแบบ</small>${b('','รายการ')}${b('c','ตามลูกค้า')}${b('p','ตามโครงการ')}</span>`}
+function qgSwitch(){const v=S.qView==='a'?'a':qgVw(),b=(k,l)=>`<button type="button" class="btn sm${v===k?' pri':''}" data-a="qgView" data-k="${k}" aria-pressed="${v===k}">${l}</button>`;
+  return `<span class="qg-sw"><small class="muted">ดูแบบ</small>${b('','รายการ')}${b('c','ตามลูกค้า')}${b('p','ตามโครงการ')}${b('a','วิเคราะห์')}</span>`}
 ACT.qgView=b=>{S.qView=b.dataset.k;render()};
 ACT.qgFold=b=>{const F=S.qgFold=S.qgFold||{};F[b.dataset.k]=!F[b.dataset.k];render()};
 ACT.qgMet=b=>{S.qgMet=b.dataset.k;render()};
