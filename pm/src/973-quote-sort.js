@@ -4,20 +4,23 @@
    the quotes inside each group are sorted. Sorting reads the quotation itself (real dates and amounts), not the shown text.
    (user: "เพิ่มชื่อผู้เสนอราคาและผู้อนุมัติด้วยดีไหม") Two more columns: ผู้เสนอราคา (Q.by, 959) and ผู้อนุมัติ, the people who approved
    the quote in its approval steps (Q.appr, 240/910) or approved its low profit (Q.lowOk, 924); a refusal shows in red. Older quotes
-   without them stay blank.
+   without them show the quote's ผู้ลงนาม (Q.signName) in grey instead (4.99.12: "ชื่อคนอนุมัติทำไมไม่ขึ้น" — approval steps are off
+   unless ตั้งค่าบริษัท › เปิดใช้ขั้นตอนอนุมัติ is ticked).
    4.99.9 (user: "อันนี้ไม่ใช่เรียง ให้เป็นเลือก"): the ⌄ opens a menu like Excel's filter: sort up or down, and for every column
    ("ปรับเหมือนกันเลย"; months for วันที่ / ยืนราคาถึง, the shown amount for ราคา and กำไร) tick the values to show, with a search box. Chosen values live in
    S.qColF {column: [values]} and narrow the list, the groups and the analysis (qByOk); a heading with a filter is marked ●, and
    the bar above the list says what is filtered with one press to clear it. The old ผู้เสนอราคา box became this menu. */
 function qApprL(q){const R=[];Object.keys(q.appr||{}).sort((a,b)=>a-b).forEach(i=>{const a=q.appr[i],st=(APPR.quote[i]||[])[0]||'';if(a&&a.by)R.push({by:a.by,ok:a.ok!==false,st,at:a.at})});
   if(q.lowOk&&q.lowOk.by)R.push({by:q.lowOk.by,ok:true,st:'อนุมัติกำไรต่ำ',at:q.lowOk.at});if(q.lowNo&&q.lowNo.by)R.push({by:q.lowNo.by,ok:false,st:'กำไรต่ำ',at:q.lowNo.at});return R}
-function qApprBy(q){const R=qApprL(q),seen=new Set();return R.filter(r=>{const k=r.by+'|'+r.ok;if(seen.has(k))return false;seen.add(k);return true})
+// no approval steps recorded (เปิดใช้ขั้นตอนอนุมัติ is off, or the quote is older): the quote's ผู้ลงนาม (959) is who approved it on paper
+const qSigner=q=>String(q.signName||'').trim();
+function qApprBy(q){const R=qApprL(q),seen=new Set(),sg=qSigner(q);if(!R.length)return sg?`<span class="muted" title="ผู้ลงนามในใบเสนอราคา${q.signPos?' · '+esc(q.signPos):''}">${esc(sg)}</span>`:'';return R.filter(r=>{const k=r.by+'|'+r.ok;if(seen.has(k))return false;seen.add(k);return true})
   .map(r=>`<span title="${esc((r.ok?'อนุมัติ':'ไม่อนุมัติ')+(r.st?' · '+r.st:'')+(r.at?' · '+thD(r.at):''))}"${r.ok?'':' class="qg-neg"'}>${r.ok?'':'ไม่อนุมัติ · '}${esc(r.by)}</span>`).join('<br>')}
 const QBLANK='(ว่าง)';
 // the values a quote has in a column that can be filtered (ผู้อนุมัติ may have several)
 const qGpTxt=q=>{const x=qCalc(q);return x.net?fmt((x.net-x.cost)*100/x.net,1)+'%':''};
 const QCOLV={no:q=>[q.no],val:q=>[fmt(qCalc(q).net)],gp:q=>[qGpTxt(q)],cust:q=>[custName(q.cust)],pj:q=>[qPjOf(q)],job:q=>[q.title],st:q=>[(QST.find(s=>s[0]===q.status)||QST[0])[1]],by:q=>[q.by],
-  ap:q=>{const L=qApprL(q).filter(r=>r.ok).map(r=>r.by);return L.length?L:['']},date:q=>[okD(q.date)?thM(ym(q.date)):''],exp:q=>{const e=addD(q.date,n(q.valid));return [okD(e)?thM(ym(e)):'']}};
+  ap:q=>{const R=qApprL(q),L=R.filter(r=>r.ok).map(r=>r.by);return L.length?L:R.length?['']:[qSigner(q)]},date:q=>[okD(q.date)?thM(ym(q.date)):''],exp:q=>{const e=addD(q.date,n(q.valid));return [okD(e)?thM(ym(e)):'']}};
 const qColVals=(q,k)=>[...new Set(QCOLV[k](q).map(v=>String(v||'').trim()||QBLANK))];
 function qColF(){const F=S.qColF=S.qColF&&typeof S.qColF==='object'?S.qColF:{};if(S.qByF){F.by=[S.qByF];S.qByF=''}return F}
 const qByOk=q=>{const F=qColF();return Object.keys(F).every(k=>!QCOLV[k]||!Array.isArray(F[k])||qColVals(q,k).some(v=>F[k].includes(v)))};
@@ -28,7 +31,7 @@ const QSORT={no:'เลขที่',date:'วันที่',cust:'ลูก�
 function qSortKey(q,k){const c=()=>qCalc(q);
   switch(k){case 'no':return String(q.no||'');case 'date':return q.date||'';case 'cust':return custName(q.cust)||'';case 'pj':return qPjOf(q)||'';
     case 'job':return String(q.title||'');case 'val':return c().net;case 'gp':{const x=c();return x.net?(x.net-x.cost)/x.net:-1e9}
-    case 'st':{const i=QST.findIndex(s=>s[0]===q.status);return i<0?99:i}case 'exp':return addD(q.date,n(q.valid))||'';case 'by':return String(q.by||'').trim()||'\uffff';case 'ap':return qApprL(q).map(r=>r.by).join(', ')||'\uffff'}return ''}
+    case 'st':{const i=QST.findIndex(s=>s[0]===q.status);return i<0?99:i}case 'exp':return addD(q.date,n(q.valid))||'';case 'by':return String(q.by||'').trim()||'\uffff';case 'ap':return qApprL(q).map(r=>r.by).join(', ')||qSigner(q)||'\uffff'}return ''}
 const qSortCmp=(a,b)=>typeof a==='number'&&typeof b==='number'?a-b:String(a).localeCompare(String(b),'th',{numeric:true,sensitivity:'base'});
 const qcmClose=()=>{const m=document.getElementById('qcm');if(m)m.remove()};
 // the menu under a heading: sort, then (for columns with values) tick what to show
