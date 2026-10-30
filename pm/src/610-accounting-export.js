@@ -22,18 +22,18 @@ const bkLbl=b=>(BKIND.find(x=>x[0]===(b.kind||'prog'))||BKIND[0])[1];
 function accData(m){const S1=[],P1=[],R1=[],Y1=[];
   projects().forEach(p=>withP(p,()=>{const cu=custOf(p),cn=custName(p.info.cust)||p.info.client||'';
     p.bills.forEach(b=>{if(b.status==='draft')return;const c=billCalc(b),inst=((p.inst||[]).find(x=>x.id===b.inst)||{});
-      const row={p,b,c,no:b.tiNo||b.no,ref:b.no,who:cn,tax:cu.tax||'',desc:`${bkLbl(b)}${inst.name?' '+inst.name:''} โครงการ ${p.name}`,vat:n(p.info.vat)};
+      const row={p,b,c,no:b.tiNo||b.no,ref:b.no,who:cn,tax:cu.tax||'',desc:`${bkLbl(b)}${inst.name?' '+inst.name:''} ${pjTxt(p)}`,vat:n(p.info.vat)};
       if(ym(b.date)===m)S1.push(Object.assign({date:b.date},row));
       if(b.status==='paid'&&okD(b.paid)&&ym(b.paid)===m)R1.push(Object.assign({date:b.paid,rc:b.rcNo||''},row))});
     p.pos.forEach(po=>{const T=poTotal(po),v=vendOf(p,po),rec=(po.dl||[]).length||okD(po.taxDate),row={p,kind:'po',no:po.taxNo||'',ref:po.no,who:v.name||'',tax:v.tax||'',
-        desc:`ซื้อวัสดุตาม ${po.no} โครงการ ${p.name}`,base:T.s,vat:T.v,wht:0,whtp:0,tot:T.t,net:T.t,acc:'mat',items:po.items,vatp:po.novat?0:n(p.info.vat),cr:true};
+        desc:`ซื้อวัสดุตาม ${po.no} ${pjTxt(p)}`,base:T.s,vat:T.v,wht:0,whtp:0,tot:T.t,net:T.t,acc:'mat',items:po.items,vatp:po.novat?0:n(p.info.vat),cr:true};
       if(rec&&ym(poTaxDate(po))===m)P1.push(Object.assign({date:poTaxDate(po)},row));
       if(po.paid&&ym(po.paidDate||po.date)===m)Y1.push(Object.assign({date:po.paidDate||po.date},row))});
     p.spay.forEach(x=>{if(ym(x.date)!==m)return;const s=p.subs.find(y=>y.id===x.sub)||{},c=payCalc(x);
-      const row={p,kind:'spay',date:x.date,no:x.taxNo||'',ref:x.whtNo||'',who:s.name||'',tax:s.tax||'',desc:`${x.desc||'ค่าจ้างผู้รับเหมาช่วง'} โครงการ ${p.name}`,base:c.a,vat:c.v,wht:c.w,whtp:n(x.whtp),tot:c.a+c.v,net:c.net,acc:'sub',vatp:x.vat?7:0,pnd:s.ent==='co'?'ภ.ง.ด.53':'ภ.ง.ด.3'};
+      const row={p,kind:'spay',date:x.date,no:x.taxNo||'',ref:x.whtNo||'',who:s.name||'',tax:s.tax||'',desc:`${x.desc||'ค่าจ้างผู้รับเหมาช่วง'} ${pjTxt(p)}`,base:c.a,vat:c.v,wht:c.w,whtp:n(x.whtp),tot:c.a+c.v,net:c.net,acc:'sub',vatp:x.vat?7:0,pnd:s.ent==='co'?'ภ.ง.ด.53':'ภ.ง.ด.3'};
       P1.push(row);Y1.push(row)});
     p.costs.forEach(x=>{if(ym(x.date)!==m)return;const c=payCalc(x);
-      const row={p,kind:'cost',date:x.date,no:x.taxNo||x.ref||'',ref:x.ref||'',who:x.who||'',tax:x.tax||'',desc:`${x.desc||'ค่าใช้จ่าย'} โครงการ ${p.name}`,base:c.a,vat:c.v,wht:c.w,whtp:n(x.whtp),tot:c.a+c.v,net:c.net,acc:'oth',vatp:x.vat?7:0,pnd:(x.ent||'co')==='co'?'ภ.ง.ด.53':'ภ.ง.ด.3'};
+      const row={p,kind:'cost',date:x.date,no:x.taxNo||x.ref||'',ref:x.ref||'',who:x.who||'',tax:x.tax||'',desc:`${x.desc||'ค่าใช้จ่าย'} ${pjTxt(p)}`,base:c.a,vat:c.v,wht:c.w,whtp:n(x.whtp),tot:c.a+c.v,net:c.net,acc:'oth',vatp:x.vat?7:0,pnd:(x.ent||'co')==='co'?'ภ.ง.ด.53':'ภ.ง.ด.3'};
       P1.push(row);Y1.push(row)})}));
   const by=(a,b)=>String(a.date).localeCompare(String(b.date))||String(a.ref).localeCompare(String(b.ref));
   return {sale:S1.sort(by),buy:P1.sort(by),rcv:R1.sort(by),pay:Y1.sort(by)}}

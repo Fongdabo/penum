@@ -14,7 +14,7 @@ VIEWS.dash=()=>{
   (P.inst||[]).forEach(x=>{if(!x.task||P.bills.some(b=>b.inst===x.id))return;const r=s.R[x.task];if(r&&r.es<=addD(td,14))up.push([r.es,'ถึงงวดเบิก',`งวด ${x.no} ${x.desc}`])});
   up.sort((a,b)=>a[0].localeCompare(b[0]));
   const I=P.info,el=okD(I.start)&&okD(I.finish)?Math.max(0,Math.min(100,diffD(I.start,td)*100/Math.max(1,diffD(I.start,I.finish)))):null;
-  return `<section class="card" style="padding:14px 16px"><div class="row" style="justify-content:space-between"><div><h2 style="font-size:20px">${esc(P.name)}</h2><div class="muted">${[I.client,I.site,I.contractNo&&'สัญญา '+I.contractNo].filter(Boolean).map(esc).join(' · ')||'ยังไม่ได้ใส่ข้อมูลโครงการ'}</div></div>
+  return `<section class="card" style="padding:14px 16px"><div class="row" style="justify-content:space-between"><div><h2 style="font-size:20px">${(J=>J.pj?`${esc(J.pj)} <small class="muted" style="font-weight:500">· ${esc(pjJobW(J.job))}</small>`:esc(J.job))(pjJob(P))}</h2><div class="muted">${[I.client,I.site,I.contractNo&&'สัญญา '+I.contractNo].filter(Boolean).map(esc).join(' · ')||'ยังไม่ได้ใส่ข้อมูลโครงการ'}</div></div>
     <div class="muted" style="text-align:right">${okD(I.start)?`${thD(I.start)} – ${thD(I.finish)}`:''}${el!=null?`<br>เวลาผ่านไป ${fmt(el,0)}%`:''}</div></div>
     ${!P.boq.items.length?`<div class="row" style="margin-top:12px"><span class="hint" style="margin:0">เริ่มต้นโดยดึง BOQ จาก PENUM MEP หรือเปิดโครงการตัวอย่างเพื่อลองใช้</span><button type="button" class="btn pri" data-a="tab" data-k="setup">ดึง BOQ</button><button type="button" class="btn" data-a="loadDemo">เปิดโครงการตัวอย่าง</button></div>`:''}</section>
   <dl class="stats">
