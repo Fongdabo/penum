@@ -95,7 +95,7 @@ CVIEWS.acct=()=>{const {cur,html}=subTabs('acct',[['ar','ลูกหนี้ (
 ACT.printRc=b=>{const p=DB.projects[b.dataset.p],x=p&&p.bills.find(y=>y.id===b.dataset.id);if(!x)return;
   if(!x.rcNo){x.rcNo=nextNo('RC-',projects().flatMap(q=>q.bills.filter(y=>y.rcNo).map(y=>({no:y.rcNo}))));save()}
   $('#print').innerHTML=withP(p,()=>{const c=billCalc(x),cu=CO().customers.find(y=>y.id===P.info.cust)||{},I=P.info;
-    return cphead(`ใบเสร็จรับเงิน ${esc(x.rcNo)}`,`วันที่ ${thDL(x.paid||today())}`)+`<div class="meta"><div><b>ได้รับเงินจาก</b> ${esc(cu.name||I.client||'')}<br>${esc(cu.addr||'')}<br>${cu.tax?'เลขประจำตัวผู้เสียภาษี '+esc(cu.tax):''}</div><div>โครงการ ${esc(P.name)}<br>อ้างอิงใบกำกับภาษี ${esc(x.no)} ลงวันที่ ${thDL(x.date)}</div></div>
+    return cphead(`ใบเสร็จรับเงิน ${esc(x.rcNo)}`,`วันที่ ${thDL(x.paid||today())}`)+`<div class="meta"><div><b>ได้รับเงินจาก</b> ${esc(cu.name||I.client||'')}<br>${esc(cu.addr||'')}<br>${cu.tax?'เลขประจำตัวผู้เสียภาษี '+esc(cu.tax):''}</div><div>${(J=>J.pj?`โครงการ ${esc(J.pj)}<br>งาน ${esc(J.job)}`:`โครงการ ${esc(J.job)}`)(pjJob(P))}<br>อ้างอิงใบกำกับภาษี ${esc(x.no)} ลงวันที่ ${thDL(x.date)}</div></div>
     <table><thead><tr><th>รายการ</th><th>จำนวนเงิน</th></tr></thead><tbody><tr><td>ชำระค่างานตามใบกำกับภาษี ${esc(x.no)} (รวมภาษีมูลค่าเพิ่ม)</td><td style="text-align:right">${fmt(c.base+c.vat,2)}</td></tr>
     <tr><td>หักภาษี ณ ที่จ่าย ${n(I.wht)}% (ลูกค้าหักและออกหนังสือรับรอง)</td><td style="text-align:right">-${fmt(c.wht,2)}</td></tr>${c.ret?`<tr><td>หักเงินประกันผลงาน ${n(I.ret)}%</td><td style="text-align:right">-${fmt(c.ret,2)}</td></tr>`:''}
     <tr><td><b>รับเงินสุทธิ</b><br><small>(${bahtText(c.net)})</small></td><td style="text-align:right"><b>${fmt(c.net,2)}</b></td></tr></tbody></table>

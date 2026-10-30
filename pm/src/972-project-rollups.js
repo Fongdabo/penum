@@ -6,6 +6,8 @@
    - กระแสเงินสด adds a table of money in and out per project, its jobs under it.
    - ภาพรวมผู้บริหาร (220) puts the jobs of a project under one project row with the project's totals.
    - the accounting export files get a งาน column next to โครงการ, and their descriptions read "งาน … โครงการ …".
+   รอบ 3: the documents that still printed the whole name in one line now say งาน … โครงการ …: the subcontract, the handover
+   certificate, the receipt, the bank guarantee request, LINE messages and the project overview heading (the rest use phead, 330).
    A chosen project or job only narrows what is shown: every document number is still counted across the company (they are
    given when a button is pressed, never while a page is drawn), and a save asked for while drawing waits for the full data. */
 function pjGroupsOf(L){const M=new Map();L.forEach(p=>{const k=pjGk(p);(M.get(k)||M.set(k,{k,nm:pjSplit(p).base,L:[]}).get(k)).L.push(p)});return [...M.values()]}
