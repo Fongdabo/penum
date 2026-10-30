@@ -1,4 +1,4 @@
-/* ---------- 4.99.5 ใบเสนอราคา by customer or by project, with a chart (user: "เลือกได้ว่าจะดูแค่ลูกค้ามีกี่งาน หรือโครงการมีกี่งาน
+/* ---------- 4.99.6 ใบเสนอราคา by customer or by project, with a chart (user: "เลือกได้ว่าจะดูแค่ลูกค้ามีกี่งาน หรือโครงการมีกี่งาน
    … ทำกราฟด้วย แต่ละลูกค้ามีงานให้เรากี่งาน มูลค่ารวมเท่าไหร่ กำไรขาดทุนเท่าไร") ----------
    The quotation list gets ดูแบบ: รายการ / ตามลูกค้า / ตามโครงการ. Grouped, each customer or project gets a heading row (quotes, won,
    value quoted, value won, profit) that folds its quotes away, and a chart card above the list compares the groups by value, number
