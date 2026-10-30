@@ -29,16 +29,16 @@ function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[s
   const nph=subPhotos(b,x).length,att=SUBPG.filter(([k])=>k!=='let'&&pk[k]&&(k!=='ph'||nph)).map(([k,l],i)=>`${i+1}. ${l}${k==='ph'?` (${nph} รูป)`:''}`);
   const oh=ohead('-','',[]),lh=oh.split('<div class="ot">')[0]+(oh.match(/<div class="ofoot">[\s\S]*$/)||[''])[0];
   // "โครงการ - งาน" names read better as "งาน … โครงการ …"
-  const nm=String(P.name||'').trim(),cut=nm.indexOf(' - '),pjN=cut>0?nm.slice(0,cut).trim():'',job=cut>0?nm.slice(cut+3).trim():nm,what=pjN?`${esc(job)} โครงการ ${esc(pjN)}`:esc(nm);
+  const pjN=pjJob().pj,what=pjWhat();
   const row=(k,v)=>`<div class="lt-r"><b>${k}</b><div>${v}</div></div>`,party=esc(I.client||custName(I.cust)||'ผู้ว่าจ้าง');
   return lh+`<div class="let lt2">
   <div class="lt-top"><span>ที่ ${esc(b.letNo)}</span></div>
   <div class="lt-date">${thDL(b.date)}</div>
-  ${row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${what}`)}
+  ${row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${gov?what:pjWhat(P,1)}`)}
   ${row('เรียน',esc(subTo()))}
   ${I.contractNo?row('อ้างถึง',`สัญญาจ้างเลขที่ ${esc(I.contractNo)}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''}`):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',`<ol>${att.map(t=>`<li>${esc(t.replace(/^\d+\.\s*/,''))}</li>`).join('')}</ol>`):''}
-  <p class="lt-p">ตามที่ ${esc(CO_.name||'')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${I.site?` ณ ${esc(I.site)}`:''} จาก ${party}${I.contractNo?` ตามสัญญาที่อ้างถึง`:''} มูลค่างานตามสัญญา ${fmt(C.total,2)} บาท (ไม่รวมภาษีมูลค่าเพิ่ม) นั้น</p>
+  <p class="lt-p">ตามที่ ${esc(CO_.name||'')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${siteOnly(I.site)?` ณ ${esc(siteOnly(I.site))}`:''} จาก ${party}${I.contractNo?` ตามสัญญาที่อ้างถึง`:''} มูลค่างานตามสัญญา ${fmt(C.total,2)} บาท (ไม่รวมภาษีมูลค่าเพิ่ม) นั้น</p>
   <p class="lt-p">บัดนี้ ${esc(CO_.name||'ผู้รับจ้าง')} ได้ดำเนินงานงวดที่ ${esc(x.no)}${x.it?` (${fmt(x.it.pct,1)}% ของค่างาน)`:''} แล้วเสร็จ ${subWork(b,x)?`ได้แก่ ${esc(subWork(b,x))} `:''}ผลงานสะสมถึงงวดนี้คิดเป็นร้อยละ ${fmt(c.cum,2)}${x.plan?` (ตามแผนร้อยละ ${fmt(x.plan,2)})`:''} มูลค่างานงวดนี้ ${fmt(c.amt,2)} บาท (${bahtText(c.amt)}) ไม่รวมภาษีมูลค่าเพิ่ม</p>
   <p class="lt-p">${gov?`จึงเรียนมาเพื่อโปรดนำเสนอคณะกรรมการตรวจรับพัสดุตรวจรับงานงวดที่ ${esc(x.no)} และเบิกจ่ายเงินค่าจ้างตามเงื่อนไขของสัญญาต่อไป`:`จึงเรียนมาเพื่อโปรดตรวจสอบผลงานและอนุมัติเบิกจ่ายเงินค่างานงวดที่ ${esc(x.no)} ต่อไป`}</p>
   <div class="lt-sign"><div>ขอแสดงความนับถือ</div><div class="lt-ln"></div><div>(${esc(sn||'.................................................')})</div><div>${esc(sr)}</div><div>${esc(CO_.name||'')}</div></div>
@@ -74,7 +74,7 @@ function subSummary(b,x){const I=P.info,C=contract(),c=billCalc(b),mode=I.billMo
 function subCert(b,x){const I=P.info,c=billCalc(b),C=contract(),cn=CO().name||'ผู้รับจ้าง';
   if(isGovP())return `<div style="text-align:right;font-size:12px;color:#888">ร่างสำหรับคณะกรรมการตรวจรับพัสดุ (ใช้แบบฟอร์มของหน่วยงานได้)</div><h1 style="text-align:center">ใบตรวจรับพัสดุ (งานจ้าง)</h1>
   <div class="let" style="font-size:15px;line-height:1.8"><p style="text-align:right">เขียนที่ ${esc(I.client||'............................................')}<br>วันที่ ........ เดือน .................... พ.ศ. ..........</p>
-  <p style="text-indent:2.5em">ตามที่${esc(I.client||'หน่วยงาน')} ได้ทำสัญญาจ้าง${esc(cn)} ให้ดำเนินการ${esc(P.name)} ตามสัญญาเลขที่ ${esc(I.contractNo||'............')}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''} เป็นจำนวนเงิน ${fmt(C.total*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม) นั้น</p>
+  <p style="text-indent:2.5em">ตามที่${esc(I.client||'หน่วยงาน')} ได้ทำสัญญาจ้าง${esc(cn)} ให้ดำเนินการ${pjWhat()} ตามสัญญาเลขที่ ${esc(I.contractNo||'............')}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''} เป็นจำนวนเงิน ${fmt(C.total*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม) นั้น</p>
   <p style="text-indent:2.5em">ผู้รับจ้างได้ส่งมอบงานงวดที่ ${esc(x.no)} ตามหนังสือที่ ${esc(b.letNo||'............')} ลงวันที่ ${thDL(b.date)} คณะกรรมการตรวจรับพัสดุได้ตรวจรับงานเมื่อวันที่ ........................ ปรากฏว่า</p>
   <p style="margin-left:2.5em">☐ ผลงานถูกต้องครบถ้วนตามสัญญา เห็นควรรับงานงวดที่ ${esc(x.no)} และเบิกจ่ายเงินจำนวน ${fmt(c.amt*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม)<br>☐ ผลงานยังไม่ถูกต้องครบถ้วน ให้ผู้รับจ้างแก้ไขดังนี้ ...................................................................</p>
   <p style="text-indent:2.5em">จึงลงลายมือชื่อไว้เป็นหลักฐาน</p></div>
