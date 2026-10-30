@@ -64,5 +64,5 @@ function ohead(title,sub,extra){const C=CO(),t=String(title),en=(DOC_EN.find(([r
   <div class="ofoot"><span>${esc(C.name||'')}${C.email?' · '+esc(C.email):''}</span><span>${C.phone?'โทร '+esc(C.phone):''}</span></div>`}
 cphead=(t,s)=>ohead(t,s,[]);
 // "โครงการ - งาน" names (3.99) print as two rows
-phead=(t,s)=>{const I=P.info,nm=String(P.name||'').trim(),k=nm.indexOf(' - ');return ohead(t,s,[...(k>0?[['โครงการ',esc(nm.slice(0,k).trim())],['งาน',esc(nm.slice(k+3).trim())]]:[['โครงการ',esc(nm)]]),...(I.client?[['ลูกค้า',esc(I.client)]]:[])])};
+phead=(t,s)=>{const I=P.info,J=pjJob(P);return ohead(t,s,[...(J.pj?[['โครงการ',esc(J.pj)],['งาน',esc(J.job)]]:[['โครงการ',esc(J.job)]]),...(I.client?[['ลูกค้า',esc(I.client)]]:[])])};
 

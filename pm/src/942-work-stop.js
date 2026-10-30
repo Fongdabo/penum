@@ -212,7 +212,7 @@ HOOK.push((p,v)=>{const m=String(p).match(/^stops\.([^.]+)\.kind$/);if(!m)return
 
 /* --- the letter --- */
 function swLetter(s){const I=P.info,CO_=CO(),[sn,sr]=subSigner(),R=swR(s),k=s.kind,t=swK(k)[2],fin=swFin(),gov=isGovP(),party=esc(s.to||swParty()),at=s.date||today();
-  const nm=String(P.name||'').trim(),cut=nm.indexOf(' - '),pjN=cut>0?nm.slice(0,cut).trim():'',job=cut>0?nm.slice(cut+3).trim():nm,what=pjN?`${esc(job)} โครงการ ${esc(pjN)}`:esc(nm);
+  const pjN=pjJob().pj,what=pjWhat();
   const row=(a,v)=>`<div class="lt-r"><b>${a}</b><div>${v}</div></div>`,p=x=>x?`<p class="lt-p">${x}</p>`:'',nd=n(s.nd)||7;
   const dtl=s.detail&&s.detail.trim()?esc(s.detail.trim()).replace(/\n/g,' '):'',cl=String(s.clause||'').trim();
   const B=swMoney(s)?swBills(s):[],btx=swBillTxt(B,at),tb=swBillTb(B,at),owe=sum(B,swAmt);
@@ -223,7 +223,7 @@ function swLetter(s){const I=P.info,CO_=CO(),[sn,sr]=subSigner(),R=swR(s),k=s.ki
   if(k==='term')swPrior(s).forEach(x=>refs.push(swRef(x.id)));else if(lnk)refs.push(swRef(lnk.id));
   const att=String(s.att||'').split('\n').map(x=>x.trim()).filter(Boolean);
   const law=swPay(s)&&['warn','stop'].includes(k)?' ซึ่งเป็นสิทธิของคู่สัญญาในสัญญาต่างตอบแทนที่จะไม่ชำระหนี้ตอบแทนจนกว่าอีกฝ่ายจะชำระหนี้ ตามประมวลกฎหมายแพ่งและพาณิชย์ มาตรา 369':'';
-  const intro=`ตามที่ ${esc(CO_.name||'บริษัท')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${I.site?` ณ ${esc(I.site)}`:''} จาก ${party}${refs[0]?' ตามสัญญาที่อ้างถึง':''}${fin&&!['ret'].includes(k)?` กำหนดแล้วเสร็จวันที่ ${thDL(fin)}`:''} นั้น`;
+  const intro=`ตามที่ ${esc(CO_.name||'บริษัท')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${siteOnly(I.site)?` ณ ${esc(siteOnly(I.site))}`:''} จาก ${party}${refs[0]?' ตามสัญญาที่อ้างถึง':''}${fin&&!['ret'].includes(k)?` กำหนดแล้วเสร็จวันที่ ${thDL(fin)}`:''} นั้น`;
   let subj='',body='';
   if(k==='remind'){subj=`ทวงถามการชำระเงินค่างวด ${what}`;
     body=p(intro)+p(s.why==='chq'?`บัดนี้ ${swChq(s)}${btx?` ${btx}`:''}${dtl?` ${dtl}`:''}`:`บริษัทได้ส่งงานและวางบิลเรียกเก็บเงินค่างานตามสัญญาแล้ว แต่จนถึงวันที่ออกหนังสือฉบับนี้ บริษัทยังไม่ได้รับชำระเงิน${btx?` ${btx}`:''}${dtl?` ${dtl}`:''}`)+tb+
