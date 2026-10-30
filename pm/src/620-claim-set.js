@@ -92,7 +92,7 @@ PRINT.subm=id=>{const b=P.bills.find(y=>y.id===id);if(!b)return submReg(id);cons
   if(pk.let)out.push(subLetter(b,x,pk));if(pk.sum)out.push(subSummary(b,x));if(pk.bill)out.push(PRINT.bill(id));if(pk.pp&&typeof subPP==='function')out.push(subPP(b));if(pk.cert)out.push(subCert(b,x));
   if(pk.ph){const h=subPh(b,x);if(h)out.push(h)}if(pk.ti)out.push(taxInv(id));
   // the landscape sheet starts its own page already; a page break before it as well would leave a blank page
-  return out.join(subBr).split(subBr+'<div class="sub-pp"').join('<div class="sub-pp"')};
+  return out.join(subBr).split(subBr+'<div class="sub-pp').join('<div class="sub-pp')};
 function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,ph=subPhotos(b,x).length,[sn]=subSigner();if(!b.pk)b.pk=pk;
   const ck=(k,l)=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-t="chk" data-p="${bp}.pk.${k}"${pk[k]?' checked':''}>${l}${k==='ph'?` <small class="muted">(${ph} รูปจากรายงานประจำวัน)</small>`:''}${k==='cert'?` <small class="muted">(${isGovP()?'ร่างใบตรวจรับสำหรับกรรมการ':'ให้ที่ปรึกษาลงนาม'})</small>`:''}</label>`;
   return `<section class="card" id="subCard"><h2><span>ชุดเอกสารส่งงวด งวดที่ ${esc(x.no)}</span><small>หนังสือนำส่ง สรุปผลงาน ใบเบิก Progress Payment ใบรับรอง และรูปถ่าย พิมพ์รวมเป็นชุดเดียว</small><span class="sp"></span><button type="button" class="btn sm pri" data-a="print" data-k="subm" data-id="${b.id}">พิมพ์ชุดเอกสารส่งงวด</button></h2>
