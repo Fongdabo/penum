@@ -19,8 +19,8 @@ ACT.qPjEdGo=b=>{const q=CO().quotes.find(x=>x.id===b.dataset.id);if(!q)return;co
   const k=pjKey(pjCombine(a||j,a?j:''));if(Object.values(DB.projects).some(x=>x!==p&&pjKey(x.name)===k)){toast('มีงานชื่อนี้ในโครงการนั้นแล้ว ใส่ชื่องานให้ต่างกัน');return}
   pjSetNames(p,a||j,a?j:'');q.pname=a||j;$('#dlg').close();save();render();toast(`ย้ายไปโครงการ ${a||j} แล้ว`)};
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments);
-  return h.replace(/(<tr class="[^"]*"><td><button type="button" class="btn ghost sm" data-a="sel" data-k="quote" data-id="([^"]+)">[\s\S]*?<\/td><td>[\s\S]*?<\/td><td>[\s\S]*?<\/td>)<td>([\s\S]*?)<\/td>/g,
-    (all,pre,id,v)=>`${pre}<td><button type="button" class="q-pjc" data-a="qPjEd" data-id="${id}" title="แก้ / ย้ายโครงการ">${v||'<span class="muted">ใส่โครงการ</span>'} <span class="q-pje" aria-hidden="true">✎</span></button></td>`)}}
+  return h.replace(/(<tr class="[^"]*"><td><button type="button" class="btn ghost sm" data-a="sel" data-k="quote" data-id="([^"]+)">[\s\S]*?<\/td><td[^>]*>[\s\S]*?<\/td><td[^>]*>[\s\S]*?<\/td>)<td( class="[^"]*")?>([\s\S]*?)<\/td>/g,
+    (all,pre,id,cl,v)=>`${pre}<td${cl||''}${v?` title="${v}"`:''}><button type="button" class="q-pjc" data-a="qPjEd" data-id="${id}" title="${v?v+' · ':''}แก้ / ย้ายโครงการ"><span class="q-pjt">${v||'<span class="muted">ใส่โครงการ</span>'}</span> <span class="q-pje" aria-hidden="true">✎</span></button></td>`)}}
 document.head.insertAdjacentHTML('beforeend',`<style>
 .q-pjc{background:none;border:0;padding:2px 4px;margin:-2px -4px;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:6px}.q-pjc:hover{background:var(--surface-2,rgba(127,127,127,.12))}
 .q-pje{font-size:12px;opacity:0;color:var(--accent,#0e7490)}.q-pjc:hover .q-pje,.q-pjc:focus-visible .q-pje{opacity:1}@media (hover:none){.q-pje{opacity:.6}}
