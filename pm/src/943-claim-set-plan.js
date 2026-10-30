@@ -16,7 +16,7 @@ function subPlan(b,x){if(!P.tasks.length||typeof ganttPrint!=='function')return 
   if(pk.plan){const h=subPlan(b,x);if(h)out.push(h)}if(pk.cert)out.push(subCert(b,x));
   if(pk.ph){const h=subPh(b,x);if(h)out.push(h)}if(pk.ti)out.push(taxInv(id));
   // a landscape sheet starts its own page already; a page break before it as well would leave a blank page
-  return out.join(subBr).split(subBr+'<div class="sub-pp"').join('<div class="sub-pp"')}}
+  return out.join(subBr).split(subBr+'<div class="sub-pp').join('<div class="sub-pp')}}
 // without a plan the page has nothing to print: say so next to its box
 {const f=subCard;subCard=function(b){const h=f.apply(this,arguments);return P.tasks.length?h:h.replace(/(data-p="bills\.[^"]+\.pk\.plan"[^>]*>[^<]*)/,'$1 <small class="muted">(ยังไม่มีแผนงาน)</small>')}}
 document.head.insertAdjacentHTML('beforeend',`<style>
