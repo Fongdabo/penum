@@ -83,3 +83,11 @@ function pjRenBtn(){const b=document.querySelector('#side .pj-jobb');if(b&&!b.qu
 document.head.insertAdjacentHTML('beforeend',`<style>.pjren{width:100%}.pjren td{padding:3px 4px}.pjren input{width:100%;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--surface,#fff);color:inherit}.pjren tr.pjren-g td{border-top:2px solid var(--line)}
 .pj-jobb .btn[data-a="pjRenAll"]{flex:0 0 auto}</style>`);
 Object.assign(SBKW,{'pj.setup':(SBKW['pj.setup']||'')+' แก้ชื่อโครงการ เปลี่ยนชื่อโครงการ แก้ชื่องาน ย้ายงาน'});
+
+/* --- ใบเสนอราคา: a โครงการ column and a project filter (user: "ตรงนี้เพิ่มช่องโครงการเข้าไปด้วยดีไหม") --- */
+// the project of a quotation: the one it was won into, else its own โครงการ box
+function qPjOf(q){const p=q&&q.pj&&DB.projects[q.pj];return p?pjSplit(p).base:pjName(q&&q.pname||'')}
+function qPjFilter(L){const M=new Map();L.forEach(q=>{const v=qPjOf(q);if(v&&!M.has(pjKey(v)))M.set(pjKey(v),v)});if(!M.size)return '';
+  const O=[...M.entries()].sort((a,b)=>a[1].localeCompare(b[1],'th')),cur=S.qPjF||'';
+  return ` <select id="qPjF" aria-label="โครงการ" style="max-width:280px;margin-left:8px"><option value="">ทุกโครงการ</option>${O.map(([k,v])=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(v)} (${L.filter(q=>pjKey(qPjOf(q))===k).length})</option>`).join('')}<option value="-"${cur==='-'?' selected':''}>ยังไม่ระบุโครงการ (${L.filter(q=>!qPjOf(q)).length})</option></select>`}
+document.addEventListener('change',e=>{if(e.target.id!=='qPjF')return;S.qPjF=e.target.value;render()});
