@@ -43,7 +43,7 @@ function siteFixAll(){let ch=0;const fx=o=>{if(o&&typeof o.site==='string'){cons
 document.addEventListener('change',e=>{const el=e.target;if(!el.dataset||!el.dataset.pjn)return;
   const v=k=>String((document.querySelector(`#view [data-pjn="${k}"]`)||{}).value||'').trim(),pj=v('pj'),job=v('job');
   if(!pj&&!job){toast('ใส่ชื่อโครงการ');render();return}
-  P.name=pj&&job&&pjKey(pj)!==pjKey(job)?`${pj} - ${job}`:pj||job;save();render()});
+  if(typeof pjSetNames==='function')pjSetNames(P,pj||job,pj?job:'');else P.name=pj&&job&&pjKey(pj)!==pjKey(job)?`${pj} - ${job}`:pj||job;save();render()});
 Object.assign(SBKW,{'pj.setup':(SBKW['pj.setup']||'')+' ชื่องาน งาน แยกโครงการกับงาน'});
 // the job and the project make the subject a line or two longer: keep the letter on one page
 document.head.insertAdjacentHTML('beforeend','<style>#print .lt2 .lt-sign{margin-top:22px}#print .lt2 .lt-ln{height:44px}#print .lt2 .lt-ct{margin-top:18px}</style>');
