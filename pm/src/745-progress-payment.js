@@ -107,6 +107,30 @@ function subPP(b){const h=PRINT.ppay(b.id).replace('<style>@page{size:A4 landsca
     if(ht(1)>lim&&ht(.66)<=lim){let lo=.66,hi=1;for(let i=0;i<7;i++){const m=(lo+hi)/2;if(ht(m)<=lim)lo=m;else hi=m}z=lo}P0.innerHTML=''}catch(e){}
   return `<div class="sub-pp"${z<1?` style="zoom:${z.toFixed(3)};width:${(277/z).toFixed(1)}mm"`:''}>${h}</div>`}
 document.head.insertAdjacentHTML('beforeend','<style>@page subland{size:A4 landscape;margin:0}@media print{#print .sub-pp{page:subland}}</style>');
+/* 4.99.14 the sheet on the เบิกงวด page in the dark theme (user: "ช่องมืดแปลกๆ"): its cells are see-through with dark ink, so the
+   odd rows and the ประกัน / VAT / หัก ณ ที่จ่าย rows showed dark text on the dark card while the even rows stayed white. On screen in
+   the dark theme the sheet takes the theme's colours; the printout and the แบ่งจอ paper (a shadow root, where :root does not match)
+   keep the paper colours. */
+document.head.insertAdjacentHTML('beforeend',`<style>@media screen{
+:root[data-theme="dark"] .tw>.pp{border-color:var(--line)}
+:root[data-theme="dark"] .tw>.pp td{background:var(--surface);color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] .tw>.pp tbody tr.it:nth-child(even) td{background:#151C25}
+:root[data-theme="dark"] .tw>.pp td.p,:root[data-theme="dark"] .tw>.pp td.c{color:var(--muted)}
+:root[data-theme="dark"] .tw>.pp td.l{color:var(--muted)}
+:root[data-theme="dark"] .tw>.pp td.cur,:root[data-theme="dark"] .tw>.pp tbody tr.it:nth-child(even) td.cur{background:rgba(245,158,11,.14)}
+:root[data-theme="dark"] .tw>.pp tr.sp td{background:#1F3A5F}
+:root[data-theme="dark"] .tw>.pp tr.t td{background:var(--good-soft);color:var(--good)}
+:root[data-theme="dark"] .tw>.pp tr.bl td.r{color:#60A5FA}
+:root[data-theme="dark"] .tw>.pp tr.rd td.r,:root[data-theme="dark"] .tw>.pp tr.rd td.l{color:var(--danger)}
+:root[data-theme="dark"] .tw>.pp tr.n td{background:#1F3A5F;color:#fff;border-color:#2f4c73}
+:root[data-theme="dark"] .tw>.pp tr.n td.cur{background:#C27803}
+:root[data-theme="dark"] .tw>.pp tr.rv td{background:var(--good-soft);color:var(--good)}
+:root[data-theme="dark"] .tw>.pp tr.rv small{color:var(--muted)}
+:root[data-theme="dark"] .tw>.pp tr.od td{background:var(--danger-soft);color:var(--ink)}
+:root[data-theme="dark"] .tw>.pp tr.od td.bad{color:var(--danger)}
+:root[data-theme="dark"] .tw>.pp tr.rv td.cur,:root[data-theme="dark"] .tw>.pp tr.od td.cur{background:rgba(245,158,11,.14)}
+:root[data-theme="dark"] .tw>.pp .bar{background:rgba(255,255,255,.12)}
+}</style>`);
 // on the เบิกงวด page: the same sheet as a card, with a print button
 {const f=VIEWS.cost;VIEWS.cost=()=>{const h=f();if((S.sub.cost||'sum')!=='bill')return h;
   if(!(P.inst||[]).length&&!P.bills.length)return h+`<section class="card"><h2><span>แผนเบิกงวดงาน / PROGRESS PAYMENT</span></h2><p class="hint">ยังไม่มีงวดงานหรือใบเบิก สร้างงวดที่แท็บ “แผนงวดเงิน” หรือกด “+ ใบเบิก” ด้านบน แล้วแผ่น PROGRESS PAYMENT จะขึ้นที่นี่</p></section>`;
