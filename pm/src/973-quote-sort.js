@@ -9,17 +9,19 @@
    4.99.9 (user: "อันนี้ไม่ใช่เรียง ให้เป็นเลือก"): the ⌄ opens a menu like Excel's filter: sort up or down, and for every column
    ("ปรับเหมือนกันเลย"; months for วันที่ / ยืนราคาถึง, the shown amount for ราคา and กำไร) tick the values to show, with a search box. Chosen values live in
    S.qColF {column: [values]} and narrow the list, the groups and the analysis (qByOk); a heading with a filter is marked ●, and
-   the bar above the list says what is filtered with one press to clear it. The old ผู้เสนอราคา box became this menu. */
+   the bar above the list says what is filtered with one press to clear it. The old ผู้เสนอราคา box became this menu.
+   4.99.15 (user: "เพิ่มช่อง VAT และราคารวม VAT ด้วยดีไหม"): VAT and ราคารวม VAT columns after ราคาไม่รวม VAT, from each quote's own
+   qCalc (vat, grand), with the same menu. */
 function qApprL(q){const R=[];Object.keys(q.appr||{}).sort((a,b)=>a-b).forEach(i=>{const a=q.appr[i],st=(APPR.quote[i]||[])[0]||'';if(a&&a.by)R.push({by:a.by,ok:a.ok!==false,st,at:a.at})});
   if(q.lowOk&&q.lowOk.by)R.push({by:q.lowOk.by,ok:true,st:'อนุมัติกำไรต่ำ',at:q.lowOk.at});if(q.lowNo&&q.lowNo.by)R.push({by:q.lowNo.by,ok:false,st:'กำไรต่ำ',at:q.lowNo.at});return R}
 // no approval steps recorded (เปิดใช้ขั้นตอนอนุมัติ is off, or the quote is older): the quote's ผู้ลงนาม (959) is who approved it on paper
 const qSigner=q=>String(q.signName||'').trim();
 function qApprBy(q){const R=qApprL(q),seen=new Set(),sg=qSigner(q);if(!R.length)return sg?`<span class="muted" title="ผู้ลงนามในใบเสนอราคา${q.signPos?' · '+esc(q.signPos):''}">${esc(sg)}</span>`:'';return R.filter(r=>{const k=r.by+'|'+r.ok;if(seen.has(k))return false;seen.add(k);return true})
-  .map(r=>`<span title="${esc((r.ok?'อนุมัติ':'ไม่อนุมัติ')+(r.st?' · '+r.st:'')+(r.at?' · '+thD(r.at):''))}"${r.ok?'':' class="qg-neg"'}>${r.ok?'':'ไม่อนุมัติ · '}${esc(r.by)}</span>`).join('<br>')}
+  .map(r=>`<span title="${esc(r.by+' · '+(r.ok?'อนุมัติ':'ไม่อนุมัติ')+(r.st?' · '+r.st:'')+(r.at?' · '+thD(r.at):''))}"${r.ok?'':' class="qg-neg"'}>${r.ok?'':'ไม่อนุมัติ · '}${esc(r.by)}</span>`).join(', ')}
 const QBLANK='(ว่าง)';
 // the values a quote has in a column that can be filtered (ผู้อนุมัติ may have several)
 const qGpTxt=q=>{const x=qCalc(q);return x.net?fmt((x.net-x.cost)*100/x.net,1)+'%':''};
-const QCOLV={no:q=>[q.no],val:q=>[fmt(qCalc(q).net)],gp:q=>[qGpTxt(q)],cust:q=>[custName(q.cust)],pj:q=>[qPjOf(q)],job:q=>[q.title],st:q=>[(QST.find(s=>s[0]===q.status)||QST[0])[1]],by:q=>[q.by],
+const QCOLV={no:q=>[q.no],val:q=>[fmt(qCalc(q).net)],vat:q=>[fmt(qCalc(q).vat)],grand:q=>[fmt(qCalc(q).grand)],gp:q=>[qGpTxt(q)],cust:q=>[custName(q.cust)],pj:q=>[qPjOf(q)],job:q=>[q.title],st:q=>[(QST.find(s=>s[0]===q.status)||QST[0])[1]],by:q=>[q.by],
   ap:q=>{const R=qApprL(q),L=R.filter(r=>r.ok).map(r=>r.by);return L.length?L:R.length?['']:[qSigner(q)]},date:q=>[okD(q.date)?thM(ym(q.date)):''],exp:q=>{const e=addD(q.date,n(q.valid));return [okD(e)?thM(ym(e)):'']}};
 const qColVals=(q,k)=>[...new Set(QCOLV[k](q).map(v=>String(v||'').trim()||QBLANK))];
 function qColF(){const F=S.qColF=S.qColF&&typeof S.qColF==='object'?S.qColF:{};if(S.qByF){F.by=[S.qByF];S.qByF=''}return F}
@@ -27,16 +29,16 @@ const qByOk=q=>{const F=qColF();return Object.keys(F).every(k=>!QCOLV[k]||!Array
 const qByFilter=()=>{const F=qColF(),K=Object.keys(F).filter(k=>QCOLV[k]&&Array.isArray(F[k]));if(!K.length)return '';
   return `<span class="q-fchip">กรองอยู่: ${K.map(k=>`${QSORT[k]} (${F[k].length})`).join(', ')} <button type="button" class="btn sm ghost" data-a="qColClr">✕ ล้างตัวกรอง</button></span>`};
 ACT.qColClr=()=>{S.qColF={};render()};
-const QSORT={no:'เลขที่',date:'วันที่',cust:'ลูกค้า',pj:'โครงการ',job:'งาน',val:'ราคาไม่รวม VAT',gp:'กำไรขั้นต้น',st:'สถานะ',by:'ผู้เสนอราคา',ap:'ผู้อนุมัติ',exp:'ยืนราคาถึง'};
+const QSORT={no:'เลขที่',date:'วันที่',cust:'ลูกค้า',pj:'โครงการ',job:'งาน',val:'ราคาไม่รวม VAT',vat:'VAT',grand:'ราคารวม VAT',gp:'กำไรขั้นต้น',st:'สถานะ',by:'ผู้เสนอราคา',ap:'ผู้อนุมัติ',exp:'ยืนราคาถึง'};
 function qSortKey(q,k){const c=()=>qCalc(q);
   switch(k){case 'no':return String(q.no||'');case 'date':return q.date||'';case 'cust':return custName(q.cust)||'';case 'pj':return qPjOf(q)||'';
-    case 'job':return String(q.title||'');case 'val':return c().net;case 'gp':{const x=c();return x.net?(x.net-x.cost)/x.net:-1e9}
+    case 'job':return String(q.title||'');case 'val':return c().net;case 'vat':return c().vat;case 'grand':return c().grand;case 'gp':{const x=c();return x.net?(x.net-x.cost)/x.net:-1e9}
     case 'st':{const i=QST.findIndex(s=>s[0]===q.status);return i<0?99:i}case 'exp':return addD(q.date,n(q.valid))||'';case 'by':return String(q.by||'').trim()||'\uffff';case 'ap':return qApprL(q).map(r=>r.by).join(', ')||qSigner(q)||'\uffff'}return ''}
 const qSortCmp=(a,b)=>typeof a==='number'&&typeof b==='number'?a-b:String(a).localeCompare(String(b),'th',{numeric:true,sensitivity:'base'});
 const qcmClose=()=>{const m=document.getElementById('qcm');if(m)m.remove()};
 // the menu under a heading: sort, then (for columns with values) tick what to show
 ACT.qSort=b=>{const k=b.dataset.k,was=document.getElementById('qcm');qcmClose();if(was&&was.dataset.k===k)return;
-  const F=qColF(),s=S.qSort||{},cat=!!QCOLV[k],num=['val','gp'].includes(k);
+  const F=qColF(),s=S.qSort||{},cat=!!QCOLV[k],num=['val','vat','grand','gp'].includes(k);
   const L=cat?[...new Set(CO().quotes.filter(q=>!S.qPjF||pjKey(qPjOf(q)||'-')===S.qPjF).flatMap(q=>qColVals(q,k)))]:[];
   if(k==='date'||k==='exp'){const ord=v=>{const q=CO().quotes.find(x=>qColVals(x,k).includes(v));return q?(k==='date'?q.date:addD(q.date,n(q.valid)))||'':''};L.sort((a,b)=>ord(b).localeCompare(ord(a)))}
   else if(num){const v=x=>x===QBLANK?-1e15:parseFloat(x.replace(/[,%]/g,''))||0;L.sort((a,b)=>v(b)-v(a))}
@@ -63,7 +65,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')qcmClose()});
 {const r=render;render=function(){qcmClose();return r.apply(this,arguments)}}
 {const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);
   h=h.replace(/(<div class="qg-bar"><span class="qg-sw">[\s\S]*?)(<\/div>)/,(a,x,y)=>x+qByFilter()+y);
-  const m=h.match(/<div class="tw"><table><thead><tr><th>เลขที่<\/th>[\s\S]*?<\/thead><tbody>([\s\S]*?)<\/tbody><\/table><\/div>/);if(!m)return h;
+  const m=h.match(/<div class="tw"><table class="q-list"><thead><tr><th>เลขที่<\/th>[\s\S]*?<\/thead><tbody>([\s\S]*?)<\/tbody><\/table><\/div>/);if(!m)return h;
   const s=S.qSort&&QSORT[S.qSort.k]?S.qSort:null;let t=m[0];
   // the arrows
   const CF=qColF();Object.entries(QSORT).forEach(([k,l])=>{const on=s&&s.k===k,fl=Array.isArray(CF[k])&&QCOLV[k],ar=(fl?'● ':'')+(on?(s.d===1?'▲':'▼'):'⌄');
@@ -86,5 +88,14 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .qcm-b{display:flex;gap:6px;justify-content:flex-end;padding:6px 4px 2px;flex-wrap:wrap}
 .q-fchip{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--accent,#0e7490);margin-left:6px}.q-ths.on span{opacity:1;color:var(--accent,#0e7490)}.q-ths:hover span{opacity:1}
 th.r .q-ths{flex-direction:row}
+/* 4.99.15 (user: "ไม่อยากให้เป็น 2 แถวแบบนี้ ปรับตัวหนังสือก็ได้"): every quote on one line. Numbers, dates and names never wrap; the
+   long texts (ลูกค้า, โครงการ, งาน, ผู้อนุมัติ) end in … and show in full when pointed at. */
+table.q-list{font-size:13px}table.q-list th .q-ths{white-space:normal;text-align:inherit}table.q-list th.r .q-ths{justify-content:flex-end}table.q-list td{white-space:nowrap}table.q-list th,table.q-list td{padding-top:6px;padding-bottom:6px;padding-left:8px;padding-right:8px}
+table.q-list td .btn.sm{padding-left:6px;padding-right:6px}
+table.q-list{width:100%}table.q-list td.q-tx{max-width:0;min-width:84px;overflow:hidden;text-overflow:ellipsis}
+table.q-list>thead>tr>th:nth-child(3),table.q-list>thead>tr>th:nth-child(4){width:15%}table.q-list>thead>tr>th:nth-child(5){width:21%}table.q-list>thead>tr>th:nth-child(12){width:9%}table.q-list>thead>tr>th:nth-child(9){min-width:72px}
+table.q-list .q-pjc{display:flex;max-width:100%;align-items:baseline;gap:4px}table.q-list .q-pjt{overflow:hidden;text-overflow:ellipsis;min-width:0}table.q-list .q-pje{flex:none}
+table.q-list tr.qg-h td{white-space:normal}
 </style>`);
 Object.assign(SBKW,{'co.sales.quote':(SBKW['co.sales.quote']||'')+' เรียงลำดับ เรียงตามหัวข้อ ลูกศร ตัวกรอง เลือกตามหัวข้อ'});
+Object.assign(I18N.en.x,{'ราคารวม VAT':'Price incl. VAT'});
