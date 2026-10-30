@@ -27,7 +27,7 @@ function qgChart(G,by){const m=['val','n','gp'].includes(S.qgMet)?S.qgMet:'val',
     <div class="qg-v">${m==='gp'?`<b${neg?' class="qg-neg"':''}>${f(a)}</b>`:`<b>${f(w)}</b> <small class="muted">/ ${f(a)}</small>`}</div></div>`}).join('')}</div>
   <p class="hint" style="margin:8px 0 0">${m==='gp'?'กำไร / ขาดทุนของงานที่ได้: งานที่เปิดโครงการแล้วใช้ค่าคาดการณ์ของโครงการ (มูลค่าสัญญา − ต้นทุนคาดการณ์) ที่เหลือใช้กำไรขั้นต้นในใบเสนอราคา':'<span class="qg-k qg-kw"></span> ได้งาน &nbsp; <span class="qg-k"></span> เสนอราคาทั้งหมด'}${G.length>top.length?` · แสดง ${top.length} อันดับแรก`:''}</p></section>`}
 {const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);
-  const C=CO(),L0=C.quotes.slice().reverse();h=h.replace(/(<section class="card"><h2><span>ใบเสนอราคา<\/span>[\s\S]*?<\/h2>)/,`$1<div class="qg-bar">${qgSwitch()}${qPjFilter(L0)}</div>`);
+  const C=CO(),L0=C.quotes.slice().reverse();h=h.replace(/(<section class="card"><h2><span>ใบเสนอราคา<\/span>[\s\S]*?<\/h2>)/,`$1<div class="qg-bar">${qgSwitch()}</div>`);
   const by=qgVw();if(!by)return h;
   const L=L0.filter(q=>(!S.qPjF||pjKey(qPjOf(q)||'-')===S.qPjF)&&qByOk(q)),G=qgStats(L,by),F=S.qgFold||{};
   const m=h.match(/<div class="tw"><table class="q-list"><thead><tr><th>เลขที่<\/th>[\s\S]*?<\/thead><tbody>([\s\S]*?)<\/tbody><\/table><\/div>/);if(!m)return h;
@@ -38,7 +38,7 @@ function qgChart(G,by){const m=['val','n','gp'].includes(S.qgMet)?S.qgMet:'val',
   h=h.replace(m[0],m[0].replace(m[1],body||'<tr><td colspan="14" class="empty">ยังไม่มีใบเสนอราคา</td></tr>'));
   return h.replace(/<section class="card"><h2><span>ใบเสนอราคา<\/span>/,qgChart(G,by)+'$&')}}
 document.head.insertAdjacentHTML('beforeend',`<style>
-.qg-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px}.qg-bar #qPjF{margin-left:6px!important}.qg-sw{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}.qg-sw small{margin-right:2px}
+.qg-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px}.qg-sw{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}.qg-sw small{margin-right:2px}
 tr.qg-h td{background:var(--surface-2,rgba(127,127,127,.08));padding:8px 10px}.qg-hb{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;margin-right:10px}
 .qg-st{font-size:13px;color:var(--muted)}.qg-neg{color:var(--danger)}
 .qg-ch h2 small{font-weight:400}

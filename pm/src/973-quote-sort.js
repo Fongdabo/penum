@@ -24,7 +24,9 @@ const qGpTxt=q=>{const x=qCalc(q);return x.net?fmt((x.net-x.cost)*100/x.net,1)+'
 const QCOLV={no:q=>[q.no],val:q=>[fmt(qCalc(q).net)],vat:q=>[fmt(qCalc(q).vat)],grand:q=>[fmt(qCalc(q).grand)],gp:q=>[qGpTxt(q)],cust:q=>[custName(q.cust)],pj:q=>[qPjOf(q)],job:q=>[q.title],st:q=>[(QST.find(s=>s[0]===q.status)||QST[0])[1]],by:q=>[q.by],
   ap:q=>{const R=qApprL(q),L=R.filter(r=>r.ok).map(r=>r.by);return L.length?L:R.length?['']:[qSigner(q)]},date:q=>[okD(q.date)?thM(ym(q.date)):''],exp:q=>{const e=addD(q.date,n(q.valid));return [okD(e)?thM(ym(e)):'']}};
 const qColVals=(q,k)=>[...new Set(QCOLV[k](q).map(v=>String(v||'').trim()||QBLANK))];
-function qColF(){const F=S.qColF=S.qColF&&typeof S.qColF==='object'?S.qColF:{};if(S.qByF){F.by=[S.qByF];S.qByF=''}return F}
+// 4.99.16 (user: "เอาออกเลยดีไหม ไม่จำเป็น"): the ทุกโครงการ box above the list is gone; a project chosen there becomes the โครงการ heading's filter
+function qColF(){const F=S.qColF=S.qColF&&typeof S.qColF==='object'?S.qColF:{};if(S.qByF){F.by=[S.qByF];S.qByF=''}
+  if(S.qPjF){const v=S.qPjF==='-'?QBLANK:CO().quotes.map(qPjOf).find(x=>x&&pjKey(x)===S.qPjF);if(v)F.pj=[v];S.qPjF=''}return F}
 const qByOk=q=>{const F=qColF();return Object.keys(F).every(k=>!QCOLV[k]||!Array.isArray(F[k])||qColVals(q,k).some(v=>F[k].includes(v)))};
 const qByFilter=()=>{const F=qColF(),K=Object.keys(F).filter(k=>QCOLV[k]&&Array.isArray(F[k]));if(!K.length)return '';
   return `<span class="q-fchip">กรองอยู่: ${K.map(k=>`${QSORT[k]} (${F[k].length})`).join(', ')} <button type="button" class="btn sm ghost" data-a="qColClr">✕ ล้างตัวกรอง</button></span>`};
