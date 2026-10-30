@@ -50,7 +50,7 @@ function siWork(Q){const M=new Map();Q.forEach(q=>{const k=siWt(q),c=qCalc(q),x=
   return `<section class="card"><h2><span>4. กำไรตามประเภทงาน</span><small>แยกจากคำในชื่องานของใบเสนอราคา · เรียงจาก % กำไรของงานที่ได้</small></h2>
   ${siTb([['ประเภทงาน'],['ใบเสนอราคา',1],['ได้งาน',1],['มูลค่าเสนอ',1],['มูลค่าได้งาน',1],['กำไร',1],['% กำไร',1]],rows)}</section>`}
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments);if(S.qView!=='a')return h;
-  const C=CO(),Q=S.qPjF?C.quotes.filter(q=>pjKey(qPjOf(q)||'-')===S.qPjF):C.quotes.slice();let ins='';
+  const C=CO(),Q=C.quotes.filter(q=>(!S.qPjF||pjKey(qPjOf(q)||'-')===S.qPjF)&&qByOk(q));let ins='';
   try{ins=`<div class="si">${siPrice(Q)}${siAR()}${siOpen(Q)}${siWork(Q)}</div>`}catch(e){ins=`<p class="hint">วิเคราะห์ไม่ได้: ${esc(e.message)}</p>`}
   return h.replace(/<section class="card"><h2><span>ใบเสนอราคา<\/span>/,ins+'$&')}}
 document.head.insertAdjacentHTML('beforeend',`<style>.si-t{font-size:13px}.si-t td,.si-t th{padding:7px 7px}.si-t td{white-space:nowrap}.si-t th{white-space:normal;vertical-align:bottom}.si-t td:first-child,.si-t td:nth-child(3){white-space:normal;min-width:120px}.si-sub{display:block}.si-t tr.tot td,.si-t tfoot td{font-weight:700;border-top:2px solid var(--line)}

@@ -29,13 +29,13 @@ function qgChart(G,by){const m=['val','n','gp'].includes(S.qgMet)?S.qgMet:'val',
 {const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);
   const C=CO(),L0=C.quotes.slice().reverse();h=h.replace(/(<section class="card"><h2><span>ใบเสนอราคา<\/span>[\s\S]*?<\/h2>)/,`$1<div class="qg-bar">${qgSwitch()}${qPjFilter(L0)}</div>`);
   const by=qgVw();if(!by)return h;
-  const L=S.qPjF?L0.filter(q=>pjKey(qPjOf(q)||'-')===S.qPjF):L0,G=qgStats(L,by),F=S.qgFold||{};
+  const L=L0.filter(q=>(!S.qPjF||pjKey(qPjOf(q)||'-')===S.qPjF)&&qByOk(q)),G=qgStats(L,by),F=S.qgFold||{};
   const m=h.match(/<div class="tw"><table><thead><tr><th>เลขที่<\/th>[\s\S]*?<\/thead><tbody>([\s\S]*?)<\/tbody><\/table><\/div>/);if(!m)return h;
   const R={};(m[1].match(/<tr class="[^"]*"><td><button type="button" class="btn ghost sm" data-a="sel" data-k="quote" data-id="[^"]+">[\s\S]*?<\/tr>/g)||[]).forEach(r=>{R[r.match(/data-id="([^"]+)"/)[1]]=r});
   const body=G.map(g=>{const fk=by+':'+g.k,fo=!!F[fk];
-    return `<tr class="qg-h"><td colspan="10"><button type="button" class="qg-hb" data-a="qgFold" data-k="${esc(fk)}" aria-expanded="${!fo}"><span aria-hidden="true">${fo?'▸':'▾'}</span> <b>${esc(g.nm)}</b></button>
+    return `<tr class="qg-h"><td colspan="12"><button type="button" class="qg-hb" data-a="qgFold" data-k="${esc(fk)}" aria-expanded="${!fo}"><span aria-hidden="true">${fo?'▸':'▾'}</span> <b>${esc(g.nm)}</b></button>
       <span class="qg-st">${g.n} ใบ · ได้งาน ${g.won}${g.lost?` · ไม่ได้ ${g.lost}`:''} · เสนอ ${fmt(g.val,0)} · ได้งาน ${fmt(g.wval,0)} บาท${g.won?` · กำไร <b${g.gp<0?' class="qg-neg"':''}>${fmt(g.gp,0)}</b>`:''}</span></td></tr>${fo?'':g.L.map(q=>R[q.id]||'').join('')}`}).join('');
-  h=h.replace(m[0],m[0].replace(m[1],body||'<tr><td colspan="10" class="empty">ยังไม่มีใบเสนอราคา</td></tr>'));
+  h=h.replace(m[0],m[0].replace(m[1],body||'<tr><td colspan="12" class="empty">ยังไม่มีใบเสนอราคา</td></tr>'));
   return h.replace(/<section class="card"><h2><span>ใบเสนอราคา<\/span>/,qgChart(G,by)+'$&')}}
 document.head.insertAdjacentHTML('beforeend',`<style>
 .qg-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px}.qg-bar #qPjF{margin-left:6px!important}.qg-sw{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}.qg-sw small{margin-right:2px}
