@@ -1,4 +1,4 @@
-/* ---------- 4.99.9 แก้โครงการจากรายการใบเสนอราคา (user: "ในกรณีเราตั้งโครงการผิด อยากแก้ไขทำยังไง") ----------
+/* ---------- 4.99.10 แก้โครงการจากรายการใบเสนอราคา (user: "ในกรณีเราตั้งโครงการผิด อยากแก้ไขทำยังไง") ----------
    The โครงการ cell of the quotation list is a button (✎). For a quote not won yet it changes the quote's โครงการ box (Q.pname).
    For a won quote it moves the job it became under another project, or renames that project, the same as ✎ แก้ชื่อโครงการ / งาน
    (968): โครงการ and งาน boxes, the project list to pick from, and a name already used by another job is refused. The quote's
