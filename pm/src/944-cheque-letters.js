@@ -110,7 +110,7 @@ HOOK.push((p,v)=>{const m=String(p).match(/^stops\.([^.]+)\.kind$/);if(!m||!SWCQ
     rcv=`<div class="sw-rcv sw-rcv2"><b>ตอบรับ (${party})</b> &nbsp; ☐ ยินยอมให้เลื่อนวันที่เช็คเป็นวันที่ ${nw} &nbsp; ☐ ไม่ยินยอม<br>ลงชื่อ ................................................ ผู้มีอำนาจ &nbsp; วันที่ ........./........./.........</div>`}
   return phead(`${t} ${s.no}`,`วันที่ ${thDL(at)}`)+`<div class="let lt2 sw">
   <div class="lt-top"><span>ที่ ${esc(s.no)}</span></div><div class="lt-date">${thDL(at)}</div>
-  ${row('เรื่อง',subj)}${row('เรียน',party)}
+  ${typeof pjSubjRows==='function'?pjSubjRows(row,subj,what):row('เรื่อง',subj)}${row('เรียน',party)}
   ${refs.length?row('อ้างถึง',refs.length>1?`<ol>${refs.map(x=>`<li>${x}</li>`).join('')}</ol>`:refs[0]):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',att.length>1?`<ol>${att.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:esc(att[0])):''}
   ${body}

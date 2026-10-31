@@ -69,7 +69,7 @@ const IDB={db:null,
   async del(k){const d=await this.open();return new Promise(ok=>{const t=d.transaction('ph','readwrite');t.objectStore('ph').delete(k);t.oncomplete=ok;t.onerror=ok})}};
 const phCache={};
 async function phSrc(k){if(phCache[k])return phCache[k];try{const v=await IDB.get(k);if(v)phCache[k]=v;return v||''}catch(e){return ''}}
-function fillPhotos(root){(root||document).querySelectorAll('img[data-ph]').forEach(async im=>{const s=await phSrc(im.dataset.ph);if(s)im.src=s})}
+function fillPhotos(root){return Promise.all([...(root||document).querySelectorAll('img[data-ph]')].map(async im=>{const s=await phSrc(im.dataset.ph);if(s){im.src=s;try{await im.decode()}catch(e){}}}))}
 function shrink(file,max=1280,q=.72){return new Promise((ok,no)=>{const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',q))};im.onerror=no;im.src=fr.result};fr.onerror=no;fr.readAsDataURL(file)})}
 
 /* file download: Artifact host downloads service when present, else a browser download */
@@ -186,7 +186,8 @@ const ACT={
       for(const [k,v] of Object.entries(J.photos||{}))await IDB.put(k,v).catch(()=>{});
       Object.values(J.projects).forEach(p=>{migrate(p);DB.projects[p.id]=p});if(J.co)DB.co=Object.assign(DB.co||{},J.co);DB.cur=Object.keys(J.projects)[0];P=DB.projects[DB.cur];save(true);render();toast('เปิดไฟล์สำรองแล้ว')}
     catch(e){alert('เปิดไฟล์ไม่ได้: '+e.message)}};f.click()},
-  print:b=>{const f=PRINT[b.dataset.k];if(!f)return;$('#print').innerHTML=f(b.dataset.id);fillPhotos($('#print'));setTimeout(()=>print(),300)},
+  print:b=>{const f=PRINT[b.dataset.k];if(!f)return;$('#print').innerHTML=f(b.dataset.id);// photos come from storage: wait for them (at most 6 s) so they are on the paper
+    Promise.race([fillPhotos($('#print')),new Promise(r=>setTimeout(r,6000))]).then(()=>setTimeout(()=>print(),300))},
 };
 const NEW={};// collection name -> fn(arr) giving defaults for a new row
 const PRINT={};

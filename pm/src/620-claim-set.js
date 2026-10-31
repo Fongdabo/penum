@@ -21,8 +21,13 @@ function subPk(b){const d={let:1,sum:1,bill:1,pp:1,cert:1,ph:1,ti:0};return Obje
 function subWork(b,x){if((b.work||'').trim())return b.work.trim();if(x.it&&x.it.desc)return x.it.desc;
   const done=P.tasks.filter(t=>n(t.pct)>=100&&durOf(t)>0).map(t=>t.name);return done.slice(-6).join(', ')}
 // photos taken on site between the previous instalment and this one
-function subPhotos(b,x){const L=[];(P.daily||[]).filter(d=>d.date<=b.date&&(!x.from||d.date>=x.from)).sort((a,c)=>a.date<c.date?-1:1).forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));
-  return L.slice(-12)}
+// 4.99.19 (user: "รูปส่งงวดไม่ขึ้น"): a claim is often dated before its photos are taken (INV-010 dated 19 Oct, photos 30 Oct), so
+// when the period has none, the photos after the claim date up to the next claim (or today) are used, and the page says so
+function subPhotos(b,x){const pick=(lo,hi,eqLo)=>{const L=[];(P.daily||[]).filter(d=>d.date&&(eqLo?!lo||d.date>=lo:d.date>lo)&&(!hi||d.date<=hi)).sort((a,c)=>a.date<c.date?-1:1)
+    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L.slice(-12)};
+  let L=pick(x.from,b.date,1);L.lo=x.from;L.hi=b.date;if(L.length)return L;
+  const prog=billsSorted().filter(y=>(y.kind||'prog')==='prog'),nx=prog[prog.indexOf(b)+1],hi=nx&&nx.date>b.date?nx.date:'';
+  const A=pick(b.date,hi,0).filter(p=>!hi||p.d<hi);if(!A.length)return L;A.lo=b.date;A.hi=A[A.length-1].d;A.after=1;return A}
 const subBr='<div style="page-break-before:always"></div>';
 function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[sn,sr]=subSigner(),gov=isGovP();
   if(!b.letNo){b.letNo=nextNo('LT-',projects().flatMap(q=>q.bills.filter(y=>y.letNo).map(y=>({no:y.letNo}))));save()}
@@ -34,7 +39,7 @@ function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[s
   return lh+`<div class="let lt2">
   <div class="lt-top"><span>ที่ ${esc(b.letNo)}</span></div>
   <div class="lt-date">${thDL(b.date)}</div>
-  ${row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${gov?what:pjWhat(P,1)}`)}
+  ${(w=>typeof pjSubjRows==='function'?pjSubjRows(row,`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${w}`,w):row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${w}`))(gov?what:pjWhat(P,1))}
   ${row('เรียน',esc(subTo()))}
   ${I.contractNo?row('อ้างถึง',`สัญญาจ้างเลขที่ ${esc(I.contractNo)}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''}`):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',`<ol>${att.map(t=>`<li>${esc(t.replace(/^\d+\.\s*/,''))}</li>`).join('')}</ol>`):''}
@@ -86,7 +91,7 @@ function subCert(b,x){const I=P.info,c=billCalc(b),C=contract(),cn=CO().name||'�
   <p style="margin-top:12px">ได้ตรวจสอบผลงานที่หน้างานแล้ว ☐ รับรองตามจำนวนที่ขอ ☐ รับรองบางส่วน จำนวน ........................ บาท เนื่องจาก ......................................................</p>
   <div class="sign"><div>ผู้รับจ้าง</div><div>ที่ปรึกษา / ผู้ควบคุมงาน</div><div>ผู้ว่าจ้าง (อนุมัติ)</div></div>`}
 function subPh(b,x){const L=subPhotos(b,x);if(!L.length)return '';
-  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${x.from?thD(x.from)+' – ':''}${thD(b.date)}`)+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(p=>`<figure style="margin:0;page-break-inside:avoid"><img data-ph="${p.k}" alt="" style="width:100%;height:62mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:12px">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`).join('')}</div>`}
+  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${L.lo?thD(L.lo)+' – ':''}${thD(L.hi||b.date)}`)+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(p=>`<figure style="margin:0;page-break-inside:avoid"><img data-ph="${p.k}" alt="" style="width:100%;height:62mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:12px">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`).join('')}</div>`}
 const submReg=PRINT.subm;// the submittal register (พิมพ์ทะเบียน) uses the same key with a type instead of a bill id
 PRINT.subm=id=>{const b=P.bills.find(y=>y.id===id);if(!b)return submReg(id);const x=subInfo(b),pk=subPk(b),out=[];
   if(pk.let)out.push(subLetter(b,x,pk));if(pk.sum)out.push(subSummary(b,x));if(pk.bill)out.push(PRINT.bill(id));if(pk.pp&&typeof subPP==='function')out.push(subPP(b));if(pk.cert)out.push(subCert(b,x));

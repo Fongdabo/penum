@@ -282,7 +282,7 @@ function swLetter(s){const I=P.info,CO_=CO(),[sn,sr]=subSigner(),R=swR(s),k=s.ki
       p('จึงเรียนมาเพื่อโปรดทราบ')}
   return phead(`${t} ${s.no}`,`วันที่ ${thDL(at)}`)+`<div class="let lt2 sw">
   <div class="lt-top"><span>ที่ ${esc(s.no)}</span></div><div class="lt-date">${thDL(at)}</div>
-  ${row('เรื่อง',subj)}${row('เรียน',party)}
+  ${typeof pjSubjRows==='function'?pjSubjRows(row,subj,what):row('เรื่อง',subj)}${row('เรียน',party)}
   ${refs.filter(Boolean).length?row('อ้างถึง',refs.filter(Boolean).length>1?`<ol>${refs.filter(Boolean).map(x=>`<li>${x}</li>`).join('')}</ol>`:refs.filter(Boolean)[0]):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',att.length>1?`<ol>${att.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:esc(att[0])):''}
   ${body}

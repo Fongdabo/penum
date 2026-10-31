@@ -16,6 +16,10 @@ function pjJob(p){p=p||P;const nm=String(p&&p.name||'').trim(),m=nm.match(PJ_SEP
   return {pj:'',job:nm}}
 // "งาน … โครงการ …" for letters (escaped); cut drops a leading "งาน" where the sentence already says it ("ค่างาน งานติดตั้ง…")
 const pjWhat=(p,cut)=>{const J=pjJob(p),j=cut&&J.pj?J.job.replace(/^งาน\s*/,'')||J.job:J.job;return J.pj?`${esc(j)} โครงการ ${esc(J.pj)}`:esc(j)};
+// 4.99.19 a letter's เรื่อง, then โครงการ and งาน as heading rows of their own (user: "โครงการและงานปรับเป็นหัวข้อใหม่ดีไหม"): the project
+// part that ended the subject (what = pjWhat(…)) moves to its rows; a subject without it stays as it is
+const pjSubjRows=(row,subj,what,p)=>{if(!what||!subj.endsWith(' '+what))return row('เรื่อง',subj);const J=pjJob(p);
+  return row('เรื่อง',subj.slice(0,-what.length-1))+(J.pj?row('โครงการ',esc(J.pj))+row('งาน',esc(J.job)):row('โครงการ',esc(J.job)))};
 // the place only: a date (or document number) read in with it from a file's header line is dropped
 const siteOnly=s=>String(s||'').replace(/\s*(?:ลงวันที่|วันที่|date)\s*[:：]\s*.*$/i,'').trim();
 
