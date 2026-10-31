@@ -91,7 +91,13 @@ function subCert(b,x){const I=P.info,c=billCalc(b),C=contract(),cn=CO().name||'�
   <p style="margin-top:12px">ได้ตรวจสอบผลงานที่หน้างานแล้ว ☐ รับรองตามจำนวนที่ขอ ☐ รับรองบางส่วน จำนวน ........................ บาท เนื่องจาก ......................................................</p>
   <div class="sign"><div>ผู้รับจ้าง</div><div>ที่ปรึกษา / ผู้ควบคุมงาน</div><div>ผู้ว่าจ้าง (อนุมัติ)</div></div>`}
 function subPh(b,x){const L=subPhotos(b,x);if(!L.length)return '';
-  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${L.lo?thD(L.lo)+' – ':''}${thD(L.hi||b.date)}`)+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(p=>`<figure style="margin:0;page-break-inside:avoid"><img data-ph="${p.k}" alt="" style="width:100%;height:62mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:12px">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`).join('')}</div>`}
+  // 4.99.20 (user: "กระดาษหลุด"): a grid let Chrome break rows anywhere, leaving half-empty pages; now 6 photos (2 × 3) per A4 page,
+  // smaller on the first page under the letterhead and the job box, bigger on the pages after it
+  const pg=[];for(let i=0;i<L.length;i+=6)pg.push(L.slice(i,i+6));
+  const fig=(p,h)=>`<figure style="margin:0;flex:1 1 0;min-width:0"><img data-ph="${p.k}" alt="" style="display:block;width:100%;height:${h}mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:11.5px;line-height:1.35;height:4.6mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`;
+  const page=(A,h)=>{let r='';for(let i=0;i<A.length;i+=2)r+=`<div class="sph-r" style="display:flex;gap:8px;margin:0 0 3mm;break-inside:avoid;page-break-inside:avoid">${fig(A[i],h)}${A[i+1]?fig(A[i+1],h):'<div style="flex:1 1 0"></div>'}</div>`;return r};
+  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${L.lo?thD(L.lo)+' – ':''}${thD(L.hi||b.date)}`)+`<div class="sph">${page(pg[0],56)}</div>`
+    +pg.slice(1).map((A,i)=>`<div class="sph" style="break-before:page;page-break-before:always"><div style="font-size:12px;color:#55666C;margin:0 0 2mm">รูปถ่ายผลงานงวดที่ ${esc(x.no)} (ต่อ) · หน้า ${i+2}/${pg.length}</div>${page(A,78)}</div>`).join('')}
 const submReg=PRINT.subm;// the submittal register (พิมพ์ทะเบียน) uses the same key with a type instead of a bill id
 PRINT.subm=id=>{const b=P.bills.find(y=>y.id===id);if(!b)return submReg(id);const x=subInfo(b),pk=subPk(b),out=[];
   if(pk.let)out.push(subLetter(b,x,pk));if(pk.sum)out.push(subSummary(b,x));if(pk.bill)out.push(PRINT.bill(id));if(pk.pp&&typeof subPP==='function')out.push(subPP(b));if(pk.cert)out.push(subCert(b,x));
