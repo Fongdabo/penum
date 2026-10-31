@@ -76,8 +76,8 @@ function impReadText(txt){const lines=String(txt||'').replace(/\r/g,'').split('\
   return {'ตารางที่วาง':lines.map(cut)}}
 // ---- understanding the table ----
 const IMPHD=[['no',/^(ลำดับ|ที่|no\.?|item|#)$/i],['desc',/รายการ|รายละเอียด|description|desc|ชื่อ/i],['q',/จำนวน(?!เงิน)|ปริมาณ|q'?ty|quantity/i],['unit',/(?<!ต่อ|\/|ละ)หน่วย(?!ละ)(?!.*ราคา)|^unit$/i],
-  ['m',/(วัสดุ|ของ|material).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(วัสดุ|material)|^(ค่า)?(วัสดุ|ของ|materials?)( cost)?$/i],
-  ['l',/(แรง|labou?r|ติดตั้ง).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(แรง|labou?r)|^(ค่า)?(แรง|แรงงาน|labou?r|ติดตั้ง)( cost)?$/i],
+  ['m',/(วัสดุ|ของ|material).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(วัสดุ|material)|^(ค่า)?(วัสดุ|ของ|materials?)( cost)?(\s*@)?$/i],
+  ['l',/(แรง|labou?r|ติดตั้ง).*(ต่อหน่วย|\/หน่วย|unit|ราคา)|(ต่อหน่วย|ราคา).*(แรง|labou?r)|^(ค่า)?(แรง|แรงงาน|labou?r|ติดตั้ง)( cost)?(\s*@)?$/i],
   ['up',/ราคา\s*ต่อ\s*หน่วย|ราคา\s*\/\s*หน่วย|unit ?price|rate/i],['amt',/^(รวม|รวมเงิน|จำนวน\s*เงิน|ราคารวม|amount|total|grand total|รวมทั้งสิ้น)/i]];
 const impHits=r=>(r||[]).filter(c=>IMPHD.some(([,re])=>re.test(impTxt(c)))).length;
 function impHeaderRow(rows){let best=0,score=-1;rows.slice(0,40).forEach((r,i)=>{const s=impHits(r);if(s>score){score=s;best=i}});if(score<2)return 0;
@@ -133,7 +133,8 @@ function impItems(rows,hr,two,map){const col=f=>map.indexOf(f),get=(r,f)=>{const
     if(/^\d+(\.\d+)+$/.test(no)&&hdNo&&!no.startsWith(hdNo+'.')){hd='';sub='';hdNo=''}
     // no quantity and a blank / '-' amount ("SOCKET OUTLET  SET  234  -  85  -  -"): priced but not counted
     let Q=has(q)?q:(col('q')>=0&&col('amt')>=0&&!has(amt)&&(has(m)||has(l)||has(up))?0:1),M=has(m)?m:0,Lb=has(l)?l:0;if(!M&&!Lb){M=has(up)?up:(has(amt)?amt/Q:0)}
-    if(/by owner|โดยเจ้าของ|ผู้ว่าจ้าง/i.test(r.join(' '))&&!M&&!Lb)desc+=' (By Owner)';
+    // 4.99.20: "OWNER" in the material column of a subcontractor's quote (labour only, the owner supplies the material)
+    const own=/by owner|\bowner\b|โดยเจ้าของ|ผู้ว่าจ้าง/i.test(r.join(' '));if(own&&!M&&!Lb)desc+=' (By Owner)';else if(own&&!M)desc+=' (วัสดุ By Owner)';
     out.push({on:true,top:/^\d+$/.test(no)?no:'',pre:!numbered,sys,sec,no,g,head:[hd,sub].filter(Boolean).join(' · '),desc:desc||no,unit:impTxt(get(r,'unit'))||(has(q)?'':'งาน'),q:Q,m:Math.round(M*100)/100,l:Math.round(Lb*100)/100})});
   // a summary block ("1 Air Handling Unit  1 LOT  848,240") whose numbers come back later as headings with the detail: keep the detail only
   const S=out.filter(i=>i.pre&&i.top);if(!S.some(i=>heads.has(i.top)))return out;
@@ -202,8 +203,9 @@ function impCheck(){const S0=sum(IMP.rows.filter(r=>r.on),r=>n(r.q)*(n(r.m)+n(r.
     else{const near=E.tot.reduce((b,v)=>Math.abs(v-S0)<Math.abs(b-S0)?v:b,E.tot[0]);h+=`<p class="hint" style="color:var(--warn-c)">ยอดรวม ${fmt(S0,2)} บาท ไม่ตรงกับยอดในไฟล์ ${fmt(near,2)} บาท (ต่าง ${fmt(S0-near,2)}) ตรวจรายการหรือคอลัมน์อีกครั้ง</p>`}}
   if((E.extra||E.disc)&&(t==='q'||t==='pj')&&S0)h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impEx" checked> <span><b>ใส่ค่าดำเนินการและส่วนลดตามไฟล์ด้วย</b>${E.extra?` · <span>ค่าดำเนินการ/กำไร ${fmt(E.extra,2)} บาท (${fmt(E.extra/S0*100,2)}%)</span>`:''}${E.disc?` · <span>ส่วนลด ${fmt(E.disc,2)} บาท</span>`:''} · <span>ยอดก่อน VAT ${fmt(S0+E.extra-E.disc,2)} บาท</span> <small class="muted">(${esc(E.labs.join(', '))})</small></span></label>`;
   if(E.pay&&E.pay.length&&t==='q')h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impPayOn" checked> <span><b>ใส่งวดชำระเงินตามไฟล์ด้วย</b> · <span>${E.pay.length} งวด (${E.pay.map(x=>x.pct+'%').join(' / ')})</span>${E.valid?` · <span>ยืนราคา ${E.valid} วัน</span>`:''}</span></label>`;
-  const MT=IMP.meta||{},mf=IMPMETA.filter(([k])=>MT[k]);
-  if(t==='q'&&(mf.length||MT.notes))h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impMetaOn" checked> <span><b>ใส่หัวเอกสารและเงื่อนไขตามไฟล์ด้วย</b> · ${mf.map(([k,l])=>`<span>${l}: ${esc(MT[k])}</span>`).join(' · ')}${MT.notes?` · <span>หมายเหตุ ${MT.notes.length} ข้อ</span>`:''}</span></label>`;
+  // only the boxes this quotation still has empty (4.99.20): a name the user typed is never replaced by the file's
+  const MQ=t==='q'&&(CO().quotes||[]).find(x=>x.id===IMP.id),MT=IMP.meta||{},mf=IMPMETA.filter(([k])=>MT[k]&&!(MQ&&String(MQ[k==='sign'?'signName':k]||'').trim()));
+  if(t==='q'&&(mf.length||MT.notes))h+=`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="impMetaOn" checked> <span><b>ใส่หัวเอกสารและเงื่อนไขตามไฟล์ด้วย</b> <small class="muted">(เฉพาะช่องที่ยังว่าง)</small> · ${mf.map(([k,l])=>`<span>${l}: ${esc(MT[k])}</span>`).join(' · ')}${MT.notes?` · <span>หมายเหตุ ${MT.notes.length} ข้อ</span>`:''}</span></label>`;
   return h}
 function impShow(){const all=IMP.sheet===IMPALL,rows=all?[]:IMP.sheets[IMP.sheet],names=Object.keys(IMP.sheets);IMP.rows=all?impAll().rows:impItems(rows,IMP.hr,IMP.two,IMP.map);
   const ok=(all||IMP.map.includes('desc'))&&IMP.rows.length,tgt=impTarget(),btn=$('#impGoBtn');if(btn)btn.disabled=!ok;
@@ -239,7 +241,8 @@ ACT.impGo=()=>{const tg=impTarget();if(!tg)return;const add=($('#impMode')||{}).
     if(useEx&&S0){Q.mk=0;Q.mkSep=false;Q.adds=(E.rows||[]).map(([name,v])=>{const pc=Math.round(v/S0*1e4)/100;return Math.abs(S0*pc/100-v)<0.01?{id:uid(),name,pct:pc,amt:''}:{id:uid(),name,pct:'',amt:v}});Q.disc=Math.round(n(E.disc)*100)/100}
     if(($('#impPayOn')||{}).checked&&E.pay&&E.pay.length){qEnsure(Q).qpay=E.pay.map((x,k)=>({id:uid(),no:String(k+1),desc:x.desc,pct:x.pct}));if(E.valid)Q.valid=E.valid}
     // the file's own header and terms, so the printed quotation reads like the original
-    if(($('#impMetaOn')||{}).checked){const MT=IMP.meta||{};['title','pname','attn','site','ref','dlv'].forEach(k=>{if(MT[k])Q[k]=MT[k]});if(MT.sign){Q.signName=MT.sign;Q.signPos=MT.signPos||''}
+    if(($('#impMetaOn')||{}).checked){const MT=IMP.meta||{};// 4.99.20 (user: "ทำไมชื่องาน มาอยู่ที่โครงการ", a subcontractor's PDF over their own quotation): the file fills only boxes still empty
+      ['title','pname','attn','site','ref','dlv'].forEach(k=>{if(MT[k]&&!String(Q[k]||'').trim())Q[k]=MT[k]});if(MT.sign&&!String(Q.signName||'').trim()){Q.signName=MT.sign;Q.signPos=MT.signPos||''}
       if(MT.notes)Q.terms=MT.notes.join('\n');if(E.valid)Q.valid=E.valid;Q.cover=MT.letter?'letter':(Q.cover||'')}}
   else if(IMP.t==='td'){const T=tg.o,old=add?(T.items||[]):[];tdFill(T,L,src);if(add)T.items=[...old,...T.items]}
   else{const items=[...(add?P.boq.items:[]),...L.map(i=>{const {t,...x}=i;return x})],sub=sum(items,boqCost);const ohp=useEx?n(E.extra)-n(E.disc):(add?n(P.boq.ohp):0);setBoq(items,{src,sub,ohp,vat:(sub+ohp)*0.07,grand:(sub+ohp)*1.07})}
