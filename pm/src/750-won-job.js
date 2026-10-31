@@ -65,7 +65,7 @@ const cvByBoq=p=>p.info.cvAuto&&(p.boq.items||[]).length;
 function cvSyncAll(){let ch=0;Object.values(DB.projects||{}).forEach(p=>{const I=p.info;if(!I||cvByBoq(p))return;let x;try{x=cvQuote(p)}catch(e){return}if(!x)return;
   const eq=(a,b)=>Math.abs(n(a)-n(b))<0.01;
   if(I.cvQ==null){if(eq(I.cv,x.v)){I.cvQ=x.v;ch=1}return}
-  if(eq(I.cvQ,x.v))return;if(eq(I.cv,I.cvQ))I.cv=x.v;I.cvQ=x.v;ch=1});return ch}
+  if(eq(I.cvQ,x.v))return;if(eq(I.cv,I.cvQ)){if(typeof sfLogAdd==='function')sfLogAdd('p:'+p.id,'มูลค่าสัญญา (ตาม '+x.Q.no+')',n(I.cv),x.v,'อัตโนมัติ');I.cv=x.v}I.cvQ=x.v;ch=1});return ch}
 {const r=render;render=function(){try{if(cvSyncAll())save()}catch(e){}return r.apply(this,arguments)}}
 function cvWarn(){if(!P||cvByBoq(P))return '';const x=cvQuote(P);if(!x||Math.abs(n(P.info.cv)-x.v)<0.01)return '';
   return `<div class="cv-warn" role="status">⚠ มูลค่าสัญญา ${fmt(n(P.info.cv),2)} ไม่ตรงกับราคาไม่รวม VAT ของ ${esc(x.Q.no)} (${fmt(x.v,2)}) ใบเบิกทุกงวดคิดจากมูลค่าสัญญา
