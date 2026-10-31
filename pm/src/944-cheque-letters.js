@@ -75,7 +75,7 @@ HOOK.push((p,v)=>{const m=String(p).match(/^stops\.([^.]+)\.kind$/);if(!m||!SWCQ
 
 /* --- the letters --- */
 {const f=swLetter;swLetter=function(s){if(!swCq(s))return f.apply(this,arguments);const I=P.info,CO_=CO(),[sn,sr]=subSigner(),k=s.kind,t=swK(k)[2],at=s.date||today();
-  const nm=String(P.name||'').trim(),cut=nm.indexOf(' - '),pjN=cut>0?nm.slice(0,cut).trim():'',job=cut>0?nm.slice(cut+3).trim():nm,what=pjN?`${esc(job)} โครงการ ${esc(pjN)}`:esc(nm);
+  const pjN=pjJob().pj,what=pjWhat();
   const row=(a,v)=>`<div class="lt-r"><b>${a}</b><div>${v}</div></div>`,p=x=>x?`<p class="lt-p">${x}</p>`:'',co=esc(CO_.name||'บริษัท');
   const dtl=s.detail&&s.detail.trim()?esc(s.detail.trim()).replace(/\n/g,' '):'',chq=swCqW(s),nw=okD(s.chqNew)?thDL(s.chqNew):'..........',days=swCqDays(s);
   const att=String(s.att||'').split('\n').map(x=>x.trim()).filter(Boolean),refs=[];let party,subj,body,rcv;
@@ -88,7 +88,7 @@ HOOK.push((p,v)=>{const m=String(p).match(/^stops\.([^.]+)\.kind$/);if(!m||!SWCQ
       if(iv)C.push(`${party}ชำระดอกเบี้ยสำหรับระยะเวลาที่เลื่อน ${days} วัน ในอัตราร้อยละ ${fmtq(n(s.rate))} ต่อปี คิดเป็นเงิน ${fmt(iv,2)} บาท (${bahtText(iv)})`);
       if(s.once)C.push('การยินยอมครั้งนี้เป็นการยินยอมเพียงครั้งเดียว หากเช็คฉบับใหม่ไม่สามารถเรียกเก็บเงินได้ตามวันที่ดังกล่าว บริษัทขอสงวนสิทธิ์หยุดงานและดำเนินการตามสัญญาและตามกฎหมายต่อไป โดยไม่ต้องแจ้งเตือนอีก');
       if(s.eot)C.push('หากการเลื่อนการชำระเงินครั้งนี้ส่งผลกระทบต่อการดำเนินงาน บริษัทขอสงวนสิทธิ์ขอขยายระยะเวลาก่อสร้างตามความเป็นจริง')}
-    const intro=`ตามที่ ${co} ได้รับจ้าง${pjN?'':'งาน'} ${what}${I.site?` ณ ${esc(I.site)}`:''} จาก ${party}${I.contractNo?' ตามสัญญาที่อ้างถึง':''} และ${party}ได้จ่ายเช็คค่างวด${chq?` ${chq}`:''} ให้แก่บริษัท${btx?` เพื่อชำระค่างาน ${btx}`:''} นั้น`;
+    const intro=`ตามที่ ${co} ได้รับจ้าง${pjN?'':'งาน'} ${what}${siteOnly(I.site)?` ณ ${esc(siteOnly(I.site))}`:''} จาก ${party}${I.contractNo?' ตามสัญญาที่อ้างถึง':''} และ${party}ได้จ่ายเช็คค่างวด${chq?` ${chq}`:''} ให้แก่บริษัท${btx?` เพื่อชำระค่างาน ${btx}`:''} นั้น`;
     body=p(intro)+(B.length>1?swBillTb(B,at).replace('รวมค้างชำระ','รวม'):'')+
       p(`${party}${refs.length&&(s.reqNo||okD(s.reqDate))?'ได้มีหนังสือที่อ้างถึง':'ได้แจ้ง'}ขอเลื่อนวันที่ของเช็คฉบับดังกล่าว${okD(s.chqDate)?` จากวันที่ ${thDL(s.chqDate)}`:''} ออกไปเป็นวันที่ ${nw}${days?` (${days} วัน)`:''}${dtl?` ${dtl}`:''} นั้น`)+
       (s.ans==='no'?p(`บริษัทได้พิจารณาแล้ว ขอเรียนว่าบริษัทไม่สามารถยินยอมให้เลื่อนวันที่เช็คได้ เนื่องจากบริษัทได้วางแผนใช้เงินดังกล่าวเป็นค่าวัสดุ ค่าแรงงาน และค่าใช้จ่ายของโครงการตามกำหนดแล้ว บริษัทจึงขอให้${party}ดำเนินการให้เช็คฉบับดังกล่าวเรียกเก็บเงินได้ตามวันที่เดิม${n(s.nd)?` หรือชำระเป็นเงินสดหรือโอนเข้าบัญชีของบริษัทภายใน ${n(s.nd)} วัน นับแต่วันที่ได้รับหนังสือฉบับนี้`:''} หากไม่ได้รับชำระเงิน บริษัทมีความจำเป็นต้องดำเนินการตามสัญญา รวมถึงการหยุดงานจนกว่าจะได้รับชำระเงิน`)
@@ -110,7 +110,7 @@ HOOK.push((p,v)=>{const m=String(p).match(/^stops\.([^.]+)\.kind$/);if(!m||!SWCQ
     rcv=`<div class="sw-rcv sw-rcv2"><b>ตอบรับ (${party})</b> &nbsp; ☐ ยินยอมให้เลื่อนวันที่เช็คเป็นวันที่ ${nw} &nbsp; ☐ ไม่ยินยอม<br>ลงชื่อ ................................................ ผู้มีอำนาจ &nbsp; วันที่ ........./........./.........</div>`}
   return phead(`${t} ${s.no}`,`วันที่ ${thDL(at)}`)+`<div class="let lt2 sw">
   <div class="lt-top"><span>ที่ ${esc(s.no)}</span></div><div class="lt-date">${thDL(at)}</div>
-  ${row('เรื่อง',subj)}${row('เรียน',party)}
+  ${typeof pjSubjRows==='function'?pjSubjRows(row,subj,what):row('เรื่อง',subj)}${row('เรียน',party)}
   ${refs.length?row('อ้างถึง',refs.length>1?`<ol>${refs.map(x=>`<li>${x}</li>`).join('')}</ol>`:refs[0]):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',att.length>1?`<ol>${att.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:esc(att[0])):''}
   ${body}

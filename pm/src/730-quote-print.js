@@ -1,6 +1,10 @@
 /* ---------- 3.25 quotation + BOQ print laid out like the contractor's own Excel BOQ the user supplied (R3 BOQ VRF SCCC):
    logo + company lines, rounded QUOTATION box, label/value header, ITEM/DESCRIPTION/QTY/UNIT/MATERIAL/LABOR/GRAND TOTAL grid,
    light-green header and total rows, validity / payment / note block, confirmation box and two "Very truly yours" signatures ---------- */
+// 4.99.20 (user: "รวมผิดหรือป่าว", a sub-heading 1.2 under section 2): a sub-heading that starts with its own number
+// (an imported BOQ) keeps it only while it belongs to this section; one moved to another section is numbered here again
+function qHeadNo(h,gi,hi){const m=String(h||'').match(/^(\d+(?:\.\d+)*)\s+(.*)$/);if(!m)return [h,gi+'.'+hi,h];
+  return [h,!m[1].includes('.')||m[1].split('.')[0]===String(gi)?m[1]:gi+'.'+hi,m[2]]}
 const XB_CSS=`<style>
 #print .xb,#print .xb table,#print .xb th,#print .xb td{font-family:Arial,"Liberation Sans","IBM Plex Sans Thai",Anuphan,sans-serif}
 #print .xb{font-size:10.5px;color:#000}
@@ -96,7 +100,7 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
   const sumG=(g,k)=>`<tr class="xgb"><td></td><td class="l">Sum ${k}</td><td></td><td></td>${sp?`<td></td>${M(G[g].m)}<td></td>${M(G[g].l)}`:'<td></td>'}${M(G[g].t)}${rm}</tr>`;
   Q.items.forEach(i=>{if(i.g!==lg){if(lg!==null)body.push(empty,sumG(lg,gi),empty);else body.push(empty);gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(`<tr><td class="c">${gi}</td><td>${gName(i.g)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}
     const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
-    if(h1!==lh){if(lh&&h1)body.push(empty);lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);body.push(`<tr><td class="c">${m?m[1]:gi+'.'+hi}</td><td>${esc(m?m[2]:h1)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}}
+    if(h1!==lh){if(lh&&h1)body.push(empty);lh=h1;ls=null;if(h1){hi++;const m=qHeadNo(h1,gi,hi);body.push(`<tr><td class="c">${m?m[1]:gi+'.'+hi}</td><td>${esc(m?m[2]:h1)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}}
     if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr><td class="c">${m?m[1]:''}</td><td>${esc(m?m[2]:h2)}</td>${'<td></td>'.repeat(nc-2)}</tr>`)}
     li++;const L=qLine(Q,i);let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
     if(G4)num=gi+'.'+li;else if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gi+'.'+hi;if(li>1)body.push(empty)}

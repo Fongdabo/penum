@@ -35,19 +35,19 @@ function lnPlan(p){const d=lnTmr(),W=lnWork(p,d);
 const WEAT=k=>(WEA.find(x=>x[0]===k)||WEA[0])[1];
 const LDOC={
   daily:id=>{const d=P.daily.find(x=>x.id===id);if(!d)return '';const M=(d.men||[]).filter(m=>n(m.n));
-    return [`📝 รายงานประจำวัน ${thDL(d.date)}`,`โครงการ ${P.name}`,`อากาศ เช้า ${WEAT(d.wam)} · บ่าย ${WEAT(d.wpm)}`,
+    return [`📝 รายงานประจำวัน ${thDL(d.date)}`,pjTxt(P),`อากาศ เช้า ${WEAT(d.wam)} · บ่าย ${WEAT(d.wpm)}`,
       `👷 คนงาน ${sum(M,m=>m.n)} คน${M.length?': '+M.map(m=>`${m.trade} ${n(m.n)}`).join(', '):''}`,
       d.work?`\n✅ งานที่ทำ\n${d.work.trim()}`:'',d.plan?`\n📅 แผนพรุ่งนี้\n${d.plan.trim()}`:'',d.issue?`\n⚠️ ปัญหา/อุปสรรค\n${d.issue.trim()}`:'',
       `\n🦺 ${d.safety||'-'}`,(d.photos||[]).length?`📷 รูป ${d.photos.length} รูป (ส่งรูปแยกในกลุ่ม)`:'',d.by?`ผู้รายงาน ${d.by}`:''].filter(Boolean).join('\n')},
   rfi:id=>{const r=P.rfis.find(x=>x.id===id);if(!r)return '';
-    return [`❓ RFI ${r.no} ${lnClean(r.subject)}`,`โครงการ ${P.name}`,`ถึง ${r.to||'-'}`,'',(r.q||'').trim(),'',`ขอคำตอบภายใน ${thDL(r.due)}`,r.ans?`\nคำตอบ (${thD(r.ansDate)}): ${r.ans.trim()}`:''].filter(x=>x!=='').join('\n')},
+    return [`❓ RFI ${r.no} ${lnClean(r.subject)}`,pjTxt(P),`ถึง ${r.to||'-'}`,'',(r.q||'').trim(),'',`ขอคำตอบภายใน ${thDL(r.due)}`,r.ans?`\nคำตอบ (${thD(r.ansDate)}): ${r.ans.trim()}`:''].filter(x=>x!=='').join('\n')},
   po:id=>{const p=P.pos.find(x=>x.id===id);if(!p)return '';const v=P.vendors.find(x=>x.id===p.vid)||{},T=poTotal(p);
-    return [`🧾 ใบสั่งซื้อ ${p.no} ลงวันที่ ${thD(p.date)}`,`ถึง ${v.name||'-'}`,`โครงการ ${P.name}`,'',...p.items.map((l,i)=>`${i+1}. ${lnClean(l.desc)} ${fmtq(l.q)} ${l.unit||''}`),'',
+    return [`🧾 ใบสั่งซื้อ ${p.no} ลงวันที่ ${thD(p.date)}`,`ถึง ${v.name||'-'}`,pjTxt(P),'',...p.items.map((l,i)=>`${i+1}. ${lnClean(l.desc)} ${fmtq(l.q)} ${l.unit||''}`),'',
       `ยอดรวม ${fmt(T.t,2)} บาท${T.v?' (รวม VAT)':''}`,`กำหนดส่ง ${thDL(p.due)}`,`สถานที่ส่ง ${p.ship||P.info.site||'-'}`,P.info.pm?`ติดต่อ ${P.info.pm}`:'',`\n${CO().name||''}`].filter(x=>x!=='').join('\n')},
   wir:id=>{const w=(P.wir||[]).find(x=>x.id===id);if(!w)return '';
-    return [`🔍 ขอตรวจงาน ${w.no}`,`โครงการ ${P.name}`,`วันที่ตรวจ ${thDL(w.insp)}${w.time?' เวลา '+w.time+' น.':''}`,w.loc?`ตำแหน่ง ${w.loc}`:'',w.desc?`งาน ${w.desc.trim()}`:'',w.by?`ผู้ขอตรวจ ${w.by}`:''].filter(Boolean).join('\n')},
+    return [`🔍 ขอตรวจงาน ${w.no}`,pjTxt(P),`วันที่ตรวจ ${thDL(w.insp)}${w.time?' เวลา '+w.time+' น.':''}`,w.loc?`ตำแหน่ง ${w.loc}`:'',w.desc?`งาน ${w.desc.trim()}`:'',w.by?`ผู้ขอตรวจ ${w.by}`:''].filter(Boolean).join('\n')},
   ncr:id=>{const r=(P.ncr||[]).find(x=>x.id===id);if(!r)return '';const st=(NST.find(x=>x[0]===r.status)||NST[0])[1],sv=(NSEV.find(x=>x[0]===r.sev)||NSEV[0])[1];
-    return [`🚩 NCR ${r.no} (${sv})`,`โครงการ ${P.name}`,r.loc?`ตำแหน่ง ${r.loc}`:'',r.desc?`\n${r.desc.trim()}`:'',r.corr?`\nการแก้ไข: ${r.corr.trim()}`:'',r.who?`ผู้รับผิดชอบ ${r.who}`:'',`แก้ไขให้เสร็จภายใน ${thDL(r.due)}`,`สถานะ ${st}`].filter(Boolean).join('\n')}};
+    return [`🚩 NCR ${r.no} (${sv})`,pjTxt(P),r.loc?`ตำแหน่ง ${r.loc}`:'',r.desc?`\n${r.desc.trim()}`:'',r.corr?`\nการแก้ไข: ${r.corr.trim()}`:'',r.who?`ผู้รับผิดชอบ ${r.who}`:'',`แก้ไขให้เสร็จภายใน ${thDL(r.due)}`,`สถานะ ${st}`].filter(Boolean).join('\n')}};
 function lnBox(title,o){S.lnDay=!!o.day;
   dialog(title,`${o.grp?`<p class="hint" style="margin:0 0 6px">ส่งเข้ากลุ่ม LINE: <b>${esc(o.grp)}</b></p>`:''}
     <textarea id="lnTxt" rows="14" style="width:100%;font:inherit;font-size:14px">${esc(o.txt)}</textarea>

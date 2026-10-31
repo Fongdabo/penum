@@ -5,6 +5,7 @@
 document.head.insertAdjacentHTML('beforeend',`<style>
 .po-pick{display:inline-flex;margin-top:4px;font-size:12.5px;padding:3px 9px;border-radius:8px;border:1px dashed var(--line);background:none;color:var(--pri,#0891B2);cursor:pointer;width:max-content}
 .po-pick:hover{border-style:solid}
+.po-view{border-style:solid;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .po-ln{font-size:12px;color:var(--muted);margin:2px 0 8px;max-height:3.2em;overflow:hidden}
 </style>`);
 // the text of the file as lines (cells on one line joined by two spaces so "P.O. No." and its value stay apart)
@@ -42,21 +43,36 @@ function poFromName(nm){let b=String(nm||'').replace(/\.[A-Za-z0-9]{1,5}$/,'').r
 ACT.poPick=b=>{const path=b.dataset.p||'info.contractNo';pickFile(async file=>{let L=null;
   if(/\.(pdf|xlsx|xls|xlsm|csv)$/i.test(file.name)){toast('กำลังอ่าน '+file.name+' …');try{L=await poLines(file)}catch(e){L=null}}
   const R=L?poFind(L):{nos:[],date:''},fn=poFromName(file.name);if(fn)R.nos=[fn,...R.nos.filter(x=>x!==fn)];L=L||[];
-  if(!R.nos.length){toast('ชื่อไฟล์ว่าง พิมพ์เลขที่ในช่องเอง');return}
+  PO_F=file.size<=25e6?file:null;if(!R.nos.length)R.nos=[I0()];
   const I=P.info,show=l=>L.find(x=>x.includes(l))||'';
   dialog('ดึงเลขที่สัญญาจากเอกสาร',`<p>จากไฟล์ <b>${esc(file.name)}</b></p>
-    <label style="display:block;margin:8px 0 2px">เลขที่สัญญา / PO<input id="poNo" list="poNoL" value="${esc(R.nos[0])}" style="display:block;min-width:260px;margin-top:4px"><datalist id="poNoL">${R.nos.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+    <label style="display:block;margin:8px 0 2px">เลขที่สัญญา / PO<input id="poNo" list="poNoL" value="${esc(R.nos[0])}" style="display:block;min-width:260px;margin-top:4px"><datalist id="poNoL">${R.nos.filter(Boolean).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
     ${R.nos.length>1?`<p class="hint">พบ ${R.nos.length} เลข: ${R.nos.map(esc).join(' · ')} กดที่ช่องเพื่อเลือก หรือแก้เองได้</p>`:'<p class="hint">แก้ตัวเลขในช่องได้ ถ้าอ่านผิด</p>'}
-    <div class="po-ln" id="poLn">${R.nos[0]===fn?'จากชื่อไฟล์':esc(show(R.nos[0]))}</div>
+    <div class="po-ln" id="poLn">${!R.nos[0]?'ชื่อไฟล์ไม่มีเลขที่ พิมพ์เลขที่เองในช่องนี้':R.nos[0]===fn?'จากชื่อไฟล์':esc(show(R.nos[0]))}</div>
     ${R.date?`<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="poDt" checked> ใส่วันที่ลงนามสัญญาเป็น <b>${esc(thDL(R.date))}</b> ด้วย${I.signed&&I.signed!==R.date?` <small class="muted">(เดิม ${esc(thDL(I.signed))})</small>`:''}</label>`:''}
-    ${I.contractNo?`<p class="hint">เลขที่เดิม “${esc(I.contractNo)}” จะถูกแทนที่</p>`:''}`,
+    ${I.contractNo&&I.contractNo!==R.nos[0]?`<p class="hint">เลขที่เดิม “${esc(I.contractNo)}” จะถูกแทนที่</p>`:''}
+    ${PO_F?`<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="poKeep" checked> เก็บไฟล์นี้ไว้กับงาน เปิดดูภายหลังด้วยปุ่ม <b>📄 ดู PO</b>${I.poFile?` <small class="muted">(แทนไฟล์เดิม ${esc(I.poFile.name)})</small>`:''}</label>`:'<p class="hint">ไฟล์ใหญ่เกิน 25 MB จึงเก็บไว้ไม่ได้</p>'}`,
     `<button type="button" class="btn pri" data-a="poGo" data-p="${esc(path)}" data-d="${esc(R.date)}">ใช้เลขที่นี้</button>`);
   const s=$('#poNo');if(s)s.oninput=()=>{$('#poLn').textContent=s.value===fn?'จากชื่อไฟล์':show(s.value)}})};
-ACT.poGo=b=>{const v=$('#poNo')&&$('#poNo').value.trim();if(!v)return;setPath(b.dataset.p,v);const dt=$('#poDt');if(b.dataset.d&&dt&&dt.checked)P.info.signed=b.dataset.d;
-  $('#dlg').close();save();render();toast('ใส่เลขที่สัญญา '+v+' แล้ว')};
+ACT.poGo=b=>{const v=$('#poNo')&&$('#poNo').value.trim(),kp=$('#poKeep'),keep=PO_F&&kp&&kp.checked;if(!v&&!keep){toast('พิมพ์เลขที่สัญญาก่อน');return}
+  if(v)setPath(b.dataset.p,v);const dt=$('#poDt');if(b.dataset.d&&dt&&dt.checked)P.info.signed=b.dataset.d;
+  $('#dlg').close();if(keep)poKeep(P,PO_F);PO_F=null;save();render();toast(v?'ใส่เลขที่สัญญา '+v+' แล้ว'+(keep?' และเก็บไฟล์ไว้':''):'เก็บไฟล์ PO ไว้แล้ว')};
+// 4.99.19: the PO / contract file itself is kept with the job (IndexedDB like photos, and the company folder / cloud when one is set)
+let PO_F=null;const I0=()=>(P&&P.info&&P.info.contractNo)||'';
+function poKeep(p,file){const fr=new FileReader();fr.onload=async()=>{const k='po:'+uid(),v=fr.result;try{await IDB.put(k,v)}catch(e){toast('เก็บไฟล์ PO ไม่ได้');return}phCache[k]=v;
+    const I=p.info,old=I.poFile;I.poFile={k,name:file.name,size:file.size,type:file.type||'',date:today()};save();render();
+    if(old&&old.k&&old.k!==k)IDB.del(old.k).catch(()=>{});
+    try{if(typeof folderOn==='function'&&folderOn())fWrite(await fSub('photos'),k+'.txt',v).catch(()=>{})}catch(e){}};fr.readAsDataURL(file)}
+ACT.poView=async()=>{const f=P&&P.info.poFile;if(!f)return;const w=window.open('','_blank');const v=await phSrc(f.k);
+  if(!v){if(w)w.close();toast('ไม่พบไฟล์ PO ในเครื่องนี้ เปิดจากเครื่องที่แนบไฟล์ หรือแนบใหม่อีกครั้ง');return}
+  let u;try{const b=await (await fetch(v)).blob();u=URL.createObjectURL(new Blob([b],{type:f.type||b.type}))}catch(e){u=v}
+  const view=/pdf|image/.test(f.type||'')||/\.(pdf|png|jpe?g|webp|gif)$/i.test(f.name);
+  if(view&&w){w.location.href=u}else{if(w)w.close();const a=document.createElement('a');a.href=u;a.download=f.name;document.body.appendChild(a);a.click();a.remove()}
+  setTimeout(()=>{try{URL.revokeObjectURL(u)}catch(e){}},60000)};
 function poBtns(){document.querySelectorAll('#view input[data-p="info.contractNo"]').forEach(i=>{const lb=i.closest('label');if(!lb||lb.querySelector('.po-pick'))return;
   lb.style.display=lb.style.display||'flex';lb.style.flexDirection='column';
-  lb.insertAdjacentHTML('beforeend','<button type="button" class="po-pick" data-a="poPick" data-p="info.contractNo" title="เลือกไฟล์ PO หรือสัญญา ระบบใช้ชื่อไฟล์เป็นเลขที่สัญญา เช่น PO0869-NET-52.pdf">📄 ดึงจากชื่อไฟล์ PO / สัญญา</button>')})}
+  lb.insertAdjacentHTML('beforeend','<button type="button" class="po-pick" data-a="poPick" data-p="info.contractNo" title="เลือกไฟล์ PO หรือสัญญา ระบบใช้ชื่อไฟล์เป็นเลขที่สัญญา เช่น PO0869-NET-52.pdf">📄 ดึงจากชื่อไฟล์ PO / สัญญา</button>');
+  const f=P.info.poFile;if(f)lb.insertAdjacentHTML('beforeend',`<button type="button" class="po-pick po-view" data-a="poView" title="แนบเมื่อ ${esc(thDL(f.date))} · กด 📄 ดึงจากชื่อไฟล์ เพื่อแนบไฟล์ใหม่แทน">📄 ดู PO: ${esc(f.name)}</button>`)})}
 {const r=render;render=function(){const x=r.apply(this,arguments);try{if(S.mode==='pj')poBtns()}catch(e){}return x}}
 Object.assign(SBKW,{'pj.setup':(SBKW['pj.setup']||'')+' PO ใบสั่งซื้อ ใบสั่งจ้าง เลขที่สัญญา ดึงจากไฟล์'});
 

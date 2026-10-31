@@ -21,24 +21,29 @@ function subPk(b){const d={let:1,sum:1,bill:1,pp:1,cert:1,ph:1,ti:0};return Obje
 function subWork(b,x){if((b.work||'').trim())return b.work.trim();if(x.it&&x.it.desc)return x.it.desc;
   const done=P.tasks.filter(t=>n(t.pct)>=100&&durOf(t)>0).map(t=>t.name);return done.slice(-6).join(', ')}
 // photos taken on site between the previous instalment and this one
-function subPhotos(b,x){const L=[];(P.daily||[]).filter(d=>d.date<=b.date&&(!x.from||d.date>=x.from)).sort((a,c)=>a.date<c.date?-1:1).forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));
-  return L.slice(-12)}
+// 4.99.19 (user: "รูปส่งงวดไม่ขึ้น"): a claim is often dated before its photos are taken (INV-010 dated 19 Oct, photos 30 Oct), so
+// when the period has none, the photos after the claim date up to the next claim (or today) are used, and the page says so
+function subPhotos(b,x){const pick=(lo,hi,eqLo)=>{const L=[];(P.daily||[]).filter(d=>d.date&&(eqLo?!lo||d.date>=lo:d.date>lo)&&(!hi||d.date<=hi)).sort((a,c)=>a.date<c.date?-1:1)
+    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L.slice(-12)};
+  let L=pick(x.from,b.date,1);L.lo=x.from;L.hi=b.date;if(L.length)return L;
+  const prog=billsSorted().filter(y=>(y.kind||'prog')==='prog'),nx=prog[prog.indexOf(b)+1],hi=nx&&nx.date>b.date?nx.date:'';
+  const A=pick(b.date,hi,0).filter(p=>!hi||p.d<hi);if(!A.length)return L;A.lo=b.date;A.hi=A[A.length-1].d;A.after=1;return A}
 const subBr='<div style="page-break-before:always"></div>';
 function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[sn,sr]=subSigner(),gov=isGovP();
   if(!b.letNo){b.letNo=nextNo('LT-',projects().flatMap(q=>q.bills.filter(y=>y.letNo).map(y=>({no:y.letNo}))));save()}
   const nph=subPhotos(b,x).length,att=SUBPG.filter(([k])=>k!=='let'&&pk[k]&&(k!=='ph'||nph)).map(([k,l],i)=>`${i+1}. ${l}${k==='ph'?` (${nph} รูป)`:''}`);
   const oh=ohead('-','',[]),lh=oh.split('<div class="ot">')[0]+(oh.match(/<div class="ofoot">[\s\S]*$/)||[''])[0];
   // "โครงการ - งาน" names read better as "งาน … โครงการ …"
-  const nm=String(P.name||'').trim(),cut=nm.indexOf(' - '),pjN=cut>0?nm.slice(0,cut).trim():'',job=cut>0?nm.slice(cut+3).trim():nm,what=pjN?`${esc(job)} โครงการ ${esc(pjN)}`:esc(nm);
+  const pjN=pjJob().pj,what=pjWhat();
   const row=(k,v)=>`<div class="lt-r"><b>${k}</b><div>${v}</div></div>`,party=esc(I.client||custName(I.cust)||'ผู้ว่าจ้าง');
   return lh+`<div class="let lt2">
   <div class="lt-top"><span>ที่ ${esc(b.letNo)}</span></div>
   <div class="lt-date">${thDL(b.date)}</div>
-  ${row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${what}`)}
+  ${(w=>typeof pjSubjRows==='function'?pjSubjRows(row,`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${w}`,w):row('เรื่อง',`${gov?`ขอส่งมอบงานงวดที่ ${esc(x.no)}`:`ขอส่งงานงวดที่ ${esc(x.no)} และขอเบิกเงินค่างาน`} ${w}`))(gov?what:pjWhat(P,1))}
   ${row('เรียน',esc(subTo()))}
   ${I.contractNo?row('อ้างถึง',`สัญญาจ้างเลขที่ ${esc(I.contractNo)}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''}`):''}
   ${att.length?row('สิ่งที่ส่งมาด้วย',`<ol>${att.map(t=>`<li>${esc(t.replace(/^\d+\.\s*/,''))}</li>`).join('')}</ol>`):''}
-  <p class="lt-p">ตามที่ ${esc(CO_.name||'')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${I.site?` ณ ${esc(I.site)}`:''} จาก ${party}${I.contractNo?` ตามสัญญาที่อ้างถึง`:''} มูลค่างานตามสัญญา ${fmt(C.total,2)} บาท (ไม่รวมภาษีมูลค่าเพิ่ม) นั้น</p>
+  <p class="lt-p">ตามที่ ${esc(CO_.name||'')} ได้รับจ้าง${pjN?'':'งาน'} ${what}${siteOnly(I.site)?` ณ ${esc(siteOnly(I.site))}`:''} จาก ${party}${I.contractNo?` ตามสัญญาที่อ้างถึง`:''} มูลค่างานตามสัญญา ${fmt(C.total,2)} บาท (ไม่รวมภาษีมูลค่าเพิ่ม) นั้น</p>
   <p class="lt-p">บัดนี้ ${esc(CO_.name||'ผู้รับจ้าง')} ได้ดำเนินงานงวดที่ ${esc(x.no)}${x.it?` (${fmt(x.it.pct,1)}% ของค่างาน)`:''} แล้วเสร็จ ${subWork(b,x)?`ได้แก่ ${esc(subWork(b,x))} `:''}ผลงานสะสมถึงงวดนี้คิดเป็นร้อยละ ${fmt(c.cum,2)}${x.plan?` (ตามแผนร้อยละ ${fmt(x.plan,2)})`:''} มูลค่างานงวดนี้ ${fmt(c.amt,2)} บาท (${bahtText(c.amt)}) ไม่รวมภาษีมูลค่าเพิ่ม</p>
   <p class="lt-p">${gov?`จึงเรียนมาเพื่อโปรดนำเสนอคณะกรรมการตรวจรับพัสดุตรวจรับงานงวดที่ ${esc(x.no)} และเบิกจ่ายเงินค่าจ้างตามเงื่อนไขของสัญญาต่อไป`:`จึงเรียนมาเพื่อโปรดตรวจสอบผลงานและอนุมัติเบิกจ่ายเงินค่างานงวดที่ ${esc(x.no)} ต่อไป`}</p>
   <div class="lt-sign"><div>ขอแสดงความนับถือ</div><div class="lt-ln"></div><div>(${esc(sn||'.................................................')})</div><div>${esc(sr)}</div><div>${esc(CO_.name||'')}</div></div>
@@ -74,7 +79,7 @@ function subSummary(b,x){const I=P.info,C=contract(),c=billCalc(b),mode=I.billMo
 function subCert(b,x){const I=P.info,c=billCalc(b),C=contract(),cn=CO().name||'ผู้รับจ้าง';
   if(isGovP())return `<div style="text-align:right;font-size:12px;color:#888">ร่างสำหรับคณะกรรมการตรวจรับพัสดุ (ใช้แบบฟอร์มของหน่วยงานได้)</div><h1 style="text-align:center">ใบตรวจรับพัสดุ (งานจ้าง)</h1>
   <div class="let" style="font-size:15px;line-height:1.8"><p style="text-align:right">เขียนที่ ${esc(I.client||'............................................')}<br>วันที่ ........ เดือน .................... พ.ศ. ..........</p>
-  <p style="text-indent:2.5em">ตามที่${esc(I.client||'หน่วยงาน')} ได้ทำสัญญาจ้าง${esc(cn)} ให้ดำเนินการ${esc(P.name)} ตามสัญญาเลขที่ ${esc(I.contractNo||'............')}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''} เป็นจำนวนเงิน ${fmt(C.total*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม) นั้น</p>
+  <p style="text-indent:2.5em">ตามที่${esc(I.client||'หน่วยงาน')} ได้ทำสัญญาจ้าง${esc(cn)} ให้ดำเนินการ${pjWhat()} ตามสัญญาเลขที่ ${esc(I.contractNo||'............')}${okD(I.signed)?` ลงวันที่ ${thDL(I.signed)}`:''} เป็นจำนวนเงิน ${fmt(C.total*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม) นั้น</p>
   <p style="text-indent:2.5em">ผู้รับจ้างได้ส่งมอบงานงวดที่ ${esc(x.no)} ตามหนังสือที่ ${esc(b.letNo||'............')} ลงวันที่ ${thDL(b.date)} คณะกรรมการตรวจรับพัสดุได้ตรวจรับงานเมื่อวันที่ ........................ ปรากฏว่า</p>
   <p style="margin-left:2.5em">☐ ผลงานถูกต้องครบถ้วนตามสัญญา เห็นควรรับงานงวดที่ ${esc(x.no)} และเบิกจ่ายเงินจำนวน ${fmt(c.amt*(1+n(I.vat)/100),2)} บาท (รวมภาษีมูลค่าเพิ่ม)<br>☐ ผลงานยังไม่ถูกต้องครบถ้วน ให้ผู้รับจ้างแก้ไขดังนี้ ...................................................................</p>
   <p style="text-indent:2.5em">จึงลงลายมือชื่อไว้เป็นหลักฐาน</p></div>
@@ -86,13 +91,13 @@ function subCert(b,x){const I=P.info,c=billCalc(b),C=contract(),cn=CO().name||'�
   <p style="margin-top:12px">ได้ตรวจสอบผลงานที่หน้างานแล้ว ☐ รับรองตามจำนวนที่ขอ ☐ รับรองบางส่วน จำนวน ........................ บาท เนื่องจาก ......................................................</p>
   <div class="sign"><div>ผู้รับจ้าง</div><div>ที่ปรึกษา / ผู้ควบคุมงาน</div><div>ผู้ว่าจ้าง (อนุมัติ)</div></div>`}
 function subPh(b,x){const L=subPhotos(b,x);if(!L.length)return '';
-  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${x.from?thD(x.from)+' – ':''}${thD(b.date)}`)+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(p=>`<figure style="margin:0;page-break-inside:avoid"><img data-ph="${p.k}" alt="" style="width:100%;height:62mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:12px">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`).join('')}</div>`}
+  return phead(`รูปถ่ายผลงานงวดที่ ${esc(x.no)}`,`ช่วงงาน ${L.lo?thD(L.lo)+' – ':''}${thD(L.hi||b.date)}`)+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(p=>`<figure style="margin:0;page-break-inside:avoid"><img data-ph="${p.k}" alt="" style="width:100%;height:62mm;object-fit:cover;border:1px solid #ccd"><figcaption style="font-size:12px">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</figcaption></figure>`).join('')}</div>`}
 const submReg=PRINT.subm;// the submittal register (พิมพ์ทะเบียน) uses the same key with a type instead of a bill id
 PRINT.subm=id=>{const b=P.bills.find(y=>y.id===id);if(!b)return submReg(id);const x=subInfo(b),pk=subPk(b),out=[];
   if(pk.let)out.push(subLetter(b,x,pk));if(pk.sum)out.push(subSummary(b,x));if(pk.bill)out.push(PRINT.bill(id));if(pk.pp&&typeof subPP==='function')out.push(subPP(b));if(pk.cert)out.push(subCert(b,x));
   if(pk.ph){const h=subPh(b,x);if(h)out.push(h)}if(pk.ti)out.push(taxInv(id));
   // the landscape sheet starts its own page already; a page break before it as well would leave a blank page
-  return out.join(subBr).split(subBr+'<div class="sub-pp"').join('<div class="sub-pp"')};
+  return out.join(subBr).split(subBr+'<div class="sub-pp').join('<div class="sub-pp')};
 function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,ph=subPhotos(b,x).length,[sn]=subSigner();if(!b.pk)b.pk=pk;
   const ck=(k,l)=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-t="chk" data-p="${bp}.pk.${k}"${pk[k]?' checked':''}>${l}${k==='ph'?` <small class="muted">(${ph} รูปจากรายงานประจำวัน)</small>`:''}${k==='cert'?` <small class="muted">(${isGovP()?'ร่างใบตรวจรับสำหรับกรรมการ':'ให้ที่ปรึกษาลงนาม'})</small>`:''}</label>`;
   return `<section class="card" id="subCard"><h2><span>ชุดเอกสารส่งงวด งวดที่ ${esc(x.no)}</span><small>หนังสือนำส่ง สรุปผลงาน ใบเบิก Progress Payment ใบรับรอง และรูปถ่าย พิมพ์รวมเป็นชุดเดียว</small><span class="sp"></span><button type="button" class="btn sm pri" data-a="print" data-k="subm" data-id="${b.id}">พิมพ์ชุดเอกสารส่งงวด</button></h2>

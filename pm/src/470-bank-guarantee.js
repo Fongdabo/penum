@@ -58,7 +58,7 @@ PRINT.lgreg=f=>{const L=lgRows(f==='live'||f==='soon'||String(f).startsWith('p:'
 // the company's request to its bank, ready to sign
 PRINT.lgreq=id=>{const x=(CO().lg||[]).find(z=>z.id===id);if(!x)return '';const C=CO(),p=lgProj(x),t=(LGT.find(z=>z[0]===x.kind)||LGT[5])[1],bk=(BANKS.find(k=>k[0]===x.bank)||['',''])[1];
   return cphead('หนังสือขอให้ออกหนังสือค้ำประกัน',`เลขที่ ${esc(x.no)}`)+`<p>วันที่ ${thDL(today())}</p><p>เรียน ผู้จัดการ ธนาคาร${esc(bk)}</p>
-  <p style="text-indent:2em;line-height:1.9">${esc(C.name||'บริษัท')} ขอให้ธนาคารออก<b>หนังสือ${esc(t)}</b> ในนามบริษัท ให้แก่ <b>${esc(x.benef||'..............................')}</b> สำหรับ${p?`โครงการ ${esc(p.name)}${p.info.contractNo?` สัญญาเลขที่ ${esc(p.info.contractNo)}`:''}`:'งานตามสัญญา'}
+  <p style="text-indent:2em;line-height:1.9">${esc(C.name||'บริษัท')} ขอให้ธนาคารออก<b>หนังสือ${esc(t)}</b> ในนามบริษัท ให้แก่ <b>${esc(x.benef||'..............................')}</b> สำหรับ${p?`${esc(pjTxt(p))}${p.info.contractNo?` สัญญาเลขที่ ${esc(p.info.contractNo)}`:''}`:'งานตามสัญญา'}
   วงเงิน <b>${fmt(x.amt,2)} บาท</b> (${bahtText(n(x.amt))}) มีผลตั้งแต่วันที่ ${thDL(x.issue)} ถึงวันที่ ${thDL(x.exp)} โดยให้ตัดวงเงินจากวงเงินหนังสือค้ำประกันของบริษัท และหักค่าธรรมเนียมจากบัญชีของบริษัท</p>
   ${x.note?`<p>หมายเหตุ ${esc(x.note)}</p>`:''}<p style="text-indent:2em">แนบสำเนาสัญญาหรือเอกสารประกวดราคาและแบบฟอร์มหนังสือค้ำประกันของผู้รับผลประโยชน์ (ถ้ามี)</p>`+signs(['ผู้มีอำนาจลงนาม และประทับตราบริษัท','ผู้ประสานงาน (ฝ่ายบัญชี)'])};
 

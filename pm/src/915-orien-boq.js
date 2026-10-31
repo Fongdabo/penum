@@ -33,7 +33,7 @@ PRINT.quoteCost=id=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';cons
   const endH=()=>{if(H&&lh&&multi(lg))body.push(sumRow('obh','รวม '+esc(hn),H));H=null};
   Q.items.forEach(i=>{const q=n(i.q),base=n(i.m)+n(i.l),mc=base?n(i.m):(q?n(i.t)/q:0),lc=base?n(i.l):0,L=qLine(QS,i),u=qUnit(Q,i),ct=q*(mc+lc),st=q*u,E=isEq(i);
     if(i.g!==lg){endH();if(G)body.push(sumRow('obs','รวม'+esc(gName(lg)),G));lg=i.g;lh=null;gi++;hi=0;G=z();body.push(`<tr class="obg"><td class="n">${gi}</td><td colspan="${NC-1}">${esc(gName(i.g))}</td></tr>`)}
-    const h=hd(i);if(h!==lh){endH();lh=h;if(h){hi++;const m=h.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h);H=z();body.push(`<tr class="obhh"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${NC-1}">${esc(m?m[2]:h)}</td></tr>`)}}
+    const h=hd(i);if(h!==lh){endH();lh=h;if(h){hi++;const m=qHeadNo(h,gi,hi);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h);H=z();body.push(`<tr class="obhh"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${NC-1}">${esc(m?m[2]:h)}</td></tr>`)}}
     let num='';if(!lh){hi++;num=gi+'.'+hi}
     [G,H].forEach(x=>{if(!x)return;x.c+=ct;x.s+=st;x.cm+=q*mc;x.cl+=q*lc;x.sm+=q*L.mu;x.sl+=q*L.lu});
     P[E?'e':'m'].c+=q*mc;P[E?'e':'m'].s+=q*L.mu;P.l.c+=q*lc;P.l.s+=q*L.lu;
