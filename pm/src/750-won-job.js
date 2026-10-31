@@ -54,3 +54,23 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.status$/);if(!m||v!=='w
 ACT.qPull=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;if(!confirm(`ดึงข้อมูลจาก ${Q.no} เข้าโครงการ “${P.name}”?\nชื่อโครงการจะเปลี่ยนเป็นชื่อในใบเสนอราคา`))return;
   if(qFillProject(Q,P)){save();render();toast(`ดึงข้อมูล ${Q.no} เข้าโครงการแล้ว`)}};
 
+/* 4.99.17 มูลค่าสัญญาตามใบเสนอราคาที่ได้งาน (user, Noble QT-004: "แก้ไม่ได้" … "ปรับให้แก้ไขอัตโนมัติได้ไหม"). The job's contract value
+   (info.cv) was copied once from the quote when it was won, so a quote fixed afterwards (120,000 → 112,150 + VAT) left the job, its
+   รวม VAT and its claims at the old value. Now a job made from a won quote follows the quote's ราคาไม่รวม VAT: info.cvQ remembers the
+   quote value last taken, and when the quote changes the contract changes with it, unless the contract was typed in by hand (then it
+   stays, and a warning says the two differ, with one press to take the quote's value). Older jobs start following once their value
+   matches the quote. The contract value can also be typed under วิธีเบิกงวด, and รวม VAT reads the contract value. */
+const cvQuote=p=>{const Q=(CO().quotes||[]).find(q=>q.pj===p.id&&q.status==='won');return Q?{Q,v:Math.round(qCalc(Q).net*100)/100}:null};
+const cvByBoq=p=>p.info.cvAuto&&(p.boq.items||[]).length;
+function cvSyncAll(){let ch=0;Object.values(DB.projects||{}).forEach(p=>{const I=p.info;if(!I||cvByBoq(p))return;let x;try{x=cvQuote(p)}catch(e){return}if(!x)return;
+  const eq=(a,b)=>Math.abs(n(a)-n(b))<0.01;
+  if(I.cvQ==null){if(eq(I.cv,x.v)){I.cvQ=x.v;ch=1}return}
+  if(eq(I.cvQ,x.v))return;if(eq(I.cv,I.cvQ))I.cv=x.v;I.cvQ=x.v;ch=1});return ch}
+{const r=render;render=function(){try{if(cvSyncAll())save()}catch(e){}return r.apply(this,arguments)}}
+function cvWarn(){if(!P||cvByBoq(P))return '';const x=cvQuote(P);if(!x||Math.abs(n(P.info.cv)-x.v)<0.01)return '';
+  return `<div class="cv-warn" role="status">⚠ มูลค่าสัญญา ${fmt(n(P.info.cv),2)} ไม่ตรงกับราคาไม่รวม VAT ของ ${esc(x.Q.no)} (${fmt(x.v,2)}) ใบเบิกทุกงวดคิดจากมูลค่าสัญญา
+    <button type="button" class="btn sm" data-a="cvUseQ">ใช้ยอด ${esc(x.Q.no)}</button></div>`}
+ACT.cvUseQ=()=>{const x=cvQuote(P);if(!x)return;P.info.cv=x.v;P.info.cvQ=x.v;save();render();toast(`มูลค่าสัญญา = ${fmt(x.v,2)} ตาม ${x.Q.no}`)};
+{const f=VIEWS.setup;VIEWS.setup=()=>{const h=f(),w=cvWarn();if(!w)return h;
+  return h.replace(/(<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-t="chk" data-p="info.cvAuto"[\s\S]*?<\/label><\/div>)/,'$1'+w)}}
+document.head.insertAdjacentHTML('beforeend',`<style>.cv-warn{margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--warn-soft,#fef3c7);color:var(--ink);display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px}</style>`);
