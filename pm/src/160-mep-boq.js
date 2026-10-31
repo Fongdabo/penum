@@ -54,7 +54,7 @@ VIEWS.setup=()=>{
       <button type="button" class="btn${L?'':' pri'}" data-a="pasteBoq">วาง BOQ ที่คัดลอกจาก PENUM MEP</button>
       <button type="button" class="btn" data-a="loadDemo">เปิดโครงการตัวอย่าง</button></div>
     ${mepNote(L)}
-    ${P.boq.items.length?`<dl class="stats" style="margin-bottom:12px"><div><dt>ค่าของ + ค่าแรง</dt><dd>${fmt(sum(P.boq.items,boqCost))}</dd></div><div><dt>ราคาขายก่อน VAT</dt><dd>${fmt(C.base)}</dd></div><div><dt>รวม VAT</dt><dd>${fmt(n(P.boq.grand)||C.base*(1+n(I.vat)/100))}</dd></div></dl>
+    ${P.boq.items.length?`<dl class="stats" style="margin-bottom:12px"><div><dt>ค่าของ + ค่าแรง</dt><dd>${fmt(sum(P.boq.items,boqCost))}</dd></div><div><dt>ราคาขายก่อน VAT</dt><dd>${fmt(C.base)}</dd></div><div><dt>รวม VAT</dt><dd>${fmt(I.cvAuto&&n(P.boq.grand)?n(P.boq.grand):C.base*(1+n(I.vat)/100))}</dd></div></dl>
     <div class="tw" style="max-height:480px"><table><thead><tr><th>รายการ</th><th>หน่วย</th><th class="r">จำนวน</th><th class="r">ค่าของ/หน่วย</th><th class="r">ค่าแรง/หน่วย</th><th class="r">ราคาขาย</th></tr></thead><tbody>
     ${P.boq.items.map(i=>{const h=i.g!==lg?`<tr class="grp"><td colspan="6">${gName(i.g)}</td></tr>`:'';lg=i.g;return h+`<tr><td>${esc(itemName(i))}</td><td>${esc(i.unit)}</td><td class="r">${fmtq(i.q)}</td><td class="r">${fmt(i.m)}</td><td class="r">${fmt(i.l)}</td><td class="r">${fmt(i.t)}</td></tr>`}).join('')}</tbody></table></div>`:''}
   </section>`;
