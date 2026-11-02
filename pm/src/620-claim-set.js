@@ -28,12 +28,16 @@ function subWork(b,x){if((b.work||'').trim())return b.work.trim();if(x.it&&x.it.
 // photos 22–23 Oct), so none counted. The first claim now takes every photo up to its date; the card can also set the photo dates by hand
 // (b.phLo / b.phHi) and says which dates it used. Up to 24 photos (4 pages of 6) instead of 12.
 const SUBPH_MAX=24;
-function subPhotos(b,x){const pick=(lo,hi,eqLo)=>{const L=[];(P.daily||[]).filter(d=>d.date&&(eqLo?!lo||d.date>=lo:d.date>lo)&&(!hi||d.date<=hi)).sort((a,c)=>a.date<c.date?-1:1)
-    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L.slice(-SUBPH_MAX)};
+function subPhRange(b,x){const pick=(lo,hi,eqLo)=>{const L=[];(P.daily||[]).filter(d=>d.date&&(eqLo?!lo||d.date>=lo:d.date>lo)&&(!hi||d.date<=hi)).sort((a,c)=>a.date<c.date?-1:1)
+    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L};
   if(b.phLo||b.phHi){const M=pick(b.phLo||'',b.phHi||'',1);M.lo=b.phLo||(M.length?M[0].d:'');M.hi=b.phHi||(M.length?M[M.length-1].d:b.date);M.man=1;return M}
   const lo=x.prev?x.from:'';let L=pick(lo,b.date,1);L.lo=lo||(L.length?L[0].d:'');L.hi=b.date;if(L.length)return L;
   const prog=billsSorted().filter(y=>(y.kind||'prog')==='prog'),nx=prog[prog.indexOf(b)+1],hi=nx&&nx.date>b.date?nx.date:'';
   const A=pick(b.date,hi,0).filter(p=>!hi||p.d<hi);if(!A.length)return L;A.lo=b.date;A.hi=A[A.length-1].d;A.after=1;return A}
+// 4.99.23 (user: "เราสามารถเลือกรูปได้ไหม ถ้าเอามาหมดมันเยอะเกิน"): untick photos on the card (b.phX = left-out photo keys), so new photos
+// added to the daily reports later still go in by themselves; the cap applies to the ticked ones
+function subPhotos(b,x){const C=subPhRange(b,x),X=new Set(b.phX||[]),L=C.filter(p=>!X.has(p.k)).slice(-SUBPH_MAX);
+  for(const k of ['lo','hi','man','after'])if(C[k]!=null)L[k]=C[k];L.all=C;return L}
 // the line under the photo tick: which dates were used, and the two date boxes to choose them by hand
 function subPhRow(b,x,L){const bp=`bills.${b.id}`,all=(P.daily||[]).filter(d=>d.date&&(d.photos||[]).length),nAll=sum(all,d=>d.photos.length);
   const used=L.length?`ใช้ ${L.length} รูป จากรายงานวันที่ ${thD(L[0].d)}${L[L.length-1].d!==L[0].d?' – '+thD(L[L.length-1].d):''}${L.man?' (ช่วงที่เลือกเอง)':L.after?' (หลังวันที่ใบเบิก)':''}`
@@ -41,7 +45,21 @@ function subPhRow(b,x,L){const bp=`bills.${b.id}`,all=(P.daily||[]).filter(d=>d.
     :'ยังไม่มีรูปในรายงานประจำวัน · ใส่รูปที่ หน้างาน › รายงานประจำวัน';
   return `<p class="hint" style="margin:10px 0 2px">📷 ${used}${L.length>=SUBPH_MAX?` · พิมพ์ได้สูงสุด ${SUBPH_MAX} รูป (รูปล่าสุด)`:''}</p><div class="form" style="align-items:start">
   <label>รูปตั้งแต่วันที่<input type="date" data-p="${bp}.phLo" value="${esc(b.phLo||'')}"></label><label>ถึงวันที่<input type="date" data-p="${bp}.phHi" value="${esc(b.phHi||'')}"></label>
-  ${b.phLo||b.phHi?`<button type="button" class="btn sm" data-a="subPhAuto" data-id="${b.id}" style="align-self:center">ให้เลือกช่วงวันที่อัตโนมัติ</button>`:'<p class="hint" style="margin:0;align-self:center">เว้นว่าง = โปรแกรมเลือกให้ตามวันที่ใบเบิก</p>'}</div>`}
+  ${b.phLo||b.phHi?`<button type="button" class="btn sm" data-a="subPhAuto" data-id="${b.id}" style="align-self:center">ให้เลือกช่วงวันที่อัตโนมัติ</button>`:'<p class="hint" style="margin:0;align-self:center">เว้นว่าง = โปรแกรมเลือกให้ตามวันที่ใบเบิก</p>'}</div>${subPhPick(b,L)}`}
+// the photo picker: every photo in the period as a thumbnail; untick one to leave it out of the set
+function subPhPick(b,L){const C=L.all||L;if(!C.length)return '';const X=new Set(b.phX||[]),on=C.filter(p=>!X.has(p.k)).length,open=S.subPhOpen===b.id;
+  const head=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn sm${open?' pri':''}" data-a="subPhOpen" data-id="${b.id}">🖼 เลือกรูป (${on}/${C.length})</button>
+    ${open?`<button type="button" class="btn sm" data-a="subPhAll" data-id="${b.id}" data-v="1">เลือกทั้งหมด</button><button type="button" class="btn sm" data-a="subPhAll" data-id="${b.id}" data-v="0">ไม่เลือกเลย</button>
+    <span class="hint" style="margin:0">กดที่รูปเพื่อเอาออก / ใส่กลับ${on>SUBPH_MAX?` · เลือกไว้ ${on} รูป พิมพ์ได้ ${SUBPH_MAX} รูป (ใช้รูปล่าสุด)`:''}</span>`:on<C.length?`<span class="hint" style="margin:0">เอาออก ${C.length-on} รูป</span>`:''}</div>`;
+  if(!open)return head;
+  return head+`<div class="subphp" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${C.map(p=>{const y=!X.has(p.k);
+    return `<button type="button" data-a="subPhT" data-id="${b.id}" data-k="${p.k}" aria-pressed="${y}" title="${y?'กดเพื่อเอาออก':'กดเพื่อใส่กลับ'}" style="position:relative;padding:0;border:2px solid ${y?'var(--accent)':'var(--line)'};border-radius:9px;background:var(--sunk);cursor:pointer;width:136px;text-align:left;opacity:${y?1:.4}">
+      <img data-ph="${p.k}" alt="" style="display:block;width:132px;height:99px;object-fit:cover;border-radius:7px 7px 0 0">
+      <span style="position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:14px;font-weight:700;background:${y?'var(--accent)':'rgba(0,0,0,.45)'};color:var(--accent-ink,#fff)">${y?'✓':''}</span>
+      <small style="display:block;padding:3px 6px;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${thD(p.d)}${p.cap?' · '+esc(p.cap):''}</small></button>`}).join('')}</div>`}
+ACT.subPhOpen=b=>{S.subPhOpen=S.subPhOpen===b.dataset.id?'':b.dataset.id;render()};
+ACT.subPhT=b=>{const x=P.bills.find(y=>y.id===b.dataset.id);if(!x)return;const k=b.dataset.k,X=new Set(x.phX||[]);X.has(k)?X.delete(k):X.add(k);x.phX=[...X];if(!x.phX.length)delete x.phX;save();render()};
+ACT.subPhAll=b=>{const x=P.bills.find(y=>y.id===b.dataset.id);if(!x)return;if(b.dataset.v==='1')delete x.phX;else x.phX=subPhRange(x,subInfo(x)).map(p=>p.k);save();render()};
 ACT.subPhAuto=b=>{const x=P.bills.find(y=>y.id===b.dataset.id);if(!x)return;delete x.phLo;delete x.phHi;save();render()};
 const subBr='<div style="page-break-before:always"></div>';
 function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[sn,sr]=subSigner(),gov=isGovP();
