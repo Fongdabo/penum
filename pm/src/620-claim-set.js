@@ -23,11 +23,26 @@ function subWork(b,x){if((b.work||'').trim())return b.work.trim();if(x.it&&x.it.
 // photos taken on site between the previous instalment and this one
 // 4.99.19 (user: "รูปส่งงวดไม่ขึ้น"): a claim is often dated before its photos are taken (INV-010 dated 19 Oct, photos 30 Oct), so
 // when the period has none, the photos after the claim date up to the next claim (or today) are used, and the page says so
+// 4.99.22 (user: "อัพเดทรูปแล้ว ทำไมใบเบิกงวดยังเป็น 0 รูป"): the first claim started its period at the project start date, but a job opened
+// from a won quote starts on the day it was made, after the daily reports typed in for earlier days (Noble INV-011: job opened 31 Oct,
+// photos 22–23 Oct), so none counted. The first claim now takes every photo up to its date; the card can also set the photo dates by hand
+// (b.phLo / b.phHi) and says which dates it used. Up to 24 photos (4 pages of 6) instead of 12.
+const SUBPH_MAX=24;
 function subPhotos(b,x){const pick=(lo,hi,eqLo)=>{const L=[];(P.daily||[]).filter(d=>d.date&&(eqLo?!lo||d.date>=lo:d.date>lo)&&(!hi||d.date<=hi)).sort((a,c)=>a.date<c.date?-1:1)
-    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L.slice(-12)};
-  let L=pick(x.from,b.date,1);L.lo=x.from;L.hi=b.date;if(L.length)return L;
+    .forEach(d=>(d.photos||[]).forEach(k=>L.push({k,d:d.date,cap:(d.caps||{})[k]||''})));return L.slice(-SUBPH_MAX)};
+  if(b.phLo||b.phHi){const M=pick(b.phLo||'',b.phHi||'',1);M.lo=b.phLo||(M.length?M[0].d:'');M.hi=b.phHi||(M.length?M[M.length-1].d:b.date);M.man=1;return M}
+  const lo=x.prev?x.from:'';let L=pick(lo,b.date,1);L.lo=lo||(L.length?L[0].d:'');L.hi=b.date;if(L.length)return L;
   const prog=billsSorted().filter(y=>(y.kind||'prog')==='prog'),nx=prog[prog.indexOf(b)+1],hi=nx&&nx.date>b.date?nx.date:'';
   const A=pick(b.date,hi,0).filter(p=>!hi||p.d<hi);if(!A.length)return L;A.lo=b.date;A.hi=A[A.length-1].d;A.after=1;return A}
+// the line under the photo tick: which dates were used, and the two date boxes to choose them by hand
+function subPhRow(b,x,L){const bp=`bills.${b.id}`,all=(P.daily||[]).filter(d=>d.date&&(d.photos||[]).length),nAll=sum(all,d=>d.photos.length);
+  const used=L.length?`ใช้ ${L.length} รูป จากรายงานวันที่ ${thD(L[0].d)}${L[L.length-1].d!==L[0].d?' – '+thD(L[L.length-1].d):''}${L.man?' (ช่วงที่เลือกเอง)':L.after?' (หลังวันที่ใบเบิก)':''}`
+    :nAll?`ไม่มีรูปในช่วงของงวดนี้ แต่ในรายงานประจำวันมี ${nAll} รูป (${(D=>thD(D[0])+(D.length>1&&D[D.length-1]!==D[0]?' – '+thD(D[D.length-1]):''))(all.map(d=>d.date).sort())}) · เลือกช่วงวันที่ด้านล่าง`
+    :'ยังไม่มีรูปในรายงานประจำวัน · ใส่รูปที่ หน้างาน › รายงานประจำวัน';
+  return `<p class="hint" style="margin:10px 0 2px">📷 ${used}${L.length>=SUBPH_MAX?` · พิมพ์ได้สูงสุด ${SUBPH_MAX} รูป (รูปล่าสุด)`:''}</p><div class="form" style="align-items:start">
+  <label>รูปตั้งแต่วันที่<input type="date" data-p="${bp}.phLo" value="${esc(b.phLo||'')}"></label><label>ถึงวันที่<input type="date" data-p="${bp}.phHi" value="${esc(b.phHi||'')}"></label>
+  ${b.phLo||b.phHi?`<button type="button" class="btn sm" data-a="subPhAuto" data-id="${b.id}" style="align-self:center">ให้เลือกช่วงวันที่อัตโนมัติ</button>`:'<p class="hint" style="margin:0;align-self:center">เว้นว่าง = โปรแกรมเลือกให้ตามวันที่ใบเบิก</p>'}</div>`}
+ACT.subPhAuto=b=>{const x=P.bills.find(y=>y.id===b.dataset.id);if(!x)return;delete x.phLo;delete x.phHi;save();render()};
 const subBr='<div style="page-break-before:always"></div>';
 function subLetter(b,x,pk){const I=P.info,C=contract(),c=billCalc(b),CO_=CO(),[sn,sr]=subSigner(),gov=isGovP();
   if(!b.letNo){b.letNo=nextNo('LT-',projects().flatMap(q=>q.bills.filter(y=>y.letNo).map(y=>({no:y.letNo}))));save()}
@@ -104,7 +119,7 @@ PRINT.subm=id=>{const b=P.bills.find(y=>y.id===id);if(!b)return submReg(id);cons
   if(pk.ph){const h=subPh(b,x);if(h)out.push(h)}if(pk.ti)out.push(taxInv(id));
   // the landscape sheet starts its own page already; a page break before it as well would leave a blank page
   return out.join(subBr).split(subBr+'<div class="sub-pp').join('<div class="sub-pp')};
-function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,ph=subPhotos(b,x).length,[sn]=subSigner();if(!b.pk)b.pk=pk;
+function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,phL=subPhotos(b,x),ph=phL.length,[sn]=subSigner();if(!b.pk)b.pk=pk;
   const ck=(k,l)=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-t="chk" data-p="${bp}.pk.${k}"${pk[k]?' checked':''}>${l}${k==='ph'?` <small class="muted">(${ph} รูปจากรายงานประจำวัน)</small>`:''}${k==='cert'?` <small class="muted">(${isGovP()?'ร่างใบตรวจรับสำหรับกรรมการ':'ให้ที่ปรึกษาลงนาม'})</small>`:''}</label>`;
   return `<section class="card" id="subCard"><h2><span>ชุดเอกสารส่งงวด งวดที่ ${esc(x.no)}</span><small>หนังสือนำส่ง สรุปผลงาน ใบเบิก Progress Payment ใบรับรอง และรูปถ่าย พิมพ์รวมเป็นชุดเดียว</small><span class="sp"></span><button type="button" class="btn sm pri" data-a="print" data-k="subm" data-id="${b.id}">พิมพ์ชุดเอกสารส่งงวด</button></h2>
   <div class="form"><label>ประเภทงาน<select data-p="info.sector"><option value="pvt"${!isGovP()?' selected':''}>งานเอกชน</option><option value="gov"${isGovP()?' selected':''}>งานราชการ / รัฐวิสาหกิจ</option></select></label>
@@ -116,6 +131,7 @@ function subCard(b){const I=P.info,x=subInfo(b),pk=subPk(b),bp=`bills.${b.id}`,p
     ${man?`<label>ชื่อผู้ลงนาม<input data-p="info.signer" value="${esc(I.signer||'')}" placeholder="ชื่อผู้มีอำนาจลงนาม"></label>`:''}<label>ตำแหน่ง<input data-p="info.signerRole" value="${esc(I.signerRole||'')}" placeholder="${esc(cur?cur.role||'':'กรรมการผู้จัดการ')}"></label>`})()}
   <label class="full">งานที่ทำแล้วเสร็จในงวดนี้ (ใส่ในหนังสือนำส่ง)<textarea data-p="${bp}.work" rows="2" placeholder="${esc(subWork(Object.assign({},b,{work:''}),x)||'เช่น ติดตั้งท่อลมชั้น 1–2 และเครื่องปรับอากาศชั้น 1 แล้วเสร็จ')}">${esc(b.work||'')}</textarea></label></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:4px 16px;margin-top:10px">${SUBPG.map(([k,l])=>ck(k,l)).join('')}</div>
+  ${pk.ph?subPhRow(b,x,phL):''}
   <p class="hint">ผลงานสะสมที่ขอเบิก ${fmt(billCalc(b).cum,1)}% · ความคืบหน้าในแผนงาน ${fmt(x.act,1)}% · ตามแผน ${fmt(x.plan,1)}% ณ วันที่ใบเบิก ${b.letNo?`· หนังสือเลขที่ ${esc(b.letNo)}`:'· เลขที่หนังสือออกให้อัตโนมัติเมื่อพิมพ์'} · หัวเอกสารและโลโก้มาจาก ตั้งค่าบริษัท</p></section>`}
 // under the selected progress bill on the billing page
 {const f=VIEWS.cost;VIEWS.cost=()=>{const h=f(),m=h.match(/data-a="print" data-k="bill" data-id="([^"]+)"/);if(!m)return h;const b=P.bills.find(y=>y.id===m[1]);if(!b||(b.kind||'prog')!=='prog')return h;
