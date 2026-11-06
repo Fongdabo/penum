@@ -21,7 +21,11 @@ const qmMa=Q=>Q.kind==='ma';
 const qmMonths=Q=>Math.max(1,n(Q.maMonths)||12);
 const qmVis=(Q,i)=>Math.max(0,n(i.vis)||n(Q.maVisits)||4);
 // visits of one line over the whole contract, and its price per unit per visit
-const qmVisits=(Q,i)=>qmVis(Q,i)*qmMonths(Q)/12;
+// visits over the whole contract; a contract shorter than the visit interval (a one-off job: 1 month, once a year) still has its one visit
+const qmVisits=(Q,i)=>{const v=qmVis(Q,i);return v?Math.max(1,v*qmMonths(Q)/12):0};
+// drafts made before 4.99.24 kept the price per visit over a fraction of a visit (1 month × 1/yr = 1/12): put the per-visit price back
+function qmMig(Q){if(!Q||!qmMa(Q)||Q.maV1)return false;Q.maV1=1;if(Q.status&&Q.status!=='draft')return true;
+  Q.items.forEach(i=>{const o=qmVis(Q,i)*qmMonths(Q)/12;if(!(o>0&&o<1)||!n(i.sp))return;const x=n(i.sp)/o,r=Math.round(x);i.sp=Math.abs(x-r)<=0.006/o?r:Math.round(x*100)/100});return true}
 const qmPerVisit=(Q,i)=>{const v=qmVisits(Q,i);return v?qUnit(Q,i)/v:0};
 
 // amount in English words, for the English and bilingual forms
@@ -193,7 +197,7 @@ PRINT.quote=(id,bq)=>{const Q=CO().quotes.find(q=>q.id===id);if(!Q)return '';con
   if(!qmMa(Q)&&(Q.look==='xl'||f==='G'||f==='E'))return PRINT.quoteXl(id,bq);
   try{return qmPrint(Q,bq)}catch(e){console.error(e);return PRINT.quoteXl(id,bq)}};
 
-function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),eqs=!ma&&!!Q.eqSep,sv=Q._part==='svc',sp=!ma&&(qSplit(Q)||eqs||sv),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
+function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q),eqs=!ma&&!!Q.eqSep,sv=Q._part==='svc',sp=!ma&&(qSplit(Q)||eqs||sv),sep=qSep(Q),S0=!ma&&f==='S',one=(!!Q.one||Q.items.length<=QM_ONE)&&!S0,lt=Q.cover==='letter'&&!ma;
   // a label in the chosen language; bilingual puts the English under (or beside) the Thai
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
@@ -207,7 +211,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const co=`<div class="qm-bar"></div><div class="qm-h"><div>${C.logo?`<img src="${C.logo}" alt="">`:`<span class="nm">${esc(C.name||'')}</span>`}</div>
     <div class="qm-co"><b>${esc(EN&&C.nameEn||C.name||'')}</b>${!EN&&C.nameEn?esc(C.nameEn)+'<br>':''}${esc(EN&&C.addrEn||C.addr||'')}${C.addr||C.addrEn?'<br>':''}${[C.phone?tx('โทร ','Tel. ')+esc(C.phone):'',esc(C.email||'')].filter(Boolean).join(' · ')}
     ${C.tax?`<br>${tx('เลขประจำตัวผู้เสียภาษี ','Tax ID ')}${esc(C.tax)}${C.branch?' ('+esc(C.branch)+')':''}`:''}</div></div>`;
-  const sub=ma?[Q.title,cuN].filter(Boolean).join(' · '):[Q.title,Q.pname].filter(Boolean).join(' · ');
+  const sub=ma?[Q.title,Q.pname||cuN].filter(Boolean).join(' · '):[Q.title,Q.pname].filter(Boolean).join(' · ');
   const valid=okD(Q.date)&&n(Q.valid)?addD(Q.date,n(Q.valid)):'';
   const meta=[[t('เลขที่','No.',1),`<b>${esc(Q.no||'')}</b>`],[t('วันที่','Date',1),dt(Q.date)],...(valid?[[t('ยืนราคาถึง','Valid until',1),dt(valid)]]:[]),...(Q.ref?[[t('อ้างอิง','Ref.',1),esc(Q.ref)]]:[]),
     ...(Q.by?[[t('ผู้เสนอราคา','Sales',1),esc(Q.by)]]:[]),...(st.phone?[[t('ติดต่อ','Contact',1),esc(st.phone)]]:[]),...(st.email?[[t('อีเมล','Email',1),`<span class="qm-em">${esc(st.email).replace('@','@<wbr>')}</span>`]]:[])];
@@ -219,7 +223,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
       ${kv(t('เลขผู้เสียภาษี','Tax ID',1),esc(cu.tax||''))}${kv(t('โทร','Tel.',1),esc([cu.phone,cu.email].filter(Boolean).join(' · ')))}</div>
     ${ma?qmMaCard(Q,t,dt,kv):`<div class="qm-c"><h3>${t('โครงการ','Project')}</h3>${kv(t('โครงการ','Project',1),esc(Q.pname||''),'big')}${kv(t('งาน','Work',1),esc(Q.title||''))}${kv(t('สถานที่','Site',1),esc(Q.site||''))}${kv(t('แล้วเสร็จ','Completion',1),esc(Q.dlv||''))}</div>`}</div>`;
   const what=esc(Q.title||''),pj=esc(Q.pname||'');
-  const intro=ma?`<p class="qm-in">${L!=='en'?`บริษัทฯ มีความยินดีขอเสนอราคา${/บำรุงรักษา|บริการ/.test(Q.title||'')?'':'บริการบำรุงรักษา'}${what}${cu.name?' ให้แก่ '+esc(cu.name):''} ตามรายละเอียดดังนี้`:''}${L!=='th'?`<i class="en"${L==='en'?' style="font-size:1em;color:inherit"':''}>We are pleased to offer our maintenance service${what?' for '+what:''} as detailed below.</i>`:''}</p>`
+  const intro=ma?`<p class="qm-in">${L!=='en'?`บริษัทฯ มีความยินดีขอเสนอราคา${/บำรุงรักษา|บริการ/.test(Q.title||'')?'':'บริการบำรุงรักษา'}${what}${pj?' สำหรับโครงการ '+pj:''}${cu.name?' ให้แก่ '+esc(cu.name):''} ตามรายละเอียดดังนี้`:''}${L!=='th'?`<i class="en"${L==='en'?' style="font-size:1em;color:inherit"':''}>We are pleased to offer our maintenance service${what?' for '+what:''}${pj?', '+pj:''} as detailed below.</i>`:''}</p>`
     :`<p class="qm-in">${L!=='en'?`บริษัทฯ มีความยินดีขอเสนอราคา${what}${pj?' สำหรับโครงการ '+pj:''} ตามรายละเอียดดังนี้`:''}${L!=='th'?`<i class="en"${L==='en'?' style="font-size:1em;color:inherit"':''}>We are pleased to submit our quotation${what?' for '+what:''}${pj?', '+pj:''}, as detailed below.</i>`:''}</p>`;
   // ---- tables
   const cols=w=>`<colgroup>${w.map(x=>`<col style="width:${x}%">`).join('')}</colgroup>`,fill=w=>{w[1]=100-w.reduce((a,b,i)=>i===1?a:a+b,0);return w};
@@ -260,7 +264,7 @@ function qmPrint(Q,bq){const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),f=qForm(Q
   const totals=`<div class="qm-tot">${tr(t('รวมเป็นเงิน','Subtotal',1),fmt(mk||A.length?T.t:c.sub,2))}${mk?tr(t(`ค่าดำเนินการและกำไร ${qMkTxt(Q)}`,`Overhead &amp; profit ${qMkTxt(Q,1)}`,1),fmt(mk,2)):''}
     ${A.map(a=>tr(esc(a.name||''),fmt(a.v,2))).join('')}${mk||A.length?tr(t('รวม','Total',1),fmt(c.sub,2)):''}
     ${c.disc?tr(t('ส่วนลด','Discount',1),'-'+fmt(c.disc,2),'d')+tr(t('ยอดหลังหักส่วนลด','After discount',1),fmt(c.net,2)):''}${tr(t('ภาษีมูลค่าเพิ่ม 7%','VAT 7%',1),fmt(c.vat,2))}
-    ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
+    ${tr(t('จำนวนเงินรวมทั้งสิ้น','Grand total'),fmt(c.grand,2),'gt')}${ma&&qmMonths(Q)>1?tr(t('เฉลี่ยต่อเดือน (รวม VAT)','Per month (incl. VAT)',1),fmt(c.grand/qmMonths(Q),2),'pm'):''}</div>`;
   // the part the customer withholds 3% on, in proportion to the amount before VAT (after markup, extras and discount)
   const wb=(eqs||sv)&&Q.whtB!=='none'&&T.t>0?(Q.whtB==='l'?T.l:T.m+T.l):null,PW=eqs&&wb!=null&&qmParts(Q),wy=PW?qCalc(PW[1]).net*qmWhtShare(PW[1]):wb==null?0:c.net*wb/T.t,ww=wy*3/100;
   // 4.35 a quotation without แยกค่าเครื่อง is one hire-of-work job: with Q.whtN (new quotes) the totals show the 3% a company customer
@@ -337,7 +341,7 @@ if(typeof fitPrint==='function'){const f=fitPrint;fitPrint=function(){const r=f.
 
 // ---- the service quotation's own parts
 function qmMaCard(Q,t,dt,kv){const m=qmMonths(Q),s=okD(Q.maStart)?Q.maStart:'',e=s?addD(addMon(s,m),-1):'',EN=qmLang(Q)==='en',P=QM_PARTS.find(x=>x[0]===(Q.maParts||''))||QM_PARTS[0];
-  return `<div class="qm-c"><h3>${t('สัญญาบริการ','Service contract')}</h3>${kv(t('ระยะสัญญา','Term',1),EN?`${m} months`:`${m} เดือน`,'big')}
+  return `<div class="qm-c"><h3>${t('สัญญาบริการ','Service contract')}</h3>${kv(t('โครงการ','Project',1),esc(Q.pname||''),'big')}${kv(t('สถานที่','Site',1),esc(Q.site||''))}${kv(t('ระยะสัญญา','Term',1),EN?`${m} months`:`${m} เดือน`,'big')}
     ${kv(t('ช่วงสัญญา','Period',1),s?`${dt(s)} – ${dt(e)}`:(EN?'From the contract date':'นับจากวันที่ลงนามสัญญา'))}
     ${kv(t('เข้าบำรุงรักษา','PM visits',1),EN?`${n(Q.maVisits)||4} times a year`:`ปีละ ${n(Q.maVisits)||4} ครั้ง`)}${kv(t('เมื่อแจ้งเสีย','Breakdown call',1),esc(Q.maResp||''))}
     ${kv(t('เวลาให้บริการ','Service hours',1),esc(Q.maHours||''))}${kv(t('อะไหล่','Spare parts',1),EN?P[2]:P[1])}</div>`}
@@ -346,23 +350,25 @@ function qmMaTable(Q,t,tx,M){const m=qmMonths(Q),w=[7,0,8,8,9,15,15];w[1]=100-w.
   return `<table class="qm-t"><colgroup>${w.map(x=>`<col style="width:${x}%">`).join('')}</colgroup><thead><tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('เครื่อง / ระบบ','Equipment / system')}</th><th>${t('จำนวน','Qty')}</th><th>${t('หน่วย','Unit')}</th><th>${t('ครั้ง/ปี','Visits/yr')}</th><th>${t('ราคา/หน่วย/ครั้ง','Per unit per visit')}</th><th>${m===12?t('ราคาต่อปี','Per year'):t(`รวม ${m} เดือน`,`${m} months`)}</th></tr></thead>
     <tbody>${rows||`<tr><td></td><td colspan="6">${tx('ยังไม่มีรายการ','No items')}</td></tr>`}<tr class="tt"><td></td><td>${t('รวม','Total',1)}</td><td colspan="4"></td><td class="r">${fmt(sum(Q.items,i=>qLine(Q,i).t),2)}</td></tr></tbody></table>`}
 // the visit plan: one bar per visit frequency, a cell per month
-function qmPlan(Q,t,tx){const m=Math.min(qmMonths(Q),24),EN=qmLang(Q)==='en',s=okD(Q.maStart)?Q.maStart:'',F={};
+function qmPlan(Q,t,tx){if(qmMonths(Q)<2)return '';const m=Math.min(qmMonths(Q),24),EN=qmLang(Q)==='en',s=okD(Q.maStart)?Q.maStart:'',F={};
   Q.items.forEach(i=>{const v=qmVis(Q,i);if(!v)return;(F[v]=F[v]||[]).push([i.type,i.desc].filter(Boolean).join(' '))});const ks=Object.keys(F).map(Number).sort((a,b)=>b-a);if(!ks.length)return '';
   const mon=k=>{if(!s)return String(k+1);const d=pd(addMon(s,k));return d.toLocaleDateString(EN?'en-GB':'th-TH',{month:'short'})};
-  const on=(v,k)=>{const step=12/v;return step>=1?Math.abs(((k+1)/step)-Math.round((k+1)/step))<1e-6:true};
+  const on=(v,k)=>{const step=12/v;if(step>m)return k===0;return step>=1?Math.abs(((k+1)/step)-Math.round((k+1)/step))<1e-6:true};
   const lab=v=>{const step=12/v,x=F[v].slice(0,2).join(', ')+(F[v].length>2?(EN?` +${F[v].length-2} more`:` และอีก ${F[v].length-2} รายการ`):'');
-    return `${step>=1&&Number.isInteger(step)?(EN?(step===1?'Monthly':`Every ${step} months`):(step===1?'ทุกเดือน':`ทุก ${step} เดือน`)):(EN?`${v} times a year`:`ปีละ ${v} ครั้ง`)} · ${esc(x)}`};
+    return `${step>m?(EN?'One visit':'เข้าครั้งเดียว'):step>=1&&Number.isInteger(step)?(EN?(step===1?'Monthly':`Every ${step} months`):(step===1?'ทุกเดือน':`ทุก ${step} เดือน`)):(EN?`${v} times a year`:`ปีละ ${v} ครั้ง`)} · ${esc(x)}`};
   return `<div class="qm-pl"><div class="qm-c" style="border:0;padding:0"><h3>${t('แผนการเข้าบำรุงรักษา','Visit plan')}</h3></div><table><colgroup><col style="width:30%">${'<col>'.repeat(m)}</colgroup>
     <thead><tr><th></th>${Array.from({length:m},(_,k)=>`<th>${s?mon(k):(EN?'M':'ด.')+(k+1)}</th>`).join('')}</tr></thead>
     <tbody>${ks.map(v=>`<tr><td class="l">${lab(v)}</td>${Array.from({length:m},(_,k)=>`<td><i${on(v,k)?' class="on"':''}></i></td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
 // what is checked at every visit, from the company's PM checklists by system
-function qmScope(Q,t,tx){if(typeof pmGuess!=='function'||typeof pmSysGet!=='function')return '';const ids=[];
+function qmScope(Q,t,tx){if(Array.isArray(Q.maScope)){const G=Q.maScope.map(g=>({n:String(g.n||'').trim(),L:String(g.t||'').split('\n').map(x=>x.trim()).filter(Boolean)})).filter(g=>g.n||g.L.length);if(!G.length)return '';
+    return `<div class="qm-c" style="border:0;padding:0;margin:4px 0 4px"><h3>${t('ขอบเขตงาน','Scope of work')}</h3></div><div class="qm-sc">${G.map(g=>`<div>${g.n?`<b style="color:var(--qn)">${esc(g.n)}</b>`:''}<ul>${g.L.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}</div>`}
+  if(typeof pmGuess!=='function'||typeof pmSysGet!=='function')return '';const ids=[];
   Q.items.forEach(i=>{const s=i.sys||pmGuess([i.type,i.desc].filter(Boolean).join(' '));if(s&&!ids.includes(s))ids.push(s)});if(!ids.length)return '';
   return `<div class="qm-c" style="border:0;padding:0;margin:4px 0 4px"><h3>${t('ขอบเขตงานที่ตรวจทุกครั้งที่เข้าบำรุงรักษา','Checked at every visit')}</h3></div><div class="qm-sc">${ids.map(id=>{const s=pmSysGet(id);if(!s)return '';
     return `<div><b style="color:var(--qn)">${esc(s.n)}</b><ul>${pmChecks(s).map(x=>`<li>${esc(pmLine(x).t)}</li>`).join('')}</ul></div>`}).join('')}</div>`}
 
 // ---- the quotation page: look, language, short form, kind; and the service-quote card
-{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);h=h.replace(/(<button type="button" class="btn sm pri" data-a="add" data-c="co.quotes" data-sel="quote">[^<]*<\/button>)/,'<button type="button" class="btn sm" data-a="qmaNew">+ ใบเสนอราคาบริการ PM/MA</button>$1');
+{const f=salesQuote;salesQuote=function(){{const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(qmMig(Q))save()}let h=f.apply(this,arguments);h=h.replace(/(<button type="button" class="btn sm pri" data-a="add" data-c="co.quotes" data-sel="quote">[^<]*<\/button>)/,'<button type="button" class="btn sm" data-a="qmaNew">+ ใบเสนอราคาบริการ PM/MA</button>$1');
   const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
   const b=`co.quotes.${Q.id}`,sel=(k,L,v)=>`<select data-p="${b}.${k}">${L.map(([x,l])=>`<option value="${x}"${(v||'')===x?' selected':''}>${l}</option>`).join('')}</select>`;
   const xl=Q.look==='xl',f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
@@ -386,8 +392,26 @@ function qmaCard(Q,b){const C=CO(),m=qmMonths(Q),eq=(C.equip||[]).filter(e=>Q.cu
     <div class="tw"><table><thead><tr><th>เครื่อง / ระบบ</th><th class="r">จำนวน</th><th>หน่วย</th><th class="r">ครั้ง/ปี</th><th class="r">ราคา/หน่วย/ครั้ง</th><th class="r">${m===12?'ราคาต่อปี':`รวม ${m} เดือน`}</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="7" class="empty">ยังไม่มีรายการ เพิ่มเครื่องหรือระบบที่ดูแล</td></tr>'}</tbody></table></div>
     <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px"><button type="button" class="btn sm pri" data-a="qmaAdd" data-id="${Q.id}">+ เพิ่มเครื่อง / ระบบ</button>
       ${typeof pmSysAll==='function'?`<select id="qmaSys" aria-label="ระบบงาน PM">${pmSysAll().map(s=>`<option value="${s.id}">${esc(s.n)} (ทุก ${n(s.every)||'-'} เดือน)</option>`).join('')}</select><button type="button" class="btn sm" data-a="qmaSys" data-id="${Q.id}">เพิ่มระบบนี้</button>`:''}
-      <button type="button" class="btn sm" data-a="qmaEq" data-id="${Q.id}"${eq.length?'':' disabled title="เลือกลูกค้าที่มีเครื่องในทะเบียนเครื่องก่อน"'}>ดึงจากทะเบียนเครื่องของลูกค้า${eq.length?` (${eq.length})`:''}</button></div></div>`}
-ACT.qmaNew=()=>{const C=CO(),Q=Object.assign({id:uid()},NEW.quotes(C.quotes),{kind:'ma',maMonths:12,maVisits:4,maStart:addD(today(),7)});C.quotes.push(Q);S.sel.quote=Q.id;save();render();
+      <button type="button" class="btn sm" data-a="qmaEq" data-id="${Q.id}"${eq.length?'':' disabled title="เลือกลูกค้าที่มีเครื่องในทะเบียนเครื่องก่อน"'}>ดึงจากทะเบียนเครื่องของลูกค้า${eq.length?` (${eq.length})`:''}</button></div>${qmaScCard(Q,b)}</div>`}
+// the scope of work printed on the quotation: from the company's PM checklists by system, or this quotation's own list
+function qmScAuto(Q){if(typeof pmGuess!=='function'||typeof pmSysGet!=='function')return [];const ids=[];
+  Q.items.forEach(i=>{const s=i.sys||pmGuess([i.type,i.desc].filter(Boolean).join(' '));if(s&&!ids.includes(s))ids.push(s)});
+  return ids.map(id=>pmSysGet(id)).filter(Boolean).map(s=>({n:s.n,t:pmChecks(s).map(x=>pmLine(x).t).join('\n')}))}
+function qmaScCard(Q,b){const own=Array.isArray(Q.maScope),A=own?[]:qmScAuto(Q);
+  const head=`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)"><b style="font-size:13px">ขอบเขตงานที่พิมพ์ในใบ</b> `;
+  if(!own)return head+`<small class="muted">${A.length?`ตอนนี้ใช้รายการตรวจตามระบบ: ${esc(A.map(g=>g.n).join(', '))} (ต้นฉบับแก้ได้ที่ บริการ › รายการตรวจ PM ตามระบบ)`:'ยังไม่มีรายการ ใบนี้จะไม่พิมพ์ขอบเขตงาน'}</small>
+    <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:6px"><button type="button" class="btn sm pri" data-a="qmaScEd" data-id="${Q.id}">✎ แก้ขอบเขตงานเฉพาะใบนี้</button>${A.length?`<button type="button" class="btn sm" data-a="qmaScOff" data-id="${Q.id}">ไม่พิมพ์ขอบเขตงาน</button>`:''}</div></div>`;
+  return head+`<small class="muted">ใบนี้ใช้ขอบเขตงานของตัวเอง ไม่กระทบใบอื่น บรรทัดละ 1 ข้อ${Q.maScope.length?'':' (ตอนนี้ไม่พิมพ์ขอบเขตงาน)'}</small>
+    ${Q.maScope.map(g=>`<div class="qma-sc" style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:8px"><input data-p="${b}.maScope.${g.id}.n" value="${esc(g.n||'')}" placeholder="หัวข้อ เช่น งานล้าง AHU" aria-label="หัวข้อขอบเขตงาน">
+      <button type="button" class="x" data-a="delRow" data-c="${b}.maScope" data-id="${g.id}" aria-label="ลบหัวข้อ">✕</button>
+      <textarea data-p="${b}.maScope.${g.id}.t" rows="${Math.min(10,Math.max(3,String(g.t||'').split('\n').length+1))}" style="grid-column:1/-1" placeholder="บรรทัดละ 1 ข้อ" aria-label="รายการในหัวข้อ">${esc(g.t||'')}</textarea></div>`).join('')}
+    <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px"><button type="button" class="btn sm" data-a="qmaScAdd" data-id="${Q.id}">+ เพิ่มหัวข้อ</button><button type="button" class="btn sm" data-a="qmaScReset" data-id="${Q.id}">↺ กลับไปใช้รายการตรวจตามระบบ</button></div></div>`}
+const qmQ=b=>CO().quotes.find(q=>q.id===b.dataset.id);
+ACT.qmaScEd=b=>{const Q=qmQ(b);if(!Q)return;Q.maScope=qmScAuto(Q).map(g=>Object.assign({id:uid()},g));if(!Q.maScope.length)Q.maScope.push({id:uid(),n:'',t:''});save();render()};
+ACT.qmaScOff=b=>{const Q=qmQ(b);if(!Q)return;Q.maScope=[];save();render()};
+ACT.qmaScAdd=b=>{const Q=qmQ(b);if(!Q)return;if(!Array.isArray(Q.maScope))Q.maScope=[];Q.maScope.push({id:uid(),n:'',t:''});save();render()};
+ACT.qmaScReset=b=>{const Q=qmQ(b);if(!Q)return;delete Q.maScope;save();render()};
+ACT.qmaNew=()=>{const C=CO(),Q=Object.assign({id:uid()},NEW.quotes(C.quotes),{kind:'ma',maMonths:12,maVisits:4,maStart:addD(today(),7),maV1:1});C.quotes.push(Q);S.sel.quote=Q.id;save();render();
   toast('สร้างใบเสนอราคาบริการแล้ว เลือกลูกค้า แล้วเพิ่มเครื่องหรือระบบที่ดูแล')};
 const qmaLine=o=>Object.assign({id:uid(),g:QM_G,head:'',type:'',desc:'',unit:'เครื่อง',q:1,m:0,l:0,t:0,sp:'',vis:''},o);
 ACT.qmaAdd=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;Q.items.push(qmaLine({}));save();render()};
