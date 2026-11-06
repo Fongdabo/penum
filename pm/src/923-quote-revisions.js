@@ -26,8 +26,15 @@ const qrvWrap=()=>{if(!PRINT.quote||PRINT.quote.__qrv)return;const f=PRINT.quote
   return h.replace(new RegExp(no+'(?![\\w.\\-/])','g'),esc(Q.no)+' Rev.'+k)};PRINT.quote.__qrv=1};
 {const r=render;render=function(){try{qrvWrap()}catch(e){}return r.apply(this,arguments)}}
 // printing the customer copy or sending it keeps a Rev. first
-{const f=ACT.print;ACT.print=function(b){if(b&&b.dataset&&b.dataset.k==='quote'){qrvWrap();const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(Q&&(Q.items||[]).length&&qrvSave(Q,'print'))save()}return f.apply(this,arguments)}}
+// 4.99.26 a draft printed to check it is not a Rev. (user: "REV.3 มาจากไหน" when the customer had R.1): printing keeps one only once the
+// quote is ส่งแล้ว (or later); ตั้งเลข Rev. sets the number by hand
+const qrvSent=Q=>!!Q.status&&Q.status!=='draft';
+{const f=ACT.print;ACT.print=function(b){if(b&&b.dataset&&b.dataset.k==='quote'){qrvWrap();const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(Q&&(Q.items||[]).length&&qrvSent(Q)&&qrvSave(Q,'print'))save()}return f.apply(this,arguments)}}
 HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.status$/);if(!m||v!=='sent')return;const Q=CO().quotes.find(x=>x.id===m[1]);if(Q&&Q.status==='sent'&&(Q.items||[]).length&&!(typeof qlNeed==='function'&&qlNeed(Q))&&qrvSave(Q,'sent'))save()});
+// ตั้งเลข Rev.: the number this copy prints with; an unsaved edit is kept as a Rev. first, and later edits count on from it
+ACT.qrvSetN=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q||!(Q.items||[]).length)return;const c=qrvCur(Q);
+  const v=prompt('เลข Rev. ของใบนี้ (0 = ฉบับแรก ไม่พิมพ์คำว่า Rev.)',String(c.none?0:c.n));if(v===null)return;const k=parseInt(String(v).replace(/^\s*r(ev)?\.?\s*/i,''),10);
+  if(!(k>=0)){toast('ใส่เป็นตัวเลข เช่น 0, 1, 2');return}const r=qrvSave(Q,'hand','ตั้งเลขเอง')||qrvLast(Q);r.n=k;save();render();toast(`ใบนี้เป็น Rev.${k} แล้ว`)};
 ACT.qrvNew=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;const L=qrvLast(Q);if(L&&L.sig===qrvSig(Q)){toast(`ยังไม่ได้แก้อะไรจาก Rev.${L.n}`);return}
   const note=prompt('หมายเหตุของ Rev. นี้ (เช่น ลูกค้าขอลดราคา, ตัดงานท่อออก) เว้นว่างได้','');if(note===null)return;const r=qrvSave(Q,'hand',note.trim());save();render();toast(`บันทึก Rev.${r.n} แล้ว`)};
 ACT.qrvPrint=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),r=Q&&(Q.revs||[]).find(x=>x.id===b.dataset.r);if(!r)return;qrvWrap();const C=CO(),k=C.quotes.indexOf(Q),T=qrvObj(Q,r);let h='';
@@ -52,14 +59,14 @@ ACT.qrvCmp=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;con
 document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.qvOnly){const w=t.closest('.qv').querySelector('.qv-w');if(w)w.classList.toggle('only',t.checked)}});
 // ---- the card on the quote page
 function qrvCard(Q){if(!Q||!(Q.items||[]).length)return '';const R=Q.revs||[],cur=qrvCur(Q),L=qrvLast(Q);
-  const st=!L?'ยังไม่มี Rev. ระบบจะเก็บ <b>Rev.0</b> ให้เองเมื่อพิมพ์ใบลูกค้าหรือเปลี่ยนสถานะเป็นส่งแล้วครั้งแรก'
-    :cur.dirty?`แก้ไขหลัง Rev.${L.n} แล้ว พิมพ์หรือส่งครั้งหน้าจะเก็บเป็น <b>Rev.${cur.n}</b>`:`ตรงกับ <b>Rev.${L.n}</b> ที่เก็บไว้ล่าสุด`;
+  const st=!L?'ยังไม่มี Rev. ระบบจะเก็บ <b>Rev.0</b> ให้เองเมื่อเปลี่ยนสถานะเป็นส่งแล้ว (พิมพ์ร่างดูเองไม่นับ)'
+    :cur.dirty?`แก้ไขหลัง Rev.${L.n} แล้ว ${qrvSent(Q)?'พิมพ์หรือส่ง':'เปลี่ยนเป็นส่งแล้ว'}ครั้งหน้าจะเก็บเป็น <b>Rev.${cur.n}</b>`:`ตรงกับ <b>Rev.${L.n}</b> ที่เก็บไว้ล่าสุด`;
   const opt=sel=>[...R.map(r=>[r.id,`Rev.${r.n} · ${qrvWhen(r.at)}`]),...(cur.dirty?[['cur','ฉบับปัจจุบัน (ยังไม่เก็บ)']]:[])].map(([v,l])=>`<option value="${v}"${v===sel?' selected':''}>${esc(l)}</option>`).join('');
   const bSel=cur.dirty?'cur':(R[R.length-1]||{}).id,aSel=cur.dirty?(R[R.length-1]||{}).id:(R[R.length-2]||{}).id;
   const rows=R.slice().reverse().map((r,j,all)=>{const p=all[j+1],s=r.sum||{},d=p?n(s.net)-n((p.sum||{}).net):0;
     return `<tr><td><b>Rev.${r.n}</b></td><td>${qrvWhen(r.at)}</td><td>${esc(r.by||'')}</td><td>${esc(QRV_WHY[r.why]||'')}${r.note?` · ${esc(r.note)}`:''}</td><td class="r">${fmt(n(s.net),2)}</td><td class="r">${p?qrvD(d):''}</td><td class="r">${s.npc!=null?fmt(n(s.npc),1)+'%':''}</td>
       <td style="white-space:nowrap"><button type="button" class="btn sm" data-a="qrvPrint" data-id="${Q.id}" data-r="${r.id}" title="พิมพ์ใบลูกค้าตามที่เป็นใน Rev. นี้">พิมพ์ฉบับนี้</button></td></tr>`}).join('');
-  return `<section class="card qrv"><h2><span>ประวัติการแก้ไข (Rev.)</span><small>${st}</small><span class="sp"></span><button type="button" class="btn sm" data-a="qrvNew" data-id="${Q.id}">บันทึกเป็น Rev. ใหม่</button></h2>
+  return `<section class="card qrv"><h2><span>ประวัติการแก้ไข (Rev.)</span><small>${st}</small><span class="sp"></span><button type="button" class="btn sm" data-a="qrvSetN" data-id="${Q.id}" title="ตั้งเลข Rev. ของฉบับนี้เอง เช่น ให้ตรงกับฉบับที่ส่งลูกค้าไปแล้ว">ตั้งเลข Rev.</button><button type="button" class="btn sm" data-a="qrvNew" data-id="${Q.id}">บันทึกเป็น Rev. ใหม่</button></h2>
   ${R.length?`<div class="tw"><table class="qb-t"><thead><tr><th>Rev.</th><th>เมื่อ</th><th>โดย</th><th>เหตุ</th><th class="r">ราคาเสนอ</th><th class="r">เทียบรอบก่อน</th><th class="r">กำไรสุทธิ</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   ${R.length+(cur.dirty?1:0)>1?`<div class="row qrv-c" style="gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">เทียบ <select id="qrvA" aria-label="ฉบับแรก">${opt(aSel)}</select> กับ <select id="qrvB" aria-label="ฉบับที่สอง">${opt(bSel)}</select><button type="button" class="btn sm pri" data-a="qrvCmp" data-id="${Q.id}">เทียบ</button></div>`:''}`:''}</section>`}
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];return Q?qbIns(h,qrvCard(Q)):h}}
