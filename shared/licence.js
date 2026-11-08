@@ -19,7 +19,7 @@
 (()=>{const C=window.PENUM_LIC;if(!C||window.penumLic)return;
 if(C.skip&&new RegExp(C.skip).test(location.hash)){window.penumLic={state:()=>({st:'skip'})};return}
 const JWK={kty:'EC',crv:'P-256',x:'wyXLWhvzv-0vF50q9rOZ8sMoh2QIg9Nsr_5IpR8f7jo',y:'BI9uqpJjjWVmVLaEgAfXkpOXtdU-Ec7I-zQRJyUeDp4',ext:true,key_ops:['verify']};
-const GRACE=7,WARN=30,REG='penum.licences',FIRST='penum.licences.first',PEND='penum.lic.pend.'+C.app,FILES='../pm/files/';
+const GRACE=7,WARN=30,REG='penum.licences',USE='penum.lic.use',FIRST='penum.licences.first',PEND='penum.lic.pend.'+C.app,FILES='../pm/files/';
 // ORIEN's Supabase (the feedback box's project): renewals sent from ORIEN ฝ่ายขาย, read with the public key (tools/licence-setup.sql)
 const SB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
 const APPN={pm:'PENUM PM',mep:'PENUM MEP',bim:'PENUM BIM'};
@@ -35,6 +35,8 @@ const T={menu:['สิทธิ์การใช้งาน','Licence'],sub:['
   expired:['รหัสนี้หมดอายุแล้ว ติดต่อ ORIEN เพื่อต่ออายุ','This code has expired. Contact ORIEN to renew it.'],
   notApp:['รหัสนี้ใช้กับ {0} ไม่รวม {1} (เก็บไว้ในเครื่องนี้ให้โปรแกรมนั้นแล้ว)','This code covers {0}, not {1} (kept on this device for those programs).'],
   okT:['เปิดใช้งาน {0} แล้ว ใช้ได้ถึง {1}','{0} is activated until {1}'],
+  use:['ใช้บริษัทนี้','Use this company'],inUse:['กำลังใช้','In use'],useT:['ตอนนี้ใช้ {0} แล้ว','Now using {0}'],
+  useP:['เครื่องนี้มีรหัสหลายบริษัท บริษัทที่กำลังใช้คือชื่อที่แสดงในแถบบน และเป็นเจ้าของ "โครงการของบริษัท" กด "ใช้บริษัทนี้" เพื่อสลับ','This device has codes of several companies. The one in use is the name in the top bar and owns "Company projects". Press "Use this company" to switch.'],
   co:['บริษัท','Company'],apps:['โปรแกรม','Programs'],until:['ใช้ได้ถึง','Valid until'],cust:['รหัสลูกค้า','Customer code'],pilot:['ทดลองใช้ฟรี','Free trial'],
   expP:['หมดอายุแล้ว','Expired'],left:['อีก {0} วัน','{0} days left'],
   warn:['สิทธิ์ใช้งาน {0} หมดอายุ {1} (อีก {2} วัน) ติดต่อ ORIEN เพื่อต่ออายุ','{0} expires on {1} ({2} days left). Contact ORIEN to renew.'],
@@ -107,12 +109,14 @@ let FREE=false;{let F={};try{F=JSON.parse(get(FIRST)||'{}')||{}}catch(e){}
 
 // the state: free | ok | warn | grace | ro (expired past the grace days, or revoked) | none (no code for this program)
 let S={st:'wait',real:'',p:null,code:'',why:'',other:[]},UI=false;
+// with several companies' codes on this device, the one picked with "ใช้บริษัทนี้" ('penum.lic.use', shared by MEP and BIM) comes first, else the latest expiry
 function decide(R){const mine=R.filter(x=>has(x.p,C.app)&&x.sig!==false),live=mine.filter(x=>!revoked(x.p)).sort((a,b)=>a.p.exp<b.p.exp?1:a.p.exp>b.p.exp?-1:0);
+  const u=get(USE),ui=u?live.findIndex(y=>who(y.p)===u&&diffD(today(),y.p.exp)>=-GRACE):-1;if(ui>0)live.unshift(live.splice(ui,1)[0]);
   const x=live[0]||mine[0];let st='none',why=R.some(y=>y.sig===false&&has(y.p,C.app))?'bad':'';
   if(live[0]){const d=diffD(today(),x.p.exp);st=d<-GRACE?'ro':d<0?'grace':d<=WARN?'warn':'ok';why=st==='ro'?'exp':''}else if(x){st='ro';why='rev'}
-  return {st:FREE?'free':st,real:st,p:x?x.p:null,code:x?x.code:'',why,other:R.filter(y=>!has(y.p,C.app)&&!revoked(y.p)).map(y=>y.p)}}
+  return {st:FREE?'free':st,real:st,p:x?x.p:null,code:x?x.code:'',why,picked:!!(u&&live[0]&&who(live[0].p)===u),many:new Set(live.map(y=>who(y.p))).size>1,alt:live.filter(y=>who(y.p)!==who(live[0].p)&&diffD(today(),y.p.exp)>=-GRACE).filter((y,i,a)=>a.findIndex(z=>who(z.p)===who(y.p))===i).map(y=>y.p),other:R.filter(y=>!has(y.p,C.app)&&!revoked(y.p)).map(y=>y.p)}}
 const all=()=>{const L=regGet();MEM.forEach(c=>{if(!L.includes(c))L.push(c)});return L.map(code=>({code,p:peek(code)}))};
-function apply(n){const was=S.st;S=n;LOCK=n.st==='none'||n.st==='ro';document.documentElement.classList.toggle('plk-hide',n.st==='none');if(UI)paint(was)}
+function apply(n){const was=S.st,wc=S.code;S=n;if(wc&&n.code!==wc)setTimeout(()=>{try{dispatchEvent(new Event('penumlic'))}catch(e){}},0);LOCK=n.st==='none'||n.st==='ro';document.documentElement.classList.toggle('plk-hide',n.st==='none');if(UI)paint(was)}
 async function recheck(){const R=all();await Promise.all(R.map(async x=>{if(has(x.p,C.app))x.sig=(await verify(x.code)).ok}));apply(decide(R))}
 // what the stored codes say decides at once whether the program shows; the signatures are checked right after
 apply(decide(all()));
@@ -140,7 +144,7 @@ const CSS=`html.plk-hide body{visibility:hidden!important}html.plk-hide #plk,htm
 .plk-bad{color:#B42318;font-weight:600;margin:6px 0 0!important}.plk-mut{color:#5B697C;font-size:13.5px}
 .plk-i{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 16px;margin:4px 0 0;padding:12px 14px;border:1px solid #E2E8F1;border-radius:14px;background:#F8FAFD}
 .plk-i.ok{border-color:#9FD8B5;background:#EEF8F1}.plk-i dt{font-size:12px;color:#5B697C}.plk-i dd{margin:0;font-weight:600;font-size:14px;overflow-wrap:anywhere}
-.plk-pill{display:inline-block;font-size:12px;font-weight:600;padding:0 8px;border-radius:999px}.plk-pill.warn{background:#FBEEDD;color:#A45A12}.plk-pill.bad{background:#F8E3E3;color:#B42318}
+.plk-pill{display:inline-block;font-size:12px;font-weight:600;padding:0 8px;border-radius:999px}.plk-pill.warn{background:#FBEEDD;color:#A45A12}.plk-pill.ok{background:#D9F2E3;color:#17703E}.plk-usew{grid-column:1/-1}.plk-use{min-height:36px!important;width:100%;font-weight:600;color:#0B7F8C!important;border-color:#0B7F8C!important}.plk-pill.bad{background:#F8E3E3;color:#B42318}
 .plk-ask{margin-top:4px;padding:14px;border-radius:16px;background:var(--k-sunk,#F5F7FB);border:1px solid var(--k-line,#E2E8F1);display:flex;flex-direction:column;gap:8px;font-size:14px}
 .plk-ask>b{font-size:15px}.plk-ask>span{color:var(--k-mut,#5B697C)}
 .plk-pr{align-self:flex-start;color:#0B6E7A;font-weight:600;background:rgba(20,184,166,.12);border-radius:10px;padding:6px 10px;line-height:1.5}
@@ -178,8 +182,8 @@ function toast(m){let el=document.querySelector('.plk-toast');if(!el){if(!docume
   el.textContent=m;el.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('on'),3200)}
 function noSave(){if(S.st!=='ro'||Date.now()-(noSave.t||0)<60e3)return;noSave.t=Date.now();setTimeout(()=>toast(t(S.why==='rev'?'noSaveR':'noSave',C.name)),0)}
 const fmt=n=>Number(n||0).toLocaleString(EN()?'en-US':'th-TH');
-function info(p,cls=''){const d=diffD(today(),p.exp);
-  return `<dl class="plk-i ${cls}"><div><dt>${t('co')}</dt><dd>${esc(p.co)}</dd></div><div><dt>${t('apps')}</dt><dd>${apOf(p).map(a=>esc(APPN[a]||a)).join(' · ')}${p.pl==='pilot'?` <span class="plk-pill warn">${t('pilot')}</span>`:''}</dd></div>
+function info(p,cls='',tag=''){const d=diffD(today(),p.exp);
+  return `<dl class="plk-i ${cls}"><div><dt>${t('co')}</dt><dd>${esc(p.co)}${tag?' '+tag:''}</dd></div><div><dt>${t('apps')}</dt><dd>${apOf(p).map(a=>esc(APPN[a]||a)).join(' · ')}${p.pl==='pilot'?` <span class="plk-pill warn">${t('pilot')}</span>`:''}</dd></div>
   <div><dt>${t('until')}</dt><dd>${thD(p.exp)}${d<0?` <span class="plk-pill bad">${t('expP')}</span>`:d<=WARN?` <span class="plk-pill warn">${t('left',d)}</span>`:''}</dd></div>${p.id?`<div><dt>${t('cust')}</dt><dd>${esc(p.sn||base(p.id))}</dd></div>`:''}${p.no?`<div><dt>Serial number</dt><dd>${esc(p.no)}</dd></div>`:''}</dl>`}
 
 // prices and how to reach ORIEN, from pm/files/plans.json (the file PENUM PM reads; PM keeps the last copy in 'penum.plans')
@@ -201,7 +205,8 @@ async function tryCode(v,out){v=norm(v);if(!out)return;if(!v){out.innerHTML='';r
   if(diffD(today(),p.exp)<-GRACE){out.innerHTML=info(p)+`<p class="plk-bad">${t('expired')}</p>`;return}
   regAdd(r.code);ss(PEND,null);
   if(!has(p,C.app)){out.innerHTML=info(p)+`<p class="plk-bad">${t('notApp',apOf(p).map(a=>APPN[a]||a).join(', '),esc(C.name))}</p>`;return}
-  out.innerHTML=info(p,'ok');await recheck();toast(t('okT',C.name,thD(p.exp)))}
+  out.innerHTML=info(p,'ok');await recheck();toast(t('okT',C.name,thD(p.exp)));
+  if(S.p&&who(S.p)!==who(p))openDlg()}          // another company's code: it is listed with "ใช้บริษัทนี้"
 
 // keys, paste and typing inside the code screens never reach the program underneath (its shortcuts, its paste)
 const own=el=>{['keydown','keyup','keypress','input','change','paste','copy','cut','click'].forEach(k=>el.addEventListener(k,e=>{if(k==='input'&&/^plk(In|New)$/.test(e.target.id)){const x=e.target;clearTimeout(x._t);x._t=setTimeout(()=>tryCode(x.value,el.querySelector(x.id==='plkIn'?'#plkR':'#plkNewR')),250)}
@@ -214,6 +219,7 @@ async function act(e){const b=e.target.closest&&e.target.closest('[data-plk]');i
   if(k==='fb'&&window.penumFB){try{const d=get('penum.fb.draft');if(!d||d.includes('[PENUM-PLAN]'))put('penum.fb.draft',txt)}catch(x){}if(ap&&AD)AD.close();penumFB.open('other')}
   if(k==='close'){const d=b.closest('dialog');d&&d.close()}
   if(k==='open')openDlg();
+  if(k==='use'&&b.dataset.who){put(USE,b.dataset.who);await recheck();if(DLG&&DLG.open)openDlg();if(S.p)toast(t('useT',S.p.co))}
   if(k==='hide'){S.st==='warn'?put('penum.lic.ban.'+C.app,today()):ss('penum.lic.ban.'+C.app,S.st);paintBan()}}
 
 function paintGate(){let g=document.getElementById('plk');if(S.st!=='none'){if(g)g.remove();return}
@@ -245,7 +251,7 @@ let DLG=null;
 function openDlg(){if(!DLG){DLG=document.createElement('dialog');DLG.className='plk-dlg';DLG.setAttribute('data-noxl','');document.body.appendChild(DLG);own(DLG)}
   const p=S.p,st=S.st,msg=st==='free'?`<p>${t('free',esc(C.name))}</p>`:st==='ro'?`<p class="plk-bad">${t(S.why==='rev'?'roRev':'roExp',esc(C.name))}</p>`:st==='grace'?`<p class="plk-bad">${t('grace',esc(C.name),thD(p.exp),GRACE+diffD(today(),p.exp))}</p>`:!p?`<p>${t('none')}</p>`:'';
   DLG.innerHTML=`<div class="plk-hd"><b>${t('menu')}</b><small>${esc(C.name)}</small></div>
-  <div class="plk-bd">${msg}${p?info(p):''}<details${(!p&&st!=='free')||st==='ro'||st==='grace'||ss(PEND)?' open':''}><summary>${t('newC')}</summary><textarea id="plkNew" rows="3" placeholder="PNM1.…" spellcheck="false" autocomplete="off">${esc(ss(PEND))}</textarea><div id="plkNewR"></div></details>${st==='free'||st==='ok'?'':ask()}</div>
+  <div class="plk-bd">${msg}${S.many?`<p class="plk-mut">${t('useP')}</p>`:''}${p?info(p,S.many?'ok':'',S.many?`<span class="plk-pill ok">${t('inUse')}</span>`:''):''}${(S.alt||[]).map(q=>info(q).replace(/<\/dl>$/,`<div class="plk-usew"><button type="button" class="plk-b plk-use" data-plk="use" data-who="${esc(who(q))}">${t('use')}</button></div></dl>`)).join('')}<details${(!p&&st!=='free')||st==='ro'||st==='grace'||ss(PEND)?' open':''}><summary>${t('newC')}</summary><textarea id="plkNew" rows="3" placeholder="PNM1.…" spellcheck="false" autocomplete="off">${esc(ss(PEND))}</textarea><div id="plkNewR"></div></details>${st==='free'||st==='ok'?'':ask()}</div>
   <div class="plk-ft"><button type="button" class="plk-b" data-plk="close" style="margin-left:auto">${t('close')}</button></div>`;
   if(!DLG.open){try{DLG.showModal()}catch(e){DLG.setAttribute('open','')}}
   const v=ss(PEND);if(v)tryCode(v,DLG.querySelector('#plkNewR'))}
@@ -307,13 +313,13 @@ function start(){UI=true;
   // a program left open for days still gets a renewal: look again when it comes back to the front, at most every 30 minutes
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-(renewals.t||0)>30*60e3)renewals()})}
 // another window (PENUM PM, or this program on another screen) added a code or a newer revoked list
-addEventListener('storage',e=>{if(e.key===REG)recheck();if(e.key==='penum.revoked'){try{REV=JSON.parse(e.newValue||'[]').map(String)}catch(x){}recheck()}});
+addEventListener('storage',e=>{if(e.key===REG||e.key===USE)recheck();if(e.key==='penum.revoked'){try{REV=JSON.parse(e.newValue||'[]').map(String)}catch(x){}recheck()}});
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start):start();
 
 // a message sent from this program's แจ้งปัญหา box names the company and customer code on its licence
 {let fb;const add=()=>S.p?{company:S.p.co,lic:S.p.sn||base(S.p.id)}:{};
   try{Object.defineProperty(window,'penumFB',{configurable:true,enumerable:true,get:()=>fb,set(v){if(v&&typeof v.init==='function'&&!v.__plk){const f=v.init;
     v.init=function(o){o=Object.assign({},o);const g=o.info;o.info=()=>{let x={};try{x=(g&&g())||{}}catch(e){}return Object.assign(add(),x)};return f.call(this,o)};v.__plk=1}fb=v}})}catch(e){}}
-window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[],code:S.code||'',cid:S.p?who(S.p):''}),open:openDlg,check:recheck,
+window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[],code:S.code||'',cid:S.p?who(S.p):'',picked:!!S.picked}),open:openDlg,check:recheck,
   has:covers,upsell,ask:openAsk};          // the other programs: whether this device opens one, the hint about one it does not, its request dialog
 })();
