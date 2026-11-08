@@ -163,6 +163,8 @@ function focusSearch(){const i=W&&W.querySelector('.ptb-si');if(!i||!i.offsetPar
 // บริษัท: the same spot in every app, beside the user; the app's own answer (PM: the company open), else the one PENUM PM keeps on
 // this device ('penum.company'), else the company on the licence code
 function coName(){let n='';try{if(C.company)n=String(C.company()||'').trim()}catch(e){}
+  // a company picked with "ใช้บริษัทนี้" in MEP/BIM's licence window is the one shown there, before PENUM PM's
+  if(!n)try{const s=window.penumLic&&window.penumLic.state();if(s&&s.picked)n=String(s.co||'').trim()}catch(e){}
   if(!n)try{const o=JSON.parse(localStorage.getItem('penum.company')||'null');n=o&&o.name?String(o.name).trim():''}catch(e){}
   if(!n)try{n=String((window.penumLic&&window.penumLic.state().co)||'').trim()}catch(e){}return n}
 function title(){if(!W)return;const c=cur(),tn=W.querySelector('.ptb-tn'),st=W.querySelector('.ptb-st'),tt=W.querySelector('.ptb-tt');
@@ -186,7 +188,8 @@ function mount(cfg){if(W)return W;C=cfg;load();W=build();document.documentElemen
   if(window.ResizeObserver)new ResizeObserver(height).observe(W);addEventListener('resize',()=>{height();popClose()});
   document.addEventListener('keydown',e=>{if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey)return;const x=e.target;if(x&&(x.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(x.tagName)))return;
     if(document.querySelector('dialog[open]'))return;if(focusSearch()){e.preventDefault();e.stopImmediatePropagation()}},true);
-  addEventListener('storage',e=>{if(e.key==='penum.company')title()});          // PENUM PM changed the company in another window
+  addEventListener('storage',e=>{if(e.key==='penum.company')title()});
+  addEventListener('penumlic',()=>title());          // ใช้บริษัทนี้ in the licence window          // PENUM PM changed the company in another window
   setTimeout(()=>{refresh();height()},0);return W}
 
 const CSS=`
