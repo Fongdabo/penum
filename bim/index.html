@@ -14586,7 +14586,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=198,V1_NAME='V1.188';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=199,V1_NAME='V1.189';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31346,6 +31346,164 @@ Object.assign(STR,{a_sitemap:['แผนที่ใต้แบบ','Map Underl
   map_pick:['เลือกแผนที่ก่อน','Select a map first'],map_gnd_done:['สร้างพื้นดินเรียบขนาดเท่าแผนที่แล้ว วาดถนนหรือสนามหญ้าด้วย พื้นที่ย่อย (Subregion)','A flat toposurface as large as the map is made: draw roads and lawns on it with Subregion'],
   p_g3:['ปูบนพื้นใน 3 มิติ','Lay on the ground in 3D'],p_geo:['ตำแหน่งบนแผนที่','Map position']});
 
+/* ===== 189 Buildings without drawings (V1.189; user 2026-11-08 "ให้ดึงตัวอาคารตาม Google Map เลย ... ลูกค้าไม่ค่อยมีแบบ เราต้องมาสร้างแบบเอง", chose both ways).
+   1. The buildings around come from Overture Maps: one free open dataset (ODbL) that joins OpenStreetMap with the AI-traced footprints of Microsoft and
+      Google Open Buildings (and Esri's), read straight from its PMTiles on Amazon S3 (HTTP range requests, gzip, Mapbox Vector Tiles), so the
+      factories that OpenStreetMap does not have come too.  The newest release is found through Overture's STAC catalog, then known releases;
+      when none answers, OpenStreetMap (Overpass) as before.  Height: height, else num_floors × 3.2 m, else 2 storeys.
+   2. Roof Pick (Massing & Site): click a roof in a map picture; the roof is grown from the pixel clicked by colour (flood fill within a tolerance),
+      its holes filled, and its outline traced (or its smallest turned rectangle), simplified, and made a mass of n storeys.
+   Google's own buildings stay out: its terms forbid taking shapes or heights out of Google Maps. ===== */
+/* ---- PMTiles v3 (https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md) ---- */
+function pmtId(z,x,y){let acc=0;for(let a=0;a<z;a++)acc+=Math.pow(4,a);const xy=[x,y];let d=0;
+  for(let s=Math.pow(2,z)/2;s>=1;s/=2){const rx=(xy[0]&s)>0?1:0,ry=(xy[1]&s)>0?1:0;d+=s*s*((3*rx)^ry);if(ry===0){if(rx===1){xy[0]=s-1-xy[0];xy[1]=s-1-xy[1]}const q=xy[0];xy[0]=xy[1];xy[1]=q}}
+  return acc+d}
+function pmtVar(b,p){let v=0,m=1;for(;;){const c=b[p.i++];v+=(c&0x7f)*m;if(c<0x80)return v;m*=128}}
+async function pmtUnzip(u8,c){if(c===1||c===0)return u8;if(c!==2||typeof DecompressionStream==='undefined')throw new Error('compression '+c);
+  const r=new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip')));return new Uint8Array(await r.arrayBuffer())}
+async function pmtGet(url,off,len){const r=await fetch(url,{headers:{Range:'bytes='+off+'-'+(off+len-1)}});if(!(r.status===206||r.status===200))throw new Error('http '+r.status);
+  const b=new Uint8Array(await r.arrayBuffer());return r.status===200?b.subarray(off,off+len):b}
+function pmtDir(b){const p={i:0},n=pmtVar(b,p),E=[];let id=0;for(let k=0;k<n;k++){id+=pmtVar(b,p);E.push({id,run:0,len:0,off:0})}
+  for(const e of E)e.run=pmtVar(b,p);for(const e of E)e.len=pmtVar(b,p);
+  for(let k=0;k<n;k++){const v=pmtVar(b,p);E[k].off=v===0&&k>0?E[k-1].off+E[k-1].len:v-1}return E}
+/* an archive: its header, read once ({url, H}) */
+async function pmtOpen(url){const b=await pmtGet(url,0,16384),s=String.fromCharCode(...b.subarray(0,7));if(s!=='PMTiles'||b[7]!==3)throw new Error('not pmtiles');
+  const dv=new DataView(b.buffer,b.byteOffset,b.byteLength),u=o=>Number(dv.getBigUint64(o,true));
+  const H={rootOff:u(8),rootLen:u(16),leafOff:u(40),tileOff:u(56),ic:b[97],tc:b[98],tt:b[99],minZ:b[100],maxZ:b[101]};
+  H.root=H.rootOff+H.rootLen<=b.length?b.slice(H.rootOff,H.rootOff+H.rootLen):await pmtGet(url,H.rootOff,H.rootLen);return{url,H,dirs:new Map()}}
+async function pmtTile(A,z,x,y){const id=pmtId(z,x,y),H=A.H;let dir=await pmtUnzip(H.root,H.ic),D=pmtDir(dir);
+  for(let depth=0;depth<4;depth++){let lo=0,hi=D.length-1,f=-1;while(lo<=hi){const m=(lo+hi)>>1;if(D[m].id<=id){f=m;lo=m+1}else hi=m-1}if(f<0)return null;const e=D[f];
+    if(e.run>0)return id-e.id<e.run?await pmtUnzip(await pmtGet(A.url,H.tileOff+e.off,e.len),H.tc):null;
+    const k=H.leafOff+e.off;let L=A.dirs.get(k);if(!L){L=pmtDir(await pmtUnzip(await pmtGet(A.url,k,e.len),H.ic));A.dirs.set(k,L)}D=L}
+  return null}
+/* ---- Mapbox Vector Tile: the polygons of one layer, [{rings: [[[x, y]…]…] in tile units, props, ext}] ---- */
+function mvtPolys(b,want){const out=[];let i=0;const vr=()=>{let v=0,m=1;for(;;){const c=b[i++];v+=(c&0x7f)*m;if(c<0x80)return v;m*=128}},skip=w=>{if(w===0)vr();else if(w===1)i+=8;else if(w===2){const n=vr();i+=n}else if(w===5)i+=4};
+  while(i<b.length){const tag=vr(),f=tag>>3,w=tag&7;if(f===3&&w===2){const n=vr(),end=i+n;mvtLayer(b.subarray(i,end),want,out);i=end}else skip(w)}return out}
+function mvtLayer(b,want,out){let i=0,name='',ext=4096;const keys=[],vals=[],feats=[];const vr=()=>{let v=0,m=1;for(;;){const c=b[i++];v+=(c&0x7f)*m;if(c<0x80)return v;m*=128}},skip=w=>{if(w===0)vr();else if(w===1)i+=8;else if(w===2){const n=vr();i+=n}else if(w===5)i+=4};
+  const td=new TextDecoder();
+  while(i<b.length){const tag=vr(),f=tag>>3,w=tag&7;
+    if(f===1&&w===2){const n=vr();name=td.decode(b.subarray(i,i+n));i+=n}else if(f===2&&w===2){const n=vr();feats.push([i,i+n]);i+=n}else if(f===3&&w===2){const n=vr();keys.push(td.decode(b.subarray(i,i+n)));i+=n}
+    else if(f===4&&w===2){const n=vr(),end=i+n;let v=null;while(i<end){const t2=vr(),g=t2>>3,w2=t2&7;
+        if(g===1&&w2===2){const m=vr();v=td.decode(b.subarray(i,i+m));i+=m}else if(g===2&&w2===5){v=new DataView(b.buffer,b.byteOffset+i,4).getFloat32(0,true);i+=4}else if(g===3&&w2===1){v=new DataView(b.buffer,b.byteOffset+i,8).getFloat64(0,true);i+=8}
+        else if((g===4||g===5)&&w2===0)v=vr();else if(g===6&&w2===0){const z=vr();v=(z>>>1)^-(z&1)}else if(g===7&&w2===0)v=!!vr();else skip(w2)}vals.push(v);i=end}
+    else if(f===5&&w===0)ext=vr();else skip(w)}
+  if(name!==want)return;
+  for(const [a,z] of feats){let j=a,type=0,tags=[],geo=[];const vr2=()=>{let v=0,m=1;for(;;){const c=b[j++];v+=(c&0x7f)*m;if(c<0x80)return v;m*=128}};
+    while(j<z){const tag=vr2(),f=tag>>3,w=tag&7;if(f===2&&w===2){const n=vr2(),e=j+n;while(j<e)tags.push(vr2())}else if(f===3&&w===0)type=vr2();else if(f===4&&w===2){const n=vr2(),e=j+n;while(j<e)geo.push(vr2())}else if(w===0)vr2();else if(w===2){const n=vr2();j+=n}else if(w===1)j+=8;else if(w===5)j+=4}
+    if(type!==3)continue;const props={};for(let k=0;k+1<tags.length;k+=2)props[keys[tags[k]]]=vals[tags[k+1]];
+    const rings=[];let x=0,y=0,r=null,k=0;const zz=n=>(n>>>1)^-(n&1);
+    while(k<geo.length){const c=geo[k++],id=c&7,cnt=c>>3;if(id===1||id===2){for(let q=0;q<cnt;q++){x+=zz(geo[k++]);y+=zz(geo[k++]);if(id===1){r=[[x,y]];rings.push(r)}else if(r)r.push([x,y])}}else if(id===7){}}
+    out.push({rings,props,ext})}}
+/* a ring clipped to the tile square [0, ext] (Sutherland–Hodgman), so that a building cut by tile edges comes out in pieces that only touch */
+function mvtClip(r,ext){let P2=r;for(const [ax,s] of [[0,1],[0,-1],[1,1],[1,-1]]){const lim=s>0?0:ext,inS=p=>s>0?p[ax]>=lim:p[ax]<=lim,out=[];
+    for(let k=0;k<P2.length;k++){const a=P2[k],b=P2[(k+1)%P2.length],ia=inS(a),ib=inS(b);if(ia)out.push(a);if(ia!==ib){const t2=(lim-a[ax])/(b[ax]-a[ax]),q=[a[0]+(b[0]-a[0])*t2,a[1]+(b[1]-a[1])*t2];out.push(q)}}P2=out;if(P2.length<3)return[]}return P2}
+const ringA=r=>{let a=0;for(let k=0;k<r.length;k++){const p=r[k],q=r[(k+1)%r.length];a+=p[0]*q[1]-q[0]*p[1]}return a/2};
+/* ---- Overture: where its building tiles are ---- */
+const OVT_REL=['2026-10-21','2026-09-24','2026-08-20','2026-07-22','2026-06-17','2026-01-21'];
+const ovtUrls=rel=>{const r=String(rel).replace(/\.\d+$/,'');return[`https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/${rel}/buildings.pmtiles`,`https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/${r}.0/buildings.pmtiles`,`https://overturemaps-tiles-us-west-2-beta.s3.amazonaws.com/${r}/buildings.pmtiles`]};
+let ovtArc=null;
+async function ovtFind(){if(ovtArc)return ovtArc;const tried=new Set(),tryU=async u=>{if(tried.has(u))return null;tried.add(u);try{return await pmtOpen(u)}catch(e){return null}};
+  let last='';try{last=localStorage.getItem('penum.bim.ovt')||''}catch(e){}if(last){const A=await tryU(last);if(A)return ovtArc=A}
+  let rels=[];try{const r=await fetch('https://stac.overturemaps.org/catalog.json');if(r.ok){const j=await r.json();if(j&&j.latest)rels.push(String(j.latest))}}catch(e){}
+  rels=rels.concat(OVT_REL);for(const rel of rels)for(const u of ovtUrls(rel)){const A=await tryU(u);if(A){try{localStorage.setItem('penum.bim.ovt',u)}catch(e){}return ovtArc=A}}
+  throw new Error('overture')}
+/* the buildings inside a box, as mapOsmBldgs gives them: [{ll: [[lat, lon]…], h, b, name}] */
+async function ovtBldgs(s,w,n,e){const A=await ovtFind(),z=Math.max(A.H.minZ,Math.min(A.H.maxZ,15)),N=Math.pow(2,z),tx=lon=>Math.floor((lon+180)/360*N),ty=lat=>Math.floor(mapWp(lat,0,z)[1]/256);
+  const x0=tx(w),x1=tx(e),y0=ty(n),y1=ty(s);if((x1-x0+1)*(y1-y0+1)>36)throw new Error('area');const out=[];
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++){const T=await pmtTile(A,z,x,y);if(!T)continue;for(const F of mvtPolys(T,'building')){const ext=F.ext||4096,s0=ringA(F.rings[0]||[])>=0;
+      for(const r0 of F.rings){if((ringA(r0)>=0)!==s0)continue;let r=r0.slice();if(r.length>1&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1])r.pop();r=mvtClip(r,ext);if(r.length<3)continue;
+        const ll=r.map(p=>mapLL((x+p[0]/ext)*256,(y+p[1]/ext)*256,z)),P2=F.props||{},hm=+P2.height,nf=+P2.num_floors,mh=+P2.min_height;
+        const h=hm>0&&hm<1000?hm*1000:nf>0&&nf<300?nf*MAP_LVH:MAP_DEFH;let nm=P2['@name']||P2.name||P2['names.primary']||'';if(typeof nm!=='string')nm='';
+        out.push({ll,h:Math.round(Math.max(2500,h)),b:mh>0&&mh*1000<h?Math.round(mh*1000):0,name:nm.slice(0,60),src:'ovt'})}}}
+  return out}
+/* Overture first; OpenStreetMap when it cannot be read */
+{const osm=mapOsmBldgs;mapOsmBldgs=async(s,w,n,e)=>{try{const r=await ovtBldgs(s,w,n,e);ui.bsrc='ovt';return r}catch(err){ui.bsrc='osm';return osm(s,w,n,e)}}}
+/* ---- the buildings around an existing map (the box of the map picture) ---- */
+async function mapBldgsFor(id){const e=IDX.get(id)||P.els.find(x=>x.cat==='link'&&Array.isArray(x.geo));const A=mapAnchor();if(!e||!Array.isArray(e.geo)||!A){toast(t('map_pick'));return}
+  const L=linkLoop(e),ll=L.map(p=>mapLLof(A,p[0],p[1])),la=ll.map(q=>q[0]),lo=ll.map(q=>q[1]);toast(t('map_b3_load'),20000);let B=[];
+  try{B=await mapOsmBldgs(Math.min(...la),Math.min(...lo),Math.max(...la),Math.max(...lo))}catch(err){toast(t('map_b3_bad'),9000);return}
+  const old=P.els.filter(x=>x.cat==='mass'&&x.ctx&&x.level===e.level).map(x=>x.pts),near=(p,q)=>p.length===q.length&&p.every((a,k)=>Math.hypot(a[0]-q[k][0],a[1]-q[k][1])<300);let nb=0;
+  edit(()=>{for(const b of B){const pts=b.ll.map(p=>{const q=mapXY(A,p[0],p[1]);return[Math.round(q[0]),Math.round(q[1])]});if(pts.length<3||Math.abs(area2(pts))<4e6||old.some(q=>near(pts,q)))continue;
+    const m={id:P.seq++,cat:'mass',level:e.level,pts,baseOff:b.b||0,height:Math.max(100,b.h-(b.b||0)),ctx:1};if(b.name)m.comment=b.name;P.els.push(m);nb++}});
+  refresh();toast(t('map_b3_n',nb,t(ui.bsrc==='ovt'?'map_b3_ovt':'map_b3_osm')),9000)}
+/* the latitude/longitude of a plan point (the inverse of mapXY) */
+function mapLLof(A,x,y){const z=21,r=-A.rot*Math.PI/180,c=Math.cos(r),s=Math.sin(r),dx=x-A.x,dy=y-A.y,u=dx*c-dy*s,v=dx*s+dy*c,m=mapMpp(A.lat,z)*1000*A.k,a=mapWp(A.lat,A.lon,z);return mapLL(a[0]+u/m,a[1]+v/m,z)}
+XA.mapbld=()=>{const id=[...ui.sel][0];mapBldgsFor(id)};
+/* ---- Roof Pick ---- */
+const RPC=new Map();
+function rpPixels(B){let q=RPC.get(B.src);if(q)return q;const im=imgOf(B);if(!im||!im.complete||!im.naturalWidth)return null;const c=document.createElement('canvas');c.width=B.pw;c.height=B.ph;const x=c.getContext('2d');x.drawImage(im,0,0,B.pw,B.ph);
+  let d;try{d=x.getImageData(0,0,B.pw,B.ph).data}catch(e){return null}q={w:B.pw,h:B.ph,d};RPC.clear();RPC.set(B.src,q);return q}
+/* the map picture under a plan point: {e, B, px, py} */
+function rpUnder(v,x,y){const L=P.els.filter(e=>e.cat==='link'&&(e.vw==null||e.vw===avid(v))&&(e.vw!=null||e.level===v.level)&&planShow(v,e));for(let k=L.length-1;k>=0;k--){const e=L[k],B=CADB.get(e.key);if(!B||!B.img)continue;
+    const q=linkF(e).from(x,y);if(Math.abs(q[0])<=B.w/2&&Math.abs(q[1])<=B.h/2)return{e,B,px:(q[0]/B.w+0.5)*B.pw,py:(q[1]/B.h+0.5)*B.ph}}return null}
+/* the roof grown from a pixel: a mask over a window, holes filled; null when it runs out of the window (no clear edge) */
+function rpGrow(I,sx,sy,tol){const W=I.w,H=I.h,R=Math.round(Math.max(60,Math.min(700,Math.max(W,H)*0.3))),x0=Math.max(0,Math.floor(sx-R)),y0=Math.max(0,Math.floor(sy-R)),x1=Math.min(W-1,Math.ceil(sx+R)),y1=Math.min(H-1,Math.ceil(sy+R)),w=x1-x0+1,h=y1-y0+1;
+  const d=I.d,px=(x,y)=>{let r=0,g=0,b=0,n=0;for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const X=clamp(x+i,0,W-1),Y=clamp(y+j,0,H-1),o=(Y*W+X)*4;r+=d[o];g+=d[o+1];b+=d[o+2];n++}return[r/n,g/n,b/n]};
+  const s0=px(Math.round(sx),Math.round(sy)),M=new Uint8Array(w*h),st=[[Math.round(sx)-x0,Math.round(sy)-y0]],T2=tol*tol;let n=0,edge=false;M[st[0][1]*w+st[0][0]]=1;
+  while(st.length){const [x,y]=st.pop();n++;if(x===0||y===0||x===w-1||y===h-1)edge=true;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const X=x+dx,Y=y+dy;if(X<0||Y<0||X>=w||Y>=h||M[Y*w+X])continue;const c=px(X+x0,Y+y0),dr=c[0]-s0[0],dg=c[1]-s0[1],db=c[2]-s0[2];if(dr*dr+dg*dg+db*db<=T2){M[Y*w+X]=1;st.push([X,Y])}}}
+  if(edge||n<12)return null;
+  const O=new Uint8Array(w*h),q=[];for(let x=0;x<w;x++){q.push([x,0],[x,h-1])}for(let y=0;y<h;y++){q.push([0,y],[w-1,y])}          // what is outside: reached from the border
+  while(q.length){const [x,y]=q.pop();if(x<0||y<0||x>=w||y>=h)continue;const k=y*w+x;if(O[k]||M[k])continue;O[k]=1;q.push([x+1,y],[x-1,y],[x,y+1],[x,y-1])}
+  for(let k=0;k<w*h;k++)if(!O[k])M[k]=1;return{M,w,h,x0,y0,n}}
+/* the outline of a mask: the edges of its pixels that face out, joined end to end (clockwise on screen); the longest loop, in picture pixels */
+function rpTrace(G){const {M,w,h}=G,at=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&M[y*w+x]===1,nx=new Map(),add=(a,b)=>{const k=a[0]+','+a[1];(nx.get(k)||nx.set(k,[]).get(k)).push(b)};
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){if(!at(x,y))continue;if(!at(x,y-1))add([x,y],[x+1,y]);if(!at(x+1,y))add([x+1,y],[x+1,y+1]);if(!at(x,y+1))add([x+1,y+1],[x,y+1]);if(!at(x-1,y))add([x,y+1],[x,y])}
+  let best=[];for(const k0 of nx.keys()){if(!nx.get(k0).length)continue;const loop=[];let k=k0;for(let g=0;g<4*w*h+8;g++){const L=nx.get(k);if(!L||!L.length)break;const q=L.pop();loop.push(q);k=q[0]+','+q[1];if(k===k0)break}if(loop.length>best.length)best=loop}
+  return best.map(p=>[p[0]+G.x0,p[1]+G.y0])}
+/* Douglas–Peucker on a closed ring: split at the first point and the one farthest from it */
+function rpSimp(pts,eps){if(pts.length<5)return pts;{let b=0;for(let i=1;i<pts.length;i++)if(pts[i][0]+pts[i][1]<pts[b][0]+pts[b][1])b=i;pts=pts.slice(b).concat(pts.slice(0,b))}          // start at a corner
+  const f=(a,b,p)=>{const L=Math.hypot(b[0]-a[0],b[1]-a[1]);return L<1e-9?Math.hypot(p[0]-a[0],p[1]-a[1]):Math.abs((b[0]-a[0])*(a[1]-p[1])-(a[0]-p[0])*(b[1]-a[1]))/L};
+  const dp=(q)=>{const keep=new Uint8Array(q.length);keep[0]=keep[q.length-1]=1;const st=[[0,q.length-1]];while(st.length){const [s,e]=st.pop();let m=-1,k=-1;for(let i=s+1;i<e;i++){const d=f(q[s],q[e],q[i]);if(d>m){m=d;k=i}}if(m>eps){keep[k]=1;st.push([s,k],[k,e])}}return q.filter((p,i)=>keep[i])};
+  let far=0,fd=-1;for(let i=1;i<pts.length;i++){const d=Math.hypot(pts[i][0]-pts[0][0],pts[i][1]-pts[0][1]);if(d>fd){fd=d;far=i}}
+  const A=dp(pts.slice(0,far+1)),B=dp(pts.slice(far).concat([pts[0]]));return A.slice(0,-1).concat(B.slice(0,-1))}
+/* the smallest rectangle round some points, turned to fit (rotating calipers on the hull) */
+function rpRect(pts){const S=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
+  for(const p of S){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p)}for(let i=S.length-1;i>=0;i--){const p=S[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p)}
+  const Hh=lo.slice(0,-1).concat(up.slice(0,-1));let best=null;
+  for(let i=0;i<Hh.length;i++){const a=Hh[i],b=Hh[(i+1)%Hh.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-9)continue;const ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L;let u0=Infinity,u1=-Infinity,v0=Infinity,v1=-Infinity;
+    for(const p of Hh){const u=p[0]*ux+p[1]*uy,v=-p[0]*uy+p[1]*ux;u0=Math.min(u0,u);u1=Math.max(u1,u);v0=Math.min(v0,v);v1=Math.max(v1,v)}const A2=(u1-u0)*(v1-v0);if(!best||A2<best.A)best={A:A2,ux,uy,u0,u1,v0,v1}}
+  if(!best)return pts;const {ux,uy,u0,u1,v0,v1}=best,P2=(u,v)=>[u*ux-v*uy,u*uy+v*ux];return[P2(u0,v0),P2(u1,v0),P2(u1,v1),P2(u0,v1)]}
+function rpArea(r){return Math.abs(ringA(r))}
+/* the click: a mass on the roof, as many storeys high as the options bar says */
+function rpClick(v,w){const U=rpUnder(v,w.x,w.y);if(!U){toast(t('rp_nomap'),7000);return}const I=rpPixels(U.B);if(!I){toast(t('rp_wait'));return}
+  const tol=clamp(+ui.opt.rpTol||28,5,90),G=rpGrow(I,U.px,U.py,tol);if(!G){toast(t('rp_edge'),9000);return}
+  let ring=rpTrace(G);if(ring.length<4){toast(t('rp_edge'),9000);return}const full=rpArea(ring);
+  const shape=ui.opt.rpShape==='outline'?'outline':ui.opt.rpShape==='rect'?'rect':'auto',R=rpRect(ring),fit=full/Math.max(1,rpArea(R));
+  ring=shape==='rect'||(shape==='auto'&&fit>0.86)?R:rpSimp(ring,Math.max(1.2,Math.sqrt(full)*0.025));
+  const F=linkF(U.e),pts=ring.map(p=>{const q=F.to((p[0]/U.B.pw-0.5)*U.B.w,(p[1]/U.B.ph-0.5)*U.B.h);return[Math.round(q[0]),Math.round(q[1])]});if(pts.length<3||Math.abs(area2(pts))<2e6){toast(t('rp_small'));return}
+  const nf=clamp(Math.round(+ui.opt.rpLv||2),1,200),ctx=!!ui.opt.rpCtx;let id=0;
+  edit(()=>{id=P.seq++;const m={id,cat:'mass',level:U.e.level,pts,baseOff:0,height:nf*MAP_LVH};if(ctx)m.ctx=1;P.els.push(m)});ui.sel=new Set([id]);refresh();
+  toast(t('rp_done',(Math.abs(area2(pts))/1e6).toLocaleString(undefined,{maximumFractionDigits:0}),nf),6000)}
+XT.roofpick={ok:v=>v.kind==='plan'&&!v.draft,on(){if(!P.els.some(e=>e.cat==='link'&&CADB.get(e.key)&&CADB.get(e.key).img)){toast(t('rp_nomap'),8000);return false}ui.sel=new Set()},hint:()=>t('h_roofpick'),
+  click(pn,v,p,w){rpClick(v,w)},
+  opt(who){const o=ui.opt;return who+`<label>${t('rp_lv')}<input type="number" id="opt_rpLv" data-opt="rpLv" value="${o.rpLv||2}" min="1" max="200" step="1" style="width:56px"></label>`
+    +`<label>${t('rp_shape')}<select id="opt_rpShape" data-opt="rpShape">${['auto','rect','outline'].map(k=>`<option value="${k}"${(o.rpShape||'auto')===k?' selected':''}>${t('rp_s_'+k)}</option>`).join('')}</select></label>`
+    +`<label>${t('rp_tol')}<input type="number" id="opt_rpTol" data-opt="rpTol" value="${o.rpTol||28}" min="5" max="90" step="1" style="width:56px"></label>`
+    +`<label><input type="checkbox" id="opt_rpCtx" data-opt="rpCtx"${o.rpCtx?' checked':''}>${t('rp_ctx')}</label>`}};
+XA.roofpick=()=>{siteGo();setTool('roofpick')};
+/* the follow-up dialog of a map: buildings around and Roof Pick too */
+{const f0=dlgMapNext;dlgMapNext=id=>{f0(id);const box=$('#dlg .mapNext');if(!box)return;box.insertAdjacentHTML('afterbegin',`<button class="btn primary" data-mx2="roofpick">${t('a_roofpick')}</button><button class="btn" data-mx2="mapbld">${t('a_mapbld')}</button>`);
+  const h=ui.dlg,c0=h&&h.click;if(h)h.click=ev=>{const b=ev.target.closest('[data-mx2]');if(b){closeDlg();if(b.dataset.mx2==='roofpick')XA.roofpick();else mapBldgsFor(id);return}if(c0)c0(ev)}}}
+/* the ribbon: Massing & Site › Model Site, after Map Underlay */
+{const st=RIBBON.find(r=>r.id==='site'),pl=st&&st.panels.find(p=>p.t==='p_modelsite');if(pl){for(const k of ['@mapbld','@roofpick'])if(!pl.b.includes(k)){const i=pl.b.indexOf('@sitemap');pl.b.splice(i<0?0:i+1,0,k)}const a=pl.b.indexOf('@mapbld'),b=pl.b.indexOf('@roofpick');if(a>b){pl.b.splice(a,1);pl.b.splice(b+1,0,'@mapbld')}}}
+Object.assign(BTN,{'@roofpick':['roofpick',''],'@mapbld':['mapbld','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-roofpick" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.4"/>`
+    +`<path ${e('i-Wb')} fill="#b9bdc4" d="M3 13.5 11 17.5 11 21 3 17z"/><path ${e('i-Wc')} fill="#8d939c" d="M11 17.5 21 12.5 21 16 11 21z"/><path ${e('i-Ta')} fill="#e7eaee" d="M3 13.5 13 8.5 21 12.5 11 17.5z"/>`
+    +`<path ${e('i-Pa')} fill="#3b6fe0" d="M15.5 1.5 17 9.4 18.6 7.6 21 10.6 22.2 9.6 19.8 6.7 22.2 5.9z"/></symbol>`
+    +`<symbol id="i-mapbld" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9.5" ry="1.4"/>`
+    +`<path ${e('i-Ta')} fill="#bfe6c9" d="M2.5 15 9 12.5 15 15 21.5 12.5 21.5 18.5 15 21 9 18.5 2.5 21z"/>`
+    +`<path ${e('i-Wb')} fill="#c9ced6" d="M5 15.5V8.5l3 1.4v7z"/><path ${e('i-Wc')} fill="#9aa1ab" d="M8 16.9V9.9l3.4-1.6v7z"/><path ${e('i-Pa')} fill="#eef1f4" d="M5 8.5l3.4-1.6 3 1.4L8 9.9z"/>`
+    +`<path ${e('i-Wb')} fill="#c9ced6" d="M13 14.5V4.5l3 1.4v10z"/><path ${e('i-Wc')} fill="#9aa1ab" d="M16 15.9V5.9l3.4-1.6v10z"/><path ${e('i-Pa')} fill="#eef1f4" d="M13 4.5l3.4-1.6 3 1.4L16 5.9z"/></symbol>`)})();
+Object.assign(STR,{a_roofpick:['คลิกหลังคา (สร้างอาคารจากภาพ)','Roof Pick'],t_roofpick:['คลิกหลังคา','Roof Pick'],a_mapbld:['ดึงอาคารรอบข้าง','Buildings Around'],
+  h_roofpick:['คลิกบนหลังคาในภาพแผนที่ โปรแกรมหาขอบหลังคาแล้วสร้างก้อนอาคาร · ขอบไม่ตรงลองปรับความไว','Click a roof in the map picture: its edge is found and a mass made · adjust the tolerance when the edge is off'],
+  rp_lv:['จำนวนชั้น','Storeys'],rp_shape:['รูปร่าง','Shape'],rp_s_auto:['อัตโนมัติ','Automatic'],rp_s_rect:['สี่เหลี่ยม','Rectangle'],rp_s_outline:['ตามขอบ','Outline'],rp_tol:['ความไว (สี)','Tolerance (colour)'],rp_ctx:['อาคารข้างเคียง (สีเทา)','Neighbouring building (grey)'],
+  rp_nomap:['ยังไม่มีภาพแผนที่ใต้แบบ ใช้ แผนที่ใต้แบบ ก่อน แล้วคลิกบนหลังคาในภาพ','There is no map picture yet: use Map Underlay first, then click a roof in it'],rp_wait:['ภาพยังโหลดไม่เสร็จ ลองคลิกอีกครั้ง','The picture is still loading: click again'],
+  rp_edge:['หาขอบหลังคาไม่ได้ (สีกลืนกับรอบ ๆ) ลองลดความไว คลิกกลางหลังคา หรือวาดก้อนอาคารเอง','The edge of the roof was not found (it blends in): lower the tolerance, click the middle of the roof, or draw the mass'],
+  rp_small:['พื้นที่เล็กเกินไป ลองเพิ่มความไว','Too small: raise the tolerance'],rp_done:['สร้างก้อนอาคาร {0} ตร.ม. สูง {1} ชั้นแล้ว · แก้ความสูงได้ในแผงคุณสมบัติ','A {0} m² mass, {1} storeys, is made · change its height in Properties'],
+  map_o_b3:['ดึงอาคารรอบข้างเป็นก้อน 3 มิติ (OpenStreetMap + Microsoft + Google)','Bring the buildings around as 3D masses (OpenStreetMap + Microsoft + Google)'],
+  map_b3_load:['กำลังดึงอาคารรอบข้าง…','Reading the buildings around…'],map_b3_n:['ได้อาคารรอบข้าง {0} หลัง จาก {1}','{0} buildings around, from {1}'],map_b3_ovt:['Overture Maps (OpenStreetMap + Microsoft + Google)','Overture Maps (OpenStreetMap + Microsoft + Google)'],map_b3_osm:['OpenStreetMap','OpenStreetMap']});
+
 /* ===== 75 pipes: Pipe Sizing (Revit: Modify | Pipes > Duct/Pipe Sizing) and the pipe report: the checks of Check Pipe Systems (PC)
    and the loss along the critical path of the Pipe Pressure Loss Report.  The numbers come from waterflow() in 27-mep.js. ===== */
 const pszOpt=()=>Object.assign(ui.psz||(ui.psz={resid:70}),sizeOpt(P).p);          /* the limits are those of the project (P.sz, 27-autosize.js); the residual pressure of the report stays with the session */
@@ -32012,6 +32170,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 เครื่องมืออยู่ในแท็บ [[tab_site]] ทุกคำสั่งพาไปที่มุมมอง [[site_plan]] ซึ่งโปรแกรมสร้างให้ในครั้งแรกที่ใช้ — เป็นแปลนที่มองจากด้านบนลงมา เห็นผิวดิน หลังคา ต้นไม้ และสิ่งที่อยู่นอกอาคาร
 - [[a_topo]]: พิมพ์ [[o_tp_z]] ของจุดที่แถบตัวเลือก เป็น มม. จาก ±0.00 แล้วคลิกวางจุด ค่าระดับเปลี่ยนได้ทุกจุด · ครบ 3 จุดผิวดินจะเกิดขึ้น คลิกต่อเพื่อเพิ่มจุด · จบด้วย [[a_tpfinish]] หรือ Enter
 - [[a_tpimport]]: ไฟล์ .csv/.txt บรรทัดละ X Y Z (เมตรหรือมม.) · [[a_tpmerge]] รวมผิวดินที่เลือก · [[a_tpsplit]] คลิกสองจุดลากเส้นตัด · [[a_tpgrade]] ผิวดินเดิมเป็นของเดิม (Existing) ได้ผิวดินใหม่ให้แก้จุด แผงคุณสมบัติบอกดินตัด/ดินถม (ม³)
+- [[a_roofpick]]: คลิกกลางหลังคาในภาพดาวเทียม โปรแกรมขยายพื้นที่สีเดียวกันจนถึงขอบหลังคา แล้วสร้างก้อนอาคาร ที่แถบตัวเลือกตั้ง [[rp_lv]] [[rp_shape]] และ [[rp_tol]] (ขอบเกินออกไปให้ลดค่า ขอบไม่ถึงให้เพิ่มค่า) · [[a_mapbld]]: ดึงรูปอาคารรอบข้างจาก Overture Maps (OpenStreetMap + Microsoft + Google) ให้แผนที่ที่เลือก
 - [[a_sitemap]]: แท็บ [[map_web]] พิมพ์ที่อยู่หรือชื่อสถานที่แล้วกด [[map_find]] หรือวางพิกัด / ลิงก์ Google Maps (โปรแกรมอ่านหมุดของลิงก์ให้) ลากแผนที่ให้กากบาทแดงอยู่กลางที่ดิน เลือก [[map_src_sat]] หรือ [[map_src_osm]] แล้วกด [[map_go]] · ส่วนที่เห็นในกรอบวางลงแบบตามขนาดจริง หันตามทิศเหนือจริง · ติ๊ก [[map_o_b3]] เพื่อดึงอาคารรอบข้างเป็นก้อนสีเทา (สูงตามจำนวนชั้นในข้อมูล ไม่มีข้อมูลตั้ง 2 ชั้น) · แผนที่ชิ้นที่สองวางต่อจากชิ้นแรกให้ตรงกันเอง · แท็บ [[map_shot]]: แคปหน้าจอ Google Maps ให้เห็นแถบมาตราส่วน กด ((Ctrl+V)) คลิกปลายแถบสองข้าง พิมพ์ระยะบนแถบ · หลังวาง เลือก [[map_x_prop]] [[map_x_pad]] [[map_x_mass]] [[map_x_road]] เพื่อวาดตามภาพ
 - [[a_tpdxf]] (Revit: Toposurface › Create from Import › Select Import Instance): เลือกไฟล์แบบสำรวจ .dxf แล้วเลือกชั้น (Layer) ที่จะใช้ โปรแกรมอ่านค่าระดับจากเส้นชั้นความสูง (Polyline ที่มีค่า Elevation หรือ 3D Polyline) จุด เส้น และผิว 3 มิติ (Point, Line, 3DFace, Polyface/Mesh) บล็อกค่าระดับ (ที่ความสูงของบล็อก หรือค่าใน Attribute) และข้อความค่าระดับ เช่น +2.350 · ตั้ง [[dxf_unit]] [[dxf_pos]] (ตามหมุดสำรวจของโครงการ กึ่งกลางกับโมเดล หรือจุด 0,0) [[tdx_z0]] และ [[tdx_s]] (อัตโนมัติ: ไม่เกิน 4,000 จุด) · ภาพตัวอย่างระบายสีตามระดับพร้อมเส้นชั้นความสูงให้ดูก่อนสร้าง · ผิวดินที่ได้แก้ไขต่อได้เหมือนผิวดินทั่วไป · ปุ่ม [[a_tpimport]] รับไฟล์ .dxf ได้ด้วย
 > ต่างจาก Revit: เลือกไฟล์ได้ทันที ไม่ต้องลิงก์แบบเข้ามาก่อน · อ่านข้อความค่าระดับและ Attribute ของบล็อกได้ (Revit อ่านไม่ได้) · คัดจุดตามระยะห่างให้เอง · ไฟล์ DWG ต้อง Save As เป็น DXF ก่อน · อ่านเฉพาะ Model Space · วัตถุของ Civil 3D (Surface, Feature Line) ต้อง Explode หรือ Export to AutoCAD ก่อน
@@ -32187,6 +32346,7 @@ Beds, sofas, tables, kitchen units, appliances, cars, people, trees. Pick the ty
 The tools are on the [[tab_site]] tab. Each of them goes to the [[site_plan]] view, which the program makes the first time — a plan seen from above that shows the ground, the roofs, the trees and what stands outside
 - [[a_topo]]: type the [[o_tp_z]] of the point in the options bar, in mm from ±0.00, then click to place it; the elevation can change for every point · the third point makes the surface, further clicks add points · end with [[a_tpfinish]] or Enter
 - [[a_tpimport]]: a .csv/.txt file of X Y Z per line (metres or mm) · [[a_tpmerge]] joins the selected surfaces · [[a_tpsplit]]: click two points for the cutting line · [[a_tpgrade]]: the original becomes Existing and a new surface is made to edit; Properties shows cut and fill (m³)
+- [[a_roofpick]]: click the middle of a roof in a satellite picture; the area of the same colour grows to the edge of the roof and becomes a mass. On the options bar set [[rp_lv]], [[rp_shape]] and [[rp_tol]] (lower it when the edge runs past the roof, raise it when it stops short) · [[a_mapbld]]: the footprints around the selected map from Overture Maps (OpenStreetMap + Microsoft + Google)
 - [[a_sitemap]]: on the [[map_web]] tab type an address or a place and press [[map_find]], or paste coordinates or a Google Maps link (its pin is read); drag the map so the red cross is in the middle of the site, pick [[map_src_sat]] or [[map_src_osm]] and press [[map_go]] · what the frame shows goes in at its true size, turned to true north · tick [[map_o_b3]] for the buildings around as grey masses (as high as their storeys in the data, else 2 storeys) · a second map lines up with the first by itself · on the [[map_shot]] tab: take a screenshot of Google Maps with its scale bar, press ((Ctrl+V)), click both ends of the bar and type its length · then trace it with [[map_x_prop]], [[map_x_pad]], [[map_x_mass]] and [[map_x_road]]
 - [[a_tpdxf]] (Revit: Toposurface › Create from Import › Select Import Instance): pick a survey .dxf, then the layers to use; the heights come from its contours (polylines at their elevation, or 3D polylines), its 3D points, lines and faces (Point, Line, 3DFace, polyface and polygon meshes), its spot-height blocks (at the height of the block, or the value of an attribute) and spot heights written as text such as +2.350 · set the [[dxf_unit]], the [[dxf_pos]] (by the survey point of the project, centre to centre, or origin to origin), the [[tdx_z0]] and the [[tdx_s]] (automatic: up to 4,000 points) · a preview shows the surface coloured by height, with its contours, before it is made · the surface is an ordinary toposurface to edit · [[a_tpimport]] takes a .dxf as well
 > Unlike Revit: the file is picked directly, with no link first · spot heights written as text and block attributes are read (Revit reads neither) · the points are thinned to a spacing by themselves · a DWG must be saved as DXF first · model space only · Civil 3D objects (surfaces, feature lines) must be exploded or exported to AutoCAD first
@@ -32703,6 +32863,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.183 · คลังราคากลาง: ราคา Split ติดผนัง/แขวน ต่อ TR (14,019 + ค่าแรง 1,725) และเครื่องกำเนิดไฟฟ้าต่อ kVA (7,159) คำนวณจากราคาสำนักงบประมาณ ธ.ค. 2568 ป้าย "สำนักงบฯ (คำนวณต่อ TR/kVA)" ใส่แทนราคาตัวอย่างเดิม (ราคาเดิมอยู่ในประวัติ)
 - V1.184 · คลังราคากลาง: ราคาสำนักงบประมาณและค่าแรง ว 480 ออกปีละครั้ง หน้าต่างคลังราคาจึงไม่นับเป็น ราคาเก่ากว่า 6 เดือน จนกว่าจะครบ 1 ปี (เหมือน PENUM PM)
 - V1.188 · [[a_sitemap]] ในแท็บ [[tab_site]]: ค้นหาที่อยู่ พิกัด หรือวางลิงก์ Google Maps แล้ววางภาพดาวเทียม (Esri) หรือแผนที่ถนน (OpenStreetMap) ใต้ผังบริเวณตามขนาดจริง หันตามทิศเหนือจริง ตั้งที่ตั้งโครงการ ใส่ลูกศรทิศเหนือ ปูภาพบนพื้นในมุมมอง 3 มิติ และดึงอาคารรอบข้างเป็นก้อน 3 มิติได้ · ภาพหน้าจอ Google Maps: กด Ctrl+V แล้วคลิกปลายแถบมาตราส่วน 2 จุด
+- V1.189 · [[a_mapbld]]: อาคารรอบข้างมาจาก Overture Maps ซึ่งรวม OpenStreetMap กับรูปอาคารที่ AI ของ Microsoft และ Google ลากจากภาพดาวเทียม (ใช้ฟรี) ได้อาคารครบกว่าเดิมมาก ถ้าอ่านไม่ได้ใช้ OpenStreetMap แทน · [[a_roofpick]]: คลิกหลังคาในภาพแผนที่ โปรแกรมหาขอบหลังคาแล้วสร้างก้อนอาคารตามจำนวนชั้นที่ตั้ง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -33024,6 +33185,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.183 · Price library: the Split per-TR rate (14,019 + labour 1,725) and the generator per-kVA rate (7,159) are worked out from the Budget Bureau prices of Dec 2025, tagged "Budget Bureau (per TR/kVA)", replacing the old sample rates (kept in history)
 - V1.184 · Price library: the Budget Bureau and Comptroller General (ว 480) prices are yearly lists, so the price library window no longer counts them as over 6 months old until a year has passed (as in PENUM PM).
 - V1.188 · [[a_sitemap]] on the [[tab_site]] tab: find an address, coordinates or a pasted Google Maps link, and put a satellite picture (Esri) or a street map (OpenStreetMap) under the site plan at its true size, turned to true north; it sets the project location, adds a north arrow, lies on the ground in 3D views and can bring the buildings around as 3D masses · a Google Maps screenshot: Ctrl+V, then click both ends of its scale bar
+- V1.189 · [[a_mapbld]]: the buildings around come from Overture Maps, which joins OpenStreetMap with the footprints Microsoft's and Google's AI traced from satellite pictures (free), so far more buildings come; OpenStreetMap when it cannot be read · [[a_roofpick]]: click a roof in a map picture, its edge is found and a mass of the storeys set is made
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -35229,6 +35391,7 @@ window.PenumBIM.r39={I:()=>({P,ui,IDX,undoN:undoS.length}),list:id=>{const v=vie
   pick:(i,x,y)=>{const pn=PANES[i],v=pn&&paneView(i),pk=v&&pickAt3(pn,v,{x,y});return pk&&pk.p?{id:pk.id,p:pk.p.slice()}:null},box3:id=>elBox3(id),lines:id=>{const d=IDX.get(id),q=d&&ann3Pt(d);return q?spot3Lines(d,q):null},
   z:(id,x,y)=>spHostZ(null,{x,y,el:id}),dxf:id=>sheetDXF(viewById(id)),json:()=>projectJSON(),loadText:s=>loadText(s),t:(k,...a)=>t(k,...a)};
 window.PenumBIM.r186={get P(){return P},ui,CADB,act,parse:mapParse,anchor:mapAnchor,xy:mapXY,open:()=>{siteGo();ui.mapd=null;dlgMap()},shot:mapShotSrc,fit:mapShotFit,av:()=>activeView(),ll:mapLL,wp:mapWp};
+window.PenumBIM.r189={id:pmtId,mvt:mvtPolys,clip:mvtClip,ovt:ovtBldgs,find:ovtFind,trace:rpTrace,simp:rpSimp,rect:rpRect,grow:rpGrow,llof:mapLLof,bld:mapBldgsFor,reset:()=>{ovtArc=null}};
 window.PenumBIM.r38={items:O=>ifcItems(O||{}).map(m=>({id:m.id,pk:m.pk||null,cat:m.cat,n:(m.t||[]).length,tq:m.tq||null})),mem:id=>trussMembers(P,IDX.get(id)).length};window.PenumBIM.r37={M:()=>shcM(),base:g=>ifcBase(g),mc:g=>ifcMC(g),ifc:O=>{const r=ifcText(O);return typeof r==='string'?r:r.text},read:s=>ifcRead(s),mapPt:(B,x,y)=>shcMapPt(B,x,y),linkOf:B=>shcLinkOf(B),dxf:(id,O)=>planDXF(viewById(id),O),rtn:a=>rtnSet(a),set:()=>shcSet(),dms:d=>ifcDMS(d),geoNote:(g,c)=>ifcGeoNote(g,c,shcSet())};window.PenumBIM.r36={I:()=>({P,ui,IDX,CADB}),place:(E,N)=>shcPlace(E,N),ne:(x,y)=>surveyNEof(P.info||{},x,y),near:(E,N)=>shcNear(E,N),frame:id=>shcFrameOf(IDX.get(id)),
   linkOf:id=>{const e=IDX.get(id);return e?shcLinkOf(CADB.get(e.key)):null},on:id=>shcOn(IDX.get(id)),acq:id=>shcAcq(IDX.get(id)),spec:(x,y,z,N,E,EL,A)=>shcSpec(x,y,z,N,E,EL,A),reloc:(dx,dy)=>shcRelocate(dx,dy),
   zAt:(x,y)=>shcZAt(activeView(),x,y),tpi:txt=>tpImportText(txt),vals:(x,y,z)=>shcVals(x,y,z),text:R=>shcText(R),to:(id,u,v)=>linkF(IDX.get(id)).to(u,v),from:(id,x,y)=>linkF(IDX.get(id)).from(x,y),
