@@ -111,10 +111,10 @@ let FREE=false;{let F={};try{F=JSON.parse(get(FIRST)||'{}')||{}}catch(e){}
 let S={st:'wait',real:'',p:null,code:'',why:'',other:[]},UI=false;
 // with several companies' codes on this device, the one picked with "ใช้บริษัทนี้" ('penum.lic.use', shared by MEP and BIM) comes first, else the latest expiry
 function decide(R){const mine=R.filter(x=>has(x.p,C.app)&&x.sig!==false),live=mine.filter(x=>!revoked(x.p)).sort((a,b)=>a.p.exp<b.p.exp?1:a.p.exp>b.p.exp?-1:0);
-  const u=get(USE),ui=u?live.findIndex(y=>who(y.p)===u&&diffD(today(),y.p.exp)>=-GRACE):-1;if(ui>0)live.unshift(live.splice(ui,1)[0]);
+  const home=live[0]?who(live[0].p):'',u=get(USE),ui=u?live.findIndex(y=>who(y.p)===u&&diffD(today(),y.p.exp)>=-GRACE):-1;if(ui>0)live.unshift(live.splice(ui,1)[0]);
   const x=live[0]||mine[0];let st='none',why=R.some(y=>y.sig===false&&has(y.p,C.app))?'bad':'';
   if(live[0]){const d=diffD(today(),x.p.exp);st=d<-GRACE?'ro':d<0?'grace':d<=WARN?'warn':'ok';why=st==='ro'?'exp':''}else if(x){st='ro';why='rev'}
-  return {st:FREE?'free':st,real:st,p:x?x.p:null,code:x?x.code:'',why,picked:!!(u&&live[0]&&who(live[0].p)===u),many:new Set(live.map(y=>who(y.p))).size>1,alt:live.filter(y=>who(y.p)!==who(live[0].p)&&diffD(today(),y.p.exp)>=-GRACE).filter((y,i,a)=>a.findIndex(z=>who(z.p)===who(y.p))===i).map(y=>y.p),other:R.filter(y=>!has(y.p,C.app)&&!revoked(y.p)).map(y=>y.p)}}
+  return {st:FREE?'free':st,real:st,p:x?x.p:null,code:x?x.code:'',why,home,picked:!!(u&&live[0]&&who(live[0].p)===u),many:new Set(live.map(y=>who(y.p))).size>1,alt:live.filter(y=>who(y.p)!==who(live[0].p)&&diffD(today(),y.p.exp)>=-GRACE).filter((y,i,a)=>a.findIndex(z=>who(z.p)===who(y.p))===i).map(y=>y.p),other:R.filter(y=>!has(y.p,C.app)&&!revoked(y.p)).map(y=>y.p)}}
 const all=()=>{const L=regGet();MEM.forEach(c=>{if(!L.includes(c))L.push(c)});return L.map(code=>({code,p:peek(code)}))};
 function apply(n){const was=S.st,wc=S.code;S=n;if(wc&&n.code!==wc)setTimeout(()=>{try{dispatchEvent(new Event('penumlic'))}catch(e){}},0);LOCK=n.st==='none'||n.st==='ro';document.documentElement.classList.toggle('plk-hide',n.st==='none');if(UI)paint(was)}
 async function recheck(){const R=all();await Promise.all(R.map(async x=>{if(has(x.p,C.app))x.sig=(await verify(x.code)).ok}));apply(decide(R))}
@@ -320,6 +320,6 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',sta
 {let fb;const add=()=>S.p?{company:S.p.co,lic:S.p.sn||base(S.p.id)}:{};
   try{Object.defineProperty(window,'penumFB',{configurable:true,enumerable:true,get:()=>fb,set(v){if(v&&typeof v.init==='function'&&!v.__plk){const f=v.init;
     v.init=function(o){o=Object.assign({},o);const g=o.info;o.info=()=>{let x={};try{x=(g&&g())||{}}catch(e){}return Object.assign(add(),x)};return f.call(this,o)};v.__plk=1}fb=v}})}catch(e){}}
-window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[],code:S.code||'',cid:S.p?who(S.p):'',picked:!!S.picked}),open:openDlg,check:recheck,
+window.penumLic={state:()=>({st:S.st,real:S.real,why:S.why,free:FREE,co:S.p&&S.p.co,exp:S.p&&S.p.exp,ap:S.p?apOf(S.p):[],code:S.code||'',cid:S.p?who(S.p):'',home:S.home||'',picked:!!S.picked}),open:openDlg,check:recheck,
   has:covers,upsell,ask:openAsk};          // the other programs: whether this device opens one, the hint about one it does not, its request dialog
 })();
