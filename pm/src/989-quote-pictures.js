@@ -1,8 +1,10 @@
 /* ---------- 4.99.28 รูปประกอบในใบเสนอราคา: pictures printed in the quotation (user, 2026-11-11, Wet Tapping quote with options A/B:
    "ใบ PM มีรูปไหม", "อยากไส่รูปด้วย") ----------
    A card on the quotation page adds pictures (several at once). Each picture belongs to one work section (i.g) or to the whole
-   quotation (''), and has a caption. The print puts a "รูปประกอบ" block above the signatures, grouped by section in the order of the
-   lines; in an options quotation (989-quote-options.js) each group carries its option's badge. Pictures are made smaller and kept like
+   quotation (''), and has a caption. 4.99.29 (user: "รูปประกอบทำแยกจากใบเสนอราคาดีกว่า", "ดูแล้วแปลกๆ"): the pictures print as their own
+   attachment sheet (PRINT.quotePics, button พิมพ์รูปประกอบ on the card), never inside the quotation. The sheet has the company header,
+   the quotation's number, customer, project and work, and the pictures grouped by section in the order of the lines; in an options
+   quotation (989-quote-options.js) each group carries its option's badge. Pictures are made smaller and kept like
    site photos (IndexedDB, key 'qph-…'), so backups, folder/cloud sync, phone file exchange and รับงานสด carry them (photoKeys in 280).
    Q.pics = [{id, k: photo key, g: section ('' = whole quotation), cap: caption}]. */
 const QPX_MAX=12;
@@ -22,10 +24,10 @@ function qpxCard(Q){if(!Q||(typeof qmMa==='function'&&qmMa(Q)))return '';const L
       <label>คำอธิบายใต้รูป<input data-p="${b}.pics.${p.id}.cap" value="${esc(p.cap||'')}" placeholder="เช่น ตัวอย่างหน้างาน Wet Tapping"></label>
       <div class="row" style="gap:4px"><button type="button" class="btn ghost sm" data-a="qpxMv" data-id="${Q.id}" data-p="${p.id}" data-d="-1"${k?'':' disabled'} aria-label="เลื่อนขึ้น">▲</button><button type="button" class="btn ghost sm" data-a="qpxMv" data-id="${Q.id}" data-p="${p.id}" data-d="1"${k<L.length-1?'':' disabled'} aria-label="เลื่อนลง">▼</button>
       <button type="button" class="btn ghost sm" data-a="qpxDel" data-id="${Q.id}" data-p="${p.id}">ลบรูป</button></div></div></div>`).join('');
-  return `<section class="card qpx-card"><h2><span>รูปประกอบในใบเสนอราคา</span><small>${L.length?`${L.length} รูป · `:''}พิมพ์ก่อนช่องลงนาม</small></h2>
+  return `<section class="card qpx-card"><h2><span>รูปประกอบในใบเสนอราคา</span><small>${L.length?`${L.length} รูป · `:''}พิมพ์แยกเป็นเอกสารแนบ ไม่ปนในใบเสนอราคา</small></h2>
   <p class="hint">ใส่รูปหน้างาน แบบอุปกรณ์ หรือรูปจากใบเสนอราคาผู้ขาย แต่ละรูปเลือกได้ว่าอยู่กับหมวดหรือออปชั่นไหน${G.length>1?' ในใบแบบออปชั่น A / B รูปจะขึ้นป้ายออปชั่นของหมวดนั้น':''}</p>
   ${rows?`<div class="qpx-g">${rows}</div>`:''}
-  <div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-a="qpxAdd" data-id="${Q.id}"${L.length>=QPX_MAX?' disabled':''}>+ เพิ่มรูป</button>${L.length>=QPX_MAX?`<small class="muted">ใส่ได้สูงสุด ${QPX_MAX} รูปต่อใบ</small>`:''}</div></section>`}
+  <div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-a="qpxAdd" data-id="${Q.id}"${L.length>=QPX_MAX?' disabled':''}>+ เพิ่มรูป</button>${L.length?`<button type="button" class="btn sm" data-a="print" data-k="quotePics" data-id="${Q.id}">พิมพ์รูปประกอบ</button>`:''}${L.length>=QPX_MAX?`<small class="muted">ใส่ได้สูงสุด ${QPX_MAX} รูปต่อใบ</small>`:''}</div></section>`}
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),Q=qpxFind(S.sel.quote)||(CO().quotes||[]).slice().reverse()[0];return Q?qbIns(h,qpxCard(Q)):h}}
 
 // one section picked when the quotation has only one, or the newest picture's section, else the whole quotation
@@ -41,33 +43,50 @@ ACT.qpxDel=b=>{const Q=qpxFind(b.dataset.id);if(!Q||!confirm('ลบรูปน
 ACT.qpxMv=b=>{const Q=qpxFind(b.dataset.id);if(!Q)return;const L=qpxList(Q),i=L.findIndex(x=>x.id===b.dataset.p),j=i+n(b.dataset.d);if(i<0||j<0||j>=L.length)return;
   [L[i],L[j]]=[L[j],L[i]];Q.pics=L;save();render()};
 
-// ---- the print
-const QPX_CSS=`<style>
-.qpx{margin:0 0 12px;break-inside:auto}
-.qpx>h3{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;color:var(--qt,#1c6f7d);font-weight:700;letter-spacing:.02em}
-.qpx>h3:before{content:"";width:8px;height:8px;border-radius:2px;background:var(--qt,#1c6f7d);transform:rotate(45deg)}
-.qpx>h3 .en{display:inline;margin-left:2px;font-style:normal;font-weight:400;color:var(--qg,#667)}
-.qpx-sec{margin:0 0 8px;break-inside:avoid;page-break-inside:avoid}
-.qpx-sh{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--qn,#123a5c);margin:0 0 4px}
-.qpx-sh .qpx-b{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;padding:0 4px;border-radius:4px;background:var(--qo,#F59E0B);color:#fff;font-size:9.5px;font-weight:700}
+// ---- the attachment sheet
+const QPX_CSS=`<style>@page{size:A4;margin:12mm}
+.qpx{font-size:11px;color:#1d2b3a;--qt:#1c6f7d;--qn:#123a5c;--qg:#667085;--ql:#dde3ea;--qo:#F59E0B}
+.qpx-bar{height:5px;border-radius:3px;background:linear-gradient(90deg,var(--qn),var(--qt));margin:0 0 10px}
+.qpx-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 10px}
+.qpx-h img{max-height:46px;max-width:200px;object-fit:contain}.qpx-h .nm{font-size:16px;font-weight:700;color:var(--qn)}
+.qpx-h .co{text-align:right;font-size:9.5px;color:var(--qg);line-height:1.45}.qpx-h .co b{font-size:11px;color:var(--qn)}
+.qpx-tt{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--ql);padding:0 0 8px;margin:0 0 10px}
+.qpx-tt small{display:block;letter-spacing:.2em;color:var(--qt);font-size:9px;font-weight:700}.qpx-tt h1{margin:0;font-size:19px;color:var(--qn)}
+.qpx-tt h1 i{font-style:normal;font-weight:400;font-size:12px;color:var(--qg);margin-left:6px}
+.qpx-no{text-align:right;font-size:10px;color:var(--qg)}.qpx-no b{display:block;font-size:13px;color:var(--qn)}
+.qpx-inf{display:grid;grid-template-columns:repeat(2,1fr);gap:3px 16px;margin:0 0 12px;font-size:10.5px}
+.qpx-inf div{display:grid;grid-template-columns:92px 1fr;gap:6px}.qpx-inf span{color:var(--qg)}
+.qpx-sec{margin:0 0 10px;break-inside:avoid;page-break-inside:avoid}
+.qpx-sh{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--qn);margin:0 0 5px}
+.qpx-b{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:4px;background:var(--qo);color:#fff;font-size:10px;font-weight:700}
 .qpx-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.qpx-row.n1{grid-template-columns:minmax(0,70%)}.qpx-row.n3{grid-template-columns:repeat(3,1fr)}
-.qpx-row figure{margin:0;border:1px solid var(--ql,#dde3ea);border-radius:8px;padding:4px;break-inside:avoid;page-break-inside:avoid;background:#fff}
-.qpx-row img,#print .qpx .qpx-row img{display:block;width:100%;max-width:none;height:56mm;max-height:none;object-fit:contain;border-radius:5px;background:#f6f8fa}
-.qpx-row.n1 img,#print .qpx .qpx-row.n1 img{height:72mm}.qpx-row.n3 img,#print .qpx .qpx-row.n3 img{height:42mm}
-.qpx-row figcaption{font-size:9.5px;color:var(--qg,#556);margin:3px 2px 0;line-height:1.3}
+.qpx-row.n1{grid-template-columns:minmax(0,80%)}.qpx-row.n3{grid-template-columns:repeat(3,1fr)}
+.qpx-row figure{margin:0;border:1px solid var(--ql);border-radius:8px;padding:4px;break-inside:avoid;page-break-inside:avoid;background:#fff}
+.qpx-row img,#print .qpx .qpx-row img{display:block;width:100%;max-width:none;height:70mm;max-height:none;object-fit:contain;border-radius:5px;background:#f6f8fa}
+.qpx-row.n1 img,#print .qpx .qpx-row.n1 img{height:95mm}.qpx-row.n3 img,#print .qpx .qpx-row.n3 img{height:48mm}
+.qpx-row figcaption{font-size:10px;color:#475467;margin:4px 2px 1px;line-height:1.35}
+.qpx-ft{margin-top:10px;border-top:1px solid var(--ql);padding-top:5px;display:flex;justify-content:space-between;font-size:9px;color:var(--qg)}
 </style>`;
-function qpxPrint(Q){const L=qpxList(Q);if(!L.length)return '';const G=qpxSecs(Q),EN=typeof qmLang==='function'&&qmLang(Q)==='en',bi=typeof qmLang==='function'&&qmLang(Q)==='bi';
+function qpxSheet(Q){const L=qpxList(Q);if(!L.length)return '';const C=CO(),G=qpxSecs(Q),EN=typeof qmLang==='function'&&qmLang(Q)==='en';
+  const tx=(th,en)=>EN?en:th,cu=(C.customers||[]).find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'';
+  const dt=s=>{try{if(!okD(s))return '';return EN?pd(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)}catch(e){return String(s||'')}};
   // groups: the whole quotation first, then the sections in the order of the lines (a section no longer in the lines prints last)
   const order=['',...G,...L.map(p=>p.g||'').filter(g=>g&&!G.includes(g))],seen=new Set();
   const groups=order.filter(g=>!seen.has(g)&&seen.add(g)).map(g=>({g,P:L.filter(p=>(p.g||'')===g)})).filter(x=>x.P.length);
   const fig=p=>`<figure><img data-ph="${esc(p.k)}" src="${phCache[p.k]||''}" alt="${esc(p.cap||'')}">${p.cap?`<figcaption>${esc(p.cap)}</figcaption>`:''}</figure>`;
   const sec=x=>{const o=qpxOpt(Q,x.g),nm=x.g?qpxSecName(Q,x.g):'',N=x.P.length,cl=N===1?' n1':N%3===0||N>4?' n3':'';
-    const head=x.g||o?`<div class="qpx-sh">${o?`<span class="qpx-b">${o}</span>`:''}${o?`${EN?'Option':'ออปชั่น'} ${o} · `:''}${esc(nm)}</div>`:'';
+    const head=x.g||o?`<div class="qpx-sh">${o?`<span class="qpx-b">${o}</span>${tx('ออปชั่น','Option')} ${o} · `:''}${esc(nm)}</div>`:'';
     return `<div class="qpx-sec">${head}<div class="qpx-row${cl}">${x.P.map(fig).join('')}</div></div>`};
-  return QPX_CSS+`<div class="qpx"><h3>${EN?'Pictures':'รูปประกอบ'}${bi?'<i class="en">Pictures</i>':''}</h3>${groups.map(sec).join('')}</div>`}
-{const f=PRINT.quote;PRINT.quote=function(id,bq){let h=f.apply(this,arguments);const Q=qpxFind(id);if(!h||!Q||bq||(typeof qmMa==='function'&&qmMa(Q)))return h;
-  const x=qpxPrint(Q);if(!x)return h;const k=h.lastIndexOf('<div class="qm-sg">');return k<0?h+x:h.slice(0,k)+x+h.slice(k)}}
+  const inf=[[tx('ลูกค้า','Customer'),cuN],[tx('โครงการ','Project'),Q.pname||''],[tx('งาน','Work'),Q.title||''],[tx('สถานที่','Site'),Q.site||'']].filter(r=>r[1]);
+  return QPX_CSS+`<div class="qpx" data-doc-name="${esc([Q.no,tx('รูปประกอบ','Pictures'),Q.pname||Q.title||''].filter(Boolean).join(' '))}"><div class="qpx-bar"></div>
+  <div class="qpx-h"><div>${C.logo?`<img src="${C.logo}" alt="">`:`<span class="nm">${esc(C.name||'')}</span>`}</div>
+    <div class="co"><b>${esc(EN&&C.nameEn||C.name||'')}</b>${C.addr?'<br>'+esc(EN&&C.addrEn||C.addr):''}${C.phone||C.email?'<br>'+esc([C.phone?tx('โทร ','Tel. ')+C.phone:'',C.email||''].filter(Boolean).join(' · ')):''}</div></div>
+  <div class="qpx-tt"><div><small>${tx('ATTACHMENT','ATTACHMENT')}</small><h1>${tx('รูปประกอบใบเสนอราคา','Quotation pictures')}${EN?'':'<i>Pictures</i>'}</h1></div>
+    <div class="qpx-no">${tx('แนบท้ายใบเสนอราคาเลขที่','Attached to quotation no.')}<b>${esc(Q.no||'')}</b>${Q.date?`${tx('ลงวันที่','dated')} ${dt(Q.date)}`:''}</div></div>
+  ${inf.length?`<div class="qpx-inf">${inf.map(r=>`<div><span>${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')}</div>`:''}
+  ${groups.map(sec).join('')}
+  <div class="qpx-ft"><span>${esc(C.name||'')}</span><span>${tx('เอกสารแนบ','Attachment')} ${esc(Q.no||'')}</span></div></div>`}
+PRINT.quotePics=id=>{const Q=qpxFind(id);return Q?qpxSheet(Q):''};
 
 // ---- the card's look on the screen
 document.head.insertAdjacentHTML('beforeend',`<style>
