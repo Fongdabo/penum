@@ -1671,6 +1671,11 @@ function sampleProject(en){
   {const get=id=>P.els.find(x=>x.id===id),at=(host,pos,x,y)=>{const e=P.els.find(q=>HOSTED.includes(q.cat)&&q.host===host&&q.pos===pos),F=e&&tagFrame(P,get,e);if(F)for(const a of P.ann)if(a.cat==='tag'&&a.el===e.id){a.du=Math.round((x-F.x)*F.ux+(y-F.y)*F.uy);a.dn=Math.round(-(x-F.x)*F.uy+(y-F.y)*F.ux)}};
     at(w1,2600,-480,3550);at(n1,7000,7000,-560);at(e1,4300,9560,4300);at(s1,3000,6000,6560);at(m1,4600,5450,4200);at(b1,1700,7400,5610);
     at(n2,7000,7000,-560);at(e2,1500,9560,1500);at(e2,4500,9560,4500);at(s2,2000,7000,6560);at(s2,6500,2500,6560);at(w2,3200,-560,2800)}
+  /* V1.199: the outer walls face out.  They are listed clockwise as the plan shows them, which puts their exterior (the left of a wall's line) inside: each is turned round the way Flip does it (198: wfRev),
+     its doors, windows and their tags staying where they are */
+  {const O=new Map([n1,e1,s1,w1,n2,e2,s2,w2].map(id=>[id,P.els.find(x=>x.id===id)])),H=new Set();for(const w of O.values()){const x=w.x1,y=w.y1;w.x1=w.x2;w.y1=w.y2;w.x2=x;w.y2=y}
+    for(const h of P.els){const w=HOSTED.includes(h.cat)&&O.get(h.host);if(!w)continue;H.add(h.id);h.pos=Math.hypot(w.x2-w.x1,w.y2-w.y1)-h.pos;h.flipF=!h.flipF;if(h.cat==='door')h.flipH=!h.flipH;else if(h.cat==='window')h.flipH=true}
+    for(const a of P.ann)if(isTag(a)&&a.du!=null&&(O.has(a.el)||H.has(a.el))){a.du=a.du?-a.du:0;a.dn=a.dn?-a.dn:0}}
   return P}
 
 /* accept a saved project: v2 as-is, v1 (first release) converted, anything else rejected */
@@ -2448,10 +2453,12 @@ function buildMeshes(P,FP,FIT){
       for(const q of O)if((q.o.ph||'new')!==(e.ph||'new')||(q.o.dem||'')!==(e.dem||'')){const pl=mk(e.id,'wall',hex2rgb(T.color));pl.mt=m.mt;pl.inf=q.o.id;solid(pl,[pt(q.a,h),pt(q.b,h),pt(q.b,-h),pt(q.a,-h)],q.s,q.t);items.push(pl)}          /* phasing: an insert that is not of the same phases as its wall leaves a plug for the views it is not in (Revit: the infill) */
       if(e.stk)for(const q of O)if(q.o.cat!=='opening'&&q.ot&&q.ot.height>0){q.s=base+(q.o.sill||0);q.t=q.s+q.ot.height}          /* a door or a window in a row of a stacked wall (190) is whole, though the row is cut only as far as it reaches */
       for(const q of O){if(q.o.cat==='opening')continue; // door / window family geometry; a plain opening has none
-        const o=q.o,ot=q.ot,fr=45,fd=Math.min(h,70),frame=mk(o.id,o.cat,[0.93,0.93,0.91]);
-        /* a box along the wall from d0 to d1, n0 to n1 across it; nl: without its edge lines (small parts) */
-        const bx=(mm,d0,d1,n0,n1,za,zb,nl)=>{if(d1-d0<1||zb-za<1||n1-n0<0.5)return;const poly=[pt(d0,n1),pt(d1,n1),pt(d1,n0),pt(d0,n0)];if(nl)prism(mm,poly,za,zb);else solid(mm,poly,za,zb)};
-        const pane=(gm,d0,d1,nm,za,zb)=>{if(d1-d0>1&&zb-za>1)prism(gm,[pt(d0,nm+3),pt(d1,nm+3),pt(d1,nm-3),pt(d0,nm-3)],za,zb)};
+        const o=q.o,ot=q.ot,fr=45,fd=Math.min(h,70),frame=mk(o.id,o.cat,[0.93,0.93,0.91]),wf=o.cat==='window'&&!!o.flipF,wh=o.cat==='window'&&!!o.flipH;
+        /* a box along the wall from d0 to d1, n0 to n1 across it; nl: without its edge lines (small parts).  A window has a front and a hand of its own (199): across the
+           wall its parts are counted towards the side it faces (flipF: the other side) and its sashes from the end its hand says (flipH: the far end), so they stay as
+           they are when the wall is turned round (198), which changes both, and Flip Facing, Flip Hand and a mirror move them as they should */
+        const bx=(mm,d0,d1,n0,n1,za,zb,nl)=>{if(wf){const x=-n0;n0=-n1;n1=x}if(d1-d0<1||zb-za<1||n1-n0<0.5)return;const poly=[pt(d0,n1),pt(d1,n1),pt(d1,n0),pt(d0,n0)];if(nl)prism(mm,poly,za,zb);else solid(mm,poly,za,zb)};
+        const pane=(gm,d0,d1,nm,za,zb)=>{if(wf)nm=-nm;if(d1-d0>1&&zb-za>1)prism(gm,[pt(d0,nm+3),pt(d1,nm+3),pt(d1,nm-3),pt(d0,nm-3)],za,zb)};
         /* a glazed sash: its frame (s wide) with the pane inside */
         const sash=(fm,gm,d0,d1,n0,n1,za,zb,s,sb)=>{bx(fm,d0,d0+s,n0,n1,za,zb);bx(fm,d1-s,d1,n0,n1,za,zb);bx(fm,d0+s,d1-s,n0,n1,zb-s,zb);bx(fm,d0+s,d1-s,n0,n1,za,za+(sb||s));pane(gm,d0+s,d1-s,(n0+n1)/2,za+(sb||s),zb-s)};
         bx(frame,q.a,q.a+fr,-fd,fd,q.s,q.t);bx(frame,q.b-fr,q.b,-fd,fd,q.s,q.t);bx(frame,q.a+fr,q.b-fr,-fd,fd,q.t-fr,q.t);
@@ -2472,9 +2479,9 @@ function buildMeshes(P,FP,FIT){
             if(ot.style==='double'){const mid=(a+b)/2;one(a,mid-2,true);one(mid+2,b,false)}else one(a,b,!o.flipH);
             items.push(leaf);for(const x of [rl,pn,hw])if(x.t.length)items.push(x)}
         }else{bx(frame,a,b,-fd,fd,q.s,q.s+fr);const zb=q.s+fr,gl=mk(o.id,'window',GLASS,0.4),W=b-a,np=ot.style==='fixed'?(W>2600?2:1):W<=750?1:W<=1500?2:W<=2200?3:4,pw=W/np;
-          if(ot.style==='sliding'&&np>1){for(let i=0;i<np;i++){const far=i%2===1;sash(frame,gl,a+pw*i-(i?19:0),a+pw*(i+1)+(i<np-1?19:0),far?2:-20,far?20:-2,zb,zt,38)}}          // sliding sashes on two tracks, overlapping where they meet
+          if(ot.style==='sliding'&&np>1){for(let i=0;i<np;i++){const far=(wh?np-1-i:i)%2===1;sash(frame,gl,a+pw*i-(i?19:0),a+pw*(i+1)+(i<np-1?19:0),far?2:-20,far?20:-2,zb,zt,38)}}          // sliding sashes on two tracks, overlapping where they meet
           else if(ot.style==='casement'){for(let i=0;i<np;i++){const d0=a+pw*i+(i?18:0),d1=a+pw*(i+1)-(i<np-1?18:0);sash(frame,gl,d0,d1,-17,17,zb,zt,40);
-              const hu=i%2?d0+20:d1-20;bx(frame,hu-8,hu+8,17,34,(zb+zt)/2-45,(zb+zt)/2+45,1)}
+              const hu=(wh?(np-1-i)%2===0:i%2===1)?d0+20:d1-20;bx(frame,hu-8,hu+8,17,34,(zb+zt)/2-45,(zb+zt)/2+45,1)}
             for(let i=1;i<np;i++){const c=a+pw*i;bx(frame,c-18,c+18,-fd*0.7,fd*0.7,zb,zt)}}
           else{pane(gl,a,b,0,zb,zt);for(let i=1;i<np;i++){const c=a+W*i/np;bx(frame,c-18,c+18,-fd*0.7,fd*0.7,zb,zt)}}
           if(gl.t.length)items.push(gl);
@@ -7787,7 +7794,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
         const a0=Math.atan2(E[1]-H[1],E[0]-H[0]),a1=Math.atan2(Cl[1]-H[1],Cl[0]-H[0]);let df=a1-a0;while(df>Math.PI)df-=2*Math.PI;while(df<-Math.PI)df+=2*Math.PI;
         ctx.lineWidth=g.lw(0.13);ctx.beginPath();ctx.arc(g.X(H[0]),g.Y(H[1]),len*T.s,a0,a1,df<0);ctx.stroke()};
       if(W.style==='double'){const m=(a+b)/2;leaf(a,m,W.width/2);leaf(b,m,W.width/2)}
-      else if(W.style==='sliding'){if(!SH('panel')){SB('panel');ctx.lineWidth=g.lw(0.35);const m=(a+b)/2;g.seg(pt(a,sd*18),pt(m+50,sd*18));g.seg(pt(m-50,-sd*18),pt(b,-sd*18))}}
+      else if(W.style==='sliding'){if(!SH('panel')){SB('panel');ctx.lineWidth=g.lw(0.35);const m=(a+b)/2;const s2=sd*(e.flipH?-18:18);g.seg(pt(a,s2),pt(m+50,s2));g.seg(pt(m-50,-s2),pt(b,-s2))}}
       else leaf(e.flipH?b:a,e.flipH?a:b,W.width);g.sub(null)}
   }          // their tags are annotations of the view (63-tags.js)
   swpPlan(ctx,g,v,T,col,o,of,hl,A,det);
@@ -8633,7 +8640,7 @@ function ensureToolView(tool){const v=activeView();if(!v||v.kind!=='plan'||!CREA
   if(v.rcp)return;let nv=P.views.find(x=>x.kind==='plan'&&!x.rcp&&!x.site&&x.level===v.level&&x.disc===d);if(!nv)edit(()=>{nv=discPlan(P,v.level,d,ui.lang==='en')});
   showView(nv.id);toast(t('disc_opened',nv.name))}
 const drawMode=()=>ui.tool==='aline'?(ui.drawBy.aline||'pickl'):ui.tool==='wall'||ui.tool==='dline'||ui.tool==='mline'||bowTool(ui.tool)?(ui.drawBy[ui.tool]||'line'):(ui.drawBy[ui.tool]||(ui.tool==='bsys'?'pick':'rect'));          // a beam system starts with the one-click placement in a bay
-function setTool(tool,silent){ui.opt.spotK='';ui.strTool=null;if(tool!==ui.tool)ui.opt.plh=false;          /* Duct / Pipe Placeholder (75-plh.js) lasts as long as its tool */
+function setTool(tool,silent){ui.opt.spotK='';ui.strTool=null;if(tool!==ui.tool){ui.opt.plh=false;ui.opt.wflip=false}          /* Duct / Pipe Placeholder (75-plh.js) lasts as long as its tool */
   if(XT[ui.tool]&&XT[ui.tool].off)XT[ui.tool].off(tool);closeInline();ui.pts=[];ui.sketch=null;ui.typed='';ui.meas=null;ui.flip=0;ui.snap=null;ui.ma=null;ui.al=null;ui.alk=null;ui.ea=null;ui.tb=null;ui.rcPick=false;ui.rcSet=false;ui.snapOv=null;
   if((tool==='area'||tool==='aline')&&!areaToolView())tool='modify';          /* the area tools work in an area plan: go to one, or make the first */
   if(tool!=='modify'){const v=activeView();
@@ -9004,8 +9011,8 @@ function toolClick(pn,v,p,ev){
           if(s.ref.k==='wend'){d.type=src.type;for(const k of ['w','h','dia'])if(src[k]!=null)d[k]=src[k]}}}
       if(tl==='grid')pt.k=s.kind;ui.pts=[pt];refresh();return}
     const a=ui.pts[0];if(Math.hypot(pt.x-a.x,pt.y-a.y)<20){ui.pts=[];ui.chainOff=null;refresh();return}
-    if(tl==='wall'&&drawMode()==='rect'){if(Math.abs(pt.x-a.x)<20||Math.abs(pt.y-a.y)<20)return;const o=ui.opt.wallLoc==='e'?wallT()/2:ui.opt.wallLoc==='i'?-wallT()/2:0,xa=Math.min(a.x,pt.x)+o,xb=Math.max(a.x,pt.x)-o,ya=Math.min(a.y,pt.y)+o,yb=Math.max(a.y,pt.y)-o,c=[[xa,ya],[xb,ya],[xb,yb],[xa,yb]];if(xb-xa<20||yb-ya<20)return;          // drawn along the outer or the inner face: the centre lines lie half a thickness inside or outside
-      edit(()=>{for(let i=0;i<4;i++)P.els.push(newLineEl('wall',v.level,{x:c[i][0],y:c[i][1]},{x:c[(i+1)%4][0],y:c[(i+1)%4][1]}))});ui.pts=[];refresh();return}
+    if(tl==='wall'&&drawMode()==='rect'){if(Math.abs(pt.x-a.x)<20||Math.abs(pt.y-a.y)<20)return;const o=-wdLoc()*wdSg(),xa=Math.min(a.x,pt.x)+o,xb=Math.max(a.x,pt.x)-o,ya=Math.min(a.y,pt.y)+o,yb=Math.max(a.y,pt.y)-o,c=[[xa,ya],[xb,ya],[xb,yb],[xa,yb]];if(xb-xa<20||yb-ya<20)return;          // drawn along the outer or the inner face: the centre lines lie half a thickness inside or outside
+      edit(()=>{for(let i=0;i<4;i++)P.els.push(wdNew(newLineEl('wall',v.level,{x:c[i][0],y:c[i][1]},{x:c[(i+1)%4][0],y:c[(i+1)%4][1]})))});ui.pts=[];refresh();return}          /* V1.199: the four face out (in after Space) */
     if((tl==='mline'||tl==='aline')&&drawMode()==='rect'){if(Math.abs(pt.x-a.x)<20||Math.abs(pt.y-a.y)<20)return;const c=[[a.x,a.y],[pt.x,a.y],[pt.x,pt.y],[a.x,pt.y]];
       edit(()=>{for(let i=0;i<4;i++)P.els.push(newLineEl(tl,v.level,{x:c[i][0],y:c[i][1]},{x:c[(i+1)%4][0],y:c[(i+1)%4][1]}))});ui.pts=[];refresh();return}
     edit(()=>{if(tl==='grid'){pt.k=s.kind;const N=gridNew(v,a,pt,s.typed?2:0),ng={id:P.seq++,cat:'grid',name:nextGridName(),x1:N.x1,y1:N.y1,x2:N.x2,y2:N.y2};if(N.bub!=null)ng.bub=N.bub;P.grids.push(ng)}          /* drawn by eye beside other grids: its ends go onto their end lines, its bubbles where they have theirs (66-gridends.js) */
@@ -9154,7 +9161,7 @@ function drawOverlay(pn,ctx,v,nav){
     const nx=-(q[1]-p[1])/L,ny=(q[0]-p[0])/L;g.text((ui.typed?ui.typed+'▏':fmtLen(L))+' '+unitName()+'   '+fmtAng(ang),[(p[0]+q[0])/2+nx*5*sc*(ny>0?-1:1),(p[1]+q[1])/2+ny*5*sc*(ny>0?-1:1)],2.8,{color,mono:true,halo:true})};
   ctx.lineCap='butt';
   if(revitOverlay(ctx,v,nav,g,w,pt,a,lenLabel)){}
-  else if(tl==='wall'&&wallModePreview(ctx,v,nav,g,w,pt,ac)){}
+  else if(tl==='wall'&&(wdPreview(ctx,v,nav,g,pt,a,ac,lenLabel)||wallModePreview(ctx,v,nav,g,w,pt,ac))){}
   else if(bowModePreview(ctx,g,nav,pt,ac)){}
   else if(areaPreview(g,ctx,v,w,pt,a,ac,lenLabel)){}
   else if(PLAIN_LINES.includes(tl)){if(a){const S=tl==='mline'?lsGet(P,ui.opt.lineStyle):[0.18,tl==='rsep'?[3,1.2]:[3.2,1.6]],c=tl==='rplane'?RPCOL:C.sketch;ctx.strokeStyle=c;ctx.lineWidth=Math.max(1.2,g.lw(S[0]));g.dash(S[1]);
@@ -9548,7 +9555,7 @@ function bindKeys(){
         if(e0&&e0.grp&&h0.grip==null){ui.solo=!ui.solo;ui.chain=null;ui.hov=h0.id;hint(ui.solo?t('h_solo'):'');redraw();return}          // as in Revit: Tab over a member of a group reaches the member itself
         if(ch){ui.chain=ui.chain?null:ch;hint(ui.chain?t('h_chain',ch.size):'');redraw();return}          // as in Revit: Tab over a wall takes the whole chain of walls joined to it
         ui.chain=null;ui.cyc=(ui.cyc||0)+1;ui.cycAt={x:ui.cur.x,y:ui.cur.y};const h=hitPlan(v,ui.cur);ui.hov=h?h.id:null;redraw()}return}
-    if(k===' '){e.preventDefault();if(ui.tool==='rotate'){ui.rcPick=!ui.rcPick;ui.pts=[];refresh();return}if(ui.tool==='door'||ui.tool==='window'||ui.tool==='mtext'||ui.tool==='sym'||ui.tool==='dcomp'||POINT_TOOLS.includes(ui.tool)){ui.flip++;redraw()}else if(ui.tool==='modify'&&ui.sel.size)spaceFlip();return}
+    if(k===' '){e.preventDefault();if(ui.tool==='rotate'){ui.rcPick=!ui.rcPick;ui.pts=[];refresh();return}if(ui.tool==='door'||ui.tool==='window'||ui.tool==='mtext'||ui.tool==='sym'||ui.tool==='dcomp'||POINT_TOOLS.includes(ui.tool)){ui.flip++;redraw()}else if(ui.tool==='wall')wdSpace();else if(ui.tool==='modify'&&ui.sel.size)spaceFlip();return}
     if(k.startsWith('Arrow')&&ui.sel.size&&ui.tool==='modify'){const v=activeView();if(v&&saSelOk(v)){e.preventDefault();saNudge(v,k,e.shiftKey);return}if(!v||v.kind!=='plan')return;e.preventDefault();const inc=snapInc(navOf(v))*(e.shiftKey?10:1),dx=k==='ArrowLeft'?-inc:k==='ArrowRight'?inc:0,dy=k==='ArrowUp'?-inc:k==='ArrowDown'?inc:0;const ids=movable(ui.sel);if(ids.length)edit(()=>translateIds(ids,dx,dy));return}
     if(/^[a-zA-Z]$/.test(k)){ui.keys+=k.toUpperCase();if(ui.keys.length>=2){const c=SHORT[ui.keys];if(c||ui.keys.length>=3||!KEY3.has(ui.keys)){ui.keys='';if(c){e.preventDefault();if(c[0]==='@'){const q=c.slice(1).split(':');act(q[0],q[1])}else setTool(c)}}}showKeys();clearTimeout(keyT);keyT=setTimeout(()=>{ui.keys='';showKeys()},1600)}});
   document.addEventListener('keyup',e=>{ui.shift=e.shiftKey})}
@@ -10514,7 +10521,7 @@ const arcStep=()=>clamp(+ui.opt.arcSeg||6,3,45)*Math.PI/180;
 const wallT=()=>{const d=defs('wall'),T=P.types.wall.find(x=>x.id===d.type)||P.types.wall[0];return T.thickness};
 /* how far the centre line of the wall lies from the line that is drawn: nothing on the centre line, half the thickness when that line is a face.
    + is to the left of the direction of drawing (Revit: the exterior face of a wall is on the left) */
-const wallLocOff=()=>ui.opt.wallLoc==='e'?-wallT()/2:ui.opt.wallLoc==='i'?wallT()/2:0;
+const wallLocOff=()=>wdLoc()*wdSg();          /* V1.199: the exterior, and with it the face that is drawn, is on the other side after Space */
 function offSeg(a,b,o){const L=Math.hypot(b[0]-a[0],b[1]-a[1])||1,nx=(b[1]-a[1])/L,ny=-(b[0]-a[0])/L;return[[a[0]+nx*o,a[1]+ny*o],[b[0]+nx*o,b[1]+ny*o]]}
 function lineX(p1,p2,p3,p4){const d=(p2[0]-p1[0])*(p4[1]-p3[1])-(p2[1]-p1[1])*(p4[0]-p3[0]);if(Math.abs(d)<1e-6)return null;const k=((p3[0]-p1[0])*(p4[1]-p3[1])-(p3[1]-p1[1])*(p4[0]-p3[0]))/d;return[p1[0]+(p2[0]-p1[0])*k,p1[1]+(p2[1]-p1[1])*k]}
 /* points along an arc: centre c, radius r, from angle a0 over the signed sweep sw */
@@ -10537,28 +10544,33 @@ function pickWallLine(v,w){const nav=navOf(v),R=10/nav.s;let best=linkPick(v,w,R
   if(!catHid(v,'dline'))for(const d of P.ann)if(d.cat==='dline'&&d.view===avid(v)&&!hidDatum(v,d)&&!lcCurve(d))seg(d.x1,d.y1,d.x2,d.y2);
   if(!catHid(v,'grid'))for(const g of P.grids)if(!hidDatum(v,g)){const q=gridPath(g);for(let i=1;i<q.length;i++)seg(q[i-1][0],q[i-1][1],q[i][0],q[i][1])}return best}
 /* the centre line of the wall a pick would make: the picked line itself, or moved to the side of the pointer by the location line and the offset */
-function pickWallPath(v,w,k){const o=(ui.opt.wallLoc==='c'||!ui.opt.wallLoc?0:wallT()/2)+Math.max(0,+ui.opt.wallOff||0);
-  if(k.arc)return{pts:k.arc(o?(k.inside(w)?-o:o):0)};const L=Math.hypot(k.b[0]-k.a[0],k.b[1]-k.a[1])||1,side=((w.x-k.a[0])*(k.b[1]-k.a[1])-(w.y-k.a[1])*(k.b[0]-k.a[0]))>=0?1:-1;return{pts:o?offSeg(k.a,k.b,o*side):[k.a,k.b]}}
+function pickWallPath(v,w,k){const loc=ui.opt.wallLoc,o=(loc==='c'||!loc?0:wallT()/2)+Math.max(0,+ui.opt.wallOff||0),tw=loc==='e'?-1:loc==='i'?1:wdSg();          /* V1.199 tw: the exterior on the side of the pointer (1) or away from it; ext(wall): the way it looks */
+  if(k.arc){const ins=k.inside(w),pts=k.arc(o?(ins?-o:o):0),n=pts.length,K=circle3(pts[0],pts[Math.floor(n/3)],pts[Math.floor(2*n/3)])||{c:[w.x,w.y]},sg=(ins?-1:1)*tw;return{pts,ext:e=>[((e.x1+e.x2)/2-K.c[0])*sg,((e.y1+e.y2)/2-K.c[1])*sg]}}
+  const L=Math.hypot(k.b[0]-k.a[0],k.b[1]-k.a[1])||1,side=((w.x-k.a[0])*(k.b[1]-k.a[1])-(w.y-k.a[1])*(k.b[0]-k.a[0]))>=0?1:-1,nx=(k.b[1]-k.a[1])/L*side*tw,ny=-(k.b[0]-k.a[0])/L*side*tw;return{pts:o?offSeg(k.a,k.b,o*side):[k.a,k.b],ext:()=>[nx,ny]}}
 /* clicks of the wall tool in its arc, circle and pick modes; true when the click was used */
 function wallModeClick(v,w,pt){const m=drawMode();
-  if(m==='pickl'){const k=pickWallLine(v,w);if(!k){toast(t('pickl_none'));return true}const path=pickWallPath(v,w,k);let n=0;edit(()=>{const ws=k.full?wallsAlong(v,path.pts.slice(0,-1),true,1):wallsAlong(v,path.pts,false,!!k.arc);for(const e of ws)P.els.push(e);n=ws.length;if(ws.length&&!k.full){wallHeal(ws[0]);if(ws.length>1)wallHeal(ws[ws.length-1])}});if(!n)toast(t('pickl_short'));return true}
-  if(m==='circle'){if(!ui.pts.length){ui.pts=[pt];refresh();return true}const c=ui.pts[0],r=Math.hypot(pt.x-c.x,pt.y-c.y)+(ui.opt.wallLoc==='e'?-wallT()/2:ui.opt.wallLoc==='i'?wallT()/2:0);if(r<100){toast(t('arc_small'));return true}
-    const pts=arcPts([c.x,c.y],r,Math.atan2(pt.y-c.y,pt.x-c.x),2*Math.PI).slice(0,-1);edit(()=>{for(const e of wallsAlong(v,pts,true,1))P.els.push(e)});ui.pts=[];refresh();return true}
+  if(m==='pickl'){const k=pickWallLine(v,w);if(!k){toast(t('pickl_none'));return true}const path=pickWallPath(v,w,k);let n=0;edit(()=>{const ws=k.full?wallsAlong(v,path.pts.slice(0,-1),true,1):wallsAlong(v,path.pts,false,!!k.arc);for(const e of ws){const q=path.ext(e);P.els.push(wdFace(e,q[0],q[1]))}n=ws.length;if(ws.length&&!k.full){wallHeal(ws[0]);if(ws.length>1)wallHeal(ws[ws.length-1])}});if(!n)toast(t('pickl_short'));return true}
+  if(m==='circle'){if(!ui.pts.length){ui.pts=[pt];refresh();return true}const c=ui.pts[0],r=Math.hypot(pt.x-c.x,pt.y-c.y)+wdLoc()*wdSg();if(r<100){toast(t('arc_small'));return true}
+    const pts=arcPts([c.x,c.y],r,Math.atan2(pt.y-c.y,pt.x-c.x),2*Math.PI).slice(0,-1);edit(()=>{for(const e of wallsAlong(v,pts,true,1))P.els.push(wdNew(e))});ui.pts=[];refresh();return true}          /* V1.199: a circle faces out (in after Space) */
   if(m==='arc'){if(ui.pts.length<2){if(ui.pts.length&&Math.hypot(pt.x-ui.pts[0].x,pt.y-ui.pts[0].y)<20)return true;ui.pts=ui.pts.concat([pt]);refresh();return true}
-    const a=ui.pts[0],b=ui.pts[1],A=arc3([a.x,a.y],[b.x,b.y],[pt.x,pt.y],ui.opt.wallLoc==='e'?-wallT()/2:ui.opt.wallLoc==='i'?wallT()/2:0);if(!A){toast(t('arc_line'));return true}
-    edit(()=>{for(const e of wallsAlong(v,A.pts,false,1))P.els.push(e)});ui.pts=ui.opt.chain?[b]:[];refresh();return true}
+    const a=ui.pts[0],b=ui.pts[1],A=wdArc([a.x,a.y],[b.x,b.y],[pt.x,pt.y]);if(!A){toast(t('arc_line'));return true}
+    edit(()=>{for(const e of wallsAlong(v,A.pts,false,1))P.els.push(wdNew(e))});ui.pts=ui.opt.chain?[b]:[];refresh();return true}
   return false}
 /* a straight wall drawn along a face: its centre line is moved off the drawn line, and the corner with the wall drawn just before is closed */
-function wallLocApply(e,a,pt){const o=wallLocOff();if(!o){ui.wprev=null;return}const q=offSeg([a.x,a.y],[pt.x,pt.y],o);e.x1=q[0][0];e.y1=q[0][1];e.x2=q[1][0];e.y2=q[1][1];
+function wallLocApply(e,a,pt){const o=wallLocOff(),rv=!wdOn()&&!wdCw(e);          /* V1.199 rv: the wall is turned round, its exterior to the left of the direction of drawing */
+  if(!o){ui.wprev=null;if(rv)wdSwap(e);return}const q=offSeg([a.x,a.y],[pt.x,pt.y],o);let p0=q[0];
   const pv=ui.wprev,pw=pv&&Math.hypot(pv.end[0]-a.x,pv.end[1]-a.y)<1?P.els.find(x=>x.id===pv.id):null;
-  if(pw){const X=lineX([pw.x1,pw.y1],[pw.x2,pw.y2],q[0],q[1]);if(X&&Math.hypot(X[0]-a.x,X[1]-a.y)<4*Math.abs(o)+50){pw.x2=X[0];pw.y2=X[1];e.x1=X[0];e.y1=X[1]}}ui.wprev={id:e.id,end:[pt.x,pt.y]}}
+  if(pw){const X=lineX([pw.x1,pw.y1],[pw.x2,pw.y2],q[0],q[1]);if(X&&Math.hypot(X[0]-a.x,X[1]-a.y)<4*Math.abs(o)+50){if(pv.k===0){pw.x1=X[0];pw.y1=X[1]}else{pw.x2=X[0];pw.y2=X[1]}p0=X}}
+  e.x1=p0[0];e.y1=p0[1];e.x2=q[1][0];e.y2=q[1][1];if(rv)wdSwap(e);ui.wprev={id:e.id,end:[pt.x,pt.y],k:rv?0:1}}          // k: the end of the wall where the drawing stopped
 /* preview of the arc, circle and pick modes */
-function wallModePreview(ctx,v,nav,g,w,pt,ac){const m=drawMode(),band=pts=>{ctx.save();ctx.strokeStyle=ac;ctx.globalAlpha=0.4;ctx.lineWidth=Math.max(2,wallT()*nav.s);ctx.lineJoin='round';g.path(pts,true);ctx.stroke();ctx.globalAlpha=1;ctx.lineWidth=1;g.path(pts,true);ctx.stroke();ctx.restore()};
-  if(m==='pickl'){const k=pickWallLine(v,w);if(!k)return true;const raw=k.arc?k.arc(0):[k.a,k.b];ctx.save();ctx.strokeStyle=C.hot;ctx.lineWidth=2.4;g.path(raw,true);ctx.stroke();ctx.restore();band(pickWallPath(v,w,k).pts);return true}
-  if(m==='circle'){if(!ui.pts.length)return true;const c=ui.pts[0],r=Math.hypot(pt[0]-c.x,pt[1]-c.y);if(r<50)return true;const pts=arcPts([c.x,c.y],r,Math.atan2(pt[1]-c.y,pt[0]-c.x),2*Math.PI);band(pts);ctx.save();ctx.strokeStyle=ac;ctx.lineWidth=1;g.dash([2,1.4]);g.seg([c.x,c.y],pt);ctx.restore();
-    g.text('R '+(ui.typed?ui.typed+'▏':fmtLen(r))+' '+unitName(),[(c.x+pt[0])/2,(c.y+pt[1])/2-4*v.scale],2.8,{color:ac,mono:true,halo:true});return true}
+function wallModePreview(ctx,v,nav,g,w,pt,ac){const m=drawMode(),band=pts=>{ctx.save();ctx.strokeStyle=ac;ctx.globalAlpha=0.4;ctx.lineWidth=Math.max(2,wallT()*nav.s);ctx.lineJoin='round';g.path(pts,true);ctx.stroke();ctx.globalAlpha=1;ctx.lineWidth=1;g.path(pts,true);ctx.stroke();ctx.restore()},thin=pts=>{ctx.save();ctx.strokeStyle=ac;ctx.lineWidth=1;g.path(pts,true);ctx.stroke();ctx.restore()};          /* V1.199: the band stands where the wall will, the double arrow on its exterior side */
+  if(m==='pickl'){const k=pickWallLine(v,w);if(!k)return true;const raw=k.arc?k.arc(0):[k.a,k.b];ctx.save();ctx.strokeStyle=C.hot;ctx.lineWidth=2.4;g.path(raw,true);ctx.stroke();ctx.restore();const path=pickWallPath(v,w,k),Q=path.pts;band(Q);
+    if(Q.length>1){const i=Math.max(1,Q.length>>1),p=Q[i-1],q=Q[i],x=path.ext({x1:p[0],y1:p[1],x2:q[0],y2:q[1]});wdMark(ctx,g,nav,[(p[0]+q[0])/2,(p[1]+q[1])/2],x[0],x[1],ac)}return true}
+  if(m==='circle'){if(!ui.pts.length)return true;const c=ui.pts[0],r=Math.hypot(pt[0]-c.x,pt[1]-c.y);if(r<50)return true;const a0=Math.atan2(pt[1]-c.y,pt[0]-c.x),rc=Math.max(50,r+wdLoc()*wdSg());band(arcPts([c.x,c.y],rc,a0,2*Math.PI));if(rc!==r)thin(arcPts([c.x,c.y],r,a0,2*Math.PI));ctx.save();ctx.strokeStyle=ac;ctx.lineWidth=1;g.dash([2,1.4]);g.seg([c.x,c.y],pt);ctx.restore();
+    g.text('R '+(ui.typed?ui.typed+'▏':fmtLen(r))+' '+unitName(),[(c.x+pt[0])/2,(c.y+pt[1])/2-4*v.scale],2.8,{color:ac,mono:true,halo:true});if(rc*nav.s>=30)wdMark(ctx,g,nav,[c.x-rc*Math.cos(a0),c.y-rc*Math.sin(a0)],-Math.cos(a0)*wdSg(),-Math.sin(a0)*wdSg(),ac);return true}
   if(m==='arc'){const n=ui.pts.length;if(!n)return true;const a=ui.pts[0];if(n===1){ctx.save();ctx.strokeStyle=ac;ctx.lineWidth=1;g.dash([2,1.4]);g.seg([a.x,a.y],pt);ctx.restore();return true}
-    const b=ui.pts[1],A=arc3([a.x,a.y],[b.x,b.y],pt,0);if(A){band(A.pts);g.text('R '+fmtLen(A.r)+' '+unitName(),[A.c[0],A.c[1]],2.8,{color:ac,mono:true,halo:true})}else{ctx.save();ctx.strokeStyle=ac;g.seg([a.x,a.y],[b.x,b.y]);ctx.restore()}return true}
+    const b=ui.pts[1],A=wdArc([a.x,a.y],[b.x,b.y],pt);if(A){band(A.pts);if(A.r!==A.r0)thin(arcPts(A.c,A.r0,A.a0,A.sw));g.text('R '+fmtLen(A.r0)+' '+unitName(),[A.c[0],A.c[1]],2.8,{color:ac,mono:true,halo:true});
+      if(A.r*Math.abs(A.sw)*nav.s>=44){const am=A.a0+A.sw/2,k=(A.sw>0?1:-1)*wdSg();wdMark(ctx,g,nav,[A.c[0]+A.r*Math.cos(am),A.c[1]+A.r*Math.sin(am)],Math.cos(am)*k,Math.sin(am)*k,ac)}}else{ctx.save();ctx.strokeStyle=ac;g.seg([a.x,a.y],[b.x,b.y]);ctx.restore()}return true}
   return false}
 
 /* ===== 66 detail components, repeating details, insulation: drawing, tools, properties (the geometry is in 26-dcomp.js) ===== */
@@ -11921,7 +11933,7 @@ function ribbonPin(){const el=$('#ribbon'),c=el&&el.querySelector('.rctx');if(c)
 function toolTitle(){return ui.tool==='knote'?t(knUser()?'a_knuser':knMatK()?'a_knmat':'a_knel'):ui.tool==='beam'&&braceMode()?t('a_brace'):ui.tool==='duct'&&defType('duct').shape==='flex'?t('a_flexduct'):ui.tool==='pipe'&&pipeFlexT(defType('pipe'))?t('a_flexpipe'):t('t_'+ui.tool)}
 const lsSel=()=>`<select data-opt="lineStyle" id="opt_lineStyle" data-re="1">${lsOpts().map(q=>`<option value="${q[0]}"${ui.opt.lineStyle===q[0]?' selected':''}>${esc(q[1])}</option>`).join('')}</select>`;          // the line styles of the project, its own among them
 function renderOptbar(){const tl=ui.tool,o=ui.opt,chk=(k,l)=>`<label><input type="checkbox" id="opt_${k}" data-opt="${k}"${o[k]?' checked':''}>${t(l)}</label>`,sel=(k,opts)=>`<select data-opt="${k}" id="opt_${k}" data-re="1">${opts.map(q=>`<option value="${q[0]}"${o[k]===q[0]?' selected':''}>${t(q[1])}</option>`).join('')}</select>`,who=`<span class="who">${esc(toolTitle())}</span>`;let h;
-  if(tl==='wall'){const m=drawMode(),loc=`<label>${t('o_wallloc')}</label>`+sel('wallLoc',[['c','wl_c'],['e','wl_e'],['i','wl_i']]);
+  if(tl==='wall'){const m=drawMode(),loc=`<label>${t('o_wallloc')}</label>`+sel('wallLoc',[['c','wl_c'],['e','wl_e'],['i','wl_i']])+(wdCan()?chk('wflip','o_wflip'):'');
     h=who+loc+(m==='pickl'?`<label>${t('o_dist')}<input type="number" id="optWallOff" data-opt="wallOff" value="${o.wallOff||0}" step="50" min="0"> ${t('u_mm')}</label><span>${t('o_pickl')}</span>`:m==='arc'||m==='circle'?`<label>${t('o_arcseg')}<input type="number" id="optArcSeg" data-opt="arcSeg" value="${o.arcSeg||6}" step="1" min="3" max="45"> °</label>`+(m==='arc'?chk('chain','o_chain'):'')+`<span>${t(m==='arc'?'o_arc':'o_circle')}</span>`:(m==='line'?chk('chain','o_chain'):'')+`<span>${t('o_typelen',unitName())}</span>`)}
   else if(tl==='mline')h=who+`<label>${t('p_lstyle')}</label>`+lsSel()+(drawMode()==='rect'?'':chk('chain','o_chain'))+`<span>${t('o_typelen',unitName())}</span>`;
   else if(XT[tl])h=XT[tl].opt?XT[tl].opt(who,chk,sel):who;
@@ -14593,7 +14605,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=208,V1_NAME='V1.198';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=209,V1_NAME='V1.199';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31408,7 +31420,8 @@ Object.assign(STR,{t_shl:['แสดงเส้นที่ถูกบัง (
    What is made from a face of a mass remembers it: e.mf=[mass id, face, level].  face: 0.. = the side from point k of the outline to the next one,
    -1 = the top (a roof), -2 = a mass floor (a floor).  level: the mass floor a wall or a floor belongs to; a curtain system has none, it takes the whole height of its face.
    Update to Face lays them on the mass again after it has changed; a mass that is gone, or a face that is, lets go of them (they stay where they are).
-   Walls stand inside the face with their outer face on it, as Wall by Face always did; a roof sits on the top face with its underside on it. */
+   Walls stand inside the face with their outer face on it, as Wall by Face always did (V1.199: and that face is their exterior: where the outline of the mass
+   has the inside on its left they run against it, so that the left of their line looks out; a curtain system runs with the outline as before); a roof sits on the top face with its underside on it. */
 const mfH=T=>((T&&+T.thickness)||200)/2,mfB=e=>!!e&&Array.isArray(e.mf),mfMassOk=m=>!!m&&m.cat==='mass'&&Array.isArray(m.pts)&&m.pts.length>=3;
 const mfHas=(m,cat,k,lv)=>P.els.some(e=>e.cat===cat&&mfB(e)&&e.mf[0]===m.id&&e.mf[1]===k&&(e.mf[2]||0)===lv);
 /* half the thickness of the wall on side j of a mass at a level (a curtain system counts at every level), 0 where the side is bare; add: walls about to be made */
@@ -31435,9 +31448,10 @@ function mfMake(kind,faces){const ids=[];let n=0,sk=0,none=0;
       for(const k of [...new Set(ks)].sort((a,b)=>a-b)){if(!(k>=0&&k<np))continue;F.forEach((f,i)=>{if(mfHas(m,'wall',k,f.id)){sk++;return}const up=cs?null:F[i+1]||null,ht=Math.round((up?up.z:zr[1])-f.z);if(ht<100)return;add.set(k+'|'+f.id,h);todo.push({k,f,up,ht})})}
       if(!todo.length)continue;const off0=mfHalf(m),off=mfHalf(m,add),old=P.els.filter(e=>e.cat==='wall'&&mfB(e)&&e.mf[0]===m.id);
       for(const e of old){const k=e.mf[1],lv=e.mf[2]||0,he=mfH(typ(P,e));if(!(k>=0&&k<np))continue;const a=mfRnd(mfLine(m,k,he,off0,lv)),b=mfRnd(mfLine(m,k,he,off,lv));          // a neighbour that is on its face: its end comes to the new corner
-        if(a[0]===e.x1&&a[1]===e.y1&&a[2]===e.x2&&a[3]===e.y2&&(a[0]!==b[0]||a[1]!==b[1]||a[2]!==b[2]||a[3]!==b[3])&&Math.hypot(b[2]-b[0],b[3]-b[1])>=50){e.x1=b[0];e.y1=b[1];e.x2=b[2];e.y2=b[3]}}
+        const rv=a[0]===e.x2&&a[1]===e.y2&&a[2]===e.x1&&a[3]===e.y1;          /* V1.199: on its face the other way round, as a wall by face now is made (its exterior on the face) and as Flip leaves one */
+        if((rv||(a[0]===e.x1&&a[1]===e.y1&&a[2]===e.x2&&a[3]===e.y2))&&(a[0]!==b[0]||a[1]!==b[1]||a[2]!==b[2]||a[3]!==b[3])&&Math.hypot(b[2]-b[0],b[3]-b[1])>=50){if(rv){e.x2=b[0];e.y2=b[1];e.x1=b[2];e.y1=b[3]}else{e.x1=b[0];e.y1=b[1];e.x2=b[2];e.y2=b[3]}}}
       F.forEach(f=>{for(const q of todo){if(q.f!==f)continue;const r=mfRnd(mfLine(m,q.k,h,off,f.id));if(Math.hypot(r[2]-r[0],r[3]-r[1])<50)continue;
-          const o={id:P.seq++,cat:'wall',type:T.id,level:cs?m.level:f.id,x1:r[0],y1:r[1],x2:r[2],y2:r[3],baseOff:cs?(m.baseOff||0):0,top:q.up?q.up.id:0,topOff:0,height:q.ht,mf:cs?[m.id,q.k]:[m.id,q.k,f.id]};P.els.push(o);ids.push(o.id);n++}})}});
+          const o={id:P.seq++,cat:'wall',type:T.id,level:cs?m.level:f.id,x1:r[0],y1:r[1],x2:r[2],y2:r[3],baseOff:cs?(m.baseOff||0):0,top:q.up?q.up.id:0,topOff:0,height:q.ht,mf:cs?[m.id,q.k]:[m.id,q.k,f.id]};if(!cs&&area2(m.pts)>0)wdSwap(o);P.els.push(o);ids.push(o.id);n++}})}});          /* V1.199: where the outline of the mass has the inside on its left, a wall runs against it, so that its exterior (the left of its line) is on the face */
   toast(n?t(kind==='roof'?'mf_rf_done':kind==='cs'?'mf_cs_done':'mass_wl',n):t(sk?'mf_has':none?'mass_none':'mf_pick0'));return{n,sk,none,ids}}
 /* Update to Face: one element laid on its face again; false when the face is no longer there */
 function mfFit(e,H){const f=e.mf,m=IDX.get(f[0]);if(!mfMassOk(m))return false;const k=f[1],lv=f[2]||0,zr=zRange(P,m);
@@ -31815,13 +31829,15 @@ Object.assign(STR,{p_ulo:['ทิศทางแบบรองพื้น','Un
    The exterior of a wall is the side n = (-uy, ux) of the line from its first end to its second (called the left elsewhere in this file; on the screen, where y
    runs down, it is the right-hand side of that direction): there lie the first layer of its structure and the sweeps of its exterior face.
    Flip (the double arrow beside a selected wall, Space, or the button of the Modify panel) turns the wall round: wfRev lets its two ends change places, and what is
-   measured along it or from one of its faces is counted from the other end and the other face, so the wall, its doors, windows and openings, the text on it, its
-   tags and the dimensions to it stay where they are.  What changes is the side its layers face, and its sweeps and reveals go with their face (those placed round
+   measured along it or from one of its faces is counted from the other end and the other face, so the wall, its doors, windows and openings, the text, the decals
+   and the paint on it, its tags and the dimensions to it stay where they are.  What changes is the side its layers face, and its sweeps and reveals go with their face (those placed round
    a room stay in the room).  A stacked wall keeps its own flip (190: the rows off its line change sides); a curtain wall and a wall divided into parts are left.
    Mirror used to leave a wall turned inside out (its ends were mirrored, so its left became the wrong side): it now turns the mirrored wall round as well.
    The walls of a group are the exception to both: the copies of a group are matched end for end (grpPlace), so a wall of a group is flipped in Edit Group
    (every copy follows) and a mirrored copy of a group keeps the ends, and so the sides, it had before this round. */
-const WF_R=x=>Math.round(x*1e6)/1e6;
+const WF_R=x=>Math.round(x*1e6)/1e6,WF_K={L:'R',R:'L',E0:'E1',E1:'E0'};
+/* the key of a painted face (4836: L and R the sides, E0 and E1 the ends, 'L#3' a region of a split face) once the wall has turned round; in a mirror the sides keep their names (the mirror image of the left is the left) */
+const wfKey=(k,mir)=>String(k).replace(/^(L|R|E0|E1)(?=#|$)/,m=>mir&&(m==='L'||m==='R')?m:WF_K[m]);
 /* why wall e cannot be turned round: '' when it can */
 const wfPlain=e=>!!e&&e.cat==='wall'&&!e.stk&&!e.prt&&(typ(P,e)||{}).kind!=='curtain';          // a basic wall, in one piece
 const wfGrp=e=>!!e.grp&&!(ui.ge&&ui.ge.g===e.grp);          // of a group that is not being edited: the copies of a group stay alike, so its walls are turned in Edit Group
@@ -31832,10 +31848,13 @@ function wfRev(W,mir){const ids=new Set(),hs=new Set(),tg=[];
   for(const e of W){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1),x=e.x1,y=e.y1;e.x1=e.x2;e.y1=e.y2;e.x2=x;e.y2=y;ids.add(e.id);tg.push(e.id);if(e.grp){if(e.wfp)delete e.wfp;else e.wfp=1}
     for(const k of ['wj','wjc'])if(Array.isArray(e[k]))e[k]=[e[k][1]||0,e[k][0]||0];
     if(e.prof&&typeof e.prof==='object')for(const k of ['t','b'])if(Array.isArray(e.prof[k]))e.prof[k]=e.prof[k].map(p=>[WF_R(1-(+p[0]||0)),p[1]]).reverse();
+    if(e.paint&&typeof e.paint==='object'&&!Array.isArray(e.paint)){const o={};for(const k in e.paint)o[wfKey(k,mir)]=e.paint[k];e.paint=o}          // Paint and Split Face: on the faces they were on
+    if(Array.isArray(e.split))for(const r of e.split){if(!r)continue;r.f=wfKey(r.f,mir);if(Array.isArray(r.pts))r.pts=r.pts.map(q=>[WF_R(L-(+q[0]||0)),q[1]])}
     for(const h of P.els){if(h.host!==e.id)continue;
       if(swpIs(h)){if(h.dir==='v'){h.pos=WF_R(L-(+h.pos||0));if(h.cat==='wsweep'){if(h.pf)delete h.pf;else h.pf=1}}else if(h.len>0)h.pos=WF_R(L-(+h.pos||0)-(+h.len));
         if(mir?mir.has(h.id):h.len>0){if(h.side==='i')delete h.side;else h.side='i'}}
-      else if(HOSTED.includes(h.cat)){hs.add(h.id);tg.push(h.id);h.pos=WF_R(L-(+h.pos||0));if(h.cat!=='opening'){h.flipF=!h.flipF;if(h.cat==='door')h.flipH=!h.flipH}}
+      else if(HOSTED.includes(h.cat)){hs.add(h.id);tg.push(h.id);h.pos=WF_R(L-(+h.pos||0));if(h.cat!=='opening'){h.flipF=!h.flipF;if(h.cat==='door')h.flipH=!h.flipH;else if(h.flipH)delete h.flipH;else h.flipH=true}}
+      else if(GEOM[h.cat]==='host'){h.pos=WF_R(L-(+h.pos||0));if(!mir||mir.has(h.id)){if(h.flipF)delete h.flipF;else h.flipF=true}}          // a decal: at the same place of the same face (a mirror does not take it along, so its face is the mirror image as it is)
       else if(h.cat==='mtext'&&isFinite(h.hs)){h.hs=WF_R(L-h.hs);if(!mir&&(h.side===1||h.side===-1))h.side=-h.side}}}
   if(ids.size)wfRefs(ids,hs,tg,mir)}
 /* what points at the walls ids (and at hs, what they host; tg: both) after they have turned round: tags, the references of dimensions and work planes (ends,
@@ -31876,6 +31895,49 @@ Object.assign(STR,{a_wflip:['กลับด้านผนัง (Flip)','Flip 
   wf_grp:['ผนังอยู่ในกลุ่ม (Group): ดับเบิลคลิกกลุ่มเพื่อแก้ไขกลุ่มก่อน แล้วจึงกลับด้าน กลุ่มชุดอื่นจะเปลี่ยนตาม','The wall is in a group: double-click the group to edit it, then flip. The other copies of the group follow'],
   wf_pin:['ผนังที่ล็อกตำแหน่งไว้กลับด้านไม่ได้ (กด {k:@unpin} เพื่อปลดล็อก)','A pinned wall cannot be flipped ({k:@unpin} to unpin)'],
   wf_cw:['ผนังกระจกไม่มีชั้นวัสดุให้กลับด้าน','A curtain wall has no layers to flip'],wf_prt:['ผนังที่แบ่งเป็น Parts กลับด้านไม่ได้ ให้ลบ Parts ก่อน','A wall divided into parts cannot be flipped: remove its parts first']});
+
+/* ===== 199 The exterior of a wall as it is drawn (V1.199; Revit: walls drawn clockwise face out, and Space flips a wall while it is drawn) =====
+   The exterior of a wall is the side n = (-uy, ux) of its line (198), which on the screen is the right of that line.  The wall tool kept the ends of a wall in the
+   order they were clicked, so the exterior came on the right of the direction of drawing: walls drawn clockwise, the four of Rectangle, a circle and the walls on
+   the faces of a mass all had it inside, while the location line (65) took it to be on the left, as Revit does.
+   Now a wall that is drawn is turned round as it is made (wdNew): its exterior is on the left of the direction of drawing as the screen shows it: outside when the
+   walls go clockwise, outside for Rectangle and Circle, on the left along an arc.  Pick Lines: on the side of the pointer, or on the picked line when the location
+   line makes that line the exterior face.  Space, or the box of the options bar, puts it on the other side for the walls drawn next (ui.opt.wflip, for as long as
+   the tool is on).  The preview stands where the wall will (off the drawn line when that line is a face) and carries the double arrow of 198 on the exterior side.
+   A wall on a face of a mass (194) has its exterior on that face.  Walls that are there already keep their sides: Flip (198) turns them.
+   A curtain wall keeps the ends it was drawn with (wdCw). */
+const wdOn=()=>!!ui.opt.wflip,wdSg=()=>wdOn()?-1:1;
+const wdSwap=e=>{const x=e.x1,y=e.y1;e.x1=e.x2;e.y1=e.y2;e.x2=x;e.y2=y;return e};
+/* a curtain wall has no layers to face either way: it keeps its ends as they were clicked, so that its grid starts where the drawing did (Revit: Justification Beginning) */
+const wdCw=e=>(typ(P,e)||{}).kind==='curtain';
+/* a wall just made along the direction of drawing: turned so that its exterior is on the left of that direction on the screen, or left as it is after Space */
+const wdNew=e=>wdOn()||wdCw(e)?e:wdSwap(e);
+/* a wall just made whose exterior is to look along (vx, vy) */
+const wdFace=(e,vx,vy)=>(!wdCw(e)&&-(e.y2-e.y1)*vx+(e.x2-e.x1)*vy<0?wdSwap(e):e);
+/* the location line as an offset of the centre line from the drawn line, + to the left of the direction of drawing on the screen (65: offSeg) when the exterior is there */
+const wdLoc=()=>ui.opt.wallLoc==='e'?-wallT()/2:ui.opt.wallLoc==='i'?wallT()/2:0;
+const wdFaceLoc=()=>ui.opt.wallLoc==='e'||ui.opt.wallLoc==='i';
+/* Pick Lines along a face: the location line says which face the picked line is and the pointer on which side the wall stands, so there is nothing left to flip */
+const wdCan=()=>!(drawMode()==='pickl'&&wdFaceLoc());
+/* the arc through three clicks: the exterior is on the left of the way from a to b, so a face that is drawn is the outer one of a wall that goes clockwise on
+   the screen and the inner one of a wall that goes the other way (Finish Face: Exterior; the reverse for Interior) */
+function wdArc(a,b,p){const A=arc3(a,b,p,0),o=wdLoc()*wdSg();return A&&o?arc3(a,b,p,(A.sw>0?1:-1)*o):A}
+function wdSpace(){if(!wdCan()){toast(t('wd_pickloc'));return}ui.opt.wflip=!ui.opt.wflip;renderOptbar();hint();redraw()}
+/* the double arrow on the exterior side of a wall that is being drawn: at m on its centre line, the exterior along (vx, vy) */
+function wdMark(ctx,g,nav,m,vx,vy,col){const l=Math.hypot(vx,vy);if(!(l>0))return;const d=wallT()/2+15/nav.s,x=g.X(m[0]+vx/l*d),y=g.Y(m[1]+vy/l*d);flipGlyph(ctx,x,y,Math.atan2(vy,vx),col,C.paper);ui.wdg={x,y,vx:vx/l,vy:vy/l}}
+/* preview of a straight wall and of Rectangle; true when the tool is in one of those modes */
+function wdPreview(ctx,v,nav,g,pt,a,ac,lenLabel){const m=drawMode();ui.wdg=null;if(m!=='line'&&m!=='rect')return false;if(!a)return true;const T=wallT(),o=wdLoc()*wdSg(),sg=wdSg();
+  ctx.save();ctx.strokeStyle=ac;ctx.lineWidth=Math.max(2,T*nav.s);ctx.globalAlpha=0.4;
+  if(m==='rect'){const x0=Math.min(a.x,pt[0])-o,x1=Math.max(a.x,pt[0])+o,y0=Math.min(a.y,pt[1])-o,y1=Math.max(a.y,pt[1])+o,w=x1-x0,h=y1-y0;          // the centre lines: half a wall inside the drawn rectangle when that is the outer face
+    if(w>1&&h>1)ctx.strokeRect(g.X(x0),g.Y(y0),w*nav.s,h*nav.s);ctx.globalAlpha=1;ctx.lineWidth=1;ctx.strokeRect(g.X(a.x),g.Y(a.y),g.X(pt[0])-g.X(a.x),g.Y(pt[1])-g.Y(a.y));ctx.restore();
+    lenLabel([a.x,a.y],[pt[0],a.y],ac);lenLabel([pt[0],a.y],pt,ac);
+    if(w*nav.s>=88&&h>1){const top=a.y<=pt[1],dx=pt[0]>=a.x?1:-1;wdMark(ctx,g,nav,[a.x+dx*Math.min(w/4,(w*nav.s/2-22)/nav.s),top?y0:y1],0,(top?-1:1)*sg,ac)}return true}
+  const L=Math.hypot(pt[0]-a.x,pt[1]-a.y);if(L<1){ctx.restore();return true}const q=o?offSeg([a.x,a.y],pt,o):[[a.x,a.y],pt];
+  g.seg(q[0],q[1]);ctx.globalAlpha=1;ctx.lineWidth=1;g.seg([a.x,a.y],pt);ctx.restore();lenLabel([a.x,a.y],pt,ac);
+  if(L*nav.s>=44){const ux=(pt[0]-a.x)/L,uy=(pt[1]-a.y)/L,d=L/2-Math.min(L*nav.s/2-22,96)/nav.s;wdMark(ctx,g,nav,[q[0][0]+ux*d,q[0][1]+uy*d],uy*sg,-ux*sg,ac)}return true}
+{const f0=hint;hint=msg=>{f0(msg);if(!msg&&ui.tool==='wall'&&!ui.zoomr&&wdCan()){const el=$('#prompt');if(el)el.textContent+='   ·   '+t(wdOn()?'h_wdflip1':'h_wdflip')}}}
+Object.assign(STR,{o_wflip:['ด้านนอกอยู่อีกฝั่ง (Space)','Exterior on the other side (Space)'],h_wdflip:['Space: สลับด้านนอกของผนัง','Space: flip the exterior side'],h_wdflip1:['ด้านนอกของผนังอยู่อีกฝั่งแล้ว (Space เพื่อสลับกลับ)','The exterior is on the other side (Space to flip back)'],
+  wd_pickloc:['เมื่อเส้นที่เลือกเป็นผิวผนัง ด้านนอกของผนังเป็นไปตาม Location Line: ชี้ฝั่งที่ต้องการให้ตัวผนังอยู่','With the picked line as a face, the location line decides the exterior: point at the side the wall should stand on']});
 
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
@@ -33749,6 +33811,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.196 · พารามิเตอร์ของโครงการในกรอบชื่อแบบ เหมือน Revit · [[a_pparams]] มีหมวดใหม่ [[cat_pinfo]]: พารามิเตอร์ของหมวดนี้มีค่าเดียวทั้งโครงการ กรอกที่ [[a_info]] (แท็บ [[tab_manage]]) ใต้กลุ่มที่ตั้งไว้ · ในกรอบชื่อแบบที่วาดเอง ([[a_tblock]] › [[tbl_custom]]) ข้อความใส่ชื่อพารามิเตอร์ของหมวด ชีต หรือ [[cat_pinfo]] ในวงเล็บปีกกาได้ เช่น {สถานะแบบ} หรือ {Drawing Status}: ค่าของชีตมาจากคุณสมบัติของแต่ละแผ่นงาน ค่าของโครงการมาจาก [[a_info]] ถ้าพารามิเตอร์ใช้ทั้งสองหมวด แผ่นงานที่ไม่ได้กรอกจะใช้ค่าของโครงการ · รายการ [[tb_addf]] ในหน้าต่างกรอบชื่อแบบรวมช่องข้อมูลของโปรแกรมและพารามิเตอร์ทั้งหมดไว้ให้เลือก ใส่ลงในข้อความที่เลือกอยู่หรือเป็นข้อความใหม่ · ค่าแบบ ใช่/ไม่ใช่ แสดงเป็นคำ ตัวเลขแสดงโดยไม่มีหน่วย (พิมพ์หน่วยต่อท้ายในข้อความเอง) · ชื่อที่ไม่มีพารามิเตอร์ตรงกันจะแสดงตามที่พิมพ์ · ออก PDF และ DXF ของแผ่นงานตามค่าเดียวกัน
 - V1.197 · [[p_underlay]] แสดงทั้งชั้นเหมือน Revit ไม่ใช่แค่เส้นผนัง: ผนังพร้อมประตูหน้าต่าง เสา พื้น บันได ทางลาด ราวกันตก เฟอร์นิเจอร์ คาน ฐานราก หลังคา และงานระบบ (ท่อลม ท่อน้ำ เครื่องจักร สุขภัณฑ์) ของชั้นที่เลือก เป็นสีจางอยู่ใต้แปลน · [[p_ulo]] ในคุณสมบัติของมุมมอง: [[ulo_dn]] เห็นแบบแปลนพื้น หรือ [[ulo_up]] เห็นแบบแปลนฝ้า (ฝ้าเพดาน ดวงโคม หัวจ่ายลม) · สิ่งที่แปลนแสดงเองอยู่แล้วไม่วาดซ้ำ และสิ่งที่ซ่อนไว้ในมุมมอง (ทีละชิ้น ทั้งหมวด ด้วยตัวกรอง หรือซ่อนชั่วคราว) ก็ไม่แสดงในแบบรองพื้น · เมื่อเปิด [[sop_ul]] คลิกชิ้นงานของแบบรองพื้นได้ทุกหมวด เพื่อดูคุณสมบัติ ย้าย หรือลบจากแปลนนี้ ส่วนการลากกรอบเลือกยังไม่เก็บชิ้นของแบบรองพื้นเหมือนเดิม · ลายเส้นและความจางตั้งที่ [[a_htset]] · DXF ออกแบบรองพื้นทั้งหมดบนเลเยอร์ X-UNDERLAY · ไม่แสดงในแบบรองพื้น: ป้ายและเส้นบอกระยะ ห้อง กริด แบบ CAD ที่ลิงก์ และพื้นดิน
 - V1.198 · [[a_wflip]] เหมือน Revit: เลือกผนังแล้วกด Space หรือคลิกลูกศรสองหัวข้างผนัง หรือปุ่ม [[a_wflip]] ในแผง แก้ไข เพื่อสลับด้านนอกกับด้านในของผนัง · ด้านนอกคือฝั่งของชั้นวัสดุแรกใน [[a_wlayers]] และของบัวด้านนอก ลูกศรอยู่ฝั่งด้านนอกเสมอ · ตัวผนัง ประตู หน้าต่าง ช่องเปิด ข้อความ 3 มิติ ป้าย และเส้นบอกระยะอยู่ที่เดิม · บัวและร่องผนังไปกับผิวของมัน ส่วนบัวที่วางรอบห้องยังอยู่ในห้องเดิม · ผนังซ้อนชนิดย้ายแถวที่เยื้องไปอีกฝั่ง · ผนังกระจกและผนังที่แบ่งเป็น Parts ไม่ถูกกลับ · ผนังในกลุ่ม (Group) ให้กลับใน [[a_gedit]] แล้วกลุ่มชุดอื่นเปลี่ยนตาม · [[t_mirror]] และ [[t_mirrorp]]: ผนังที่สะท้อนแล้วมีด้านนอกอยู่ถูกฝั่งของภาพสะท้อน (เดิมชั้นวัสดุกลับด้าน)
+- V1.199 · [[t_wall]] เหมือน Revit: ด้านนอกของผนังที่วาดใหม่อยู่ทางซ้ายของทิศที่ลาก วาดวนตามเข็มนาฬิกาแล้วด้านนอกอยู่นอกอาคาร ส่วนสี่เหลี่ยมและวงกลมหันด้านนอกออกเสมอ · กด Space ระหว่างวาด (หรือติ๊ก [[o_wflip]] ที่แถบตัวเลือก) เพื่อให้ด้านนอกอยู่อีกฝั่ง มีผลจนกว่าจะออกจากเครื่องมือ · ภาพตัวอย่างมีลูกศรสองหัวอยู่ฝั่งด้านนอก และอยู่ตรงที่ผนังจะอยู่จริงเมื่อ [[o_wallloc]] เป็นผิวผนัง · เลือกเส้น (Pick Lines): ด้านนอกอยู่ฝั่งที่ชี้ หรืออยู่ที่เส้นที่เลือกเมื่อเส้นนั้นเป็นผิวด้านนอก · ผนังตามผิวมวล (Wall by Face) หันด้านนอกออกจากมวล และผนังรอบนอกของบ้านตัวอย่างหันด้านนอกออก · ผนังที่มีอยู่แล้วไม่เปลี่ยน ถ้าต้องการกลับให้เลือกแล้วกด Space ([[a_wflip]]) · [[a_wflip]] และ [[t_mirror]]: รูปติดผนัง (Decal) สีที่ทาบนผิว (Paint) และ Split Face อยู่บนผิวเดิมของมัน และบานกับมือจับของหน้าต่างอยู่ที่เดิม · หน้าต่างใน 3 มิติ: มือจับของบานเปิดและรางของบานเลื่อนอยู่ฝั่งที่หน้าต่างหัน (ฝั่งที่ชี้ตอนวาง เหมือนทิศเปิดของประตู) ย้ายได้ด้วย [[a_flipf]] และ [[a_fliph]]
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -34080,6 +34143,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.196 · Project parameters in title blocks, as in Revit. [[a_pparams]] has a new category, [[cat_pinfo]]: a parameter of it has one value for the whole project, typed in [[a_info]] ([[tab_manage]] tab) under the group it was given. In a title block drawn by hand ([[a_tblock]] › [[tbl_custom]]) a text can name a parameter of the category Sheets or [[cat_pinfo]] in braces, such as {Drawing Status}: a sheet's value comes from the Properties of each sheet, the project's from [[a_info]]; when a parameter is of both categories, a sheet left empty shows the project's value. The [[tb_addf]] list in the Title Block dialog offers every field of the program and every parameter, and puts the one chosen into the selected text or into a new one. Yes/No values are written as words, numbers without a unit (type the unit after the field). A name no parameter has is shown as typed. The PDF and DXF of a sheet show the same values
 - V1.197 · An [[p_underlay]] shows the whole level as in Revit, not only wall outlines: walls with their doors and windows, columns, floors, stairs, ramps, railings, furniture, beams, foundations, roofs and the building services (ducts, pipes, equipment, fixtures) of the chosen level, pale under the plan. [[p_ulo]] in the properties of the view: [[ulo_dn]] shows it as a floor plan, [[ulo_up]] as a ceiling plan (ceilings, lights, air terminals). What the plan shows itself is not drawn twice, and what the view hides (by element, by category, by a filter or temporarily) is hidden in the underlay too. With [[sop_ul]] on, a click picks any element of the underlay to see its properties, move it or delete it from this plan; a selection window still leaves the underlay out. Line pattern and paleness are set in [[a_htset]]. A DXF has all of the underlay on the layer X-UNDERLAY. Not in an underlay: tags and dimensions, rooms, grids, linked CAD drawings and the ground
 - V1.198 · [[a_wflip]] as in Revit: with walls selected press Space, click the double arrow beside the wall, or use [[a_wflip]] in the Modify panel to swap the exterior and the interior side. The exterior is the side of the first layer in [[a_wlayers]] and of the exterior sweeps; the arrows always stand on it. The wall itself, its doors, windows and openings, model text, tags and dimensions stay where they are. Sweeps and reveals go with their face; a sweep placed round a room stays in the room. A stacked wall moves its offset rows to the other side. Curtain walls and walls divided into parts are left. A wall of a group is flipped in [[a_gedit]], and the other copies follow. [[t_mirror]] and [[t_mirrorp]]: a mirrored wall now has its exterior on the right side of the mirror image (its layers used to come out reversed).
+- V1.199 · [[t_wall]] as in Revit: the exterior of a wall that is drawn is on the left of the direction of drawing, so walls drawn clockwise face out; Rectangle and Circle always face out. Press Space while drawing (or tick [[o_wflip]] on the options bar) to put the exterior on the other side; it lasts until the tool is left. The preview carries the double arrow on the exterior side and stands where the wall will when the [[o_wallloc]] is a face. Pick Lines: the exterior is on the side of the pointer, or on the picked line when that line is the exterior face. A wall by face has its exterior on the face of the mass, and the outer walls of the sample house face out. Walls that are there already do not change: select them and press Space ([[a_wflip]]) to turn them. [[a_wflip]] and [[t_mirror]]: decals, painted faces and split faces stay on the face they were on. The sashes and handles of windows stay where they were too. Windows in 3D: the handle of a casement and the tracks of sliding sashes are on the side the window faces (the side pointed at when it was placed, as the swing of a door is); [[a_flipf]] and [[a_fliph]] move them.
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -36126,6 +36190,9 @@ window.PenumBIM.r198={get P(){return P},ui,why:id=>wfWhy(IDX.get(id)),rev:(ids,m
   ref:r=>refPoint(r),tag:(id,vid)=>{const d=P.ann.find(a=>a.id===id),q=d&&tagGeo(d,viewById(vid));return q?{p:q.p,a:q.a}:null},dim:id=>{const d=P.ann.find(a=>a.id===id),G=d&&dimGeo(d);return G?{a:G.a,b:G.b,val:G.val}:null},
   mirror:(ids,ax,ay,bx,by)=>edit(()=>mirrorIds(ids,ax,ay,bx,by)),ctrls:()=>(ui.ctrls||[]).map(c=>({x:c.x,y:c.y,tip:c.tip})),mesh:id=>{const o=[];for(const m of MSm().items){if(m.id!==id||!m.t.length)continue;const b=[1e9,1e9,1e9,-1e9,-1e9,-1e9];let cx=0,cy=0,n=0;for(let i=0;i<m.t.length;i+=3){const x=m.t[i],z=m.t[i+1],y=m.t[i+2];b[0]=Math.min(b[0],x);b[1]=Math.min(b[1],y);b[2]=Math.min(b[2],z);b[3]=Math.max(b[3],x);b[4]=Math.max(b[4],y);b[5]=Math.max(b[5],z);cx+=x;cy+=y;n++}o.push({cat:m.cat,li:m.li==null?-1:m.li,n,b:b.map(v=>Math.round(v)),c:[Math.round(cx/n),Math.round(cy/n)]})}return o},
   json:()=>JSON.stringify(P),keys:()=>{const o=keyCmds().find(x=>x.c==='@wflip');return o?{name:o.name,paths:o.paths}:null},wp:vid=>{const v=viewById(vid);return v&&v.wp?JSON.parse(JSON.stringify(v.wp)):null}};
+window.PenumBIM.r199={get P(){return P},ui,on:()=>wdOn(),can:()=>wdCan(),glyph:()=>ui.wdg?Object.assign({},ui.wdg):null,ext:id=>{const e=IDX.get(id);if(!e)return null;const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;return[-(e.y2-e.y1)/L,(e.x2-e.x1)/L]},
+  fp:id=>{const f=FPm().get(id);return f?{poly:f.poly,h:f.g.h,L:f.g.L}:null},mfmake:(kind,faces)=>mfMake(kind,faces),sides:mid=>mfSides([IDX.get(mid)]),dcl:id=>{const G=dclGeo(IDX.get(id));return G?{a:G.a,b:G.b,n:G.n,z0:G.z0,z1:G.z1}:null},
+  pkey:(id,n)=>paintKey(P,IDX.get(id),n),ppt:(id,f,u,v)=>paintPoint(P,IDX.get(id),f,u,v),has:k=>Object.prototype.hasOwnProperty.call(STR,k),tri:id=>{const o=[];for(const m of MSm().items)if(m.id===id){const t=m.t;for(let i=0;i+8<t.length;i+=9){const q=[0,3,6].map(k=>[t[i+k],t[i+k+1],t[i+k+2]].map(x=>Math.round(x*10)/10).join(' ')).sort();o.push(q.join('|'))}}return o.sort()},json:()=>JSON.stringify(P)};
 window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
   put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
   pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
