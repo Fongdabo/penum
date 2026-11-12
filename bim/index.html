@@ -8893,6 +8893,7 @@ function rotateIds(ids,cx,cy,deg){const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.
   tagsFollow(ids,(q,loc)=>{if(!loc){const x=q.du*c-q.dn*s,y=q.du*s+q.dn*c;q.du=x;q.dn=y}})}
 function mirrorIds(ids,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1,fn=(x,y)=>{const tt=((x-ax)*dx+(y-ay)*dy)/l2,px=ax+dx*tt,py=ay+dy*tt;return[2*px-x,2*py-y]},axd=Math.atan2(dy,dx)*180/Math.PI;
   for(const id of expandSel(ids)){const e=IDX.get(id);if(e)mapPoints(e,fn,true,axd)}
+  {const S=new Set(expandSel(ids));wfRev([...S].map(id=>IDX.get(id)).filter(e=>wfPlain(e)&&!e.grp),S)}          /* V1.198: the mirror maps the ends of a wall, which leaves its left (the exterior) on the wrong side: turn it round (the walls of a group keep their ends: its copies are matched end for end) */
   const ml=Math.sqrt(l2),mx=dx/ml,my=dy/ml;tagsFollow(expandSel(ids),(q,loc)=>{if(loc)q.dn=-q.dn;else{const k=2*(q.du*mx+q.dn*my),x=k*mx-q.du,y=k*my-q.dn;q.du=x;q.dn=y}})}
 /* duplicate elements (hosted openings follow their walls); returns the new ids */
 function cloneIds(ids){const s=expandSel(ids),map=new Map(),out=[];CLMAP=map;
@@ -9877,6 +9878,7 @@ function nudgeEl(e,u,k){const x=IDX.get(e.id);if(!x||!isFinite(k)||Math.abs(k)<0
 
 /* ---------- Space on a selection: flip a door or window, turn components a quarter ---------- */
 function spaceFlip(){const els=[...ui.sel].map(id=>IDX.get(id)).filter(Boolean);
+  if(els.length&&els.every(x=>x.cat==='wall')){act('wflip');return}          /* V1.198 as in Revit: Space flips the selected walls */
   if(els.length===1&&els[0].cat==='door'){act('fliph');return}if(els.length===1&&els[0].cat==='window'){act('flipf');return}
   const pts=els.filter(x=>GEOM[x.cat]==='point'&&'rot' in x&&!x.pin&&x.cat!=='ductacc'&&x.cat!=='pipeacc');
   if(pts.length)edit(()=>{for(const x of pts)x.rot=Math.round(((x.rot||0)+90)*10)/10%360})}
@@ -11890,7 +11892,7 @@ function ctxPanels(){const out=[],tl=ui.tool,v=activeView();
   if(tl==='mtext')out.push({t:'p_placement',b:['@mtface','@mtplane']});          // as the Placement panel of Revit: on a face, or on the work plane
   if(tl==='footing')out.push({t:'p_multiple',b:['@footcols','@footgrids']});else if(tl==='wfoot')out.push({t:'p_multiple',b:['@wfootall']});          // as in Revit: the Multiple panel of the foundation tools
   if(tl==='modify'&&ui.sel.size){const cats=selCats(),c=cats.length===1?cats[0]:'',pinb=[...ui.sel].some(isPinned)?'@unpin':'@pin';let b=['move','copy','rotate','mirrorp','mirror','array',pinb,[...ui.sel].some(id=>grpOf(id))?'@ungroup':'@group','@delete'];if(c&&CREATE_TOOLS.has(c))b.push('@similar');if(c&&P.types[c])b.push('@selsame','@selsamev');
-    if(c==='stair'||c==='ramp')b.push('@railhost');if(c==='wall'){b.push('@attach','@detach','@editprof');if([...ui.sel].some(id=>(IDX.get(id)||{}).prof))b.push('@resetprof')}          /* as in Revit: Attach Top/Base, Detach Top/Base, Edit Profile, Reset Profile */
+    if(c==='stair'||c==='ramp')b.push('@railhost');if(c==='wall'){b.push('@attach','@detach','@editprof','@wflip');if([...ui.sel].some(id=>(IDX.get(id)||{}).prof))b.push('@resetprof')}          /* as in Revit: Attach Top/Base, Detach Top/Base, Edit Profile, Reset Profile */
     if(c==='bsys')b.push('@bsdir','@bsremove');          // as in Revit: Beam Direction, Remove Beam System
     if(c==='door')b.push('@fliph','@flipf');else if(c==='window')b.push('@flipf');else if(c==='section')b=['move','@openview','@flipsec','secsplit',pinb,'@delete'];else if(c==='roof')b.push('@ridge','@roofedges','rjoin');else if(c==='beam'&&[...ui.sel].some(id=>bcOk(P,IDX.get(id))))b.push('bcjoin','cope','uncope');else if(c==='part')b=['@delete'];else if(c==='vp')b=['@openview','@actview','@delete'];else if(c==='ggrid')b=['@guidegrid','@delete'];else if(c==='matchline')b=['move','copy','rotate','mirrorp','mirror',pinb,'@similar','@delete'];else if(c==='level')b=[pinb,'@similar','@delete'];else if(ANN.includes(c))b=c==='callout'?['move','@openview',pinb,'@delete']:c==='adim'||c==='rdim'||c==='trnum'?[pinb,'@similar','@delete']:c==='cfleg'?['move','copy','@cscheme',pinb,'@delete']:c==='tag'||c==='rtag'||c==='knote'||c==='mtag'?['move','@leader',pinb,'@similar','@delete']:c==='text'?['move','copy','@leader',pinb,'@similar','@delete']:c==='dim'?['move','copy','@dimlock','@dimeq',pinb,'@similar','@delete']:c==='wire'||c==='spot'?['move','copy',pinb,'@similar','@delete']:['move','copy','rotate','mirrorp','mirror','array',pinb,'@similar','@delete',...(ORD_CATS.has(c)?['@tofront','@toback']:[])];
     else if(c==='pipe'||c==='pipeacc'||c==='fixture'||c==='sprinkler'||(c==='riser'&&[...ui.sel].every(id=>isWetRun(IDX.get(id)))))b.push('@pipesize','@pipereport');
@@ -14591,7 +14593,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=207,V1_NAME='V1.197';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=208,V1_NAME='V1.198';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31444,7 +31446,8 @@ function mfFit(e,H){const f=e.mf,m=IDX.get(f[0]);if(!mfMassOk(m))return false;co
   if(e.cat!=='wall'||!(k>=0&&k<m.pts.length))return false;let ht=Math.round(zr[1]-zr[0]),up=null;
   if(lv){const F=massFloors(P,m),i=F.findIndex(x=>x.id===lv);if(i<0)return false;up=F[i+1]||null;ht=Math.round((up?up.z:zr[1])-F[i].z)}if(ht<100)return false;
   const off=H.get(m.id)||H.set(m.id,mfHalf(m)).get(m.id),r=mfRnd(mfLine(m,k,mfH(typ(P,e)),off,lv));if(Math.hypot(r[2]-r[0],r[3]-r[1])<50)return false;
-  Object.assign(e,{level:lv||m.level,x1:r[0],y1:r[1],x2:r[2],y2:r[3],baseOff:lv?0:(m.baseOff||0),top:up?up.id:0,topOff:0,height:ht});return true}
+  const rv=(e.x2-e.x1)*(r[2]-r[0])+(e.y2-e.y1)*(r[3]-r[1])<0;          /* V1.198: a wall that was flipped stays flipped */
+  Object.assign(e,{level:lv||m.level,x1:rv?r[2]:r[0],y1:rv?r[3]:r[1],x2:rv?r[0]:r[2],y2:rv?r[1]:r[3],baseOff:lv?0:(m.baseOff||0),top:up?up.id:0,topOff:0,height:ht});return true}
 XA.mfupdate=()=>{const M=new Set([...ui.sel].filter(id=>mfMassOk(IDX.get(id)))),L=P.els.filter(e=>mfB(e)&&(ui.sel.has(e.id)||M.has(e.mf[0])));if(!L.length){toast(t('mf_nob'));return}
   const dry=L.map(e=>{const c=JSON.parse(JSON.stringify(e)),ok=mfFit(c,new Map());return ok?(JSON.stringify(c)!==JSON.stringify(e)?1:0):2}),n=dry.filter(x=>x===1).length,lost=dry.filter(x=>x===2).length;
   if(!n&&!lost){toast(t('mf_upd0'));return}edit(()=>{const H=new Map();for(const e of L)if(!mfFit(e,H))delete e.mf});toast(lost?t('mf_lost',n,lost):t('mf_upd',n))};
@@ -31807,6 +31810,72 @@ function ulRows(v){return v.underlay&&lvl(P,v.underlay)?PR.sel('ulo','p_ulo',v.u
 XVF.push((v,key,raw)=>{if(key!=='ulo')return false;if(v.kind==='plan'&&!v.draft)edit(()=>{if(raw==='up')v.ulo='up';else delete v.ulo});return true});
 XC.push(()=>{for(const v of P.views)if(v.ulo!==undefined&&(v.ulo!=='up'||v.kind!=='plan'||v.draft))delete v.ulo});
 Object.assign(STR,{p_ulo:['ทิศทางแบบรองพื้น','Underlay Orientation'],ulo_dn:['มองลง (Look Down)','Look Down'],ulo_up:['มองขึ้น (Look Up)','Look Up']});
+
+/* ===== 198 Flip a wall (V1.198; Revit: the flip control of a selected wall, and Space; a mirrored wall keeps its exterior) =====
+   The exterior of a wall is the side n = (-uy, ux) of the line from its first end to its second (called the left elsewhere in this file; on the screen, where y
+   runs down, it is the right-hand side of that direction): there lie the first layer of its structure and the sweeps of its exterior face.
+   Flip (the double arrow beside a selected wall, Space, or the button of the Modify panel) turns the wall round: wfRev lets its two ends change places, and what is
+   measured along it or from one of its faces is counted from the other end and the other face, so the wall, its doors, windows and openings, the text on it, its
+   tags and the dimensions to it stay where they are.  What changes is the side its layers face, and its sweeps and reveals go with their face (those placed round
+   a room stay in the room).  A stacked wall keeps its own flip (190: the rows off its line change sides); a curtain wall and a wall divided into parts are left.
+   Mirror used to leave a wall turned inside out (its ends were mirrored, so its left became the wrong side): it now turns the mirrored wall round as well.
+   The walls of a group are the exception to both: the copies of a group are matched end for end (grpPlace), so a wall of a group is flipped in Edit Group
+   (every copy follows) and a mirrored copy of a group keeps the ends, and so the sides, it had before this round. */
+const WF_R=x=>Math.round(x*1e6)/1e6;
+/* why wall e cannot be turned round: '' when it can */
+const wfPlain=e=>!!e&&e.cat==='wall'&&!e.stk&&!e.prt&&(typ(P,e)||{}).kind!=='curtain';          // a basic wall, in one piece
+const wfGrp=e=>!!e.grp&&!(ui.ge&&ui.ge.g===e.grp);          // of a group that is not being edited: the copies of a group stay alike, so its walls are turned in Edit Group
+function wfWhy(e){const T=typ(P,e)||{};return e.pin?'pin':wfGrp(e)?'grp':e.stk?'stk':T.kind==='curtain'?'cw':e.prt?'prt':''}
+/* turn the walls W round.  mir: null for Flip (what stands on a face stays in its place; the sweeps go with their face), or the ids a mirror has just mapped
+   (what stands on a face goes with that face, as the mirror image wants; a sweep the mirror has moved itself stays) */
+function wfRev(W,mir){const ids=new Set(),hs=new Set(),tg=[];
+  for(const e of W){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1),x=e.x1,y=e.y1;e.x1=e.x2;e.y1=e.y2;e.x2=x;e.y2=y;ids.add(e.id);tg.push(e.id);if(e.grp){if(e.wfp)delete e.wfp;else e.wfp=1}
+    for(const k of ['wj','wjc'])if(Array.isArray(e[k]))e[k]=[e[k][1]||0,e[k][0]||0];
+    if(e.prof&&typeof e.prof==='object')for(const k of ['t','b'])if(Array.isArray(e.prof[k]))e.prof[k]=e.prof[k].map(p=>[WF_R(1-(+p[0]||0)),p[1]]).reverse();
+    for(const h of P.els){if(h.host!==e.id)continue;
+      if(swpIs(h)){if(h.dir==='v'){h.pos=WF_R(L-(+h.pos||0));if(h.cat==='wsweep'){if(h.pf)delete h.pf;else h.pf=1}}else if(h.len>0)h.pos=WF_R(L-(+h.pos||0)-(+h.len));
+        if(mir?mir.has(h.id):h.len>0){if(h.side==='i')delete h.side;else h.side='i'}}
+      else if(HOSTED.includes(h.cat)){hs.add(h.id);tg.push(h.id);h.pos=WF_R(L-(+h.pos||0));if(h.cat!=='opening'){h.flipF=!h.flipF;if(h.cat==='door')h.flipH=!h.flipH}}
+      else if(h.cat==='mtext'&&isFinite(h.hs)){h.hs=WF_R(L-h.hs);if(!mir&&(h.side===1||h.side===-1))h.side=-h.side}}}
+  if(ids.size)wfRefs(ids,hs,tg,mir)}
+/* what points at the walls ids (and at hs, what they host; tg: both) after they have turned round: tags, the references of dimensions and work planes (ends,
+   faces, the jambs of openings) */
+function wfRefs(ids,hs,tg,mir){
+  tagsFollow(tg,(q,loc)=>{if(loc){q.du=q.du?-q.du:0;q.dn=q.dn?-q.dn:0}});          // a tag stands in the frame of its wall, which has turned half a turn
+  const fix=r=>{if(!r||typeof r!=='object')return;if(Array.isArray(r)){for(const q of r)fix(q);return}const k=r.k;
+    if(k==='wend'&&ids.has(r.id)){r.e=r.e?0:1;if(!mir&&r.s)r.s=-r.s}
+    else if(k==='won'&&ids.has(r.id)){r.u=WF_R(1-(+r.u||0));if(!mir&&r.s)r.s=-r.s}
+    else if(k==='wx'||k==='gx'){if(!mir){if(k==='wx'&&ids.has(r.id)&&r.s)r.s=-r.s;if(ids.has(r.w)&&r.ws)r.ws=-r.ws}}
+    else if(k==='op'&&hs.has(r.id)){if(r.s)r.s=-r.s;if(!mir&&r.f)r.f=-r.f}
+    else if(k==='wall'&&ids.has(r.id)){if(!mir&&r.side)r.side=-r.side}
+    for(const q in r){const c=r[q];if(c&&typeof c==='object')fix(c)}};
+  for(const a of P.ann)fix(a);for(const v of P.views)if(v.wp)fix(v.wp)}
+/* a wall flipped in Edit Group: the wall of every other copy turns round when the copies are made alike (grpSync gives it the ends of the edited one), and
+   what points at THAT wall is put right then.  e.wfp (1 or absent) is how the copies know: it changes whenever a wall of a group is turned round */
+{const f0=grpSync;grpSync=(pre,A,gB)=>{const p0=new Map(pre.map(e=>[e.id,e])),K=new Set();for(const a of A){const o=p0.get(a.id);if(o&&a.cat==='wall'&&o.cat==='wall'&&a.gk!=null&&!a.wfp!==!o.wfp)K.add(a.gk)}
+  const W=K.size?grpMembers(gB).filter(b=>b.cat==='wall'&&K.has(b.gk)).map(b=>b.id):[];if(!f0(pre,A,gB))return false;
+  if(W.length){const ids=new Set(W.filter(id=>IDX.get(id))),hs=new Set(),tg=[...ids];for(const h of P.els)if(ids.has(h.host)&&HOSTED.includes(h.cat)){hs.add(h.id);tg.push(h.id)}if(ids.size)wfRefs(ids,hs,tg,null)}return true}}
+/* Flip: the selected walls */
+XA.wflip=()=>{const W=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='wall');if(!W.length){toast(t('need_sel'));return}
+  const ok=[],K=new Set(),why={};for(const e of W){const y=wfWhy(e);if(y==='stk')K.add(e.stk.k);else if(y)why[y]=(why[y]||0)+1;else ok.push(e)}
+  const n=ok.length+K.size,skip=Object.values(why).reduce((a,b)=>a+b,0);
+  if(!n){toast(t(why.pin?'wf_pin':why.grp?'wf_grp':why.cw?'wf_cw':'wf_prt'));return}
+  edit(()=>{wfRev(ok,null);for(const k of K)for(const e of stkMem(k))e.stk.m=e.stk.m?0:1});
+  toast(t('wf_done',n)+(skip?' · '+t('wf_skip',skip):''))};
+Object.assign(BTN,{'@wflip':['flip','']});
+/* the flip control of the one selected wall: on its exterior side, clear of the temporary dimension at its middle; toward the same end of the wall whichever
+   way it runs, so that a flip takes the control straight across the wall */
+XCT.push((pn,ctx,v,nav,g)=>{if(!ui.sel.size||v.kind!=='plan'||v.draft)return;const S=[...ui.sel].map(id=>IDX.get(id));let e=S[0];if(!e||e.cat!=='wall')return;
+  if(S.length>1){const k=e.stk&&e.stk.k;if(!k||!S.every(x=>x&&x.cat==='wall'&&x.stk&&x.stk.k===k))return;e=S.find(x=>planShow(v,x)&&FPm().get(x.id))||e}          // the rows of one stacked wall are one wall
+  if(!planShow(v,e)||S.some(x=>{const y=wfWhy(x);return y&&y!=='stk'}))return;
+  const fp=FPm().get(e.id);if(!fp)return;const gg=fp.g,Ls=gg.L*nav.s;if(Ls<44)return;
+  const sg=gg.dx>1e-9||(Math.abs(gg.dx)<=1e-9&&gg.dy>0)?-1:1,ex=e.stk&&e.stk.m?-1:1,q=fp.pt(gg.L/2+sg*Math.min(Ls/2-22,58)/nav.s,ex*(gg.h+15/nav.s)),x=g.X(q[0]),yy=g.Y(q[1]);flipGlyph(ctx,x,yy,Math.atan2(gg.dy,gg.dx)+Math.PI/2,C.sel,C.paper);
+  ui.ctrls.push({x,y:yy,r:12,tip:'a_wflip',run:()=>act('wflip')})});
+Object.assign(STR,{a_wflip:['กลับด้านผนัง (Flip)','Flip Wall'],wf_done:['กลับด้านนอกกับด้านในของผนัง {0} ชิ้นแล้ว · ลูกศรอยู่ฝั่งด้านนอก','Flipped {0} wall(s): the arrows are on the exterior side'],
+  wf_skip:['ข้าม {0} ชิ้น (ล็อกตำแหน่งไว้ อยู่ในกลุ่ม เป็นผนังกระจก หรือแบ่งเป็น Parts)','{0} left as they were (pinned, in a group, curtain walls, or divided into parts)'],
+  wf_grp:['ผนังอยู่ในกลุ่ม (Group): ดับเบิลคลิกกลุ่มเพื่อแก้ไขกลุ่มก่อน แล้วจึงกลับด้าน กลุ่มชุดอื่นจะเปลี่ยนตาม','The wall is in a group: double-click the group to edit it, then flip. The other copies of the group follow'],
+  wf_pin:['ผนังที่ล็อกตำแหน่งไว้กลับด้านไม่ได้ (กด {k:@unpin} เพื่อปลดล็อก)','A pinned wall cannot be flipped ({k:@unpin} to unpin)'],
+  wf_cw:['ผนังกระจกไม่มีชั้นวัสดุให้กลับด้าน','A curtain wall has no layers to flip'],wf_prt:['ผนังที่แบ่งเป็น Parts กลับด้านไม่ได้ ให้ลบ Parts ก่อน','A wall divided into parts cannot be flipped: remove its parts first']});
 
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
@@ -33679,6 +33748,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.195 · [[t_cutprof]] ที่แท็บ [[tab_view]] แผง [[p_graphics]]: แก้รูปหน้าตัดของชิ้นงานเฉพาะในมุมมองเดียว เหมือน Cut Profile ของ Revit · คลิกหน้าตัดของชิ้นงานที่มุมมองตัดผ่าน (แปลน: ผนังหรือเสา · รูปตัดและรูปด้านที่ตัดที่ตำแหน่งสัญลักษณ์: ผนัง พื้น หลังคา ฝ้า เสา คาน ฐานราก) แล้ววาดสี่เหลี่ยมสองคลิก หรือหลายเหลี่ยมทีละจุด (คลิกจุดแรกซ้ำหรือกด Enter เมื่อครบ) · เลือกที่แถบตัวเลือกว่าจะ [[cpf_add]] หรือ [[cpf_cut]] · ในแปลน สี่เหลี่ยมวางตามแนวผนังให้เอง ส่วนที่เพิ่มใช้ลายเดียวกับผนัง (ผนังหลายชั้นใช้วัสดุแกน) · รูปที่วาดต้องทับหรือชิดหน้าตัดเดิม · ตัวชิ้นงาน 3 มิติ มุมมองอื่น ตารางปริมาณ และ BOQ ไม่เปลี่ยน · แก้ซ้อนกันได้หลายครั้ง คลิกที่เส้นขอบใหม่เพื่อเลือกการแก้แล้วลบ ลากย้าย หรือสลับเพิ่ม/ตัดใน Properties ได้ เมื่อเลือกชิ้นงาน Properties บอกจำนวนที่แก้ไว้ในมุมมองนี้และมีปุ่ม [[a_cpfclear]] · การแก้ตามชิ้นงานไปเมื่อย้ายชิ้นงาน คัดลอกพร้อมชิ้นงานแล้วไปอยู่กับชิ้นที่คัดลอก ทำสำเนามุมมองพร้อมรายละเอียดแล้วตามไปด้วย และหายไปพร้อมชิ้นงาน · แสดงผลบนแผ่นงาน งานพิมพ์ และ DXF ของแปลนและรูปตัด · ส่วนที่ตัดออกในรูปตัดแสดงเป็นสีกระดาษ ยังไม่วาดสิ่งที่อยู่ด้านหลัง
 - V1.196 · พารามิเตอร์ของโครงการในกรอบชื่อแบบ เหมือน Revit · [[a_pparams]] มีหมวดใหม่ [[cat_pinfo]]: พารามิเตอร์ของหมวดนี้มีค่าเดียวทั้งโครงการ กรอกที่ [[a_info]] (แท็บ [[tab_manage]]) ใต้กลุ่มที่ตั้งไว้ · ในกรอบชื่อแบบที่วาดเอง ([[a_tblock]] › [[tbl_custom]]) ข้อความใส่ชื่อพารามิเตอร์ของหมวด ชีต หรือ [[cat_pinfo]] ในวงเล็บปีกกาได้ เช่น {สถานะแบบ} หรือ {Drawing Status}: ค่าของชีตมาจากคุณสมบัติของแต่ละแผ่นงาน ค่าของโครงการมาจาก [[a_info]] ถ้าพารามิเตอร์ใช้ทั้งสองหมวด แผ่นงานที่ไม่ได้กรอกจะใช้ค่าของโครงการ · รายการ [[tb_addf]] ในหน้าต่างกรอบชื่อแบบรวมช่องข้อมูลของโปรแกรมและพารามิเตอร์ทั้งหมดไว้ให้เลือก ใส่ลงในข้อความที่เลือกอยู่หรือเป็นข้อความใหม่ · ค่าแบบ ใช่/ไม่ใช่ แสดงเป็นคำ ตัวเลขแสดงโดยไม่มีหน่วย (พิมพ์หน่วยต่อท้ายในข้อความเอง) · ชื่อที่ไม่มีพารามิเตอร์ตรงกันจะแสดงตามที่พิมพ์ · ออก PDF และ DXF ของแผ่นงานตามค่าเดียวกัน
 - V1.197 · [[p_underlay]] แสดงทั้งชั้นเหมือน Revit ไม่ใช่แค่เส้นผนัง: ผนังพร้อมประตูหน้าต่าง เสา พื้น บันได ทางลาด ราวกันตก เฟอร์นิเจอร์ คาน ฐานราก หลังคา และงานระบบ (ท่อลม ท่อน้ำ เครื่องจักร สุขภัณฑ์) ของชั้นที่เลือก เป็นสีจางอยู่ใต้แปลน · [[p_ulo]] ในคุณสมบัติของมุมมอง: [[ulo_dn]] เห็นแบบแปลนพื้น หรือ [[ulo_up]] เห็นแบบแปลนฝ้า (ฝ้าเพดาน ดวงโคม หัวจ่ายลม) · สิ่งที่แปลนแสดงเองอยู่แล้วไม่วาดซ้ำ และสิ่งที่ซ่อนไว้ในมุมมอง (ทีละชิ้น ทั้งหมวด ด้วยตัวกรอง หรือซ่อนชั่วคราว) ก็ไม่แสดงในแบบรองพื้น · เมื่อเปิด [[sop_ul]] คลิกชิ้นงานของแบบรองพื้นได้ทุกหมวด เพื่อดูคุณสมบัติ ย้าย หรือลบจากแปลนนี้ ส่วนการลากกรอบเลือกยังไม่เก็บชิ้นของแบบรองพื้นเหมือนเดิม · ลายเส้นและความจางตั้งที่ [[a_htset]] · DXF ออกแบบรองพื้นทั้งหมดบนเลเยอร์ X-UNDERLAY · ไม่แสดงในแบบรองพื้น: ป้ายและเส้นบอกระยะ ห้อง กริด แบบ CAD ที่ลิงก์ และพื้นดิน
+- V1.198 · [[a_wflip]] เหมือน Revit: เลือกผนังแล้วกด Space หรือคลิกลูกศรสองหัวข้างผนัง หรือปุ่ม [[a_wflip]] ในแผง แก้ไข เพื่อสลับด้านนอกกับด้านในของผนัง · ด้านนอกคือฝั่งของชั้นวัสดุแรกใน [[a_wlayers]] และของบัวด้านนอก ลูกศรอยู่ฝั่งด้านนอกเสมอ · ตัวผนัง ประตู หน้าต่าง ช่องเปิด ข้อความ 3 มิติ ป้าย และเส้นบอกระยะอยู่ที่เดิม · บัวและร่องผนังไปกับผิวของมัน ส่วนบัวที่วางรอบห้องยังอยู่ในห้องเดิม · ผนังซ้อนชนิดย้ายแถวที่เยื้องไปอีกฝั่ง · ผนังกระจกและผนังที่แบ่งเป็น Parts ไม่ถูกกลับ · ผนังในกลุ่ม (Group) ให้กลับใน [[a_gedit]] แล้วกลุ่มชุดอื่นเปลี่ยนตาม · [[t_mirror]] และ [[t_mirrorp]]: ผนังที่สะท้อนแล้วมีด้านนอกอยู่ถูกฝั่งของภาพสะท้อน (เดิมชั้นวัสดุกลับด้าน)
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -34009,6 +34079,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.195 · [[t_cutprof]] on the [[tab_view]] tab, [[p_graphics]] panel: change the shape of an element's cut in one view only, as Revit's Cut Profile does. Click the cut face of an element the view cuts (plan: a wall or a column · sections, and elevations cut at their marker: a wall, floor, roof, ceiling, column, beam or footing), then sketch a rectangle with two clicks or a polygon point by point (click the first point again or press Enter to finish). The options bar says whether the sketch is [[cpf_add]] or [[cpf_cut]]. In a plan the rectangle lies along its wall, and what is added takes the pattern of the wall (the core material of a layered wall). The sketch must overlap or lie against the cut. The 3D element, the other views, the schedules and the BOQ stay as they are. Edits can be stacked; click a new outline to select an edit, then delete it, drag it, or switch it between adding and removing in Properties. With the element selected, Properties counts its edits in the view and has a [[a_cpfclear]] button. An edit follows its element when that is moved, belongs to the copy when both are copied together, comes along with Duplicate with Detailing, and goes when the element is deleted. Sheets, prints and the DXF of plans and sections show it. In a section what is removed shows in the colour of the paper; what lies beyond it is not drawn yet
 - V1.196 · Project parameters in title blocks, as in Revit. [[a_pparams]] has a new category, [[cat_pinfo]]: a parameter of it has one value for the whole project, typed in [[a_info]] ([[tab_manage]] tab) under the group it was given. In a title block drawn by hand ([[a_tblock]] › [[tbl_custom]]) a text can name a parameter of the category Sheets or [[cat_pinfo]] in braces, such as {Drawing Status}: a sheet's value comes from the Properties of each sheet, the project's from [[a_info]]; when a parameter is of both categories, a sheet left empty shows the project's value. The [[tb_addf]] list in the Title Block dialog offers every field of the program and every parameter, and puts the one chosen into the selected text or into a new one. Yes/No values are written as words, numbers without a unit (type the unit after the field). A name no parameter has is shown as typed. The PDF and DXF of a sheet show the same values
 - V1.197 · An [[p_underlay]] shows the whole level as in Revit, not only wall outlines: walls with their doors and windows, columns, floors, stairs, ramps, railings, furniture, beams, foundations, roofs and the building services (ducts, pipes, equipment, fixtures) of the chosen level, pale under the plan. [[p_ulo]] in the properties of the view: [[ulo_dn]] shows it as a floor plan, [[ulo_up]] as a ceiling plan (ceilings, lights, air terminals). What the plan shows itself is not drawn twice, and what the view hides (by element, by category, by a filter or temporarily) is hidden in the underlay too. With [[sop_ul]] on, a click picks any element of the underlay to see its properties, move it or delete it from this plan; a selection window still leaves the underlay out. Line pattern and paleness are set in [[a_htset]]. A DXF has all of the underlay on the layer X-UNDERLAY. Not in an underlay: tags and dimensions, rooms, grids, linked CAD drawings and the ground
+- V1.198 · [[a_wflip]] as in Revit: with walls selected press Space, click the double arrow beside the wall, or use [[a_wflip]] in the Modify panel to swap the exterior and the interior side. The exterior is the side of the first layer in [[a_wlayers]] and of the exterior sweeps; the arrows always stand on it. The wall itself, its doors, windows and openings, model text, tags and dimensions stay where they are. Sweeps and reveals go with their face; a sweep placed round a room stays in the room. A stacked wall moves its offset rows to the other side. Curtain walls and walls divided into parts are left. A wall of a group is flipped in [[a_gedit]], and the other copies follow. [[t_mirror]] and [[t_mirrorp]]: a mirrored wall now has its exterior on the right side of the mirror image (its layers used to come out reversed).
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -34903,7 +34974,7 @@ function dlgHelp(id){let cur=HELP.find(c=>c.id===id)||HELP.find(c=>c.id===ui.hel
    Every command of the ribbon, of the contextual panels and of the File menu can be given keys of two letters, as many as wanted; a key belongs to one command.
    What differs from Revit's defaults is kept with the preferences of this browser (ui.keymap, see applyKeymap in 62-input.js).  The whole set can be written to a file
    and read back, and a KeyboardShortcuts.xml exported by Revit is read as well: its commands are matched by their CommandId (RVT_CMD). */
-const KCTX=['@line','@rect','@arc','@circle','@pickl','@pick','@finish','@cancel','@fliph','@flipf','@openview','@flipsec','secsplit','@ridge','@railhost','@leader','@dimlock','@dimeq','@placeview','@similar','@selsame','@filter','@legendfill','lcomp','@sheetrevs','@warnsel','@insadd','@insedit','@insrem','@linadd','@linedit','@linrem','@footcols','@footgrids','@wfootall','@bsauto','@bsdir','@bsremove','@mtface','@mtplane','@tofront','@toback','@actview','@deactview','@attach','@detach','@editprof','@resetprof','@tattach','@tdetach','@tprof','@tresetprof','@tremove','@disp','@dspedit','@dspreset','@dsppath','@dsphi','@dspfin','@dspcan','@cvph','@topoedit','@wkedit','@wkopen','@wkplay','@wkframes','@wkexport','@capends','@capdel','@justify','@cubehome','@cubesave','@cubelock','@cubepersp','@cubesethome','@cubefront','@cubefront0','@cubering','@orientdir','@orientplane','@cubeopts','@cubemenu','@mstlv'],
+const KCTX=['@line','@rect','@arc','@circle','@pickl','@pick','@finish','@cancel','@fliph','@flipf','@openview','@flipsec','secsplit','@ridge','@railhost','@leader','@dimlock','@dimeq','@placeview','@similar','@selsame','@filter','@legendfill','lcomp','@sheetrevs','@warnsel','@insadd','@insedit','@insrem','@linadd','@linedit','@linrem','@footcols','@footgrids','@wfootall','@bsauto','@bsdir','@bsremove','@mtface','@mtplane','@tofront','@toback','@actview','@deactview','@attach','@detach','@editprof','@resetprof','@tattach','@tdetach','@tprof','@tresetprof','@tremove','@disp','@dspedit','@dspreset','@dsppath','@dsphi','@dspfin','@dspcan','@cvph','@topoedit','@wkedit','@wkopen','@wkplay','@wkframes','@wkexport','@capends','@capdel','@justify','@cubehome','@cubesave','@cubelock','@cubepersp','@cubesethome','@cubefront','@cubefront0','@cubering','@orientdir','@orientplane','@cubeopts','@cubemenu','@mstlv','@wflip'],
   KFILE={'@new':'m_new','@sample':'m_sample','@open':'m_open','@save':'m_save','@pdf':'m_pdf','@pdfall':'a_pdfall','@png':'m_png','@dxfout':'m_dxf','@dxfall':'m_dxfall','@ifcout':'m_ifc','@csv':'m_csv','@xlsx':'m_xlsx','@xlsxall':'m_xlsxall'},
   KRES=[['Esc','k_esc'],['Enter','a_repeat'],['Tab','k_tab'],['Space','k_space'],['Shift','k_shift'],['← ↑ → ↓','k_arrows'],['Delete','a_delete'],['F1','a_help'],['Ctrl+Z','a_undo'],['Ctrl+Y','a_redo'],['Ctrl+S','a_save'],['Ctrl+O','m_open'],['Ctrl+P','a_pdf'],
     ['Ctrl+C','a_copyclip'],['Ctrl+X','a_cut'],['Ctrl+V','a_paste'],['Ctrl+A','k_selall'],['Ctrl+←','a_selprev']];
@@ -36051,6 +36122,10 @@ window.PenumBIM.r196={get P(){return P},ui,txt:sid=>{const F=tbTxt(viewById(sid)
 window.PenumBIM.r197={get P(){return P},ui,uview:id=>ulView(viewById(id)),only:(vid,eid)=>ulOnly(viewById(vid),IDX.get(eid)),
   list:vid=>{const v=viewById(vid);if(!soUlOn(v))return[];const U=ulView(v);return P.els.filter(e=>ulOnly(v,e)).map(e=>[e.id,e.cat,planShow(U,e)])},
   hit:(vid,x,y)=>ulHit(viewById(vid),{x,y}),dxf:vid=>planDXF(viewById(vid)),san:()=>sanitize(),err:()=>ulDraw.err||0,ext:vid=>planExtents(viewById(vid)),snap:(vid,x,y,o)=>{const q=snapPt(viewById(vid),{x,y},o||{});return{x:q.x,y:q.y,kind:q.kind,ref:q.ref}},show:(vid,eid)=>planShow(viewById(vid),IDX.get(eid))};
+window.PenumBIM.r198={get P(){return P},ui,why:id=>wfWhy(IDX.get(id)),rev:(ids,m)=>edit(()=>wfRev(ids.map(id=>IDX.get(id)).filter(Boolean),m?new Set(m):null)),fp:id=>{const f=FPm().get(id);return f?{poly:f.poly,h:f.g.h,L:f.g.L}:null},
+  ref:r=>refPoint(r),tag:(id,vid)=>{const d=P.ann.find(a=>a.id===id),q=d&&tagGeo(d,viewById(vid));return q?{p:q.p,a:q.a}:null},dim:id=>{const d=P.ann.find(a=>a.id===id),G=d&&dimGeo(d);return G?{a:G.a,b:G.b,val:G.val}:null},
+  mirror:(ids,ax,ay,bx,by)=>edit(()=>mirrorIds(ids,ax,ay,bx,by)),ctrls:()=>(ui.ctrls||[]).map(c=>({x:c.x,y:c.y,tip:c.tip})),mesh:id=>{const o=[];for(const m of MSm().items){if(m.id!==id||!m.t.length)continue;const b=[1e9,1e9,1e9,-1e9,-1e9,-1e9];let cx=0,cy=0,n=0;for(let i=0;i<m.t.length;i+=3){const x=m.t[i],z=m.t[i+1],y=m.t[i+2];b[0]=Math.min(b[0],x);b[1]=Math.min(b[1],y);b[2]=Math.min(b[2],z);b[3]=Math.max(b[3],x);b[4]=Math.max(b[4],y);b[5]=Math.max(b[5],z);cx+=x;cy+=y;n++}o.push({cat:m.cat,li:m.li==null?-1:m.li,n,b:b.map(v=>Math.round(v)),c:[Math.round(cx/n),Math.round(cy/n)]})}return o},
+  json:()=>JSON.stringify(P),keys:()=>{const o=keyCmds().find(x=>x.c==='@wflip');return o?{name:o.name,paths:o.paths}:null},wp:vid=>{const v=viewById(vid);return v&&v.wp?JSON.parse(JSON.stringify(v.wp)):null}};
 window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
   put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
   pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
