@@ -1971,7 +1971,7 @@ function footprints(P){
 /* ---- enclosed regions (rooms) on a level, from wall centre lines ---- */
 function regions(P,levelId,ph,ds){          /* ph: the walls that stand when that phase is finished (true: the last phase); left out: all of them */
   const LV=lvl(P,levelId),cut=(LV?LV.elev:0)+CUT,segs=[],PI=ph!=null&&typeof phIndex==='function'?phIndex(P):null,ip=PI?(ph===true?PI.size-1:phAt(PI,ph)):0,there=w=>(!PI||phThere(PI,w,ip))&&!(w.dop&&!DS.has(w.dop)),DS=ds||dsMain(P);   /* ds: the design options whose walls count (left out: the primary ones) */   // walls that the plan of this level cuts through bound its rooms
-  for(const w of P.els)if(w.cat==='wall'){if(!there(w))continue;const z=zRange(P,w);if(!(z[0]<cut&&z[1]>=cut))continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,h:P.rac==='center'?0:(typ(P,w)||{thickness:150}).thickness/2})}          /* Area and Volume Computations: the area of a room measured at the wall finish, or at the wall centre */
+  for(const w of P.els)if(w.cat==='wall'){if(!there(w))continue;const z=zRange(P,w);if(!(z[0]<cut&&z[1]>=cut))continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,h:P.rac==='center'?0:(typ(P,w)||{thickness:150}).thickness/2,xt:w.stk&&w.stk.x>0?+w.stk.x:0})}          /* Area and Volume Computations: the area of a room measured at the wall finish, or at the wall centre */
     else if(w.cat==='rsep'&&w.level===levelId&&there(w)){const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,h:0})}          // a room separation line bounds rooms as a wall with no thickness would
   const nodes=[],node=(x,y)=>{for(let i=0;i<nodes.length;i++)if(Math.abs(nodes[i][0]-x)<3&&Math.abs(nodes[i][1]-y)<3)return i;nodes.push([x,y]);return nodes.length-1};
   const pts=segs.map(w=>[[0,w.x1,w.y1],[1,w.x2,w.y2]]),cl=t=>Math.max(0,Math.min(1,t));
@@ -1980,8 +1980,8 @@ function regions(P,levelId,ph,ds){          /* ph: the walls that stand when tha
     if(Math.abs(den)<1e-6*a.L*b.L){
       const onto=(k,o,ox,oy,px,py)=>{const t=((px-o.x1)*ox+(py-o.y1)*oy)/(o.L*o.L),d=Math.abs((px-o.x1)*oy-(py-o.y1)*ox)/o.L;if(d<3&&t>0&&t<1)pts[k].push([t,px,py])};
       onto(i,a,rx,ry,b.x1,b.y1);onto(i,a,rx,ry,b.x2,b.y2);onto(j,b,sx,sy,a.x1,a.y1);onto(j,b,sx,sy,a.x2,a.y2);
-    }else{const qx=b.x1-a.x1,qy=b.y1-a.y1,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den,ea=3/a.L,eb=3/b.L;
-      if(t>=-ea&&t<=1+ea&&u>=-eb&&u<=1+eb){const tc=cl(t),x=a.x1+rx*tc,y=a.y1+ry*tc;pts[i].push([tc,x,y]);pts[j].push([cl(u),x,y])}}}
+    }else{const qx=b.x1-a.x1,qy=b.y1-a.y1,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den,ea=(3+(b.xt||0))/a.L,eb=(3+(a.xt||0))/b.L;          /* xt: a row of a stacked wall (190) that is off the line of its wall: the walls that end on that line run on to it */
+      if(t>=-ea&&t<=1+ea&&u>=-eb&&u<=1+eb){const far=a.xt||b.xt,tc=far?t:cl(t),x=a.x1+rx*tc,y=a.y1+ry*tc,put=(k,q)=>{if(far&&(q<0||q>1))pts[k][q<0?0:1]=[q,x,y];else pts[k].push([cl(q),x,y])};put(i,t);put(j,u)}}}
   const adj=new Map(),eh=new Map(),key=(u,v)=>u<v?u+','+v:v+','+u;
   const link=(u,v,h)=>{if(u===v)return;(adj.get(u)||adj.set(u,new Set()).get(u)).add(v);(adj.get(v)||adj.set(v,new Set()).get(v)).add(u);eh.set(key(u,v),Math.max(eh.get(key(u,v))||0,h))};
   pts.forEach((p,i)=>{p.sort((m,n)=>m[0]-n[0]);const ids=p.map(q=>node(q[1],q[2]));for(let k=1;k<ids.length;k++)link(ids[k-1],ids[k],segs[i].h)});
@@ -2446,6 +2446,7 @@ function buildMeshes(P,FP,FIT){
         for(const d of [q.a,q.b])for(const z of [q.s,q.t])seg(m,pt(d,h),pt(d,-h),z)}
       items.push(m);
       for(const q of O)if((q.o.ph||'new')!==(e.ph||'new')||(q.o.dem||'')!==(e.dem||'')){const pl=mk(e.id,'wall',hex2rgb(T.color));pl.mt=m.mt;pl.inf=q.o.id;solid(pl,[pt(q.a,h),pt(q.b,h),pt(q.b,-h),pt(q.a,-h)],q.s,q.t);items.push(pl)}          /* phasing: an insert that is not of the same phases as its wall leaves a plug for the views it is not in (Revit: the infill) */
+      if(e.stk)for(const q of O)if(q.o.cat!=='opening'&&q.ot&&q.ot.height>0){q.s=base+(q.o.sill||0);q.t=q.s+q.ot.height}          /* a door or a window in a row of a stacked wall (190) is whole, though the row is cut only as far as it reaches */
       for(const q of O){if(q.o.cat==='opening')continue; // door / window family geometry; a plain opening has none
         const o=q.o,ot=q.ot,fr=45,fd=Math.min(h,70),frame=mk(o.id,o.cat,[0.93,0.93,0.91]);
         /* a box along the wall from d0 to d1, n0 to n1 across it; nl: without its edge lines (small parts) */
@@ -14586,7 +14587,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=199,V1_NAME='V1.189';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=200,V1_NAME='V1.190';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31033,6 +31034,226 @@ Object.assign(STR,{
   p3_hrun:['คลิกบนท่อลมหรือท่อน้ำในภาพเพื่อแทรกอุปกรณ์ในท่อ','Click a duct or a pipe in the view to put the accessory in it'],
   p3_none:['ไม่มีผิวใต้เมาส์: ชี้ที่ฝ้า ผนัง หรือพื้น','Nothing under the pointer: point at a ceiling, a wall or a floor'],p3_need_duct:['คลิกบนท่อลม','Click a duct'],p3_need_pipe:['คลิกบนท่อน้ำ','Click a pipe'],
   p3_k_down:['ใต้ฝ้า/พื้น','Under'],p3_k_up:['บนพื้น','On top'],p3_k_wall:['บนผนัง','On the wall'],p3_k_plane:['ระนาบทำงาน','Work plane'],p3_k_run:['ในท่อ','In the run']});
+/* ===== 190 Stacked Wall (V1.190; Revit: Architecture › Wall › a Stacked Wall type — Edit Assembly, Break Up) =====
+   A stacked wall type (P.types.wall, kind 'stack') is basic wall types laid one on top of another:
+     rows [{t basic wall type id, h height in mm (0: the one row of variable height), o offset in mm (+ toward the exterior)}], the lowest first, 8 at most;
+     al what the rows line up on: 'cl' their centre lines, 'fe' / 'fi' their exterior / interior faces;  thickness: the width of all the rows together.
+   A wall drawn with such a type (or given one) becomes ordinary walls, one for every row, that go together: nothing else in the program has to know.
+   Every member carries e.stk = {k the stack, i its row, T the stacked type, n the rows it was laid for, m 1 when mirrored (the exterior is on the right),
+     L [x1,y1,x2,y2] the line of the wall (the row a plan cuts stands on it), v {l base level, b base offset, T top level or 0, o top offset, H unconnected height}: the whole wall,
+     s how far this row is off the line, x how far the farthest row is from it, a [a0,a1] how far its ends run on to meet the same row of the stack round the corner, E what the lay-out wrote}.
+   stkSync() runs with every change (XD): it lays the rows again and, from the difference between a member and E, tells what was done to one row
+   (an end dragged, trimmed, split, a level or a height typed) and does it to the whole wall.  A click takes all the rows; so do Move, Copy, Rotate, Mirror, Delete.
+   A door or a window stands in the row the plan cuts; in the other rows it reaches it makes an opening of its own (an 'opening' with stkO = the door).
+   The exterior is on the left of the drawing direction (n = (-uy, ux)), as the layers of a wall are. ===== */
+const STK_AL=['cl','fe','fi'],STK_DROP=['attT','attB','prof','arc','rb','paint','split','mark','comment','gk'];
+const stkT=id=>(P.types.wall||[]).find(T=>T.id===id&&T.kind==='stack')||null,stkBasic=T=>!!T&&!T.kind;
+const stkMem=k=>P.els.filter(e=>e.cat==='wall'&&e.stk&&e.stk.k===k).sort((a,b)=>a.stk.i-b.stk.i);
+/* the rows of a type across the wall: {R: [{t, h, th thickness, s centre off the line}], lo, hi, c the middle of them all, w their width together, mi the row on the line} */
+function stkGeo(T,W){W=W||P.types.wall||[];const R=(T.rows||[]).map(r=>{const B=W.find(x=>x.id===r.t)||{},th=+B.thickness||100;return{t:r.t,h:+r.h||0,th,s:(+r.o||0)+(T.al==='fe'?-th/2:T.al==='fi'?th/2:0)}});
+  /* the row a plan cuts (1.20 m above the base; the variable row when the fixed rows under it end lower) stands on the line of the wall, where the walls that meet it end; the others are off it */
+  let mi=R.findIndex(r=>!r.h),z=0;if(mi<0)mi=R.length-1;for(let i=0;i<R.length;i++){if(!R[i].h){mi=i;break}z+=R[i].h;if(z>=CUT){mi=i;break}}
+  const m0=R.length?R[mi].s:0;for(const r of R)r.s-=m0;
+  let lo=Infinity,hi=-Infinity;for(const r of R){lo=Math.min(lo,r.s-r.th/2);hi=Math.max(hi,r.s+r.th/2)}if(!R.length)lo=hi=0;return{R,lo,hi,c:(lo+hi)/2,w:hi-lo,mi}}
+/* a type made right: rows of basic types only, one of them variable; false when the project has no basic wall type to build it of */
+function stkNorm(T,W){W=W||P.types.wall||[];const B=W.filter(stkBasic);if(!B.length)return false;
+  let R=(Array.isArray(T.rows)?T.rows:[]).filter(r=>r&&typeof r==='object').slice(0,8).map(r=>({t:B.some(x=>x.id===r.t)?r.t:B[0].id,h:Math.max(0,Math.round(+r.h||0)),o:Math.max(-1000,Math.min(1000,Math.round(+r.o||0)))}));
+  if(!R.length)R=[{t:B[0].id,h:0,o:0}];let vi=R.findIndex(r=>!r.h);if(vi<0){vi=R.length-1;R[vi].h=0}R.forEach((r,i)=>{if(i!==vi&&r.h<50)r.h=r.h?50:1000});
+  T.rows=R;T.al=STK_AL.includes(T.al)?T.al:'cl';T.thickness=Math.max(10,Math.round(stkGeo(T,W).w));const V=B.find(x=>x.id===R[vi].t);T.color=V.color||'#d8d2c8';T.hatch=V.hatch||'none';T.cost=0;delete T.lays;delete T.mat;delete T.mid;return true}
+XC.push(()=>{const W=P.types.wall||[];let bad=false;for(const T of W)if(T.kind==='stack'&&!stkNorm(T,W))bad=true;if(bad)P.types.wall=W.filter(T=>T.kind!=='stack');
+  for(const e of P.els){if(e.stk!==undefined){const s=e.stk;if(e.cat!=='wall'||!s||typeof s!=='object'||!(s.k>0)||!(s.i>=0)||!Array.isArray(s.L)||s.L.length!==4||!s.L.every(q=>isFinite(q))||!s.v||typeof s.v!=='object')delete e.stk}
+    if(e.stkO!==undefined&&e.cat!=='opening')delete e.stkO}});
+/* a new project has one to start from: concrete 1.00 m high with brick above */
+function stkSeed(Q,en){const W=Q.types&&Q.types.wall;if(!W||W.some(T=>T.kind==='stack'))return;const B=W.filter(stkBasic),a=B.find(x=>x.hatch==='solid')||B[0],b=B.find(x=>x!==a&&x.thickness<=a.thickness)||a;if(!a)return;
+  const T={id:Q.seq++,name:en?'Stacked Wall: concrete to 1.00 m, brick above':'ผนังซ้อนชนิด: คอนกรีตสูง 1.00 ม. ต่อด้วยก่ออิฐ',mark:'SW1',kind:'stack',al:'cl',rows:[{t:a.id,h:1000,o:0},{t:b.id,h:0,o:0}]};if(stkNorm(T,W))W.push(T)}
+{const f0=newProject;newProject=en=>{const Q=f0(en);stkSeed(Q,en);return Q}}
+/* a stack turned into one basic wall of type `type` (its lowest row stays and becomes that wall); HW: where the doors and windows are */
+function stkToWall(M,type,kill,HW){const keep=M[0],D=keep.stk,L=D.L,len=Math.hypot(L[2]-L[0],L[3]-L[1])||1,ux=(L[2]-L[0])/len,uy=(L[3]-L[1])/len,R2=q=>Math.round(q*100)/100,ids=new Set(M.map(e=>e.id));
+  for(const o of P.els)if(HOSTED.includes(o.cat)&&ids.has(o.host)&&!HW.has(o.id)){const w=IDX.get(o.host)||M.find(e=>e.id===o.host),l=Math.hypot(w.x2-w.x1,w.y2-w.y1)||1;HW.set(o.id,[w.x1+(w.x2-w.x1)/l*o.pos,w.y1+(w.y2-w.y1)/l*o.pos])}
+  Object.assign(keep,{x1:R2(L[0]),y1:R2(L[1]),x2:R2(L[2]),y2:R2(L[3]),level:D.v.l,baseOff:D.v.b||0,top:D.v.T>0&&lvl(P,D.v.T)?D.v.T:0,height:Math.max(100,D.v.H||3000),type});keep.topOff=keep.top?D.v.o||0:0;delete keep.stk;
+  for(const e of M)if(e!==keep)kill.add(e.id);
+  for(const o of P.els)if(HOSTED.includes(o.cat)&&ids.has(o.host)){if(o.stkO){kill.add(o.id);continue}const wp=HW.get(o.id);o.host=keep.id;o.pos=R2((wp[0]-keep.x1)*ux+(wp[1]-keep.y1)*uy)}}
+function stkSync(){const W=P.types.wall||[];if(!W.some(T=>T.kind==='stack')&&!P.els.some(e=>e.stk||e.stkO))return false;
+  let ch=false;const R2=q=>Math.round(q*100)/100,wall=new Map(),HW=new Map(),kill=new Set(),dir=L=>{const l=Math.hypot(L[2]-L[0],L[3]-L[1])||1;return[(L[2]-L[0])/l,(L[3]-L[1])/l,l]};
+  for(const e of P.els)if(e.cat==='wall')wall.set(e.id,e);
+  for(const o of P.els)if(HOSTED.includes(o.cat)){const w=wall.get(o.host);if(!w||!(w.stk||stkT(w.type)))continue;const l=Math.hypot(w.x2-w.x1,w.y2-w.y1)||1;HW.set(o.id,[w.x1+(w.x2-w.x1)/l*o.pos,w.y1+(w.y2-w.y1)/l*o.pos])}
+  /* a wall given a stacked type: the first member of a new stack (its line is the line of the stack: the row a plan cuts stays where the wall was) */
+  for(const e of wall.values()){if(e.stk)continue;const T=stkT(e.type);if(!T)continue;
+    e.stk={k:P.seq++,i:0,T:T.id,n:0,m:0,L:[e.x1,e.y1,e.x2,e.y2],v:{l:e.level,b:e.baseOff||0,T:e.top||0,o:e.topOff||0,H:e.height||3000}};delete e.arc;ch=true}
+  /* the stacks; a copy of one (a row met a second time) is a stack of its own */
+  const by=new Map();for(const e of wall.values())if(e.stk)(by.get(e.stk.k)||by.set(e.stk.k,[]).get(e.stk.k)).push(e);
+  for(const [k,M] of [...by]){M.sort((a,b)=>a.id-b.id);let seen=new Set();const parts=[[]];for(const e of M){if(seen.has(e.stk.i)){parts.push([]);seen=new Set()}seen.add(e.stk.i);parts[parts.length-1].push(e)}
+    if(parts.length<2)continue;by.set(k,parts[0]);for(const Q of parts.slice(1)){const nk=P.seq++;for(const e of Q){e.stk=JSON.parse(JSON.stringify(e.stk));e.stk.k=nk;e.stk.n=0}by.set(nk,Q)}ch=true}
+  /* what was done to each stack since it was laid */
+  const S=[],own=new Map();
+  for(const [k,M0] of by){const M=M0.slice().sort((a,b)=>a.stk.i-b.stk.i||a.id-b.id),D=JSON.parse(JSON.stringify(M[0].stk));delete D.E;
+    const tS=M.map(e=>stkT(e.type)).find(Boolean),T=tS||stkT(D.T);
+    if(!T){for(const e of M)delete e.stk;ch=true;continue}          // its type is gone: the rows stay, as walls of their own
+    if(D.T!==T.id){D.T=T.id;ch=true}
+    const tb=M.filter(e=>e.stk.E&&e.type!==e.stk.E[9]&&stkBasic(W.find(x=>x.id===e.type)));
+    if(tb.length&&M.every(e=>e.type===tb[0].type)){stkToWall(M,tb[0].type,kill,HW);ch=true;continue}          // every row is of one basic type now (the rows were given it): one basic wall
+    const n=T.rows.length,have=new Map(),dead=[];for(const e of M){if(e.stk.i<n&&!have.has(e.stk.i))have.set(e.stk.i,e);else dead.push(e)}
+    if(have.size<n&&D.n===n){for(const e of M)kill.add(e.id);ch=true;continue}          // a row was deleted: the wall goes
+    if(!have.size){for(const e of M)kill.add(e.id);ch=true;continue}
+    const sig=D.m?-1:1,live=[...have.values()],moved=live.filter(e=>e.stk.E&&(Math.abs(e.x1-e.stk.E[0])>0.02||Math.abs(e.y1-e.stk.E[1])>0.02||Math.abs(e.x2-e.stk.E[2])>0.02||Math.abs(e.y2-e.stk.E[3])>0.02));
+    if(moved.length){const rec=(e,g)=>{const l=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/l,uy=(e.y2-e.y1)/l,s=(e.stk.s||0)*g,a=e.stk.a||[0,0];return[e.x1+uy*s+ux*a[0],e.y1-ux*s+uy*a[0],e.x2+uy*s-ux*a[1],e.y2-ux*s-uy*a[1]]};
+      const a=moved[0],b=moved.find(e=>Math.abs((e.stk.s||0)-(a.stk.s||0))>1);let g=sig;
+      if(b){const d=q=>{const p=rec(a,q),r=rec(b,q);return Math.hypot(p[0]-r[0],p[1]-r[1])+Math.hypot(p[2]-r[2],p[3]-r[3])};if(d(-sig)<d(sig)-0.5)g=-sig}          // mirrored: the rows have changed sides
+      D.L=rec(a,g).map(R2);D.m=g<0?1:0;ch=true}
+    const v=D.v=Object.assign({},D.v),top=(D.n||n)-1;
+    {const c=live.find(e=>e.stk.E&&e.level!==e.stk.E[4]);if(c){v.l=c.level;ch=true}}
+    {const c=live.filter(e=>e.stk.E&&(e.baseOff||0)!==e.stk.E[5]);if(c.length){v.b=c.length>1&&c.every(e=>(e.baseOff||0)===(c[0].baseOff||0))?(c[0].baseOff||0):(v.b||0)+(c[0].baseOff||0)-c[0].stk.E[5];ch=true}}
+    {const c=live.find(e=>e.stk.E&&(e.top||0)!==e.stk.E[6]),d=live.find(e=>e.stk.E&&(e.topOff||0)!==e.stk.E[7]);
+      if(c){if(!(c.top>0)&&v.T>0&&lvl(P,v.T)&&lvl(P,v.l))v.H=Math.max(100,Math.round(elev(P,v.T)+(v.o||0)-elev(P,v.l)-(v.b||0)));v.T=c.top||0;if(!v.T)v.o=0;ch=true}if(d&&v.T>0){v.o=d.topOff||0;ch=true}}
+    {const c=live.filter(e=>e.stk.E&&(e.height||3000)!==e.stk.E[8]),tm=c.find(e=>e.stk.i===top);
+      if(c.length>1&&c.every(e=>e.height===c[0].height)){v.H=Math.max(100,c[0].height);ch=true}else if(tm){v.H=Math.max(100,(v.H||3000)+tm.height-tm.stk.E[8]);ch=true}else if(c.length)ch=true}
+    if(!lvl(P,v.l)){for(const e of M)kill.add(e.id);ch=true;continue}
+    const s={k,T,D,have,n,dead};S.push(s);for(const e of M)own.set(e.id,s)}
+  /* the rows of each: how high, how far off the line */
+  for(const s of S){const T=s.T,v=s.D.v,z0=elev(P,v.l)+(v.b||0),zt=v.T>0&&lvl(P,v.T)?elev(P,v.T)+(v.o||0):z0+(v.H||3000),G=stkGeo(T),fx=T.rows.reduce((a,r)=>a+r.h,0),vh=Math.max(100,Math.round(zt-z0-fx));let z=z0;
+    s.over=fx+vh-(zt-z0)>1;s.R=G.R.map(r=>{const h=r.h||vh,o={z0:z,z1:z+h,h,s:r.s,t:r.t};z+=h;return o})}
+  /* where two stacks (or a stack and a wall) meet end to end, each row runs on to the same row round the corner */
+  const ends=[];for(const s of S){const L=s.D.L;ends.push([L[0],L[1],s],[L[2],L[3],s])}
+  const ord=[...wall.values()].filter(e=>!e.stk&&!kill.has(e.id));
+  for(const s of S){const D=s.D,L=D.L,[ux,uy]=dir(L),sg=D.m?-1:1,A=[null,null];
+    for(const en of [0,1]){const px=L[en*2],py=L[en*2+1];let o=null;
+      for(const q of ends){if(q[2]===s||Math.abs(q[0]-px)>2||Math.abs(q[1]-py)>2)continue;const B=q[2],[bx,by]=dir(B.D.L);if(Math.abs(ux*by-uy*bx)<0.05)continue;o={B,bx,by,qx:q[0],qy:q[1],sg:B.D.m?-1:1};break}
+      if(!o)for(const w of ord){if(w.level!==D.v.l||!((Math.abs(w.x1-px)<2&&Math.abs(w.y1-py)<2)||(Math.abs(w.x2-px)<2&&Math.abs(w.y2-py)<2)))continue;const [bx,by]=dir([w.x1,w.y1,w.x2,w.y2]);if(Math.abs(ux*by-uy*bx)<0.05)continue;o={B:null,bx,by,qx:px,qy:py,sg:1};break}
+      A[en]=o}
+    s.a=s.R.map(r=>[0,1].map(en=>{const o=A[en];if(!o)return 0;let sb=0;if(o.B){let best=null,bo=0;for(const q of o.B.R){const ov=Math.min(q.z1,r.z1)-Math.max(q.z0,r.z0);if(ov>bo){bo=ov;best=q}}if(!best)return 0;sb=best.s*o.sg}
+      if(Math.abs(r.s)<0.01&&Math.abs(sb)<0.01)return 0;const ax=L[en*2]-uy*r.s*sg,ay=L[en*2+1]+ux*r.s*sg,qx=o.qx-o.by*sb,qy=o.qy+o.bx*sb,tA=((qx-ax)*o.by-(qy-ay)*o.bx)/(ux*o.by-uy*o.bx),a=en?tA:-tA;return Math.abs(a)>1500?0:R2(a)}))}
+  /* the members written; rows that are not there yet are made from the lowest one */
+  for(const s of S){const D=s.D,T=s.T,L=D.L,[ux,uy]=dir(L),sg=D.m?-1:1,lv=elev(P,D.v.l),base=s.have.get(Math.min(...s.have.keys())),tc=D.v.T>0&&lvl(P,D.v.T)&&!s.over;
+    for(let i=0;i<s.n;i++){const r=s.R[i],a=s.a[i];let e=s.have.get(i);
+      if(!e){e=JSON.parse(JSON.stringify(base));for(const k of STK_DROP)delete e[k];e.id=P.seq++;P.els.push(e);s.have.set(i,e);own.set(e.id,s);ch=true}
+      const w={x1:R2(L[0]-uy*r.s*sg-ux*a[0]),y1:R2(L[1]+ux*r.s*sg-uy*a[0]),x2:R2(L[2]-uy*r.s*sg+ux*a[1]),y2:R2(L[3]+ux*r.s*sg+uy*a[1]),level:D.v.l,baseOff:Math.round(r.z0-lv),top:i===s.n-1&&tc?D.v.T:0,topOff:i===s.n-1&&tc?D.v.o||0:0,height:Math.round(r.h),type:r.t};
+      for(const k in w)if(e[k]!==w[k]){e[k]=w[k];ch=true}
+      if(i<s.n-1&&e.attT!=null){delete e.attT;ch=true}if(i&&e.attB!=null){delete e.attB;ch=true}if(e.arc!=null){delete e.arc;ch=true}
+      e.stk={k:s.k,i,T:T.id,n:s.n,m:D.m?1:0,L:L.slice(),v:Object.assign({},D.v),s:r.s,x:R2(Math.max(...s.R.map(q=>Math.abs(q.s-r.s)))),a:a.slice(),E:[e.x1,e.y1,e.x2,e.y2,e.level,e.baseOff,e.top,e.topOff,e.height,e.type]}}
+    for(const e of s.dead){kill.add(e.id);ch=true}}
+  /* doors, windows and openings: in the row the plan cuts when they reach it, else in the row they are most in; an opening of its own in every other row they reach */
+  const want=new Map();
+  for(const o of P.els){if(!HOSTED.includes(o.cat)||o.stkO||!own.has(o.host)||kill.has(o.id))continue;let s=own.get(o.host);const wp=HW.get(o.id);if(!wp)continue;
+    const OT=typ(P,o)||{},wd=o.cat==='opening'?(+o.w||1000):(+o.w||+OT.width||900),ht=o.cat==='opening'?(+o.h||2100):(+o.h||+OT.height||2000);
+    const on=q=>{const L=q.D.L,[ux,uy,l]=dir(L),d=(wp[0]-L[0])*ux+(wp[1]-L[1])*uy,p=Math.abs(-(wp[0]-L[0])*uy+(wp[1]-L[1])*ux);return p<600&&d>-1&&d<l+1};
+    if(!on(s)){const q=S.find(q=>q!==s&&q.D.v.l===s.D.v.l&&on(q));if(q)s=q}          // after a split: the stack whose line it stands on
+    const lv=elev(P,s.D.v.l),zs=lv+(+o.sill||0),zt=zs+ht,zc=lv+CUT;let best=null,bo=20;
+    s.R.forEach((r,i)=>{const ov=Math.min(zt,r.z1)-Math.max(zs,r.z0);if(ov>20&&r.z0<zc&&r.z1>=zc){best=i;bo=1e9}else if(ov>bo){best=i;bo=ov}});
+    if(best==null){const h=wall.get(o.host);best=h&&h.stk&&s.have.get(h.stk.i)===h?h.stk.i:0}
+    const put=i=>{const e=s.have.get(i),l=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;return R2(((wp[0]-e.x1)*(e.x2-e.x1)+(wp[1]-e.y1)*(e.y2-e.y1))/l)},hb=s.have.get(best),np=put(best);
+    if(o.host!==hb.id||Math.abs(o.pos-np)>0.02){o.host=hb.id;o.pos=np;ch=true}
+    s.R.forEach((r,i)=>{if(i===best)return;const ov=Math.min(zt,r.z1)-Math.max(zs,r.z0);if(ov<=20)return;const e=s.have.get(i);want.set(o.id+':'+e.id,{host:e.id,pos:put(i),w:wd,h:Math.round(ov),sill:Math.round(Math.max(zs,r.z0)-lv),stkO:o.id})})}
+  for(const o of P.els)if(o.cat==='opening'&&o.stkO&&!kill.has(o.id)){const k=o.stkO+':'+o.host,q=want.get(k);if(!q){kill.add(o.id);ch=true;continue}want.delete(k);for(const f of ['pos','w','h','sill'])if(Math.abs((+o[f]||0)-q[f])>0.02){o[f]=q[f];ch=true}}
+  for(const q of want.values()){P.els.push(Object.assign({id:P.seq++,cat:'opening'},q));ch=true}
+  if(kill.size)P.els=P.els.filter(e=>!kill.has(e.id));
+  if(ch)IDX=indexProject(P);return ch}
+XD.push(stkSync);
+/* the walls of a storey are joined as they were; of a stack only the row the plan cuts joins them, and every other row joins what stands beside it at its own height */
+{const f0=footprints;footprints=Q=>{if(!Q.els.some(e=>e.stk&&e.cat==='wall'))return f0(Q);
+  const byK=new Map(),sec=[];for(const e of Q.els)if(e.cat==='wall'&&e.stk)(byK.get(e.stk.k)||byK.set(e.stk.k,[]).get(e.stk.k)).push(e);
+  for(const M of byK.values()){const zc=elev(Q,M[0].level)+CUT;let m=M.find(e=>{const z=zRange(Q,e);return z[0]<zc&&z[1]>=zc});if(!m)m=M.reduce((a,b)=>a.stk.i<b.stk.i?a:b);for(const e of M)if(e!==m)sec.push(e)}
+  if(!sec.length)return f0(Q);
+  const si=new Set(sec.map(e=>e.id)),out=f0(Object.assign({},Q,{els:Q.els.filter(e=>!si.has(e.id))})),bands=new Map(),walls=Q.els.filter(e=>e.cat==='wall').map(e=>[e,zRange(Q,e)]);
+  for(const e of sec){const z=zRange(Q,e),k=e.level+'|'+Math.round(z[0])+'|'+Math.round(z[1]);(bands.get(k)||bands.set(k,{z,lv:e.level,g:[]}).get(k)).g.push(e)}
+  for(const B of bands.values()){const mine=new Set(B.g.map(e=>e.id)),r=f0(Object.assign({},Q,{els:walls.filter(([w,z])=>mine.has(w.id)||(w.level===B.lv&&Math.min(z[1],B.z[1])-Math.max(z[0],B.z[0])>50)).map(q=>q[0])}));for(const id of mine)if(r.has(id))out.set(id,r.get(id))}
+  return out}}
+/* the row of a stacked wall the plan cuts is drawn cut, however low it ends (a wall under 2 m of its own is seen from above) */
+{const f0=planShow;planShow=(v,e)=>{const r=f0(v,e);if(r==='low'&&e.cat==='wall'&&e.stk){const z=zRange(P,e),c=VRm(v).cut;if(z[0]<c&&z[1]>=c)return'cut'}return r}}
+/* the area of a row: less what its doors, windows and openings really take out of it */
+{const f0=quantities;quantities=Q=>{const q=f0(Q);if(!Q.els.some(e=>e.stk&&e.cat==='wall'))return q;const H=new Map();for(const o of Q.els)if(HOSTED.includes(o.cat))(H.get(o.host)||H.set(o.host,[]).get(o.host)).push(o);
+  for(const e of Q.els){if(e.cat!=='wall'||!e.stk||e.attT||e.attB||e.prof||!H.has(e.id))continue;const r=q.get(e.id),T=typ(Q,e),z=zRange(Q,e),lv=elev(Q,e.level);if(!r||!T)continue;let open=0;
+    for(const o of H.get(e.id)){const ot=typ(Q,o);if(!ot)continue;const zs=lv+(+o.sill||0);open+=ot.width*Math.max(0,Math.min(z[1],zs+ot.height)-Math.max(z[0],zs))}
+    r.area=Math.max(0,r.len*r.h-open);r.vol=r.area*T.thickness}return q}}
+/* a stacked type in use keeps the types of its rows; Purge Unused offers neither */
+{const f0=purgeable;purgeable=Q=>{const out=f0(Q),W=(Q.types||{}).wall||[];if(!W.some(T=>T.kind==='stack'))return out;const keep=new Set(),us=new Set();for(const e of Q.els||[])if(e.stk)us.add(e.stk.T);
+  for(const T of W)if(T.kind==='stack'){if(us.has(T.id))keep.add(T.id);for(const r of T.rows||[])keep.add(r.t)}return out.filter(it=>!(it.g==='type'&&it.cat==='wall'&&keep.has(it.id)))}}
+/* a click on a row takes the whole wall, and so does everything done to a row */
+const stkGrow=(ids,set)=>{let ks=null;for(const id of ids){const e=IDX.get(id);if(e&&e.cat==='wall'&&e.stk)(ks=ks||new Set()).add(e.stk.k)}if(ks)for(const e of P.els)if(e.cat==='wall'&&e.stk&&ks.has(e.stk.k))set.add(e.id);return set};
+{const f0=grpIds;grpIds=id=>{const r=f0(id);if(ui.ge)return r;const s=new Set(r),n=s.size;stkGrow(r,s);return s.size===n?r:[...s]}}
+{const f0=grpClose;grpClose=set=>{const s=f0(set);return ui.ge?s:stkGrow([...s],s)}}
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids),n=s.size;stkGrow([...s],s);return s.size===n?s:f0(s)}}
+/* the stacks the selection is exactly (every row of each, and nothing else), or null */
+function stkSelK(){if(ui.sel.size<1||ui.ge)return null;const ks=new Map();for(const id of ui.sel){const e=IDX.get(id);if(!e||e.cat!=='wall'||!e.stk)return null;ks.set(e.stk.k,(ks.get(e.stk.k)||0)+1)}
+  for(const [k,c] of ks)if(stkMem(k).length!==c)return null;return[...ks.keys()]}
+/* Properties of whole stacked walls: the constraints of the wall, not of its rows */
+function stkProps(K){const Ms=K.map(stkMem),D=Ms[0][0].stk,V=f=>{const a=f(D);return Ms.every(M=>f(M[0].stk)===a)?a:''},W=P.types.wall||[],U=t('u_mm'),Q=QTY(),ids=Ms.flat().map(e=>e.id),S=k=>ids.reduce((s,id)=>s+((Q.get(id)||{})[k]||0),0),tc=V(d=>d.T),
+    op=(x,c)=>`<option value="${x.id}"${x.id===c?' selected':''}>${esc(x.name)}</option>`,
+    num=(k,l,v,a)=>`<div class="pr"><label for="sk_${k}">${t(l)}</label><div><input type="number" id="sk_${k}" data-stk="${k}" value="${v===''?'':v}" ${a||''}${v===''?` placeholder="${t('varies')}"`:''}><span class="u">${U}</span></div></div>`,
+    sel=(k,l,v,o)=>`<div class="pr"><label for="sk_${k}">${t(l)}</label><div><select id="sk_${k}" data-stk="${k}">${v===''?`<option value="" selected>${t('varies')}</option>`:''}${o.map(x=>`<option value="${x[0]}"${String(x[0])===String(v)?' selected':''}>${esc(x[1])}</option>`).join('')}</select></div></div>`;
+  const L=lvOpts(),vt=V(d=>d.v.T||0),len=Ms.reduce((s,M)=>s+Math.hypot(M[0].stk.L[2]-M[0].stk.L[0],M[0].stk.L[3]-M[0].stk.L[1]),0),T=tc===''?null:stkT(tc);
+  let h=`<div class="tsel">${icon((BTN.wall||['types'])[0])}<div class="fam"><small>${esc(t('stk_sel')+' ('+K.length+')')}</small><select id="sk_type" data-stk="type" aria-label="${t('type')}">${tc===''?`<option value="" selected>${t('varies')}</option>`:''}<optgroup label="${esc(t('stk_g'))}">${W.filter(x=>x.kind==='stack').map(x=>op(x,tc)).join('')}</optgroup><optgroup label="${esc(t('stk_gb'))}">${W.filter(stkBasic).map(x=>op(x,-1)).join('')}</optgroup></select></div><button class="btn" data-stkb="edit"${T?'':' disabled'}>${t('edit_type')}</button></div>`;
+  h+=PR.grp('g_constraints')+sel('l','p_baselevel',V(d=>d.v.l),L)+num('b','p_baseoff',V(d=>d.v.b||0),'step="50"')+sel('top','p_top',vt,[[0,t('top_unconn')],...L.map(l=>[l[0],t('top_upto')+' '+l[1]])]);
+  h+=vt===0?num('H','p_height',V(d=>d.v.H||3000),'step="50" min="100"'):vt===''?'':num('o','p_topoff',V(d=>d.v.o||0),'step="50"');
+  h+=PR.grp('g_dims')+PR.ro('p_length',fmtLen(len)+' '+unitName())+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit())+PR.ro('p_volume',fmtVol(S('vol'))+' '+volUnit());
+  if(T){h+=PR.grp('stk_rows');const n=T.rows.length;for(let i=n-1;i>=0;i--){const r=T.rows[i],B=W.find(x=>x.id===r.t)||{},m=Ms.length===1?Ms[0].find(e=>e.stk.i===i):null;h+=`<div class="pr"><label>${n-i} · ${m?fmtLen(zRange(P,m)[1]-zRange(P,m)[0])+' '+unitName():r.h?fmtLen(r.h)+' '+unitName():t('stk_var')}</label><div><span class="ro" title="${esc(B.name||'')}">${esc(B.name||'')}</span></div></div>`}}
+  return h+`<div class="pa"><button class="btn" data-stkb="flip" title="${t('stk_flip_t')}">${t('stk_flip')}</button><button class="btn" data-stkb="break">${t('stk_break')}</button></div><div class="pnote">${t('stk_note')}</div>`}
+function stkSet(K,k,raw){const W=P.types.wall||[];let conv=null;
+  edit(()=>{const kill=new Set(),HW=new Map();for(const key of K){const M=stkMem(key);if(!M.length)continue;
+      if(k==='type'){const T=W.find(x=>x.id===+raw);if(!T)continue;if(T.kind==='stack'){for(const e of M)e.stk.T=T.id}else if(stkBasic(T)){stkToWall(M,T.id,kill,HW);(conv=conv||[]).push(M[0].id)}continue}
+      const v=Object.assign({},M[0].stk.v),x=parseFloat(raw);
+      if(k==='l'){if(!lvl(P,+raw))continue;v.l=+raw}else if(k==='b'){if(!isFinite(x))continue;v.b=Math.round(x)}else if(k==='o'){if(!isFinite(x))continue;v.o=Math.round(x)}else if(k==='H'){if(!isFinite(x)||x<100)continue;v.H=Math.round(x)}
+      else if(k==='top'){const id=+raw;if(id>0){if(!lvl(P,id))continue;v.T=id;v.o=0}else{if(v.T>0&&lvl(P,v.T))v.H=Math.max(100,Math.round(elev(P,v.T)+(v.o||0)-elev(P,v.l)-(v.b||0)));v.T=0;v.o=0}}
+      for(const e of M)e.stk.v=Object.assign({},v)}
+    if(kill.size){P.els=P.els.filter(e=>!kill.has(e.id));IDX=indexProject(P)}});
+  ui.sel=new Set(conv||K.flatMap(key=>stkMem(key).map(e=>e.id)));refresh()}
+/* Break Up: the rows become walls of their own (and the openings of their doors openings of their own) */
+function stkBreak(K){const ks=new Set(K);edit(()=>{const ids=new Set();for(const e of P.els)if(e.cat==='wall'&&e.stk&&ks.has(e.stk.k)){ids.add(e.id);delete e.stk}for(const o of P.els)if(o.stkO&&ids.has(o.host))delete o.stkO});toast(t('stk_broken'));refresh()}
+{const f0=renderProps;renderProps=()=>{f0();const tl=ui.tool;if((CREATE_TOOLS.has(tl)&&P.types[tl])||NEW_PROPS.includes(tl)||selGroup())return;const K=stkSelK();if(!K)return;const el=$('#props'),st=el.scrollTop;el.innerHTML=stkProps(K);el.scrollTop=st}}
+(()=>{const el=$('#props');if(!el)return;
+  el.addEventListener('change',e=>{const k=e.target&&e.target.dataset&&e.target.dataset.stk;if(!k)return;e.stopPropagation();const K=stkSelK();if(K&&e.target.value!=='')stkSet(K,k,e.target.value);else renderProps()},true);
+  el.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('[data-stkb]');if(!b)return;e.stopPropagation();const K=stkSelK();if(!K)return;if(b.dataset.stkb==='break')stkBreak(K);else if(b.dataset.stkb==='flip')edit(()=>{for(const k of K)for(const e of stkMem(k))e.stk.m=e.stk.m?0:1});else{const T=stkT(stkMem(K[0])[0].stk.T);if(T)dlgTypes('wall',T.id)}},true)})();
+/* the ends of a selected stacked wall can be dragged, as those of a wall can: the grips of the row the plan shows */
+function stkGrip(v){if(!v||v.kind!=='plan'||ui.tool!=='modify'||ui.sel.size<2)return null;const K=stkSelK();if(!K||K.length!==1)return null;const M=stkMem(K[0]).filter(e=>planShow(v,e));return M.find(e=>planShow(v,e)==='cut')||M[0]||null}
+{const f0=hitPlan;hitPlan=(v,p)=>{const m=stkGrip(v);if(m){const nav=navOf(v),x=(p.x-nav.ox)/nav.s,y=(p.y-nav.oy)/nav.s,gt=8/nav.s;if(Math.hypot(m.x1-x,m.y1-y)<gt)return{id:m.id,grip:0};if(Math.hypot(m.x2-x,m.y2-y)<gt)return{id:m.id,grip:1}}return f0(v,p)}}
+XCT.push((pn,ctx,v,nav,g)=>{const m=stkGrip(v);if(!m)return;for(const p of [[m.x1,m.y1],[m.x2,m.y2]]){ctx.fillStyle=C.raise;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(g.X(p[0]),g.Y(p[1]),4.5,0,7);ctx.fill();ctx.stroke()}});
+/* a new stacked type from a basic one: that type above, and under it 1.00 m of another (a thicker or a concrete one when there is one) */
+function stkNew(B){const W=P.types.wall,O=W.filter(x=>stkBasic(x)&&x!==B),lo=O.find(x=>x.hatch==='solid'&&x.thickness>=B.thickness)||O.find(x=>x.thickness>B.thickness)||O[0]||B;let id;
+  edit(()=>{const n=W.filter(x=>x.kind==='stack').length+1,T={id:id=P.seq++,name:t('stk_name')+' '+n,mark:'SW'+n,kind:'stack',al:'cl',rows:[{t:lo.id,h:1000,o:0},{t:B.id,h:0,o:0}]};if(stkNorm(T,W))W.push(T);else id=null});if(id)dlgStack(stkT(id))}
+const stkUse=id=>new Set(P.els.filter(e=>e.cat==='wall'&&e.stk&&e.stk.T===id).map(e=>e.stk.k)).size;
+/* Edit Assembly: the rows from the top down, as they stand */
+function dlgStack(T){const W=P.types.wall||[],B=W.filter(stkBasic),G=stkGeo(T),used=stkUse(T.id),n=T.rows.length,U=t('u_mm');
+  const rows=T.rows.map((r,i)=>[r,i]).reverse().map(([r,i])=>`<tr><td>${n-i}</td><td><select data-sk="t" data-i="${i}" style="max-width:230px">${B.map(x=>`<option value="${x.id}"${x.id===r.t?' selected':''}>${esc(x.name)}</option>`).join('')}</select></td>
+    <td>${r.h?`<input type="number" data-sk="h" data-i="${i}" value="${r.h}" min="50" step="50" style="width:84px">`:`<span class="note">${t('stk_var')}</span>`}</td><td style="text-align:center"><input type="radio" name="skv" data-sk="v" data-i="${i}"${r.h?'':' checked'} aria-label="${t('stk_var')}"></td>
+    <td><input type="number" data-sk="o" data-i="${i}" value="${r.o||0}" step="5" style="width:72px"></td>
+    <td style="white-space:nowrap"><button class="btn" data-ska="up" data-i="${i}"${i<n-1?'':' disabled'}>▲</button><button class="btn" data-ska="dn" data-i="${i}"${i?'':' disabled'}>▼</button><button class="btn" data-ska="ins" data-i="${i}" title="${t('stk_ins')}"${n<8?'':' disabled'}>+</button><button class="btn danger" data-ska="del" data-i="${i}"${n>1?'':' disabled'}>✕</button></td></tr>`).join('');
+  /* the section of a sample: the exterior on the left */
+  const sh=G.R.map(r=>r.h||Math.max(800,3000-T.rows.reduce((a,q)=>a+q.h,0))),tot=sh.reduce((a,b)=>a+b,0)||1,SW=190,SH=250,m=G.w+2*Math.max(120,G.w*0.5),kx=(SW-70)/m,ky=(SH-34)/tot,k=Math.min(kx,ky*4),x0=20+(SW-70)/2+(G.c)*k,X=s=>x0-s*k;let z=0,svg='';
+  G.R.forEach((r,i)=>{const b=B.find(x=>x.id===r.t)||{},y1=SH-14-z*ky,y0=SH-14-(z+sh[i])*ky;svg+=`<rect x="${X(r.s+r.th/2).toFixed(1)}" y="${y0.toFixed(1)}" width="${(r.th*k).toFixed(1)}" height="${(y1-y0).toFixed(1)}" fill="${esc(b.color||'#ccc')}" stroke="currentColor" stroke-width="1"/><text x="${SW-44}" y="${((y0+y1)/2+4).toFixed(1)}" font-size="10.5" fill="currentColor">${r.h?esc(fmtLen(r.h)):'↕'}</text>`;z+=sh[i]});
+  svg=`<svg viewBox="0 0 ${SW} ${SH}" width="${SW}" height="${SH}" role="img" aria-label="${esc(t('stk_prev'))}" style="flex:none;color:var(--ink,#18202b)"><line x1="${X(0).toFixed(1)}" y1="4" x2="${X(0).toFixed(1)}" y2="${SH-8}" stroke="#d5352f" stroke-width="1" stroke-dasharray="5 3"/>${svg}<line x1="6" y1="${SH-14}" x2="${SW-50}" y2="${SH-14}" stroke="currentColor" stroke-width="1.4"/><text x="4" y="12" font-size="10.5" fill="currentColor">${esc(t('stk_ext'))}</text><text x="${SW-50}" y="12" font-size="10.5" fill="currentColor" text-anchor="end">${esc(t('stk_int'))}</text></svg>`;
+  const body=`<div class="fr"><label for="tdType">${t('type')}</label><select id="tdType">${W.map(x=>`<option value="${x.id}"${x===T?' selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="pa" style="padding:0"><button class="btn" data-ska="dup">${t('duplicate')}</button><button class="btn danger" data-ska="deltype"${used?' disabled':''}>${t('delete_type')}</button><span class="note" style="align-self:center">${t('type_used',used)}</span></div>
+    <div class="pg" style="margin:4px -16px;padding-left:16px">${t('stk_asm')}</div>
+    <div class="fr"><label for="sk_name">${t('f_name')}</label><input id="sk_name" data-sk="name" type="text" value="${esc(T.name||'')}" maxlength="80"></div>
+    <div class="fr"><label for="sk_mark">${t('f_mark')}</label><input id="sk_mark" data-sk="mark" type="text" value="${esc(T.mark||'')}" maxlength="24"></div>
+    <div class="fr"><label for="sk_al">${t('stk_al')}</label><select id="sk_al" data-sk="al">${STK_AL.map(a=>`<option value="${a}"${T.al===a?' selected':''}>${t('stk_al_'+a)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap"><div style="overflow-x:auto;flex:1 1 430px"><table class="tbl" style="width:100%"><thead><tr><th>#</th><th>${t('stk_c_t')}</th><th>${t('stk_c_h')} (${U})</th><th>${t('stk_var')}</th><th>${t('stk_c_o')} (${U})</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="note">${t('stk_top')}</td></tr>${rows}<tr><td colspan="6" class="note">${t('stk_base')}</td></tr></tbody></table></div>${svg}</div>
+    <p class="note"><b>${t('stk_w')}: ${Math.round(G.w)} ${U}</b> · ${t('stk_dnote')}</p>`;
+  openDlg(t('stk_title')+' · '+T.name,body,`<button class="btn primary" data-close="1">${t('close')}</button>`,{
+    change(e){const el=e.target;if(el.id==='tdType')return dlgTypes('wall',+el.value);const k=el.dataset.sk;if(!k)return;const i=+el.dataset.i,r=T.rows[i];
+      if(k==='name'||k==='mark'){const v=String(el.value).trim();if(k==='name'&&!v)return dlgStack(T);edit(()=>{T[k]=v});return dlgStack(T)}
+      if(k==='al'){if(STK_AL.includes(el.value))edit(()=>{T.al=el.value;stkNorm(T)});return dlgStack(T)}if(!r)return;
+      if(k==='t'){const id=+el.value;if(B.some(x=>x.id===id))edit(()=>{r.t=id;stkNorm(T)})}
+      else if(k==='h'){const v=Math.round(parseFloat(el.value));if(isFinite(v)&&v>=50&&v<=30000)edit(()=>{r.h=v;stkNorm(T)})}
+      else if(k==='o'){const v=Math.round(parseFloat(el.value));if(isFinite(v)&&Math.abs(v)<=1000)edit(()=>{r.o=v;stkNorm(T)})}
+      else if(k==='v'&&r.h)edit(()=>{for(const q of T.rows)if(!q.h)q.h=1000;r.h=0;stkNorm(T)});
+      dlgStack(T)},
+    click(e){const b=e.target.closest('[data-ska]');if(!b)return;const a=b.dataset.ska,i=+b.dataset.i,A=T.rows;
+      if(a==='dup'){let nid;edit(()=>{const c=JSON.parse(JSON.stringify(T));c.id=nid=P.seq++;c.name=T.name+' ('+t('copy_suffix')+')';W.push(c)});return dlgStack(stkT(nid))}
+      if(a==='deltype'){if(used)return;edit(()=>{P.types.wall=W.filter(x=>x!==T)});return dlgTypes('wall')}
+      edit(()=>{if(a==='up'&&i<A.length-1)[A[i+1],A[i]]=[A[i],A[i+1]];else if(a==='dn'&&i>0)[A[i-1],A[i]]=[A[i],A[i-1]];else if(a==='ins'&&A.length<8)A.splice(i+1,0,{t:A[i].t,h:1000,o:0});else if(a==='del'&&A.length>1)A.splice(i,1);stkNorm(T)});dlgStack(T)}},'wide')}
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{const c=P.types[cat]?cat:'wall',L=P.types[c]||[],T=L.find(x=>x.id===id)||L[0];if(c==='wall'&&T&&T.kind==='stack')return dlgStack(T);f0(cat,id);if(c!=='wall'||!stkBasic(T))return;
+  const d=$('#dlg'),dup=d&&d.querySelector('[data-td="dup"]');if(!dup)return;const b=document.createElement('button');b.className='btn';b.type='button';b.textContent=t('stk_new')+'…';b.dataset.stkn='1';b.addEventListener('click',ev=>{ev.stopPropagation();ev.preventDefault();stkNew(T)});dup.after(b);
+  if((P.types.wall||[]).some(S=>S.kind==='stack'&&(S.rows||[]).some(r=>r.t===T.id))){const del=d.querySelector('[data-td="del"]');if(del){del.disabled=true;del.title=t('stk_inrow')}}}}
+Object.assign(STR,{
+  stk_sel:['ผนังซ้อนชนิด (Stacked Wall)','Stacked Wall'],stk_g:['ผนังซ้อนชนิด','Stacked Wall'],stk_gb:['เปลี่ยนเป็นผนังธรรมดา','Change to a basic wall'],stk_rows:['แถวของผนัง จากบนลงล่าง','Rows, from the top down'],
+  stk_var:['สูงตามผนัง','Variable'],stk_break:['แยกเป็นผนังย่อย (Break Up)','Break Up'],stk_flip:['กลับด้านนอก/ใน (Flip)','Flip'],stk_flip_t:['สลับด้านนอกกับด้านในของผนังซ้อนชนิด: แถวที่เยื้องย้ายไปอีกฝั่งของแนวเส้นผนัง','Swap the exterior and the interior side of the stacked wall: the rows that are off the line move to its other side'],stk_broken:['แยกแล้ว: แต่ละแถวเป็นผนังธรรมดาของตัวเอง','Broken up: every row is a wall of its own'],
+  stk_note:['ผนังซ้อนชนิดเลือกและแก้ทั้งผืน · ลากจุดปลายเพื่อยืดหดได้ · แก้ชนิดและความสูงของแต่ละแถวที่ แก้ชนิด','A stacked wall is picked and changed as one · drag an end to stretch it · the type and the height of each row are in Edit Type'],
+  stk_new:['สร้างผนังซ้อนชนิดจากชนิดนี้','New Stacked Wall from this type'],stk_name:['ผนังซ้อนชนิด','Stacked Wall'],stk_title:['แก้โครงสร้างผนังซ้อนชนิด (Edit Assembly)','Edit Assembly'],stk_asm:['ผนังซ้อนชนิด: ผนังธรรมดาวางซ้อนกันตามความสูง','Stacked wall: basic walls one on top of another'],
+  stk_al:['จัดแนวแถวตาม (Offset)','Offset'],stk_al_cl:['เส้นกึ่งกลางผนัง (Wall Centerline)','Wall Centerline'],stk_al_fe:['ผิวด้านนอก (Finish Face: Exterior)','Finish Face: Exterior'],stk_al_fi:['ผิวด้านใน (Finish Face: Interior)','Finish Face: Interior'],
+  stk_c_t:['ชนิดผนัง','Wall type'],stk_c_h:['ความสูง','Height'],stk_c_o:['ระยะเยื้อง','Offset'],stk_ins:['เพิ่มแถวเหนือแถวนี้','Insert a row above this one'],stk_top:['บนสุด','Top'],stk_base:['ฐาน','Base'],stk_ext:['ภายนอก','Exterior'],stk_int:['ภายใน','Interior'],stk_prev:['รูปตัดตัวอย่าง','Sample section'],
+  stk_w:['ความกว้างรวม','Overall width'],stk_dnote:['แถวหนึ่งต้องสูงตามผนัง (ยืดหดตามความสูงผนัง) · ระยะเยื้องบวกคือออกด้านนอก · แถวที่แปลนตัดผ่าน (สูง 1.20 ม. จากฐาน) อยู่บนแนวเส้นผนัง (เส้นประสีแดง) แถวอื่นเยื้องจากแนวนั้น · ผนังที่ใช้ชนิดนี้เปลี่ยนตามทันที','One row is variable: it takes up the rest of the height of the wall · a positive offset is toward the exterior · the row a plan cuts (1.20 m above the base) stands on the line of the wall (the dashed red line), the other rows are off it · the walls of this type follow at once'],
+  stk_inrow:['ชนิดนี้เป็นแถวของผนังซ้อนชนิด','This type is a row of a stacked wall']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -32896,6 +33117,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.184 · คลังราคากลาง: ราคาสำนักงบประมาณและค่าแรง ว 480 ออกปีละครั้ง หน้าต่างคลังราคาจึงไม่นับเป็น ราคาเก่ากว่า 6 เดือน จนกว่าจะครบ 1 ปี (เหมือน PENUM PM)
 - V1.188 · [[a_sitemap]] ในแท็บ [[tab_site]]: ค้นหาที่อยู่ พิกัด หรือวางลิงก์ Google Maps แล้ววางภาพดาวเทียม (Esri) หรือแผนที่ถนน (OpenStreetMap) ใต้ผังบริเวณตามขนาดจริง หันตามทิศเหนือจริง ตั้งที่ตั้งโครงการ ใส่ลูกศรทิศเหนือ ปูภาพบนพื้นในมุมมอง 3 มิติ และดึงอาคารรอบข้างเป็นก้อน 3 มิติได้ · ภาพหน้าจอ Google Maps: กด Ctrl+V แล้วคลิกปลายแถบมาตราส่วน 2 จุด
 - V1.189 · [[a_mapbld]]: อาคารรอบข้างมาจาก Overture Maps ซึ่งรวม OpenStreetMap กับรูปอาคารที่ AI ของ Microsoft และ Google ลากจากภาพดาวเทียม (ใช้ฟรี) ได้อาคารครบกว่าเดิมมาก ถ้าอ่านไม่ได้ใช้ OpenStreetMap แทน · [[a_roofpick]]: คลิกหลังคาในภาพแผนที่ โปรแกรมหาขอบหลังคาแล้วสร้างก้อนอาคารตามจำนวนชั้นที่ตั้ง
+- V1.190 · ผนังซ้อนชนิด (Stacked Wall): ชนิดผนังที่เป็นผนังธรรมดาหลายชนิดวางซ้อนกันตามความสูง เช่น คอนกรีตสูง 1.00 ม. ต่อด้วยก่ออิฐ · โครงการใหม่มีชนิด SW1 ให้เลือกในช่องชนิดของเครื่องมือ [[t_wall]] · โครงการเดิม: เปิด [[edit_type]] ของผนังธรรมดาแล้วกด [[stk_new]] · ใน [[stk_title]] เพิ่ม ลบ สลับแถว เลือกชนิดและความสูงของแต่ละแถว แถวหนึ่งต้อง [[stk_var]] ตั้ง [[stk_al]] และ [[stk_c_o]] ได้ มีรูปตัดตัวอย่างให้ดู แถวที่แปลนตัดผ่านอยู่บนแนวเส้นผนัง ห้องและผนังที่มาชนจึงยังต่อกันเหมือนเดิม · ผนังทั้งผืนเลือก ย้าย คัดลอก หมุน ลบ และลากปลายพร้อมกันทุกแถว Properties แสดงระดับฐาน ระดับบน และความสูงของทั้งผืน · ประตูและหน้าต่างเจาะทุกแถวที่มันผ่าน · แก้ชนิดแล้วผนังทุกผืนเปลี่ยนตาม · [[stk_flip]] สลับด้านนอกกับด้านใน · [[stk_break]] แยกแต่ละแถวเป็นผนังธรรมดา · ตารางและปริมาณนับทีละแถวตามชนิดจริง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -33218,6 +33440,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.184 · Price library: the Budget Bureau and Comptroller General (ว 480) prices are yearly lists, so the price library window no longer counts them as over 6 months old until a year has passed (as in PENUM PM).
 - V1.188 · [[a_sitemap]] on the [[tab_site]] tab: find an address, coordinates or a pasted Google Maps link, and put a satellite picture (Esri) or a street map (OpenStreetMap) under the site plan at its true size, turned to true north; it sets the project location, adds a north arrow, lies on the ground in 3D views and can bring the buildings around as 3D masses · a Google Maps screenshot: Ctrl+V, then click both ends of its scale bar
 - V1.189 · [[a_mapbld]]: the buildings around come from Overture Maps, which joins OpenStreetMap with the footprints Microsoft's and Google's AI traced from satellite pictures (free), so far more buildings come; OpenStreetMap when it cannot be read · [[a_roofpick]]: click a roof in a map picture, its edge is found and a mass of the storeys set is made
+- V1.190 · Stacked Wall: a wall type made of basic walls one on top of another, such as concrete to 1.00 m with brick above · a new project has the type SW1 in the Type Selector of [[t_wall]] · in an older project open [[edit_type]] of a basic wall and press [[stk_new]] · in [[stk_title]] add, remove and reorder the rows and give each its type and height; one row is [[stk_var]]; [[stk_al]] and [[stk_c_o]] place the rows across the wall, and a sample section shows the result; the row a plan cuts stands on the line of the wall, so rooms and the walls that meet it stay joined · the whole wall is picked, moved, copied, rotated, deleted and stretched by its ends as one, and Properties show the base, the top and the height of the whole wall · doors and windows cut every row they pass through · walls follow their type when it is edited · [[stk_flip]] swaps the exterior and the interior side · [[stk_break]] turns the rows into basic walls · schedules and quantities count each row by its real type
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -35230,6 +35453,9 @@ window.PenumBIM.r99={tc:(ids,o)=>{const Q=tcPlan(ids||P.els.filter(e=>e.cat==='r
   tcApply:(ids,o)=>tcApply(tcPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},tcOpt(),o||{}))),
   fdr:(ids,o)=>{const Q=fdrPlan(ids||P.els.filter(e=>e.cat==='room').map(e=>e.id),Object.assign({},fdrOpt(),o||{}));return{rooms:Q.rooms.map(R=>({id:R.it.r.id,name:R.it.r.name,st:R.st,n:R.n,has:R.has})),add:Q.add,del:[...Q.del]}},
   fxc:()=>fxcCheck(),people:()=>fxcPeople()};
+window.PenumBIM.r190={get P(){return P},reg:lv=>regions(P,lv).map(r=>({poly:r.poly,net:r.net,area:r.area,perim:r.perim})),ui,sync:stkSync,mem:k=>stkMem(k).map(e=>JSON.parse(JSON.stringify(e))),keys:()=>[...new Set(P.els.filter(e=>e.cat==='wall'&&e.stk).map(e=>e.stk.k))],selK:stkSelK,geo:id=>stkGeo(stkT(id)),set:stkSet,brk:stkBreak,newT:id=>stkNew(P.types.wall.find(x=>x.id===id)),dlg:id=>dlgTypes('wall',id),fp:id=>{const f=FPm().get(id);return f?{dL0:f.dL0,dR0:f.dR0,dL1:f.dL1,dR1:f.dR1,poly:f.poly,tj:f.tj,free:[f.free0,f.free1]}:null},qty:id=>QTY().get(id),
+  grow:id=>grpIds(id),move:(ids,dx,dy)=>edit(()=>translateIds(expandSel(ids),dx,dy)),del:ids=>edit(()=>deleteIds([...expandSel(ids)])),copy:(ids,dx,dy)=>{let out;edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});return out},
+  rot:(ids,cx,cy,deg)=>edit(()=>rotateIds([...expandSel(ids)],cx,cy,deg)),mir:(ids,ax,ay,bx,by)=>edit(()=>mirrorIds([...expandSel(ids)],ax,ay,bx,by)),split:(id,x,y)=>edit(()=>splitLine(IDX.get(id),{x,y},0)),hit:(x,y)=>hitPlan(activeView(),{x,y}),props:()=>$('#props').innerText};
 window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
   put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
   pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
