@@ -7668,12 +7668,12 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
   ctx.lineJoin='miter';ctx.lineCap='butt';g.dash(null);
   // crop region: the model is cut at it, annotations show a little further out
   const CB=cropOn(v)?v.crop.box:null,clipTo=(b,pl)=>{ctx.save();g.path(pl||[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]]);ctx.clip();g.clipBox(b)};if(CB)clipTo(CB,v.crop.poly);
-  for(const PS of pregPasses(ctx,g,v)){PS.on();try{shown=[];for(const e of P.els){const m=planShow(v,e);if(m)shown.push([e,m])}          /* once, or outside the plan regions and in each (94) */
+  for(const PS of pregPasses(ctx,g,v)){PS.on();try{shown=[];for(const e of P.els){if(o.only&&!o.only.has(e.id))continue;const m=planShow(v,e);if(m&&!(o.ul&&ulSkip(o,e)))shown.push([e,m])}          /* once, or outside the plan regions and in each (94) */
   // underlay of another level
-  if(v.underlay&&lvl(P,v.underlay)&&!hc('underlay')){g.lay('underlay');ctx.strokeStyle=col.ghost;ctx.lineWidth=1;ctx.setLineDash(ulDash());for(const e of P.els)if(e.cat==='wall'&&e.level===v.underlay){const fp=FP.get(e.id);if(fp){g.path(fp.poly);ctx.stroke()}}ctx.setLineDash([])}
+  if(v.underlay&&lvl(P,v.underlay)&&!hc('underlay'))ulDraw(ctx,g,v,T,o);          /* V1.197: all of that level, not its walls only */
   // linked CAD drawings lie under everything else
   {const lk=of('link');if(lk.length)drawLinks(ctx,g,v,lk.map(x=>x[0]),T,col,o,hl)}
-  for(const f of XPL0)f(ctx,g,v,T,col,o,of,hl);          /* the ground lies under the building */
+  if(!o.ul)for(const f of XPL0)f(ctx,g,v,T,col,o,of,hl);          /* the ground lies under the building */
   // room colour fill
   const rooms=of('room'),regs=REG(v.level,viewPhase(v),dopShown(P,v)),CS=v.cs?CSm(v.cs):null;
   rooms.forEach(([r],i)=>{g.el(r);const k=regionAt(regs,r.x,r.y);if(k<0)return;const h=hl(r.id),ci=CS&&CS.of.get(r.id);
@@ -7823,6 +7823,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
   if(v.area!=null)areaDrawLines(ctx,g,of('aline'),hl);          // area boundary lines: over the walls they run along
   // building services
   drawMEP(g,v,T,col,H,shown,hl,hc,det)}finally{PS.off()}}
+  if(o.ul)return;          /* an underlay is the model only: no datums, no annotations */
   if(CB){ctx.restore();const m=cropAnn(v);clipTo([CB[0]-m,CB[1]-m,CB[2]+m,CB[3]+m])}
   // reference planes: construction lines, on screen only (as in Revit they do not print)
   if(o.screen)for(const [e] of of('rplane')){g.el(e);const h=hl(e.id),c=h||RPCOL;ctx.strokeStyle=c;ctx.lineWidth=h?1.8:g.lw(0.13);g.dash([3.2,1.6]);g.seg([e.x1,e.y1],[e.x2,e.y2]);g.dash(null);
@@ -7853,7 +7854,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
 function planExtents(v,raw){let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const FP=FPm(),sc=v.scale,CB=!raw&&cropOn(v)?v.crop.box:null,am=CB?cropAnn(v):0;          // raw: as if nothing were cropped
   const add=CB?(x,y)=>{x=clamp(x,CB[0]-am,CB[2]+am);y=clamp(y,CB[1]-am,CB[3]+am);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}:(x,y)=>{if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y};
   if(CB){x0=CB[0];y0=CB[1];x1=CB[2];y1=CB[3]}          // a cropped view is as large as its crop region, plus the annotations that show outside it
-  if(!CB)for(const e of P.els){if(!planShow(v,e)||e.cat==='rplane')continue;const G=GEOM[e.cat];          // a reference plane does not print: it does not count
+  if(!CB)for(const e of P.els){if(!(planShow(v,e)||ulOnly(v,e))||e.cat==='rplane')continue;const G=GEOM[e.cat];          // a reference plane does not print: it does not count; V1.197: what the underlay shows counts
     if(e.cat==='wall'){const fp=FP.get(e.id);if(fp)fp.poly.forEach(p=>add(p[0],p[1]))}else if(e.cat==='roof'){const R=roofGeo(P,e);(R.out||R.eave).forEach(p=>add(p[0],p[1]))}
     else if(G==='line'&&lcCurve(e))bowPts(e).forEach(p=>add(p[0],p[1]));else if(G==='line'){add(e.x1,e.y1);if(e.cat==='stair'){const s=stairGeo(P,e);s.hull.forEach(p=>add(p[0],p[1]))}else add(e.x2,e.y2)}else if(e.cat==='link')linkLoop(e).forEach(p=>add(p[0],p[1]));else if(e.cat==='mtext')mtextLoop(P,e).forEach(p=>add(p[0],p[1]));else if(G==='point'){const m=COMP_CATS.includes(e.cat)?250:700;add(e.x-m,e.y-m);add(e.x+m,e.y+m)}else if(G==='poly'||G==='path')e.pts.forEach(p=>add(p[0],p[1]))}
   if(!v.draft&&!catHid(v,'grid'))for(const e of P.grids){if(hidDatum(v,e))continue;const S=CB||gridBent(e)?gridShape(v,e):{q:[[e.x1,e.y1],[e.x2,e.y2]]};if(!S)continue;const q=S.q,R=8.5*sc,L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;if(S.path)for(const p of S.path)add(p[0],p[1]);for(const k of [0,1]){if(!geBub(e,k)){add(q[k][0],q[k][1]);continue}const sg=k?1:-1,o=S.u?S.u[k]:[(e.x2-e.x1)/L*sg,(e.y2-e.y1)/L*sg],ex=q[k][0]+o[0]*R,ey=q[k][1]+o[1]*R;add(ex,ey);add(ex-4*sc,ey-4*sc);add(ex+4*sc,ey+4*sc)}}
@@ -8664,7 +8665,7 @@ function cancelTool(hard){
 let KP=null;
 function keyData(v,faces){
   if(KP&&KP.ver===VER&&KP.view===v.id&&KP.faces===!!faces)return KP;const pts=[],late=[],lines=[],FP=FPm();
-  for(const e of P.els){if(!planShow(v,e))continue;const G=GEOM[e.cat];
+  for(const e of P.els){if(!planShow(v,e)&&!ulOnly(v,e))continue;const G=GEOM[e.cat];          /* V1.197: and what its underlay shows */
     if(G==='line'&&e.cat!=='stair'&&!lcCurve(e)){pts.push({x:e.x1,y:e.y1,kind:'end',ref:{k:'wend',id:e.id,e:0,s:0}},{x:e.x2,y:e.y2,kind:'end',ref:{k:'wend',id:e.id,e:1,s:0}},{x:(e.x1+e.x2)/2,y:(e.y1+e.y2)/2,kind:'mid',w:1.5,ref:{k:'won',id:e.id,u:0.5,s:0}});
       lines.push({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,id:e.id,s:0});
       if(faces&&e.cat==='wall'){const fp=FP.get(e.id);if(fp){const h=fp.g.h,cs=[[fp.dL0,h,0,1],[fp.dL1,h,1,1],[fp.dR0,-h,0,-1],[fp.dR1,-h,1,-1]];for(const c of cs){const p=fp.pt(c[0],c[1]);pts.push({x:p[0],y:p[1],kind:'end',ref:{k:'wend',id:e.id,e:c[2],s:c[3]}})}
@@ -8729,11 +8730,11 @@ function snapPt(v,w,o){
 /* ---------- hit testing (plan) ---------- */
 function segDist(px,py,x1,y1,x2,y2){const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy||1,tt=clamp(((px-x1)*dx+(py-y1)*dy)/l2,0,1);return Math.hypot(px-x1-dx*tt,py-y1-dy*tt)}
 function polyEdgeDist(x,y,pts){let d=Infinity;for(let i=0;i<pts.length;i++){const a=pts[i],b=pts[(i+1)%pts.length];d=Math.min(d,segDist(x,y,a[0],a[1],b[0],b[1]))}return d}
-function hitPlan(v,p){
-  const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=6/nav.s,sc=v.scale,FP=FPm();
+function hitPlan(v,p,UL){
+  const nav=navOf(UL||v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=6/nav.s,sc=v.scale,FP=FPm();
   if(cropOn(v)){const b=v.crop.box,m=cropAnn(v);if(w.x<b[0]-m||w.x>b[2]+m||w.y<b[1]-m||w.y>b[3]+m)return null}          // nothing is drawn out there
   // grips of a single selected element
-  if(ui.sel.size===1){const e=IDX.get([...ui.sel][0]);if(e){const G=GEOM[e.cat],gt=8/nav.s;
+  if(!UL&&ui.sel.size===1){const e=IDX.get([...ui.sel][0]);if(e){const G=GEOM[e.cat],gt=8/nav.s;
       if(e.cat==='section'&&!v.draft)for(const q of secGrips(e))if(Math.hypot(q[1][0]-w.x,q[1][1]-w.y)<gt)return{id:e.id,grip:q[0]};          // the depth of the view, the pieces and the jogs of a split section
       if(G==='line'&&e.cat!=='stair'&&!(e.cat==='section'&&e.jog)){const A=e.cat==='grid'?gE2(v,e,0):[e.x1,e.y1],B=e.cat==='grid'?gE2(v,e,1):[e.x2,e.y2];if(Math.hypot(A[0]-w.x,A[1]-w.y)<gt)return{id:e.id,grip:0};if(Math.hypot(B[0]-w.x,B[1]-w.y)<gt)return{id:e.id,grip:1}}
       if(G==='poly'||G==='path')for(let i=0;i<e.pts.length;i++)if(Math.hypot(e.pts[i][0]-w.x,e.pts[i][1]-w.y)<gt)return{id:e.id,grip:i}
@@ -8785,9 +8786,10 @@ function hitPlan(v,p){
   const regs=v.draft?[]:REG(v.level,viewPhase(v),dopShown(P,v)),ri=regionAt(regs,w.x,w.y);
   for(const e of sh)if(e.cat==='room'){if(Math.hypot(e.x-w.x,e.y-w.y)<7*sc)add(e.id,0,11);else if(ri>=0&&regionAt(regs,e.x,e.y)===ri)cand.push([9999,12,e.id])}
   if(v.area!=null){const AR=AREG(v.area,v.level),ai=areaAt(AR,w.x,w.y);for(const e of sh)if(e.cat==='area'){if(Math.hypot(e.x-w.x,e.y-w.y)<7*sc)add(e.id,0,11);else if(ai>=0&&areaAt(AR,e.x,e.y)===ai)cand.push([9999,12,e.id])}}          /* an area: by its point, or anywhere in its region where nothing else is */
-  if(ui.tool==='modify'&&(SOP.face||SOP.ul)&&!v.draft)soSoft(v,w,sh,inM,FP,tol).forEach((id,i)=>{if(!cand.some(c=>c[2]===id))cand.push([9999,1+i/100,id])});          // V1.192 by face and of the underlay: ahead of a room picked by its region
-  if(!cand.length)return null;cand.sort((a,b)=>(a[0]-b[0])||(a[1]-b[1]));
+  if(!UL&&ui.tool==='modify'&&(SOP.face||SOP.ul)&&!v.draft)soSoft(v,w,sh,inM,FP,tol).forEach((id,i)=>{if(!cand.some(c=>c[2]===id))cand.push([9999,1+i/100,id])});          // V1.192 by face and of the underlay: ahead of a room picked by its region
+  if(UL)return cand.sort((a,b)=>(a[0]-b[0])||(a[1]-b[1]));if(!cand.length)return null;cand.sort((a,b)=>(a[0]-b[0])||(a[1]-b[1]));
   const real=cand.filter(c=>c[0]<9999),list=real.length?real:cand,pk=list[(ui.cyc||0)%list.length];return pk[0]===9999&&pk[1]<12?{id:pk[2],n:list.length,soft:1}:{id:pk[2],n:list.length}}
+const hitPlan0=hitPlan;          /* V1.197 hitPlan itself, before the sections below wrap it: the underlay asks it for its candidates */
 function hitElev(v,p){const nav=navOf(v),E=elevExtents(v),sc=v.scale||100,k=sc*nav.s;{const a=eaHit(v,p,nav);if(a)return a}{const a=evAnnHit(v,p,nav);if(a)return a}if(catHid(v,'level'))return null;
   for(const l of P.levels){if(hidDatum(v,l))continue;const y=-l.elev*nav.s+nav.oy,xa=(E.h0-12*sc)*nav.s+nav.ox,xt=(E.h1+16*sc)*nav.s+nav.ox;          // xt: where the name and the elevation are written
     if(p.x>=xt-3&&p.x<=xt+Math.max(48,String(l.name).length*1.8*k)&&p.y>=y-4.8*k&&p.y<=y-0.6*k)return{id:l.id,part:'name',x:xt,y:y-2.6*k};
@@ -12587,7 +12589,7 @@ function viewRows(v){const U=t('u_mm'),TK=tplKind(v),TP=tplOf(v);let h=PR.grp('g
   const scl=sclOpts(v.scale),sty=['wire','hidden','shaded','colors','real'].map(s=>[s,t('st_'+s)]);
   if(v.kind==='plan'&&v.draft)h+=PR.sel('scale','p_scale',v.scale,scl)+(gcsIs(v)?gcsRows(v):cropRows(v))+`<div class="pnote">${t(v.legend?'legend_note':gcsIs(v)?'gcs_note':'draft_note')}</div>`+(v.legend?`<div class="pa"><button class="btn" data-act="legendfill">${t('a_legendfill')}</button></div>`:'');
   else if(v.kind==='plan'){const l=lvl(P,v.level);h+=PR.sel('disc','p_disc',v.disc||'coord',DISCS.map(d=>[d,t('disc_'+d)]))+PR.sel('scale','p_scale',v.scale,scl)+PR.sel('detail','p_detail',v.detail,['coarse','medium','fine'].map(s=>[s,t('det_'+s)]))
-      +PR.sel('underlay','p_underlay',v.underlay||0,[[0,t('none')],...lvOpts().filter(x=>x[0]!==v.level)])+PR.chk('tags','p_tags',v.tags!==false)+(v.area!=null?PR.ro('p_ascheme',asName(v.area))+PR.sel('acs','p_acs',v.acs||'',[['',t('none')],...AREA_FILL.map(k=>[k,t('acs_'+k)])])+`<div class="pa"><button class="btn" data-act="areacomp">${t('a_areacomp')}…</button></div>`:PR.sel('cs','p_cscheme',v.cs||'',[['',t('none')],...CS_KEYS.map(k=>[k,t('cs_'+k)])])+`<div class="pa"><button class="btn" data-act="cscheme">${t('a_cscheme')}…</button></div>`)+rcfViewRows(v)
+      +PR.sel('underlay','p_underlay',v.underlay||0,[[0,t('none')],...lvOpts().filter(x=>x[0]!==v.level)])+ulRows(v)+PR.chk('tags','p_tags',v.tags!==false)+(v.area!=null?PR.ro('p_ascheme',asName(v.area))+PR.sel('acs','p_acs',v.acs||'',[['',t('none')],...AREA_FILL.map(k=>[k,t('acs_'+k)])])+`<div class="pa"><button class="btn" data-act="areacomp">${t('a_areacomp')}…</button></div>`:PR.sel('cs','p_cscheme',v.cs||'',[['',t('none')],...CS_KEYS.map(k=>[k,t('cs_'+k)])])+`<div class="pa"><button class="btn" data-act="cscheme">${t('a_cscheme')}…</button></div>`)+rcfViewRows(v)
       +PR.grp('g_level')+PR.text('lvname','p_name',l.name)+PR.num('lvelev','p_elev',l.elev,U,'step="50"')+PR.ro('p_cutpl',fmtLen(vrOf(v).cut)+' '+unitName()+(v.rcp?' ↑':''))+`<div class="pa"><button class="btn" data-act="viewrange">${t('a_viewrange')}…</button></div>`+cropRows(v)}
   else if(v.kind==='3d')h+=PR.sel('disc','p_disc',v.disc||'coord',['coord','mep','mech','plumb','fire','elec'].map(d=>[d,t('disc_'+d)]))+PR.sel('style','p_vstyle',v.style||'shaded',sty)+PR.chk('persp','p_persp',!!navOf(v).persp)+realRows(v)+PR.grp('g_extents')+PR.chk('sbox','p_sbox',!!v.sboxOn)+(v.sboxOn&&v.sbox?PR.num('sboxA','p_sboxa',+sboxAng(v).toFixed(2),'°','step="1" min="-180" max="180"'):'');
   else if(v.kind==='elev'||v.kind==='section'){h+=PR.sel('scale','p_scale',v.scale,scl)+PR.sel('style','p_vstyle',v.style||'hidden',sty)+realRows(v)+cropRows(v);const s=v.kind==='section'&&sectionOf(v);if(s)h+=secRows(s).replace(PR.grp('g_extents'),'')}
@@ -14589,7 +14591,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=206,V1_NAME='V1.196';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=207,V1_NAME='V1.197';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -31289,8 +31291,8 @@ Object.assign(STR,{a_tremove:['ถอดโครงถักเป็นคา�
   trr_done:['ถอดโครงถักแล้ว: ชิ้นส่วน {0} ชิ้นคงอยู่เป็นคานแบบค้ำยัน {1} ชิ้น และเสา {2} ต้น (ชิ้นตั้งตรง ดูได้ใน 3 มิติ)','Truss family removed: {0} members stay as {1} braces and {2} columns (the upright ones: see them in a 3D view)']});
 /* ===== 192 selection options: Select underlay elements and Select elements by face (V1.192) =====
    Revit has five selection options at the right of the status bar; section 100 has three of them, these are the other two (kept in penum.bim.opts with them).
-   - Select underlay elements (SOP.ul, on as in Revit): the walls of the level a plan shows as its underlay are picked by a click, hover and Tab like the plan's own,
-     so they can be edited, moved, stretched or deleted from the plan above or below. A selection window leaves them out: a window drawn over one
+   - Select underlay elements (SOP.ul, on as in Revit): what a plan shows of another level as its underlay (its walls until V1.197, all of it since: section 197) is picked
+     by a click, hover and Tab like the plan's own, so it can be edited, moved, stretched or deleted from the plan above or below. A selection window leaves them out: a window drawn over one
      floor never takes walls of another floor with it.
    - Select elements by face (SOP.face, off as in Revit): a floor, ceiling, roof, foundation, pad or subregion is picked by a click anywhere inside its outline
      (not in its openings), not only on its edge.
@@ -31298,20 +31300,19 @@ Object.assign(STR,{a_tremove:['ถอดโครงถักเป็นคา�
    A press on an element picked this way moves it only when it is already selected; otherwise the drag draws a selection window (hitPlan marks such a pick with soft:1). */
 const SO_FACE=new Set(['floor','ceiling','roof','footing','wfoot','pad','subreg']);
 const soUlOn=v=>!!v&&v.kind==='plan'&&!v.draft&&!!v.underlay&&!catHid(v,'underlay')&&!!lvl(P,v.underlay);
-const soUlWall=(v,e)=>!!e&&e.cat==='wall'&&e.level===v.underlay&&!planShow(v,e);          // a wall the plan shows only as underlay
 function soFaceLoop(e){const k=e.cat;if(k==='roof'){const R=roofGeo(P,e);return R.out||R.eave}if(k==='footing')return columnLoop(P,e);if(k==='wfoot')return wfootLoop(P,e);return e.pts}
 /* what the two options put under the pointer (w, mm): ids, the smallest outline first */
 function soSoft(v,w,sh,inM,FP,tol){const out=[];if(!inM)return out;const lock=e=>P.doa&&dopLocked(P,e);
   if(SOP.face)for(const e of sh){if(!SO_FACE.has(e.cat)||lock(e))continue;const lp=soFaceLoop(e);if(!lp||lp.length<3||!inPoly(w.x,w.y,lp))continue;
     const H=e.cat==='roof'?roofHoles(P,e):e.cat==='floor'||e.cat==='ceiling'?slabHoles(P,e):[];if(H.some(h=>inPoly(w.x,w.y,h)))continue;out.push([e.id,Math.abs(area2(lp))])}
-  if(SOP.ul&&soUlOn(v))for(const e of P.els){if(e.cat!=='wall'||e.level!==v.underlay||lock(e)||planShow(v,e))continue;const fp=FP.get(e.id);
-    if(fp&&(inPoly(w.x,w.y,fp.poly)||polyEdgeDist(w.x,w.y,fp.poly)<=tol))out.push([e.id,Math.abs(area2(fp.poly))])}
-  return out.sort((a,b)=>a[1]-b[1]).map(x=>x[0])}
-/* an underlay wall that is selected or under the pointer is drawn over the plan in the colour of the selection, with its end grips when it is the only one */
-function soUlDraw(pn,ctx,v,g,act){if(!soUlOn(v))return;const ids=new Set(ui.sel);if(ui.tool==='modify'){if(ui.hov!=null)ids.add(ui.hov);if(ui.chain)for(const id of ui.chain)ids.add(id)}if(!ids.size)return;let FP=null,one=null;
-  for(const id of ids){const e=IDX.get(id);if(!soUlWall(v,e))continue;FP=FP||FPm();const fp=FP.get(id);if(!fp)continue;const on=ui.sel.has(id);if(on)one=e;
-    ctx.save();ctx.setLineDash([]);ctx.strokeStyle=on?C.sel:C.hot;ctx.lineWidth=on?2:1.6;ctx.beginPath();fp.poly.forEach((q,i)=>i?ctx.lineTo(g.X(q[0]),g.Y(q[1])):ctx.moveTo(g.X(q[0]),g.Y(q[1])));ctx.closePath();ctx.stroke();ctx.restore()}
-  if(one&&act&&ui.tool==='modify'&&ui.sel.size===1&&!ui.dragging)for(const p of [[one.x1,one.y1],[one.x2,one.y2]]){ctx.fillStyle=C.raise;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(g.X(p[0]),g.Y(p[1]),4.5,0,7);ctx.fill();ctx.stroke()}}
+  const ids=SOP.ul&&soUlOn(v)?ulHit(v,w):[];          // V1.197: anything of the underlay, the nearest first, ahead of what is picked by its face
+  return ids.concat(out.sort((a,b)=>a[1]-b[1]).map(x=>x[0]).filter(id=>!ids.includes(id)))}
+/* what is selected or under the pointer and belongs to the underlay is drawn over the plan in the colour of the selection, with its grips when it is the only one */
+function soUlDraw(pn,ctx,v,g,act){if(!soUlOn(v))return;const ids=new Set(ui.sel);if(ui.tool==='modify'){if(ui.hov!=null)ids.add(ui.hov);if(ui.chain)for(const id of ui.chain)ids.add(id)}if(!ids.size)return;const S=new Set(),H=new Set();let one=null;
+  for(const id of ids){const e=IDX.get(id);if(!ulOnly(v,e))continue;if(ui.sel.has(id)){S.add(id);one=e}else H.add(id)}if(!S.size&&!H.size)return;const nav=navOf(v),o={C,thin:ui.thin};
+  if(H.size)ulDraw(ctx,g,v,nav,o,[C.hot,1.6],H);if(S.size)ulDraw(ctx,g,v,nav,o,[C.sel,2],S);
+  if(one&&act&&ui.tool==='modify'&&ui.sel.size===1&&!ui.dragging){const G=GEOM[one.cat],pts=G==='line'&&one.cat!=='stair'?[[one.x1,one.y1],[one.x2,one.y2]]:(G==='poly'||G==='path')&&Array.isArray(one.pts)?one.pts:[];
+    for(const p of pts){ctx.fillStyle=C.raise;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.setLineDash([]);ctx.beginPath();ctx.arc(g.X(p[0]),g.Y(p[1]),4.5,0,7);ctx.fill();ctx.stroke()}}}
 Object.assign(SO_IC,{ul:'<path d="M8 2l5.8 3L8 8 2.2 5z"/><path d="M2.2 9.6 8 12.6l5.8-3" stroke-dasharray="1.7 1.5"/>',
   face:'<path d="M2 12l3.2-8h8.8l-3.2 8z"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/>'});
 Object.assign(STR,{sop_ul:['เลือกชิ้นของแบบรองพื้นได้','Select underlay elements'],sop_face:['เลือกชิ้นงานโดยคลิกที่ผิวได้','Select elements by face']});
@@ -31764,6 +31765,49 @@ Object.assign(STR,{cat_pinfo:['ข้อมูลโครงการ (Project 
     'The name of a project parameter (Manage › Project Parameters) of the category Sheets or Project Information works in braces too, such as {Drawing Status}: a sheet\'s value comes from the Properties of each sheet, the project\'s from Project Information · pick from the Field list to put one into the selected text, or as a new text'],
   pi_ppnote:['พารามิเตอร์ของโครงการที่ใช้กับหมวด ข้อมูลโครงการ กรอกค่าได้ที่นี่ และใส่ในกรอบชื่อแบบที่วาดเองได้ด้วยชื่อในวงเล็บปีกกา','Project parameters of the category Project Information take their values here, and a drawn title block shows them by their names in braces.'],
   pi_ppnone:['เพิ่มช่องของโครงการเองได้: กด Project Parameters แล้วเพิ่มพารามิเตอร์ที่ใช้กับหมวด ข้อมูลโครงการ','For fields of your own, press Project Parameters and add a parameter for the category Project Information.']});
+/* ===== 197 Underlay of the whole level (V1.197; Revit: the Underlay group of a plan's properties: Range: Base Level and Underlay Orientation) =====
+   The underlay of a plan used to be the outlines of the walls of another level.  It is now that level as a plan of it shows it: walls with their doors and windows,
+   columns, floors, stairs, ramps, railings, furniture, the structure and the building services, all in the pale colour of the underlay, looking down (a floor plan)
+   or looking up (v.ulo==='up': a reflected ceiling plan with its ceilings and what hangs from them).
+   drawPlan draws it by calling itself for a view that exists only for this (ulView: the plan itself moved to the other level, with nothing of its own on it),
+   through a canvas that turns every colour into the underlay's and leaves hatches out (ulCtx).  What the plan shows itself is left out, and so is what the plan hides
+   by element, by category, by filter or for a while.  Select underlay elements (192) picks all of it, by hitPlan called the same way. */
+const UL_OFF=['link','topo','pad','subreg','propline','room','rsep','area','aline','grid','level','section','matchline','rplane','tag','underlay'],
+  UL_DROP=['crop','vr','cut','ov','eov','flt','dep','parent','callout','site','area','acs','cs','scope','rcp','legend','draft','wpShow','shl','lw','tpl','gcs','rsr','sketch','ulo'];
+let ULV={ver:-1,p:null,m:new Map()};
+function ulView(v){if(ULV.ver!==VER||ULV.p!==P)ULV={ver:VER,p:P,m:new Map()};let u=ULV.m.get(v.id);
+  if(!u){u=Object.assign({},v,{id:'ul'+v.id,name:'',level:v.underlay,underlay:0,tags:false,hidden:[],hiddenCats:[...new Set((v.hiddenCats||[]).concat(UL_OFF))]});for(const k of UL_DROP)delete u[k];if(v.ulo==='up')u.rcp=true;ULV.m.set(v.id,u)}
+  return u}
+/* in the underlay of plan o.ul: is e left out?  What the plan shows itself or hides, a door or window of a wall the plan hides; o.only: everything but these ids */
+function ulSkip(o,e){const v=o.ul;if(o.only&&!o.only.has(e.id))return true;if(planShow(v,e)||hidEl(v,e))return true;if(HOSTED.includes(e.cat)){const w=IDX.get(e.host);if(w&&hidEl(v,w))return true}return false}
+/* is e something plan v shows only as its underlay? */
+const ulOnly=(v,e)=>!!e&&!!e.cat&&soUlOn(v)&&!!planShow(ulView(v),e)&&!ulSkip({ul:v},e);
+/* the canvas of the underlay: every line in the colour of the underlay (a highlight: hi=[colour, width], lines only), 1 px wide, in the line pattern of
+   Halftone/Underlay when one is set; every fill pale; no hatches, no pictures.  The painter's layer / el / cut / own end here: all of it is the category Underlay */
+function ulCtx(ctx,col,hi){const line=hi?hi[0]:col.ghost,p=css2rgb(col.paper),q=css2rgb(col.ghost),pale='rgb('+q.map((x,i)=>Math.round((x+(p[i]-x)*0.72)*255)).join(',')+')',
+    keep=new Set([col.paper,'transparent',line,pale]),force=hi?[]:ulDash(),lw0=hi?hi[1]:1,fns=new Map();let pat=0,rawLW=lw0,depth=0;
+  const S={layer(){},el(){},sub(){},cut(){},own(){},vgOff(){},vgq:()=>null,pat(on){pat=on?1:0},
+    save(){depth++;ctx.save()},restore(){if(depth>0){depth--;ctx.restore()}},ulUnwind(){while(depth>0){depth--;ctx.restore()}},
+    stroke(){if(!pat)ctx.stroke.apply(ctx,arguments)},fill(){if(!pat&&!hi)ctx.fill.apply(ctx,arguments)},fillRect(){if(!pat&&!hi)ctx.fillRect.apply(ctx,arguments)},strokeRect(){if(!pat)ctx.strokeRect.apply(ctx,arguments)},drawImage(){},
+    setLineDash(a){ctx.setLineDash(hi?[]:force.length?force:a||[])},
+    fillText(){if(hi)return;const f=ctx.fillStyle;ctx.fillStyle=line;ctx.fillText.apply(ctx,arguments);ctx.fillStyle=f},
+    strokeText(){if(hi)return;const w=ctx.lineWidth;ctx.lineWidth=rawLW;ctx.strokeText.apply(ctx,arguments);ctx.lineWidth=w}};
+  ctx.strokeStyle=line;ctx.fillStyle=pale;ctx.lineWidth=lw0;ctx.setLineDash(force);
+  return new Proxy(ctx,{get(tg,k){if(Object.prototype.hasOwnProperty.call(S,k))return S[k];const val=tg[k];if(typeof val!=='function')return val;let f=fns.get(k);if(!f){f=val.bind(tg);fns.set(k,f)}return f},
+    set(tg,k,val){if(k==='strokeStyle'){if(typeof val==='string'&&!keep.has(val))val=line}else if(k==='fillStyle'){if(typeof val==='string'&&!keep.has(val))val=pale}else if(k==='lineWidth'){rawLW=val;val=lw0}tg[k]=val;return true}})}
+/* draw the underlay of plan v (o.only with hi: a highlight of those elements, over the plan).  An error in it must not take the plan with it */
+function ulDraw(ctx,g,v,T,o,hi,only){if(!hi)g.lay('underlay');ctx.save();let c=null;
+  try{c=ulCtx(ctx,o.C,hi);drawPlan(c,ulView(v),T,Object.assign({},o,{screen:false,ul:v,only:only||null}))}
+  catch(err){if(c)c.ulUnwind();if(!ulDraw.err){ulDraw.err=1;console.error(err)}}
+  finally{ctx.restore()}}
+/* what Select underlay elements puts under the pointer (w, mm): ids, the nearest first, as hitPlan ranks them */
+function ulHit(v,w){const nav=navOf(v),out=[];for(const c of hitPlan0(ulView(v),{x:w.x*nav.s+nav.ox,y:w.y*nav.s+nav.oy},v))if(c[0]<9998&&!out.includes(c[2])&&!soBlk(c[2])&&ulOnly(v,IDX.get(c[2])))out.push(c[2]);return out}
+/* the property of the plan: which way the underlay looks */
+function ulRows(v){return v.underlay&&lvl(P,v.underlay)?PR.sel('ulo','p_ulo',v.ulo==='up'?'up':'dn',[['dn',t('ulo_dn')],['up',t('ulo_up')]]):''}
+XVF.push((v,key,raw)=>{if(key!=='ulo')return false;if(v.kind==='plan'&&!v.draft)edit(()=>{if(raw==='up')v.ulo='up';else delete v.ulo});return true});
+XC.push(()=>{for(const v of P.views)if(v.ulo!==undefined&&(v.ulo!=='up'||v.kind!=='plan'||v.draft))delete v.ulo});
+Object.assign(STR,{p_ulo:['ทิศทางแบบรองพื้น','Underlay Orientation'],ulo_dn:['มองลง (Look Down)','Look Down'],ulo_up:['มองขึ้น (Look Up)','Look Up']});
+
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -33634,6 +33678,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.194 · สร้างจากผิวมวล (Model by Face) ครบขึ้น ที่แท็บสถาปัตย์ แผง [[p_mass]]: [[t_mfroof]] วางหลังคาเรียบบนผิวบนของมวล, [[t_mfcs]] วางผนังกระจกเต็มความสูงของผิวด้านข้าง และ [[t_mfwall]] วางผนังชั้นละชิ้นเฉพาะผิวที่เลือก · วิธีใช้เหมือนกันทั้งสามตัว: คลิกผิวทีละผิว (ในแปลนคลิกที่ขอบของมวล ใน 3 มิติ รูปด้าน และรูปตัดคลิกที่ผิว คลิกซ้ำคือเอาออก) แล้วกด Enter หรือปุ่มสร้างที่แถบตัวเลือก · เลือกมวลแล้วกดปุ่มในแผงคุณสมบัติก็ได้ จะสร้างให้ทุกผิวในครั้งเดียว · ชิ้นงานที่สร้างจากผิวจำผิวของมันไว้ (แถว [[p_mf]]) เมื่อแก้รูปร่างหรือความสูงของมวล ให้เลือกมวลหรือชิ้นงานแล้วกด [[a_mfupdate]] ชิ้นงานจะย้ายตามผิวใหม่ · ผิวที่มีชิ้นงานแบบเดียวกันอยู่แล้วจะถูกข้าม ไม่สร้างซ้อน
 - V1.195 · [[t_cutprof]] ที่แท็บ [[tab_view]] แผง [[p_graphics]]: แก้รูปหน้าตัดของชิ้นงานเฉพาะในมุมมองเดียว เหมือน Cut Profile ของ Revit · คลิกหน้าตัดของชิ้นงานที่มุมมองตัดผ่าน (แปลน: ผนังหรือเสา · รูปตัดและรูปด้านที่ตัดที่ตำแหน่งสัญลักษณ์: ผนัง พื้น หลังคา ฝ้า เสา คาน ฐานราก) แล้ววาดสี่เหลี่ยมสองคลิก หรือหลายเหลี่ยมทีละจุด (คลิกจุดแรกซ้ำหรือกด Enter เมื่อครบ) · เลือกที่แถบตัวเลือกว่าจะ [[cpf_add]] หรือ [[cpf_cut]] · ในแปลน สี่เหลี่ยมวางตามแนวผนังให้เอง ส่วนที่เพิ่มใช้ลายเดียวกับผนัง (ผนังหลายชั้นใช้วัสดุแกน) · รูปที่วาดต้องทับหรือชิดหน้าตัดเดิม · ตัวชิ้นงาน 3 มิติ มุมมองอื่น ตารางปริมาณ และ BOQ ไม่เปลี่ยน · แก้ซ้อนกันได้หลายครั้ง คลิกที่เส้นขอบใหม่เพื่อเลือกการแก้แล้วลบ ลากย้าย หรือสลับเพิ่ม/ตัดใน Properties ได้ เมื่อเลือกชิ้นงาน Properties บอกจำนวนที่แก้ไว้ในมุมมองนี้และมีปุ่ม [[a_cpfclear]] · การแก้ตามชิ้นงานไปเมื่อย้ายชิ้นงาน คัดลอกพร้อมชิ้นงานแล้วไปอยู่กับชิ้นที่คัดลอก ทำสำเนามุมมองพร้อมรายละเอียดแล้วตามไปด้วย และหายไปพร้อมชิ้นงาน · แสดงผลบนแผ่นงาน งานพิมพ์ และ DXF ของแปลนและรูปตัด · ส่วนที่ตัดออกในรูปตัดแสดงเป็นสีกระดาษ ยังไม่วาดสิ่งที่อยู่ด้านหลัง
 - V1.196 · พารามิเตอร์ของโครงการในกรอบชื่อแบบ เหมือน Revit · [[a_pparams]] มีหมวดใหม่ [[cat_pinfo]]: พารามิเตอร์ของหมวดนี้มีค่าเดียวทั้งโครงการ กรอกที่ [[a_info]] (แท็บ [[tab_manage]]) ใต้กลุ่มที่ตั้งไว้ · ในกรอบชื่อแบบที่วาดเอง ([[a_tblock]] › [[tbl_custom]]) ข้อความใส่ชื่อพารามิเตอร์ของหมวด ชีต หรือ [[cat_pinfo]] ในวงเล็บปีกกาได้ เช่น {สถานะแบบ} หรือ {Drawing Status}: ค่าของชีตมาจากคุณสมบัติของแต่ละแผ่นงาน ค่าของโครงการมาจาก [[a_info]] ถ้าพารามิเตอร์ใช้ทั้งสองหมวด แผ่นงานที่ไม่ได้กรอกจะใช้ค่าของโครงการ · รายการ [[tb_addf]] ในหน้าต่างกรอบชื่อแบบรวมช่องข้อมูลของโปรแกรมและพารามิเตอร์ทั้งหมดไว้ให้เลือก ใส่ลงในข้อความที่เลือกอยู่หรือเป็นข้อความใหม่ · ค่าแบบ ใช่/ไม่ใช่ แสดงเป็นคำ ตัวเลขแสดงโดยไม่มีหน่วย (พิมพ์หน่วยต่อท้ายในข้อความเอง) · ชื่อที่ไม่มีพารามิเตอร์ตรงกันจะแสดงตามที่พิมพ์ · ออก PDF และ DXF ของแผ่นงานตามค่าเดียวกัน
+- V1.197 · [[p_underlay]] แสดงทั้งชั้นเหมือน Revit ไม่ใช่แค่เส้นผนัง: ผนังพร้อมประตูหน้าต่าง เสา พื้น บันได ทางลาด ราวกันตก เฟอร์นิเจอร์ คาน ฐานราก หลังคา และงานระบบ (ท่อลม ท่อน้ำ เครื่องจักร สุขภัณฑ์) ของชั้นที่เลือก เป็นสีจางอยู่ใต้แปลน · [[p_ulo]] ในคุณสมบัติของมุมมอง: [[ulo_dn]] เห็นแบบแปลนพื้น หรือ [[ulo_up]] เห็นแบบแปลนฝ้า (ฝ้าเพดาน ดวงโคม หัวจ่ายลม) · สิ่งที่แปลนแสดงเองอยู่แล้วไม่วาดซ้ำ และสิ่งที่ซ่อนไว้ในมุมมอง (ทีละชิ้น ทั้งหมวด ด้วยตัวกรอง หรือซ่อนชั่วคราว) ก็ไม่แสดงในแบบรองพื้น · เมื่อเปิด [[sop_ul]] คลิกชิ้นงานของแบบรองพื้นได้ทุกหมวด เพื่อดูคุณสมบัติ ย้าย หรือลบจากแปลนนี้ ส่วนการลากกรอบเลือกยังไม่เก็บชิ้นของแบบรองพื้นเหมือนเดิม · ลายเส้นและความจางตั้งที่ [[a_htset]] · DXF ออกแบบรองพื้นทั้งหมดบนเลเยอร์ X-UNDERLAY · ไม่แสดงในแบบรองพื้น: ป้ายและเส้นบอกระยะ ห้อง กริด แบบ CAD ที่ลิงก์ และพื้นดิน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -33963,6 +34008,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.194 · More of Model by Face on the Architecture tab, [[p_mass]] panel: [[t_mfroof]] lays a flat roof on the top face of a mass, [[t_mfcs]] a curtain wall the whole height of a side face, and [[t_mfwall]] one wall per mass floor on just the faces you pick. All three work the same way: click the faces one by one (in a plan click an edge of the mass; in 3D, elevations and sections click the face; a second click drops it), then press Enter or the create button of the options bar. With a mass selected the buttons of Properties do every face at once. What is made from a face remembers it (the [[p_mf]] row): after the outline or the height of the mass has changed, select the mass or the elements and press [[a_mfupdate]], and they move to the new faces. A face that has one of the same kind already is passed over, so nothing is doubled.
 - V1.195 · [[t_cutprof]] on the [[tab_view]] tab, [[p_graphics]] panel: change the shape of an element's cut in one view only, as Revit's Cut Profile does. Click the cut face of an element the view cuts (plan: a wall or a column · sections, and elevations cut at their marker: a wall, floor, roof, ceiling, column, beam or footing), then sketch a rectangle with two clicks or a polygon point by point (click the first point again or press Enter to finish). The options bar says whether the sketch is [[cpf_add]] or [[cpf_cut]]. In a plan the rectangle lies along its wall, and what is added takes the pattern of the wall (the core material of a layered wall). The sketch must overlap or lie against the cut. The 3D element, the other views, the schedules and the BOQ stay as they are. Edits can be stacked; click a new outline to select an edit, then delete it, drag it, or switch it between adding and removing in Properties. With the element selected, Properties counts its edits in the view and has a [[a_cpfclear]] button. An edit follows its element when that is moved, belongs to the copy when both are copied together, comes along with Duplicate with Detailing, and goes when the element is deleted. Sheets, prints and the DXF of plans and sections show it. In a section what is removed shows in the colour of the paper; what lies beyond it is not drawn yet
 - V1.196 · Project parameters in title blocks, as in Revit. [[a_pparams]] has a new category, [[cat_pinfo]]: a parameter of it has one value for the whole project, typed in [[a_info]] ([[tab_manage]] tab) under the group it was given. In a title block drawn by hand ([[a_tblock]] › [[tbl_custom]]) a text can name a parameter of the category Sheets or [[cat_pinfo]] in braces, such as {Drawing Status}: a sheet's value comes from the Properties of each sheet, the project's from [[a_info]]; when a parameter is of both categories, a sheet left empty shows the project's value. The [[tb_addf]] list in the Title Block dialog offers every field of the program and every parameter, and puts the one chosen into the selected text or into a new one. Yes/No values are written as words, numbers without a unit (type the unit after the field). A name no parameter has is shown as typed. The PDF and DXF of a sheet show the same values
+- V1.197 · An [[p_underlay]] shows the whole level as in Revit, not only wall outlines: walls with their doors and windows, columns, floors, stairs, ramps, railings, furniture, beams, foundations, roofs and the building services (ducts, pipes, equipment, fixtures) of the chosen level, pale under the plan. [[p_ulo]] in the properties of the view: [[ulo_dn]] shows it as a floor plan, [[ulo_up]] as a ceiling plan (ceilings, lights, air terminals). What the plan shows itself is not drawn twice, and what the view hides (by element, by category, by a filter or temporarily) is hidden in the underlay too. With [[sop_ul]] on, a click picks any element of the underlay to see its properties, move it or delete it from this plan; a selection window still leaves the underlay out. Line pattern and paleness are set in [[a_htset]]. A DXF has all of the underlay on the layer X-UNDERLAY. Not in an underlay: tags and dimensions, rooms, grids, linked CAD drawings and the ground
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -36002,6 +36048,9 @@ window.PenumBIM.r195={get P(){return P},ui,of:vid=>[...cpfOf(viewById(vid))].map
   px:(i,x,y)=>{const pn=PANES[i],r=pn.cv.getBoundingClientRect(),k=pn.cv.width/r.width,d=pn.cv.getContext('2d').getImageData(Math.round((x-r.left)*k),Math.round((y-r.top)*k),1,1).data;return[d[0],d[1],d[2]]},col:()=>({paper:C.paper,poche:C.poche,ink:C.ink,sel:C.sel})};
 window.PenumBIM.r196={get P(){return P},ui,txt:sid=>{const F=tbTxt(viewById(sid));return Object.assign({},F,{pp:[...F.pp]})},fill:(s,sid)=>tbFill(s,Object.assign({},tbTxt(viewById(sid)),{firm:'F',addr:'A',tel:'T'})),has:s=>tbHasField(s),
   sdxf:id=>sheetDXF(viewById(id)),san:()=>sanitize(),info:()=>dlgInfo(),tblock:id=>dlgTitleBlock(id),pparams:()=>dlgPParams(),cats:()=>PRM_CATS(),parse:s=>tbParse(s)};
+window.PenumBIM.r197={get P(){return P},ui,uview:id=>ulView(viewById(id)),only:(vid,eid)=>ulOnly(viewById(vid),IDX.get(eid)),
+  list:vid=>{const v=viewById(vid);if(!soUlOn(v))return[];const U=ulView(v);return P.els.filter(e=>ulOnly(v,e)).map(e=>[e.id,e.cat,planShow(U,e)])},
+  hit:(vid,x,y)=>ulHit(viewById(vid),{x,y}),dxf:vid=>planDXF(viewById(vid)),san:()=>sanitize(),err:()=>ulDraw.err||0,ext:vid=>planExtents(viewById(vid)),snap:(vid,x,y,o)=>{const q=snapPt(viewById(vid),{x,y},o||{});return{x:q.x,y:q.y,kind:q.kind,ref:q.ref}},show:(vid,eid)=>planShow(viewById(vid),IDX.get(eid))};
 window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
   put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
   pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
