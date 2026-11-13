@@ -14613,7 +14613,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=244,V1_NAME='V1.234';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=245,V1_NAME='V1.235';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -22089,7 +22089,7 @@ function mtoParts(P0,e,Q,tr){if(!MTO_CATS.includes(e.cat))return[];const T=e.cat
   const mats=Array.isArray(P0.mats)?P0.mats:[],out=new Map(),
     add=(k,n,b,a,v,M,p)=>{let r=out.get(k);if(!r){r={k,n,b,a:0,v:0,rho:M&&+M.rho>0?+M.rho:MK_RHO[b]||MK_RHO.auto,p:p?1:0};out.set(k,r)}r.a+=a||0;r.v+=v||0};
   const M=T.mid!=null?mats.find(x=>x.id===T.mid)||null:null,A=e.cat==='bsys'?0:q.area||0,L=(e.cat==='wall'||SL_CATS.includes(e.cat))&&wlOf(T);
-  if(L)for(const l of L)add(l.mat,tr('wlm_'+l.mat),l.mat,A,A*l.t);
+  if(L){const WQ=e.cat==='wall'?wrQty235(P0,e,T):null;L.forEach((l,i)=>WQ?add(l.mat,tr('wlm_'+l.mat),l.mat,Math.max(0,A+WQ[i].a),Math.max(0,A*l.t+WQ[i].v)):add(l.mat,tr('wlm_'+l.mat),l.mat,A,A*l.t))}          // a wall's wrapped layers (V1.235)
   else{const m=M?M.base:mtoBase(e.cat,T);add(M?'#'+M.id:m,M?M.name:mtoLab(m,tr),m,A,e.cat==='wall'?q.vol||A*(T.thickness||0):q.vol||0,M)}
   if(e.cat==='footing'&&q.pvol>0)for(const r of out.values()){r.v+=q.pvol;break}          // the piles of a pile cap: of its material
   if(e.cat==='column'&&e.bp){const w=(T.w||200)+150,d=(T.d||T.w||200)+150;add('metal',mtoLab('metal',tr),'metal',w*d,w*d*20)}          // steel plates (79)
@@ -36903,6 +36903,33 @@ Object.assign(STR,{
   nwh_high234:['{0} สูงเกินผนังนี้','{0} would rise above this wall'],
   nwh_lbl234:['ย้าย {0} ชิ้นมาที่นี่ · {1}','Move {0} here · {1}'],
   h_newhost234:['คลิกผิวผนังที่จะย้ายไป ประตูหน้าต่างไปอยู่ที่ระดับชั้นใต้ตัวชี้ สูงจากพื้นชั้นและห่างกันเท่าเดิม','Click the face of the wall to move them to: they go to the level under the pointer, as high above it and as far apart as they were']});
+/* ===== 235 Material quantities of wrapped layers (V1.235; Revit: in a Material Takeoff a layer that wraps at an insert or at the end of a wall counts the returns it makes
+   into the jamb, head and sill or round the end, and the layers it is wrapped round count the part they give up there).
+   wrQty235(P0, e, T): per layer of wall e (index as wlOf(T)) {a: area mm², v: volume mm³} to add to its unwrapped quantity (area × thickness): the same pieces wr3d232
+   draws, so the wall as a whole keeps its volume (what the cut-back layers lose, the wrapping ones gain), only the layers that wrap gain area (the face of each return).
+   A piece that stays inside the layer's own band (a core that one side wraps less deep than the other, Both) is the layer itself, cut back less there: its face
+   (area) is cut back only as far as that piece; a piece outside its band is a return, whose face adds to the area.
+   null where nothing wraps: no layers, a curtain or stacked wall, a wall shaped by its outline or by what it is attached to, no edge that wraps (as in 3D). */
+const own235=(y,nA,nB)=>nA>=y.n1-1e-6&&nB<=y.n0+1e-6;
+function wrQty235(P0,e,T){if(P0!==P||!T||T.kind==='curtain'||e.stk||typeof wrLay232!=='function')return null;
+  if((e.attT||e.attB||e.prof)&&typeof wallProf==='function'){const q=wallProf(P0,e);if(q&&!q.plain)return null}
+  const fp=FPm().get(e.id);if(!fp)return null;const R=wrLay232(T,fp.g.h,true);if(!R)return null;
+  const ins=P0.els.filter(o=>o.host===e.id&&(o.cat==='door'||o.cat==='window')),Z=wrEdges232(P0,fp,R,ins);if(!Z.length)return null;
+  const L=wlOf(T),Y=R.Y,D=Y.map(()=>({a:0,v:0})),sc=Y.map((y,i)=>y.n0-y.n1>1e-9?(+L[i].t||0)/(y.n0-y.n1):1),zr=zRange(P0,e),z0=zr[0],z1=zr[1],base=elev(P0,e.level),seen=new Set();
+  for(const z of Z){
+    if(z.o){if(seen.has(z.o.id))continue;seen.add(z.o.id);const U=typ(P0,z.o);if(!U)continue;const w=+U.width||0,s=Math.max(z0,base+(z.o.sill||0)),t=Math.min(z1,base+(z.o.sill||0)+(+U.height||0));if(t-s<1||w<1)continue;
+      const sl=s>z0+1,hd=t<z1-1;
+      const fr=x=>{const s2=sl?Math.max(z0,s-x):s,t2=hd?Math.min(z1,t+x):t;return(w+2*x)*(t2-s2)-w*(t-s)};          // the frame of width x round the insert
+      Y.forEach((y,li)=>{const Q=z.Z.L[li],x=Q.x,k=sc[li];D[li].v-=fr(x)*(y.n0-y.n1)*k;let xa=x;          // its own band is cut back by x round the insert
+        for(const [x0,x1,nA,nB] of Q.legs){const dn=(nB-nA)*k,own=own235(y,nA,nB),zl=sl?Math.max(z0,s-x1):s,zh=hd?Math.min(z1,t+x1):t;          // the pieces: two jambs, the head, the sill
+          if(own)xa=Math.min(xa,x0);
+          if(zh>zl){if(!own)D[li].a+=2*dn*(zh-zl);D[li].v+=2*(x1-x0)*dn*(zh-zl)}
+          if(hd){const hh=Math.min(z1,t+x1)-(t+x0);if(hh>0){if(!own)D[li].a+=dn*(w+2*x0);D[li].v+=(w+2*x0)*dn*hh}}
+          if(sl){const hh=(s-x0)-Math.max(z0,s-x1);if(hh>0){if(!own)D[li].a+=dn*(w+2*x0);D[li].v+=(w+2*x0)*dn*hh}}}
+        D[li].a-=fr(xa)})}
+    else{const H=z1-z0;Y.forEach((y,li)=>{const Q=z.Z.L[li],k=sc[li];let xa=Q.x;D[li].v-=Q.x*H*(y.n0-y.n1)*k;          // a free end: cut back by x, the returns round it
+      for(const [x0,x1,nA,nB] of Q.legs){const dn=(nB-nA)*k,own=own235(y,nA,nB);if(own)xa=Math.min(xa,x0);else D[li].a+=dn*H;D[li].v+=(x1-x0)*dn*H}D[li].a-=xa*H})}}
+  return D}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -38043,9 +38070,10 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > ต่างจาก Revit: ผนังกระจกที่ยาวถึงปลายผนังยังเหลือผนัง 30 มม. ที่ปลายนั้น
 - [[t_cutg]] กับผนังกระจก (Revit: Cut Geometry ฝังผนังกระจกในผนัง): ผนังกระจกที่ชนิดไม่ได้ตั้ง [[f_emb]] ก็ฝังทีละอันได้ เลือกเครื่องมือ [[t_cutg]] คลิกผนังก่อน แล้วคลิกผนังกระจกที่อยู่ตามแนวผนัง ผนังจะเจาะช่องให้เหมือนฝังอัตโนมัติ ([[t_uncutg]] คลิกสองชิ้นเดิมเพื่อเอาออก) ผนังกระจกที่ไม่ได้อยู่ตามแนวผนังฝังไม่ได้ · ในแปลน เมื่อคลิกชิ้นแรกแล้ว คลิกที่เดิมอีกครั้งจะได้ชิ้นถัดไปที่ซ้อนอยู่ตรงนั้น ใช้ได้กับเครื่องมือเชื่อมและตัดรูปทรงทุกตัว
 - [[f_wri]] และ [[f_wre]] (Revit: Wrapping at Inserts, Wrapping at Ends): ตั้งในแก้ไขชนิดของผนังที่มีชั้นวัสดุ ([[a_wlayers]]) ชั้นที่อยู่นอกแกนด้านที่เลือกจะห่อเลี้ยวเข้าไปที่วงกบประตูหน้าต่าง (ใน 3D ห่อทั้งด้านข้าง ทับหลังและธรณี) และที่ปลายผนังที่ไม่ได้ชนกับอะไร แต่ละชั้นหนาเท่าเดิม ชั้นที่ถูกห่อผ่านจะถูกตัดถอยเข้าไป ห่อด้านเดียวผิวจะวิ่งเต็มความหนาผนัง ห่อทั้งสองด้านผิวสองฝั่งจะพบกันกลางแกน เห็นในแปลน (ละเอียดปานกลางขึ้นไป) และในชั้นของผนังใน 3D รูปด้าน รูปตัด
-> ต่างจาก Revit: ห่อทั้งสองด้านพบกันกลางแกนเสมอ · ปริมาณวัสดุทีละชั้นยังคิดแบบไม่ห่อ · ช่องที่ห่อแล้วจะเลยไปถึงปลายผนัง ช่องอื่น หรือรอยต่อ และปลายที่ชนผนังอื่นหรือเฉียง จะไม่ห่อ
+> ต่างจาก Revit: ห่อทั้งสองด้านพบกันกลางแกนเสมอ · ช่องที่ห่อแล้วจะเลยไปถึงปลายผนัง ช่องอื่น หรือรอยต่อ และปลายที่ชนผนังอื่นหรือเฉียง จะไม่ห่อ
 - [[wl_wr233]] และ [[wl_wrd233]] ใน [[a_wlayers]] (Revit: Wraps, Default Wrapping ของ Edit Assembly): คอลัมน์ ห่อ ติ๊กเลือกทีละชั้นที่อยู่นอกแกนว่าชั้นนั้นห่อหรือไม่ (ตั้งต้นห่อทุกชั้น) ชั้นที่ห่อเลี้ยวเข้าซ้อนกันจากผิว ชั้นที่ไม่ห่อหยุดตรงวงกบและถูกตัดถอยเท่าความหนาของชั้นที่ห่อผ่าน ใต้ตารางตั้งการห่อที่ช่องประตูหน้าต่างและที่ปลายผนังได้เลย (ค่าเดียวกับ [[f_wri]] [[f_wre]] ในแก้ไขชนิด)
 - [[f_wcl]] (Revit: Wall Closure ของประตูหน้าต่าง): ในแก้ไขชนิดของประตูหรือหน้าต่าง ตามผนัง (ตั้งต้น) ใช้การห่อของชนิดผนัง ไม่ห่อ ด้านนอก ด้านใน หรือทั้งสองด้าน ใช้แทนการห่อของผนังสำหรับประตูหน้าต่างชนิดนั้น แม้ชนิดผนังตั้งไม่ห่อก็ห่อได้
+- ปริมาณวัสดุของชั้นที่ห่อ ([[a_mtake]] และตารางวัสดุ): ชั้นที่ห่อเข้าวงกบ ทับหลัง ธรณี หรือรอบปลายผนัง นับพื้นที่และปริมาตรของส่วนที่เลี้ยวเข้าไปด้วย ชั้นที่ถูกห่อทับนับน้อยลงเท่าที่เสียไปตรงนั้น ปริมาตรรวมของผนังเท่าเดิม (เหมือน Revit)
 - ฝ้าเพดานวาดและมองเห็นใน [[a_rcp]] (แท็บ [[tab_view]])
 
 # ขอบพื้น
@@ -38244,9 +38272,10 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > Unlike Revit: a curtain wall that reaches the end of its wall leaves 30 mm of wall at that end
 - [[t_cutg]] with a curtain wall (Revit: Cut Geometry embeds a curtain wall in a wall): a curtain wall whose type does not set [[f_emb]] can be embedded one at a time: pick [[t_cutg]], click the wall, then the curtain wall that lies along it, and the wall gets its opening as if the type embedded it ([[t_uncutg]] on the same two takes it out); a curtain wall that does not lie along the wall cannot be embedded · in a plan, once the first element is picked, a second click on the same spot takes the next element lying there, with every join and cut tool
 - [[f_wri]] and [[f_wre]] (Revit: Wrapping at Inserts, Wrapping at Ends): in Edit Type of a wall with layers ([[a_wlayers]]), the layers outside the core on the side chosen turn into the jambs of its doors and windows (in 3D round the head and the sill too) and round its free ends, each keeping its thickness, and the layers they pass are cut back; wrapped from one side the finish runs the whole depth of the wall, from both the two finishes meet at the middle of the core. In plans (Medium detail and finer) and in the wall's layers in 3D, elevations and sections
-> Unlike Revit: Both always meets at the middle of the core · material quantities by layer are still counted unwrapped · an insert whose wrap would reach a wall end, another insert or a joint, and an end joined to another wall or slanted, do not wrap
+> Unlike Revit: Both always meets at the middle of the core · an insert whose wrap would reach a wall end, another insert or a joint, and an end joined to another wall or slanted, do not wrap
 - [[wl_wr233]] and [[wl_wrd233]] in [[a_wlayers]] (Revit: Wraps and Default Wrapping of Edit Assembly): the Wraps column ticks which layers outside the core wrap (all of them to begin with); those that wrap turn in one inside the other from the face, one that does not stops at the jamb, cut back by the layers that wrap past it. Under the table, wrapping at inserts and at ends can be set right there (the same values as [[f_wri]] and [[f_wre]] in Edit Type)
 - [[f_wcl]] (Revit: Wall Closure of a door or window): in Edit Type of a door or a window, By host (the default) wraps as the wall's type says; Neither, Exterior, Interior or Both wraps the jambs of the doors or windows of that type so, even in a wall whose type does not wrap
+- Quantities of wrapped layers ([[a_mtake]] and material takeoffs): a layer that wraps into the jambs, head and sill or round an end counts the area and volume of its returns too, the layers it wraps round count less by what they give up there, and the wall as a whole keeps its volume (as in Revit)
 - Ceilings are drawn and seen in a [[a_rcp]] (the [[tab_view]] tab)
 
 # Slab edges
@@ -38877,6 +38906,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.232 · ห่อชั้นผนัง (Revit: Wrapping at Inserts / at Ends): ชนิดผนังที่มีชั้นวัสดุตั้งให้ผิวนอกหรือผิวในห่อเข้าวงกบประตูหน้าต่างและปลายผนังได้ เห็นในแปลนและ 3D
 - V1.233 · ห่อทีละชั้นและการห่อตั้งต้นในแก้โครงสร้างผนัง (Revit: Wraps, Default Wrapping) และ ห่อผนังที่วงกบ ของชนิดประตูหน้าต่าง (Revit: Wall Closure)
 - V1.234 · ย้ายไปผนังอื่น (Pick New Host) ในรูปด้าน รูปตัด และ 3 มิติ พร้อมตัวอย่างตำแหน่งใหม่ในทุกมุมมอง และวางประตูหน้าต่างในแปลนบนชั้นของแปลนเมื่อผนังสูงหลายชั้น ไม่วางซ้อนกัน
+- V1.235 · ปริมาณวัสดุทีละชั้นของผนังที่ห่อ (ตารางวัสดุ Material Takeoff) นับส่วนที่ห่อเข้าวงกบและรอบปลายผนัง เหมือน Revit
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -39250,6 +39280,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.232 · Wall layer wrapping (Revit: Wrapping at Inserts / at Ends): a layered wall type can turn its exterior or interior finishes into the jambs of doors and windows and round free ends, in plans and in 3D
 - V1.233 · Wraps per layer and Default Wrapping in Edit Structure (Revit: Wraps, Default Wrapping), and Wall Closure on door and window types (Revit: Wall Closure)
 - V1.234 · Pick New Host in elevations, sections and 3D views, with a preview of where they go in every view; doors and windows placed in a plan stand on the plan's level in walls of several storeys and never overlap another
+- V1.235 · Material quantities of wrapped wall layers (Material Takeoff) count the returns at inserts and ends, as in Revit
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -41441,6 +41472,8 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r235={q:id=>{const e=IDX.get(id),D=e&&wrQty235(P,e,typ(P,e));return D?D.map(d=>({a:Math.round(d.a),v:Math.round(d.v)})):null},
+  parts:id=>{const e=IDX.get(id);return e?mtoParts(P,e,QTY(),t).map(m=>({k:m.k,a:Math.round(m.a),v:Math.round(m.v)})):null}};
 window.PenumBIM.r234={at:(ids,wid,at,z,lv)=>{const L=ids.map(id=>IDX.get(id)),q=nhAt234(L,IDX.get(wid),at,z==null?null:z,lv);return q&&{big:q.big?q.big.id:null,high:q.high?q.high.id:null,clash:q.clash?q.clash.id:null,to:q.to?q.to.id:null,it:q.it.map(i=>({id:i.e.id,pos:i.pos,sill:i.sill}))}},
   pl:(x,y)=>{const v=activeView(),o=v&&v.kind==='plan'?openingAt(v,{x,y}):null;return o?{host:o.host,pos:o.pos,sill:o.sill==null?null:o.sill,clash:!!o.clash}:null},
   pick:(pane,x,y)=>{const pn=PANES[pane],v=pn&&viewById(ui.panes[pane]);const k=v&&nh3Pick234(pn,v,{x,y});return k?{w:k.w.id,at:k.at,z:Math.round(k.z),sd:k.sd}:null}};
