@@ -14608,7 +14608,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=221,V1_NAME='V1.211';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=222,V1_NAME='V1.212';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -34874,6 +34874,82 @@ Object.assign(STR,{a_adgshow:['กลุ่มรายละเอียดท�
   adg_to:['แนบกับกลุ่ม','Attached to'],adg_vt:['ชนิดมุมมอง','View type'],adg_noinst:['ยังไม่มีกลุ่มใดแสดงรายละเอียดนี้','No group shows it yet'],
   adg_del_q:['ลบกลุ่มรายละเอียดที่แนบ “{0}” และที่แสดงอยู่ {1} ชุด?','Delete the attached detail group “{0}” and the {1} copies shown?'],adg_deleted:['ลบ “{0}” แล้ว','Deleted “{0}”']});
 function adgProps211(G){const R=adgRec211(G);return R?PR.ro('adg_to',grpName(R.on))+PR.ro('adg_vt',t('adg_vk_'+R.vk)):''}
+/* ===== 212 photographic exposure (Revit: Graphic Display Options › Photographic Exposure: Enable, Exposure Automatic/Manual, Value; Image: Highlights, Shadows, Saturation, White Point) =====
+   The Realistic picture as it is drawn is the one for Value 14 with nothing adjusted. With Enable ticked, one last pass over the picture: the exposure (one step of Value halves or
+   doubles the light; the brightest parts roll off instead of burning out), the colour of light that shows as white, the bright and the dark tones, and how strong the colours are.
+   Automatic takes the Value from how bright the picture is. The same on screen, on sheets and prints, in walkthroughs and solar studies. Kept on the view (v.pexp) and in view templates. */
+const PX0212={ev:14,hi:0.25,sh:0.2,sat:1,wp:6500},PXR212={ev:[8,20],hi:[0,1],sh:[0,1],sat:[0,3],wp:[2000,12000]},PXS212={ev:0.25,hi:0.05,sh:0.05,sat:0.05,wp:100};
+const PXA212=new Map();          // the Value Automatic last chose, per view
+const pxR212=(k,x)=>{const s=PXS212[k];return clamp(Math.round(x/s)*s,PXR212[k][0],PXR212[k][1])};
+function pxOf212(v){const X=v&&v.pexp;if(!X||typeof X!=='object'||!X.on)return null;const n=k=>X[k]!=null&&X[k]!==''&&isFinite(+X[k])?clamp(+X[k],PXR212[k][0],PXR212[k][1]):PX0212[k];
+  return{auto:X.auto!==0,ev:n('ev'),hi:n('hi'),sh:n('sh'),sat:n('sat'),wp:n('wp')}}
+const pxFmt212=(k,x)=>k==='wp'?Math.round(x)+' K':k==='ev'?(Math.round(x*100)/100).toFixed(2):(Math.round(x*100)/100).toFixed(2);
+/* a light of K kelvin as linear RGB; white balance: what a light of the white point gives is shown as white (6500 K, daylight, as drawn) */
+function kRgb212(K){const q=K/100;let r,g,b;if(q<=66){r=255;g=99.4708025861*Math.log(q)-161.1195681661;b=q<=19?0:138.5177312231*Math.log(q-10)-305.0447927307}
+  else{r=329.698727446*Math.pow(q-60,-0.1332047592);g=288.1221695283*Math.pow(q-60,-0.0755148492);b=255}return[r,g,b].map(x=>Math.pow(clamp(x,0,255)/255,2.2))}
+function wb212(wp){const a=kRgb212(6500),b=kRgb212(wp),f=a.map((x,i)=>Math.pow(Math.min(4,x/Math.max(b[i],0.05)),0.6)),          // 0.6: a camera's white balance, milder than the full black-body ratio
+  L=0.2126*f[0]+0.7152*f[1]+0.0722*f[2];return f.map(x=>x/L)}
+const FS_PX212='precision mediump float;varying vec2 vQ;uniform sampler2D uT;uniform float uE;uniform float uSat;uniform vec3 uWB;uniform vec2 uHS;uniform vec4 uBg;'
+  +'void main(){vec3 c=texture2D(uT,vQ*0.5+0.5).rgb;if(uBg.w>0.5&&all(lessThan(abs(c-uBg.rgb),vec3(1.5/255.0)))){gl_FragColor=vec4(c,1.0);return;}vec3 x=pow(c,vec3(2.2))*uWB;x=uE>=1.0?uE*x/(1.0+(uE-1.0)*x):uE*x;c=pow(clamp(x,0.0,1.0),vec3(1.0/2.2));'
+  +'c=c+uHS.x*c*c*(1.0-c)-uHS.y*c*(1.0-c)*(1.0-c);float l=dot(c,vec3(0.2126,0.7152,0.0722));c=mix(vec3(l),c,uSat);gl_FragColor=vec4(clamp(c,0.0,1.0),1.0);}';
+const FS_PXC212='precision mediump float;varying vec2 vQ;uniform sampler2D uT;void main(){gl_FragColor=vec4(texture2D(uT,vQ*0.5+0.5).rgb,1.0);}';
+const PXG212={gl:null,ok:false};
+function pxProg212(){const gl=GLR.gl;if(!gl)return null;if(PXG212.gl===gl)return PXG212.ok?PXG212:null;PXG212.gl=gl;PXG212.ok=false;
+  try{const sh=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s};
+    const mk=fs=>{const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS_S));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.bindAttribLocation(p,0,'aP');gl.linkProgram(p);
+      if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));const u={},n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);for(let i=0;i<n;i++){const nm=gl.getActiveUniform(p,i).name;u[nm]=gl.getUniformLocation(p,nm)}return{p,u}};
+    PXG212.a=mk(FS_PX212);PXG212.b=mk(FS_PXC212);PXG212.tx=gl.createTexture();PXG212.ok=true}catch(e){PXG212.ok=false}return PXG212.ok?PXG212:null}
+/* Automatic: the mean (in logs) of how bright a 48 × 48 sample of the picture is, brought to the mean an ordinary daylight view has */
+const PX_KEY212=0.36;
+function pxAuto212(G,w,h,bg){const gl=GLR.gl,F=glFbo('pxF212',48,48);if(!F)return 1;gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G.tx);gl.bindFramebuffer(gl.FRAMEBUFFER,F.fb);gl.viewport(0,0,48,48);gl.useProgram(G.b.p);gl.uniform1i(G.b.u.uT,0);glQuad();
+  const d=new Uint8Array(48*48*4);gl.readPixels(0,0,48,48,gl.RGBA,gl.UNSIGNED_BYTE,d);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
+  let s=0,n=0;const lin=x=>Math.pow(x/255,2.2),B=bg&&bg.map(x=>Math.round(x*255));for(let i=0;i<d.length;i+=4){if(B&&Math.abs(d[i]-B[0])<=2&&Math.abs(d[i+1]-B[1])<=2&&Math.abs(d[i+2]-B[2])<=2)continue;s+=Math.log(0.004+0.2126*lin(d[i])+0.7152*lin(d[i+1])+0.0722*lin(d[i+2]));n++}
+  PXG212.key=n?Math.exp(s/n):null;return n?clamp(PX_KEY212/PXG212.key,0.25,4):1}
+function pxPass212(o){const gl=GLR.gl,G=pxProg212(),X=o.px;if(!gl||!G||!X)return false;const w=o.w,h=o.h;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.disable(gl.BLEND);gl.disable(gl.STENCIL_TEST);gl.disable(gl.CULL_FACE);gl.colorMask(true,true,true,true);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G.tx);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.copyTexImage2D(gl.TEXTURE_2D,0,gl.RGB,0,0,w,h,0);
+  const bg=o.cam&&o.kind212!=='3d'&&o.bg?o.bg:null;let K=Math.pow(2,PX0212.ev-X.ev);if(X.auto){K=pxAuto212(G,w,h,bg);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,G.tx);if(X.vid!=null)PXA212.set(X.vid,pxR212('ev',PX0212.ev-Math.log2(K)))}
+  gl.viewport(0,0,w,h);const u=G.a.u;gl.useProgram(G.a.p);gl.uniform1i(u.uT,0);gl.uniform1f(u.uE,K);gl.uniform1f(u.uSat,X.sat);gl.uniform3fv(u.uWB,wb212(X.wp));gl.uniform2f(u.uHS,(X.hi-PX0212.hi)*1.2,(X.sh-PX0212.sh)*1.2);gl.uniform4f(u.uBg,bg?bg[0]:0,bg?bg[1]:0,bg?bg[2]:0,bg?1:0);glQuad();
+  gl.bindTexture(gl.TEXTURE_2D,null);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);return true}
+{const f0=modelOpts;modelOpts=(v,nav,w,h,dpr,col,screen)=>{const o=f0(v,nav,w,h,dpr,col,screen);if(o&&o.style==='real'){const X=pxOf212(v);if(X){o.px=Object.assign(X,{vid:v.id});o.kind212=v.kind}}return o}}
+{const f0=glRender;glRender=o=>{const r=f0(o);if(r!==false&&o&&o.px&&o.style==='real'&&GLR.real&&GLR.gl)pxPass212(o);return r}}
+VT_KEYS.gdo.push('pexp');
+/* the Graphic Display Options dialog: a Photographic Exposure part between Lighting and Background (as in Revit) */
+function pxRows212(v){const real=v.style==='real',X=v.pexp&&typeof v.pexp==='object'?v.pexp:{},on=real&&!!X.on,Q=pxOf212({pexp:Object.assign({},X,{on:1})}),auto=X.auto!==0,dis=!on;
+  const row=(id,lab,inp)=>`<div class="fr"><label for="${id}">${lab}</label>${inp}</div>`,evA=PXA212.get(v.id),
+    rng=(id,k,off,val)=>`<span class="rng"><input type="range" id="${id}" data-px="${k}" min="${PXR212[k][0]}" max="${PXR212[k][1]}" step="${PXS212[k]}" value="${val}"${off?' disabled':''}><output>${pxFmt212(k,val)}</output></span>`;
+  return`<div class="pg" data-px212="1" style="margin:6px -16px 2px;padding-left:16px">${t('gd_px')}</div>`
+    +row('pxOn',t('px_on'),`<input type="checkbox" id="pxOn"${on?' checked':''}${real?'':' disabled'}>`)
+    +row('pxMode',t('px_exp'),`<select id="pxMode"${dis?' disabled':''}><option value="auto"${auto?' selected':''}>${t('px_auto')}</option><option value="man"${auto?'':' selected'}>${t('px_man')}</option></select>`)
+    +row('pxEv',t('px_ev'),rng('pxEv','ev',dis||auto,auto&&evA!=null?evA:Q.ev))
+    +`<div class="note" style="margin:6px 0 2px;font-weight:600">${t('px_img')}</div>`
+    +row('pxHi',t('px_hi'),rng('pxHi','hi',dis,Q.hi))+row('pxSh',t('px_sh'),rng('pxSh','sh',dis,Q.sh))+row('pxSat',t('px_sat'),rng('pxSat','sat',dis,Q.sat))+row('pxWp',t('px_wp'),rng('pxWp','wp',dis,Q.wp))
+    +`<div class="pa" style="padding:0"><button class="btn" data-px212r="1"${dis?' disabled':''}>${t('px_reset')}</button></div>`
+    +`<p class="note">${real?t('px_note'):t('px_notreal')}</p>`}
+function pxChange212(v,el){edit(()=>{const X=v.pexp&&typeof v.pexp==='object'?v.pexp:(v.pexp={});
+    if(el.id==='pxOn'){if(el.checked)X.on=1;else delete X.on}
+    else if(el.id==='pxMode'){if(el.value==='auto')delete X.auto;else{X.auto=0;const a=PXA212.get(v.id);if(a!=null&&X.ev==null&&a!==PX0212.ev)X.ev=a}}
+    else{const k=el.dataset.px;if(!k||!PXR212[k])return;const x=pxR212(k,+el.value);if(!isFinite(x))return;if(Math.abs(x-PX0212[k])<1e-9)delete X[k];else X[k]=x}
+    if(!Object.keys(X).length)delete v.pexp})}
+function pxAgain212(v){const dc=$('#dlg .dc'),k=dc?dc.scrollTop:0,f=document.activeElement&&document.activeElement.id;dlgSun(v);const d2=$('#dlg .dc');if(d2)d2.scrollTop=k;const q=f&&/^px[A-Z]/.test(f)?$('#'+f):null;if(q&&!q.disabled)q.focus()}          // the box keeps the keyboard
+{const f0=dlgSun;dlgSun=function(v0){f0(v0);const v=v0||activeView();if(!sunView(v))return;const dc=$('#dlg .dc');if(!dc||dc.querySelector('[data-px212]'))return;
+  const html=pxRows212(v),back=[...dc.querySelectorAll('.pg')].find(x=>x.textContent===t('gd_back'));if(back)back.insertAdjacentHTML('beforebegin',html);else dc.insertAdjacentHTML('beforeend',html);
+  dc.addEventListener('input',e=>{const el=e.target;if(!el||!el.dataset||!el.dataset.px)return;const o=el.parentNode&&el.parentNode.querySelector('output');if(o)o.textContent=pxFmt212(el.dataset.px,pxR212(el.dataset.px,+el.value))});
+  const h=ui.dlg||{};ui.dlg=Object.assign({},h,{change(e){const el=e.target;if(el&&/^px[A-Z]/.test(el.id||'')){pxChange212(v,el);pxAgain212(v);return}if(h.change)h.change(e)},
+    click(e){if(e.target.closest&&e.target.closest('[data-px212r]')){edit(()=>{const X=v.pexp;if(X)for(const k of Object.keys(PX0212))delete X[k];if(X)delete X.auto});pxAgain212(v);return}if(h.click)h.click(e)}});
+  const X=pxOf212(v);if(X&&X.auto&&v.style==='real')setTimeout(()=>{const a=PXA212.get(v.id),r=$('#pxEv');if(a==null||!r||!$('#dlg').open)return;r.value=a;const o=r.parentNode.querySelector('output');if(o)o.textContent=pxFmt212('ev',a)},400)}}
+/* a file: v.pexp only as an object of known keys with numbers in range */
+XC.push(()=>{for(const v of P.views||[]){if(v.pexp==null)continue;const X=v.pexp;if(typeof X!=='object'||Array.isArray(X)){delete v.pexp;continue}const o={};
+  if(X.on)o.on=1;if(X.auto===0)o.auto=0;for(const k of Object.keys(PX0212))if(X[k]!=null&&X[k]!==''&&isFinite(+X[k])){const x=pxR212(k,+X[k]);if(Math.abs(x-PX0212[k])>1e-9)o[k]=x}
+  if(Object.keys(o).length)v.pexp=o;else delete v.pexp}});
+Object.assign(STR,{gd_px:['การรับแสงแบบกล้องถ่ายรูป (Photographic Exposure)','Photographic Exposure'],px_on:['เปิดใช้ (Enable)','Enable'],px_exp:['การรับแสง (Exposure)','Exposure'],
+  px_auto:['อัตโนมัติ (Automatic)','Automatic'],px_man:['กำหนดเอง (Manual)','Manual'],px_ev:['ค่ารับแสง (Value)','Value'],px_img:['ปรับภาพ (Image)','Image'],
+  px_hi:['ส่วนสว่าง (Highlights)','Highlights'],px_sh:['ส่วนมืด (Shadows)','Shadows'],px_sat:['ความอิ่มสี (Saturation)','Saturation'],px_wp:['จุดขาว (White Point)','White Point'],
+  px_reset:['คืนค่าเริ่มต้น (Reset to Default)','Reset to Default'],
+  px_note:['ค่า 14 คือภาพตามที่วาด ลดค่าลงหนึ่งขั้นภาพสว่างขึ้นเท่าตัว อัตโนมัติเลือกค่าจากความสว่างของภาพ · ส่วนสว่างมากขึ้นทำให้ที่สว่างสว่างกว่าเดิม ส่วนมืดมากขึ้นทำให้ที่มืดมืดกว่าเดิม · จุดขาวคืออุณหภูมิสีของแสงที่จะเห็นเป็นสีขาว (ค่าต่ำภาพออกฟ้า ค่าสูงภาพออกส้ม) · มีผลกับแผ่นงาน การพิมพ์ ภาพเดินชม และการศึกษาแสงอาทิตย์ด้วย',
+    'Value 14 is the picture as drawn; one step lower doubles the light. Automatic picks the Value from how bright the picture is · more Highlights brightens the bright parts, more Shadows darkens the dark parts · White Point is the colour of light that shows as white (lower turns the picture bluer, higher more orange) · sheets, prints, walkthroughs and solar studies show it too'],
+  px_notreal:['การรับแสงแบบกล้องถ่ายรูปใช้กับรูปแบบ "สมจริง" เท่านั้น','Photographic exposure is for the Realistic style only']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -36595,6 +36671,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[gd_dcue]] — ใน [[a_gdo]] ของรูปด้านและรูปตัด: ติ๊ก [[gd_dcon]] แล้วของที่อยู่ลึกเข้าไปจะจางลงเข้าหาสีกระดาษ ปรับได้ว่าเริ่มจางและจางสุดที่ความลึกเท่าใด และจางได้มากสุดเท่าใด · ใช้ได้กับทุกรูปแบบการแสดงผล และไปกับการพิมพ์แผ่นงาน
 [[gd_sketch]] [[gd_ao]] [[gd_lamps]] [[gd_bk]] — อยู่ใน [[a_gdo]] ((GD)) ด้วย: [[gd_sketch]] ทำให้เส้นดูเหมือนร่างด้วยมือ ([[gd_jitter]] 1–10) · [[gd_ao]] ทำให้มุมห้อง รอยต่อ และโคนผนังเข้มลงเล็กน้อย ใช้ได้ทุกรูปแบบยกเว้นโครงลวด มุมมอง 3D แบบแรเงาเปิดไว้ให้แล้ว · [[gd_lamps]] (รูปแบบ Realistic) ให้ดวงโคมในโมเดลส่องสว่างรอบตัว ลดแสงอาทิตย์ลงเพื่อดูกลางคืน · [[gd_bk]] ของมุมมอง 3 มิติ: [[gd_bk_grad]] (ฟ้า ขอบฟ้า พื้นดิน) หรือ [[gd_bk_img]] ที่เลือกจากเครื่อง
+[[gd_px]] — ใน [[a_gdo]] ((GD)) ของมุมมองรูปแบบ [[st_real]]: ติ๊ก [[px_on]] แล้วเลือก [[px_exp]] เป็น [[px_auto]] (เลือกค่าจากความสว่างของภาพ) หรือ [[px_man]] ([[px_ev]] 8–20: 14 คือภาพตามที่วาด ลดลงหนึ่งขั้นสว่างขึ้นเท่าตัว ส่วนที่สว่างมากค่อย ๆ อิ่มตัวแทนการขาวโพลน) · [[px_img]]: [[px_hi]] มากขึ้นที่สว่างสว่างกว่าเดิม [[px_sh]] มากขึ้นที่มืดมืดกว่าเดิม [[px_sat]] 0 คือภาพขาวดำ [[px_wp]] คืออุณหภูมิสีของแสงที่จะเห็นเป็นสีขาว (ต่ำกว่า 6500 K ภาพออกฟ้า สูงกว่าออกส้ม) · [[px_reset]] · ภาพบนแผ่นงาน การพิมพ์ ภาพเดินชม และการศึกษาแสงอาทิตย์ใช้ค่าเดียวกัน และแม่แบบมุมมองเก็บค่านี้ด้วย
 
 [[t_termduct]] — แท็บ [[tab_sys]]: คลิกข้างท่อลม หัวจ่ายติดที่ผิวข้างท่อด้านนั้นโดยไม่มีคอและท่อแยก ความสูงของหัวไม่เกินความสูงท่อ · ย้ายหรือเปลี่ยนขนาดท่อแล้วหัวจ่ายตามไปด้วย · ปริมาณลมของหัวนับรวมในท่อช่วงนั้นเหมือนหัวจ่ายแบบอื่น
 [[t_fitedit]] — แท็บ [[tab_sys]]: คลิกข้อต่อท่อลมเพื่อดูชนิดและขนาด แล้วเลือกแบบของชิ้นนั้น (ข้องอโค้ง หักมุม หักมุมมีครีบ · สามทาง 90° หรือแยกเข้า 45°) · แบบตั้งต้นของทุกชิ้นตั้งที่ชนิดท่อ ([[f_elb]] [[f_tee]]) · ค่าสูญเสียที่ทางแยกคิดตามสัดส่วนลมและพื้นที่ (ASHRAE / Idelchik) เลือกค่าคงที่แบบเดิมได้ใน [[a_mset]]
@@ -36763,6 +36840,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.209 · แถบนำทาง (Navigation Bar) แบบ Revit ในทุกมุมมอง: ใต้ลูกบาศก์มุมมองของ 3 มิติ หรือที่มุมขวาบน มี [[a_wheel]] และปุ่มซูมที่จำคำสั่งที่เลือกล่าสุด (▾ เลือกการซูมเจ็ดแบบ) · ▾ ล่างสุดปรับแต่งปุ่มที่แสดง ตำแหน่งสี่มุมหรือใต้ลูกบาศก์ และปิดแถบ (ค่าจำไว้ในเครื่องนี้) · ใหม่ [[a_zoomss]] (ZS) แสดงแบบเท่าขนาดที่พิมพ์ตามมาตราส่วน และ [[a_zoomnext]] กลับไปที่ [[a_zoomprev]] ย้อนมา (อยู่ในแผงซูมของแท็บ [[tab_view]] ด้วย) · แท็บ [[tab_view]] กลุ่ม [[p_ui]] มี [[a_vcube]] และ [[a_navbar]] สำหรับเปิดปิดลูกบาศก์และแถบ
 - V1.210 · หัวเรื่องและลักษณะของตาราง (Revit: Modify Schedule › Titles & Headers / Appearance): คลิกชื่อตาราง หัวคอลัมน์ หรือช่องข้อมูลเพื่อเลือก (Shift เป็นบล็อก Ctrl ทีละช่อง) แล้วใช้ [[a_tfont]] (ฟอนต์ ขนาด หนา เอียง ขีดเส้นใต้ สี) [[a_tshade]] [[a_tborder]] [[a_talh]] [[a_talv]] และ [[a_treset]] · ส่วนหัวเรื่องหลายแถว: [[a_ttrowa]] [[a_ttrowb]] [[a_ttrowdel]] [[a_ttmerge]] [[a_ttimg]] (เช่น โลโก้) [[a_ttclear]] ดับเบิลคลิกเพื่อพิมพ์ · [[a_rowh]] และ [[a_colw]] เป็นมิลลิเมตรบนกระดาษ · แสดงเหมือนกันบนจอ ในแผ่นงาน PDF DXF และ Excel
 - V1.211 · กลุ่มรายละเอียดที่แนบ (Revit: Attached Detail Group): เลือกชิ้นในแปลนพร้อมป้าย เส้นบอกขนาด ข้อความ หรือเส้นรายละเอียดของชิ้นเหล่านั้น แล้วกด [[a_group]] ได้กลุ่มโมเดลและกลุ่มรายละเอียดที่แนบมาด้วย (หรือ [[a_gattach]] ขณะ [[a_gedit]]) · เลือกสำเนากลุ่มอื่นแล้วกด [[a_adgshow]] ติ๊กเพื่อแสดง ป้ายและเส้นบอกขนาดชี้ชิ้นของสำเนานั้นเอง · ย้าย หมุน กลับด้าน หรือคัดลอกกลุ่ม รายละเอียดตามไป ลบกลุ่มแล้วหายไปด้วย · แก้ไขกลุ่มรายละเอียดหนึ่งชุดแล้วทุกชุดตาม · ใน Project Browser อยู่ใต้กลุ่มโมเดลของมัน
+- V1.212 · การรับแสงแบบกล้องถ่ายรูป (Revit: Photographic Exposure): ใน [[a_gdo]] ((GD)) ของมุมมองรูปแบบ [[st_real]] ติ๊ก [[px_on]] แล้วเลือก [[px_auto]] หรือ [[px_man]] พร้อม [[px_ev]] และปรับภาพ [[px_hi]] [[px_sh]] [[px_sat]] [[px_wp]] ภาพบนจอ แผ่นงาน การพิมพ์ ภาพเดินชม และการศึกษาแสงอาทิตย์ออกตามค่าเดียวกัน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -36939,6 +37017,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 
 [[gd_dcue]] — in [[a_gdo]] of an elevation or a section: tick [[gd_dcon]] and what stands further back fades into the paper. Set where the fading starts and ends in the depth of the view, and how far it goes · works in every visual style and goes to the printed sheet
 [[gd_sketch]] [[gd_ao]] [[gd_lamps]] [[gd_bk]] — also in [[a_gdo]] ((GD)): [[gd_sketch]] makes the lines look drawn by hand ([[gd_jitter]] 1–10) · [[gd_ao]] darkens the corners of rooms, the joints and the foot of walls a little, in every style but Wireframe; shaded 3D views have it on · [[gd_lamps]] (Realistic) lets the light fixtures of the model light what is round them; turn the sun down for a night view · [[gd_bk]] of a 3D view: a [[gd_bk_grad]] (sky, horizon, ground) or an [[gd_bk_img]] from your computer
+[[gd_px]] — in [[a_gdo]] ((GD)) of a view in the [[st_real]] style: tick [[px_on]] and set [[px_exp]] to [[px_auto]] (the Value comes from how bright the picture is) or [[px_man]] ([[px_ev]] 8–20: 14 is the picture as drawn, one step lower doubles the light, and the brightest parts roll off instead of burning out) · [[px_img]]: more [[px_hi]] brightens the bright parts, more [[px_sh]] darkens the dark parts, [[px_sat]] 0 is black and white, [[px_wp]] is the colour of light that shows as white (below 6500 K the picture turns bluer, above more orange) · [[px_reset]] · sheets, prints, walkthroughs and solar studies use the same settings, and view templates keep them
 
 [[t_termduct]] — on the [[tab_sys]] tab: click beside a duct and the register sits on that side face, with no neck and no branch; it is no higher than the duct · move or resize the duct and the register goes with it · its airflow counts in that run like any other air terminal
 [[t_fitedit]] — on the [[tab_sys]] tab: click a duct fitting to see its kind and size and choose what that one is made as (radiused, mitered, mitered with vanes · 90° tee or 45° tap) · the default for all of them is set on the duct type ([[f_elb]], [[f_tee]]) · junction losses follow the flow and area ratio (ASHRAE / Idelchik); the old constants can be chosen in [[a_mset]]
@@ -37107,6 +37186,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.209 · The Navigation Bar of Revit in every view: under the ViewCube of a 3D view or at the top right, with [[a_wheel]] and a zoom button that keeps the zoom picked last (▾ picks one of seven) · the ▾ at its foot picks the controls it shows, docks it at a corner or under the cube, or closes it (kept on this computer) · new [[a_zoomss]] (ZS) shows the view as large as it prints at its scale, and [[a_zoomnext]] goes back to where [[a_zoomprev]] stepped from (also on the Zoom panel of the [[tab_view]] tab) · the [[tab_view]] tab, [[p_ui]], has [[a_vcube]] and [[a_navbar]] to turn the cube and the bar on or off
 - V1.210 · Titles, headers and the look of a schedule's cells (Revit: Modify Schedule › Titles & Headers / Appearance): click the schedule's name, a header or a cell of the body to pick it (Shift for a block, Ctrl for one more), then [[a_tfont]] (font, size, bold, italic, underline, colour), [[a_tshade]], [[a_tborder]], [[a_talh]], [[a_talv]] and [[a_treset]] · a title section of several rows: [[a_ttrowa]], [[a_ttrowb]], [[a_ttrowdel]], [[a_ttmerge]], [[a_ttimg]] (a logo, say), [[a_ttclear]], a double-click to type · [[a_rowh]] and [[a_colw]] in millimetres of paper · the same on the screen, on sheets, in PDF, DXF and Excel
 - V1.211 · Attached detail groups (Revit: Attached Detail Group): select elements in a plan with their tags, dimensions, text or detail lines and use [[a_group]]: a model group and its attached detail group (or [[a_gattach]] while in [[a_gedit]]) · select another copy of the group and use [[a_adgshow]] to show it: its tags and dimensions refer to that copy's own elements · moved, rotated, mirrored or copied, the group takes its details along; deleted, it takes them with it · edit one attached detail group and every copy follows · in the Project Browser they are under their model group
+- V1.212 · Photographic exposure (Revit: Photographic Exposure): in [[a_gdo]] ((GD)) of a view in the [[st_real]] style tick [[px_on]], choose [[px_auto]] or [[px_man]] with a [[px_ev]], and adjust the image: [[px_hi]], [[px_sh]], [[px_sat]], [[px_wp]]. The screen, sheets, prints, walkthroughs and solar studies all follow it
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -39292,6 +39372,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r212={px:id=>{const v=viewById(id);return v&&v.pexp?JSON.parse(JSON.stringify(v.pexp)):null},of:id=>pxOf212(viewById(id)),auto:id=>PXA212.has(id)?PXA212.get(id):null,wb:k=>wb212(k),
+  set:(id,X)=>{edit(()=>{const v=viewById(id);if(X)v.pexp=JSON.parse(JSON.stringify(X));else delete v.pexp})},prog:()=>!!pxProg212(),key:()=>PXG212.key,vt:()=>VT_KEYS.gdo.slice(),tpl:(src,dst)=>{const val=tplTake(viewById(src),['gdo']),v=viewById(dst);edit(()=>{tplApply(v,{kind:v.kind,inc:{gdo:1},val},false)});return val},
+  st:d=>{let r=0,g=0,b=0,L=0,n=0,wh=0,dk=0,bl=0;for(let j=0;j<d.length;j+=4*7){const R=d[j],G=d[j+1],B=d[j+2];r+=R;g+=G;b+=B;const l=0.2126*R+0.7152*G+0.0722*B;L+=l;if(l>245)wh++;if(l<40)dk++;n++}return{r:r/n,g:g/n,b:b/n,L:L/n,wh:wh/n,dk:dk/n}},
+  stats:i=>{const pn=PANES[i==null?ui.ap:i];if(!pn||!pn.cv)return null;const c=pn.cv;return window.PenumBIM.r212.st(c.getContext('2d').getImageData(0,0,c.width,c.height).data)},
+  gl:(id,W,H)=>{const v=viewById(id);if(!glScene(MSm(),VER))return null;const o=modelOpts(v,navOf(v),W||400,H||300,1,C,false);glRender(o);const gl=GLR.gl,d=new Uint8Array(o.w*o.h*4);gl.readPixels(0,0,o.w,o.h,gl.RGBA,gl.UNSIGNED_BYTE,d);return Object.assign(window.PenumBIM.r212.st(d),{px:!!o.px})},
+  place:id=>{act('sheet');const sh=P.views.filter(x=>x.kind==='sheet').pop();if(!sh.vps.some(q=>q.view===id))edit(()=>{addViewport(sh,id)});return sh.id},
+  sheet:async(sid,dpi)=>{const sh=viewById(sid);await saReady([sh]);const cv=renderSheetCanvas(sh,dpi||60),c=cv.getContext('2d');return window.PenumBIM.r212.st(c.getImageData(0,0,cv.width,cv.height).data)},
+  shpng:async(sid,dpi)=>{const sh=viewById(sid);await saReady([sh]);return renderSheetCanvas(sh,dpi||110).toDataURL('image/png')}};
 window.PenumBIM.r211={adg:()=>JSON.parse(JSON.stringify(P.adg||null)),recs:()=>JSON.parse(JSON.stringify((P.groups||[]).filter(g=>g.att))),insts:()=>adgInsts211(),
   mem:g=>P.ann.filter(d=>d.grp===g).map(d=>JSON.parse(JSON.stringify(d))),els:g=>P.els.filter(e=>e.grp===g).map(e=>e.id),
   tagp:id=>{const d=IDX.get(id);if(!d)return null;const q=tagGeo(d,viewById(d.view));return q?q.p:null},dimg:id=>{const d=IDX.get(id);const G=d&&dimGeo(d);return G?{p:G.p,q:G.q,val:G.val,mode:d.mode||''}:null},
