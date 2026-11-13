@@ -14608,7 +14608,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=227,V1_NAME='V1.217';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=228,V1_NAME='V1.218';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -35811,6 +35811,97 @@ Object.assign(STR,{
   bcc_el:['ชิ้นส่วน','Member'],bcc_what:['ส่วนที่ไม่มีที่รองรับ','Not supported'],bcc_base:['ฐาน','its foot'],bcc_both:['ทั้งสองปลาย','both ends'],bcc_end:['ปลาย {0}','end {0}'],
   bcc_fix:['ใส่จุดรองรับแบบยึดแน่นใต้เสา {0} ต้น','Put a fixed boundary condition under the {0} columns'],bcc_fixed:['ใส่จุดรองรับแบบยึดแน่นแล้ว {0} จุด','{0} fixed boundary conditions placed'],
   lt_bc:['จุดรองรับ','Support'],lt_bctip:['จุดรองรับที่ฐานของเสาต้นล่างสุด','The boundary condition at the foot of the lowest column']});
+/* ===== 218 placeholder sheets, the sheet list typed in, New Sheet (Revit: Sheet List › Insert Data Row; View › Sheet; the sheet's Appears In Sheet List) =====
+   P.phs = [{id, no, name}]: sheets that are planned but not drawn yet. They are rows of every sheet list (schedule kind 'sheets') and nothing else: not views, not in the browser,
+   not printed. New Sheet (a dialog, as in Revit) makes a real sheet of each one picked, with its number and name, a title block and a paper size; New makes an empty one.
+   In a sheet list the number and the name of a sheet or a placeholder are typed in place; a sheet number is used once among the sheets and the placeholders.
+   s.nosl: a sheet left out of the sheet lists (Appears In Sheet List off).  B.act('sheet') with no button still makes a sheet at once, as before. */
+const phList218=Q=>Array.isArray(Q.phs)?Q.phs:[];
+const shKey218=s=>String(s==null?'':s).trim().toLowerCase();
+/* the sheet numbers in use, of the sheets and the placeholders, but the one with id skip */
+function shNos218(Q,skip){const S=new Set();for(const s of Q.views)if(s.kind==='sheet'&&s.id!==skip)S.add(shKey218(s.number));for(const h of phList218(Q))if(h.id!==skip)S.add(shKey218(h.no));S.delete('');return S}
+/* the number after the last one of the list (A-103 → A-104, keeping the zeros of S-009), one not in use */
+function shNext218(Q){const all=Q.views.filter(s=>s.kind==='sheet').map(s=>String(s.number||'').trim()).concat(phList218(Q).map(h=>String(h.no).trim())).filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  const used=shNos218(Q),last=all.length?all[all.length-1]:'A-100',m=/^(.*?)(\d+)(\D*)$/.exec(last);let pre,w,n,suf;if(m){pre=m[1];w=m[2].length;n=+m[2]+1;suf=m[3]}else{pre=last+'-';w=1;n=1;suf=''}
+  for(let i=0;i<100000;i++,n++){const s=pre+String(n).padStart(w,'0')+suf;if(!used.has(shKey218(s)))return s}return last+'-'+Date.now()}
+/* a new sheet, inside an edit: {no, name, tb, size, view (put on it, as the old command did)} */
+function shMake218(o){o=o||{};const n=P.views.filter(x=>x.kind==='sheet').length+1,U=shNos218(P);let no=o.no!=null?String(o.no).trim():'';
+  if(!no){let k=n;do{no='A-'+(100+k);k++}while(U.has(shKey218(no)))}
+  const s={id:P.seq++,kind:'sheet',name:o.name!=null?String(o.name):t('sheet_name')+' '+n,number:no,size:SHEETS[o.size]?o.size:'A3',vps:[],scale:1,hidden:[],hiddenCats:[]};
+  if(o.tb!=null&&o.tb!=='strip'&&(TB_STOCK[o.tb]||(P.tbs||[]).some(T=>T.id===o.tb)))s.tb=o.tb;P.views.push(s);if(o.view&&o.view.kind!=='sheet')addViewport(s,o.view.id);return s}
+XA.sheet=(arg,el,v)=>{if(el||arg==='dlg'){dlgNewSheet218();return}let id;edit(()=>{id=shMake218({view:v}).id});showView(id);toast(t('sheet_made'))};
+/* New Sheet: a title block, a paper size, New and the placeholder sheets to make real */
+function dlgNewSheet218(){const H=phList218(P).slice().sort((a,b)=>String(a.no).localeCompare(String(b.no),undefined,{numeric:true})),av=activeView(),
+    tb0=ui.nsTb218!=null&&tbAll().some(o=>String(o[0])===String(ui.nsTb218))?ui.nsTb218:(av&&av.kind==='sheet'?tbOf(P,av).key:'strip'),sz0=SHEETS[ui.nsSz218]?ui.nsSz218:(av&&av.kind==='sheet'&&SHEETS[av.size]?av.size:'A3');
+  const it=(k,l,on)=>`<label class="nsr"><input type="checkbox" data-nsph="${k}"${on?' checked':''}> ${l}</label>`;
+  openDlg(t('a_newsheet218'),`<p class="note">${t('ns_note218')}</p><div class="fr"><label for="nsTb">${t('p_tblock')}</label><select id="nsTb">${tbAll().map(o=>`<option value="${o[0]}"${String(o[0])===String(tb0)?' selected':''}>${esc(o[1])}</option>`).join('')}</select></div>
+    <div class="fr"><label for="nsSz">${t('p_paper')}</label><select id="nsSz">${Object.keys(SHEETS).map(k=>`<option value="${k}"${k===sz0?' selected':''}>${k}  ${SHEETS[k][0]}×${SHEETS[k][1]}</option>`).join('')}</select></div>
+    <div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t('ns_ph218')}</div><div id="nsPh" style="display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto">${it('new','<b>'+esc(t('ns_new218'))+'</b>',true)}${H.map(h=>it(h.id,esc(h.no)+' - '+esc(h.name||''),false)).join('')}</div>${H.length?'':`<p class="note">${t('ns_noph218')}</p>`}`,
+    `<span style="flex:1"></span><button class="btn primary" data-nsok="1">${t('ok')}</button><button class="btn" data-close="1">${t('cancel')}</button>`,
+    {change(e){const k=e.target.dataset.nsph;if(k==null||!e.target.checked)return;if(k!=='new'){const n=$('#dlg [data-nsph="new"]');if(n)n.checked=false}},          // as in Revit: picking a placeholder takes the place of New
+     click(e){if(!e.target.closest('[data-nsok]'))return;const pick=$$('#dlg [data-nsph]').filter(x=>x.checked).map(x=>x.dataset.nsph);if(!pick.length){toast(t('ns_none218'));return}
+      const tv=$('#nsTb').value,tb=/^\d+$/.test(tv)?+tv:tv,sz=$('#nsSz').value;ui.nsTb218=tb;ui.nsSz218=sz;const made=[];
+      edit(()=>{if(pick.includes('new'))made.push(shMake218({tb,size:sz,view:av}).id);for(const k of pick){if(k==='new')continue;const h=phList218(P).find(x=>x.id===+k);if(!h)continue;
+          P.phs=P.phs.filter(x=>x!==h);if(!P.phs.length)delete P.phs;made.push(shMake218({no:h.no,name:h.name,tb,size:sz}).id)}});
+      closeDlg();if(made.length){showView(made[0]);toast(made.length===1?t('sheet_made'):t('ns_made218',made.length))}}},'nsd')}
+/* a number or a name typed in a sheet list: w 's' a sheet, 'p' a placeholder */
+function shSet218(w,id,k,raw){const o=w==='p'?phList218(P).find(h=>h.id===id):P.views.find(s=>s.kind==='sheet'&&s.id===id);if(!o||(k!=='no'&&k!=='name'))return false;let val=String(raw==null?'':raw).trim();
+  if(k==='no'){val=val.slice(0,40);if(!val){toast(t('sh_noempty'));refresh();return false}if(shNos218(P,id).has(shKey218(val))){toast(t('sh_dup',val));refresh();return false}
+    if(val===String(w==='p'?o.no:o.number))return true;edit(()=>{if(w==='p')o.no=val;else o.number=val});return true}
+  val=val.slice(0,120);if(w==='s'&&!val){refresh();return false}if(val===String(o.name||''))return true;edit(()=>{o.name=val});return true}
+sfChange=(f0=>el=>{const z=el.dataset.sh218;if(z==null)return f0(el);const q=z.split(':'),w=q[0],id=+q[1],k=q[2];if(shSet218(w,id,k,el.value))return;
+  const o=w==='p'?phList218(P).find(h=>h.id===id):P.views.find(s=>s.id===id);if(o)el.value=String(k==='no'?(w==='p'?o.no:o.number):o.name||'')})(sfChange);          // refused: the cell shows what it was
+/* the sheet list: the placeholders as rows, a Placeholder column once there is one, the sheets left out of it gone, number and name typed in */
+{const f0=scheduleTable;scheduleTable=(Q,kind,tr,o)=>{const S=f0(Q,kind,tr,o);if(kind!=='sheets'||!S||!Array.isArray(S.rows))return S;
+  const H=phList218(Q),out=new Set(Q.views.filter(s=>s.kind==='sheet'&&s.nosl).map(s=>s.id));if(out.size)S.rows=S.rows.filter(r=>!out.has(r._v));
+  for(const c of S.cols)if(c.k==='no'||c.k==='name')c.fe='sh218';if(!H.length)return S;
+  for(const h of H){const r={_ph:h.id};for(const c of S.cols)r[c.k]='';r.no=h.no;r.name=h.name||'';S.rows.push(r)}
+  S.cols.push({k:'ph',label:tr('c_ph218'),fe:'ph218'});for(const r of S.rows)r.ph=tr(r._ph?'o_yes':'o_no');
+  S.rows.sort((a,b)=>String(a.no).localeCompare(String(b.no),undefined,{numeric:true}));return S}}
+{const f0=sfCell;sfCell=(c,r,st)=>{if(c.fe!=='sh218'&&c.fe!=='ph218')return f0(c,r,st);const c2=Object.assign({},c);delete c2.fe;
+  if(c.fe==='ph218')return`<td${st||''}>${esc(r.ph||'')}${r._ph?` <button type="button" class="x" style="padding:0 6px;min-height:0;height:auto;line-height:1.3;font-size:12px" data-act="phdel" data-arg="${r._ph}" title="${esc(t('a_phdel'))}" aria-label="${esc(t('a_phdel'))} ${esc(r.no)}">✕</button>`:''}</td>`;
+  const id=r._ph||r._v;if(!id||r._g)return f0(c2,r,st);const k=c.k;
+  return`<td class="ed"${st||''}><input type="text" data-sf="" data-sh218="${r._ph?'p':'s'}:${id}:${k}" data-fk="sh218|${id}|${k}" value="${esc(r[k]==null?'':String(r[k]))}" maxlength="${k==='no'?40:120}" autocomplete="off" aria-label="${esc(colLabel(c))}"></td>`}}
+/* Insert Data Row: a placeholder with the next number; its number is ready to be typed over */
+XA.phrow=arg=>{const v=arg?viewById(+arg):activeView();if(v&&!(v.kind==='schedule'&&v.sched==='sheets')){toast(t('ph_na'));return}let id,no;
+  edit(()=>{no=shNext218(P);id=P.seq++;(P.phs||(P.phs=[])).push({id,no,name:t('ph_unnamed')})});toast(t('ph_made',no));
+  setTimeout(()=>{for(const pn of PANES){const q=pn.sched&&!pn.sched.hidden?pn.sched.querySelector('[data-fk="sh218|'+id+'|no"]'):null;if(q){q.focus();q.select();break}}},60)};
+XA.phdel=arg=>{const h=phList218(P).find(x=>x.id===+arg);if(!h)return;edit(()=>{P.phs=P.phs.filter(x=>x!==h);if(!P.phs.length)delete P.phs});toast(t('ph_del',h.no))};
+XVB.push((pn,v)=>v.kind==='schedule'&&v.sched==='sheets'?`<button class="btn" data-act="phrow" data-arg="${v.id}">＋ ${t('a_phrow')}</button>`:'');
+{const f0=ctxPanels;ctxPanels=()=>{const out=f0(),v=activeView();if(v&&v.kind==='schedule'&&v.sched==='sheets'){const R=out.find(p=>p.t==='p_srow');if(R&&!R.b.includes('@phrow'))R.b=['@phrow',...R.b];else if(!R)out.push({t:'p_srow',b:['@phrow']})}return out}}          // as in Revit: Insert Data Row heads the Rows panel of a sheet list
+/* a sheet's Properties: Appears In Sheet List; its number is used once */
+XVR.push(v=>v.kind==='sheet'?PR.chk('shl218','p_shl218',!v.nosl):'');
+XVF.push((v,key,raw)=>{if(v.kind!=='sheet')return false;
+  if(key==='shl218'){edit(()=>{if(raw)delete v.nosl;else v.nosl=1});return true}
+  if(key!=='number')return false;const s=String(raw==null?'':raw).trim();if(!s){toast(t('sh_noempty'));refresh();return true}if(shNos218(P,v.id).has(shKey218(s))){toast(t('sh_dup',s));refresh();return true}return false});
+/* the cleaner: placeholders made sound (a number, once, an id of their own); Appears In Sheet List only on sheets */
+XC.push(()=>{for(const v of P.views){if(v.kind==='sheet'&&v.nosl)v.nosl=1;else delete v.nosl}
+  if(P.phs==null)return;if(!Array.isArray(P.phs)){delete P.phs;return}
+  const ids=new Set();for(const e of P.els)ids.add(e.id);for(const a of P.ann)ids.add(a.id);for(const v of P.views)ids.add(v.id);
+  const used=new Set(P.views.filter(s=>s.kind==='sheet').map(s=>shKey218(s.number)));used.delete('');const out=[];
+  for(const h of P.phs){if(!h||typeof h!=='object')continue;let no=String(h.no==null?'':h.no).trim().slice(0,40);if(!no)continue;const name=String(h.name==null?'':h.name).slice(0,120);
+    const b=no;let i=2;while(used.has(shKey218(no)))no=(b+' ('+(i++)+')').slice(0,40);used.add(shKey218(no));
+    let id=Number.isInteger(h.id)&&h.id>0&&!ids.has(h.id)?h.id:P.seq++;if(id>=P.seq)P.seq=id+1;ids.add(id);out.push({id,no,name})}
+  if(out.length)P.phs=out;else delete P.phs});
+Object.assign(BTN,{'@phrow':['sheet','']});
+Object.assign(STR,{
+  c_ph218:['แผ่นสำรอง (Placeholder)','Placeholder'],
+  a_phrow:['เพิ่มแถวแผ่นงาน (Insert Data Row)','Insert Data Row'],
+  a_phdel:['ลบแผ่นสำรองนี้','Delete this placeholder sheet'],
+  ph_unnamed:['ยังไม่ได้ตั้งชื่อ','Unnamed'],
+  ph_made:['เพิ่มแผ่นสำรอง {0} แล้ว พิมพ์เลขที่และชื่อในตารางได้ แล้วทำเป็นชีตจริงที่ ชีตใหม่','Placeholder sheet {0} added: type its number and name in the list, then make it a real sheet with New Sheet'],
+  ph_del:['ลบแผ่นสำรอง {0} แล้ว','Placeholder sheet {0} deleted'],
+  ph_na:['เพิ่มแถวได้ในรายการแผ่นงาน (Sheet List)','Rows are inserted in a sheet list'],
+  sh_dup:['เลขที่แผ่นงาน {0} มีอยู่แล้ว เลขที่ของชีตและแผ่นสำรองต้องไม่ซ้ำกัน','Sheet number {0} is already in use: the numbers of sheets and placeholder sheets must be unique'],
+  sh_noempty:['เลขที่แผ่นงานว่างไม่ได้','A sheet number cannot be empty'],
+  a_newsheet218:['ชีตใหม่ (New Sheet)','New Sheet'],
+  ns_note218:['ใหม่: ชีตเปล่าเลขที่ถัดไป (มีมุมมองที่เปิดอยู่ถ้าไม่ใช่ชีต) · แผ่นสำรองที่ติ๊กกลายเป็นชีตจริงด้วยเลขที่และชื่อของมัน และออกจากรายการแผ่นสำรอง','New: an empty sheet with the next number (with the open view on it unless that is a sheet) · each placeholder sheet ticked becomes a real sheet with its number and name, and leaves the placeholders'],
+  ns_ph218:['เลือกแผ่นสำรอง (Select placeholder sheets)','Select placeholder sheets'],
+  ns_new218:['ใหม่ (New)','New'],
+  ns_noph218:['ยังไม่มีแผ่นสำรอง เพิ่มได้ที่รายการแผ่นงาน ด้วย เพิ่มแถวแผ่นงาน','No placeholder sheets yet: add them in a sheet list with Insert Data Row'],
+  ns_none218:['ติ๊ก ใหม่ หรือแผ่นสำรองอย่างน้อยหนึ่งแผ่น','Tick New or at least one placeholder sheet'],
+  ns_made218:['สร้างชีตแล้ว {0} แผ่น','{0} sheets created'],
+  p_shl218:['แสดงในรายการแผ่นงาน (Appears In Sheet List)','Appears In Sheet List']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -37718,6 +37809,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.215 · ตะแกรงเหล็ก (Revit: Fabric Area / Fabric Sheet): แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้นแล้ววาดขอบเขต สี่เหลี่ยม ทั้งแผ่น หรือคลิกวางแผ่นเดียว ได้ตะแกรงเหล็ก (Wire Mesh) ปูเป็นแผ่นทาบกันตามระยะทาบ สลับรอยต่อได้ ผิวบนหรือล่าง ชนิดแผ่นตั้งต้นห้าแบบ (Ø4 Ø5 Ø6 @150 และ @200) แก้หรือเพิ่มได้ใน แก้ไขชนิด แปลนแสดงทุกแผ่นพร้อมเส้นทแยง 3 มิติแสดงลวด ตารางตะแกรงเหล็ก ตารางของหมวด BOQ (นับแผ่น) และ IFC (IfcReinforcingMesh)
 - V1.216 · น้ำหนักบรรทุก กรณีน้ำหนัก และชุดน้ำหนักรวม (Revit: Loads, Load Cases, Load Combinations, Structural Settings): แท็บ วิเคราะห์ วางน้ำหนักแบบจุด แบบเส้น แบบพื้นที่ ทั้งแบบอิสระและแบบยึดกับคาน ผนัง หรือพื้น ค่า Fx Fy Fz และโมเมนต์ แปลนแสดงสัญลักษณ์สีตามลักษณะ 3 มิติแสดงลูกศร การตั้งค่าโครงสร้างมีกรณีน้ำหนักแปดกรณีและชุดน้ำหนักรวมสี่ชุดที่แก้ได้ น้ำหนักลงเสาส่งน้ำหนักเหล่านี้ลงเสาตามกรณีและแสดงชุดที่วิกฤต ตารางของหมวด น้ำหนักบรรทุก
 - V1.217 · จุดรองรับ (Revit: Boundary Conditions, Check Supports, Boundary Conditions Settings): แท็บ วิเคราะห์ วางจุดรองรับแบบจุดที่ฐานเสาหรือปลายคานและผนัง แบบเส้นตามคานหรือผนัง และแบบพื้นที่ใต้พื้น สถานะยึดแน่น ยึดหมุน ล้อเลื่อน หรือกำหนดเอง (ยึด ปล่อย สปริง ทีละแกน) แปลนและ 3 มิติแสดงสัญลักษณ์แบบ Revit ตรวจที่รองรับหาเสาและคานที่ไม่มีที่รองรับ ตารางน้ำหนักลงเสาบอกจุดรองรับที่ฐาน ตารางของหมวด จุดรองรับ
+- V1.218 · แผ่นสำรองและรายการแผ่นงาน (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): ตารางรายการแผ่นงานเพิ่มแถวแผ่นสำรองได้ พิมพ์เลขที่และชื่อของชีตและแผ่นสำรองในตารางได้ (เลขที่ไม่ซ้ำ) ปุ่ม ชีตใหม่ เปิดหน้าต่างเลือกกรอบชื่อแบบ ขนาดกระดาษ และแผ่นสำรองที่จะทำเป็นชีตจริง ชีตเลือกได้ว่าจะอยู่ในรายการแผ่นงานหรือไม่
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -38072,6 +38164,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.215 · Fabric reinforcement (Revit: Fabric Area / Fabric Sheet): Structure tab, Rebar panel; click a slab and sketch a boundary, a rectangle or the whole slab, or place one sheet by a click, for welded wire fabric laid in sheets overlapping by the lap lengths, staggered if asked, at the top or the bottom. Five sheet types to start with (Ø4, Ø5, Ø6 at 150 and 200), changed or added in Edit Type; the plan shows every sheet with its diagonal, 3D the wires, and the Fabric Sheet Schedule, a category schedule, the BOQ (sheets) and IFC (IfcReinforcingMesh) take them up
 - V1.216 · Structural loads, load cases and combinations (Revit: Loads, Load Cases, Load Combinations, Structural Settings): on the Analyze tab, point, line and area loads, free or hosted on a beam, wall or slab, with Fx Fy Fz and moments; plans show the symbols in the colour of their nature, 3D views arrows; Structural Settings hold eight load cases and four combinations to edit; the load takedown carries the loads down the columns by case and shows the governing combination; schedules of the Structural Loads category
 - V1.217 · Boundary conditions (Revit: Boundary Conditions, Check Supports, Boundary Conditions Settings): on the Analyze tab, point boundary conditions at the foot of a column or the end of a beam or wall, line ones along a beam or wall, area ones under a slab; Fixed, Pinned, Roller or User (Fixed, Released or Spring direction by direction); plans and 3D views show Revit's symbols; Check Supports finds the columns and beams nothing holds up; the load takedown shows the support at each foot; schedules of the Boundary Conditions category
+- V1.218 · Placeholder sheets and the sheet list (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): insert placeholder sheet rows in a sheet list, type the numbers and names of sheets and placeholders in the list (numbers are unique), New Sheet opens a dialog for the title block, the paper size and the placeholder sheets to make real, and a sheet can be left out of the sheet lists
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -38599,6 +38692,7 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 2. กด [[a_placeview]] เลือกมุมมองที่จะวาง แล้วลากเพื่อจัดตำแหน่ง ขนาดบนกระดาษเป็นไปตามมาตราส่วนของมุมมองนั้น
 3. ตั้ง [[p_paper]] [[p_sheetno]] และ [[p_sheetname]] ในแผงคุณสมบัติ
 4. ข้อมูลในกรอบชื่อแบบ (ชื่อโครงการ เจ้าของงาน ผู้เขียนแบบ วันที่) มาจาก [[a_info]] ในแท็บ [[tab_manage]]
+- [[a_sheet]] เปิดหน้าต่าง [[a_newsheet218]] เลือก [[p_tblock]] [[p_paper]] และ [[ns_new218]] หรือแผ่นสำรองที่จะทำเป็นชีตจริง · แผ่นสำรอง (Placeholder Sheet) คือแผ่นที่วางแผนไว้แต่ยังไม่ได้ทำ เพิ่มได้ในตาราง รายการแผ่นงาน ด้วย [[a_phrow]] แล้วพิมพ์เลขที่และชื่อในตาราง (ชีตจริงก็แก้เลขที่และชื่อในตารางได้ เลขที่ต้องไม่ซ้ำกัน) · เอาติ๊ก [[p_shl218]] ออกในคุณสมบัติของชีตเพื่อไม่ให้ชีตนั้นอยู่ในรายการแผ่นงาน
 - ดับเบิลคลิกมุมมองแปลนบนแผ่นงานเพื่อเปิดใช้มุมมอง — [[a_actview]] — แล้วแก้โมเดล ใส่ระยะ และใช้เครื่องมือของแปลนได้ทั้งหมดบนแผ่นงานเลย ส่วนอื่นของแผ่นงานจะจางลง · ดับเบิลคลิกที่ว่างนอกกรอบมุมมอง หรือกด [[a_deactview]] เพื่อกลับสู่แผ่นงาน · มุมมองชนิดอื่น (รูปด้าน รูปตัด 3 มิติ ตาราง) ดับเบิลคลิกแล้วเปิดเป็นแท็บ
 - [[a_tblock]]: กรอบชื่อแบบมี 3 รูปแบบที่มากับโปรแกรม — [[tbl_strip]] · [[tbl_side]] · [[tbl_box]] — เลือกได้ทีละแผ่นที่ [[p_tblock]] ในแผงคุณสมบัติ · กด [[tb_new]] เพื่อทำกรอบชื่อแบบของโครงการเอง แล้วใส่ [[tb_firm]] ที่อยู่ และ [[tb_logo]] เลือกได้ว่าจะแสดงช่อง [[tb_chk]] · [[tb_app]] · [[tb_pno]] หรือไม่ · จากนั้นกด [[tb_use]] หรือ [[tb_useall]]
 - แต่ละแผ่นมี [[p_sdrawn]] · [[p_schecked]] · [[p_sapproved]] และ [[p_sdate]] ของตัวเอง ถ้าเว้นว่าง ผู้เขียนและวันที่จะมาจาก [[a_info]]
@@ -38651,6 +38745,7 @@ Fields of your own for the elements, such as a fire rating, a contractor or a U-
 2. [[a_placeview]]: choose the view to place, then drag it into position. Its size on paper follows the scale of the view
 3. Set the [[p_paper]], the [[p_sheetno]] and the [[p_sheetname]] in Properties
 4. The title block (project, client, drawn by, date) is filled from [[a_info]] on the [[tab_manage]] tab
+- [[a_sheet]] opens [[a_newsheet218]]: pick the [[p_tblock]], the [[p_paper]] and [[ns_new218]] or the placeholder sheets to make real · a placeholder sheet is a sheet planned but not made yet: add them in the Sheet List schedule with [[a_phrow]] and type their numbers and names in the list (a real sheet's number and name can be typed there too; a number is used only once) · untick [[p_shl218]] in a sheet's Properties to leave it out of the sheet lists
 - Double-click a plan on the sheet to activate it — [[a_actview]] — and edit the model, dimension and use every tool of a plan right on the sheet; the rest of the sheet is greyed · double-click empty space outside the view, or press [[a_deactview]], to go back to the sheet · a view of another kind (elevation, section, 3D, schedule) opens in a tab instead
 - [[a_tblock]]: three title blocks come with the program — [[tbl_strip]] · [[tbl_side]] · [[tbl_box]] — chosen sheet by sheet with [[p_tblock]] in Properties · press [[tb_new]] for a title block of the project's own, then give it the [[tb_firm]], the address and a [[tb_logo]], and say whether it shows [[tb_chk]] · [[tb_app]] · [[tb_pno]] · then press [[tb_use]] or [[tb_useall]]
 - Every sheet has its own [[p_sdrawn]] · [[p_schecked]] · [[p_sapproved]] and [[p_sdate]]; left empty, the author and the date come from [[a_info]]
@@ -40257,6 +40352,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r218={list:()=>JSON.parse(JSON.stringify(phList218(P))),next:()=>shNext218(P),nos:skip=>[...shNos218(P,skip)],
+  add:(no,name)=>{let id;edit(()=>{id=P.seq++;(P.phs||(P.phs=[])).push({id,no:no!=null?String(no):shNext218(P),name:name!=null?String(name):t('ph_unnamed')})});return id},
+  set:(w,id,k,val)=>shSet218(w,id,k,val),make:o=>{let id;edit(()=>{const x=Object.assign({},o||{});if(x.view!=null)x.view=viewById(x.view);id=shMake218(x).id});return id},
+  dlg:()=>dlgNewSheet218(),list1:()=>{const v=P.views.find(x=>x.kind==='schedule'&&x.sched==='sheets');return v?v.id:null},
+  rows:vid=>{const v=viewById(vid);const S=schedView(P,v,t);return{cols:S.cols.map(c=>c.k),rows:S.rows.map(r=>{const o={};for(const c of S.cols)o[c.k]=r[c.k];o._ph=r._ph||null;o._v=r._v||null;return o})}},
+  csv:vid=>scheduleCSV(viewById(vid)),sheets:()=>P.views.filter(s=>s.kind==='sheet').map(s=>({id:s.id,no:s.number,name:s.name,size:s.size,tb:s.tb==null?null:s.tb,nosl:s.nosl||0,vps:(s.vps||[]).length}))};
 window.PenumBIM.r217={mk:o=>{const keep=ui.opt.bcSt;if(o.st)ui.opt.bcSt=o.st;const G=bcGeo217(P,{bk:o.bk,host:o.host,en:o.en});const H=IDX.get(o.host);const id=G?bcNew217({bk:o.bk,host:o.host,en:o.en,level:H.level,pts:G.pts}):0;ui.opt.bcSt=keep;return id},
   geo:id=>{const G=bcGeo217(P,IDX.get(id));return G?{k:G.k,pts:G.pts,z:G.z,holes:G.holes,host:G.H.id}:null},st:id=>{const G=bcGeo217(P,IDX.get(id));return G?bcStations217(P,G):null},
   dof:id=>bcDof217(IDX.get(id)),kv:id=>bcKv217(IDX.get(id)),chk:()=>bcCheck217(P),fix:ids=>bcFix217(ids),dlg:()=>dlgBcChk217(),set:()=>dlgStSet216('bc'),sp:()=>bcSp217(P),
