@@ -4705,14 +4705,14 @@ function joinInserts(P){const holes=new Map(),span=new Map(),J=P.joins||[];if(!J
 /* in a plan: Map(id → the ids that cut it), joins only */
 function joinDom(P){const m=new Map();for(const q of P.joins||[])(m.get(q[1])||m.set(q[1],[]).get(q[1])).push(q[0]);return m}
 /* the meshes of buildMeshes cut by what cuts them */
-function joinApply(P,items){const J=P.joins||[],C=P.cuts||[];if(!J.length&&!C.length)return;const E=new Map(P.els.map(e=>[e.id,e])),by=new Map();
+function joinApply(P,items){const J=P.joins||[],C=cutsNE231(P);if(!J.length&&!C.length)return;const E=new Map(P.els.map(e=>[e.id,e])),by=new Map();
   for(const it of items){if(!it.t||!it.t.length||it.ml||it.ins)continue;const e=E.get(it.id);if(e&&e.cat===it.cat&&joinable(e))(by.get(it.id)||by.set(it.id,[]).get(it.id)).push(it)}
   const solid=new Map(),sol=id=>{let s=solid.get(id);if(!s){s=[];for(const it of by.get(id)||[])if(it.a>=1&&!it.inf)for(const v of it.t)s.push(v);solid.set(id,s)}return s};          // the cutters as they were before anything was cut
   const jobs=new Map(),add=(id,tr)=>{if(tr.length&&by.has(id))(jobs.get(id)||jobs.set(id,[]).get(id)).push(tr)};
   for(const q of J)add(q[1],sol(q[0]));for(const q of C)add(q[1],sol(q[0]));for(const [id,L] of joinInserts(P).holes)for(const h of L)add(id,h.box);
   for(const [id,L] of jobs)for(const it of by.get(id))for(const c of L){const r=csgCut(it.t,it.l,it.s,c);if(r){it.t=r.t;it.l=r.l;it.s=r.s}}}
 /* what the cuts take off the quantities: Map(id → {vol (mm³), area (mm², of a wall: the openings of the wall beside it)}), worked out on plain solids */
-function joinLoss(P){const out=new Map(),J=P.joins||[],C=P.cuts||[];if(!J.length&&!C.length)return out;const E=new Map(P.els.map(e=>[e.id,e])),jobs=new Map(),sol=new Map(),S=id=>{let s=sol.get(id);if(!s){const e=E.get(id);s=joinable(e)?joinSolid(P,e):[];sol.set(id,s)}return s};
+function joinLoss(P){const out=new Map(),J=P.joins||[],C=cutsNE231(P);if(!J.length&&!C.length)return out;const E=new Map(P.els.map(e=>[e.id,e])),jobs=new Map(),sol=new Map(),S=id=>{let s=sol.get(id);if(!s){const e=E.get(id);s=joinable(e)?joinSolid(P,e):[];sol.set(id,s)}return s};
   const add=(id,tr)=>{if(tr.length&&joinable(E.get(id)))(jobs.get(id)||jobs.set(id,[]).get(id)).push(tr)};for(const q of J)add(q[1],S(q[0]));for(const q of C)add(q[1],S(q[0]));
   const H=joinInserts(P).holes;for(const [id,L] of H)for(const h of L)add(id,h.box);
   for(const [id,L] of jobs){const t0=S(id);if(!t0.length)continue;let A=csgFromTris(t0,0);const bb=triBox(t0);for(const c of L)if(boxHit(bb,triBox(c),0))A=csgSub(A,csgFromTris(c,1));
@@ -10201,14 +10201,14 @@ let JNC=null;
 /* what joined walls do to each other's doors and windows, kept until the model changes */
 function JNm(){if(!JNC||JNC.ver!==VER)JNC={ver:VER,x:joinInserts(P)};return JNC.x}
 const JN_TOOLS=['join','unjoin','swjoin','cutg','uncutg'];
-const jnEl=(pn,v,p)=>{const q=geoPick(pn,v,p);return q&&joinable(q.e)?q.e:null};
+const jnEl=(pn,v,p)=>{let q=geoPick(pn,v,p);if(q&&ui.jn&&q.e.id===ui.jn&&v.kind==='plan'){const c=ui.cyc||0;ui.cyc=c+1;try{const r=geoPick(pn,v,p);if(r&&r.e.id!==ui.jn)q=r}finally{ui.cyc=c}}return q&&joinable(q.e)?q.e:null};          // V1.231
 function jnPick(tl,e){
   if(!e){toast(t('jn_pick'));return}
   if(tl==='unjoin'){const n=(P.joins||[]).filter(q=>q[0]===e.id||q[1]===e.id).length;if(!n){toast(t('jn_none'));return}edit(()=>{P.joins=P.joins.filter(q=>q[0]!==e.id&&q[1]!==e.id)});toast(t('jn_unjoined',n));return}          // Revit: Unjoin Geometry takes one element out of all its joins
   const a=ui.jn&&IDX.get(ui.jn);if(!a){ui.jn=e.id;ui.sel=new Set([e.id]);refresh();return}if(a===e)return;let done=false;
   if(tl==='join'){if(joinIdx(P,a.id,e.id)>=0)toast(t('jn_already'));else if(!joinTouch(P,a,e))toast(t('jn_apart'));else{edit(()=>{(P.joins=P.joins||[]).push(joinOrder(a,e))});done=true}}
   else if(tl==='swjoin'){const i=joinIdx(P,a.id,e.id);if(i<0)toast(t('jn_notjoined'));else{edit(()=>{P.joins[i].reverse()});const q=P.joins[joinIdx(P,a.id,e.id)];toast(t('jn_order',jnName(q[0]),jnName(q[1])));done=true}}
-  else if(tl==='cutg'){if(cutIdx(P,e.id,a.id)>=0)toast(t('jn_cutalready'));else if(!joinTouch(P,a,e))toast(t('jn_apart'));else{edit(()=>{(P.cuts=P.cuts||[]).push([e.id,a.id])});done=true}}          // the first pick is cut by the second
+  else if(tl==='cutg'){const em=isBW231(P,a)&&isCW231(P,e);if(cutIdx(P,e.id,a.id)>=0)toast(t('jn_cutalready'));else if(em&&!embGap231(P,a,e))toast(t('emb_apart231'));else if(!joinTouch(P,a,e))toast(t('jn_apart'));else{edit(()=>{(P.cuts=P.cuts||[]).push([e.id,a.id])});if(em)toast(t('emb_cut231'));done=true}}          // the first pick is cut by the second
   else if(tl==='uncutg'){const i=cutIdx(P,e.id,a.id);if(i<0)toast(t('jn_notcut'));else{edit(()=>{P.cuts.splice(i,1)});done=true}}
   if(done&&ui.opt.jnMulti&&(tl==='join'||tl==='swjoin')){ui.sel=new Set([a.id]);refresh();return}          // Multiple Join: the first pick stays, the next clicks join to it
   ui.jn=null;ui.sel.clear();refresh()}
@@ -14613,7 +14613,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=240,V1_NAME='V1.230';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=241,V1_NAME='V1.231';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -36703,15 +36703,11 @@ Object.assign(STR,{
    T.emb==='yes' on a curtain wall type: each curtain wall of that type that lies along a basic wall (parallel to it, its location line inside the wall's thickness, the
    same design option) cuts the wall where the two overlap, along the wall and in height, as a void does: the wall's 3D solid and its layers, elevations and sections
    (drawn from them), plans where the cut plane passes through the gap, and the wall's area and volume.  The type's own setting: no instance parameter. */
-function emb230(P0){const out=new Map(),C=[];
-  for(const e of P0.els){if(e.cat!=='wall'||e.gx)continue;const T=typ(P0,e);if(T&&T.kind==='curtain'&&T.emb==='yes'&&Math.hypot(e.x2-e.x1,e.y2-e.y1)>=50)C.push(e)}
+function emb230(P0){const out=new Map(),C=[],M=cutEmb231(P0);          // V1.231: also the curtain walls Cut Geometry embeds, in the walls it names
+  for(const e of P0.els){if(e.cat!=='wall'||e.gx)continue;const T=typ(P0,e);if(T&&T.kind==='curtain'&&(T.emb==='yes'||(M&&M.has(e.id))))C.push([e,T.emb==='yes'])}
   if(!C.length)return out;
-  for(const w of P0.els){if(w.cat!=='wall'||w.gx)continue;const W=typ(P0,w);if(!W||W.kind==='curtain')continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L<1)continue;
-    const ux=(w.x2-w.x1)/L,uy=(w.y2-w.y1)/L,h=(+W.thickness||150)/2,D=(x,y)=>(x-w.x1)*ux+(y-w.y1)*uy,N=(x,y)=>(y-w.y1)*ux-(x-w.x1)*uy;let zw=null;
-    for(const c of C){if(c.dop&&w.dop&&c.dop!==w.dop)continue;const cl=Math.hypot(c.x2-c.x1,c.y2-c.y1);if(Math.abs((c.x2-c.x1)*uy-(c.y2-c.y1)*ux)/cl>0.02)continue;          // parallel
-      if(Math.abs(N(c.x1,c.y1))>h+1||Math.abs(N(c.x2,c.y2))>h+1)continue;const d1=D(c.x1,c.y1),d2=D(c.x2,c.y2),a=Math.max(0,Math.min(d1,d2)),b=Math.min(L,Math.max(d1,d2));if(b-a<50)continue;
-      zw=zw||zRange(P0,w);const zc=zRange(P0,c),s=Math.max(zw[0],zc[0]),t=Math.min(zw[1],zc[1]);if(t-s<50)continue;
-      (out.get(w.id)||out.set(w.id,[]).get(w.id)).push({cw:c.id,a,b,s,t,ph:c.ph,dem:c.dem})}}
+  for(const w of P0.els){if(!isBW231(P0,w))continue;
+    for(const [c,auto] of C){if(!auto&&!M.get(c.id).has(w.id))continue;const q=embGap231(P0,w,c);if(q)(out.get(w.id)||out.set(w.id,[]).get(w.id)).push({cw:c.id,a:q.a,b:q.b,s:q.s,t:q.t,ph:c.ph,dem:c.dem})}}
   return out}
 /* the embedded curtain walls drawn after every other cut wall, so that their host's fill and its gap lie under them */
 function embOrd230(M,cutW){if(!M.size)return cutW;const S=new Set();for(const L of M.values())for(const q of L)S.add(q.cw);return cutW.filter(x=>!S.has(x[0].id)).concat(cutW.filter(x=>S.has(x[0].id)))}
@@ -36733,6 +36729,26 @@ Object.assign(STR,{
 /* picking in a plan: inside the gap a curtain wall cuts in its wall (where the plan's cut passes through it) the wall is not there, so a click there picks the curtain wall */
 let EMBH230={v:-1,p:null,m:null};
 function embIn230(v,e,x,y){if(EMBH230.v!==VER||EMBH230.p!==P)EMBH230={v:VER,p:P,m:emb230(P)};const L=EMBH230.m.get(e.id);if(!L)return false;const l=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,d=((x-e.x1)*(e.x2-e.x1)+(y-e.y1)*(e.y2-e.y1))/l,c=VRm(v).cut;return L.some(q=>q.s<c&&q.t>c&&d>q.a&&d<q.b)}
+/* ===== 231 Cut Geometry embeds a curtain wall (Revit: a curtain wall whose type does not embed by itself is embedded in a basic wall with Cut Geometry: the wall, then the
+   curtain wall) =====
+   P.cuts [cw, wall] with cw a curtain wall and wall a basic wall: the curtain wall is embedded in that wall as V1.230 does, whatever its type says, and the pair no longer
+   cuts the wall's solid with the mullions (joinApply / joinLoss leave it out).  Uncut Geometry takes it out again.  The join tools also reach what lies under the first
+   pick: in a plan a second click where the first pick is takes the next element there */
+const isCW231=(P0,e)=>!!e&&e.cat==='wall'&&(typ(P0,e)||{}).kind==='curtain',isBW231=(P0,e)=>{const T=e&&e.cat==='wall'&&typ(P0,e);return!!T&&T.kind!=='curtain'};
+/* curtain wall id → the ids of the basic walls Cut Geometry embeds it in; null when there are none */
+function cutEmb231(P0){const C=P0.cuts;if(!C||!C.length)return null;const E=new Map(P0.els.map(e=>[e.id,e])),m=new Map();
+  for(const q of C){const c=E.get(q[0]),w=E.get(q[1]);if(isCW231(P0,c)&&isBW231(P0,w))(m.get(c.id)||m.set(c.id,new Set()).get(c.id)).add(w.id)}return m.size?m:null}
+/* P.cuts without those pairs (the same list when there are none) */
+function cutsNE231(P0){const C=P0.cuts||[];if(!C.length)return C;const M=cutEmb231(P0);return M?C.filter(q=>!(M.has(q[0])&&M.get(q[0]).has(q[1]))):C}
+/* the gap curtain wall c would cut in basic wall w, by where they lie alone: {a, b, s, t} or null */
+function embGap231(P0,w,c){const W=typ(P0,w);if(!W||W.kind==='curtain'||w.gx||c.gx)return null;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1),cl=Math.hypot(c.x2-c.x1,c.y2-c.y1);if(L<1||cl<50)return null;
+  if(c.dop&&w.dop&&c.dop!==w.dop)return null;const ux=(w.x2-w.x1)/L,uy=(w.y2-w.y1)/L,h=(+W.thickness||150)/2,D=(x,y)=>(x-w.x1)*ux+(y-w.y1)*uy,N=(x,y)=>(y-w.y1)*ux-(x-w.x1)*uy;
+  if(Math.abs((c.x2-c.x1)*uy-(c.y2-c.y1)*ux)/cl>0.02)return null;          // parallel
+  if(Math.abs(N(c.x1,c.y1))>h+1||Math.abs(N(c.x2,c.y2))>h+1)return null;const d1=D(c.x1,c.y1),d2=D(c.x2,c.y2),a=Math.max(0,Math.min(d1,d2)),b=Math.min(L,Math.max(d1,d2));if(b-a<50)return null;
+  const zw=zRange(P0,w),zc=zRange(P0,c),s=Math.max(zw[0],zc[0]),t=Math.min(zw[1],zc[1]);return t-s<50?null:{a,b,s,t}}
+Object.assign(STR,{
+  emb_apart231:['ผนังกระจกต้องอยู่ตามแนวผนัง (ขนานกัน และแนวผนังกระจกอยู่ในความหนาของผนัง) จึงฝังได้','The curtain wall must lie along the wall (parallel, its line inside the wall\'s thickness) to be embedded'],
+  emb_cut231:['ฝังผนังกระจกในผนังแล้ว','Curtain wall embedded in the wall']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -37866,7 +37882,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[a_cwpanels]]: รอยต่อเสาครีบ (Revit: Join Condition, Make Continuous / Break at Join): ที่ แก้ชนิด ของผนังกระจก ตั้ง [[f_mjc]] ว่าที่รอยต่อของเสาครีบตั้งกับเสาครีบนอน เส้นไหนวิ่งผ่าน: [[mjc_v]] · [[mjc_h]] · [[mjc_bv]] (เสาครีบรอบขอบวิ่งผ่านเสาครีบด้านใน ด้านในเสาครีบตั้งวิ่งผ่าน) · [[mjc_bh]] · [[mjc_nd]] (แต่ละช่วงจากเส้นกริดถึงเส้นกริดเหมือนเดิม) · เส้นที่ไม่วิ่งผ่านหยุดที่ผิวของเส้นที่วิ่งผ่าน เส้นที่วิ่งผ่านเป็นชิ้นเดียวตลอดช่วงที่รูปหน้าตัดเดียวกัน และที่ปลายของมันยื่นไปถึงผิวไกลของอีกเส้น เห็นชัดเมื่อเสาครีบสองทางลึกต่างกัน · เปลี่ยนทีละรอยต่อได้ในหน้าต่าง [[a_cwpanels]] โหมด [[cwm_mjn]] (คลิกใกล้มุมของช่อง) ปุ่ม [[cw_rmjn229]] คืนทั้งหมด · [[f_mof]] เลื่อนเสาครีบออกจากแนวกระจก ค่าบวกไปทางด้านนอกของผนัง ตั้งทีละช่วงได้ที่ช่อง [[mty_o229]] ในโหมด [[cwm_mty]]
 > ต่างจาก Revit: ที่รอยต่อที่เสาครีบที่วิ่งผ่านมีรูปหน้าตัดต่างกันสองข้าง เสาครีบแบ่งเป็นสองชิ้นที่กึ่งกลางรอยต่อ · แก้เส้นกริดแล้วรอยต่อที่ตั้งเองถูกล้าง
 - [[f_emb]] (Revit: Automatically Embed): ที่ แก้ชนิด ของผนังกระจก ตั้ง [[f_emb]] เป็น ใช่ แล้ววาดผนังกระจกชนิดนั้นตามแนวผนังธรรมดา (ขนานกัน และแนวผนังกระจกอยู่ในความหนาของผนัง) ผนังกระจกจะเจาะช่องในผนังเองตรงช่วงที่ซ้อนกันทั้งความยาวและความสูง ช่องนี้เห็นในภาพ 3D รูปด้าน รูปตัด และแปลนที่ระนาบตัดผ่านช่อง พื้นที่และปริมาตรของผนังหักช่องออก · Properties ของผนังกระจกบอกว่าฝังอยู่ในผนังชนิดไหน และของผนังบอกจำนวนผนังกระจกที่ฝังอยู่ · ย้ายผนังกระจกออกจากแนวผนัง ช่องก็หายไปเอง
-> ต่างจาก Revit: ตั้งได้ที่ชนิดเท่านั้น ยังไม่มีคำสั่ง Cut Geometry สำหรับฝังผนังกระจกทีละอัน · ผนังกระจกที่ยาวถึงปลายผนังยังเหลือผนัง 30 มม. ที่ปลายนั้น
+> ต่างจาก Revit: ผนังกระจกที่ยาวถึงปลายผนังยังเหลือผนัง 30 มม. ที่ปลายนั้น
+- [[t_cutg]] กับผนังกระจก (Revit: Cut Geometry ฝังผนังกระจกในผนัง): ผนังกระจกที่ชนิดไม่ได้ตั้ง [[f_emb]] ก็ฝังทีละอันได้ เลือกเครื่องมือ [[t_cutg]] คลิกผนังก่อน แล้วคลิกผนังกระจกที่อยู่ตามแนวผนัง ผนังจะเจาะช่องให้เหมือนฝังอัตโนมัติ ([[t_uncutg]] คลิกสองชิ้นเดิมเพื่อเอาออก) ผนังกระจกที่ไม่ได้อยู่ตามแนวผนังฝังไม่ได้ · ในแปลน เมื่อคลิกชิ้นแรกแล้ว คลิกที่เดิมอีกครั้งจะได้ชิ้นถัดไปที่ซ้อนอยู่ตรงนั้น ใช้ได้กับเครื่องมือเชื่อมและตัดรูปทรงทุกตัว
 - ฝ้าเพดานวาดและมองเห็นใน [[a_rcp]] (แท็บ [[tab_view]])
 
 # ขอบพื้น
@@ -38062,7 +38079,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[a_cwpanels]]: mullion joins (Revit: Join Condition, Make Continuous / Break at Join): in Edit Type of a curtain wall set [[f_mjc]], which mullion runs through where a vertical and a horizontal one meet: [[mjc_v]] · [[mjc_h]] · [[mjc_bv]] (the border mullions run through the ones inside, and inside the vertical ones run through) · [[mjc_bh]] · [[mjc_nd]] (each segment from grid line to grid line, as before) · the one that does not run through stops at the faces of the one that does; the one that runs through is one piece along the segments of one profile, and where it ends it reaches the far face of the other; it shows when mullions of the two ways have different depths · in [[a_cwpanels]] the [[cwm_mjn]] mode switches one joint at a time (click near a corner of a panel), [[cw_rmjn229]] resets them · [[f_mof]] moves the mullions off the line of the glass, + toward the exterior of the wall; one segment takes its own in the [[mty_o229]] box of the [[cwm_mty]] mode
 > Unlike Revit: where the mullion running through has another profile on each side, it is two pieces meeting at the middle of the joint · changing the grid clears the joints set on the wall
 - [[f_emb]] (Revit: Automatically Embed): in Edit Type of a curtain wall set [[f_emb]] to Yes, then draw a curtain wall of that type along a basic wall (parallel, its location line inside the wall's thickness): it cuts its own opening in the wall where the two overlap, along the wall and in height. The opening shows in 3D, elevations, sections and plans whose cut plane passes through it, and the wall's area and volume leave it out · the Properties of the curtain wall name the type of the wall it is embedded in, and those of the wall count the curtain walls in it · move the curtain wall off the wall and the opening goes
-> Unlike Revit: a type setting only; there is no Cut Geometry yet to embed one curtain wall at a time · a curtain wall that reaches the end of its wall leaves 30 mm of wall at that end
+> Unlike Revit: a curtain wall that reaches the end of its wall leaves 30 mm of wall at that end
+- [[t_cutg]] with a curtain wall (Revit: Cut Geometry embeds a curtain wall in a wall): a curtain wall whose type does not set [[f_emb]] can be embedded one at a time: pick [[t_cutg]], click the wall, then the curtain wall that lies along it, and the wall gets its opening as if the type embedded it ([[t_uncutg]] on the same two takes it out); a curtain wall that does not lie along the wall cannot be embedded · in a plan, once the first element is picked, a second click on the same spot takes the next element lying there, with every join and cut tool
 - Ceilings are drawn and seen in a [[a_rcp]] (the [[tab_view]] tab)
 
 # Slab edges
@@ -38689,6 +38707,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.228 · เปลี่ยนชนิดเสาครีบทีละช่วงหรือทั้งเส้นกริด (Revit: เลือกเสาครีบแล้วเปลี่ยนชนิด): รูปหน้าตัด ความกว้าง ความลึก ในหน้าต่างแก้แผงผนังกระจก
 - V1.229 · รอยต่อเสาครีบและระยะเยื้อง (Revit: Join Condition, Make Continuous / Break at Join, Offset): ชนิดของผนังกระจกตั้งว่าเสาครีบตั้งหรือนอนวิ่งผ่านรอยต่อ สลับทีละรอยต่อในหน้าต่างแก้แผง และเลื่อนเสาครีบออกจากแนวกระจก
 - V1.230 · ผนังกระจกฝังในผนังอัตโนมัติ (Revit: Automatically Embed): ชนิดของผนังกระจกตั้งให้เจาะช่องในผนังธรรมดาที่วาดทับได้ เห็นในภาพ 3D แปลน รูปด้าน และรูปตัด และหักพื้นที่ผนังออก
+- V1.231 · ฝังผนังกระจกทีละอันด้วยตัดรูปทรง (Revit: Cut Geometry): คลิกผนังแล้วคลิกผนังกระจกที่อยู่ตามแนว ผนังเจาะช่องให้แม้ชนิดไม่ได้ตั้งฝังอัตโนมัติ และเครื่องมือเชื่อมหรือตัดรูปทรงคลิกที่เดิมซ้ำได้ชิ้นที่ซ้อนอยู่
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -39058,6 +39077,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.228 · Mullion types one by one or along a grid line (Revit: select a mullion, change its type): profile, width and depth, in Edit Panels of a curtain wall
 - V1.229 · Mullion joins and offsets (Revit: Join Condition, Make Continuous / Break at Join, Offset): a curtain wall type sets which mullions run through the joints, Edit Panels switches one joint at a time, and mullions can sit off the line of the glass
 - V1.230 · Automatically Embed (Revit: Automatically Embed): a curtain wall type can cut its own opening in the basic wall it is drawn in, in 3D, plans, elevations and sections, and out of the wall's area
+- V1.231 · Embedding one curtain wall with Cut Geometry (Revit: Cut Geometry): click the wall, then the curtain wall along it, and the wall gets its opening though the type does not embed by itself; the join and cut tools take the element lying under the first pick on a second click there
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -41249,6 +41269,7 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r231={gap:(w,c)=>{const a=IDX.get(w),b=IDX.get(c);return a&&b?embGap231(P,a,b):null},ne:()=>JSON.parse(JSON.stringify(cutsNE231(P)))};
 window.PenumBIM.r230={emb:()=>{const o={};for(const [id,L] of emb230(P))o[id]=L.map(q=>({cw:q.cw,a:Math.round(q.a),b:Math.round(q.b),s:Math.round(q.s),t:Math.round(q.t)}));return o},
   area:id=>{const q=quantities(P).get(id);return q?{area:Math.round(q.area),vol:Math.round(q.vol)}:null},
   ord:()=>embOrd230(emb230(P),P.els.filter(e=>e.cat==='wall').map(e=>[e])).map(x=>x[0].id)};
