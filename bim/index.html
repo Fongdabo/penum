@@ -14608,7 +14608,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=230,V1_NAME='V1.220';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=231,V1_NAME='V1.221';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -36073,6 +36073,118 @@ Object.assign(STR,{
   shc_deld220:['ลบชุด {0} แล้ว แผ่นงาน {1} แผ่นในชุดยังอยู่ (ไม่อยู่ในชุดใด)','{0} deleted; its {1} sheets are kept, in no collection'],shc_made220:['สร้าง {0} แล้ว พิมพ์ชื่อของชุดได้เลย','{0} made: type its name'],
   shc_empty220:['ชื่อชุดต้องไม่ว่าง','A collection needs a name'],shc_dup220:['มีชุดชื่อ {0} อยู่แล้ว','There is a collection named {0} already'],
   p_shc220:['ชุดแผ่นงาน (Sheet Collection)','Sheet Collection'],c_shc220:['ชุดแผ่นงาน','Sheet Collection'],pr_shc220:['เลือกทั้งชุด','Pick a collection']});
+/* ===== 221 Rebar Couplers (Revit: Structure › Reinforcement › Rebar Coupler) =====
+   The rebar of a host (e.rb, columns, beams, walls, floors and footings) may be joined by mechanical couplers instead of laps, and the main bars of a column,
+   a beam or a wall may end in a coupler (a construction joint, or the bars of the next pour screw on there).
+   e.rb.cs: 1 = a bar longer than a stock bar (10 m) is joined by a coupler every 10 m and no lap length is added; e.rb.ce: the ends of the main bars that take
+   a coupler (1 the start: a column's or a wall's foot, a beam's first end; 2 the end: the top, the last end; 3 both), a hook there goes; e.rb.ct: the coupler type
+   (std standard parallel thread, pos positional, wld weldable).  The couplers are drawn in 3D and cut in sections with the bars, listed in the Rebar Schedule
+   (a table of their own, and in its CSV), counted in Properties and priced in the BOQ by type and bar size (assumed prices until a price is typed). */
+const CPL_T221={std:{od:1.5,l:2.5,pr:1},pos:{od:1.7,l:3.5,pr:1.8},wld:{od:1.6,l:1.8,pr:1.4}},CPL_K221=['std','pos','wld'],CPL_CE221=['column','beam','wall'],CPL_MAX221=6000;
+const cplT221=r=>r&&CPL_K221.includes(r.ct)?r.ct:'std';
+const cplDim221=(ct,d)=>{const f=CPL_T221[ct]||CPL_T221.std;return{od:Math.round(f.od*d+2),L:Math.round(f.l*d/5)*5}};          // outer diameter and length (mm) for a bar of d mm
+const cplPrice221=(ct,d)=>Math.round(0.25*d*d*(CPL_T221[ct]||CPL_T221.std).pr);          // an assumed price (baht each): about 100 for a DB20 standard coupler
+const cplName221=(ct,d,tr)=>(tr||t)('cpl_'+ct+'221')+' '+rbName(d);
+const cplHost221=e=>!!(e&&e.rb&&typeof e.rb==='object'&&RB_HOST.includes(e.cat)&&!AR214.includes(e.cat));
+const cplCe221=e=>CPL_CE221.includes(e.cat)?(+e.rb.ce|0)&3:0;
+const cplOn221=e=>cplHost221(e)&&!!(e.rb.cs||cplCe221(e));
+/* the bars: those to be spliced are marked cs, the main bars ending in a coupler lose their hook at that end and are marked ce */
+{const f0=rbSet;rbSet=(Q,e)=>{const out=f0(Q,e);if(!out.length||!cplOn221(e))return out;const r=e.rb,ce=cplCe221(e);let zl=Infinity,zh=-Infinity;
+  if(ce&&e.cat==='wall')for(const b of out)if(b.k==='v')for(const q of b.p){if(q[2]<zl)zl=q[2];if(q[2]>zh)zh=q[2]}          // a wall: only the foot and the top of the wall, not a bar stopped at an opening
+  return out.map(b=>{if(b.k==='t')return b;const o=Object.assign({},b);if(r.cs)o.cs=1;let c=b.k==='m'||b.k==='v'?ce:0;
+    if(c&&b.k==='v'){const n=b.p.length;if(Math.abs(b.p[0][2]-zl)>1)c&=2;if(Math.abs(b.p[n-1][2]-zh)>1)c&=1}
+    if(c){let p=b.p.slice();const hk=(b.hk||[0,0]).slice();if(c&1){if(hk[0]&&p.length>2)p=p.slice(1);hk[0]=0}if(c&2){if(hk[1]&&p.length>2)p=p.slice(0,-1);hk[1]=0}o.p=p;o.hk=hk;o.ce=c}
+    return o})}}
+/* a spliced bar: its own length only, and the couplers it needs */
+{const f0=rbCut;rbCut=(b,lap)=>{if(!b||!b.cs||b.k==='t')return f0(b,lap);let len=0;for(let i=1;i<b.p.length;i++)len+=Math.hypot(b.p[i][0]-b.p[i-1][0],b.p[i][1]-b.p[i-1][1],b.p[i][2]-b.p[i-1][2]);
+  return{len,laps:0,cpl:len<=RB_ST?0:Math.ceil(len/RB_ST)-1,total:len}}}
+/* the couplers of a host: [{p: [x, y, z] its middle, u: the bar's direction there, d, ct, w: 's' splice | 'e' bar end, od, L}] */
+function cplOf221(Q,e){if(!cplOn221(e))return[];const ct=cplT221(e.rb),out=[],N=v=>{const l=Math.hypot(v[0],v[1],v[2])||1;return[v[0]/l,v[1]/l,v[2]/l]};
+  for(const b of rbSet(Q,e)){const p=b.p,n=p.length;if(n<2||b.k==='t')continue;const D=cplDim221(ct,b.d),put=(q,u,w)=>{if(out.length<CPL_MAX221)out.push({p:q,u,d:b.d,ct,w,od:D.od,L:D.L})};
+    if(b.cs){const c=rbCut(b,40);let k=1,acc=0;for(let i=1;i<n&&k<=c.cpl;i++){const a=p[i-1],q=p[i],l=Math.hypot(q[0]-a[0],q[1]-a[1],q[2]-a[2]);
+        while(k<=c.cpl&&k*RB_ST<=acc+l+1e-6){const s=(k*RB_ST-acc)/(l||1);put([a[0]+(q[0]-a[0])*s,a[1]+(q[1]-a[1])*s,a[2]+(q[2]-a[2])*s],N([q[0]-a[0],q[1]-a[1],q[2]-a[2]]),'s');k++}acc+=l}}
+    if(b.ce&1)put(p[0].slice(),N([p[0][0]-p[1][0],p[0][1]-p[1][1],p[0][2]-p[1][2]]),'e');
+    if(b.ce&2)put(p[n-1].slice(),N([p[n-1][0]-p[n-2][0],p[n-1][1]-p[n-2][1],p[n-1][2]-p[n-2][2]]),'e')}
+  return out}
+/* ---- 3D and sections: a sleeve on each, cut in its own colour as the bars are ---- */
+{const f0=buildMeshes;buildMeshes=(Q,FP,FIT)=>{const R=f0(Q,FP,FIT);if(!R||!R.items||!Q||!Q.els||!Q.els.some(cplOn221))return R;
+  for(const e of Q.els){if(!cplOn221(e))continue;const C=cplOf221(Q,e);if(!C.length)continue;const K=modelKit({x:0,y:0,id:e.id,cat:'rebar'},0,R.items),m=K.part([0.36,0.42,0.52]);m.mt=MAT.metal;m.rc=1;m.cpl=1;
+    for(const c of C){const h=c.L/2,A=[c.p[0]-c.u[0]*h,c.p[1]-c.u[1]*h,c.p[2]-c.u[2]*h],B=[c.p[0]+c.u[0]*h,c.p[1]+c.u[1]*h,c.p[2]+c.u[2]*h];K.cyl(m,A,B,c.od/2,{n:10})}}
+  return R}}
+/* ---- the coupler schedule (Revit: a Rebar Coupler schedule): one row per type, bar size and place; rows {mark, ct, d, w, od, L, n, hosts} ---- */
+function cplSched221(Q){const G=new Map();for(const e of Q.els){if(!cplOn221(e))continue;for(const c of cplOf221(Q,e)){const k=c.ct+'|'+c.d+'|'+c.w;let g=G.get(k);if(!g)G.set(k,g={ct:c.ct,d:c.d,w:c.w,od:c.od,L:c.L,n:0,hosts:new Set()});g.n++;g.hosts.add(e.id)}}
+  const rows=[...G.values()].sort((a,b)=>CPL_K221.indexOf(a.ct)-CPL_K221.indexOf(b.ct)||b.d-a.d||(a.w<b.w?1:a.w>b.w?-1:0));rows.forEach((r,i)=>{r.mark='C'+String(i+1).padStart(2,'0')});return rows}
+function cplTable221(C){const n=C.reduce((a,r)=>a+r.n,0);
+  return`<div class="pg" style="margin:12px -16px 4px;padding-left:16px">${t('cs_title221')}</div><p class="note">${t('cs_note221')}</p><div class="tblw"><table class="tbl" id="cplTb221"><thead><tr><th>${t('rs_mark')}</th><th>${t('cs_type221')}</th><th>${t('rs_size')}</th><th>${t('cs_where221')}</th><th>OD (mm)</th><th>L (mm)</th><th>${t('rs214n')}</th></tr></thead><tbody>`+
+    C.map((r,i)=>`<tr data-cpl221="${i}"><td>${r.mark}</td><td>${esc(t('cpl_'+r.ct+'221'))}</td><td>${rbName(r.d)}</td><td>${esc(t(r.w==='s'?'cs_spl221':'cs_end221'))}</td><td>${r.od}</td><td>${r.L}</td><td>${r.n}</td></tr>`).join('')+
+    `<tr class="chg"><td colspan="6"><b>${t('rs_total')}</b></td><td><b>${n}</b></td></tr></tbody></table></div>`}
+{const f0=dlgRbSched;dlgRbSched=function(){f0.apply(this,arguments);const C=cplSched221(P),dc=$('#dlg .dc');if(!C.length||!dc)return;dc.insertAdjacentHTML('beforeend',cplTable221(C));
+  const h=ui.dlg||{},c0=h.click;h.click=function(ev){const tr=ev.target.closest&&ev.target.closest('tr[data-cpl221]');if(tr){const r=C[+tr.dataset.cpl221];if(r)showEls([...r.hosts]);return}return c0?c0.apply(this,arguments):undefined}}}
+XA.rbsched=()=>dlgRbSched();
+{const f0=rbSchedCSV;rbSchedCSV=rows=>{const s=f0(rows),C=cplSched221(P);if(!C.length)return s;const q=x=>'"'+String(x).replace(/"/g,'""')+'"';
+  return s+'\r\n\r\n'+[[t('cs_title221')],[t('rs_mark'),t('cs_type221'),t('rs_size'),t('cs_where221'),'OD (mm)','L (mm)',t('rs214n')]].concat(C.map(r=>[r.mark,t('cpl_'+r.ct+'221'),rbName(r.d),t(r.w==='s'?'cs_spl221':'cs_end221'),r.od,r.L,r.n])).map(L=>L.map(q).join(',')).join('\r\n')}}
+/* ---- the BOQ: couplers by type and bar size, each, after the rebar ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(cplOn221))return S;
+  const PR0=Q0.prices||{},by=new Map(),rb=S.rows.find(r=>String(r.pk||'').startsWith('rebar|')),c0=rb?rb._c+0.01:9.25;
+  for(const e of Q0.els){if(e.gx||!cplOn221(e))continue;for(const c of cplOf221(Q0,e)){const pk='cpl|'+c.ct+'|'+c.d;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_cpl221'),_c:c0,tcat:'cpl',pk,item:cplName221(c.ct,c.d,tr),qty:0,unit:tr('u_cpl221'),cost:PR0[pk]!=null?+PR0[pk]||0:cplPrice221(c.ct,c.d),amount:0});r.qty++}}
+  if(!by.size)return S;for(const r of by.values()){r.amount=r.qty*r.cost;S.rows.push(r)}S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+/* ---- Properties: under the host's Rebar rows ---- */
+const cplCeOpts221=cat=>{const v=cat==='beam';return[['0',t('ce_none221')],['1',t(v?'ce_s221':'ce_bot221')],['2',t(v?'ce_e221':'ce_top221')],['3',t('ce_both221')]]};
+function cplRows221(els){const e=els[0],r=e.rb,same=k=>els.every(x=>String(x.rb[k]||'')===String(r[k]||'')),ce=CPL_CE221.includes(e.cat)&&els.every(x=>x.cat===e.cat);
+  let h=PR.sel('cp221_cs','p_cs221',same('cs')?(r.cs?'cpl':'lap'):'',[['lap',t('cs_lap221')],['cpl',t('cs_cpl221')]]);
+  if(ce)h+=PR.sel('cp221_ce','p_ce221',els.every(x=>cplCe221(x)===cplCe221(e))?String(cplCe221(e)):'',cplCeOpts221(e.cat));
+  if(els.some(cplOn221)){h+=PR.sel('cp221_ct','p_ct221',els.every(x=>cplT221(x.rb)===cplT221(r))?cplT221(r):'',CPL_K221.map(k=>[k,t('cpl_'+k+'221')]));
+    let n=0;for(const x of els)n+=cplOf221(P,x).length;h+=PR.ro('p_cn221',n+' '+t('u_cpl221'))}
+  return h}
+{const f0=rbRows;rbRows=els=>{const h=f0(els);if(!h||!els.length||!els.every(cplHost221))return h;const k='<div class="pa"><button class="btn" data-act="rbsched"',i=h.lastIndexOf(k);
+  if(i<0)return h;const kg=h.lastIndexOf('<div class="pr">',i);const at=kg>=0&&h.slice(kg,i).indexOf('class="ro"')>=0?kg:i;return h.slice(0,at)+cplRows221(els)+h.slice(at)}}          // before the weight row
+XF.push((cat,o,key,raw)=>{if(!key.startsWith('cp221_'))return false;if(!o.rb||typeof o.rb!=='object'||!RB_HOST.includes(cat)||AR214.includes(cat))return true;const k=key.slice(6),r=o.rb;
+  if(k==='cs'){if(raw==='cpl')r.cs=1;else if(raw==='lap')delete r.cs;return true}
+  if(k==='ce'){if(raw==='')return true;const v=(+raw|0)&3;if(v&&CPL_CE221.includes(cat))r.ce=v;else delete r.ce;return true}
+  if(k==='ct'){if(CPL_K221.includes(raw)){if(raw==='std')delete r.ct;else r.ct=raw}return true}return true});
+/* ---- the Rebar Coupler tool: the couplers of the selected hosts in one box ---- */
+const cplSel221=()=>[...ui.sel].map(id=>IDX.get(id)).filter(e=>cplHost221(e)&&rbOf(e));
+function cplSizes221(els){const s=new Set();for(const e of els)for(const b of rbSet(P,e))if(b.k!=='t')s.add(b.d);return[...s].sort((a,b)=>a-b)}
+function cplDimTb221(ct,ds){if(!ds.length)return'';return`<div class="tblw"><table class="tbl"><thead><tr><th>${t('rs_size')}</th><th>OD (mm)</th><th>L (mm)</th><th>${t('cs_price221')}</th></tr></thead><tbody>`+
+  ds.map(d=>{const D=cplDim221(ct,d),pk='cpl|'+ct+'|'+d,pr=(P.prices||{})[pk];return`<tr><td>${rbName(d)}</td><td>${D.od}</td><td>${D.L}</td><td>${pr!=null?+pr||0:cplPrice221(ct,d)}</td></tr>`}).join('')+'</tbody></table></div>'}
+function dlgCpl221(els){const e=els[0],r=e.rb,ce=els.some(x=>CPL_CE221.includes(x.cat)),beam=els.every(x=>x.cat==='beam'),ds=cplSizes221(els),
+    ce0=els.every(x=>cplCe221(x)===cplCe221(e))?cplCe221(e):0,opt=(v,l,on)=>`<option value="${v}"${on?' selected':''}>${esc(l)}</option>`;
+  const body=`<p class="note">${t('cpl_note221',els.length)}</p>
+    <div class="fr"><label for="cpCs221">${t('p_cs221')}</label><select id="cpCs221">${opt('lap',t('cs_lap221'),!r.cs)}${opt('cpl',t('cs_cpl221'),!!r.cs)}</select></div>`+
+    (ce?`<div class="fr"><label for="cpCe221">${t('p_ce221')}</label><select id="cpCe221">${cplCeOpts221(beam?'beam':'column').map(o=>opt(o[0],o[1],+o[0]===ce0)).join('')}</select></div>`:'')+
+    `<div class="fr"><label for="cpCt221">${t('p_ct221')}</label><select id="cpCt221">${CPL_K221.map(k=>opt(k,t('cpl_'+k+'221'),k===cplT221(r))).join('')}</select></div>
+    <div id="cpTb221">${cplDimTb221(cplT221(r),ds)}</div><p class="note" id="cpN221"></p>`;
+  const count=()=>{const cs=$('#cpCs221').value==='cpl',c=$('#cpCe221'),v=c?+c.value:0,ct=$('#cpCt221').value;let n=0;
+      for(const x of els){const q=Object.assign({},x,{rb:Object.assign({},x.rb)});if(cs)q.rb.cs=1;else delete q.rb.cs;if(CPL_CE221.includes(x.cat)&&c){if(v)q.rb.ce=v;else delete q.rb.ce}q.rb.ct=ct;n+=cplOf221(P,q).length}
+      $('#cpN221').textContent=t('cpl_cnt221',n);$('#cpTb221').innerHTML=cplDimTb221(ct,ds)};
+  openDlg(t('a_cpl221'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-cp221="ok">${t('ok')}</button>`,{change:count,
+    click(ev){if(ev.target.dataset.cp221!=='ok')return;const cs=$('#cpCs221').value==='cpl',c=$('#cpCe221'),v=c?+c.value:0,ct=$('#cpCt221').value;closeDlg();
+      edit(()=>{for(const x of els){const q=IDX.get(x.id);if(!q||!q.rb)continue;if(cs)q.rb.cs=1;else delete q.rb.cs;if(c&&CPL_CE221.includes(q.cat)){if(v)q.rb.ce=v;else delete q.rb.ce}if(ct==='std')delete q.rb.ct;else q.rb.ct=ct}});
+      let n=0;for(const x of els)n+=cplOf221(P,IDX.get(x.id)||x).length;toast(t('cpl_done221',n))}});count()}
+XA.cpl221=()=>{const els=cplSel221();if(!els.length){toast(t('cpl_sel221'));return}dlgCpl221(els)};
+/* ---- a file: only what is valid ---- */
+XC.push(()=>{for(const e of P.els){const r=e.rb;if(!r||typeof r!=='object'||!RB_HOST.includes(e.cat)||AR214.includes(e.cat))continue;
+  if(r.cs!==undefined){if(r.cs&&r.cs!=='0')r.cs=1;else delete r.cs}
+  if(r.ce!==undefined){const v=(+r.ce|0)&3;if(v&&CPL_CE221.includes(e.cat))r.ce=v;else delete r.ce}
+  if(r.ct!==undefined&&(!CPL_K221.includes(r.ct)||r.ct==='std'))delete r.ct}});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-cpl221" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path class="i-Pc" fill="#b0362c" ${E} d="M1.5 10.6h7v2.8h-7zM15.5 10.6h7v2.8h-7z"/><path fill="none" stroke="#7c231b" stroke-width=".5" d="M3 10.6l1 2.8M5 10.6l1 2.8M7 10.6l1 2.8M17 10.6l1 2.8M19 10.6l1 2.8M21 10.6l1 2.8"/>`
+    +`<path class="i-Pa" fill="#c9d1dc" ${E} d="M8 8.2h8a1 1 0 0 1 1 1v5.6a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9.2a1 1 0 0 1 1-1z"/><path fill="none" stroke="#7a8696" stroke-width=".55" d="M9.2 8.2v7.6M10.8 8.2v7.6M13.2 8.2v7.6M14.8 8.2v7.6"/><path fill="#ffffff" opacity=".7" d="M8 9h8v1.2H8z"/></symbol>`)})();
+for(const A of RIBBON)for(const p of A.panels||[])if(p.t==='p_rebar'&&!p.b.includes('@cpl221')){const i=p.b.indexOf('@rbsched');p.b.splice(i<0?p.b.length:i,0,'@cpl221')}
+Object.assign(BTN,{'@cpl221':['cpl221','']});
+Object.assign(STR,{
+  a_cpl221:['ข้อต่อเหล็กเสริม (Rebar Coupler)','Rebar Coupler'],cat_cpl221:['ข้อต่อเหล็กเสริม (Coupler)','Rebar Couplers'],
+  cpl_std221:['ข้อต่อมาตรฐาน','Standard coupler'],cpl_pos221:['ข้อต่อแบบหมุนไม่ได้ (Positional)','Positional coupler'],cpl_wld221:['ข้อต่อแบบเชื่อม (Weldable)','Weldable coupler'],
+  p_cs221:['การต่อเหล็กยาว','Splices'],cs_lap221:['ทาบ (Lap)','Lap'],cs_cpl221:['ข้อต่อ (Coupler)','Coupler'],
+  p_ce221:['ข้อต่อที่ปลายเหล็กยืน','Couplers at main bar ends'],ce_none221:['ไม่มี','None'],ce_bot221:['ล่าง','Bottom'],ce_top221:['บน','Top'],ce_s221:['ต้นคาน','Start'],ce_e221:['ปลายคาน','End'],ce_both221:['ทั้งสองปลาย','Both ends'],
+  p_ct221:['ชนิดข้อต่อ','Coupler type'],u_cpl221:['ตัว','ea'],p_cn221:['ข้อต่อ (Couplers)','Couplers'],
+  cs_title221:['ตารางข้อต่อเหล็กเสริม (Rebar Couplers)','Rebar Coupler Schedule'],cs_type221:['ชนิด','Type'],cs_where221:['ตำแหน่ง','Placement'],cs_spl221:['ต่อเหล็ก','Splice'],cs_end221:['ปลายเหล็ก','Bar end'],cs_price221:['ราคา/ตัว (บาท)','Price each (THB)'],
+  cs_note221:['ข้อต่อชนิดและขนาดเดียวกันใช้เบอร์เดียวกัน OD = เส้นผ่านศูนย์กลางนอก L = ความยาว · คลิกแถวเพื่อดูชิ้นที่มีข้อต่อนั้น','Couplers of one type and size share a mark. OD = outer diameter, L = length · click a row to see its hosts'],
+  cpl_note221:['ใช้กับ {0} ชิ้นที่เลือก · เหล็กยาวเกิน 10 ม. ต่อด้วยข้อต่อทุก 10 ม. แทนการทาบ (ไม่บวกระยะทาบ) · ข้อต่อที่ปลายเหล็กยืนของเสา คาน ผนัง ใช้ที่รอยต่อการเท หรือรอต่อเหล็กของชั้นถัดไป (ปลายนั้นไม่งอ)','For the {0} selected · bars over 10 m are joined by a coupler every 10 m instead of a lap (no lap length added) · couplers at the main bar ends of columns, beams and walls: a construction joint, or the bars of the next pour screw on there (that end has no hook)'],
+  cpl_cnt221:['ข้อต่อทั้งหมด {0} ตัว','{0} couplers in all'],cpl_done221:['ตั้งข้อต่อแล้ว รวม {0} ตัว','Couplers set: {0} in all'],
+  cpl_sel221:['เลือกเสา คาน ผนัง พื้น หรือฐานรากที่มีเหล็กเสริมก่อน','Select columns, beams, walls, slabs or footings with rebar first']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -37179,6 +37291,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_pinf]]: คลิกพื้นแล้วคลิกจุดของแนว (ขอบพื้นหรือแนวคาน) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กตั้งฉากกับแนว ยาว [[p_arL]] ยื่นเข้าไปในพื้น ([[p_arflip]] สลับข้าง) ที่ผิวบนหรือล่าง [[p_arL2]] ทำให้เหล็กทุกเส้นที่สองยาวอีกค่า · เหล็กของทั้งสองแบบหยุดที่ระยะหุ้มจากขอบเขต ขอบพื้น และช่องเปิด และเข้า [[a_rbsched]] ปริมาณ และ BOQ
 - [[t_fabarea]]: คลิกพื้น (หรือเลือกพื้นก่อน) แล้ววาดขอบเขต (หรือสี่เหลี่ยม หรือกด [[a_arwhole]]) หรือเลือก [[fab_sheet]] แล้วคลิกมุมของแผ่น ได้ตะแกรงเหล็กปูเป็นแผ่นจากมุมของขอบเขตตามทิศหลัก ทาบกันตาม [[p_fblM]] และ [[p_fblm]] ติ๊ก [[p_fbstag]] ให้แถวเว้นแถวเลื่อนครึ่งแผ่น ชนิดของแผ่น (ลวดทั้งสองทาง ระยะห่าง ขนาดแผ่น) อยู่ใน แก้ไขชนิด · แผ่นที่ถูกขอบเขต ขอบพื้น หรือช่องเปิดตัดนับเป็นแผ่นตัด · [[a_fabsched]] ในคุณสมบัติ ตารางของหมวด [[cat_fabarea]] และ BOQ นับแผ่นของแต่ละชนิด
+- [[a_cpl221]] (Revit: Rebar Coupler): เลือกชิ้นที่มีเหล็กเสริม แล้วกดปุ่มนี้ในแท็บ [[tab_struct]] แผง เหล็กเสริม หรือตั้งในแผง [[properties]] ใต้เหล็กเสริม · [[p_cs221]] เลือก [[cs_cpl221]] เหล็กที่ยาวเกิน 10 ม. ต่อด้วยข้อต่อทุก 10 ม. แทนการทาบ ความยาวตัดไม่บวกระยะทาบ · [[p_ce221]] (เสา ผนัง: ล่าง บน · คาน: ต้นคาน ปลายคาน) ใส่ข้อต่อที่ปลายเหล็กยืน ใช้ที่รอยต่อการเทหรือรอต่อเหล็กของชั้นถัดไป ปลายนั้นไม่งอ · [[p_ct221]] [[cpl_std221]] [[cpl_pos221]] หรือ [[cpl_wld221]] ขนาดตามเหล็ก · ข้อต่อเห็นใน 3 มิติและรูปตัด อยู่ใน [[a_rbsched]] (ตารางของมันเอง และในไฟล์ CSV) และใน BOQ เป็นตัวตามชนิดและขนาด (ราคาสมมติ แก้ราคาในตาราง BOQ ได้)
+> ต่างจาก Revit: ข้อต่อตั้งตามกฎของชิ้นงานทั้งชิ้น ไม่ได้คลิกวางทีละเส้น · ตำแหน่งต่อทุก 10 ม. จากต้นเหล็ก ไม่สลับตำแหน่ง · ไม่มีข้อต่อต่างขนาด (Transition) · ไม่ส่งออกเป็น IFC และไม่แสดงในแปลน
 - [[a_fslab]]: วาดขอบเขตเหมือนพื้น ด้วยชนิดฐานรากแผ่น
 - ฐานรากอยู่ใต้พื้น ในแปลนจึงเป็นเส้นประ ส่วนแปลนที่ [[p_disc]] เป็นโครงสร้างจะแสดงเป็นเส้นทึบพร้อมชื่อชนิด · ปริมาณคอนกรีตอยู่ในตารางโครงสร้าง ราคาอยู่ใน [[a_boq]]
 > ต่างจาก Revit: ตัดปลายและบากเฉพาะคานเหล็กที่อยู่ระดับ (คานลาด ค้ำยัน และคานคอนกรีตยาวถึงปลายของมันเหมือนเดิม คานคอนกรีตใช้ [[t_join]]) · บากได้เฉพาะหน้าตัด H, I และรางน้ำ ที่ชนด้านเอวของคานหรือเสาเหล็ก
@@ -37358,6 +37472,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_pinf]]: click a slab, then the points of the path (a slab edge, or over a beam); click the last point again or press Enter to finish. The bars run across the path, [[p_arL]] long, into the slab ([[p_arflip]] swaps the side), at the top or the bottom face; [[p_arL2]] makes every other bar another length · the bars of both stop at the cover from the boundary, the slab edge and openings, and go into the [[a_rbsched]], the quantities and the BOQ
 - [[t_fabarea]]: click a slab (or select one first), then sketch the boundary (or a rectangle, or [[a_arwhole]]), or pick [[fab_sheet]] and click the sheet's corner; welded wire fabric is laid in sheets from the corner of the boundary along the major direction, overlapping by [[p_fblM]] and [[p_fblm]]; tick [[p_fbstag]] to move every other row half a sheet. The sheet (wires both ways, spacings, size) is the type, in Edit Type · a sheet the boundary, the slab edge or an opening cuts is a cut sheet · [[a_fabsched]] in Properties, a schedule of the [[cat_fabarea]] category and the BOQ count the sheets of each type
+- [[a_cpl221]] (Revit: Rebar Coupler): select elements with rebar and press this button ([[tab_struct]] tab, Reinforcement panel), or set it in [[properties]] under the rebar · [[p_cs221]]: [[cs_cpl221]] joins bars over 10 m with a coupler every 10 m instead of a lap, and the cut length adds no lap · [[p_ce221]] (columns and walls: bottom, top · beams: start, end) puts a coupler on the main bars' ends, for a construction joint or the next pour's bars; that end has no hook · [[p_ct221]]: [[cpl_std221]], [[cpl_pos221]] or [[cpl_wld221]], sized by the bar · couplers show in 3D and sections, in the [[a_rbsched]] (a table of their own, and in its CSV), and in the BOQ by type and size, each (assumed prices: type a price in the BOQ)
+> Unlike Revit: couplers follow the element's rebar rules rather than being placed bar by bar · splices fall every 10 m from the start of a bar, not staggered · no transition couplers (two sizes) · not in IFC and not drawn in plans
 - [[a_fslab]]: sketch the boundary as for a floor, with a foundation slab type
 - Foundations are under the floor, so a plan shows them in hidden line; a plan whose [[p_disc]] is Structure shows them in full with the mark of their type · the concrete is in the structure schedule, the price in the [[a_boq]]
 > Unlike Revit: ends are cut and coped on level steel beams only (sloped beams, braces and concrete beams run to their ends as before; join concrete ones with [[t_join]]) · only H, I and channel sections are coped, where they meet the web side of a steel beam or column
@@ -37983,6 +38099,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.218 · แผ่นสำรองและรายการแผ่นงาน (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): ตารางรายการแผ่นงานเพิ่มแถวแผ่นสำรองได้ พิมพ์เลขที่และชื่อของชีตและแผ่นสำรองในตารางได้ (เลขที่ไม่ซ้ำ) ปุ่ม ชีตใหม่ เปิดหน้าต่างเลือกกรอบชื่อแบบ ขนาดกระดาษ และแผ่นสำรองที่จะทำเป็นชีตจริง ชีตเลือกได้ว่าจะอยู่ในรายการแผ่นงานหรือไม่
 - V1.219 · ความหนาเส้น (Revit: Line Weights): ตารางปากกา 1–16 ในแท็บจัดการ ความหนาของโมเดลตามมาตราส่วน (เพิ่ม/ลบมาตราส่วน ปรับตามมาตราส่วนแบบ Revit) และความหนาของงานกำกับที่ไม่ขึ้นกับมาตราส่วน ใช้บนจอ แผ่นงาน และ PDF ส่งต่อด้วยการถ่ายโอนมาตรฐานโครงการได้
 - V1.220 · ชุดแผ่นงาน (Revit 2025: Sheet Collections): จัดแผ่นงานเป็นชุดเป็นโฟลเดอร์ใน Project Browser สร้างชีตใหม่ในชุด เปลี่ยนชื่อ ลบ ย้ายแผ่นในคุณสมบัติ คอลัมน์ชุดแผ่นงานในตารางรายการแผ่นงาน (กรองได้) เลือกพิมพ์ทั้งชุด และจัดกลุ่มใน Browser Organization
+- V1.221 · ข้อต่อเหล็กเสริม (Revit: Rebar Coupler): ต่อเหล็กยาวด้วยข้อต่อแทนการทาบ ข้อต่อที่ปลายเหล็กยืนของเสา คาน ผนัง 3 ชนิด ขนาดตามเหล็ก เห็นใน 3 มิติและรูปตัด ตารางข้อต่อใน ตารางตัดเหล็ก และ CSV นับในแผงคุณสมบัติ และคิดราคาใน BOQ
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -38340,6 +38457,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.218 · Placeholder sheets and the sheet list (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): insert placeholder sheet rows in a sheet list, type the numbers and names of sheets and placeholders in the list (numbers are unique), New Sheet opens a dialog for the title block, the paper size and the placeholder sheets to make real, and a sheet can be left out of the sheet lists
 - V1.219 · Line weights (Revit: Line Weights): a table of pens 1–16 on the Manage tab, model widths by view scale (add or delete scales, scale with view as in Revit) and annotation widths at every scale, on screen, on sheets and in PDF; Transfer Project Standards carries it
 - V1.220 · Sheet collections (Revit 2025: Sheet Collections): sheets grouped in folders of the Project Browser, New Sheet in a collection, rename, delete, move a sheet in its Properties, a Sheet Collection column in sheet lists (to filter), print a whole collection, group by it in Browser Organization
+- V1.221 · Rebar couplers (Revit: Rebar Coupler): long bars joined by couplers instead of laps, couplers on the main bar ends of columns, beams and walls, three types sized by the bar, shown in 3D and sections, a coupler table in the Rebar Schedule and its CSV, counted in Properties and priced in the BOQ
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -40531,6 +40649,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r221={of:id=>cplOf221(P,IDX.get(id)).map(c=>({p:c.p.map(x=>Math.round(x*10)/10),u:c.u.map(x=>Math.round(x*1000)/1000),d:c.d,ct:c.ct,w:c.w,od:c.od,L:c.L})),
+  bars:id=>{const e=IDX.get(id),R=rbOf(e);return rbSet(P,e).map(b=>({d:b.d,k:b.k,hk:b.hk,cs:b.cs||0,ce:b.ce||0,p:b.p.map(q=>q.map(x=>Math.round(x*10)/10)),cut:rbCut(b,R?R.lap:40)}))},
+  sched:()=>cplSched221(P).map(r=>({mark:r.mark,ct:r.ct,d:r.d,w:r.w,od:r.od,L:r.L,n:r.n,hosts:[...r.hosts]})),bar:()=>rbSched(P).map(r=>({mark:r.mark,d:r.d,shape:r.shape,A:r.A,B:r.B,n:r.n,cut:r.cut,laps:r.laps,hosts:[...r.hosts],kg:r.kg})),
+  csv:()=>rbSchedCSV(rbSched(P)),boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>String(r.pk||'').startsWith('cpl|')).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item,unit:r.unit,cat:r.cat,_c:r._c})),
+  rbBoq:()=>scheduleTable(P,'boq',t).rows.filter(r=>String(r.pk||'').startsWith('rebar|')).map(r=>({pk:r.pk,qty:r.qty,_c:r._c})),total:()=>{const S=scheduleTable(P,'boq',t);return S&&S.foot?S.foot.amount:0},
+  qty:id=>{const q=QTY().get(id)||{};return{kg:q.rbkg||0,m:Object.assign({},q.rbm||{})}},
+  mesh:id=>MSm().items.filter(it=>it.id===id&&it.cpl).reduce((a,it)=>a+it.t.length/9,0),rebarMesh:id=>MSm().items.filter(it=>it.id===id&&it.cat==='rebar'&&!it.cpl).reduce((a,it)=>a+it.t.length/9,0),
+  dim:(ct,d)=>cplDim221(ct,d),price:(ct,d)=>cplPrice221(ct,d),on:id=>cplOn221(IDX.get(id)),rows:ids=>rbRows(ids.map(id=>IDX.get(id))),dlg:()=>XA.cpl221()};
 window.PenumBIM.r220={list:()=>JSON.parse(JSON.stringify(shcList220(P))),sorted:()=>shcSorted220().map(c=>c.name),add:n=>shcAdd220(n),ren:(id,n)=>shcRen220(id,n),del:id=>shcDel220(id),set:(sid,id)=>shcSet220(sid,id),
   of:sid=>{const s=P.views.find(v=>v.id===+sid);return s&&s.shc!=null?s.shc:null},in:id=>shcSheets220(id).map(s=>s.number),dlg:f=>dlgShc220(f),
   tree:()=>{const T=document.querySelector('#tree details[data-g="sheets"]');if(!T)return null;const out=[];for(const d of T.querySelectorAll(':scope > details[data-g^="shc:"]'))out.push({g:d.dataset.g,label:d.querySelector('summary').textContent.trim(),open:d.open,items:[...d.querySelectorAll(':scope > .ti[data-view]')].map(b=>b.textContent.trim().replace(/✕$/,''))});
