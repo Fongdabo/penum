@@ -2558,7 +2558,7 @@ function buildMeshes(P,FP,FIT){
     else if(PLAIN_LINES.includes(e.cat)||e.cat==='area'||e.cat==='part'){}          // room separation lines and reference planes have no shape in 3D
     else mepMesh(P,FP,e,K,items)
   }
-  fitMeshes(P,K.fit,items);rectFitMeshes(P,FP&&FP.rfit,items);swpMeshes(P,FP,items);sedMeshes(P,items);hnMeshes(P,items);stcMeshes(P,items);rfeMeshes(P,items);slMeshes(P,items);
+  fitMeshes(P,K.fit,items);rectFitMeshes(P,FP&&FP.rfit,items);swpMeshes(P,FP,items);sedMeshes(P,items);hnMeshes(P,items);stcMeshes(P,items);rfeMeshes(P,items);slMeshes(P,items);ipcMeshes(P,items);
   if(typeof siteMeshes==='function')siteMeshes(P,items);          /* the ground with its pads, subregions and property lines (26-site.js) */
   if(typeof joinApply==='function')joinApply(P,items);prtMeshes(P,items,FP);if(typeof paintApply==='function')paintApply(P,items);          /* Join Geometry and Cut Geometry: what is cut loses what cuts it (26-join.js) */
   if(typeof linkMeshes==='function')linkMeshes(P,items);          /* linked IFC models (82-ifclink.js): as they are, where their links stand */
@@ -14607,7 +14607,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=214,V1_NAME='V1.204';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=215,V1_NAME='V1.205';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -33094,6 +33094,439 @@ Object.assign(STR,{
   asv_top:['รูปด้านบน (Elevation Top)','Elevation Top'],asv_bot:['รูปด้านล่าง (Elevation Bottom)','Elevation Bottom'],asv_seca:['รูปตัด A (Detail Section A)','Detail Section A'],asv_secb:['รูปตัด B (Detail Section B)','Detail Section B'],
   asv_parts:['รายการชิ้นส่วน (Part List)','Part List'],asvs_3d:['3 มิติ','3D'],asvs_front:['หน้า','Front'],asvs_back:['หลัง','Back'],asvs_left:['ซ้าย','Left'],asvs_right:['ขวา','Right'],asvs_top:['บน','Top'],asvs_bot:['ล่าง','Bottom'],asvs_seca:['ตัด A','Section A'],asvs_secb:['ตัด B','Section B'],asvs_parts:['ชิ้นส่วน','Part List'],asvs_mto:['วัสดุ','Takeoff'],asv_mto:['ปริมาณวัสดุ (Material Takeoff)','Material Takeoff'],asv_sheet:['แผ่นงาน (Sheet)','Sheet'],br_asm:['ชุดประกอบ (Assemblies)','Assemblies'],
   h_asolo:['คลิกเพื่อเลือกเฉพาะชิ้นนี้ในชุดประกอบ · Tab อีกครั้งกลับไปเลือกทั้งชุด','Click to select this member alone · Tab again to go back to the whole assembly']});
+/* ===== 205 In-Place Components (V1.205; Revit: Architecture › Build › Component › Model In-Place) =====
+   A shape made for this project only, in the family editor that opens inside it: a counter, a plinth for a machine, a planter, a rail.
+   {cat:'ipc', ic (its family category), name, level, x, y, rot, mi?, forms:[…], mark?, comment?}.  Its forms are kept in its own frame: u along rot from (x, y),
+   v across it (turned over when mi), heights from its level:
+     {k:'ext', pts, z0, z1}        Extrusion: an outline pushed up from z0 to z1 (Extrusion Start and End)
+     {k:'blend', pts, pt2, z0, z1} Blend: a base outline at z0 and a top outline at z1 joined by straight faces (First End and Second End)
+     {k:'rev', c:[u,v], prof:[[r,z]…], a0, a1}   Revolve: an outline in the plane through the upright axis at c (r: from the axis, z: height) turned from a0 to a1°
+     {k:'sweep', path:[[u,v]…], cl?, z, prof:[[s,t]…]}   Sweep: an outline across a path drawn on the level (s: to the left of the path, t: up from z), carried
+       along it with mitred corners; cl: the path is a loop
+   Any form may be a void (v: 1), which cuts the solid forms of its component; a solid form has a material (mat: a key of MAT or 'c:'+id of a project material).
+   rev and sweep keep how their outline was made (pp: the preset and its sizes) so that the dialog opens on it again.
+   The editor (ui.ipe = {id, P0}) is what Revit's in-place family editor is: the ribbon gives the forms and Finish Model / Cancel Model; a click on the component
+   picks one of its forms (ui.ipf), whose Properties are its own; Move, Copy, Rotate, Mirror and Delete then work on that form. */
+GEOM.ipc='point';DISC.ipc='arch';
+const IPC_IC=['gen','furn','case','spec','fixture','equip','column','beam','footing','floor','roof','wall'],IPC_K=['ext','blend','rev','sweep'],
+  IPC_TOOL={ipext:'ext',ipblend:'blend',iprev:'rev',ipswp:'sweep'},IPC_MATS=['plain',...PAINT_MATS.filter(k=>k!=='plain')],IPC_VCOL=[0.96,0.55,0.16];
+const ipcIs=e=>!!e&&e.cat==='ipc',ipcF=e=>Array.isArray(e.forms)?e.forms:[],ipcR=x=>Math.round(x*10)/10,ipcEd=()=>ui.ipe?IDX.get(ui.ipe.id)||null:null;
+const ipcICName=(k,tr)=>(tr||t)('icat_'+(IPC_IC.includes(k)?k:'gen')),ipcICShort=k=>t('icn_'+(IPC_IC.includes(k)?k:'gen'));
+/* the frame of a component: local (u, v) to plan and back */
+function ipcXf(e){const a=(+e.rot||0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a),m=e.mi?-1:1,X=+e.x||0,Y=+e.y||0;
+  return{w:(u,v)=>[X+u*c-v*m*s,Y+u*s+v*m*c],l:(x,y)=>{const dx=x-X,dy=y-Y;return[dx*c+dy*s,(-dx*s+dy*c)*m]},a,m}}
+/* ---- the outline of a revolve or a sweep from its preset ---- */
+function ipcCirc(cx,cy,r,n){const o=[];for(let i=0;i<n;i++){const a=2*Math.PI*i/n;o.push([ipcR(cx+r*Math.cos(a)),ipcR(cy+r*Math.sin(a))])}return o}
+function ipcProf(kind,pp){const n=(k,d,lo)=>{const x=+pp[k];return isFinite(x)&&x>=(lo==null?1:lo)?x:d};
+  if(kind==='rev'){const zb=isFinite(+pp.zb)?+pp.zb:0,Z=q=>q.map(p=>[ipcR(p[0]),ipcR(p[1]+zb)]);
+    switch(pp.k){case'cone':{const r0=n('r0',400,0),r1=n('r1',150,0),h=n('h',600);return Z([[0,0],[Math.max(r0,1),0],[r1,h],[0,h]])}
+      case'sph':{const r=n('r',400),o=[[0,0]];if(pp.half==='yes'){for(let i=0;i<=12;i++){const a=Math.PI/2*i/12;o.push([r*Math.cos(a),r*Math.sin(a)])}return Z(o)}
+        for(let i=1;i<24;i++){const a=Math.PI*i/24;o.push([r*Math.sin(a),r-r*Math.cos(a)])}o.push([0,2*r]);return Z(o)}
+      case'tor':{const R=n('R',500),r=Math.min(n('r',80),R-1);return Z(ipcCirc(R,r,r,24))}
+      case'tube':{const ro=n('ro',300),ri=Math.min(n('ri',250,0),ro-1),h=n('h',900);return Z([[ri,0],[ro,0],[ro,h],[ri,h]])}
+      default:{const r=n('r',300),h=n('h',900);return Z([[0,0],[r,0],[r,h],[0,h]])}}}
+  if(pp.k==='circ'){const d=n('d',50);return ipcCirc(0,0,d/2,24)}
+  if(pp.k==='ang'){const w=n('w',75),h=n('h',75),t2=Math.min(n('t',8),w-1,h-1);return[[0,0],[w,0],[w,t2],[t2,t2],[t2,h],[0,h]].map(p=>[ipcR(p[0]-w/2),ipcR(p[1]-h/2)])}
+  const w=n('w',100),h=n('h',100);return[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].map(p=>[ipcR(p[0]),ipcR(p[1])])}
+/* ---- geometry (pure but for the cache) ---- */
+const ipcPts=(L,n)=>{if(!Array.isArray(L))return null;const o=[];for(const q of L){if(!Array.isArray(q)||!isFinite(+q[0])||!isFinite(+q[1]))return null;const p=[+q[0],+q[1]],z=o[o.length-1];if(!z||Math.hypot(p[0]-z[0],p[1]-z[1])>0.5)o.push(p)}
+  while(o.length>1&&Math.hypot(o[0][0]-o[o.length-1][0],o[0][1]-o[o.length-1][1])<=0.5)o.pop();return o.length>=(n||3)?o:null};
+/* rings of points joined face to face; capA / capB: index triples of the first and last ring (as their outline is ordered) */
+function ipcLoft(R,capA,capB){const T=[],n=R[0].length;
+  for(let i=0;i+1<R.length;i++)for(let j=0;j<n;j++){const j1=(j+1)%n,a=R[i][j],b=R[i][j1],c=R[i+1][j1],d=R[i+1][j];T.push(a,b,c,a,c,d)}
+  if(capA){const r=R[0];for(let k=0;k+2<capA.length;k+=3)T.push(r[capA[k]],r[capA[k+2]],r[capA[k+1]])}
+  if(capB){const r=R[R.length-1];for(let k=0;k+2<capB.length;k+=3)T.push(r[capB[k]],r[capB[k+1]],r[capB[k+2]])}return T}
+/* two outlines with as many points each: cut at the fractions of their length where either has a corner, from the corners that face one another */
+function ipcMatch(A,B){const per=L=>{const s=[0];for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];s.push(s[i]+Math.hypot(b[0]-a[0],b[1]-a[1]))}return s},
+    cen=L=>{let x=0,y=0;for(const p of L){x+=p[0];y+=p[1]}return[x/L.length,y/L.length]};
+  if((area2(A)>0)!==(area2(B)>0))B=B.slice().reverse();const cA=cen(A),cB=cen(B),a0=Math.atan2(A[0][1]-cA[1],A[0][0]-cA[0]);let k=0,bd=Infinity;
+  B.forEach((q,i)=>{let d=Math.abs(Math.atan2(q[1]-cB[1],q[0]-cB[0])-a0);d=Math.min(d,2*Math.PI-d);if(d<bd-1e-9){bd=d;k=i}});B=B.slice(k).concat(B.slice(0,k));
+  const sA=per(A),sB=per(B),LA=sA[A.length]||1,LB=sB[B.length]||1,fr=[...new Set(sA.slice(0,-1).map(x=>x/LA).concat(sB.slice(0,-1).map(x=>x/LB)).map(x=>Math.round(x*1e6)/1e6))].sort((x,y)=>x-y);
+  const at=(L,s,f)=>{const d=f*s[L.length];let i=0;while(i<L.length-1&&s[i+1]<=d)i++;const a=L[i],b=L[(i+1)%L.length],g=s[i+1]-s[i]||1,u=(d-s[i])/g;return[a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u]};
+  return[fr.map(f=>at(A,sA,f)),fr.map(f=>at(B,sB,f))]}
+/* the triangles of one form in its component's frame ([u, v, z] points, three to a triangle), or null when it makes no solid */
+function ipcFormTris(f){if(!f||!IPC_K.includes(f.k))return null;
+  if(f.k==='ext'){const p=ipcPts(f.pts);if(!p||Math.abs(area2(p))<1)return null;const z0=+f.z0||0,z1=+f.z1||0;if(Math.abs(z1-z0)<1)return null;const cap=earclip(p);
+    return ipcLoft([p.map(q=>[q[0],q[1],z0]),p.map(q=>[q[0],q[1],z1])],cap,cap)}
+  if(f.k==='blend'){let A=ipcPts(f.pts),B=ipcPts(f.pt2);if(!A||!B||Math.abs(area2(A))<1||Math.abs(area2(B))<1)return null;const z0=+f.z0||0,z1=+f.z1||0;if(Math.abs(z1-z0)<1)return null;
+    [A,B]=ipcMatch(A,B);return ipcLoft([A.map(q=>[q[0],q[1],z0]),B.map(q=>[q[0],q[1],z1])],earclip(A),earclip(B))}
+  if(f.k==='rev'){const pr=ipcPts(f.prof);if(!pr||Math.abs(area2(pr))<1||!Array.isArray(f.c))return null;const P2=pr.map(q=>[Math.max(0,q[0]),q[1]]),c=[+f.c[0]||0,+f.c[1]||0];
+    let a0=+f.a0||0,sp=clamp((+f.a1||0)-a0,1,360);const full=sp>359.9,rm=Math.max(...P2.map(q=>q[0])),N=Math.max(4,Math.ceil(sp/360*(rm<200?24:rm<1500?36:48))),R=[];
+    for(let k=0;k<=N;k++){if(full&&k===N){R.push(R[0]);break}const a=(a0+sp*k/N)*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a);R.push(P2.map(q=>[c[0]+q[0]*cs,c[1]+q[0]*sn,q[1]]))}
+    const cap=full?null:earclip(P2);return ipcLoft(R,cap,cap)}
+  const path=ipcPts(f.path,2),pr=ipcPts(f.prof);if(!path||!pr||Math.abs(area2(pr))<1)return null;const cl=!!f.cl&&path.length>=3,z=+f.z||0,M=ipcMit(path,cl);
+  const R=path.map((p,i)=>pr.map(q=>[p[0]+M[i][0]*q[0],p[1]+M[i][1]*q[0],z+q[1]]));if(cl){R.push(R[0]);return ipcLoft(R,null,null)}const cap=earclip(pr);return ipcLoft(R,cap,cap)}
+/* the mitred side step at each point of a path: a point s to the left of the path is p + s·M[i] */
+function ipcMit(path,cl){const n=path.length,sn=[];for(let i=0;i<(cl?n:n-1);i++){const a=path[i],b=path[(i+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1])||1;sn.push([-(b[1]-a[1])/l,(b[0]-a[0])/l])}
+  return path.map((p,i)=>{const p0=cl?sn[(i+n-1)%n]:sn[Math.max(0,i-1)],p1=cl?sn[i]:sn[Math.min(sn.length-1,i)];let mx=p0[0]+p1[0],my=p0[1]+p1[1];const ml=Math.hypot(mx,my);
+    if(ml<1e-6){mx=p1[0];my=p1[1]}else{mx/=ml;my/=ml}const k=1/Math.max(0.25,mx*p1[0]+my*p1[1]);return[mx*k,my*k]})}
+/* triangles to GL ([x, height, y]), turned so that they are counter-clockwise seen from outside */
+function ipcGL(T,toGL){const t=[];for(let i=0;i+2<T.length;i+=3){const a=toGL(T[i]),b=toGL(T[i+1]),c=toGL(T[i+2]),ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    if(Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)<1e-3)continue;t.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2])}
+  if(ipcSVol(t)<0)for(let i=0;i+8<t.length;i+=9)for(let k=0;k<3;k++){const q=t[i+3+k];t[i+3+k]=t[i+6+k];t[i+6+k]=q}return t}
+function ipcSVol(t){let s=0;for(let i=0;i+8<t.length;i+=9)s+=t[i]*(t[i+4]*t[i+8]-t[i+5]*t[i+7])-t[i+1]*(t[i+3]*t[i+8]-t[i+5]*t[i+6])+t[i+2]*(t[i+3]*t[i+7]-t[i+4]*t[i+6]);return s/6}
+/* shading: a corner takes the normals of the faces round it that meet at less than 25° (CSG_COS), weighted by their areas; edges between such faces are smooth
+   (drawn where they turn away from the viewer) */
+function ipcShade(t){const nT=t.length/9,FN=[],FA=[],V=new Map(),E=new Map(),key=i=>Math.round(t[i]*8)+','+Math.round(t[i+1]*8)+','+Math.round(t[i+2]*8);
+  for(let f=0;f<nT;f++){const i=f*9,ux=t[i+3]-t[i],uy=t[i+4]-t[i+1],uz=t[i+5]-t[i+2],vx=t[i+6]-t[i],vy=t[i+7]-t[i+1],vz=t[i+8]-t[i+2],x=uy*vz-uz*vy,y=uz*vx-ux*vz,z=ux*vy-uy*vx,l=Math.hypot(x,y,z)||1;
+    FN.push([x/l,y/l,z/l]);FA.push(l);const ks=[key(i),key(i+3),key(i+6)];for(const k of ks)(V.get(k)||V.set(k,[]).get(k)).push(f);
+    for(let j=0;j<3;j++){const a=ks[j],b=ks[(j+1)%3],ek=a<b?a+'|'+b:b+'|'+a;(E.get(ek)||E.set(ek,[]).get(ek)).push([f,j])}}
+  const n=[];for(let f=0;f<nT;f++){const i=f*9,N=FN[f];for(let k=0;k<3;k++){let x=0,y=0,z=0;for(const g of V.get(key(i+3*k))){const M=FN[g];if(M[0]*N[0]+M[1]*N[1]+M[2]*N[2]>=CSG_COS){x+=M[0]*FA[g];y+=M[1]*FA[g];z+=M[2]*FA[g]}}const l=Math.hypot(x,y,z)||1;n.push(2*x/l,2*y/l,2*z/l)}}
+  const s=[];for(const L of E.values()){if(L.length!==2)continue;const A=FN[L[0][0]],B=FN[L[1][0]],d=A[0]*B[0]+A[1]*B[1]+A[2]*B[2];if(d>0.99985||d<CSG_COS)continue;const i=L[0][0]*9+L[0][1]*3,j=L[0][0]*9+((L[0][1]+1)%3)*3;
+    s.push({a:[t[i],t[i+1],t[i+2]],b:[t[j],t[j+1],t[j+2]],n1:A,n2:B})}
+  return{n,s}}
+function ipcLines(t){const l=[];for(const E of csgCreases(csgFromTris(t,0)).values())for(const q of E.iv)l.push(E.f[0]+E.d[0]*q[0],E.f[1]+E.d[1]*q[0],E.f[2]+E.d[2]*q[0],E.f[0]+E.d[0]*q[1],E.f[1]+E.d[1]*q[1],E.f[2]+E.d[2]*q[1]);return l}
+/* the material of a form: {key (to group by), name, c (colour), mt (the look the renderer gives it)} */
+function ipcMat(Q,f,tr){tr=tr||t;const k=f&&f.mat;if(typeof k==='string'&&k.slice(0,2)==='c:'){const M=(Array.isArray(Q.mats)?Q.mats:[]).find(x=>x.id===+k.slice(2));
+    if(M)return{key:k,name:M.name,c:hex2rgb(M.color||'#c9c4b8'),mt:MAT[M.base]!=null?MAT[M.base]:MAT.plain}}
+  const m=MAT[k]!=null&&k!=='plain'?k:'plain';return{key:m,name:tr('mat_'+m),c:hex2rgb(MAT_COL[m]||(m==='paint'?'#e6e1d6':m==='gloss'?'#d5d9de':'#c9c3b5')),mt:MAT[m]}}
+/* G: {parts: [{i, f, t, n, l, s, mat}] the solid forms less the voids, voids: [{i, t}], vol (as one solid: overlaps counted once), mv (volume by material key),
+   bb: [x0, y0, z0, x1, y1, z1] in plan and height}; cached by what it depends on */
+const IPC_GC=new Map();
+const ipcSig=e=>JSON.stringify([e.forms,e.mi?1:0]);
+/* the box of the solid forms in the frame of the component: [u0, v0, z0, u1, v1, z1] (a schedule's width, depth and height) */
+function ipcLBox(e){let B=null;for(const f of ipcF(e)){if(f.v)continue;const T=ipcFormTris(f);if(!T)continue;for(const q of T){if(!B)B=[q[0],q[1],q[2],q[0],q[1],q[2]];else for(let i=0;i<3;i++){B[i]=Math.min(B[i],q[i]);B[i+3]=Math.max(B[i+3],q[i])}}}return B}
+function ipcGeo(Q,e){if(!ipcIs(e))return null;const zb=elev(Q,e.level),k=ipcSig(e)+'|'+[+e.x||0,+e.y||0,+e.rot||0,zb].join(','),c=IPC_GC.get(e.id);if(c&&c.k===k)return c.G;
+  let G;try{G=ipcBuild(Q,e,zb)}catch(err){G={parts:[],voids:[],vol:0,mv:new Map(),bb:null}}IPC_GC.set(e.id,{k,G});if(IPC_GC.size>4000)IPC_GC.clear();return G}
+function ipcBuild(Q,e,zb){const X=ipcXf(e),toGL=p=>{const q=X.w(p[0],p[1]);return[q[0],zb+p[2],q[1]]},sol=[],voi=[];
+  ipcF(e).forEach((f,i)=>{const T=ipcFormTris(f);if(!T)return;const t=ipcGL(T,toGL);if(t.length)(f.v?voi:sol).push({i,f,t})});
+  const parts=[];for(const s of sol){let t=s.t;for(const v of voi)if(boxHit(triBox(t),triBox(v.t),0))t=csgToTris(csgSub(csgFromTris(t,0),csgFromTris(v.t,1)));if(!t.length)continue;
+    const S=ipcShade(t);parts.push({i:s.i,f:s.f,t,n:S.n,s:S.s,l:ipcLines(t),mat:ipcMat(Q,s.f)})}
+  let vol=0;const mv=new Map();for(let a=0;a<parts.length;a++){let A=null,t=parts[a].t;const bb=triBox(t);
+    for(let b=0;b<a;b++)if(boxHit(bb,triBox(parts[b].t),0)){A=csgSub(A||csgFromTris(t,0),csgFromTris(parts[b].t,1))}const x=A?triVol(csgToTris(A)):triVol(t);vol+=x;const k=parts[a].mat.key;mv.set(k,(mv.get(k)||0)+x)}
+  let bb=null;for(const p of parts){const b=triBox(p.t);if(!bb)bb=[b[0],b[2],b[1],b[3],b[5],b[4]];else{bb[0]=Math.min(bb[0],b[0]);bb[1]=Math.min(bb[1],b[2]);bb[2]=Math.min(bb[2],b[1]);bb[3]=Math.max(bb[3],b[3]);bb[4]=Math.max(bb[4],b[5]);bb[5]=Math.max(bb[5],b[4])}}
+  return{parts,voids:voi.map(v=>({i:v.i,t:v.t})),vol,mv,bb}}
+/* ---- 3D: one mesh to a solid form; in the editor the voids too, as orange glass ---- */
+/* the category of Visibility/Graphics that also hides a component: its Family Category (casework is with the furniture here) */
+const ipcVC=e=>{const c=e.ic==='case'?'furn':e.ic;return IPC_IC.includes(e.ic)&&VG_CATS.includes(c)?c:''};
+function ipcMeshes(Q,items){for(const e of Q.els){if(e.cat!=='ipc')continue;const G=ipcGeo(Q,e);if(!G)continue;const vc=ipcVC(e);
+    for(const p of G.parts){const m={id:e.id,cat:'ipc',c:p.mat.c,a:1,t:p.t.slice(),n:p.n.slice(),l:p.l.slice(),s:p.s.slice(),k:2,mt:p.mat.mt};if(vc)m.vc=vc;items.push(m)}
+    if(ui.ipe&&ui.ipe.id===e.id&&Q===P)for(const v of G.voids){const S=ipcShade(v.t);items.push({id:e.id,cat:'ipc',c:IPC_VCOL,a:0.3,t:v.t.slice(),n:S.n,l:ipcLines(v.t),s:[],k:2,ipv:1})}}}
+/* ---- plans: what the cut plane cuts (heavy) and, under it, the edges and outlines seen from above that nothing of the component hides (thin) ---- */
+const IPC_PC=new Map();
+function ipcPlan(e,cz){const G=ipcGeo(P,e);if(!G)return{cut:[],pro:[],tris:[]};const c=IPC_PC.get(e.id),k=String(cz);if(c&&c.k===k&&c.G===G)return c.R;
+  const cut=[],segs=[],tris=[];
+  for(const p of G.parts){const t=p.t;
+    for(let i=0;i+8<t.length;i+=9){const A=[t[i],t[i+2],t[i+1]],B=[t[i+3],t[i+5],t[i+4]],C=[t[i+6],t[i+8],t[i+7]],q=[];
+      for(const [a,b] of [[A,B],[B,C],[C,A]]){const da=a[2]-cz,db=b[2]-cz;if((da<0&&db>0)||(da>0&&db<0)){const u=da/(da-db);q.push([a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u])}}
+      if(q.length===2&&Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])>0.5)cut.push(q);
+      const ar=(B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0]);if(Math.abs(ar)>1)tris.push({A,B,C,ar,x0:Math.min(A[0],B[0],C[0]),x1:Math.max(A[0],B[0],C[0]),y0:Math.min(A[1],B[1],C[1]),y1:Math.max(A[1],B[1],C[1])})}
+    for(let i=0;i+5<p.l.length;i+=6)segs.push([[p.l[i],p.l[i+2],p.l[i+1]],[p.l[i+3],p.l[i+5],p.l[i+4]]]);
+    for(const q of p.s)if(q.n1[1]*q.n2[1]<0)segs.push([[q.a[0],q.a[2],q.a[1]],[q.b[0],q.b[2],q.b[1]]])}
+  /* a point is hidden where a face of the component lies above it, under the cut plane */
+  const hid=(x,y,z)=>{for(const T of tris){if(x<T.x0||x>T.x1||y<T.y0||y>T.y1)continue;const{A,B,C,ar}=T,w1=((B[0]-x)*(C[1]-y)-(B[1]-y)*(C[0]-x))/ar,w2=((C[0]-x)*(A[1]-y)-(C[1]-y)*(A[0]-x))/ar,w3=1-w1-w2;
+      if(w1<-1e-6||w2<-1e-6||w3<-1e-6)continue;const h=w1*A[2]+w2*B[2]+w3*C[2];if(h>z+1&&h<=cz+0.01)return true}return false};
+  const pro=[];for(let [a,b] of segs){if(a[2]>cz&&b[2]>cz)continue;if(a[2]>cz||b[2]>cz){if(a[2]>cz){const q=a;a=b;b=q}const u=(cz-a[2])/(b[2]-a[2]);b=[a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,cz]}
+    const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<0.5)continue;const n=Math.min(24,Math.max(1,Math.ceil(L/150)));let s0=null;
+    for(let k=0;k<=n;k++){const u=k===n?1:(k+0.5)/n,v=k===n?null:[a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u],vis=v&&!hid(v[0],v[1],v[2]);
+      if(vis&&s0==null)s0=k/n;if(!vis&&s0!=null){const u1=k/n;pro.push([[a[0]+(b[0]-a[0])*s0,a[1]+(b[1]-a[1])*s0],[a[0]+(b[0]-a[0])*u1,a[1]+(b[1]-a[1])*u1]]);s0=null}}}
+  const R={cut,pro,tris};IPC_PC.set(e.id,{k,G,R});return R}
+/* the outlines of one form in plan, as its sketch was drawn: [{p, c (closed)}] */
+function ipcOutline(e,f){const X=ipcXf(e),W=q=>X.w(q[0],q[1]);if(!f)return[];
+  if(f.k==='ext'&&Array.isArray(f.pts))return[{p:f.pts.map(W),c:1}];if(f.k==='blend')return[{p:(f.pts||[]).map(W),c:1},{p:(f.pt2||[]).map(W),c:1}];
+  if(f.k==='rev'&&Array.isArray(f.c)&&Array.isArray(f.prof)){const rr=f.prof.map(q=>Math.max(0,+q[0]||0)),r1=Math.max(...rr),r0=Math.min(...rr),a0=+f.a0||0,sp=clamp((+f.a1||0)-a0,1,360),full=sp>359.9,o=[];
+    const arc=r=>{const L=[],n=Math.max(8,Math.ceil(sp/7.5));for(let k=0;k<=n;k++){const a=(a0+sp*k/n)*Math.PI/180;L.push(W([f.c[0]+r*Math.cos(a),f.c[1]+r*Math.sin(a)]))}return L};
+    const A=arc(r1);if(full){A.pop();o.push({p:A,c:1});if(r0>1){const B=arc(r0);B.pop();o.push({p:B,c:1})}}else{const B=r0>1?arc(r0).reverse():[W(f.c)];o.push({p:A.concat(B),c:1})}return o}
+  if(f.k==='sweep'&&Array.isArray(f.prof)){const P2=ipcPts(f.path,2);if(!P2)return[];const ss=f.prof.map(q=>+q[0]||0),hi=Math.max(...ss),lo=Math.min(...ss),cl=!!f.cl&&P2.length>=3,M=ipcMit(P2,cl),
+      A=P2.map((p,i)=>W([p[0]+M[i][0]*hi,p[1]+M[i][1]*hi])),B=P2.map((p,i)=>W([p[0]+M[i][0]*lo,p[1]+M[i][1]*lo])),o=[{p:P2.map(W),c:cl?1:0}];
+    if(cl)o.push({p:A,c:1},{p:B,c:1});else o.push({p:A.concat(B.reverse()),c:1});return o}
+  return[]}
+const ipcPolyD=(x,y,O)=>{let d=Infinity;for(const q of O){if(q.p.length<2)continue;if(q.c&&q.p.length>=3&&inPoly(x,y,q.p))return 0;for(let i=0;i+1<q.p.length+(q.c?1:0);i++){const a=q.p[i],b=q.p[(i+1)%q.p.length];d=Math.min(d,segDist(x,y,a[0],a[1],b[0],b[1]))}}return d};
+/* ---- the category in the model ---- */
+{const f0=zRange;zRange=(Q,e)=>{if(e.cat!=='ipc')return f0(Q,e);const G=ipcGeo(Q,e),z=elev(Q,e.level);return G&&G.bb?[G.bb[2],Math.max(G.bb[5],G.bb[2]+1)]:[z,z+1]}}
+{const f0=elBox;elBox=(v,e)=>{if(e.cat!=='ipc')return f0(v,e);const G=ipcGeo(P,e);return G&&G.bb?[G.bb[0],G.bb[1],G.bb[3],G.bb[4]]:[+e.x||0,+e.y||0,+e.x||0,+e.y||0]}}
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='ipc')return f0(v,e);if(v.kind!=='plan'||v.draft||v.rcp)return'';{const vc=ipcVC(e);if(vc&&catHid(v,vc))return''}
+  if(!f0(v,Object.assign({},e,{level:v.level})))return'';const R=VRm(v),z=zRange(P,e);return z[0]<R.cut&&z[1]>R.depth?'on':''}}
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||!P.els.some(e=>e.cat==='ipc'))return;const L=of('ipc');if(!L.length)return;const R=VRm(v),H=halfCols(col),E=o.screen?ipcEd():null;          // of() opens the DXF layer: none for a project without components
+  for(const [e] of L){const pl=ipcPlan(e,R.cut);g.el(e);const h=hl(e.id),ink=h||(discMode(P,v,e)===1?H.ink:col.ink);ctx.strokeStyle=ink;g.dash(null);
+    ctx.lineWidth=h?1.2:g.lw(0.18);for(const s of pl.pro)g.seg(s[0],s[1]);g.cut(true);ctx.lineWidth=h?2:g.lw(0.35);for(const s of pl.cut)g.seg(s[0],s[1]);g.cut(false)}
+  if(!E||!L.some(x=>x[0]===E))return;const sc=v.scale||100;          // the editor: the sketch of every form, the one picked in the selection colour, voids dashed orange
+  ipcF(E).forEach((f,i)=>{const on=ui.ipf===i&&ui.sel.has(E.id);ctx.strokeStyle=on?col.sel:f.v?'#e8891c':'#d9a400';ctx.lineWidth=on?2:1.1;g.dash(f.v?[2,1]:on?null:[1,0.8]);
+    for(const q of ipcOutline(E,f)){if(q.p.length<2)continue;g.path(q.p,!q.c);ctx.stroke()}});g.dash(null);
+  const B=elBox(v,E);if(B){const m=4*sc;ctx.strokeStyle='#d9a400';ctx.lineWidth=1.6;g.dash([3,1.5]);g.path([[B[0]-m,B[1]-m],[B[2]+m,B[1]-m],[B[2]+m,B[3]+m],[B[0]-m,B[3]+m]]);ctx.stroke();g.dash(null);
+    g.text(t('ipc_elabel',E.name||''),[B[0]-m,B[1]-m-1.5*sc],2.4,{align:'left',color:'#d9a400',halo:true})}});
+/* picked by its lines, or anywhere inside its outline when nothing else is nearer; in the editor the form under the pointer is noted for the click */
+XHIT.ipc=(v,e,w,tol)=>{const pl=ipcPlan(e,VRm(v).cut);let d=Infinity;for(const s of pl.cut.concat(pl.pro))d=Math.min(d,segDist(w.x,w.y,s[0][0],s[0][1],s[1][0],s[1][1]));
+  if(d>tol){for(const T of pl.tris)if(inPoly(w.x,w.y,[T.A,T.B,T.C])){d=Math.min(d,tol*0.9);break}}
+  if(ui.ipe&&ui.ipe.id===e.id){let bi=null,bd=Infinity,ba=Infinity;ipcF(e).forEach((f,i)=>{const O=ipcOutline(e,f),q=ipcPolyD(w.x,w.y,O),a=O.reduce((s,x)=>Math.max(s,x.c?Math.abs(area2(x.p)):0),0);if(q<bd-1e-6||(q===0&&bd===0&&a<ba)){bd=q;bi=i;ba=a}});ui.ipfH=bd<=Math.max(tol,1)?bi:null;if(bd<=tol)d=Math.min(d,bd)}return d};XHIT.ipc.pr=4;
+{const f0=grpIds;grpIds=id=>{if(ui.ipe&&id===ui.ipe.id){ui.ipf=ui.ipfH!=null?ui.ipfH:null;return[id]}return f0(id)}}
+{const f0=tagFrame;tagFrame=(Q,get,e)=>{if(!e||e.cat!=='ipc')return f0(Q,get,e);const G=ipcGeo(Q,e);return G&&G.bb?{x:(G.bb[0]+G.bb[3])/2,y:(G.bb[1]+G.bb[4])/2,ux:1,uy:0}:{x:+e.x||0,y:+e.y||0,ux:1,uy:0}}}
+{const f0=tagLabel;tagLabel=(Q,e,d)=>e&&e.cat==='ipc'&&!(d&&d.sp)?String(e.mark||e.name||''):f0(Q,e,d)}
+{const f0=ifcClass;ifcClass=(Q,e)=>{if(e.cat!=='ipc')return f0(Q,e);switch(e.ic){case'furn':case'case':return['IFCFURNISHINGELEMENT','','',''];case'fixture':return['IFCSANITARYTERMINAL','.NOTDEFINED.','',''];
+  case'equip':return['IFCUNITARYEQUIPMENT','.NOTDEFINED.','',''];case'column':return['IFCCOLUMN','.COLUMN.','Pset_ColumnCommon',''];case'beam':return['IFCBEAM','.BEAM.','Pset_BeamCommon',''];
+  case'footing':return['IFCFOOTING','.PAD_FOOTING.','Pset_FootingCommon',''];case'floor':return['IFCSLAB','.FLOOR.','Pset_SlabCommon',''];case'roof':return['IFCROOF','.FREEFORM.','Pset_RoofCommon',''];
+  case'wall':return['IFCWALL','.NOTDEFINED.','Pset_WallCommon',''];default:return['IFCBUILDINGELEMENTPROXY','.NOTDEFINED.','','']}}}
+/* IFC: the name of the family and its category, in place of what a type would give */
+{const f0=ifcXPr;ifcXPr=(Q,e,id,T,pr,prop,tr)=>{const r=f0(Q,e,id,T,pr,prop,tr);if(!e||e.cat!=='ipc')return r;const G=ipcGeo(Q,e);
+  return r.filter(x=>x!==pr[0]&&x!==pr[1]).concat([prop('Category',ipcICName(e.ic,tr)),prop('Type',e.name||''),prop('InPlace','true','IFCBOOLEAN'),prop('Volume',G?Math.round(G.vol/1e6)/1e3:0,'IFCVOLUMEMEASURE')])}}
+{const f0=ifcWrite;ifcWrite=(Q,items,o)=>{const r=f0(Q,items,o);if(!r||typeof r.text!=='string'||!Q.els.some(e=>e.cat==='ipc'))return r;const tr=(o&&o.tr)||(k=>k),cl=tr('cat_ipc');let s=r.text;
+  for(const e of Q.els)if(e.cat==='ipc'&&e.name){const a=ifcStr(cl+':'+e.id)+','+(e.comment?ifcStr(e.comment):'$')+','+ifcStr(cl)+',',b=ifcStr(e.name+':'+e.id)+','+(e.comment?ifcStr(e.comment):'$')+','+ifcStr(e.name)+',';s=s.split(a).join(b)}
+  r.text=s;return r}}
+/* quantities: the volume of the component as one solid; schedules list its name, family category and materials */
+{const f0=quantities;quantities=Q=>{const q=f0(Q);for(const e of Q.els)if(e.cat==='ipc'&&!e.gx){const G=ipcGeo(Q,e);if(G)q.set(e.id,{vol:G.vol,h:G.bb?G.bb[5]-G.bb[2]:0})}return q}}
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='ipc')return F;const vq=(e,X)=>{const o=X.Q.get(e.id);return o&&typeof o.vol==='number'?o.vol:''};
+  F.push({k:'ipname',l:tr('c_ipname'),g:e=>e.name||'',grp:'i'},{k:'ipcat',l:tr('c_ipcat'),g:e=>ipcICName(e.ic,tr),grp:'i'},
+    {k:'ipmat',l:tr('c_mat'),g:e=>{const G=ipcGeo(Q,e);return G?[...new Set(G.parts.map(p=>ipcMat(Q,p.f,tr).name))].join(', '):''},grp:'i'},
+    {k:'ipforms',l:tr('c_ipforms'),g:e=>ipcF(e).length,grp:'q',num:1,dec:0},{k:'vol',l:tr('c_vol'),g:vq,num:1,u:'m3',sum:1,grp:'q'});return F}}
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if((kind!=='mto'&&kind!=='struct'&&kind!=='furn')||!S||!Array.isArray(S.rows)||!Q0.els.some(e=>e.cat==='ipc'&&!e.gx))return S;
+  const add=[];
+  if(kind==='mto'){const by=new Map();for(const e of Q0.els){if(e.cat!=='ipc'||e.gx)continue;const G=ipcGeo(Q0,e);if(!G)continue;
+      for(const [k,v] of G.mv){const p=G.parts.find(x=>x.mat.key===k),nm=p?ipcMat(Q0,p.f,tr).name:k,key=nm+'|'+e.ic+'|'+e.name;let r=by.get(key);if(!r)by.set(key,r={mat:nm,cat:ipcICName(e.ic,tr),type:e.name||'',count:0,area:0,vol:0,_ids:[]});
+        if(!r._ids.includes(e.id)){r.count++;r._ids.push(e.id)}r.vol+=v}}add.push(...by.values())}
+  else if(kind==='furn'){const by=new Map();for(const e of Q0.els){if(e.cat!=='ipc'||e.gx||(e.ic!=='furn'&&e.ic!=='case'))continue;const B=ipcLBox(e);if(!B)continue;const L=lvl(Q0,e.level),key=e.name+'|'+e.level;let r=by.get(key);
+      if(!r)by.set(key,r={grp:tr('fg_'+e.ic),_g:FURN_GRP.indexOf(e.ic),mark:e.mark||'',type:e.name||'',w:Math.round(B[3]-B[0]),d:Math.round(B[4]-B[1]),h:Math.round(B[5]),level:L?L.name:'',_o:L?L.elev:0,count:0,_ids:[]});r.count++;r._ids.push(e.id)}add.push(...by.values())}
+  else{const SC=['column','beam','footing','floor'];for(const e of Q0.els){if(e.cat!=='ipc'||e.gx||!SC.includes(e.ic))continue;const G=ipcGeo(Q0,e);if(!G)continue;const L=lvl(Q0,e.level);
+      add.push({cat:ipcICName(e.ic,tr),_c:e.ic==='footing'?-2:e.ic==='column'?0:e.ic==='beam'?1:2,type:e.name||'',level:L?L.name:'',_o:L?L.elev:0,count:1,len:0,area:0,vol:G.vol,_ids:[e.id]})}}
+  if(!add.length)return S;S.rows.push(...add);
+  if(kind==='furn'){S.rows.sort((a,b)=>(a._g||0)-(b._g||0)||(a._o||0)-(b._o||0)||String(a.type).localeCompare(String(b.type)));if(S.foot)S.foot.count=S.rows.reduce((q,r)=>q+(+r.count||0),0)}
+  else if(kind==='mto'){S.rows.sort((a,b)=>String(a.mat).localeCompare(String(b.mat))||String(a.cat).localeCompare(String(b.cat))||String(a.type).localeCompare(String(b.type)));if(S.foot){S.foot.count=S.rows.reduce((q,r)=>q+(+r.count||0),0);S.foot.vol=S.rows.reduce((q,r)=>q+(+r.vol||0),0)}}
+  else{S.rows.sort((a,b)=>(a._c||0)-(b._c||0)||(a._o||0)-(b._o||0)||String(a.type).localeCompare(String(b.type)));if(S.foot)S.foot.vol=S.rows.reduce((q,r)=>q+(+r.vol||0),0)}return S}}
+/* two components on one spot are not the same instance twice unless their forms are the same */
+{const f0=warnings;warnings=(Q,r)=>f0(Q,r).filter(w=>{if(w.k!=='dup')return true;const L=w.ids.map(id=>Q.els.find(e=>e.id===id));if(!L.every(e=>e&&e.cat==='ipc'))return true;const s=ipcSig(L[0]);return L.every(e=>ipcSig(e)===s)})}
+/* an assembly compares the forms of its components too */
+{const f0=asmDesc;asmDesc=(L,F)=>{const D=f0(L,F);for(const d of D)if(d.e.cat==='ipc')d.k+='|'+ipcSig(d.e);return D}}
+/* ---- names: one in-place family to a name, as Revit has it ---- */
+const ipcClip=s=>String(s==null?'':s).replace(/[\r\n\t]+/g,' ').trim().slice(0,60),ipcTaken=(nm,not)=>P.els.some(e=>e.cat==='ipc'&&e.id!==not&&e.name===nm);
+function ipcNext(nm,used){const b=String(nm).replace(/\s+\d+$/,'');for(let n=2;n<10000;n++){const c=b+' '+n;if(!(used&&used.has(c))&&!ipcTaken(c))return c}return b+' '+Date.now()%100000}
+function ipcDefName(ic){const b=ipcICShort(ic);for(let n=1;n<10000;n++){const c=b+' '+n;if(!ipcTaken(c))return c}return b}
+/* ---- the clean-up: what a component may hold; one with no form goes, unless it is the one being made ---- */
+function ipcCleanF(f){if(!f||!IPC_K.includes(f.k))return null;const o={k:f.k},num=(x,d)=>{x=+x;return isFinite(x)?ipcR(x):d},P2=(L,n)=>{const p=ipcPts(L,n);return p?p.map(q=>[ipcR(q[0]),ipcR(q[1])]):null};
+  if(f.k==='ext'||f.k==='blend'){o.pts=P2(f.pts);if(!o.pts)return null;if(f.k==='blend'){o.pt2=P2(f.pt2);if(!o.pt2)return null}let z0=num(f.z0,0),z1=num(f.z1,1000);if(z1<z0){const q=z0;z0=z1;z1=q}if(z1-z0<1)z1=z0+1;o.z0=z0;o.z1=z1}
+  else if(f.k==='rev'){o.c=Array.isArray(f.c)?[num(f.c[0],0),num(f.c[1],0)]:[0,0];o.prof=P2(f.prof);if(!o.prof)return null;o.prof=o.prof.map(q=>[Math.max(0,q[0]),q[1]]);
+    const a0=clamp(num(f.a0,0),-720,720);o.a0=a0;o.a1=ipcR(a0+clamp(num(f.a1,a0+360)-a0,1,360))}
+  else{o.path=P2(f.path,2);o.prof=P2(f.prof);if(!o.path||!o.prof)return null;o.z=num(f.z,0);if(f.cl&&o.path.length>=3)o.cl=1}
+  if(f.v)o.v=1;else if(typeof f.mat==='string'&&f.mat!=='plain'&&(MAT[f.mat]!=null||(f.mat.slice(0,2)==='c:'&&matList().some(M=>M.id===+f.mat.slice(2)))))o.mat=f.mat;
+  if(f.pp&&typeof f.pp==='object'&&(f.k==='rev'||f.k==='sweep')){const pp={};for(const k in f.pp){const x=f.pp[k];if(typeof x==='string'&&x.length<12)pp[k]=x;else if(isFinite(+x))pp[k]=+x}o.pp=pp}
+  return o}
+function ipcClean(e){if(!IPC_IC.includes(e.ic))e.ic='gen';e.name=ipcClip(e.name)||ipcICShort(e.ic);for(const k of ['x','y']){const x=+e[k];e[k]=isFinite(x)?ipcR(x):0}{const r=+e.rot;e.rot=isFinite(r)?Math.round(r*1e4)/1e4:0}
+  if(e.mi)e.mi=1;else delete e.mi;for(const q of ['type','x1','y1','x2','y2','pts','w','h','off','baseOff','host','top','height'])delete e[q];
+  e.forms=(Array.isArray(e.forms)?e.forms:[]).map(ipcCleanF).filter(Boolean).slice(0,200)}
+XC.push(()=>{if(ui.ipe&&!P.els.some(e=>e.id===ui.ipe.id&&e.cat==='ipc')){ui.ipe=null;ui.ipf=null;ui.ipBase=null}
+  if(!P.els.some(e=>e.cat==='ipc'))return;const used=new Set();
+  P.els=P.els.filter(e=>{if(e.cat!=='ipc')return true;ipcClean(e);if(!e.forms.length&&!(ui.ipe&&ui.ipe.id===e.id))return false;if(used.has(e.name))e.name=ipcNext(e.name,used);used.add(e.name);return true});
+  if(ui.ipf!=null){const e=ipcEd();if(!e||!e.forms[ui.ipf])ui.ipf=null}});
+XS.push(()=>{ui.ipe=null;ui.ipf=null;ui.ipfH=null;ui.ipBase=null;ui.ipVoid=false;ui.ipSk=null;IPC_GC.clear();IPC_PC.clear()});
+/* a dialog may follow what is typed as it is typed (its handlers' input): the preview of a profile */
+document.addEventListener('input',e=>{const el=e.target;if(el&&el.closest&&el.closest('#dlg')&&ui.dlg&&ui.dlg.input)ui.dlg.input(e)});
+/* ---- Model In-Place: Family Category and Name, then the editor ---- */
+XA.ipcnew=()=>{if(ui.ipe||ui.ae||ui.ge){toast(t('ipc_busy'));return}const v=activeView();if(!v||v.kind!=='plan'||v.draft||v.rcp){toast(t('ipc_eview'));return}
+  const D={ic:'gen',auto:true,name:ipcDefName('gen')};
+  const body=`<p class="note">${t('ipc_new_note')}</p><div class="pr"><label for="ipcC">${t('p_ipic')}</label><div><select id="ipcC">${IPC_IC.map(k=>`<option value="${k}"${k===D.ic?' selected':''}>${esc(ipcICName(k))}</option>`).join('')}</select></div></div>`
+    +`<div class="pr"><label for="ipcN">${t('p_ipname')}</label><div><input type="text" id="ipcN" maxlength="60" value="${esc(D.name)}"></div></div><p class="note" id="ipcMsg"></p>`;
+  openDlg(t('ipc_new'),body,`<button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ipc="ok">${t('ok')}</button>`,
+    {change(ev){if(ev.target.id==='ipcC'){D.ic=ev.target.value;if(D.auto){D.name=ipcDefName(D.ic);$('#ipcN').value=D.name}}},input(ev){if(ev.target.id==='ipcN')D.auto=false},
+     click(ev){const b=ev.target.closest?ev.target.closest('[data-ipc]'):ev.target;if(!b||b.dataset.ipc!=='ok')return;const nm=ipcClip($('#ipcN').value)||ipcDefName(D.ic);if(ipcTaken(nm)){$('#ipcMsg').textContent=t('ipc_taken',nm);return}closeDlg();ipcNew(D.ic,nm)}})};
+function ipcNew(ic,name){const v=activeView();if(!v||v.kind!=='plan'||v.draft)return 0;const P0=JSON.stringify(P);let id=P.seq;ui.ipe={id,P0};          // the editor is open before the clean-up sees the empty component
+  edit(()=>{const o={id:P.seq++,cat:'ipc',ic:IPC_IC.includes(ic)?ic:'gen',name:ipcClip(name)||ipcDefName(ic),level:v.level,x:0,y:0,rot:0,forms:[]};P.els.push(o);id=o.id});
+  if(!IDX.get(id)){ui.ipe=null;return 0}ui.ipe={id,P0};ui.ipf=null;ui.ipVoid=false;ui.sel=new Set([id]);setTool('modify');touch();refresh();toast(t('ipc_eon',(IDX.get(id)||{}).name||name),8000);return id}
+function ipcEditStart(id){const e=IDX.get(id);if(!ipcIs(e))return false;if(ui.ipe||ui.ae||ui.ge){toast(t('ipc_busy'));return false}
+  const v=activeView();if(!v||v.kind!=='plan'||v.draft||v.rcp){const pv=P.views.find(x=>x.kind==='plan'&&!x.draft&&!x.rcp&&x.area==null&&x.level===e.level);if(!pv){toast(t('ipc_eview'));return false}showView(pv.id)}
+  ui.ipe={id,P0:JSON.stringify(P)};ui.ipf=null;ui.ipVoid=false;ui.sel=new Set([id]);setTool('modify');touch();refresh();toast(t('ipc_eon',e.name),8000);return true}
+function ipcEditEnd(keep){const E=ui.ipe;if(!E)return;const e=IDX.get(E.id);
+  if(keep&&e&&!ipcF(e).some(f=>!f.v&&ipcFormTris(f))){toast(t('ipc_nosolid'),8000);return}
+  ui.sketch=null;ui.pts=[];ui.ipe=null;ui.ipf=null;ui.ipBase=null;ui.ipVoid=false;ui.ipSk=null;
+  if(!keep){snapshot();P=JSON.parse(E.P0);ui.sel.clear();setTool('modify');commit();toast(t('ipc_ecancel'));return}
+  ui.sel=new Set(e?[e.id]:[]);setTool('modify');touch();refresh();toast(t('ipc_edone',e?e.name:'',e?ipcF(e).length:0),6000)}
+XA.ipedit=()=>{const L=[...ui.sel].map(id=>IDX.get(id)).filter(ipcIs);if(L.length!==1){toast(t('ipc_sel1'));return}ipcEditStart(L[0].id)};
+XA.ipfin=()=>ipcEditEnd(true);XA.ipcan=()=>ipcEditEnd(false);
+XA.ipvoid=()=>{ui.ipVoid=!ui.ipVoid;refresh()};
+XA.ipfsel=arg=>{const E=ipcEd();if(!E||!E.forms[+arg])return;ui.ipf=+arg;ui.sel=new Set([E.id]);if(ui.tool!=='modify')setTool('modify');refresh()};
+/* a double-click on a component edits it (one that is part of an assembly or a group: what that is) */
+{const f0=asmDbl;asmDbl=el=>{if(ipcIs(el)&&!el.asm&&!el.grp&&!ui.ipe&&!ui.ae&&!ui.ge)return ipcEditStart(el.id);return f0(el)}}
+/* ---- the forms: sketched on the plan of the level, the frame of the component set by the first ---- */
+const ipcOn=()=>!!ui.ipe&&ui.ipf!=null&&ui.sel.size===1&&ui.sel.has(ui.ipe.id);
+function ipcMid(f){const L=f.pts||f.path||(f.c?[f.c]:[[0,0]]);let x=0,y=0;for(const p of L){x+=p[0];y+=p[1]}return[x/L.length,y/L.length]}
+/* f in plan coordinates into the frame of e */
+function ipcLocal(e,f){const X=ipcXf(e),L=q=>{const l=X.l(q[0],q[1]);return[ipcR(l[0]),ipcR(l[1])]},o=Object.assign({},f);
+  if(o.pts)o.pts=o.pts.map(L);if(o.pt2)o.pt2=o.pt2.map(L);if(o.c)o.c=L(o.c);if(o.path){o.path=o.path.map(L);if(e.mi&&o.prof)o.prof=o.prof.map(q=>[-q[0],q[1]])}return o}
+function ipcAdd(f,re){const E=ipcEd();if(!E)return-1;let idx=-1;
+  edit(()=>{const e=P.els.find(x=>x.id===E.id);if(!e)return;if(!Array.isArray(e.forms))e.forms=[];
+    if(!e.forms.length&&re==null){const c=ipcMid(f);e.x=Math.round(c[0]);e.y=Math.round(c[1]);e.rot=0;delete e.mi}
+    const L=ipcLocal(e,f);if(re!=null&&e.forms[re]){e.forms[re]=Object.assign({},e.forms[re],L);idx=re}else{e.forms.push(L);idx=e.forms.length-1}});
+  ui.ipf=idx<0?null:idx;ui.ipSk=null;ui.ipBase=null;ui.sel=new Set([E.id]);setTool('modify');ui.ipf=idx<0?null:idx;refresh();if(idx>=0)toast(t('ipc_fmade',t((ipcF(ipcEd()||{})[idx]||{}).v?'ipv_'+f.k:'ipk_'+f.k)));return idx}
+function ipcNewForm(k,o){const d=defs({ext:'ipext',blend:'ipblend',rev:'iprev',sweep:'ipswp'}[k]),f=Object.assign({k},o);if(ui.ipSk==null){if(ui.ipVoid)f.v=1;else if(d.mat&&d.mat!=='plain')f.mat=d.mat}return f}
+{const f0=toolClick;toolClick=(pn,v,p,ev)=>{ui.ipClick=1;try{return f0(pn,v,p,ev)}finally{ui.ipClick=0}}}
+{const f0=finishSketch;finishSketch=()=>{const tl=ui.tool,k=IPC_TOOL[tl];if(!k||k==='rev')return f0();const E=ipcEd();if(!E){ui.sketch=null;refresh();return}
+  const closed=k!=='sweep'||drawMode()==='rect'||!!ui.ipClick,pts=ui.sketch;if(!pts||pts.length<(closed?3:2)){toast(t(k==='sweep'?'ipc_path2':'sketch_open'));return}
+  const W=pts.map(q=>[q[0],q[1]]);ui.sketch=null;ui.pts=[];const re=ui.ipSk,F0=re!=null?ipcF(E)[re]:null,d=defs(tl);
+  if(k==='blend'&&!ui.ipBase){ui.ipBase=W;refresh();return}
+  if(k==='ext'){ipcAdd(F0?{pts:W}:ipcNewForm('ext',{pts:W,z0:d.z0!=null?+d.z0:0,z1:d.z1!=null?+d.z1:1000}),re);return}
+  if(k==='blend'){const B=ui.ipBase;ui.ipBase=null;ipcAdd(F0?{pts:B,pt2:W}:ipcNewForm('blend',{pts:B,pt2:W,z0:d.z0!=null?+d.z0:0,z1:d.z1!=null?+d.z1:1000}),re);return}
+  if(F0){const o={path:W};if(closed&&W.length>=3)o.cl=1;else o.cl=0;ipcAdd(o,re);return}
+  ipcProfDlg('sweep',{path:W,cl:closed&&W.length>=3?1:0})}}
+XT.iprev={ok:v=>v.kind==='plan'&&!v.draft&&!!ui.ipe,hint:()=>t('h_iprev'),click(pn,v,p,w,pt){ipcProfDlg('rev',{c:[pt.x,pt.y]})}};
+for(const tl of ['ipext','ipblend','ipswp'])SKETCH.add(tl);for(const tl of Object.keys(IPC_TOOL)){PLAN_TOOLS.add(tl);CREATE_TOOLS.add(tl);NEW_PROPS.push(tl)}
+{const f0=toolAllowed;toolAllowed=(tool,v)=>IPC_TOOL[tool]&&!ui.ipe?false:f0(tool,v)}
+{const f0=setTool;setTool=(tool,silent)=>{if(ui.ipe&&tool!==ui.tool&&CREATE_TOOLS.has(tool)&&!IPC_TOOL[tool]&&tool!=='rplane'){toast(t('ipc_only'),6000);tool='modify'}          // as in Revit: the editor has its own tools
+  if(tool!==ui.tool){ui.ipBase=null;if(!IPC_TOOL[tool])ui.ipSk=null}if(tool==='ipswp'&&ui.drawBy&&!ui.drawBy.ipswp)ui.drawBy.ipswp='line';return f0(tool,silent)}}
+{const f0=hint;hint=msg=>{if(!msg&&IPC_TOOL[ui.tool]&&ui.tool!=='iprev'&&!ui.zoomr){const tl=ui.tool;msg=(tl==='ipblend'?t(ui.ipBase?'h_ipblend2':'h_ipblend1'):t('h_'+tl))+(ui.ipSk!=null?' · '+t('h_ipresk'):'')+' · '+t('h_sketch_'+drawMode())}return f0(msg)}}
+{const f0=pressed;pressed=id=>id==='@ipvoid'?!!ui.ipVoid:f0(id)}
+/* Edit Sketch: the outline of the form is drawn again (the base and then the top of a blend); the profile of a revolve or a sweep is set in its dialog */
+XA.ipfsk=()=>{if(!ipcOn())return;const f=ipcF(ipcEd())[ui.ipf];if(!f)return;if(f.k==='rev'){ipcProfDlg('rev',null,ui.ipf);return}const i=ui.ipf;
+  setTool({ext:'ipext',blend:'ipblend',sweep:'ipswp'}[f.k]);ui.ipSk=i;refresh();toast(t('h_ipresk'))};
+XA.ipfprof=()=>{if(!ipcOn())return;const f=ipcF(ipcEd())[ui.ipf];if(f&&(f.k==='rev'||f.k==='sweep'))ipcProfDlg(f.k,null,ui.ipf)};
+XA.ipfdel=()=>{if(!ipcOn())return;const E=ipcEd(),i=ui.ipf;edit(()=>{const e=P.els.find(x=>x.id===E.id);if(e&&e.forms[i])e.forms.splice(i,1)});ui.ipf=null;refresh();toast(t('ipc_fdel'))};
+/* in the editor Move, Copy, Rotate, Mirror, Array and Delete work on the form picked */
+function ipcMapForm(e,i,fn,mir){const f=ipcF(e)[i];if(!f)return;const X=ipcXf(e),M=q=>{const w=X.w(q[0],q[1]),r=fn(w[0],w[1]),l=X.l(r[0],r[1]);return[ipcR(l[0]),ipcR(l[1])]};
+  if(f.pts)f.pts=f.pts.map(M);if(f.pt2)f.pt2=f.pt2.map(M);if(f.path){f.path=f.path.map(M);if(mir&&f.prof)f.prof=f.prof.map(q=>[-q[0],q[1]])}
+  if(f.c){const c0=f.c,a0=+f.a0||0,a1=+f.a1||0,sp=a1-a0,dir=a=>{const r=a*Math.PI/180;return M([c0[0]+1000*Math.cos(r),c0[1]+1000*Math.sin(r)])},c=M(c0),ang=p=>Math.atan2(p[1]-c[1],p[0]-c[0])*180/Math.PI;
+    const b=ang(dir(mir?a1:a0));f.c=c;f.a0=ipcR(b);f.a1=ipcR(b+sp)}}
+{const f0=translateIds;translateIds=(ids,dx,dy)=>{if(!ipcOn())return f0(ids,dx,dy);const L=[...ids],E=ipcEd();if(!L.includes(E.id))return f0(ids,dx,dy);ipcMapForm(E,ui.ipf,(x,y)=>[x+dx,y+dy],false);const r=L.filter(id=>id!==E.id);if(r.length)f0(r,dx,dy)}}
+{const f0=rotateIds;rotateIds=(ids,cx,cy,deg)=>{if(!ipcOn())return f0(ids,cx,cy,deg);const L=[...ids],E=ipcEd();if(!L.includes(E.id))return f0(ids,cx,cy,deg);const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+  ipcMapForm(E,ui.ipf,(x,y)=>[cx+(x-cx)*c-(y-cy)*s,cy+(x-cx)*s+(y-cy)*c],false);const r=L.filter(id=>id!==E.id);if(r.length)f0(r,cx,cy,deg)}}
+{const f0=mirrorIds;mirrorIds=(ids,ax,ay,bx,by)=>{const L=[...ids];if(ipcOn()&&L.includes(ui.ipe.id)){const E=ipcEd(),dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1;
+    ipcMapForm(E,ui.ipf,(x,y)=>{const tt=((x-ax)*dx+(y-ay)*dy)/l2,px=ax+dx*tt,py=ay+dy*tt;return[2*px-x,2*py-y]},true);const r=L.filter(id=>id!==E.id);if(r.length)f0(r,ax,ay,bx,by);return}
+  f0(ids,ax,ay,bx,by);for(const id of expandSel(L)){const e=IDX.get(id);if(ipcIs(e)){if(e.mi)delete e.mi;else e.mi=1}}}}
+{const f0=cloneIds;cloneIds=ids=>{const L=[...ids];if(!ipcOn()||!L.includes(ui.ipe.id))return f0(ids);const E=ipcEd(),f=ipcF(E)[ui.ipf];E.forms.push(JSON.parse(JSON.stringify(f)));ui.ipf=E.forms.length-1;
+  const r=L.filter(id=>id!==E.id);return(r.length?f0(r):[]).concat([E.id])}}
+{const f0=deleteIds;deleteIds=ids=>{const L=[...ids];if(!ipcOn()||!L.includes(ui.ipe.id))return f0(ids);const E=ipcEd(),i=ui.ipf;if(E&&E.forms[i])E.forms.splice(i,1);ui.ipf=null;const r=L.filter(id=>id!==E.id);if(r.length)f0(r)}}
+{const f0=act;act=(a,arg,el)=>{if(a==='delete'&&ipcOn()){XA.ipfdel();return}if(ui.ipe&&(a==='group'||a==='asmmake')){toast(t('ipc_busy'));return}if(a==='cancel'&&ui.tool==='ipblend')ui.ipBase=null;return f0(a,arg,el)}}
+/* Undo and Redo in the editor keep the component in Properties */
+for(const nm of ['undo','redo']){const f0=nm==='undo'?undo:redo,g=()=>{f0();if(ui.ipe&&!ui.sel.size&&IDX.get(ui.ipe.id)){ui.sel=new Set([ui.ipe.id]);refresh()}};if(nm==='undo')undo=g;else redo=g}
+/* ---- the profile of a revolve (r from the axis, z up) or of a sweep (s left of the path, t up from it): a preset or points typed, seen as it is drawn ---- */
+const IPC_PRE={rev:['cyl','cone','sph','tor','tube','cust'],sweep:['rect','circ','ang','cust']},
+  IPC_PPF={cyl:['r','h','zb'],cone:['r0','r1','h','zb'],sph:['r','half','zb'],tor:['R','rt','zb'],tube:['ro','ri','h','zb'],rect:['w','h'],circ:['d'],ang:['w','h','t'],cust:[]},
+  IPC_PPD={cyl:{r:300,h:900,zb:0},cone:{r0:400,r1:150,h:600,zb:0},sph:{r:400,half:'no',zb:0},tor:{R:500,rt:80,zb:0},tube:{ro:300,ri:250,h:900,zb:0},rect:{w:100,h:100},circ:{d:50},ang:{w:75,h:75,t:8}};
+const ipcPP=(kind,pp)=>pp.k==='cust'?null:ipcProf(kind,pp.k==='tor'?Object.assign({},pp,{r:pp.rt}):pp);
+const ipcPPName=f=>{const pp=f.pp||{};if(!pp.k||pp.k==='cust')return t('ipp_cust')+' · '+(f.prof||[]).length+' '+t('ipp_pts');return t('ipp_'+pp.k)+' · '+(IPC_PPF[pp.k]||[]).filter(k=>k!=='half').map(k=>Math.round(+pp[k]||0)).join(' × ')};
+function ipcSvg(kind,L){if(!L||L.length<2)return'';const xs=L.map(q=>q[0]).concat([0]),ys=L.map(q=>q[1]).concat([0]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),W=260,H=170,m=14,
+    k=Math.min((W-2*m)/Math.max(1,x1-x0),(H-2*m)/Math.max(1,y1-y0)),X=x=>m+(x-x0)*k+((W-2*m)-(x1-x0)*k)/2,Y=y=>H-m-(y-y0)*k-((H-2*m)-(y1-y0)*k)/2;
+  return`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="background:var(--bg2,#f3f5f8);border-radius:6px;display:block;margin:4px 0"><line x1="${X(0)}" y1="4" x2="${X(0)}" y2="${H-4}" stroke="#d9534f" stroke-dasharray="5 3" stroke-width="1"/>`
+    +(kind==='sweep'?`<line x1="4" y1="${Y(0)}" x2="${W-4}" y2="${Y(0)}" stroke="#d9534f" stroke-dasharray="5 3" stroke-width="1"/>`:'')
+    +`<polygon points="${L.map(q=>X(q[0]).toFixed(1)+','+Y(q[1]).toFixed(1)).join(' ')}" fill="#9fc2ec" fill-opacity=".55" stroke="#2a5d9f" stroke-width="1.6" stroke-linejoin="round"/>`
+    +`<text x="${W-6}" y="${H-5}" text-anchor="end" font-size="10" fill="#6a7385">${t(kind==='rev'?'ipp_axis':'ipp_path')}</text></svg>`}
+function ipcParse(s){const o=[];for(const ln of String(s||'').split(/[\n;]+/)){const m=ln.trim().split(/[\s,]+/).map(Number);if(m.length>=2&&isFinite(m[0])&&isFinite(m[1]))o.push([m[0],m[1]])}return o}
+function ipcProfDlg(kind,base,re){const E=ipcEd();if(!E)return;const F0=re!=null?ipcF(E)[re]:null;ui.ipPP=ui.ipPP||{};
+  const S={pp:Object.assign({},(F0&&F0.pp&&F0.pp.k?F0.pp:null)||ui.ipPP[kind]||(kind==='rev'?Object.assign({k:'cyl'},IPC_PPD.cyl):Object.assign({k:'rect'},IPC_PPD.rect))),
+    a0:F0?+F0.a0||0:0,a1:F0?+F0.a1:360,z:F0?+F0.z||0:(ui.ipZ!=null?ui.ipZ:900),txt:''};
+  if(F0&&(!F0.pp||!F0.pp.k))S.pp={k:'cust'};S.txt=((F0&&F0.prof)||ipcPP(kind,S.pp)||[]).map(q=>q[0]+', '+q[1]).join('\n');
+  const cur=()=>S.pp.k==='cust'?ipcParse(S.txt):ipcPP(kind,S.pp),U=t('u_mm');
+  const fields=()=>(IPC_PPF[S.pp.k]||[]).map(k=>k==='half'?`<div class="pr"><label for="ipp_${k}">${t('ipp_f_half')}</label><div><select id="ipp_${k}" data-pp="half"><option value="no"${S.pp.half!=='yes'?' selected':''}>${t('ipp_full')}</option><option value="yes"${S.pp.half==='yes'?' selected':''}>${t('ipp_dome')}</option></select></div></div>`
+      :`<div class="pr"><label for="ipp_${k}">${t('ipp_f_'+k)}</label><div><input type="number" id="ipp_${k}" data-pp="${k}" value="${S.pp[k]!=null?S.pp[k]:''}" step="10"><span class="u">${U}</span></div></div>`).join('')
+    +(S.pp.k==='cust'?`<div class="pr"><label for="ippT">${t(kind==='rev'?'ipp_ptsr':'ipp_ptss')}</label><div><textarea id="ippT" rows="6" maxlength="4000">${esc(S.txt)}</textarea></div></div>`:'');
+  const body=()=>`<p class="note">${t(kind==='rev'?'ipp_note_rev':'ipp_note_sw')}</p><div class="pr"><label for="ippK">${t('ipp_kind')}</label><div><select id="ippK">${IPC_PRE[kind].map(k=>`<option value="${k}"${k===S.pp.k?' selected':''}>${t('ipp_'+k)}</option>`).join('')}</select></div></div>`
+    +`<div id="ippF">${fields()}</div>`+(kind==='rev'?`<div class="pr"><label for="ippA0">${t('p_ipa0')}</label><div><input type="number" id="ippA0" value="${S.a0}" step="15"><span class="u">°</span></div></div><div class="pr"><label for="ippA1">${t('p_ipa1')}</label><div><input type="number" id="ippA1" value="${S.a1}" step="15"><span class="u">°</span></div></div>`
+      :`<div class="pr"><label for="ippZ">${t('p_ipzs')}</label><div><input type="number" id="ippZ" value="${S.z}" step="10"><span class="u">${U}</span></div></div>`)
+    +`<div id="ippV">${ipcSvg(kind,cur())}</div><p class="note" id="ippMsg"></p>`;
+  const redraw=()=>{const v=$('#ippV');if(v)v.innerHTML=ipcSvg(kind,cur())};
+  openDlg(t(kind==='rev'?'ipp_trev':'ipp_tsw'),body(),`<button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ipp="ok">${t('ok')}</button>`,{
+    change(ev){const el=ev.target;if(el.id==='ippK'){const k=el.value;if(k==='cust'){const L=cur();if(L)S.txt=L.map(q=>q[0]+', '+q[1]).join('\n');S.pp={k}}else S.pp=Object.assign({k},IPC_PPD[k]);$('#ippF').innerHTML=fields();redraw();return}
+      if(el.dataset.pp==='half'){S.pp.half=el.value;redraw();return}this.input(ev)},
+    input(ev){const el=ev.target,p=el.dataset.pp;if(p&&p!=='half'){S.pp[p]=parseFloat(el.value);redraw()}else if(el.id==='ippT'){S.txt=el.value;redraw()}else if(el.id==='ippA0')S.a0=parseFloat(el.value);else if(el.id==='ippA1')S.a1=parseFloat(el.value);else if(el.id==='ippZ')S.z=parseFloat(el.value)},
+    click(ev){const b=ev.target.closest?ev.target.closest('[data-ipp]'):ev.target;if(!b||b.dataset.ipp!=='ok')return;const L=cur(),msg=$('#ippMsg'),pts=ipcPts(L);
+      if(!pts||Math.abs(area2(pts))<1){msg.textContent=t('ipp_bad');return}if(kind==='rev'&&pts.some(q=>q[0]<-0.01)){msg.textContent=t('ipp_neg');return}
+      if(kind==='rev'&&!(isFinite(S.a0)&&isFinite(S.a1)&&S.a1-S.a0>=1)){msg.textContent=t('ipp_aerr');return}if(kind==='sweep'&&!isFinite(S.z)){msg.textContent=t('ipp_bad');return}
+      closeDlg();const pp=S.pp.k==='cust'?{k:'cust'}:Object.assign({},S.pp);if(S.pp.k!=='cust')ui.ipPP[kind]=Object.assign({},S.pp);
+      const prof=pts.map(q=>[ipcR(q[0]),ipcR(q[1])]);
+      if(kind==='rev'){const o={prof,pp,a0:S.a0,a1:Math.min(S.a1,S.a0+360)};if(F0)ipcProfSet(re,o);else ipcAdd(ipcNewForm('rev',Object.assign({c:base.c},o)))}
+      else{ui.ipZ=S.z;const o={prof,pp,z:S.z};if(F0)ipcProfSet(re,o);else ipcAdd(ipcNewForm('sweep',Object.assign({path:base.path,cl:base.cl},o)))}}})}
+/* the profile set again: a sweep in a mirrored component keeps its side */
+function ipcProfSet(i,o){const E=ipcEd();if(!E)return;edit(()=>{const e=P.els.find(x=>x.id===E.id),f=e&&e.forms[i];if(!f)return;const p=e.mi&&f.k==='sweep'?o.prof.map(q=>[-q[0],q[1]]):o.prof;Object.assign(f,o,{prof:p})});ui.ipf=i;refresh()}
+/* ---- Properties ---- */
+const ipcMatOpts=()=>IPC_MATS.map(k=>[k,t('mat_'+k)]).concat(matList().map(M=>['c:'+M.id,M.name]));
+function ipcFormRows(e,f){const U=t('u_mm');let h=PR.grp('g_ipform')+PR.ro('p_ipk',t('ipk_'+f.k))+PR.sel('ipfv','p_ipfv',f.v?'v':'s',[['s',t('ipf_solid')],['v',t('ipf_void')]]);
+  if(!f.v)h+=PR.sel('ipfmat','p_ipfmat',f.mat||'plain',ipcMatOpts());
+  if(f.k==='ext'||f.k==='blend')h+=PR.num('ipfz0',f.k==='ext'?'p_ipz0e':'p_ipz0b',f.z0,U,'step="10"')+PR.num('ipfz1',f.k==='ext'?'p_ipz1e':'p_ipz1b',f.z1,U,'step="10"');
+  if(f.k==='rev')h+=PR.num('ipfa0','p_ipa0',f.a0,'°','step="15"')+PR.num('ipfa1','p_ipa1',f.a1,'°','step="15"')+PR.ro('p_ipprof',ipcPPName(f));
+  if(f.k==='sweep'){let L=0;const p=f.path||[];for(let i=0;i+1<p.length+(f.cl?1:0);i++){const a=p[i],b=p[(i+1)%p.length];L+=Math.hypot(b[0]-a[0],b[1]-a[1])}h+=PR.num('ipfz','p_ipzs',f.z,U,'step="10"')+PR.ro('p_ipprof',ipcPPName(f))+PR.ro('p_iplen',fmtLen(L)+' '+unitName())}
+  return h+`<div class="pa">${f.k!=='rev'?`<button class="btn" data-act="ipfsk">${t('a_ipfsk')}</button>`:''}${f.k==='rev'||f.k==='sweep'?`<button class="btn" data-act="ipfprof">${t('a_ipfprof')}…</button>`:''}<button class="btn" data-act="ipfdel">${t('a_ipfdel')}</button></div>`}
+function ipcRows(els){const e=els[0],one=els.length===1,E=ipcEd(),ed=one&&!!E&&E===e,V=k=>{const a=e[k];return els.every(x=>x[k]===a)?a:''};let h='';
+  if(ed){const F=ipcF(e);h+=PR.grp('g_ipforms')+`<div class="pa" style="flex-wrap:wrap">`+F.map((f,i)=>`<button class="btn${ui.ipf===i?' primary':''}" data-act="ipfsel" data-arg="${i}">${i+1} · ${esc(t(f.v?'ipv_'+f.k:'ipk_'+f.k))}</button>`).join('')+`</div>`;
+    const f=ui.ipf!=null?F[ui.ipf]:null;h+=f?ipcFormRows(e,f):`<div class="pnote">${t(F.length?'n_ipfpick':'n_ipfnone')}</div>`}
+  h+=PR.grp('g_ipfam')+(one?PR.text('ipname','p_ipname',e.name||''):'')+PR.sel('ipic','p_ipic',V('ic'),IPC_IC.map(k=>[k,ipcICName(k)]));
+  const L=lvl(P,e.level);h+=PR.grp('g_constraints')+PR.ro('p_level',els.every(x=>x.level===e.level)&&L?L.name:t('varies'));
+  let vol=0;for(const x of els){const G=ipcGeo(P,x);if(G)vol+=G.vol}h+=PR.grp('g_dims')+PR.ro('p_volume',fmtVol(vol)+' '+volUnit());
+  if(one){const G=ipcGeo(P,e),F=ipcF(e);if(G&&G.bb)h+=PR.ro('p_iphz',fmtLen(G.bb[2]-elev(P,e.level))+' – '+fmtLen(G.bb[5]-elev(P,e.level))+' '+unitName());h+=PR.ro('p_ipnf',t('ipc_nf',F.filter(f=>!f.v).length,F.filter(f=>f.v).length))}
+  if(one&&!ed)h+=`<div class="pa"><button class="btn" data-act="ipedit">${t('a_ipedit')}</button></div>`;return h}
+function ipcNewRows(tl){const d=defs(tl),k=IPC_TOOL[tl],U=t('u_mm');let h=PR.grp('g_ipform')+PR.sel('ipfv','p_ipfv',ui.ipVoid?'v':'s',[['s',t('ipf_solid')],['v',t('ipf_void')]]);
+  if(!ui.ipVoid)h+=PR.sel('ipfmat','p_ipfmat',d.mat||'plain',ipcMatOpts());
+  if(k==='ext'||k==='blend')h+=PR.num('ipfz0',k==='ext'?'p_ipz0e':'p_ipz0b',d.z0!=null?d.z0:0,U,'step="10"')+PR.num('ipfz1',k==='ext'?'p_ipz1e':'p_ipz1b',d.z1!=null?d.z1:1000,U,'step="10"');
+  return h+`<div class="pnote">${t('n_'+tl)}</div>`}
+{const f0=catRows;catRows=(cat,els,isNew)=>IPC_TOOL[cat]?ipcNewRows(cat):cat==='ipc'?ipcRows(els):f0(cat,els,isNew)}
+XF.push((cat,o,key,raw)=>{const num=()=>{const x=parseFloat(raw);return isFinite(x)?ipcR(x):null};
+  if(IPC_TOOL[cat]){if(key==='ipfv'){ui.ipVoid=raw==='v';return true}if(key==='ipfmat'){o.mat=String(raw);return true}if(key==='ipfz0'||key==='ipfz1'){const x=num();if(x!=null)o[key.slice(3)]=x;return true}return false}
+  if(cat!=='ipc')return false;
+  if(key==='ipname'){const s=ipcClip(raw);if(!s)return true;if(s!==o.name&&ipcTaken(s,o.id)){toast(t('ipc_taken',s));return true}o.name=s;return true}
+  if(key==='ipic'){if(IPC_IC.includes(raw))o.ic=raw;return true}
+  if(key.slice(0,3)==='ipf'){const f=ui.ipe&&ui.ipe.id===o.id&&ui.ipf!=null?ipcF(o)[ui.ipf]:null;if(!f)return true;const k=key.slice(3);
+    if(k==='v'){if(raw==='v')f.v=1;else delete f.v;return true}if(k==='mat'){if(raw==='plain')delete f.mat;else f.mat=String(raw);return true}
+    const x=num();if(x==null)return true;if(k==='z0'||k==='z1'){f[k]=x;if(f.z1-f.z0<1){if(k==='z0')f.z1=ipcR(x+Math.max(1,(f.z1||0)-(f.z0||0)));else f.z0=ipcR(x-1)}return true}
+    if(k==='a0'){const sp=(+f.a1||0)-(+f.a0||0);f.a0=x;f.a1=ipcR(x+sp);return true}if(k==='a1'){f.a1=clamp(x,(+f.a0||0)+1,(+f.a0||0)+360);return true}if(k==='z'){f.z=x;return true}return true}
+  return false});
+{const f0=renderProps;renderProps=()=>{if(ui.ipf!=null&&!(ui.ipe&&ui.sel.size===1&&ui.sel.has(ui.ipe.id)))ui.ipf=null;f0();if(ui.sel.size!==1||CREATE_TOOLS.has(ui.tool))return;const e=IDX.get([...ui.sel][0]);if(!ipcIs(e))return;
+  const n=$('#props .tsel .none');if(n)n.textContent=(ui.ipe&&ui.ipe.id===e.id?t('ipc_editing')+' · ':'')+e.name}}
+/* ---- the ribbon: Model In-Place beside Component; the editor's own panels; Edit In-Place for one selected ---- */
+for(const [tab,pn,after] of [['arch','p_build','furn'],['struct','p_struct','bsys']]){const R=RIBBON.find(r=>r.id===tab),p=R&&R.panels.find(x=>x.t===pn);if(p&&!p.b.includes('@ipcnew')){const i=p.b.indexOf(after);p.b.splice(i<0?p.b.length:i+1,0,'@ipcnew')}}
+/* the editor keeps what works on its forms: no groups, assemblies or Create Similar while it is open */
+{const f0=ctxPanels;ctxPanels=()=>{const L=f0();if(!ui.ipe)return L;const no=new Set(['@group','@ungroup','@asmmake','@asmdis','@asmedit','@asmviews','@similar','@ipedit']);return L.map(p=>Object.assign({},p,{b:p.b.filter(b=>!no.has(b))})).filter(p=>p.b.length)}}
+XR.push(tl=>{if(ui.ipe)return[{t:'p_ipforms',b:['ipext','ipblend','iprev','ipswp','@ipvoid']},{t:'p_ipmode',b:['@ipfin','@ipcan']}];
+  if(tl==='modify'&&ui.sel.size===1&&ipcIs(IDX.get([...ui.sel][0])))return[{t:'p_ipc',b:['@ipedit']}];return[]});
+/* the editor draws the base of a blend while its top is sketched */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||v.kind!=='plan'||ui.tool!=='ipblend'||!ui.ipBase)return;ctx.strokeStyle=C.sketch;ctx.lineWidth=1.2;g.dash([2,1]);g.path(ui.ipBase);ctx.stroke();g.dash(null)});
+/* ---- the category ---- */
+{const i=VG_CATS.indexOf('furn');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'ipc')}FLT_CATS.push('ipc');SF_CATS.push('ipc');SF_DISC.arch.push('ipc');TAG_CATS.push('ipc');
+SF_DEF.ipc=['ipname','ipcat','level','ipmat','vol','count','comment'];DXF_LAYER.ipc=['A-GENM',7];
+/* the buttons */
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"',SH='<ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.4" rx="8.6" ry="1.3"/>';
+  sp.insertAdjacentHTML('beforeend',
+    `<symbol id="i-ipc" viewBox="0 0 24 24">${SH}<path class="i-Wc" fill="#b5793d" ${E} d="M12 13.4 21 8.9 21 15.6 12 20.1z"/><path class="i-Wb" fill="#dba56a" ${E} d="M3 8.9 12 13.4 12 20.1 3 15.6z"/><path class="i-Wa" fill="#f5dfbd" ${E} d="M3 8.9 12 4.4 21 8.9 12 13.4z"/><path fill="none" stroke="#7a4c1c" stroke-width=".8" stroke-linecap="round" d="M14.8 6.6l3.6 1.8M7 9.2l4 2"/><path fill="#2f7fd6" stroke="#2a3550" stroke-width=".4" d="M16.5 1.8l2.2 1.1-5.4 6.4-1.6.4.3-1.5z"/></symbol>`
+   +`<symbol id="i-ipext" viewBox="0 0 24 24">${SH}<path class="i-Pb" fill="#9fc2ec" ${E} d="M4.5 8 12 11.8 12 20 4.5 16.2z"/><path class="i-Pc" fill="#5f93d3" ${E} d="M12 11.8 19.5 8.6 19.5 16.8 12 20z"/><path class="i-Pa" fill="#e3eefb" ${E} d="M4.5 8 9.6 4.4 16.8 5 19.5 8.6 12 11.8z"/><path fill="none" stroke="#c0392b" stroke-width="1" stroke-linecap="round" d="M12 10V2.2M10.4 3.8 12 2.2l1.6 1.6"/></symbol>`
+   +`<symbol id="i-ipblend" viewBox="0 0 24 24">${SH}<path class="i-Pb" fill="#9fc2ec" ${E} d="M3 15 12 19.6 12 8.4 8.8 6.8z"/><path class="i-Pc" fill="#5f93d3" ${E} d="M12 19.6 21 15 15.2 6.8 12 8.4z"/><path class="i-Pa" fill="#e3eefb" ${E} d="M8.8 6.8 12 5.2 15.2 6.8 12 8.4z"/><path fill="none" stroke="#2a3550" stroke-width=".5" stroke-dasharray="1 .8" d="M3 15 12 10.4 21 15"/></symbol>`
+   +`<symbol id="i-iprev" viewBox="0 0 24 24">${SH}<path class="i-Pb" fill="#9fc2ec" ${E} d="M8.6 3.4h6.8c0 2.8-1.4 3.6-1.4 5.6 0 2.6 4 3.6 4 7.6 0 2.6-2.6 4-6 4s-6-1.4-6-4c0-4 4-5 4-7.6 0-2-1.4-2.8-1.4-5.6z"/><path class="i-Pc" fill="#5f93d3" opacity=".55" d="M12 20.6c3.4 0 6-1.4 6-4 0-4-4-5-4-7.6 0-2 1.4-2.8 1.4-5.6H12z"/><ellipse class="i-Pa" fill="#e3eefb" ${E} cx="12" cy="3.4" rx="3.4" ry="1"/><path fill="none" stroke="#c0392b" stroke-width=".7" stroke-dasharray="1.6 1" d="M12 .8v22.4"/></symbol>`
+   +`<symbol id="i-ipswp" viewBox="0 0 24 24">${SH}<path class="i-Pb" fill="#9fc2ec" ${E} d="M3.6 19.4V10c0-3.6 2.4-5.6 6-5.6h10.6v4.4H10.2c-1.2 0-2.2.8-2.2 2.2v8.4z"/><path class="i-Pc" fill="#5f93d3" ${E} d="M3.6 19.4 8 19.4 9.4 20.6 5 20.6z"/><ellipse class="i-Pa" fill="#e3eefb" ${E} cx="20.2" cy="6.6" rx="1.2" ry="2.2"/><path fill="none" stroke="#c0392b" stroke-width=".8" stroke-dasharray="1.4 .9" d="M5.8 19.6V10.6c0-2.6 1.6-4 4-4h10.4"/></symbol>`
+   +`<symbol id="i-ipvoid" viewBox="0 0 24 24"><path fill="#f6b46b" fill-opacity=".45" stroke="#c96a12" stroke-width=".9" stroke-dasharray="1.8 1" stroke-linejoin="round" d="M3 8.9 12 4.4 21 8.9 21 15.6 12 20.1 3 15.6z"/><path fill="none" stroke="#c96a12" stroke-width=".7" stroke-dasharray="1.4 .9" d="M3 8.9 12 13.4 21 8.9M12 13.4V20.1"/></symbol>`)})();
+Object.assign(BTN,{ipc:['ipc',''],'@ipcnew':['ipc',''],ipext:['ipext',''],ipblend:['ipblend',''],iprev:['iprev',''],ipswp:['ipswp',''],'@ipvoid':['ipvoid',''],'@ipfin':['finish',''],'@ipcan':['cancel',''],'@ipedit':['ipc','']});
+Object.assign(STR,{
+  cat_ipc:['ชิ้นงานในโครงการ (In-Place)','In-Place Components'],a_ipcnew:['สร้างชิ้นงานในโครงการ (Model In-Place)','Model In-Place'],ipc_new:['สร้างชิ้นงานในโครงการ (Model In-Place)','Model In-Place'],
+  t_ipext:['รูปทรงยื่น (Extrusion)','Extrusion'],t_ipblend:['รูปทรงผสาน (Blend)','Blend'],t_iprev:['รูปทรงหมุน (Revolve)','Revolve'],t_ipswp:['รูปทรงกวาด (Sweep)','Sweep'],
+  cat_ipext:['รูปทรงยื่น (Extrusion)','Extrusion'],cat_ipblend:['รูปทรงผสาน (Blend)','Blend'],cat_iprev:['รูปทรงหมุน (Revolve)','Revolve'],cat_ipswp:['รูปทรงกวาด (Sweep)','Sweep'],
+  a_ipvoid:['ช่องว่าง (Void Forms)','Void Forms'],a_ipfin:['เสร็จชิ้นงาน (Finish Model)','Finish Model'],a_ipcan:['ยกเลิกชิ้นงาน (Cancel Model)','Cancel Model'],a_ipedit:['แก้ไขชิ้นงาน (Edit In-Place)','Edit In-Place'],
+  p_ipforms:['รูปทรง (Forms)','Forms'],p_ipmode:['ชิ้นงานในโครงการ','In-Place Editor'],p_ipc:['ชิ้นงานในโครงการ','Model'],
+  ipc_new_note:['เลือกหมวดของชิ้นงาน (Family Category) ซึ่งใช้ซ่อนหรือแสดงชิ้นงาน ทำตาราง และส่งออก IFC แล้วตั้งชื่อ จากนั้นสร้างรูปทรงในแปลนด้วยปุ่มในแถบเมนู','Choose its family category (visibility, schedules and the IFC class go by it) and a name, then build its forms in the plan with the buttons on the ribbon.'],
+  p_ipic:['หมวดของชิ้นงาน (Family Category)','Family Category'],p_ipname:['ชื่อ (Name)','Name'],
+  ipc_taken:['ชื่อ "{0}" มีชิ้นงานในโครงการอื่นใช้แล้ว','"{0}" is the name of another in-place component'],
+  ipc_busy:['กำลังแก้ไขชิ้นงาน กลุ่ม หรือชุดประกอบอยู่ กดเสร็จหรือยกเลิกก่อน','An in-place component, a group or an assembly is being edited: finish or cancel it first'],
+  ipc_eview:['เปิดแปลนของชั้นก่อน แล้วจึงสร้างหรือแก้ไขชิ้นงานในโครงการ','Open a floor plan first: in-place components are made and edited there'],
+  ipc_eon:['กำลังแก้ไข "{0}" · สร้างรูปทรงด้วยปุ่มในแถบเมนู คลิกรูปทรงเพื่อแก้ แล้วกด เสร็จชิ้นงาน','Editing "{0}" · make forms with the ribbon buttons, click a form to change it, then Finish Model'],
+  ipc_nosolid:['ชิ้นงานยังไม่มีรูปทรงตัน สร้างรูปทรงก่อน หรือกด ยกเลิกชิ้นงาน','The component has no solid form yet: make one, or Cancel Model'],
+  ipc_ecancel:['ยกเลิกแล้ว ชิ้นงานกลับเป็นเหมือนก่อนแก้','Cancelled: the component is as it was'],ipc_edone:['เสร็จชิ้นงาน "{0}" · {1} รูปทรง','Finished "{0}" · {1} forms'],
+  ipc_sel1:['เลือกชิ้นงานในโครงการหนึ่งชิ้น','Select one in-place component'],ipc_fmade:['สร้าง{0} แล้ว · ตั้งค่าได้ใน คุณสมบัติ','{0} made · set it in Properties'],ipc_fdel:['ลบรูปทรงแล้ว','Form deleted'],
+  ipc_path2:['เส้นทางต้องมีอย่างน้อยสองจุด','A path needs at least two points'],ipc_only:['ระหว่างแก้ไขชิ้นงานในโครงการใช้ได้เฉพาะรูปทรง ระนาบอ้างอิง และเครื่องมือแก้ไข · กด เสร็จ หรือ ยกเลิก ก่อน','While editing in place only the forms, reference planes and the modify tools work · Finish or Cancel first'],ipc_elabel:['กำลังแก้ไขชิ้นงาน: {0}','Editing in place: {0}'],ipc_editing:['กำลังแก้ไข','Editing'],
+  ipc_nf:['ตัน {0} · ช่องว่าง {1}','{0} solid · {1} void'],
+  icat_gen:['ชิ้นงานทั่วไป (Generic Models)','Generic Models'],icat_furn:['เฟอร์นิเจอร์ (Furniture)','Furniture'],icat_case:['ตู้และเคาน์เตอร์ (Casework)','Casework'],icat_spec:['อุปกรณ์เฉพาะ (Specialty Equipment)','Specialty Equipment'],
+  icat_fixture:['สุขภัณฑ์ (Plumbing Fixtures)','Plumbing Fixtures'],icat_equip:['อุปกรณ์เครื่องกล (Mechanical Equipment)','Mechanical Equipment'],icat_column:['เสาโครงสร้าง (Structural Columns)','Structural Columns'],
+  icat_beam:['คานโครงสร้าง (Structural Framing)','Structural Framing'],icat_footing:['ฐานราก (Structural Foundations)','Structural Foundations'],icat_floor:['พื้น (Floors)','Floors'],icat_roof:['หลังคา (Roofs)','Roofs'],icat_wall:['ผนัง (Walls)','Walls'],
+  icn_gen:['ชิ้นงาน','Model In-Place'],icn_furn:['เฟอร์นิเจอร์','Furniture'],icn_case:['เคาน์เตอร์','Casework'],icn_spec:['อุปกรณ์เฉพาะ','Specialty Equipment'],icn_fixture:['สุขภัณฑ์','Plumbing Fixture'],icn_equip:['ฐานเครื่อง','Equipment'],
+  icn_column:['เสา','Column'],icn_beam:['คาน','Beam'],icn_footing:['ฐานราก','Foundation'],icn_floor:['พื้น','Floor'],icn_roof:['หลังคา','Roof'],icn_wall:['ผนัง','Wall'],
+  ipk_ext:['รูปทรงยื่น (Extrusion)','Extrusion'],ipk_blend:['รูปทรงผสาน (Blend)','Blend'],ipk_rev:['รูปทรงหมุน (Revolve)','Revolve'],ipk_sweep:['รูปทรงกวาด (Sweep)','Sweep'],
+  ipv_ext:['ช่องว่างยื่น (Void Extrusion)','Void Extrusion'],ipv_blend:['ช่องว่างผสาน (Void Blend)','Void Blend'],ipv_rev:['ช่องว่างหมุน (Void Revolve)','Void Revolve'],ipv_sweep:['ช่องว่างกวาด (Void Sweep)','Void Sweep'],
+  g_ipforms:['รูปทรงของชิ้นงาน','Forms'],g_ipform:['รูปทรงที่เลือก','Form'],g_ipfam:['ชิ้นงานในโครงการ (In-Place Family)','In-Place Family'],
+  p_ipk:['ชนิดรูปทรง','Form'],p_ipfv:['ตันหรือช่องว่าง (Solid/Void)','Solid/Void'],ipf_solid:['ตัน (Solid)','Solid'],ipf_void:['ช่องว่าง (Void)','Void'],p_ipfmat:['วัสดุ (Material)','Material'],
+  p_ipz0e:['ระดับเริ่ม (Extrusion Start)','Extrusion Start'],p_ipz1e:['ระดับจบ (Extrusion End)','Extrusion End'],p_ipz0b:['ระดับฐาน (First End)','First End'],p_ipz1b:['ระดับยอด (Second End)','Second End'],
+  p_ipa0:['มุมเริ่ม (Start Angle)','Start Angle'],p_ipa1:['มุมจบ (End Angle)','End Angle'],p_ipzs:['ความสูงแนวกวาด','Path Height'],p_ipprof:['รูปตัด (Profile)','Profile'],p_iplen:['ความยาวแนวกวาด','Path Length'],
+  p_iphz:['ช่วงความสูงจากระดับชั้น','Height above Level'],p_ipnf:['รูปทรง','Forms'],
+  a_ipfsk:['ร่างใหม่ (Edit Sketch)','Edit Sketch'],a_ipfprof:['แก้รูปตัด (Edit Profile)','Edit Profile'],a_ipfdel:['ลบรูปทรง','Delete Form'],
+  n_ipfpick:['คลิกรูปทรงในแปลน หรือปุ่มด้านบน เพื่อแก้รูปทรงนั้น · ย้าย คัดลอก หมุน มิเรอร์ และลบ ใช้กับรูปทรงที่เลือก','Click a form in the plan, or a button above, to change it · Move, Copy, Rotate, Mirror and Delete work on the form picked'],
+  n_ipfnone:['ยังไม่มีรูปทรง · เลือก รูปทรงยื่น ผสาน หมุน หรือกวาด จากแถบเมนู','No forms yet · choose Extrusion, Blend, Revolve or Sweep on the ribbon'],
+  n_ipext:['ร่างรูปปิดในแปลน (สี่เหลี่ยมหรือเส้นต่อกัน) รูปจะยื่นขึ้นจากระดับเริ่มถึงระดับจบ','Sketch a closed outline in the plan (a rectangle or lines): it is pushed up from the Extrusion Start to the End'],
+  n_ipblend:['ร่างขอบฐาน แล้วร่างขอบบน (Edit Top) รูปทรงเชื่อมสองขอบด้วยผิวตรง','Sketch the base, then the top (Edit Top): straight faces join the two'],
+  n_iprev:['คลิกตำแหน่งแกนหมุน แล้วเลือกรูปตัดในหน้าต่าง','Click where the axis stands, then choose the profile in the dialog'],
+  n_ipswp:['ร่างเส้นทาง (เปิดหรือปิด) กด เสร็จ แล้วเลือกรูปตัดในหน้าต่าง','Sketch the path (open or closed), press Finish, then choose the profile'],
+  h_ipext:['ร่างรูปทรงยื่น','Extrusion'],h_ipblend1:['ร่างขอบฐานของรูปทรงผสาน','Blend: sketch the base'],h_ipblend2:['ร่างขอบบน (Edit Top) ของรูปทรงผสาน','Blend: now sketch the top (Edit Top)'],
+  h_ipswp:['ร่างเส้นทางของรูปทรงกวาด · กด เสร็จ สำหรับเส้นทางเปิด','Sweep: sketch the path · Finish for an open path'],h_iprev:['คลิกตำแหน่งแกนหมุนของรูปทรงหมุน','Revolve: click where its axis stands'],
+  h_ipresk:['ร่างใหม่แทนรูปเดิม','sketching again in place of the old outline'],
+  ipp_trev:['รูปตัดของรูปทรงหมุน (Revolve)','Revolve Profile'],ipp_tsw:['รูปตัดของรูปทรงกวาด (Sweep)','Sweep Profile'],ipp_kind:['แบบรูปตัด','Profile'],
+  ipp_cyl:['ทรงกระบอก','Cylinder'],ipp_cone:['ทรงกรวยตัด','Cone'],ipp_sph:['ทรงกลม','Sphere'],ipp_tor:['วงแหวน','Torus'],ipp_tube:['ท่อกลวง','Tube'],ipp_cust:['กำหนดจุดเอง','Custom Points'],
+  ipp_rect:['สี่เหลี่ยม','Rectangle'],ipp_circ:['วงกลม','Circle'],ipp_ang:['เหล็กฉาก','Angle'],
+  ipp_f_r:['รัศมี','Radius'],ipp_f_h:['ความสูง','Height'],ipp_f_zb:['ระดับฐาน','Base Height'],ipp_f_r0:['รัศมีล่าง','Bottom Radius'],ipp_f_r1:['รัศมีบน','Top Radius'],ipp_f_half:['รูปทรง','Shape'],
+  ipp_full:['ทรงกลมเต็มลูก','Whole sphere'],ipp_dome:['ครึ่งลูก (โดม)','Half (dome)'],ipp_f_R:['รัศมีวง','Ring Radius'],ipp_f_rt:['รัศมีหน้าตัด','Tube Radius'],ipp_f_ro:['รัศมีนอก','Outer Radius'],
+  ipp_f_ri:['รัศมีใน','Inner Radius'],ipp_f_w:['กว้าง','Width'],ipp_f_d:['เส้นผ่านศูนย์กลาง','Diameter'],ipp_f_t:['ความหนา','Thickness'],
+  ipp_ptsr:['จุด r, z (บรรทัดละจุด)','Points r, z (one a line)'],ipp_ptss:['จุด s, t (บรรทัดละจุด)','Points s, t (one a line)'],ipp_pts:['จุด','points'],ipp_axis:['แกนหมุน','axis'],ipp_path:['แนวกวาด','path'],
+  ipp_note_rev:['รูปตัดอยู่ในระนาบตั้งผ่านแกนหมุน: r คือระยะจากแกน z คือความสูงจากระดับชั้น รูปตัดหมุนรอบแกนจากมุมเริ่มถึงมุมจบ','The profile lies in an upright plane through the axis: r from the axis, z above the level. It turns about the axis from the Start Angle to the End Angle'],
+  ipp_note_sw:['รูปตัดตั้งฉากกับเส้นทาง: s คือระยะไปทางซ้ายของเส้นทาง t คือระยะขึ้นจากความสูงแนวกวาด','The profile stands across the path: s to the left of the path, t up from the path height'],
+  ipp_bad:['รูปตัดต้องเป็นรูปปิดอย่างน้อยสามจุด','The profile must be a closed outline of three points or more'],ipp_neg:['รูปตัดของรูปทรงหมุนต้องอยู่ด้านเดียวของแกน (r ไม่ติดลบ)','A revolve profile stays on one side of its axis (r is not negative)'],
+  ipp_aerr:['มุมจบต้องมากกว่ามุมเริ่ม','The End Angle must be greater than the Start Angle'],
+  c_ipname:['ชื่อ','Name'],c_ipcat:['หมวดของชิ้นงาน','Family Category'],c_ipforms:['จำนวนรูปทรง','Forms']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -34972,6 +35405,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.202 · ผนังเดียวมีประตู หน้าต่าง และช่องเปิดผนังซ้อนกันในแนวดิ่งได้แบบ Revit เช่น ช่องแสงเหนือประตู หรือหน้าต่างบานบนเหนือบานล่าง: ผนังเจาะช่องให้ทุกชิ้นทั้งใน 3 มิติ รูปด้าน รูปตัด ตาราง และ IFC (เดิมเจาะให้ชิ้นแรกชิ้นเดียว ชิ้นที่ซ้อนอยู่จมในเนื้อผนัง) ใช้ได้กับผนังชั้นเดียว ผนังหลายชั้นวัสดุ และผนังที่แก้รูปด้านข้าง (Edit Profile) · เครื่องมือ [[t_door]] [[t_window]] และ [[t_opening]] ใช้ได้ในรูปด้าน รูปตัด และมุมมอง 3 มิติแล้ว: คลิกบนผิวผนัง หน้าต่างและช่องเปิดวางตามความสูงของเมาส์ โดยจับธรณีของชนิดและแนวธรณีกับแนวหัวของช่องอื่นในผนังให้ ประตูวางที่ระดับชั้นใต้เมาส์ ภาพตัวอย่างบอกความสูงธรณี และถ้าทับกับช่องที่มีอยู่จะเป็นสีแดงและไม่วางให้ · ในแปลน ชิ้นที่ซ้อนกันแสดงเฉพาะชิ้นที่ระนาบตัดผ่าน (ถ้าไม่มี แสดงชิ้นที่ใกล้ระนาบตัดที่สุด) ชิ้นอื่นเป็นเส้นประสองข้าง และคลิกแล้วได้ชิ้นที่แสดงก่อน กด Tab เพื่อไปชิ้นที่ซ้อนอยู่ · Open IFC (V1.201) แปลงหน้าต่างที่ซ้อนอยู่เหนือช่องอื่นได้แล้ว รวมทั้งประตูหน้าต่างหลายชิ้นที่อยู่ในช่องเดียวกันของผนัง (หน้าต่างชิดกัน หรือช่องแสงบนหัวประตู) ผนังที่ช่องสูงเต็มผนังแบ่งออกเป็นสองท่อน และประตูที่ทะลุผนังสองแถวที่ซ้อนกัน ส่วนผนังสูงหลายชั้นแบ่งเฉพาะที่ระดับชั้น
 - V1.203 · [[cm_review]] ตรวจชิ้นงานที่แปลงมาจากลิงก์ IFC ด้วย (ผนัง พื้น เสา คาน ประตู หน้าต่าง ที่ได้จาก [[a_oifile]] ของ V1.201) แบบ Copy/Monitor ของ Revit: เมื่อได้ไฟล์ฉบับใหม่ให้กด [[ifc_reload]] ที่ลิงก์ โปรแกรมบอกทันทีว่าชิ้นงานที่แปลงไว้เปลี่ยนกี่ชิ้นและหายไปกี่ชิ้น แล้วกด [[cm_review]] ใน [[properties]] ของลิงก์ รายการบอกทีละชิ้นว่า ย้ายเท่าไร ขนาดเปลี่ยนจากเท่าไรเป็นเท่าไร ระดับหรือความสูงต่างเท่าไร รูปร่างเปลี่ยน หรือหายไปจากไฟล์ · ติ๊กแล้วกด [[cm_go]] ชิ้นงานจะย้ายหรือเปลี่ยนขนาดตามไฟล์โดยยังเป็นชิ้นเดิม ป้าย เส้นบอกระยะ และประตูหน้าต่างที่วางเพิ่มเองในผนังนั้นจึงยังอยู่ ส่วนชิ้นที่หายไปจากไฟล์ ติ๊กเพื่อลบ · ชิ้นที่แก้เองในโครงการขณะที่ไฟล์ไม่ได้เปลี่ยน แสดงเป็น [[cr_st_mine]] และไม่ถูกติ๊กไว้ให้ ติ๊กเองได้ถ้าต้องการคืนให้ตรงกับไฟล์ · [[cr_sel]] เลือกชิ้นงานของแถวที่ติ๊กให้ดูในมุมมอง · สำเนาของชิ้นงานที่แปลงมา (Copy, Array, Mirror) เป็นชิ้นงานของโครงการเอง ไม่ถูกติดตามและไม่ถูกลบเมื่อคืนชิ้นงานเข้าลิงก์ · ชิ้นที่ในไฟล์ใหม่แปลงเป็นชิ้นงานไม่ได้แล้ว (เช่น ผนังที่กลายเป็นผนังกระจก) ติ๊กแล้วกด [[cm_go]] จะลบชิ้นงานนั้นและให้ลิงก์แสดงตามไฟล์อีกครั้ง · ชิ้นใหม่ในไฟล์ ใช้ [[a_oiopen]] อีกครั้ง ผนังใหม่จะต่อกับผนังที่แปลงไว้แล้ว และประตูหน้าต่างใหม่เข้าไปอยู่ในผนังเดิมได้ เหมือนแปลงทั้งไฟล์ในครั้งเดียว
 - V1.204 · ชุดประกอบ (Assembly) แบบ Revit: เลือกชิ้นงาน (ผนัง คาน เสา พื้น ท่อ อุปกรณ์ ฯลฯ) แล้วกด [[a_asmmake]] ตั้ง [[asm_tname]] และ [[asm_nc]] คลิกชิ้นใดก็เลือกทั้งชุด (Tab เลือกชิ้นเดียว) ย้าย หมุน คัดลอก มิเรอร์ได้ทั้งชุด · ชุดที่เหมือนกันทุกชิ้นได้ชื่อเดียวกันเอง (คัดลอกไปที่ไหนหรือหมุนแค่ไหนก็ยังเป็นชนิดเดียวกัน) ถ้าชุดไหนถูกแก้จนไม่เหมือนเพื่อนจะได้ชื่อใหม่ หรือได้ชื่อของชนิดที่ตอนนี้เหมือนกัน · [[a_asmedit]] (ดับเบิลคลิกก็ได้) ใช้ [[t_asmadd]] / [[t_asmrem]] ได้ทั้งในแปลนและ 3 มิติ · [[a_asmdis]] ชิ้นงานอยู่ที่เดิม · [[a_asmviews]]: [[asv_3d]], รูปด้านหน้า หลัง ซ้าย ขวา บน ล่าง, [[asv_seca]] / [[asv_secb]] ตัดกลางชุด, [[asv_parts]], [[asv_mto]] และแผ่นงานที่วางมุมมองให้เอง มุมมองเหล่านี้แสดงเฉพาะชิ้นในชุด หันตามแกนของชุด และย้ายตามเมื่อชุดย้ายหรือเปลี่ยน อยู่ในกลุ่ม [[br_asm]] ของ Project Browser · ส่งออก IFC เป็น IfcElementAssembly ที่มีชิ้นในชุดอยู่ข้างใน
+- V1.205 · ชิ้นงานในโครงการ (Model In-Place) แบบ Revit: กด [[a_ipcnew]] ในแถบสถาปัตย์หรือโครงสร้าง เลือก [[p_ipic]] และตั้งชื่อ แล้วสร้างรูปทรงในแปลน: [[t_ipext]] (ร่างรูปปิด ยื่นจากระดับเริ่มถึงระดับจบ) [[t_ipblend]] (ร่างขอบฐานแล้วขอบบน) [[t_iprev]] (คลิกแกนหมุน เลือกรูปตัด ทรงกระบอก กรวย ทรงกลม วงแหวน ท่อ หรือกำหนดจุดเอง) และ [[t_ipswp]] (ร่างเส้นทางแล้วเลือกรูปตัด) · [[a_ipvoid]] ทำรูปทรงเป็นช่องว่างที่เจาะรูปทรงตันของชิ้นงาน · คลิกรูปทรงเพื่อแก้ระดับ มุม วัสดุ ร่างใหม่ หรือแก้รูปตัด ย้าย คัดลอก หมุน มิเรอร์ ลบ ใช้กับรูปทรงที่เลือก · กด [[a_ipfin]] หรือ [[a_ipcan]] · ดับเบิลคลิกชิ้นงานเพื่อแก้อีกครั้ง · แปลนแสดงเส้นตัดและเส้นที่มองเห็นจากบน ตารางมีปริมาตรและวัสดุ ส่งออก IFC ตามหมวด
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -35309,6 +35743,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.202 · One wall can hold doors, windows and wall openings above one another, as in Revit: a fanlight over a door, a high window over a low one. The wall is cut for every one of them in 3D, elevations, sections, schedules and IFC (before, only the first on a stretch was cut and the others stood in solid wall); this works for walls of one piece, of several layers and with an edited profile · The [[t_door]], [[t_window]] and [[t_opening]] tools now work in elevations, sections and 3D views: click a wall face; a window or an opening goes at the height of the pointer and catches the sill of its type and the sills and heads of the other inserts of the wall, a door stands on the level under the pointer. The preview shows the sill height, and turns red (nothing is placed) where it would pass through an insert that is there · In a plan, of inserts above one another only the one the cut plane passes through is drawn (else the nearest to it); the others are two dashed lines, a click takes the one drawn first and Tab goes on to the others · Open IFC (V1.201) now converts windows that stand above another opening, several doors and windows that share one hole of a wall (windows edge to edge, a fanlight on the head of its door), a wall parted in two by an opening of its full height, and a door through walls that stand on one another; a wall of several storeys is cut at levels only
 - V1.203 · [[cm_review]] now also checks the elements made of an IFC link (the walls, floors, columns, beams, doors and windows of [[a_oifile]], V1.201), as Copy/Monitor does in Revit: when a new issue of the file arrives, use [[ifc_reload]] on the link; the program says at once how many of the elements made of it have changed and how many are gone. [[cm_review]] in the [[properties]] of the link then lists them one by one: moved by how much, size from what to what, level or height off by how much, outline changed, or gone from the file · Tick and press [[cm_go]]: the element moves or changes size as the file says and stays the same element, so its tags, its dimensions and the doors and windows you put in that wall yourself stay. Tick an element that is gone from the file to delete it · An element you edited here while the file stayed as it was shows as [[cr_st_mine]] and is not ticked: tick it only to set it back to the file · [[cr_sel]] selects the elements of the ticked rows in the view · A copy of an element made of a link (Copy, Array, Mirror) is an element of the project: it is not watched, and Return Elements to Link leaves it · An element the new file can no longer give (a wall that became a curtain wall) is deleted when ticked, and the link shows it again as the file has it · New products of the file: use [[a_oiopen]] again; a new wall meets the walls made before, and a new door or window goes into a wall made before, as if the whole file had been made in one pass
 - V1.204 · Assemblies as in Revit: select elements (walls, beams, columns, floors, pipes, equipment …) and press [[a_asmmake]], give the [[asm_tname]] and the [[asm_nc]]. A click on any member selects the whole assembly (Tab: the member alone); it moves, rotates, copies and mirrors as one · identical assemblies share one name by themselves (copied anywhere or turned any way they stay one type); one that is edited until it differs from the others gets a name of its own, or the name of the type it is now identical to · [[a_asmedit]] (or a double-click) with [[t_asmadd]] / [[t_asmrem]] in plans and in 3D · [[a_asmdis]] leaves the elements where they are · [[a_asmviews]]: [[asv_3d]], the elevations Front, Back, Left, Right, Top and Bottom, [[asv_seca]] / [[asv_secb]] through the middle, [[asv_parts]], [[asv_mto]] and a sheet with the views laid out on it. These views show the members only, are turned to the assembly's axis and follow it when it moves or changes; they are under [[br_asm]] in the Project Browser · IFC export writes each assembly as an IfcElementAssembly that aggregates its members
+- V1.205 · In-place components as in Revit: press [[a_ipcnew]] on the Architecture or Structure tab, choose the [[p_ipic]] and a name, then build forms in the plan: [[t_ipext]] (a closed outline pushed up from its start to its end), [[t_ipblend]] (a base outline, then a top one), [[t_iprev]] (click the axis, pick a profile: cylinder, cone, sphere, torus, tube or points of your own) and [[t_ipswp]] (a path, then a profile) · [[a_ipvoid]] makes the next forms voids that cut the solids of the component · click a form to change its heights, angles, material, sketch or profile; Move, Copy, Rotate, Mirror and Delete work on the form picked · [[a_ipfin]] or [[a_ipcan]] · double-click the component to edit it again · plans show what is cut and what is seen from above, schedules its volume and materials, IFC its class by category
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -37431,6 +37866,22 @@ window.PenumBIM.r204={get P(){return P},ui,
   rows:vid=>{const v=viewById(vid),S=schedView(P,v,t);return{cols:S.cols.map(c=>c.k),rows:S.rows.map(r=>{const o={};for(const c of S.cols)o[c.k]=r[c.k];o._g=r._g||'';return o})}},
   tree:()=>{const d=document.querySelector('#tree details[data-g="asm"]');return d?d.textContent:''},props:()=>document.querySelector('#props').textContent,
   ifc:O=>ifcText(O).text,av:()=>{const v=activeView();return v?{id:v.id,kind:v.kind,ak:v.ak||null}:null},t:(k,...a)=>t(k,...a),has:k=>k in STR};
+window.PenumBIM.r205={get P(){return P},ui,
+  geo:id=>{const e=IDX.get(id),G=e&&ipcGeo(P,e);return G?{vol:G.vol,parts:G.parts.length,voids:G.voids.length,tri:G.parts.reduce((s,p)=>s+p.t.length/9,0),lines:G.parts.reduce((s,p)=>s+p.l.length/6,0),
+    smooth:G.parts.reduce((s,p)=>s+p.s.length,0),bb:G.bb,mv:[...G.mv],sv:G.parts.map(p=>ipcSVol(p.t)),mats:G.parts.map(p=>p.mat.key)}:null},
+  ftris:f=>{const T=ipcFormTris(f);return T?T.length/3:0},fvol:f=>{const T=ipcFormTris(f);if(!T)return 0;return Math.abs(ipcSVol(ipcGL(T,p=>[p[0],p[2],p[1]])))},
+  plan:(vid,id)=>{const v=viewById(vid),e=IDX.get(id);if(!v||!e)return null;const R=ipcPlan(e,VRm(v).cut);return{cut:R.cut.length,pro:R.pro.length,cz:VRm(v).cut,
+    ext:(()=>{let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const s of R.cut.concat(R.pro))for(const q of s){x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1])}return[x0,y0,x1,y1]})()}},
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),zr:id=>zRange(P,IDX.get(id)),box:(vid,id)=>elBox(viewById(vid),IDX.get(id)),
+  ipe:()=>ui.ipe?ui.ipe.id:0,ipf:()=>ui.ipf,setf:i=>XA.ipfsel(i),base:()=>ui.ipBase,
+  make:(ic,name)=>ipcNew(ic||'gen',name||ipcDefName(ic||'gen')),edit:id=>ipcEditStart(id),end:k=>ipcEditEnd(k),add:(f,re)=>ipcAdd(f,re),newf:(k,o)=>ipcNewForm(k,o),
+  outline:(id,i)=>{const e=IDX.get(id);return ipcOutline(e,ipcF(e)[i])},local:(id,x,y)=>ipcXf(IDX.get(id)).l(x,y),world:(id,u,v)=>ipcXf(IDX.get(id)).w(u,v),
+  items:id=>MSm().items.filter(m=>m.id===id).map(m=>({tri:m.t.length/9,l:m.l.length/6,s:m.s.length,a:m.a,vc:m.vc||'',ipv:m.ipv||0,mt:m.mt,c:m.c,sv:ipcSVol(m.t)})),
+  qty:id=>{const q=QTY().get(id);return q?JSON.parse(JSON.stringify(q)):null},prof:(k,pp)=>ipcProf(k,pp),
+  rows:vid=>{const v=viewById(vid),S=schedView(P,v,t);return{cols:S.cols.map(c=>c.k),rows:S.rows.map(r=>{const o={};for(const c of S.cols)o[c.k]=r[c.k];return o})}},
+  sched:(kind)=>{const S=scheduleTable(P,kind,t,{});return S?{rows:S.rows.map(r=>JSON.parse(JSON.stringify(Object.assign({},r,{_ids:undefined})))),foot:S.foot||null}:null},
+  warn:()=>warnings(P).map(w=>({k:w.k,ids:w.ids})),props:()=>document.querySelector('#props').textContent,ifc:O=>ifcText(O).text,
+  t:(k,...a)=>t(k,...a),has:k=>k in STR,av:()=>{const v=activeView();return v?{id:v.id,kind:v.kind,level:v.level}:null},hitF:(vid,x,y)=>{const v=viewById(vid),e=ipcEd();if(!e)return null;ui.ipfH=null;XHIT.ipc(v,e,{x,y},60);return ui.ipfH}};
 window.PenumBIM.r9a={at:(cat,x,y)=>{const pn=PANES[ui.ap],v=activeView(),q=p3At(pn,v,{x,y},cat);return q?Object.assign({},q,{lv:q.lv&&q.lv.id}):null},
   put:(cat,x,y,type)=>{ui.tool=cat;if(type!=null)defs(cat).type=type;const pn=PANES[ui.ap],v=activeView(),n0=P.els.length;p3Tool.click(pn,v,{x,y});const e=P.els.length>n0?P.els[P.els.length-1]:null;return e?JSON.parse(JSON.stringify(e)):null},
   pane:()=>{const pn=PANES[ui.ap];return{w:pn.w,h:pn.h}},pick:(x,y)=>{const pk=pickAt3(PANES[ui.ap],activeView(),{x,y});return pk?{id:pk.id,cat:pk.cat,p:pk.p,n:pk.n}:null},allowed:cat=>toolAllowed(cat,activeView())};
