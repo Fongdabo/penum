@@ -14608,7 +14608,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=228,V1_NAME='V1.218';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=229,V1_NAME='V1.219';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -35902,6 +35902,91 @@ Object.assign(STR,{
   ns_none218:['ติ๊ก ใหม่ หรือแผ่นสำรองอย่างน้อยหนึ่งแผ่น','Tick New or at least one placeholder sheet'],
   ns_made218:['สร้างชีตแล้ว {0} แผ่น','{0} sheets created'],
   p_shl218:['แสดงในรายการแผ่นงาน (Appears In Sheet List)','Appears In Sheet List']});
+/* ===== 219 Line Weights (Revit: Manage > Settings > Additional Settings > Line Weights) =====
+   Pens 1–16: the widths drawings ask for (LW_PEN219, paper mm), the weights of Object Styles, Line Styles and Visibility/Graphics among them.
+   Model Line Weights: P.lwm = {"<scale>": [16 widths]}, what each pen draws at in a view of that scale; a view at a scale not listed uses the nearest scale listed.
+   Annotation Line Weights: P.lwa = [16 widths], one width per pen whatever the scale, for annotation categories (LW_ANN219) and for what a sheet draws itself (title block, schedules).
+   A width between two pens is read between their widths.  With no table a pen draws at its own width, as before: painter is only wrapped when one is set.
+   On screen, on sheets, in print and PDF; a DXF keeps its layers (no lineweights).  Perspective Line Weights are not here: 3D views are drawn by WebGL. */
+const LW_PEN219=[0.05,0.09,0.1,0.13,0.18,0.2,0.25,0.3,0.35,0.45,0.5,0.6,0.7,1,1.4,2],LW_SC219=[10,20,50,100,200,500],LW_MAXSC219=20,
+  LW_ANN219=new Set(['rplane','grid','level','section','matchline','dim','text','adim','rdim','cloud','spot','clabel','tag','rtag','knote','sym','callout','vref','cfleg']),
+  LW_PRE219=[[5,2],[10,1.6],[20,1.4],[50,1.2],[100,1],[200,0.8],[500,0.6],[1000,0.5]];          // Scale with View: what a pen is multiplied by at a scale (read between, by the logarithm); pens 1–3 stay
+const lwRow219=a=>Array.isArray(a)&&a.length===16&&a.every(x=>typeof x==='number'&&isFinite(x)&&x>=0.01&&x<=5);
+const lwVal219=x=>{const n=parseFloat(String(x==null?'':x).replace(',','.'));return n>=0.01&&n<=5?Math.round(n*1000)/1000:null};
+const lwFmt219=w=>String(+(+w).toFixed(3));
+function lwmOf219(Q){Q=Q||P;const M=Q&&Q.lwm;return M&&typeof M==='object'&&!Array.isArray(M)&&Object.keys(M).length?M:null}
+function lwScales219(Q){const M=lwmOf219(Q);return M?Object.keys(M).map(Number).sort((a,b)=>a-b):LW_SC219.slice()}
+/* the widths of the pens at view scale sc: the column of that scale, else of the nearest one (by the logarithm; between two, the larger scale) */
+function lwCol219(Q,sc){const M=lwmOf219(Q);if(!M)return LW_PEN219;sc=+sc>0?+sc:100;let b=null,d=Infinity;for(const s of lwScales219(Q)){const x=Math.abs(Math.log(s/sc));if(x<d-1e-9){d=x;b=s}}return lwRow219(M[b])?M[b]:LW_PEN219}
+function lwAnn219(Q){Q=Q||P;return Q&&lwRow219(Q.lwa)?Q.lwa:LW_PEN219}
+/* the width a drawing asks for (mm) drawn by the row W: a pen's own width becomes its width in W, one between two pens is read between */
+function lwMap219(mm,W){if(!(mm>0)||!W||W===LW_PEN219)return mm;const N=LW_PEN219,n=N.length;if(mm<=N[0])return mm*W[0]/N[0];if(mm>=N[n-1])return mm*W[n-1]/N[n-1];
+  let i=0;while(N[i+1]<mm)i++;const f=(mm-N[i])/(N[i+1]-N[i]);return W[i]+(W[i+1]-W[i])*f}
+const lwAnnCat219=(sc,k)=>!(+sc>1)||LW_ANN219.has(k);
+function lwOf219(mm,sc,k){return lwMap219(mm,lwAnnCat219(sc,k)?lwAnn219(P):lwCol219(P,sc))}
+/* the painter of a view or a sheet keeps the category it was told of (lay: the DXF layer) and reads every weight through the table */
+{const f0=painter;painter=function(ctx,T,scale){const g=f0.apply(this,arguments);if(!P||(!lwmOf219(P)&&!lwRow219(P.lwa)))return g;
+  const sc=+scale>0?+scale:100,Wm=lwCol219(P,sc),Wa=lwAnn219(P),lw0=g.lw,lay0=g.lay;let ann=!(sc>1);
+  g.lay=function(k){ann=lwAnnCat219(sc,k);return lay0.apply(this,arguments)};
+  g.lw=mm=>lw0(lwMap219(mm,ann?Wa:Wm));return g}}
+/* Scale with View: the stock pens made thicker at large scales and thinner at small ones */
+function lwPreF219(sc){const T=LW_PRE219,L=Math.log(sc);if(sc<=T[0][0])return T[0][1];for(let i=1;i<T.length;i++)if(sc<=T[i][0]){const a=Math.log(T[i-1][0]),b=Math.log(T[i][0]);return T[i-1][1]+(T[i][1]-T[i-1][1])*(L-a)/(b-a)}return T[T.length-1][1]}
+const lwPre219=sc=>{const f=lwPreF219(sc);return LW_PEN219.map((n,i)=>i<3?n:Math.min(5,Math.max(0.05,Math.round(n*f*100)/100)))};
+/* one change of the model table: every scale written out first (the stock table when there was none) */
+function lwEdit219(fn){edit(()=>{const M={},O=lwmOf219(P);for(const s of lwScales219(P))M[s]=(O&&lwRow219(O[s])?O[s]:LW_PEN219).slice();fn(M);P.lwm=M})}
+function dlgLwt219(pg){pg=pg==='a'?'a':'m';const c0=$('#dlg .clr'),top=c0&&c0.dataset.lw219===pg?c0.scrollTop:0,mm=t('mm219');
+  const smp=w=>`<svg width="40" height="10" aria-hidden="true" style="vertical-align:middle"><line x1="2" y1="5" x2="38" y2="5" stroke="currentColor" stroke-width="${Math.max(0.35,w*96/25.4).toFixed(2)}"/></svg>`,
+    inp=(a,v,lab)=>`<input type="number" ${a} value="${lwFmt219(v)}" min="0.01" max="5" step="0.01" style="width:68px" aria-label="${esc(lab)}">`,
+    pen=(n,i)=>`<td class="n">${i+1}</td><td style="white-space:nowrap">${smp(n)} ${lwFmt219(n)} ${mm}</td>`;let h,stock;
+  if(pg==='m'){const S=lwScales219(P),O=lwmOf219(P);stock=!O;
+    h=`<p class="note">${t('lw_note_m219')}</p><div class="clr vgt" data-lw219="m"><table><thead><tr><th class="n">${t('lw_pen219')}</th><th>${t('lw_nom219')}</th>`
+      +S.map(s=>`<th style="white-space:nowrap;text-align:left">1:${s}${S.length>1?` <button type="button" class="x" data-lwx="del:${s}" title="${esc(t('lw_delsc219','1:'+s))}" aria-label="${esc(t('lw_delsc219','1:'+s))}">✕</button>`:''}</th>`).join('')+`</tr></thead><tbody>`
+      +LW_PEN219.map((n,i)=>`<tr>${pen(n,i)}${S.map(s=>`<td>${inp(`data-lwm="${s}:${i}"`,(O&&lwRow219(O[s])?O[s]:LW_PEN219)[i],t('lw_cell219',i+1,'1:'+s))}</td>`).join('')}</tr>`).join('')
+      +`</tbody></table></div><div class="pa msa"><label>${t('lw_addsc219')} 1:<input type="number" id="lwSc219" min="1" max="5000" step="1" style="width:76px" aria-label="${esc(t('lw_addsc219'))}"></label><button class="btn" data-lwx="add"${S.length>=LW_MAXSC219?' disabled':''}>${t('lw_add219')}</button><button class="btn" data-lwx="pre">${t('lw_pre219')}</button></div>`}
+  else{const A=lwAnn219(P);stock=!lwRow219(P.lwa);
+    h=`<p class="note">${t('lw_note_a219')}</p><div class="clr vgt" data-lw219="a"><table><thead><tr><th class="n">${t('lw_pen219')}</th><th>${t('lw_nom219')}</th><th>${t('lw_w219')}</th></tr></thead><tbody>`
+      +LW_PEN219.map((n,i)=>`<tr>${pen(n,i)}<td>${inp(`data-lwa="${i}"`,A[i],t('lw_cella219',i+1))}</td></tr>`).join('')+`</tbody></table></div>`}
+  openDlg(t('a_lwt219'),`<div class="msw"><nav class="msn" aria-label="${esc(t('a_lwt219'))}">${['m','a'].map(k=>`<button type="button" data-lwp="${k}" aria-pressed="${k===pg}">${t(k==='m'?'lw_m219':'lw_a219')}</button>`).join('')}</nav><div class="msc">${h}</div></div>`,
+    `<button class="btn" data-lwx="reset"${stock?' disabled':''}>${t('ms_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){const el=ev.target,d=el.dataset;
+       if(d.lwm){const a=d.lwm.split(':'),s=+a[0],i=+a[1],v=lwVal219(el.value);if(v==null){toast(t('lw_bad219'));dlgLwt219('m');return}lwEdit219(M=>{if(M[s])M[s][i]=v});dlgLwt219('m');return}
+       if(d.lwa){const i=+d.lwa,v=lwVal219(el.value);if(v==null){toast(t('lw_bad219'));dlgLwt219('a');return}edit(()=>{const A=lwAnn219(P).slice();A[i]=v;P.lwa=A});dlgLwt219('a');return}},
+     click(ev){const b=ev.target.closest('button');if(!b)return;const d=b.dataset;
+       if(d.lwp){dlgLwt219(d.lwp);return}
+       if(d.lwx==='reset'){edit(()=>{if(pg==='m')delete P.lwm;else delete P.lwa});dlgLwt219(pg);return}
+       if(d.lwx==='add'){const el=$('#lwSc219'),s=Math.round(+(el&&el.value)),S=lwScales219(P);if(!(s>=1&&s<=5000)){toast(t('lw_badsc219'));return}if(S.includes(s)){toast(t('lw_dupsc219','1:'+s));return}if(S.length>=LW_MAXSC219)return;
+         const W=lwCol219(P,s).slice();lwEdit219(M=>{M[s]=W});dlgLwt219('m');return}
+       if(d.lwx&&d.lwx.startsWith('del:')){const s=+d.lwx.slice(4);if(lwScales219(P).length<2)return;lwEdit219(M=>{delete M[s]});dlgLwt219('m');return}
+       if(d.lwx==='pre'){lwEdit219(M=>{for(const s in M)M[s]=lwPre219(+s)});dlgLwt219('m');toast(t('lw_pred219'));return}}},'vg lw219');
+  if(top){const d2=$('#dlg .clr');if(d2)d2.scrollTop=top}}
+XA.lwt219=arg=>dlgLwt219(arg);
+/* the cleaner: scales are whole numbers 1–5000 (20 at most), every row 16 widths of 0.01–5 mm; anything else goes */
+XC.push(()=>{if(P.lwm!==undefined){const M=P.lwm,o={};let n=0;if(M&&typeof M==='object'&&!Array.isArray(M))for(const k of Object.keys(M).sort((a,b)=>+a-+b)){const s=+k;if(!(Number.isInteger(s)&&s>=1&&s<=5000)||String(s)!==k)continue;const r=M[k];
+      if(!Array.isArray(r)||r.length!==16)continue;const w=r.map(lwVal219);if(w.some(x=>x==null))continue;if(n<LW_MAXSC219){o[k]=w;n++}}
+    if(n)P.lwm=o;else delete P.lwm}
+  if(P.lwa!==undefined){const r=P.lwa,w=Array.isArray(r)&&r.length===16?r.map(lwVal219):null;if(w&&w.every(x=>x!=null))P.lwa=w;else delete P.lwa}});
+/* Transfer Project Standards: Line Weights come over whole, as the units do */
+{const f=standardsOf;standardsOf=S=>{const o=f(S);if(S&&(lwmOf219(S)||lwRow219(S.lwa)))o.push({k:'lw',n:1});return o}}
+{const f=transferStandards;transferStandards=function(Q,S,picks){const R=f.apply(this,arguments);if((picks||[]).includes('lw')&&S&&(lwmOf219(S)||lwRow219(S.lwa))){const cp=o=>JSON.parse(JSON.stringify(o));
+  if(lwmOf219(S))Q.lwm=cp(S.lwm);else delete Q.lwm;if(lwRow219(S.lwa))Q.lwa=cp(S.lwa);else delete Q.lwa;R.replaced++}return R}}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-lwt219" viewBox="0 0 24 24"><path class="i-Pc" fill="#9fadc0" ${E} d="M4.6 4.7h14.8a2 2 0 0 1 2 2v12.4a2 2 0 0 1-2 2h-14.8a2 2 0 0 1-2-2v-12.4a2 2 0 0 1 2-2z"/><path class="i-Pa" fill="#f6f8fb" ${E} d="M4.6 3.2h14.8a2 2 0 0 1 2 2v12.4a2 2 0 0 1-2 2h-14.8a2 2 0 0 1-2-2v-12.4a2 2 0 0 1 2-2z"/>`
+    +`<path class="i-kD" fill="none" stroke="#222937" stroke-linecap="round" d="M5.6 6.6h8.6" style="stroke-width:.7"/><path class="i-kD" fill="none" stroke="#222937" stroke-linecap="round" d="M5.6 9.6h8.6" style="stroke-width:1.3"/><path class="i-kD" fill="none" stroke="#222937" stroke-linecap="round" d="M5.6 13h8.6" style="stroke-width:2"/><path class="i-kB" fill="none" stroke="#5c9af0" stroke-linecap="round" d="M5.6 16.8h8.6" style="stroke-width:2.8"/>`
+    +`<path fill="none" stroke="#2b8a3e" stroke-width="1.1" stroke-linecap="round" d="M17.2 6.4v10.8M16 7.6l1.2-1.2 1.2 1.2M16 16l1.2 1.2 1.2-1.2"/></symbol>`)})();
+for(const A of RIBBON)if(A.id==='manage')for(const p of A.panels||[])if(p.t==='p_settings'&&!p.b.includes('@lwt219')){const i=p.b.indexOf('@linestyles');p.b.splice(i<0?p.b.length:i+1,0,'@lwt219')}
+Object.assign(BTN,{'@lwt219':['lwt219','']});
+Object.assign(STR,{
+  a_lwt219:['ความหนาเส้น (Line Weights)','Line Weights'],lw_m219:['ความหนาเส้นของโมเดล (Model)','Model Line Weights'],lw_a219:['ความหนาเส้นงานกำกับ (Annotation)','Annotation Line Weights'],
+  lw_note_m219:['ปากกา 1–16 คือความหนาที่หมวดและรูปแบบเส้นขอไว้ (Object Styles, Line Styles, Visibility/Graphics) · แต่ละคอลัมน์คือความหนาจริงเมื่อวาดในมุมมองที่มาตราส่วนนั้น มุมมองที่มาตราส่วนไม่อยู่ในตารางใช้คอลัมน์ที่ใกล้ที่สุด ความหนาที่อยู่ระหว่างปากกาสองด้ามอ่านค่าระหว่างกลาง · ใช้บนจอ บนแผ่นงาน และเวลาพิมพ์หรือทำ PDF',
+    'Pens 1–16 are the widths categories and line styles ask for (Object Styles, Line Styles, Visibility/Graphics) · each column is the width a pen draws at in a view of that scale; a view at a scale not listed uses the nearest column, and a width between two pens is read between theirs · on screen, on sheets and in print and PDF'],
+  lw_note_a219:['งานกำกับ (เส้นบอกขนาด ป้าย ข้อความ กริด ระดับ เครื่องหมายรูปตัดและรูปขยาย เมฆแก้ไข ค่าระดับ) และสิ่งที่วาดบนแผ่นงานเอง (กรอบชื่อแบบ ตารางบนแผ่นงาน) ใช้ความหนาเดียวทุกมาตราส่วน',
+    'Annotation (dimensions, tags, text, grids, levels, section and callout marks, revision clouds, spot elevations) and what a sheet draws itself (title block, schedules on sheets) use one width per pen at every scale'],
+  lw_pen219:['ปากกา','Pen'],lw_nom219:['ความหนาที่ขอ','Asked for'],lw_w219:['ความหนา','Width'],mm219:['มม.','mm'],
+  lw_cell219:['ปากกา {0} ที่มาตราส่วน {1}','Pen {0} at {1}'],lw_cella219:['ปากกา {0} ของงานกำกับ','Annotation pen {0}'],
+  lw_addsc219:['เพิ่มมาตราส่วน','Add scale'],lw_add219:['เพิ่ม','Add'],lw_delsc219:['ลบมาตราส่วน {0}','Delete scale {0}'],
+  lw_pre219:['ปรับตามมาตราส่วน (แบบ Revit)','Scale with view (as in Revit)'],lw_pred219:['ตั้งความหนาตามมาตราส่วนแล้ว: มาตราส่วนใหญ่เส้นหนาขึ้น มาตราส่วนเล็กเส้นบางลง (ปากกา 1–3 คงเดิม)','Widths now follow the scale: thicker at large scales, thinner at small ones (pens 1–3 as they were)'],
+  lw_bad219:['ความหนาต้องอยู่ระหว่าง 0.01 ถึง 5 มม.','A width is 0.01 to 5 mm'],lw_badsc219:['มาตราส่วนต้องเป็น 1:1 ถึง 1:5000','A scale is 1:1 to 1:5000'],lw_dupsc219:['มีมาตราส่วน {0} อยู่แล้ว','Scale {0} is there already'],
+  tp_k_lw:['ความหนาเส้น (Line Weights)','Line weights']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -37810,6 +37895,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.216 · น้ำหนักบรรทุก กรณีน้ำหนัก และชุดน้ำหนักรวม (Revit: Loads, Load Cases, Load Combinations, Structural Settings): แท็บ วิเคราะห์ วางน้ำหนักแบบจุด แบบเส้น แบบพื้นที่ ทั้งแบบอิสระและแบบยึดกับคาน ผนัง หรือพื้น ค่า Fx Fy Fz และโมเมนต์ แปลนแสดงสัญลักษณ์สีตามลักษณะ 3 มิติแสดงลูกศร การตั้งค่าโครงสร้างมีกรณีน้ำหนักแปดกรณีและชุดน้ำหนักรวมสี่ชุดที่แก้ได้ น้ำหนักลงเสาส่งน้ำหนักเหล่านี้ลงเสาตามกรณีและแสดงชุดที่วิกฤต ตารางของหมวด น้ำหนักบรรทุก
 - V1.217 · จุดรองรับ (Revit: Boundary Conditions, Check Supports, Boundary Conditions Settings): แท็บ วิเคราะห์ วางจุดรองรับแบบจุดที่ฐานเสาหรือปลายคานและผนัง แบบเส้นตามคานหรือผนัง และแบบพื้นที่ใต้พื้น สถานะยึดแน่น ยึดหมุน ล้อเลื่อน หรือกำหนดเอง (ยึด ปล่อย สปริง ทีละแกน) แปลนและ 3 มิติแสดงสัญลักษณ์แบบ Revit ตรวจที่รองรับหาเสาและคานที่ไม่มีที่รองรับ ตารางน้ำหนักลงเสาบอกจุดรองรับที่ฐาน ตารางของหมวด จุดรองรับ
 - V1.218 · แผ่นสำรองและรายการแผ่นงาน (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): ตารางรายการแผ่นงานเพิ่มแถวแผ่นสำรองได้ พิมพ์เลขที่และชื่อของชีตและแผ่นสำรองในตารางได้ (เลขที่ไม่ซ้ำ) ปุ่ม ชีตใหม่ เปิดหน้าต่างเลือกกรอบชื่อแบบ ขนาดกระดาษ และแผ่นสำรองที่จะทำเป็นชีตจริง ชีตเลือกได้ว่าจะอยู่ในรายการแผ่นงานหรือไม่
+- V1.219 · ความหนาเส้น (Revit: Line Weights): ตารางปากกา 1–16 ในแท็บจัดการ ความหนาของโมเดลตามมาตราส่วน (เพิ่ม/ลบมาตราส่วน ปรับตามมาตราส่วนแบบ Revit) และความหนาของงานกำกับที่ไม่ขึ้นกับมาตราส่วน ใช้บนจอ แผ่นงาน และ PDF ส่งต่อด้วยการถ่ายโอนมาตรฐานโครงการได้
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -38165,6 +38251,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.216 · Structural loads, load cases and combinations (Revit: Loads, Load Cases, Load Combinations, Structural Settings): on the Analyze tab, point, line and area loads, free or hosted on a beam, wall or slab, with Fx Fy Fz and moments; plans show the symbols in the colour of their nature, 3D views arrows; Structural Settings hold eight load cases and four combinations to edit; the load takedown carries the loads down the columns by case and shows the governing combination; schedules of the Structural Loads category
 - V1.217 · Boundary conditions (Revit: Boundary Conditions, Check Supports, Boundary Conditions Settings): on the Analyze tab, point boundary conditions at the foot of a column or the end of a beam or wall, line ones along a beam or wall, area ones under a slab; Fixed, Pinned, Roller or User (Fixed, Released or Spring direction by direction); plans and 3D views show Revit's symbols; Check Supports finds the columns and beams nothing holds up; the load takedown shows the support at each foot; schedules of the Boundary Conditions category
 - V1.218 · Placeholder sheets and the sheet list (Revit: Placeholder Sheets, Insert Data Row, New Sheet, Appears In Sheet List): insert placeholder sheet rows in a sheet list, type the numbers and names of sheets and placeholders in the list (numbers are unique), New Sheet opens a dialog for the title block, the paper size and the placeholder sheets to make real, and a sheet can be left out of the sheet lists
+- V1.219 · Line weights (Revit: Line Weights): a table of pens 1–16 on the Manage tab, model widths by view scale (add or delete scales, scale with view as in Revit) and annotation widths at every scale, on screen, on sheets and in PDF; Transfer Project Standards carries it
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -38324,6 +38411,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - [[t_dline]] ((DL)): เส้น 2 มิติ เลือก [[p_lstyle]] ได้ (บาง กลาง หนา ประ ศูนย์กลาง รื้อถอน และรูปแบบที่สร้างเอง)
 - [[t_dline]] และ [[t_mline]] วาดเป็นส่วนโค้งได้ ([[a_arc]]: คลิกจุดเริ่ม จุดปลาย แล้วจุดที่โค้งผ่าน หรือพิมพ์[[lc_r]]แล้วกด Enter) หรือเป็น[[a_circle]] (คลิกจุดศูนย์กลาง แล้วจุดบนวง หรือพิมพ์[[lc_r]]) · เส้นโมเดลโค้งได้ในแปลน เส้นรายละเอียดโค้งได้ทุกมุมมอง · จับจุดได้ที่ปลาย กึ่งกลาง จุดศูนย์กลาง จุดควอดแรนต์ และจุดสัมผัส · ลากจุดศูนย์กลางของวงกลมเพื่อย้าย ลากจุดบนวงเพื่อเปลี่ยนขนาด · ระยะชั่วคราวและ Properties แก้[[lc_r]]และ[[p_bow]]ได้ · [[t_offset]]ได้เส้นโค้งร่วมศูนย์ · [[t_split]]แบ่งส่วนโค้งได้ (วงกลมแบ่งไม่ได้) · [[t_rdim]] [[t_ddim]] [[t_ldim]] วัดเส้นโค้งได้ · [[t_trim]] [[t_trim1]] [[t_offset]] และ [[t_split]] ใช้กับเส้นรายละเอียดเส้นตรงได้ ทั้งในแปลนและในมุมมองร่าง
 - [[a_linestyles]] (แท็บ [[tab_manage]]): แก้น้ำหนัก สี และลายของรูปแบบเส้นที่มีมาให้ หรือกด [[ls_new]] เพื่อสร้างรูปแบบของโครงการเอง ใช้ได้ทั้งกับเส้นรายละเอียดและเส้นโมเดล · เส้นที่วาดไว้เปลี่ยนตามทันที · ลบรูปแบบที่มีเส้นใช้อยู่ เส้นเหล่านั้นกลับเป็นเส้นบาง
+- [[a_lwt219]] (แท็บ [[tab_manage]]): ตารางปากกา 1–16 · แท็บ [[lw_m219]] ให้แต่ละปากกามีความหนาของตัวเองในแต่ละมาตราส่วน (มุมมองที่มาตราส่วนไม่อยู่ในตารางใช้คอลัมน์ที่ใกล้ที่สุด เพิ่มหรือลบมาตราส่วนได้ และ [[lw_pre219]] ทำให้เส้นหนาขึ้นที่ 1:20 บางลงที่ 1:200) · แท็บ [[lw_a219]] สำหรับเส้นบอกขนาด ป้าย ข้อความ กริด ระดับ และกรอบชื่อแบบ ใช้ความหนาเดียวทุกมาตราส่วน · น้ำหนักใน Object Styles รูปแบบเส้น และการแสดงผลของมุมมอง คือปากกาในตารางนี้ · ยังไม่ตั้งตาราง เส้นหนาเท่าเดิม
 - [[a_lpats]] (แท็บ [[tab_manage]]): ลายของเส้นคือชุดของ [[lpt_dash]] [[lpt_dot]] และ [[lpt_space]] ยาวเป็นมิลลิเมตรบนกระดาษ จึงเท่าเดิมทุกมาตราส่วน · กด [[lpt_new]] หรือ [[duplicate]] ลายที่มีมาให้ แล้วแก้ชื่อและความยาวทีละแถว ดูตัวอย่างได้ทันที · [[lpt_imp]] อ่านลายแบบง่ายจากไฟล์ .lin ของ AutoCAD · ลายของโครงการเลือกได้ใน [[a_linestyles]] [[a_objstyles]] [[a_vg]] ตัวกรอง [[a_eov]] และการแสดงผลของเฟส · ไฟล์ DXF ที่ส่งออกมีชนิดเส้น (Linetype) ของลายเหล่านี้ · ลบลายแล้วสิ่งที่ใช้อยู่กลับไปใช้ลายเดิม
 > ต่างจาก Revit: ลายที่มีมาให้แก้ไม่ได้ ให้ทำสำเนาเป็นลายของโครงการแล้วแก้
 - [[a_fpats]] (แท็บ [[tab_manage]]): ลายแบบเขียนแบบ (ขนาดคงที่บนกระดาษทุกมาตราส่วน) และแบบโมเดล (ขนาดของจริง เช่น กระเบื้อง 600 × 600) · [[fpt_new]] สร้างเส้นขนานหรือตาราง กำหนดมุมและระยะห่าง · [[duplicate]] ลายที่มีมาให้แล้วแก้ · [[fpt_imp]] อ่านลายจากไฟล์ .pat ของ AutoCAD หรือ Revit · ชนิดของพื้นที่ลาย และ [[mt_sp]] / [[mt_cp]] ของ [[a_materials]] ใช้ลายเหล่านี้ · ลบลายแล้วสิ่งที่ใช้อยู่เปลี่ยนเป็นไม่มีลาย
@@ -38402,6 +38490,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[t_dline]] ((DL)): a 2D line, with a [[p_lstyle]] (thin, medium, wide, hidden, centre, demolished, and the styles made in the project)
 - [[t_dline]] and [[t_mline]] can be drawn as arcs ([[a_arc]]: click the start, the end, then a point it passes through, or type its [[lc_r]] and press Enter) or as a [[a_circle]] (click the centre, then a point on it, or type its [[lc_r]]) · model lines curve in plans, detail lines in any view · they snap at their ends, middle, centre, quadrants and tangents · drag the centre of a circle to move it, a point on it to resize it · the temporary dimension and Properties change the [[lc_r]] and the [[p_bow]] · [[t_offset]] gives a concentric curve · [[t_split]] splits an arc (not a circle) · [[t_rdim]], [[t_ddim]] and [[t_ldim]] measure them · [[t_trim]], [[t_trim1]], [[t_offset]] and [[t_split]] work on straight detail lines too, in plans and in drafting views
 - [[a_linestyles]] (the [[tab_manage]] tab): give a stock line style another pen, colour or pattern, or press [[ls_new]] for a style of the project's own; detail lines and model lines use them · the lines already drawn follow at once · when a style in use is deleted its lines are thin lines again
+- [[a_lwt219]] (the [[tab_manage]] tab): the table of pens 1–16 · on [[lw_m219]] each pen has a width of its own at each scale (a view at a scale not listed uses the nearest column; add or delete scales, and [[lw_pre219]] makes lines thicker at 1:20 and thinner at 1:200) · on [[lw_a219]] dimensions, tags, text, grids, levels and the title block have one width per pen at every scale · the weights of Object Styles, line styles and Visibility/Graphics are pens of this table · with no table set, lines keep their widths
 - [[a_lpats]] (the [[tab_manage]] tab): a line pattern is a run of [[lpt_dash]], [[lpt_dot]] and [[lpt_space]] measured in mm of paper, so it looks the same at any scale · press [[lpt_new]], or [[duplicate]] a stock pattern, then change its name and lengths row by row with the preview beside them · [[lpt_imp]] reads the simple line types of an AutoCAD .lin file · the patterns of the project can be picked in [[a_linestyles]], [[a_objstyles]], [[a_vg]], filters, [[a_eov]] and the graphics of phases · an exported DXF has a linetype for each of them · what used a deleted pattern goes back to its own
 > Unlike Revit: the stock patterns cannot be changed; duplicate one to make it the project's own
 - [[a_fpats]] (the [[tab_manage]] tab): drafting patterns (the same size on paper at any scale) and model patterns (the size of the real thing, such as 600 × 600 tiles) · [[fpt_new]] makes parallel lines or a crosshatch at an angle and spacing · [[duplicate]] a stock pattern to change it · [[fpt_imp]] reads patterns from an AutoCAD or Revit .pat file · filled region types and the [[mt_sp]] and [[mt_cp]] of [[a_materials]] use them · what used a deleted pattern has none
@@ -40352,6 +40441,11 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r219={pens:()=>LW_PEN219.slice(),scales:()=>lwScales219(P),col:sc=>lwCol219(P,sc).slice(),ann:()=>lwAnn219(P).slice(),raw:()=>JSON.parse(JSON.stringify({lwm:P.lwm,lwa:P.lwa})),
+  map:(mm,sc,k)=>lwOf219(mm,sc,k),pre:sc=>lwPre219(sc),isAnn:(sc,k)=>lwAnnCat219(sc,k),
+  pw:(mm,sc,k)=>{const cv=document.createElement('canvas'),g=painter(cv.getContext('2d'),{s:10/sc,ox:0,oy:0},sc,C,false);if(k)g.lay(k);return g.lw(mm)},
+  set:o=>{edit(()=>{if('m' in o){if(o.m)P.lwm=JSON.parse(JSON.stringify(o.m));else delete P.lwm}if('a' in o){if(o.a)P.lwa=JSON.parse(JSON.stringify(o.a));else delete P.lwa}})},
+  dlg:pg=>dlgLwt219(pg),std:S=>standardsOf(S||P).map(x=>x.k),tr:(S,picks,ov)=>{let R;edit(()=>{R=transferStandards(P,JSON.parse(JSON.stringify(S)),picks,!!ov)});return R},label:k=>tpLabel(k)};
 window.PenumBIM.r218={list:()=>JSON.parse(JSON.stringify(phList218(P))),next:()=>shNext218(P),nos:skip=>[...shNos218(P,skip)],
   add:(no,name)=>{let id;edit(()=>{id=P.seq++;(P.phs||(P.phs=[])).push({id,no:no!=null?String(no):shNext218(P),name:name!=null?String(name):t('ph_unnamed')})});return id},
   set:(w,id,k,val)=>shSet218(w,id,k,val),make:o=>{let id;edit(()=>{const x=Object.assign({},o||{});if(x.view!=null)x.view=viewById(x.view);id=shMake218(x).id});return id},
