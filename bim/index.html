@@ -2397,7 +2397,7 @@ function buildMeshes(P,FP,FIT){
       c=(i,j)=>[A[0]+n[0]*i*w/2+q[0]*j*h/2,A[1]+n[1]*i*w/2+q[1]*j*h/2,A[2]+n[2]*i*w/2+q[2]*j*h/2],lp=[c(-1,-1),c(1,-1),c(1,1),c(-1,1)];extrude(lp,d,m.t);
     for(let i=0;i<4;i++){const p=lp[i],r=lp[(i+1)%4];m.l.push(p[0],p[1],p[2],r[0],r[1],r[2],p[0]+d[0],p[1]+d[1],p[2]+d[2],r[0]+d[0],r[1]+d[1],r[2]+d[2],p[0],p[1],p[2],p[0]+d[0],p[1]+d[1],p[2]+d[2])}};
   const K={mk,prism,seg,vseg,loopL,boxL,solid,round,cyl,bar3};K.fit=FIT||fitPlan(P);
-  const hosted=new Map();for(const e of P.els)if(HOSTED.includes(e.cat))(hosted.get(e.host)||hosted.set(e.host,[]).get(e.host)).push(e);
+  const hosted=new Map();for(const e of P.els)if(HOSTED.includes(e.cat))(hosted.get(e.host)||hosted.set(e.host,[]).get(e.host)).push(e);const EMB230=emb230(P);
   for(const e of P.els){
     if(e.rb&&RB_HOST.includes(e.cat)){const B=rbBars(P,e);if(B.length){const rm=mk(e.id,'rebar',[0.7,0.2,0.16]);rm.rc=1;rm.mt=MAT.metal;          // its rebar: bars in the host, cut in their own colour
       for(const [a,b,d] of B){const dx=b[0]-a[0],dy=b[1]-a[1],h=Math.hypot(dx,dy),v=Math.abs(b[2]-a[2])>h;bar3(rm,[a[0],a[2],a[1]],[b[0],b[2],b[1]],v?[1,0,0]:[-dy/h,0,dx/h],d,d)}items.push(rm)}}
@@ -2420,6 +2420,7 @@ function buildMeshes(P,FP,FIT){
       const m=mk(e.id,'wall',hex2rgb(T.color)),lo=Math.max(fp.dL0,fp.dR0)+30,hi=Math.min(fp.dL1,fp.dR1)-30,O=[];m.mt=matOf('wall',T);m.rv=swpRv(P,e,fp,T);m.li=0;
       const PZ=soProfZ(P,e,z0,z1);for(const o of hosted.get(e.id)||[]){const ot=typ(P,o);if(!ot)continue;const a=Math.max(lo,o.pos-ot.width/2),b=Math.min(hi,o.pos+ot.width/2),s=Math.max(PZ[0],base+(o.sill||0)),t=Math.min(PZ[1],base+(o.sill||0)+ot.height);if(b-a>60&&t-s>60)O.push({o,ot,a,b,s,t})}
       for(const q of voidCuts(P,e,z0,z1))if(Math.min(hi,q[1])-Math.max(lo,q[0])>60)O.push({o:{cat:'opening',id:q[4]},ot:{width:q[1]-q[0],height:q[3]-q[2]},a:Math.max(lo,q[0]),b:Math.min(hi,q[1]),s:q[2],t:q[3]});          // where a void form passes through the wall
+      for(const q of EMB230.get(e.id)||[]){const a=Math.max(lo,q.a),b=Math.min(hi,q.b),s=Math.max(z0,q.s),t=Math.min(z1,q.t);if(b-a>60&&t-s>60)O.push({o:{cat:'opening',id:q.cw,ph:q.ph,dem:q.dem},ot:{width:b-a,height:t-s},a,b,s,t})}          // V1.230 an embedded curtain wall
       O.sort((p,q)=>p.a-q.a);const OS=soStrips(O);          /* 202: stretches side by side, each with its gaps from below */
       const e0=[pt(fp.dR0,-h)];if(fp.apex0)e0.push([g.x1,g.y1]);e0.push(pt(fp.dL0,h));
       const e1=[pt(fp.dL1,h)];if(fp.apex1)e1.push([g.x2,g.y2]);e1.push(pt(fp.dR1,-h));
@@ -3742,11 +3743,11 @@ function furnTypes(T,N){const F=(grp,th,en,mark,kind,w,d,h,color,cost,x)=>T(Obje
 
 /* ===== 25 schedules & quantities (pure) ===== */
 function quantities(P0){const P=P0.els.some(e=>e.gx)?Object.assign({},P0,{els:P0.els.filter(e=>!e.gx)}):P0;          // an excluded member counts for nothing
-  const q=new Map(),hosted=new Map();
+  const q=new Map(),hosted=new Map(),EMQ230=emb230(P);
   for(const e of P.els)if(HOSTED.includes(e.cat))(hosted.get(e.host)||hosted.set(e.host,[]).get(e.host)).push(e);
   const net=e=>slabPieces(P,e).reduce((s,pc)=>s+Math.abs(area2(pc)),0);          // floor or ceiling less its stair wells and shafts
   for(const e of P.els){const T=typ(P,e),zr=zRange(P,e);
-    if(e.cat==='wall'){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1),H=zr[1]-zr[0];let open=0;for(const o of hosted.get(e.id)||[]){const ot=typ(P,o);if(ot)open+=ot.width*Math.min(ot.height,H)}
+    if(e.cat==='wall'){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1),H=zr[1]-zr[0];let open=embArea230(EMQ230,e);for(const o of hosted.get(e.id)||[]){const ot=typ(P,o);if(ot)open+=ot.width*Math.min(ot.height,H)}
       const WP=(e.attT||e.attB||e.prof)&&typeof wallProf==='function'?wallProf(P,e):null,gross=WP&&!WP.plain?WP.area:L*H,area=Math.max(0,gross-open);q.set(e.id,{len:L,h:H,area,vol:area*T.thickness})}          // a wall attached to a roof, or with an outline of its own: the area of that outline
     else if(e.cat==='column')q.set(e.id,{len:zr[1]-zr[0],vol:(T.shape==='round'?Math.PI*T.w*T.w/4:T.w*T.d)*(zr[1]-zr[0])});
     else if(e.cat==='beam'){const L=beamLen3(P,e);q.set(e.id,{len:L,vol:L*T.w*T.h})}          // along its slope
@@ -7764,7 +7765,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
   g.cut(1);ctx.strokeStyle=A.ink;ctx.lineWidth=2*g.lw(halfA?0.25:0.45);for(const [e] of cutW){g.el(e);const cq=cpfIn(ctx,g,v,e,halfA,det!=='coarse');g.path(FP.get(e.id).poly);ctx.stroke();if(cq)ctx.restore()}
   ctx.lineWidth=g.lw(halfA?0.18:0.25);for(const [e] of cutW)if(e.wjc){const fp=FP.get(e.id),h=fp.g.h;for(const en of [0,1])if(e.wjc[en]){const A1=en?fp.pt(fp.dL1,h):fp.pt(fp.dL0,h),B1=en?fp.pt(fp.dR1,-h):fp.pt(fp.dR0,-h),M1=en?[fp.g.x2,fp.g.y2]:[fp.g.x1,fp.g.y1];g.el(e);if((en?fp.apex1:fp.apex0)){g.seg(A1,M1);g.seg(M1,B1)}else g.seg(A1,B1)}}g.cut(0)          // Don't Clean Join: the line between the walls
   for(const [id,q] of jcol)if(q[0]==='merge'){const e=IDX.get(id);g.el(e);g.path(colPlanLoop(P,e));ctx.stroke()}
-  for(const [e] of cutW){g.el(e);const fp=FP.get(e.id),W=typ(P,e),cq=cpfIn(ctx,g,v,e,halfA,false);g.path(fp.poly);
+  {const EM230=emb230(P);for(const [e] of embOrd230(EM230,cutW)){g.el(e);const fp=FP.get(e.id),W=typ(P,e),cq=cpfIn(ctx,g,v,e,halfA,false);g.path(fp.poly);
     if(W.kind!=='curtain'&&vgCutW(g,fp,W,A,col,det)){}else if(W.kind==='curtain'){ctx.fillStyle=col.paper;ctx.fill();const d0=Math.max(fp.dL0,fp.dR0),d1=Math.min(fp.dL1,fp.dR1);const xs=cwGrid(W,d0,d1,0,1,e).xs,CE227=cmEnds227(P,FP,e,xs),dr=xs.map((c,i)=>i<xs.length-1&&CW_DOOR(cwPanel(W,e,i,0))?cwPanel(W,e,i,0):'');ctx.strokeStyle='#3d8fc9';ctx.lineWidth=g.lw(0.3);
       for(let i=0;i<xs.length-1;i++)if(!dr[i])g.seg(fp.pt(xs[i],0),fp.pt(xs[i+1],0));
       if(dr.some(Boolean)){const pw=Math.max(5,(+W.mw||50)/2);ctx.strokeStyle=A.ink;          // curtain wall doors swing to the side away from the wall's drawn normal
@@ -7777,7 +7778,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
         const R229=cwCut229(e,W,xs,Gz,CE227,W.bm!=='no',hw,hd,mp,d0,d1,zr,zc);xs.forEach((c,i)=>{if(cmSkipV227(W,CE227,i,xs.length,W.bm!=='no'))return;if(R229?!R229[i]:MD.has('v'+i+','+jc))return;const S228=R229?R229[i]:mty228(e,W,'v'+i+','+jc,hw,hd,mp);((mp,hw,hd,of)=>{if(mp==='round'){const q=fp.pt(c,of);ctx.beginPath();ctx.arc(g.X(q[0]),g.Y(q[1]),hw*T.s,0,7);ctx.fillStyle=col.paper;ctx.fill();ctx.stroke();return}
           g.path([fp.pt(Math.max(d0,c-hw),of-hd),fp.pt(Math.min(d1,c+hw),of-hd),fp.pt(Math.min(d1,c+hw),of+hd),fp.pt(Math.max(d0,c-hw),of+hd)]);ctx.fillStyle=col.paper;ctx.fill();ctx.stroke();if(mp==='cap'){g.path([fp.pt(c-hw*1.6,of+hd),fp.pt(c+hw*1.6,of+hd),fp.pt(c+hw*1.6,of+hd+20),fp.pt(c-hw*1.6,of+hd+20)]);ctx.fill();ctx.stroke()}})(S228.p,S228.hw,S228.hd,S228.of||0)})}}
     else if(det==='coarse'){ctx.fillStyle=A.poche;ctx.fill()}
-    else{ctx.fillStyle=col.paper;ctx.fill();if(wlOf(W))wlDraw(g,ctx,fp,W,A);else if(matCut(W)){if(matCut(W)!=='none')wlPat(g,ctx,fp.poly,matCut(W),A)}else if(W.hatch==='solid'){ctx.globalAlpha=0.45;ctx.fillStyle=A.muted;g.path(fp.poly);ctx.fill();ctx.globalAlpha=1}else if(W.hatch==='diag')g.hatch(fp.poly,1.1,A.ink)}if(cq)ctx.restore()}          // a material with a cut pattern draws it
+    else{ctx.fillStyle=col.paper;ctx.fill();if(wlOf(W))wlDraw(g,ctx,fp,W,A);else if(matCut(W)){if(matCut(W)!=='none')wlPat(g,ctx,fp.poly,matCut(W),A)}else if(W.hatch==='solid'){ctx.globalAlpha=0.45;ctx.fillStyle=A.muted;g.path(fp.poly);ctx.fill();ctx.globalAlpha=1}else if(W.hatch==='diag')g.hatch(fp.poly,1.1,A.ink)}if(cq)ctx.restore();embGap230(g,ctx,v,FP,e,A,col,halfA,T.s,EM230,cutW)}}          // a material with a cut pattern draws it; V1.230 the gap of an embedded curtain wall
   if(det!=='coarse')cmPlan227(g,ctx,P,FP,cutW,A,col);          // V1.227
   if(det!=='coarse')for(const [e] of cutW){const W=typ(P,e),XT=wlExt(P,FP,FP.get(e.id),W,1.5/T.s);if(!XT.length)continue;g.el(e);          // layer joins at a T: the core runs on through the other wall's finishes
     for(const x of XT){g.path(x.poly);ctx.fillStyle=col.paper;ctx.fill();if(!vgXT(g,x,A,col))wlPat(g,ctx,x.poly,x.mat,A);ctx.strokeStyle=A.ink;ctx.lineWidth=g.lw(0.18);g.seg(x.poly[0],x.poly[1]);g.seg(x.poly[3],x.poly[2])}}
@@ -8784,7 +8785,7 @@ function hitPlan(v,p,UL){
     else if(k==='mtext'){const lp=mtextLoop(P,e);add(e.id,inPoly(w.x,w.y,lp)?0:polyEdgeDist(w.x,w.y,lp),pr(e,3))}          // a model text: by what the plan shows of it; on the face of a wall it is picked before the wall
     else if(k==='bsys'){let d=polyEdgeDist(w.x,w.y,e.pts);const hw=(bsysType(P,e).w||200)/2;for(const b of bsysBeams(P,e))d=Math.min(d,segDist(w.x,w.y,b.x1,b.y1,b.x2,b.y2)-hw);add(e.id,d,pr(e,9))}          // a beam system: by its outline or one of its beams
     else if(k==='truss'&&!trUpright(e)){let d=bowDist(w.x,w.y,e)-3/nav.s;for(const lp of trPlanLoops(P,e))d=Math.min(d,inPoly(w.x,w.y,lp)?0:polyEdgeDist(w.x,w.y,lp));add(e.id,d,pr(e,6))}          // turned or leaning: by its members as the plan shows them (V1.130)
-    else if(LINE_CATS.includes(k))add(e.id,bowDist(w.x,w.y,e)-Math.max(lineHW(e),3/nav.s),pr(e,k==='wall'?5:6));
+    else if(LINE_CATS.includes(k)){if(!(k==='wall'&&embIn230(v,e,w.x,w.y)))add(e.id,bowDist(w.x,w.y,e)-Math.max(lineHW(e),3/nav.s),pr(e,k==='wall'?5:6))}
     else if(k==='stair'){const st=stairGeo(P,e);if(st.polys.some(pl=>inPoly(w.x,w.y,pl)))add(e.id,0,pr(e,7))}
     else if(k==='roof'){const R=roofGeo(P,e);let d=polyEdgeDist(w.x,w.y,R.out||R.eave);for(const f of R.faces)if(f.i>=0)d=Math.min(d,polyEdgeDist(w.x,w.y,f.loop));add(e.id,d,pr(e,9))}
     else if(k==='floor'||k==='ceiling'||k==='shaft'||k==='mass')add(e.id,k==='mass'&&inPoly(w.x,w.y,e.pts)?Math.min(polyEdgeDist(w.x,w.y,e.pts),tol*0.95):polyEdgeDist(w.x,w.y,e.pts),pr(e,k==='shaft'?8:10));
@@ -10405,7 +10406,7 @@ function dlgRbSched(){const rows=rbSched(P),tot=rows.reduce((a,r)=>a+r.kg,0),byD
       const tr=ev.target.closest('tr[data-rs]');if(tr)showEls([...rows[+tr.dataset.rs].hosts])}},'wide')}
 XA.rbsched=dlgRbSched;
 function cwRows(els){const e=els[0],C=els.length===1&&cwOf(e);if(!C)return'';const n=e.cwp?Object.keys(e.cwp).length:0;
-  return PR.grp('g_cw')+PR.ro('p_cwgrid',(C.G.xs.length-1)+' × '+(C.G.zs.length-1))+(n?PR.ro('p_cwover',String(n)):'')+(e.mty?PR.ro('p_mty228',String(Object.keys(e.mty).length)):'')+(e.mjn?PR.ro('p_mjn229',String(Object.keys(e.mjn).length)):'')+(C.G.xs.some((x,i)=>i<C.G.xs.length-1&&CW_DOOR(cwPanel(C.T,e,i,0)))?PR.chk('cwfl','p_cwfl',!!e.cwfl)+PR.chk('cwfh','p_cwfh',!!e.cwfh):'')+`<div class="pa"><button class="btn" data-act="cwpanels">${t('a_cwpanels')}…</button></div>`}
+  return PR.grp('g_cw')+PR.ro('p_cwgrid',(C.G.xs.length-1)+' × '+(C.G.zs.length-1))+(n?PR.ro('p_cwover',String(n)):'')+(e.mty?PR.ro('p_mty228',String(Object.keys(e.mty).length)):'')+(e.mjn?PR.ro('p_mjn229',String(Object.keys(e.mjn).length)):'')+(C.G.xs.some((x,i)=>i<C.G.xs.length-1&&CW_DOOR(cwPanel(C.T,e,i,0)))?PR.chk('cwfl','p_cwfl',!!e.cwfl)+PR.chk('cwfh','p_cwfh',!!e.cwfh):'')+embRow230(e)+`<div class="pa"><button class="btn" data-act="cwpanels">${t('a_cwpanels')}…</button></div>`}
 /* keep each changed panel where it was when grid lines come and go: its centre finds the cell it now falls in */
 function cwRemap(e,G0,G1){if(!e.cwp)return;const m={},fx=(L,c)=>{for(let k=0;k<L.length-1;k++)if(c>L[k]&&c<L[k+1])return k;return -1};
   for(const [key,k] of Object.entries(e.cwp)){const [i,j]=key.split(',').map(Number);if(i>=G0.xs.length-1||j>=G0.zs.length-1)continue;const ni=fx(G1.xs,(G0.xs[i]+G0.xs[i+1])/2),nj=fx(G1.zs,(G0.zs[j]+G0.zs[j+1])/2);if(ni>=0&&nj>=0)m[ni+','+nj]=k}
@@ -12596,7 +12597,7 @@ function catRows(cat,els,isNew){
           +PR.grp('g_constraints')+(eq?'':PR.chk('lk','p_dimlock',e.lk>0))+(eq||(dimChainOf(e).length>1&&!dsSeg(e))?PR.chk('eq','p_dimeq',eq):'')+(eq?PR.sel('eqd','p_dimeqd',e.eqv?'val':'eq',[['eq',t('eqd_eq')],['val',t('eqd_val')]]):'')
           +PR.grp('g_text')+PR.text('txt','p_dimtext',e.txt||'')+PR.text('pre','p_dimpre',e.pre||'')+PR.text('suf','p_dimsuf',e.suf||'')}break;
     case'vp':if(els.length===1){const V2=viewById(e.view),sh2=vpSheet(e);h+=PR.grp('g_view')+PR.ro('p_name',V2?V2.name:'')+PR.ro('p_scale',V2&&V2.scale?'1:'+V2.scale:'—')+(V2&&V2.kind!=='schedule'&&sh2?PR.text('vpno','p_vpno',vpNos(P,sh2).get(e.id)||''):'')}break}
-  if(cat==='wall'&&!isNew)h+=wallProfRows(els)+cwRows(els);
+  if(cat==='wall'&&!isNew)h+=wallProfRows(els)+cwRows(els)+embRows230(els);
   if(RB_HOST.includes(cat)&&!isNew)h+=rbRows(els);
   return h}
 /* Realistic style: sun, shadows, sky and ground of the view (Revit: Graphic Display Options) */
@@ -12755,7 +12756,7 @@ function cwGrid(T,d0,d1,z0,z1,e){const xs=cwSplit(d0,d1,T.vLay||'near',T.vSp,T.v
 const CW_DOOR=k=>k==='door'||k==='door2';
 const cwPanel=(T,e,i,j)=>{const k=(e.cwp&&e.cwp[i+','+j])||T.cwpan||'glass';return CW_DOOR(k)&&j>0?T.cwpan||'glass':k};          // a door panel only stands on the bottom row
 const CW_FIELDS=[['vLay','sel',CW_LAYS,'cwl_'],['vSp','num'],['vNum','num','-',1],['vJ','sel',CW_JUST,'cwj_'],['hLay','sel',CW_LAYS,'cwl_'],['hSp','num'],['hNum','num','-',1],['hJ','sel',CW_JUST,'cwj_'],
-  ['mjc','sel',['nd','v','h','bv','bh'],'mjc_'],['mw','num'],['md','num'],['mof','mof229'],['mpro','sel',['rect','round','cap'],'mp_'],['bm','sel',['yes','no']],['mcol','color'],['cwpan','sel',CW_PANS.slice(0,3),'cwp_'],['pcol','color'],['thickness','num'],['color','color']];
+  ['mjc','sel',['nd','v','h','bv','bh'],'mjc_'],['mw','num'],['md','num'],['mof','mof229'],['mpro','sel',['rect','round','cap'],'mp_'],['bm','sel',['yes','no']],['mcol','color'],['cwpan','sel',CW_PANS.slice(0,3),'cwp_'],['emb','sel',['no','yes']],['pcol','color'],['thickness','num'],['color','color']];
 const TYPE_FIELDS={wall:[['thickness','num'],['hatch','sel',['diag','solid','none']],['mat','sel',TYPE_MATS.wall],['color','color']],door:[['width','num'],['height','num'],['style','sel',['single','double','sliding']]],
   window:[['width','num'],['height','num'],['sill','num'],['style','sel',['casement','sliding','fixed']]],column:[['shape','sel',['rect','round']],['w','num'],['d','num'],['mat','sel',TYPE_MATS.column],['color','color']],beam:[['w','num'],['h','num'],['mat','sel',TYPE_MATS.beam],['color','color']],truss:[['kind','sel',TRUSS_KINDS],['h','num'],['panel','num'],['cw','num'],['ch','num'],['ww','num'],['wh','num'],['color','color']],
   mtext:[['font','sel',Object.keys(FONTS)],['size','num'],['bold','sel',['no','yes']],['italic','sel',['no','yes']]],
@@ -12773,7 +12774,7 @@ const TYPE_FIELDS={wall:[['thickness','num'],['hatch','sel',['diag','solid','non
   furn:[['kind','sel',['bed','nstand','wardrobe','sofa','sofal','ctable','rtable','table','chair','dset','ochair','desk','shelf','cabinet','tvstand','tvset','lamp','curtain','rug','kbase','kwall','fridge','washer','stove','hood','car','person','tree','shrub','pot','slab','pave','fam']],['grp','sel',['furn','case','appl','site']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],
   eequip:[['kind','sel',['lc','db','mdb','tx','gen','ssw']],['w','num'],['d','num'],['h','num'],['elev','num'],['color','color']],tray:[['elb','sel',TFIT_ELB,'telb_'],['kind','sel',['ladder','perf','wway']]],conduit:[]};
 function dlgTypes(cat,id){cat=P.types[cat]?cat:'wall';const list=P.types[cat],T=list.find(x=>x.id===id)||list[0],used=P.els.filter(e=>(e.cat===cat&&e.type===T.id)||(cat==='beam'&&e.cat==='bsys'&&e.bt===T.id)||(cat==='beam'&&e.cat==='truss'&&trUses(P,e,T.id))).length+P.ann.filter(d=>(d.cat===cat||(cat==='dim'&&(d.cat==='edim'||d.cat==='dim3'))||(cat==='text'&&(d.cat==='etext'||d.cat==='text3'))||(cat==='tag'&&(d.cat==='etag'||d.cat==='tag3')))&&(d.type===T.id||(cat==='dim'&&d.type==null&&T===list[0]))).length+(cat==='dcomp'?P.types.rdet.filter(q=>q.detail===T.id).length:0)+(cat==='vp'?vptUsed(T.id):0),flat=cat==='dcomp'||cat==='rdet'||cat==='dim'||cat==='text'||cat==='tag'||cat==='region'||cat==='vp';          /* flat: a family of drawings (no keynote, no cost) */
-  const CWD={vLay:'near',vSp:1500,vNum:3,vJ:'ctr',hLay:'near',hSp:1500,hNum:2,hJ:'ctr',mw:50,md:T.thickness,mpro:'rect',bm:'yes',mcol:'#575e69',cwpan:'glass',pcol:'#b9bec6',...CM_DEF227,mjc:'nd'};const TV=T.kind==='curtain'?Object.assign({},CWD,...Object.entries(T).filter(x=>x[1]!=null).map(([k,v])=>({[k]:v}))):cat==='railing'?Object.assign({tr:'rect',hr:'none',hrx:'none'},HR_DEF224,BP_DEF225(T),T):T;          // a curtain type shows the defaults of what it leaves unset
+  const CWD={vLay:'near',vSp:1500,vNum:3,vJ:'ctr',hLay:'near',hSp:1500,hNum:2,hJ:'ctr',mw:50,md:T.thickness,mpro:'rect',bm:'yes',mcol:'#575e69',cwpan:'glass',pcol:'#b9bec6',...CM_DEF227,mjc:'nd',emb:'no'};const TV=T.kind==='curtain'?Object.assign({},CWD,...Object.entries(T).filter(x=>x[1]!=null).map(([k,v])=>({[k]:v}))):cat==='railing'?Object.assign({tr:'rect',hr:'none',hrx:'none'},HR_DEF224,BP_DEF225(T),T):T;          // a curtain type shows the defaults of what it leaves unset
   const F=[['name','text'],...(cat==='vp'?[]:[['mark','text']]),...(flat?[]:[['kn','kn']]),...((cat==='wall'&&T.kind==='curtain'?cwFields227(T):tdFields(cat,T))||[]),...(flat?[]:[['cost','num']])],fr=f=>{const k=f[0];
       if(RG_TF[f[1]])return RG_TF[f[1]](T,f);
       if(f[1]==='tref')return`<div class="fr"><label for="tf_${k}">${t('f_'+k)}</label><select id="tf_${k}" data-tf="${k}" data-tref="1">${(P.types[f[2]]||[]).map(x=>`<option value="${x.id}"${x.id===T[k]?' selected':''}>${esc(x.name)}</option>`).join('')}</select></div>`;
@@ -14612,7 +14613,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=239,V1_NAME='V1.229';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=240,V1_NAME='V1.230';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -36698,6 +36699,40 @@ Object.assign(STR,{
     'Click inside a panel near a corner, or click the mark at a joint, to switch which mullion runs through that joint (Make Continuous / Break at Join) · an upright bar: the vertical mullion runs through; a flat bar: the horizontal one; a dot: Not Defined · orange ones are set on this wall, not by its type'],
   mjn_type229:['ชนิดของผนัง: {0}','The type: {0}'],mjn_v229:['เสาครีบตั้งวิ่งผ่าน','The vertical mullion runs through'],mjn_h229:['เสาครีบนอนวิ่งผ่าน','The horizontal mullion runs through'],mjn_nd229:['ไม่กำหนด','Not Defined'],
   cw_rmjn229:['คืนรอยต่อเสาครีบทั้งหมด','Reset mullion joins'],cw_nmjn229:['ตั้งรอยต่อไว้ {0} จุด','{0} joints of their own'],p_mjn229:['รอยต่อเสาครีบที่ตั้งเอง','Mullion joins changed']});
+/* ===== 230 Automatically Embed (Revit: a curtain wall type's Automatically Embed: a curtain wall drawn inside a basic wall cuts its own opening in that wall) =====
+   T.emb==='yes' on a curtain wall type: each curtain wall of that type that lies along a basic wall (parallel to it, its location line inside the wall's thickness, the
+   same design option) cuts the wall where the two overlap, along the wall and in height, as a void does: the wall's 3D solid and its layers, elevations and sections
+   (drawn from them), plans where the cut plane passes through the gap, and the wall's area and volume.  The type's own setting: no instance parameter. */
+function emb230(P0){const out=new Map(),C=[];
+  for(const e of P0.els){if(e.cat!=='wall'||e.gx)continue;const T=typ(P0,e);if(T&&T.kind==='curtain'&&T.emb==='yes'&&Math.hypot(e.x2-e.x1,e.y2-e.y1)>=50)C.push(e)}
+  if(!C.length)return out;
+  for(const w of P0.els){if(w.cat!=='wall'||w.gx)continue;const W=typ(P0,w);if(!W||W.kind==='curtain')continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L<1)continue;
+    const ux=(w.x2-w.x1)/L,uy=(w.y2-w.y1)/L,h=(+W.thickness||150)/2,D=(x,y)=>(x-w.x1)*ux+(y-w.y1)*uy,N=(x,y)=>(y-w.y1)*ux-(x-w.x1)*uy;let zw=null;
+    for(const c of C){if(c.dop&&w.dop&&c.dop!==w.dop)continue;const cl=Math.hypot(c.x2-c.x1,c.y2-c.y1);if(Math.abs((c.x2-c.x1)*uy-(c.y2-c.y1)*ux)/cl>0.02)continue;          // parallel
+      if(Math.abs(N(c.x1,c.y1))>h+1||Math.abs(N(c.x2,c.y2))>h+1)continue;const d1=D(c.x1,c.y1),d2=D(c.x2,c.y2),a=Math.max(0,Math.min(d1,d2)),b=Math.min(L,Math.max(d1,d2));if(b-a<50)continue;
+      zw=zw||zRange(P0,w);const zc=zRange(P0,c),s=Math.max(zw[0],zc[0]),t=Math.min(zw[1],zc[1]);if(t-s<50)continue;
+      (out.get(w.id)||out.set(w.id,[]).get(w.id)).push({cw:c.id,a,b,s,t,ph:c.ph,dem:c.dem})}}
+  return out}
+/* the embedded curtain walls drawn after every other cut wall, so that their host's fill and its gap lie under them */
+function embOrd230(M,cutW){if(!M.size)return cutW;const S=new Set();for(const L of M.values())for(const q of L)S.add(q.cw);return cutW.filter(x=>!S.has(x[0].id)).concat(cutW.filter(x=>S.has(x[0].id)))}
+/* plans: the gap in the host where the cut plane passes through it; paper over the wall's fill and its outline, its two ends drawn as cut lines; the outline of the
+   curtain wall, which the gap covered, again (its own fill comes later) */
+function embGap230(g,ctx,v,FP,e,A,col,half,sc,M,cutW){const L=M&&M.get(e.id);if(!L)return;const fp=FP.get(e.id);if(!fp)return;const h=fp.g.h,cut=VRm(v).cut,lw=g.lw(half?0.25:0.45),ex=lw/sc*1.5,lo=Math.max(fp.dL0,fp.dR0),hi=Math.min(fp.dL1,fp.dR1),S=[];
+  for(const q of L){if(!(q.s<cut&&q.t>cut))continue;const a=Math.max(lo,q.a),b=Math.min(hi,q.b);if(b-a<1)continue;g.path([fp.pt(a,h+ex),fp.pt(b,h+ex),fp.pt(b,-h-ex),fp.pt(a,-h-ex)]);ctx.fillStyle=col.paper;ctx.fill();S.push([a,b,q.cw])}
+  if(!S.length)return;g.cut(1);ctx.strokeStyle=A.ink;ctx.lineWidth=lw;for(const [a,b] of S){if(a>lo+1)g.seg(fp.pt(a,h),fp.pt(a,-h));if(b<hi-1)g.seg(fp.pt(b,h),fp.pt(b,-h))}
+  ctx.lineWidth=2*lw;for(const [,,id] of S){const c=cutW.find(x=>x[0].id===id),cf=c&&FP.get(id);if(!cf)continue;g.el(c[0]);g.path(cf.poly);ctx.stroke()}g.el(e);g.cut(0)}
+/* the area of a wall that its embedded curtain walls take */
+function embArea230(M,e){let s=0;for(const q of M.get(e.id)||[])s+=(q.b-q.a)*(q.t-q.s);return s}
+/* Properties: a curtain wall embedded in a wall names that wall's type; a wall with curtain walls in it counts them */
+function embRow230(e){const M=emb230(P),H=[];for(const [id,L] of M)if(L.some(q=>q.cw===e.id)){const w=IDX.get(id),W=w&&typ(P,w);if(W)H.push(W.name)}return H.length?PR.ro('p_emb230',H.join(', ')):''}
+function embRows230(els){if(els.length!==1)return'';const e=els[0],T=typ(P,e);if(!T||T.kind==='curtain')return'';const L=emb230(P).get(e.id);return L?PR.ro('p_embn230',String(L.length)):''}
+XC.push(()=>{for(const T of (P.types&&P.types.wall)||[]){if(T.emb===undefined)continue;if(T.kind!=='curtain'||T.emb!=='yes')delete T.emb}});
+Object.assign(STR,{
+  f_emb:['ฝังในผนังอัตโนมัติ (Automatically Embed)','Automatically Embed'],
+  p_emb230:['ฝังอยู่ในผนัง','Embedded in'],p_embn230:['ผนังกระจกที่ฝังอยู่','Embedded curtain walls']});
+/* picking in a plan: inside the gap a curtain wall cuts in its wall (where the plan's cut passes through it) the wall is not there, so a click there picks the curtain wall */
+let EMBH230={v:-1,p:null,m:null};
+function embIn230(v,e,x,y){if(EMBH230.v!==VER||EMBH230.p!==P)EMBH230={v:VER,p:P,m:emb230(P)};const L=EMBH230.m.get(e.id);if(!L)return false;const l=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,d=((x-e.x1)*(e.x2-e.x1)+(y-e.y1)*(e.y2-e.y1))/l,c=VRm(v).cut;return L.some(q=>q.s<c&&q.t>c&&d>q.a&&d<q.b)}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -37830,6 +37865,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > ต่างจาก Revit: ตั้งรูปหน้าตัดกับขนาดให้เสาครีบแต่ละช่วงโดยตรง ไม่ได้เลือกจากชนิดเสาครีบ (Mullion Type) ที่ตั้งชื่อไว้
 - [[a_cwpanels]]: รอยต่อเสาครีบ (Revit: Join Condition, Make Continuous / Break at Join): ที่ แก้ชนิด ของผนังกระจก ตั้ง [[f_mjc]] ว่าที่รอยต่อของเสาครีบตั้งกับเสาครีบนอน เส้นไหนวิ่งผ่าน: [[mjc_v]] · [[mjc_h]] · [[mjc_bv]] (เสาครีบรอบขอบวิ่งผ่านเสาครีบด้านใน ด้านในเสาครีบตั้งวิ่งผ่าน) · [[mjc_bh]] · [[mjc_nd]] (แต่ละช่วงจากเส้นกริดถึงเส้นกริดเหมือนเดิม) · เส้นที่ไม่วิ่งผ่านหยุดที่ผิวของเส้นที่วิ่งผ่าน เส้นที่วิ่งผ่านเป็นชิ้นเดียวตลอดช่วงที่รูปหน้าตัดเดียวกัน และที่ปลายของมันยื่นไปถึงผิวไกลของอีกเส้น เห็นชัดเมื่อเสาครีบสองทางลึกต่างกัน · เปลี่ยนทีละรอยต่อได้ในหน้าต่าง [[a_cwpanels]] โหมด [[cwm_mjn]] (คลิกใกล้มุมของช่อง) ปุ่ม [[cw_rmjn229]] คืนทั้งหมด · [[f_mof]] เลื่อนเสาครีบออกจากแนวกระจก ค่าบวกไปทางด้านนอกของผนัง ตั้งทีละช่วงได้ที่ช่อง [[mty_o229]] ในโหมด [[cwm_mty]]
 > ต่างจาก Revit: ที่รอยต่อที่เสาครีบที่วิ่งผ่านมีรูปหน้าตัดต่างกันสองข้าง เสาครีบแบ่งเป็นสองชิ้นที่กึ่งกลางรอยต่อ · แก้เส้นกริดแล้วรอยต่อที่ตั้งเองถูกล้าง
+- [[f_emb]] (Revit: Automatically Embed): ที่ แก้ชนิด ของผนังกระจก ตั้ง [[f_emb]] เป็น ใช่ แล้ววาดผนังกระจกชนิดนั้นตามแนวผนังธรรมดา (ขนานกัน และแนวผนังกระจกอยู่ในความหนาของผนัง) ผนังกระจกจะเจาะช่องในผนังเองตรงช่วงที่ซ้อนกันทั้งความยาวและความสูง ช่องนี้เห็นในภาพ 3D รูปด้าน รูปตัด และแปลนที่ระนาบตัดผ่านช่อง พื้นที่และปริมาตรของผนังหักช่องออก · Properties ของผนังกระจกบอกว่าฝังอยู่ในผนังชนิดไหน และของผนังบอกจำนวนผนังกระจกที่ฝังอยู่ · ย้ายผนังกระจกออกจากแนวผนัง ช่องก็หายไปเอง
+> ต่างจาก Revit: ตั้งได้ที่ชนิดเท่านั้น ยังไม่มีคำสั่ง Cut Geometry สำหรับฝังผนังกระจกทีละอัน · ผนังกระจกที่ยาวถึงปลายผนังยังเหลือผนัง 30 มม. ที่ปลายนั้น
 - ฝ้าเพดานวาดและมองเห็นใน [[a_rcp]] (แท็บ [[tab_view]])
 
 # ขอบพื้น
@@ -38024,6 +38061,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > Unlike Revit: a segment is given a profile and sizes directly, not one of a list of named mullion types
 - [[a_cwpanels]]: mullion joins (Revit: Join Condition, Make Continuous / Break at Join): in Edit Type of a curtain wall set [[f_mjc]], which mullion runs through where a vertical and a horizontal one meet: [[mjc_v]] · [[mjc_h]] · [[mjc_bv]] (the border mullions run through the ones inside, and inside the vertical ones run through) · [[mjc_bh]] · [[mjc_nd]] (each segment from grid line to grid line, as before) · the one that does not run through stops at the faces of the one that does; the one that runs through is one piece along the segments of one profile, and where it ends it reaches the far face of the other; it shows when mullions of the two ways have different depths · in [[a_cwpanels]] the [[cwm_mjn]] mode switches one joint at a time (click near a corner of a panel), [[cw_rmjn229]] resets them · [[f_mof]] moves the mullions off the line of the glass, + toward the exterior of the wall; one segment takes its own in the [[mty_o229]] box of the [[cwm_mty]] mode
 > Unlike Revit: where the mullion running through has another profile on each side, it is two pieces meeting at the middle of the joint · changing the grid clears the joints set on the wall
+- [[f_emb]] (Revit: Automatically Embed): in Edit Type of a curtain wall set [[f_emb]] to Yes, then draw a curtain wall of that type along a basic wall (parallel, its location line inside the wall's thickness): it cuts its own opening in the wall where the two overlap, along the wall and in height. The opening shows in 3D, elevations, sections and plans whose cut plane passes through it, and the wall's area and volume leave it out · the Properties of the curtain wall name the type of the wall it is embedded in, and those of the wall count the curtain walls in it · move the curtain wall off the wall and the opening goes
+> Unlike Revit: a type setting only; there is no Cut Geometry yet to embed one curtain wall at a time · a curtain wall that reaches the end of its wall leaves 30 mm of wall at that end
 - Ceilings are drawn and seen in a [[a_rcp]] (the [[tab_view]] tab)
 
 # Slab edges
@@ -38649,6 +38688,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.227 · เสาครีบมุมของผนังกระจก (Revit: Corner Mullion): มุม L, V, คางหมู และสี่เหลี่ยม ตั้งที่ขอบ 1 และขอบ 2 ในชนิดของผนัง แทนเสาครีบขอบของสองผืนที่ชนกันเป็นมุม
 - V1.228 · เปลี่ยนชนิดเสาครีบทีละช่วงหรือทั้งเส้นกริด (Revit: เลือกเสาครีบแล้วเปลี่ยนชนิด): รูปหน้าตัด ความกว้าง ความลึก ในหน้าต่างแก้แผงผนังกระจก
 - V1.229 · รอยต่อเสาครีบและระยะเยื้อง (Revit: Join Condition, Make Continuous / Break at Join, Offset): ชนิดของผนังกระจกตั้งว่าเสาครีบตั้งหรือนอนวิ่งผ่านรอยต่อ สลับทีละรอยต่อในหน้าต่างแก้แผง และเลื่อนเสาครีบออกจากแนวกระจก
+- V1.230 · ผนังกระจกฝังในผนังอัตโนมัติ (Revit: Automatically Embed): ชนิดของผนังกระจกตั้งให้เจาะช่องในผนังธรรมดาที่วาดทับได้ เห็นในภาพ 3D แปลน รูปด้าน และรูปตัด และหักพื้นที่ผนังออก
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -39017,6 +39057,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.227 · Corner mullions of curtain walls (Revit: Corner Mullion): L, V, Trapezoid and Quad, set as Border 1 and Border 2 in the wall's type, in place of the border mullions of two walls that meet at a corner
 - V1.228 · Mullion types one by one or along a grid line (Revit: select a mullion, change its type): profile, width and depth, in Edit Panels of a curtain wall
 - V1.229 · Mullion joins and offsets (Revit: Join Condition, Make Continuous / Break at Join, Offset): a curtain wall type sets which mullions run through the joints, Edit Panels switches one joint at a time, and mullions can sit off the line of the glass
+- V1.230 · Automatically Embed (Revit: Automatically Embed): a curtain wall type can cut its own opening in the basic wall it is drawn in, in 3D, plans, elevations and sections, and out of the wall's area
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -41208,6 +41249,9 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r230={emb:()=>{const o={};for(const [id,L] of emb230(P))o[id]=L.map(q=>({cw:q.cw,a:Math.round(q.a),b:Math.round(q.b),s:Math.round(q.s),t:Math.round(q.t)}));return o},
+  area:id=>{const q=quantities(P).get(id);return q?{area:Math.round(q.area),vol:Math.round(q.vol)}:null},
+  ord:()=>embOrd230(emb230(P),P.els.filter(e=>e.cat==='wall').map(e=>[e])).map(x=>x[0].id)};
 window.PenumBIM.r229={runs:id=>{const e=IDX.get(id),T=e&&typ(P,e),fp=e&&FPm().get(id);if(!T||T.kind!=='curtain'||!fp)return null;const zr=zRange(P,e),d0=Math.max(fp.dL0,fp.dR0),d1=Math.min(fp.dL1,fp.dR1),G=cwGrid(T,d0,d1,zr[0],zr[1],e),xs=G.xs,CE=cmEnds227(P,FPm(),e,xs),hw=Math.max(5,(+T.mw||50)/2),hd=+T.md>0?T.md/2:fp.g.h;
     const R=cwRuns229(e,T,xs,G.zs,CE,T.bm!=='no',hw,hd,T.mpro||'rect',d0,d1,zr[0],zr[1]),r=x=>Math.round(x*10)/10,f=q=>({a:r(q.a),b:r(q.b),za:r(q.za),zb:r(q.zb),p:q.S.p,hw:q.S.hw,hd:q.S.hd,of:q.S.of||0});
     return{V:R.V.map(q=>Object.assign({i:q.i,j0:q.j0,j1:q.j1},f(q))),H:R.H.map(q=>Object.assign({j:q.j,i0:q.i0,i1:q.i1},f(q))),xs:xs.map(r),zs:G.zs.map(r),z0:zr[0],z1:zr[1]}},
