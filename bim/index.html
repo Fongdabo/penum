@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=281,V1_NAME='V1.271';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=282,V1_NAME='V1.272';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38876,6 +38876,45 @@ Object.assign(STR,{
   p_sphm271:['กำหนดด้วย (Specify)','Specify'],sphm_s271:['ความลาด','Slope'],sphm_h271:['ความสูงที่หางลูกศร','Height at Tail'],
   p_sphht271:['ระยะยกที่หางลูกศร','Height Offset at Tail'],p_sphhh271:['ระยะยกที่หัวลูกศร','Height Offset at Head'],p_sphsl271:['ความลาดที่ได้','Slope'],sph_down271:['ลาดลงตามลูกศร','falls along the arrow'],
   sph_note271:['หางลูกศรอยู่ที่ขอบที่ลูกศรเริ่มตามทิศที่ตั้ง หัวอยู่ที่ขอบอีกด้าน ระยะยกนับจากระดับของแผ่น แผ่นเอียงผ่านทั้งสองจุด แก้รูปแผ่นแล้วระยะยกที่หางและหัวคงเดิม · เลือกแผ่นในแปลนจะเห็นลูกศรชี้ทางขึ้น','The tail is at the edge where the arrow starts along its direction, the head at the far one; the offsets are from the slab\'s height and the slab runs through both, which stay when the outline changes · select it in a plan to see the arrow']});
+/* ===== 272 Room volumes under sloped floors and ceilings (V1.272; Revit: a room's volume is computed to its bounding elements, a sloped ceiling or a floor
+   with Shape Editing included) =====
+   V1.240 took the ceilings and floors over a room, and the floors it stands on, out of its volume as flat slabs at their heights.  A slab with a slope (e.sp or
+   Height at Tail, 271) or with points raised by Shape Editing (e.zv, 76) now counts as it lies: its face over the room is a plane, or a plane on each triangle
+   of the raised points, and the volume above it (a floor under the room) or below it (a ceiling or a floor over the room) is integrated exactly, clipped to
+   the room's base and top.  Rooms whose slabs are all flat are computed as before. */
+const slTilt272=s=>!!slabSlope(s)||(s.cat==='floor'&&Array.isArray(s.zv)&&s.zv.length===s.pts.length);
+/* the face of slab s that a room meets, as linear pieces {T: a triangle or null (the whole slab), a, b, c}: z = a·x + b·y + c; up = its underside */
+function slFace272(P0,s,up){const z=zRange(P0,s),z0=up?z[0]:z[1],S=slabSlope(s);let a=0,b=0,c=0;if(S){c=S.dz(0,0);a=S.dz(1,0)-c;b=S.dz(0,1)-c}
+  if(s.cat!=='floor'||!Array.isArray(s.zv)||s.zv.length!==s.pts.length)return[{T:null,a,b,c:c+z0}];
+  const TN=zvTin(s),out=[];for(let i=0;i<TN.t.length;i+=3){const A=TN.p[TN.t[i]],B=TN.p[TN.t[i+1]],C=TN.p[TN.t[i+2]],d=(B[0]-A[0])*(C[1]-A[1])-(C[0]-A[0])*(B[1]-A[1]);if(Math.abs(d)<1e-6)continue;
+    const pa=((B[2]-A[2])*(C[1]-A[1])-(C[2]-A[2])*(B[1]-A[1]))/d,pb=((C[2]-A[2])*(B[0]-A[0])-(B[2]-A[2])*(C[0]-A[0]))/d;
+    out.push({T:[[A[0],A[1]],[B[0],B[1]],[C[0],C[1]]],a:a+pa,b:b+pb,c:c+z0+A[2]-pa*A[0]-pb*A[1]})}return out.length?out:[{T:null,a,b,c:c+z0}]}
+/* the lowest and highest the face gets over the slab's outline */
+function slRange272(s,F){let lo=Infinity,hi=-Infinity;for(const f of F)for(const p of (f.T||s.pts)){const z=f.a*p[0]+f.b*p[1]+f.c;lo=Math.min(lo,z);hi=Math.max(hi,z)}return[lo,hi]}
+{const f0=rmVol240;rmVol240=(P0,e,r,rec)=>{if(!r||!(r.area>0)||!Array.isArray(r.net))return 0;const M=rmLim240(P0,e);if(!(M.h>0))return 0;
+  const PI=typeof phIndex==='function'?phIndex(P0):null,ip=PI?phAt(PI,e.ph||'new'):0,DS=dsE(P0,e),lvE=elev(P0,e.level);
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of r.net){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
+  const caps=[],bases=[];let tl=false;
+  for(const s of P0.els){if(s.cat!=='floor'&&s.cat!=='ceiling')continue;if(!Array.isArray(s.pts)||s.pts.length<3)continue;if(PI&&!phThere(PI,s,ip))continue;if(s.dop&&!DS.has(s.dop))continue;
+    let a0=Infinity,b0=Infinity,a1=-Infinity,b1=-Infinity;for(const p of s.pts){a0=Math.min(a0,p[0]);b0=Math.min(b0,p[1]);a1=Math.max(a1,p[0]);b1=Math.max(b1,p[1])}if(a1<x0||a0>x1||b1<y0||b0>y1)continue;
+    const base=s.cat==='floor'&&elev(P0,s.level)<=lvE+1,t=slTilt272(s);
+    if(!t){const z=zRange(P0,s);if(base){if(z[1]>M.b+1)bases.push({z:Math.min(z[1],M.t),s})}else if(z[1]>M.b+1&&z[0]<M.t-1)caps.push({z:Math.max(z[0],M.b),s});continue}
+    const zr=zRange(P0,s),F=slFace272(P0,s,!base),R=slRange272(s,F),th=zr[1]-zr[0];
+    if(base){if(R[1]>M.b+1){bases.push({z:Math.min(R[1],M.t),s,F});tl=true}}else if(R[1]+th>M.b+1&&R[0]<M.t-1){caps.push({z:Math.max(R[0],M.b),s,F});tl=true}}
+  if(!tl)return f0(P0,e,r,rec);
+  const C=Array.isArray(r.cols239)&&r.cols239.length?rbdCols239(P0,e.level,e.ph||'new',DS).filter(c=>r.cols239.includes(c.id)):[];
+  const inA=Q=>{let a=rbdClip239(r.net,Q);for(const c of C)for(const H of c.parts){const X=rmCvx240(H,Q);if(X)a-=rbdClip239(r.net,X)}return Math.max(0,a)};
+  /* the integral over the room (less its columns) within the convex outlines cl, with the half-planes hp, of a·x + b·y + c */
+  const I=(cl,hp,a,b,c)=>{let v=rfInt242(r.net,cl,hp,a,b,c);for(const k of C)for(const H of k.parts)v-=rfInt242(r.net,cl.concat([H]),hp,a,b,c);return v};
+  const CR=[],run=(L,up)=>{let v=0;const done=[];for(const q of L){let parts=[];try{parts=slabPieces(P0,q.s).flatMap(pc=>holeParts([pc]))}catch(err){parts=[]}
+      let ar=0,vq=0;for(const Q of parts){const rest=done.length?polyMinus(Q,done):[Q];for(const R of rest){if(up)CR.push({z:q.z,R});
+        if(!q.F){const a=inA(R);ar+=a;vq+=(up?M.t-q.z:q.z-M.b)*a;continue}
+        for(const K of holeParts([R]))for(const f of q.F){const cl=f.T?[K,f.T]:[K],zf=p=>f.a*p[0]+f.b*p[1]+f.c;ar+=I(cl,[],0,0,1);
+          if(up)vq+=I(cl,[p=>M.b-zf(p)],0,0,M.t-M.b)+I(cl,[p=>zf(p)-M.b,p=>M.t-zf(p)],-f.a,-f.b,M.t-f.c);
+          else vq+=I(cl,[p=>zf(p)-M.t],0,0,M.t-M.b)+I(cl,[p=>zf(p)-M.b,p=>M.t-zf(p)],f.a,f.b,f.c-M.b)}}}
+      v+=vq;if(rec)rec.push({id:q.s.id,up,z:q.z,a:ar,v:vq,tilt:q.F?1:0});done.push(...parts)}return v};
+  caps.sort((a,b)=>a.z-b.z);bases.sort((a,b)=>b.z-a.z);
+  return Math.max(0,r.area*M.h-run(caps,true)-run(bases,false)-rfCut242(P0,e,r,M,CR,C,PI,ip,DS,rec))}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40921,6 +40960,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.269 · แบ่งเว้นช่องตามแนวนอนล็อกช่องไว้เหมือน Revit: ผนังที่แบ่งเว้นช่องตามแนวนอนในรูปด้าน รูปตัด หรือ 3 มิติ และเสาที่แบ่งเว้นช่องที่ความสูง เมื่อแก้ปลายบนของชิ้นล่าง ชิ้นบนเลื่อนฐานตามโดยปลายบนอยู่ที่เดิม เมื่อแก้ฐานของชิ้นบน ชิ้นล่างเลื่อนปลายบนตาม ช่องเท่าเดิมเสมอ · คุณสมบัติของชิ้นบอกช่องและมีช่องติ๊ก ล็อกช่อง เอาติ๊กออกเพื่อปลดล็อก
 - V1.270 · รูปกุญแจที่ช่องรอยต่อที่ล็อก: เลือกผนังหรือเสาที่แบ่งเว้นช่องตามแนวนอนในรูปด้าน รูปตัด หรือ 3 มิติ จะเห็นกุญแจที่กลางช่อง ชี้แล้วบอกว่าคลิกเพื่อปลดล็อก คลิกแล้วปลดล็อก (ย้อนกลับได้) · เปิดแสดงข้อจำกัด (Reveal Constraints) ในรูปด้านหรือรูปตัดเห็นกุญแจสีแดงของทุกช่องที่ล็อก
 - V1.271 · ลาดพื้นกำหนดด้วยความสูงที่หางลูกศร (Specify: Height at Tail): ในกลุ่มความลาดของพื้นและฝ้าเลือกกำหนดด้วยความลาดแบบเดิม หรือความสูงที่หางลูกศร แล้วตั้งระยะยกที่หางและหัวลูกศร แผ่นเอียงผ่านทั้งสองจุด ลาดขึ้นหรือลงตามลูกศรได้ ความลาดคำนวณให้เอง แก้รูปแผ่นแล้วระยะยกคงเดิม สลับกลับเป็นความลาดแผ่นยังอยู่ที่เดิม
+- V1.272 · ปริมาตรห้องใต้พื้นและฝ้าที่ลาด: ห้องที่อยู่ใต้ฝ้าหรือพื้นชั้นบนที่ลาด (ความลาดหรือความสูงที่หางลูกศร) หรือยกจุดพื้น และห้องที่ตั้งบนพื้นแบบนั้น คิดปริมาตรตามผิวแผ่นจริง ไม่ใช่แผ่นเรียบ เหมือน Revit ห้องที่แผ่นเรียบทั้งหมดได้ค่าเท่าเดิม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41331,6 +41371,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.269 · Split with Gap across locks the gap, as in Revit: for a wall split across with a gap in an elevation, a section or a 3D view and a column split with a gap at a height, moving the top of the part below takes the base of the part above along (its top stays), moving the base of the part above takes the top of the part below along, the gap always the same · Properties of either part show the gap with a Locked box; clear it to unlock
 - V1.270 · The padlock of a locked gap: select a wall or a column split across with a gap in an elevation, a section or a 3D view and a padlock shows at the middle of the gap; pointed at, it says a click unlocks, and a click unlocks it (undoable) · Reveal Constraints in an elevation or a section shows every locked gap in red
 - V1.271 · Slope Arrow Specify: Height at Tail: in the Slope group of a floor or a ceiling choose Specify Slope (as before) or Height at Tail, then set Height Offset at Tail and at Head; the slab runs through both, rising or falling along the arrow, the slope follows, a changed outline keeps both heights, and going back to Slope keeps the slab where it is
+- V1.272 · Room volumes under sloped floors and ceilings: a room under a sloped ceiling or floor above (Slope or Height at Tail) or a floor with raised points, or standing on one, has its volume to the slab's real face, not a flat slab, as in Revit; rooms whose slabs are flat keep their volumes
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43524,6 +43565,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r272={
+  vol:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);return i<0?null:Math.round(rmVol240(P,e,R[i])/1e3)/1e3},
+  rec:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y),o=[];if(i<0)return null;rmVol240(P,e,R[i],o);return o.filter(x=>x.id!=null).map(x=>Object.assign({},x))},
+  area:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);return i<0?null:R[i].area},
+  /* the volume slab s takes out of room id, sampled on a grid (step mm), from what 3D draws: its face at a point is its height, the slope and the raised points */
+  num:(id,sid,step,flat,ex)=>{const e=IDX.get(id),s=IDX.get(sid);if(!e||!s)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);if(i<0)return null;const net=R[i].net,M=rmLim240(P,e),zr=zRange(P,s),
+    up=!(s.cat==='floor'&&elev(P,s.level)<=elev(P,e.level)+1),S=flat?null:slabSlope(s),T=!flat&&s.zv?zvTin(s):null,PC=slabPieces(P,s),EX=(ex||[]).flatMap(k=>{const q=IDX.get(k);return q?slabPieces(P,q):[]});let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of net){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
+    let v=0;for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net)||!PC.some(pc=>inPoly(x,y,pc))||EX.some(pc=>inPoly(x,y,pc)))continue;const z=(up?zr[0]:zr[1])+(S?S.dz(x,y):0)+(T?zvAt(T,s,x,y):0),c=Math.max(M.b,Math.min(M.t,z));v+=(up?M.t-c:c-M.b)*step*step}return v/1e9},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r271={
   sl:id=>{const e=IDX.get(id),S=e&&slabSlope(e);return S?{k:Math.round(S.k*1e6)/1e6,rise:Math.round(S.rise*10)/10,sp:e.sp==null?null:e.sp,sph:e.sph271||null,off:e.off==null?null:e.off,sa:e.sa||0}:null},
   dz:(id,x,y)=>{const e=IDX.get(id),S=e&&slabSlope(e);return S?Math.round(S.dz(x,y)*10)/10:null},
