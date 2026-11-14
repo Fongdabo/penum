@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=271,V1_NAME='V1.261';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=272,V1_NAME='V1.262';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38309,6 +38309,75 @@ Object.assign(STR,{
   f_rcp261:['จุดคำนวณห้อง (Room Calculation Point)','Room Calculation Point'],f_rcpu261:['จุดคำนวณห้อง: เลื่อนตามความกว้าง','Room Calculation Point: Along'],
   f_rcpv261:['จุดคำนวณห้อง: เลื่อนไปด้านหน้า','Room Calculation Point: Forward'],rcp_auto261:['หน้าชิ้น + 150','front face + 150'],
   g_rcp261:['ห้อง (Room)','Room'],p_room261:['อยู่ในห้อง','Room'],rcp_none261:['ไม่อยู่ในห้องใด','In no room']});
+/* ===== 262 Shear Studs (V1.262; Revit: Steel › Fabrication › Shear Studs — headed studs welded in a pattern along the top flange of a steel beam, so that the slab
+   cast over it works with the beam; their diameter, length, spacing, end distance and rows are set, and they are counted and scheduled) =====
+   A level steel beam (one that may have connections) has e.ss262 = {n: rows (1 or 2), d: diameter, h: length (height over the flange, head included), s: spacing
+   along the beam, ed: distance of the first and last stud from the ends of its line, g: gauge between two rows}; a key left out takes the stock value.  The studs
+   stand on the top of the steel, in rows centred across the flange, evenly between the end distances.  Two rows need g + d + 24 mm within the width of the flange;
+   narrower, the studs are one row.  They show in 3D views, elevations and sections (meshes of the beam, so IFC writes them with it), as rings in plans of Fine
+   detail; Properties of beams sets them, the Structure tab's Connection panel puts them on the selected beams, the BOQ counts them by size and beam schedules
+   have their count. */
+const SS_D262=[13,16,19,22,25],SS_DEF262={n:1,d:19,h:100,s:300,ed:150,g:100};
+const ssOn262=e=>!!e&&e.cat==='beam'&&!!e.ss262&&typeof e.ss262==='object'&&+e.ss262.n>0;
+function ssPar262(e){const o=e.ss262||{},n=(k)=>o[k]!=null&&o[k]!==''&&isFinite(+o[k])?+o[k]:SS_DEF262[k];const d=SS_D262.includes(n('d'))?n('d'):19;
+  return{n:n('n')===2?2:1,d,h:Math.max(4*d,n('h')),s:Math.max(4*d,n('s')),ed:Math.max(25,n('ed')),g:Math.max(4*d,n('g'))}}
+/* the studs of a beam: {F (bcFrame), p (the values), rows (as they fit), z0 (top of steel), pts: [s, u] in the frame of the beam}; null when it has none or the
+   beam does not take them */
+function ssGeo262(Q,e){if(!ssOn262(e)||!bcOk(Q,e))return null;const F=bcFrame(Q,e),T=F.T||{},p=ssPar262(e),bf=+T.sb||+T.w||200,rows=p.n===2&&p.g+p.d+24<=bf?2:1;
+  const av=F.L-2*p.ed,pts=[];if(av<-1e-6){if(F.L>=2*p.d)pts.push(F.L/2)}else{const N=Math.floor(av/p.s+1e-6)+1,s0=p.ed+(av-(N-1)*p.s)/2;for(let i=0;i<N;i++)pts.push(s0+i*p.s)}
+  const us=rows===2?[-p.g/2,p.g/2]:[0],P2=[];for(const s of pts)for(const u of us)P2.push([s,u]);return{F,p,rows,bf,z0:F.zt,pts:P2}}
+const ssKg262=G=>G?G.pts.length*Math.PI*(G.p.d/2)**2*G.p.h*STC_RHO:0;
+const ssPrice262=(d,h)=>Math.round(({13:18,16:22,19:28,22:38,25:55}[d]||28)*(0.7+0.3*h/100));          // assumed, THB each
+/* ---- 3D: a shaft and its head, on the beam (with the beam: picked, hidden, coloured and exported with it) ---- */
+function ssMeshes262(Q,items){for(const e of Q.els){if(e.cat!=='beam'||e.gx||!ssOn262(e))continue;const G=ssGeo262(Q,e);if(!G||!G.pts.length)continue;const a=Math.atan2(G.F.a[1],G.F.a[0])*180/Math.PI;
+  const K=modelKit({x:e.x1,y:e.y1,id:e.id,cat:'beam'},a,items),m=K.part(STC_COL);m.vc='beam';m.mt=MAT.metal;const d=G.p.d,h=G.p.h,r=d/2,R=0.8*d,th=Math.max(6,0.45*d),z=G.z0;
+  for(const q of G.pts)K.rev(m,[q[0],q[1],z],[q[0],q[1],z+h],[[0,0],[0,r],[h-th,r],[h-th,R],[h,R],[h,0]],{n:8,nl:1})}}
+{const f0=stcMeshes;stcMeshes=(Q,items)=>{f0(Q,items);ssMeshes262(Q,items)}}
+/* ---- plans of Fine detail: a ring for each stud ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||(v.detail||'coarse')!=='fine')return;if(!P.els.some(ssOn262))return;const sc=v.scale||100,H=halfCols(col);
+  for(const [e] of of('beam')){if(!ssOn262(e))continue;const G=ssGeo262(P,e);if(!G)continue;g.el(e);const h=hl(e.id);ctx.strokeStyle=h||(discMode(P,v,e)===1?H.ink:col.ink);g.dash(null);ctx.lineWidth=h?1.2:g.lw(0.13);
+    for(const q of G.pts){g.circle(G.F.pt(q[0],q[1]),Math.max(G.p.d/2,0.1*sc)/sc);ctx.stroke()}}g.dash(null)});
+/* ---- Properties of beams ---- */
+const ssBeams262=els=>els.length&&els.every(e=>e.cat==='beam'&&bcOk(P,e));
+XP.push((c,els)=>{if(c!=='beam'||!ssBeams262(els))return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},on=els.filter(ssOn262),U=t('u_mm');
+  let h=PR.grp('g_ss262')+PR.sel('ss262_n','p_ss262n',V(e=>ssOn262(e)?String(ssPar262(e).n):'0'),[['0',t('ss_none262')],['1',t('ss_r1_262')],['2',t('ss_r2_262')]]);if(!on.length)return h;
+  const W=k=>{const a=ssPar262(on[0])[k];return on.every(x=>ssPar262(x)[k]===a)?a:''};
+  h+=PR.sel('ss262_d','p_ss262d',W('d'),SS_D262.map(d=>[d,'Ø'+d]))+PR.num('ss262_h','p_ss262h',W('h'),U,'step="5"')+PR.num('ss262_s','p_ss262s',W('s'),U,'step="10"')+PR.num('ss262_ed','p_ss262e',W('ed'),U,'step="10"');
+  if(on.some(e=>ssPar262(e).n===2))h+=PR.num('ss262_g','p_ss262g',W('g'),U,'step="5"');
+  let n=0,kg=0,one=0;for(const e of on){const G=ssGeo262(P,e);if(!G)continue;n+=G.pts.length;kg+=ssKg262(G);if(G.p.n===2&&G.rows===1)one++}
+  h+=PR.ro('p_ss262c',n+' '+t('u_ss262'))+PR.ro('p_ss262w',(Math.round(kg*10)/10)+' '+t('u_kg262'));if(one)h+=`<div class="pnote">${esc(t('ss_one262'))}</div>`;return h});
+XF.push((cat,o,key,raw)=>{if(!String(key).startsWith('ss262_'))return false;if(cat!=='beam')return true;const k=key.slice(6);if(raw===''||raw==null)return true;
+  if(k==='n'){const v=+raw|0;if(v<=0)delete o.ss262;else o.ss262=Object.assign(o.ss262&&typeof o.ss262==='object'?o.ss262:{},{n:v===2?2:1});return true}
+  if(!ssOn262(o))return true;const v=parseFloat(raw);if(!isFinite(v))return true;const s=o.ss262,d=ssPar262(o).d;
+  if(k==='d'){if(SS_D262.includes(v))s.d=v;return true}
+  const lim={h:[Math.max(50,4*d),400],s:[4*d,3000],ed:[25,3000],g:[4*d,600]}[k];if(!lim)return true;s[k]=Math.round(clamp(v,lim[0],lim[1])*10)/10;return true});
+/* ---- the button: studs on the selected steel beams that have none (as Revit's tool places a pattern on the beams picked) ---- */
+XA.ss262=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='beam'&&bcOk(P,e));if(!S.length){toast(t('ss_sel0_262'));return}const L=S.filter(e=>!ssOn262(e));
+  if(!L.length){toast(t('ss_has262'));return}edit(()=>{for(const e of L)e.ss262={n:1}});let n=0;for(const e of L){const G=ssGeo262(P,e);if(G)n+=G.pts.length}toast(t('ss_done262',L.length,n))};
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-ss262" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+   +`<path class="i-Pb" fill="#d7dfea" ${E} d="M1.6 13.4h20.8v2.4H1.6zM1.6 18.2h20.8v2.4H1.6z"/><path class="i-Sa" fill="#e9edf4" ${E} d="M10.8 15.8h2.4v2.4h-2.4z"/>`
+   +[4.6,10.2,15.8].map(x=>`<path class="i-Ta" fill="#aeefdc" ${E} d="M${x+1} 6.6h1.6v6.8h-1.6z"/><path class="i-Sc" fill="#7184a2" ${E} d="M${x} 4.8h3.6v1.8h-3.6z"/>`).join('')+`</symbol>`)})();
+Object.assign(BTN,{'@ss262':['ss262','']});
+{const p=(RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('@ss262'))p.b.push('@ss262')}
+XR.push(tl=>tl==='modify'&&[...ui.sel].some(id=>{const e=IDX.get(id);return e&&e.cat==='beam'&&bcOk(P,e)})?[{t:'p_sconn',b:['@ss262']}]:[]);
+/* ---- the BOQ: studs by size, each, after the connections ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(ssOn262))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.gx||!ssOn262(e))continue;const G=ssGeo262(Q0,e);if(!G||!G.pts.length)continue;const pk='ss262|'+G.p.d+'|'+G.p.h;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_ss262'),_c:9.38,tcat:'ss262',pk,item:tr('ss_item262',G.p.d,G.p.h),qty:0,unit:tr('u_ss262'),cost:PR0[pk]!=null?+PR0[pk]||0:ssPrice262(G.p.d,G.p.h),amount:0});r.qty+=G.pts.length}
+  if(!by.size)return S;for(const r of by.values()){r.amount=r.qty*r.cost;S.rows.push(r)}S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+/* ---- schedules of beams: the studs and their count ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;const on=f=>e=>{const G=ssGeo262(Q,e);return G?f(G):''};
+  F.push({k:'ss262',l:tr('c_ss262'),g:on(G=>G.rows+'×Ø'+G.p.d+'×'+G.p.h+' @'+G.p.s),grp:'i'},{k:'ss262n',l:tr('c_ss262n'),g:on(G=>G.pts.length),num:1,sum:1,grp:'q'});return F}}
+Object.assign(STR,{
+  a_ss262:['หมุดรับแรงเฉือน (Shear Studs)','Shear Studs'],cat_ss262:['หมุดรับแรงเฉือน','Shear Studs'],g_ss262:['หมุดรับแรงเฉือน (Shear Studs)','Shear Studs'],
+  p_ss262n:['หมุดรับแรงเฉือน','Shear Studs'],ss_none262:['ไม่มี','None'],ss_r1_262:['1 แถว','1 row'],ss_r2_262:['2 แถว','2 rows'],
+  p_ss262d:['เส้นผ่านศูนย์กลาง','Diameter'],p_ss262h:['ความยาว (รวมหัว)','Length (with head)'],p_ss262s:['ระยะห่าง','Spacing'],p_ss262e:['ระยะจากปลายคาน','End Distance'],
+  p_ss262g:['ระยะระหว่างแถว','Row Gauge'],p_ss262c:['จำนวนหมุด','Number of Studs'],p_ss262w:['น้ำหนักหมุด','Stud Weight'],u_ss262:['ตัว','ea'],u_kg262:['กก.','kg'],
+  ss_one262:['ปีกคานแคบเกินสองแถว ใส่เป็นแถวเดียว (ระยะระหว่างแถว + เส้นผ่านศูนย์กลาง + 24 มม. ต้องไม่เกินความกว้างปีก)','The flange is too narrow for two rows, so the studs are one row (the gauge + the diameter + 24 mm must be within the flange width)'],
+  ss_sel0_262:['เลือกคานเหล็กที่วางระดับก่อน แล้วกดหมุดรับแรงเฉือน','Select level steel beams first, then press Shear Studs'],ss_has262:['คานที่เลือกมีหมุดรับแรงเฉือนแล้ว แก้ค่าได้ในคุณสมบัติ','The selected beams already have shear studs; change them in Properties'],
+  ss_done262:['ใส่หมุดรับแรงเฉือนให้คาน {0} ท่อน รวม {1} ตัว (แก้ขนาดและระยะได้ในคุณสมบัติ)','Shear studs on {0} beams, {1} in all (sizes and spacing are in Properties)'],
+  ss_item262:['หมุดรับแรงเฉือน Ø{0}×{1} มม.','Shear stud Ø{0}×{1} mm'],c_ss262:['หมุดรับแรงเฉือน','Shear Studs'],c_ss262n:['จำนวนหมุดรับแรงเฉือน','Shear Stud Count']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40344,6 +40413,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.259 · [[t_splitgap]] ใช้ได้ในรูปด้าน รูปตัด และ 3 มิติเหมือน Revit: คลิกบนผนังแบ่งตามแนวตั้งเว้นช่องและล็อกช่องไว้เหมือนในแปลน ชี้ใกล้ขอบปลายผนังแบ่งตามแนวนอน ชิ้นล่างหยุดใต้จุดแบ่งครึ่งช่อง ชิ้นบนเริ่มเหนือจุดแบ่งครึ่งช่อง (ที่ระดับชั้นเป็นระยะเยื้องจากชั้นนั้น) ประตูหรือหน้าต่างในช่องหรือคร่อมช่องไม่แบ่งและบอกเหตุผล
 - V1.260 · [[t_splitgap]] ใช้กับคานและเสาได้เหมือน Revit 2024: คานแบ่งเว้นช่องได้ในแปลน รูปด้าน รูปตัด และ 3 มิติ พร้อมล็อกช่องเหมือนผนัง เสาตั้งตรงคลิกตรงความสูงที่จะแบ่งในรูปด้าน รูปตัด หรือ 3 มิติ ต้นล่างหยุดใต้จุดแบ่งครึ่งช่อง ต้นบนเริ่มเหนือจุดแบ่งครึ่งช่อง ใส่แผ่นต่อเสาในช่องได้
 - V1.261 · [[f_rcp261]] ของชนิดเฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์ เครื่องจักร หัวจ่ายลม โคม และอุปกรณ์ไฟฟ้า เหมือน Revit: ตั้ง ใช่ ในคุณสมบัติชนิดแล้วชิ้นนั้นนับว่าอยู่ในห้องที่จุดนั้นอยู่ (ตั้งค่าเลื่อนตามความกว้างและไปด้านหน้าได้ เว้นว่าง = หน้าชิ้น + 150 มม.) ใช้ในตาราง (ห้อง: เลขห้อง ชื่อห้อง และตารางฝังในห้อง) คุณสมบัติ (แถว อยู่ในห้อง) การสร้างวงจรตามห้อง และการนับท่อระบายน้ำพื้นของห้องเปียก เลือกชิ้นในแปลนจะเห็นจุดและเส้นประจากจุดวาง
+- V1.262 · [[a_ss262]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือน Steel › Fabrication › Shear Studs ของ Revit: หมุดหัวเชื่อมบนปีกบนของคานเหล็กให้พื้นคอนกรีตทำงานร่วมกับคาน · เลือกคานเหล็กที่วางระดับแล้วกดปุ่ม หรือตั้งในคุณสมบัติของคาน (ไม่มี 1 แถว 2 แถว) ตั้งเส้นผ่านศูนย์กลาง Ø13–Ø25 ความยาวรวมหัว ระยะห่าง ระยะจากปลายคาน และระยะระหว่างแถวได้ หมุดเรียงเท่ากันระหว่างระยะจากปลายทั้งสองข้าง ปีกที่แคบเกินสองแถวใส่เป็นแถวเดียว · เห็นในมุมมอง 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_fine]] (วงกลม) ไปกับคานเมื่อย้าย คัดลอก สะท้อน หรือแบ่ง คุณสมบัติบอกจำนวนและน้ำหนัก ตารางคานมีคอลัมน์หมุดและจำนวน [[a_boq]] นับเป็นตัวตามขนาด (ราคาสมมติ) และ IFC ส่งไปกับคาน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -40744,6 +40814,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.259 · [[t_splitgap]] works in elevations, sections and 3D views, as in Revit: a click on a wall splits it upright with the gap locked, as in a plan; near the end of a wall it splits it across, the part below stopping half the gap under the split and the part above starting half the gap over it (at a level, as offsets from that level); a door or window in the gap or across it refuses the split with the reason
 - V1.260 · [[t_splitgap]] works on beams and columns, as in Revit 2024: a beam splits with the gap in plans, elevations, sections and 3D, the gap locked as for walls; a vertical column clicked at a height in an elevation, a section or 3D splits there, the part below stopping half the gap under it and the part above starting half the gap over it, ready for a column splice
 - V1.261 · a [[f_rcp261]] for furniture, plumbing fixtures, equipment, air terminals, lighting fixtures and devices, as in Revit: set it to Yes in the type and the component is in the room that point is in (with its offsets along the width and forward; left empty, 150 mm in front of its front face). Schedules (Room: Number / Name, Embedded Schedules), Properties (a Room row), Create Circuits by room and the floor drains of wet rooms go by it; a selected component shows the point in plans
+- V1.262 · [[a_ss262]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Steel › Fabrication › Shear Studs: headed studs on the top flange of a steel beam, so that the slab works with it. Select level steel beams and press the button, or set them in the beam's Properties (None, 1 row, 2 rows) with the diameter Ø13–Ø25, the length with the head, the spacing, the end distance and the row gauge; the studs are spread evenly between the end distances, and a flange too narrow for two rows takes one. They show in 3D views, elevations, sections and plans of [[det_fine]] detail (rings), go with the beam when it is moved, copied, mirrored or split, Properties gives their number and weight, beam schedules have a studs column and a count, [[a_boq]] counts them each by size (assumed prices) and IFC writes them with the beam
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -42937,6 +43008,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r262={
+  geo:id=>{const e=IDX.get(id),G=e&&ssGeo262(P,e);return G?{rows:G.rows,n:G.pts.length,z0:G.z0,p:G.p,pts:G.pts.map(q=>[Math.round(q[0]*10)/10,q[1]]),kg:Math.round(ssKg262(G)*100)/100}:null},
+  set:(ids,o)=>edit(()=>{for(const id of ids){const e=IDX.get(id);if(!e)continue;if(o==null)delete e.ss262;else e.ss262=Object.assign({},o)}}),
+  place:ids=>{ui.sel=new Set(ids);XA.ss262();return ids.map(id=>{const e=IDX.get(id);return e&&e.ss262?Object.assign({},e.ss262):null})},
+  mesh:id=>{const B=buildMeshes(P,FPm(),FITm());let n=0;for(const m of B)if(m.id===id&&m.cat==='beam')n+=m.t.length/9;return n},
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>String(r.pk||'').startsWith('ss262|')).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item,unit:r.unit,cat:r.cat})),
+  sched:(cat,flds)=>{const S=schedView(P,{id:-1,kind:'schedule',name:'x',sched:'cat',scat:cat,flds,hidden:[],hiddenCats:[],sp:{}},t);return S.rows.map(r=>[r.id,...S.cols.map(c=>r[c.k])])},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r261={
   xy:id=>{const e=IDX.get(id);return e?rcpXY261(e).map(v=>Math.round(v*10)/10):null},on:id=>rcpOn261(IDX.get(id)),
   room:id=>{const e=IDX.get(id),r=e&&sfCtx(P,t,null).inRoom(e);return r?r.id:null},
