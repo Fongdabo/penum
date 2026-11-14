@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=277,V1_NAME='V1.267';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=278,V1_NAME='V1.268';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38713,6 +38713,60 @@ Object.assign(STR,{
   p_ssdkt267:['ร่องที่คานผ่าน','Troughs Crossed'],ss_dkx267:['ในร่อง ทุก {0} ร่อง','In troughs, every {0}'],
   ss_dkpar267:['ร่องขนานคาน ใช้ระยะห่างเดิม','Ribs along beam: as spaced'],
   ss_dklow267:['หมุดควรยาวอย่างน้อย {0} มม. เพื่อให้สูงพ้นสันลอนแผ่นพื้นเหล็ก 35 มม.','Studs should be at least {0} mm long to stand 35 mm above the ribs of the deck']});
+/* ===== 268 Stiffeners of a haunch (V1.268; Revit: the Haunch connection's stiffeners — a pair of plates in the beam's web over the toe of the haunch, where
+   its sloping flange meets the beam, and continuity plates in the column level with the beam's top flange and the haunch's flange) =====
+   A beam with haunches (265) has e.hn265.st: 1 plates at the toe, 2 plates in the column, 3 both.  The toe plates stand square to the beam at the toe, between
+   its flanges, against its web on both sides (one side of a channel), as the stiffeners of 263; the column plates fill the column between its flanges from the
+   web to the flange tips at the two heights, once for every column even when beams from both sides ask for them.  The thickness is the beam's flange rounded
+   up to a plate (at least 8 mm).  Properties of the beam set them under the haunch, 3D views, elevations and sections show them (meshes of the beam and of the
+   column, which IFC writes), plans of Medium and Fine detail draw the toe plates, and the BOQ counts them with the stiffeners by thickness, in kg. */
+const hnStT268=tf=>SS_T263.find(x=>x>=Math.max(8,tf))||25;
+const hnStOn268=e=>hnOn265(e)&&(+e.hn265.st&3)>0;
+const hnPl268=(S,q,t)=>((q[1]-q[0])*2*S.hd-STF_SN263*STF_SN263)*t*STC_RHO;
+/* a beam's haunch stiffeners: {G (hnGeo265), t, tip: [{a (along the beam), u0, u1}], zc, hd, col: [{c (the column), S, z: [heights]}], nocol (columns that are
+   not steel H, I or channel), kg (its own plates: the toe ones, and the column ones it asks for)} */
+function hnSt268(Q,e){if(!hnStOn268(e))return null;const G=hnGeo265(Q,e);if(!G||!G.ends.length)return null;const st=+e.hn265.st&3,T=typ(Q,e)||{},t=hnStT268(G.tf),BG=bcGeo(Q,e),F=G.F;
+  const R={G,t,st,tip:[],col:[],nocol:0,kg:0};
+  if(st&1){const S=stfSec263(T);if(S){R.zc=F.zt-S.d/2;R.hd=S.hd;R.S=S;for(const x of G.ends){const a=x.se+x.dir*x.l;if(a<t/2||a>F.L-t/2)continue;for(const o of S.O){R.tip.push({a,u0:o[0],u1:o[1]});R.kg+=hnPl268(S,o,t)}}}}
+  if(st&2)for(const x of G.ends){const J=BG&&BG.J&&BG.J[x.k],c=J&&J.m;if(!c||c.cat!=='column')continue;const S=stfSec263(typ(Q,c)||{});if(!S){R.nocol++;continue}
+    const z=zRange(Q,c),zs=[F.zt-G.tf/2,F.zb-x.dh+G.tf/2].filter(h=>h>=z[0]+t/2&&h<=z[1]-t/2);if(!zs.length)continue;
+    R.col.push({c,S,z:zs,z0:z[0]});for(const h of zs)for(const o of S.O)R.kg+=hnPl268(S,o,t)}
+  return R.tip.length||R.col.length||R.nocol?R:null}
+/* the column plates of the model, once each (plates closer than their thickness are one): Map(column id -> {c, S, pl: Map(height -> t)}) */
+function hnCols268(Q){const M=new Map();for(const e of Q.els){if(e.cat!=='beam'||e.gx||!hnStOn268(e))continue;const R=hnSt268(Q,e);if(!R)continue;
+  for(const x of R.col){let m=M.get(x.c.id);if(!m)M.set(x.c.id,m={c:x.c,S:x.S,pl:new Map()});for(const h of x.z){let k=Math.round(h*10)/10;for(const [q,t] of m.pl)if(Math.abs(q-k)<Math.max(t,R.t)){k=q;break}m.pl.set(k,Math.max(m.pl.get(k)||0,R.t))}}}return M}
+/* ---- 3D: toe plates of the beam, continuity plates of the column ---- */
+function hnStMeshes268(Q,items){if(!Q.els.some(hnStOn268))return;
+  for(const e of Q.els){if(e.cat!=='beam'||e.gx||!hnStOn268(e))continue;const R=hnSt268(Q,e);if(!R||!R.tip.length)continue;const t2=R.t/2;
+    const K=modelKit({x:e.x1,y:e.y1,id:e.id,cat:'beam'},Math.atan2(R.G.F.a[1],R.G.F.a[0])*180/Math.PI,items),m=K.part(STC_COL);m.vc='beam';m.mt=MAT.metal;
+    for(const q of R.tip)K.box(m,q.a-t2,q.u0,R.zc-R.hd,q.a+t2,q.u1,R.zc+R.hd)}
+  for(const [,x] of hnCols268(Q)){const c=x.c,K=modelKit({x:c.x,y:c.y,id:c.id,cat:'column'},c.rot||0,items),m=K.part(STC_COL);m.vc='column';m.mt=MAT.metal;
+    for(const [h,t] of x.pl)for(const o of x.S.O)K.box(m,o[0],-x.S.hd,h-t/2,o[1],x.S.hd,h+t/2)}}
+{const f0=stcMeshes;stcMeshes=(Q,items)=>{f0(Q,items);hnStMeshes268(Q,items)}}
+/* ---- plans of Medium and Fine detail: the toe plates, as the stiffeners of 263 ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||(v.detail||'coarse')==='coarse')return;if(!P.els.some(hnStOn268))return;const H=halfCols(col);
+  for(const [e] of of('beam')){if(!hnStOn268(e))continue;const R=hnSt268(P,e);if(!R||!R.tip.length)continue;g.el(e);const h=hl(e.id);ctx.strokeStyle=h||(discMode(P,v,e)===1?H.ink:col.ink);
+    g.dash(null);ctx.lineWidth=h?1.2:g.lw(0.13);const t2=R.t/2;for(const q of R.tip){g.path([[q.a-t2,q.u0],[q.a+t2,q.u0],[q.a+t2,q.u1],[q.a-t2,q.u1]].map(r=>R.G.F.pt(r[0],r[1])));ctx.stroke()}}g.dash(null)});
+/* ---- Properties: in the haunch group, after its rows and before its notes ---- */
+{const i=XP.findIndex(f=>String(f).includes("PR.grp('g_hn265')")),fn=(c,els)=>{if(c!=='beam'||!els.length||!els.every(hnOK265))return'';const on=els.filter(hnOn265);if(!on.length)return'';
+  const a=String(+on[0].hn265.st&3),v=on.every(e=>String(+e.hn265.st&3)===a)?a:'';
+  let h=PR.sel('hnst268','p_hnst268',v,[['0',t('hnst0_268')],['1',t('hnst1_268')],['2',t('hnst2_268')],['3',t('hnst3_268')]]);
+  let n=0,kg=0,nc=0;for(const e of on){const R=hnSt268(P,e);if(!R)continue;n+=R.tip.length+R.col.reduce((s,x)=>s+x.z.length*x.S.O.length,0);kg+=R.kg;nc+=R.nocol}
+  if(on.some(hnStOn268)){h+=PR.ro('p_hnstc268',String(n))+PR.ro('p_hnstw268',(Math.round(kg*10)/10)+' '+t('u_kg262'));if(nc)h+=`<div class="pnote">${esc(t('hnst_nocol268',nc))}</div>`}return h};
+  if(i<0)XP.push(fn);else{const f0=XP[i];XP[i]=(c,els)=>{const h=f0(c,els),m=h?fn(c,els):'';if(!m)return h;const k=h.indexOf('<div class="pnote">');return k<0?h+m:h.slice(0,k)+m+h.slice(k)}}}
+XF.push((cat,o,key,raw)=>{if(key!=='hnst268')return false;if(cat!=='beam'||!hnOn265(o)||raw===''||raw==null)return true;const b=(+raw|0)&3;if(b)o.hn265.st=b;else delete o.hn265.st;return true});
+/* ---- the BOQ: with the stiffeners of 263, by thickness, kg ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(hnStOn268))return S;const PR0=Q0.prices||{},by=new Map();
+  const add=(t,kg)=>{const pk='stf263|'+t;let r=S.rows.find(x=>x.pk===pk)||by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_stf263'),_c:9.37,tcat:'stf263',pk,item:tr('stf_item263',t),qty:0,unit:tr('u_kg262'),cost:PR0[pk]!=null?+PR0[pk]||0:45,amount:0});r.qty+=kg;r.hn268=1};
+  for(const e of Q0.els){if(e.cat!=='beam'||e.gx||!hnStOn268(e))continue;const R=hnSt268(Q0,e);if(!R)continue;for(const q of R.tip)add(R.t,hnPl268(R.S,[q.u0,q.u1],R.t))}
+  for(const [,x] of hnCols268(Q0))for(const [,t] of x.pl)for(const q of x.S.O)add(t,hnPl268(x.S,q,t));
+  for(const r of by.values())S.rows.push(r);let any=0;for(const r of S.rows){if(!r.hn268)continue;any=1;delete r.hn268;r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100}
+  if(!any)return S;S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+Object.assign(STR,{
+  p_hnst268:['แผ่นเสริม','Stiffeners'],hnst0_268:['ไม่มี','None'],hnst1_268:['ที่ปลายลิ่ม','At the Toe'],hnst2_268:['ในเสา','In the Column'],hnst3_268:['ที่ปลายลิ่มและในเสา','At the Toe and in the Column'],
+  p_hnstc268:['จำนวนแผ่นเสริม','Stiffener Plates'],p_hnstw268:['น้ำหนักแผ่นเสริม','Stiffener Weight'],
+  hnst_nocol268:['เสา {0} ต้นไม่ใช่เหล็กหน้าตัด H, I หรือรางน้ำ จึงไม่มีแผ่นเสริมในเสา','{0} columns are not steel H, I or channel sections, so they have no plates']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40754,6 +40808,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.265 · [[a_hn265]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Haunch ของ Revit: ชิ้นเหล็กรูปลิ่มที่ตัดจากหน้าตัดเดียวกับคาน เชื่อมใต้ปลายคานตรงที่คานชนเสา ทำให้คานลึกขึ้นที่จุดต่อรับโมเมนต์ · เลือกคานเหล็ก H, I หรือรางน้ำแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความยาว (ตั้งต้นหนึ่งในสิบของคาน) และความลึกใต้คานที่เสา (ตั้งต้นเท่าคาน) ได้ · มีเฉพาะปลายที่ชนเสา เริ่มจากปลายเอวคานตามที่วาด ปีกเอียงจากใต้คานที่เสาขึ้นไปชนปีกล่างของคาน · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] เป็นเส้นประใต้คาน [[a_boq]] นับน้ำหนักตามหน้าตัด (ราคาสมมติ) ตารางคานมีจำนวน แบ่งคานแล้วเหล็กเสริมอยู่กับท่อนที่ปลายนั้น และ IFC ส่งไปกับคาน
 - V1.266 · แบ่งเสาเอียงได้ ด้วย [[t_split]] และแบ่งเว้นช่องในรูปด้าน รูปตัด และ 3 มิติ เหมือน Revit · คลิกเสาเอียงตรงความสูงที่จะแบ่ง (เกาะระดับชั้นเหมือนเสาตั้งตรง) เส้นแสดงจุดแบ่งตามแนวแกนของเสา · ท่อนล่างเก็บฐานและการตัดหรือยื่นที่ฐาน ปลายบนตัดระดับที่จุดแบ่ง ท่อนบนตั้งตรงจุดที่แกนผ่านความสูงนั้น ฐานตัดระดับ และเก็บปลายบนเดิม · เสาที่เอียงตามจุดปลายแบ่งระยะเอียงตามความสูง เสาที่เอียงตามมุมเก็บมุมเดิม · แบ่งเว้นช่องได้สองท่อนห่างกันเท่าช่องว่างรอยต่อบนแนวเดิม
 - V1.267 · [[a_ss262]] ใต้พื้นที่มีแผ่นพื้นเหล็ก (Structural Deck) เหมือน Revit: เมื่อแผ่นพื้นเหล็กวางบนหลังคานและลอนวิ่งตัดคาน หมุดจะอยู่กลางท้องร่องที่คานผ่าน ทุกร่องหรือทุก n ร่องตามระยะห่างที่ตั้ง (ปัดเป็นจำนวนร่อง) · ลอนที่วิ่งตามแนวคานใช้ระยะห่างเดิม · คุณสมบัติของคานบอกจำนวนร่องและระยะ และเตือนเมื่อหมุดสั้นจนสูงพ้นสันลอนไม่ถึง 35 มม. · 3 มิติ แปลน BOQ และตารางนับตามตำแหน่งใหม่
+- V1.268 · [[a_hn265]] มีแผ่นเสริมได้เหมือน Revit: ในคุณสมบัติของคาน เลือกแผ่นเสริมที่ปลายลิ่ม (คู่แผ่นในเอวคานตรงปลายเหล็กเสริม) ในเสา (แผ่นในเสาระดับปีกบนของคานและปีกของเหล็กเสริม) หรือทั้งสอง หนาตามปีกคานปัดขึ้น · 3 มิติ รูปด้าน รูปตัด และ IFC เห็นแผ่น แปลนระดับปานกลางและละเอียดเห็นแผ่นที่ปลายลิ่ม · BOQ นับรวมกับแผ่นเสริมตามความหนา
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41160,6 +41215,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.265 · [[a_hn265]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Haunch connection: a tapered piece cut from the beam's own section, welded under the end of a beam where it meets a column, deepening it for a moment connection. Select steel H, I or channel beams and press the button, or set it in Properties (Start, End or Both Ends) with its length (a tenth of the beam when left blank) and its depth under the beam at the column (the beam's depth when blank). Only ends at a column have one: it starts where the beam's web ends as drawn, its sloping flange running from under the beam at the column up to the beam's bottom flange. It shows in 3D views, elevations, sections and, dashed under the beam, plans of [[det_medium]] and [[det_fine]] detail; [[a_boq]] counts it in kg by section (assumed prices), beam schedules count it, splitting a beam keeps it on the piece at its end, and IFC writes it with the beam
 - V1.266 · Slanted columns split, with [[t_split]] and Split with Gap in elevations, sections and 3D views, as in Revit. Click a slanted column at the height to split (it snaps to levels as an upright one does); the preview runs across it where its axis passes that height. The part below keeps its base with its cut and extension, its top cut level at the joint; the part above stands where the axis passes the joint, its base cut level, and keeps the top as it was. An end point driven column shares its lean out by height, an angle driven one keeps its angle; with a gap the two parts stand Joint Gap apart on the same line
 - V1.267 · [[a_ss262]] under a floor with a Structural Deck, as in Revit: when the deck sits on the top of the beam and its ribs cross the beam, the studs stand in the middle of the troughs the beam crosses, every trough or every n-th one by the stud spacing (rounded to whole troughs); ribs running along the beam keep the spacing. Properties of the beam give the troughs and their spacing and warn when the studs are too short to stand 35 mm above the ribs; 3D, plans, the BOQ and schedules follow
+- V1.268 · [[a_hn265]] can have stiffeners, as in Revit: in the beam's Properties pick plates At the Toe (a pair in the beam's web over the haunch's toe), In the Column (plates in the column level with the beam's top flange and the haunch's flange) or both, as thick as the beam's flange rounded up · 3D, elevations, sections and IFC show them, plans of Medium and Fine detail draw the toe plates · the BOQ counts them with the stiffeners by thickness
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43353,6 +43409,13 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r268={
+  geo:id=>{const e=IDX.get(id),R=e&&hnSt268(P,e),r=x=>Math.round(x*10)/10;return R?{t:R.t,st:R.st,tip:R.tip.map(q=>({a:r(q.a),u0:r(q.u0),u1:r(q.u1)})),zc:R.zc,hd:R.hd,
+    col:R.col.map(x=>({id:x.c.id,z:x.z.map(r)})),nocol:R.nocol,kg:Math.round(R.kg*100)/100}:null},
+  cols:()=>[...hnCols268(P)].map(([id,x])=>({id,pl:[...x.pl].sort((a,b)=>a[0]-b[0])})),
+  set:(id,st)=>edit(()=>{const e=IDX.get(id);if(st)e.hn265.st=st;else delete e.hn265.st}),
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>/^stf263\|/.test(String(r.pk||''))).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item})),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r267={
   geo:id=>{const e=IDX.get(id),G=e&&ssGeo262(P,e),r=x=>Math.round(x*10)/10;return G?{n:G.pts.length,pts:G.pts.map(q=>[r(q[0]),r(q[1])]),deck:G.deck||null,p:G.p}:null},
   deck:id=>{const e=IDX.get(id);if(!e||!bcOk(P,e))return null;const K=ssDeck267(P,bcFrame(P,e));return K?{id:K.e.id,v0:K.v0,zb:K.zb,U:K.U,p:K.D.p}:null},
