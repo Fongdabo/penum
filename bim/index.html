@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=275,V1_NAME='V1.265';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=276,V1_NAME='V1.266';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38652,6 +38652,34 @@ Object.assign(STR,{
   hn_sel0_265:['เลือกคานเหล็กหน้าตัด H, I หรือรางน้ำก่อน แล้วกดเหล็กเสริมใต้ปลายคาน','Select steel H, I or channel beams first, then press Haunch'],hn_has265:['คานที่เลือกมีเหล็กเสริมใต้ปลายคานแล้ว แก้ค่าได้ในคุณสมบัติ','The selected beams have haunches already; change them in Properties'],
   hn_done265:['ใส่เหล็กเสริมใต้ปลายคานให้คาน {0} ชิ้น รวม {1} ปลายที่ชนเสา','Haunches on {0} beams, {1} ends at columns'],
   hn_item265:['เหล็กเสริมใต้ปลายคาน (Haunch) ตัดจาก {0}','Haunch cut from {0}'],c_hn265:['จำนวนเหล็กเสริมใต้ปลายคาน','Haunch Count']});
+/* ===== 266 Split slanted columns (V1.266; Revit: Modify › Split Element and Split with Gap on a slanted column — it splits where its axis passes the
+   height clicked, in an elevation, a section or a 3D view) =====
+   255 and 260 refused a slanted column.  Now it splits as an upright one does (the same height snaps, at least 100 mm each side), and both parts keep the
+   line of the column: the part below keeps its base and its base cut and extension, its top cut level at the joint; the part above stands where the axis
+   passes the joint (its x, y), its base cut level, and keeps the top, its cut and extension.  An end point driven column has its lean shared out by height,
+   an angle driven one keeps its angle.  With a gap, the parts stop Joint Gap / 2 either side of the joint, still on the line.  The preview follows the axis. */
+/* the axis of G at height z, in plan */
+const slAx266=(G,z)=>{const f=(z-G.zr[0])/G.H;return[G.B[0]+G.D[0]*f,G.B[1]+G.D[1]*f]};
+/* set the lower part e (top at zt) and the upper part c (base at zb) of what was one slanted column G, as above */
+function slPut266(e,c,G,zt,zb){const R=q=>Math.round(q*10)/10,H=G.H,f0=(zt-G.zr[0])/H,f1=(G.zr[1]-zb)/H,S=slAx266(G,zb);
+  delete e.slt;delete e.slet;delete c.slb;delete c.sleb;c.x=R(S[0]);c.y=R(S[1]);
+  if(e.slm==='e'){e.slx=R(G.D[0]*f0);e.sly=R(G.D[1]*f0)}if(c.slm==='e'){c.slx=R(G.D[0]*f1);c.sly=R(G.D[1]*f1)}}
+{const f0=spcDo255;spcDo255=(e,zs)=>{const G=slOn(e)?slMake(P,e):null;const c=f0(e,zs);if(G&&c)slPut266(e,c,G,zs,zs);return c}}
+{const f0=sgDoC260;sgDoC260=(e,zs,g)=>{const G=slOn(e)?slMake(P,e):null;const c=f0(e,zs,g);if(G&&c)slPut266(e,c,G,zs-g/2,zs+g/2);return c}}
+sgWhyC260=(e,zs,g)=>{const z=zRange(P,e),k=g/2;return zs-k-z[0]<100-1e-6||z[1]-zs-k<100-1e-6?'spc_short255':null};
+/* the pick: a slanted column is split where the pointer is, as an upright one */
+{const f0=spl255At;spl255At=(pn,v,p)=>{const r=f0(pn,v,p);if(!r||r.why!=='spc_slant255')return r;const nav=navOf(v),pk=pickAt3(pn,v,p),e=r.e;if(!pk||!pk.p)return r;
+  const z=zRange(P,e),is3=v.kind==='3d',inc=is3?(nav.hh<4000?10:50):(snapInc(nav)>=100?50:10),tz=is3?150:8/nav.s;
+  let zs=Math.round(pk.p[1]/inc)*inc,bd=tz;for(const l of P.levels){const d=Math.abs(elev(P,l.id)-pk.p[1]);if(d<bd){bd=d;zs=elev(P,l.id)}}
+  if(zs-z[0]<100-1e-6||z[1]-zs<100-1e-6)return{why:'spc_short255',e,zs};return{k:'col',e,zs}}}
+/* the previews of 255 and 260 draw across the column where its axis passes the height (ev3Box and columnLoop of that column, while they draw) */
+let SL266=null;
+{const f0=ev3Box;ev3Box=(v,e)=>{if(SL266&&e===SL266.e){let h0=Infinity,h1=-Infinity;for(const q of SL266.lp){const h=ev3Hq(v,q);h0=Math.min(h0,h);h1=Math.max(h1,h)}const z=zRange(P,e);return[h0,h1,z[0],z[1]]}return f0(v,e)}}
+{const f0=columnLoop;columnLoop=(P0,c)=>SL266&&c===SL266.e&&P0===P?SL266.lp:f0(P0,c)}
+const slDraw266=f0=>(pn,ctx,v,nav)=>{const H=ui.spl3,e=H&&H.r&&H.r.e;if(!e||e.cat!=='column'||!slOn(e)||H.r.zs==null)return f0(pn,ctx,v,nav);const G=slMake(P,e);if(!G)return f0(pn,ctx,v,nav);
+  SLV++;let lp;try{lp=columnLoop(P,e)}finally{SLV--}SL266={e,lp:G.at(lp,H.r.zs)};try{return f0(pn,ctx,v,nav)}finally{SL266=null}};
+XT3.split.draw=slDraw266(XT3.split.draw);XT3.splitgap.draw=slDraw266(XT3.splitgap.draw);
+STR.spc_slant255=['แบ่งเสาเอียงได้ตามแนวแกนของเสา','A slanted column splits along its axis'];
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40691,6 +40719,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.263 · [[t_stf263]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Stiffener ของ Revit: แผ่นเหล็กหนึ่งหรือสองแผ่นเชื่อมในคานหรือเสาเหล็ก ตั้งฉากกับชิ้น อยู่ระหว่างปีกและชิดเอว · คลิกคานเหล็กที่วางระดับในแปลน 3 มิติ รูปด้าน หรือรูปตัด ตรงจุดที่จะใส่ (เกาะจุดที่คานอื่นมาต่อ) หรือคลิกเสาเหล็กในรูปด้าน รูปตัด หรือ 3 มิติ ตรงความสูงที่จะใส่ (เกาะระดับปีกของคานที่มาต่อ) · ใช้กับหน้าตัด H, I และรางน้ำ แผ่นเต็มความลึกระหว่างปีกและยื่นถึงปลายปีก ตัดมุม 15 มม. · คุณสมบัติตั้งความหนาและจำนวนแผ่นต่อจุด (สองข้างหรือข้างเดียว) และเอาออกได้ · แปลนระดับ [[det_medium]] และ [[det_fine]] เห็นแผ่นเสริมของคาน 3 มิติ รูปด้าน และรูปตัดเห็นทั้งหมด ไปกับชิ้นเมื่อย้าย คัดลอก หรือแบ่ง [[a_boq]] นับน้ำหนักเหล็กตามความหนา (ราคาสมมติ) และตารางคานและเสามีจำนวนแผ่นเสริม
 - V1.264 · [[a_gp264]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อค้ำยันแบบแผ่นประกับ (Gusset Plate) ของ Revit: แผ่นเหล็กในระนาบของค้ำยัน เชื่อมกับเสาและคานตรงจุดที่ค้ำยันวิ่งเข้าไป และยึดค้ำยันด้วยสลักเกลียว · เลือกค้ำยันเหล็กแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความหนา จำนวนและขนาดสลักเกลียวได้ · แผ่นตั้งในระนาบค้ำยัน ขอบชนผิวเสา ใต้คาน (หรือบนคานเมื่อค้ำยันชี้ขึ้น และพื้นที่โคนเสา) แล้วยื่นเลยไปตามค้ำยันเท่าระยะทาบสลักเกลียว ปลายที่ไม่ชนอะไรไม่มีแผ่นและคุณสมบัติบอกไว้ · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] [[a_boq]] นับน้ำหนักแผ่นและสลักเกลียว (ราคาสมมติ) ตารางคานมีจำนวนแผ่น และ IFC ส่งไปกับค้ำยัน
 - V1.265 · [[a_hn265]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Haunch ของ Revit: ชิ้นเหล็กรูปลิ่มที่ตัดจากหน้าตัดเดียวกับคาน เชื่อมใต้ปลายคานตรงที่คานชนเสา ทำให้คานลึกขึ้นที่จุดต่อรับโมเมนต์ · เลือกคานเหล็ก H, I หรือรางน้ำแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความยาว (ตั้งต้นหนึ่งในสิบของคาน) และความลึกใต้คานที่เสา (ตั้งต้นเท่าคาน) ได้ · มีเฉพาะปลายที่ชนเสา เริ่มจากปลายเอวคานตามที่วาด ปีกเอียงจากใต้คานที่เสาขึ้นไปชนปีกล่างของคาน · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] เป็นเส้นประใต้คาน [[a_boq]] นับน้ำหนักตามหน้าตัด (ราคาสมมติ) ตารางคานมีจำนวน แบ่งคานแล้วเหล็กเสริมอยู่กับท่อนที่ปลายนั้น และ IFC ส่งไปกับคาน
+- V1.266 · แบ่งเสาเอียงได้ ด้วย [[t_split]] และแบ่งเว้นช่องในรูปด้าน รูปตัด และ 3 มิติ เหมือน Revit · คลิกเสาเอียงตรงความสูงที่จะแบ่ง (เกาะระดับชั้นเหมือนเสาตั้งตรง) เส้นแสดงจุดแบ่งตามแนวแกนของเสา · ท่อนล่างเก็บฐานและการตัดหรือยื่นที่ฐาน ปลายบนตัดระดับที่จุดแบ่ง ท่อนบนตั้งตรงจุดที่แกนผ่านความสูงนั้น ฐานตัดระดับ และเก็บปลายบนเดิม · เสาที่เอียงตามจุดปลายแบ่งระยะเอียงตามความสูง เสาที่เอียงตามมุมเก็บมุมเดิม · แบ่งเว้นช่องได้สองท่อนห่างกันเท่าช่องว่างรอยต่อบนแนวเดิม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41095,6 +41124,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.263 · [[t_stf263]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Stiffener connection: one or two steel plates welded into a steel beam or column, square to it, between its flanges and against its web. Click a level steel beam in a plan, 3D view, elevation or section where it goes (it catches where another beam frames in), or a steel column in an elevation, a section or 3D at its height (it catches the flange levels of beams that frame in). H, I and channel sections; each plate fills the depth between the flanges out to the flange tip, with 15 mm corner snipes. Properties set the thickness and the plates per point (both sides or one) and remove them. Plans of [[det_medium]] and [[det_fine]] detail show beam stiffeners, 3D views, elevations and sections show them all, they go with the member when it is moved, copied or split, [[a_boq]] counts their steel by thickness in kg (assumed prices) and beam and column schedules count them
 - V1.264 · [[a_gp264]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's brace connections with a gusset plate: a plate in the plane of a brace, welded to the column and the beam at the joint the brace runs into, the brace bolted to it. Select steel braces and press the button, or set them in Properties (Start, End or Both Ends) with the plate thickness and the number and size of bolts. The plate stands in the brace's plane, bounded by the face of the column, the underside of the beam (its top for a brace running up, the floor at the foot of a column) and reaching along the brace by the bolt lap; an end that meets nothing has none, and Properties says so. They show in 3D views, elevations, sections and plans of [[det_medium]] and [[det_fine]] detail, [[a_boq]] counts the plates in kg and the bolts (assumed prices), beam schedules count the plates and IFC writes them with the brace
 - V1.265 · [[a_hn265]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Haunch connection: a tapered piece cut from the beam's own section, welded under the end of a beam where it meets a column, deepening it for a moment connection. Select steel H, I or channel beams and press the button, or set it in Properties (Start, End or Both Ends) with its length (a tenth of the beam when left blank) and its depth under the beam at the column (the beam's depth when blank). Only ends at a column have one: it starts where the beam's web ends as drawn, its sloping flange running from under the beam at the column up to the beam's bottom flange. It shows in 3D views, elevations, sections and, dashed under the beam, plans of [[det_medium]] and [[det_fine]] detail; [[a_boq]] counts it in kg by section (assumed prices), beam schedules count it, splitting a beam keeps it on the piece at its end, and IFC writes it with the beam
+- V1.266 · Slanted columns split, with [[t_split]] and Split with Gap in elevations, sections and 3D views, as in Revit. Click a slanted column at the height to split (it snaps to levels as an upright one does); the preview runs across it where its axis passes that height. The part below keeps its base with its cut and extension, its top cut level at the joint; the part above stands where the axis passes the joint, its base cut level, and keeps the top as it was. An end point driven column shares its lean out by height, an angle driven one keeps its angle; with a gap the two parts stand Joint Gap apart on the same line
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43288,6 +43318,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r266={
+  geo:id=>{const e=IDX.get(id),G=e&&slMake(P,e),r=x=>Math.round(x*10)/10;if(!e)return null;const z=zRange(P,e);return{x:e.x,y:e.y,z:[r(z[0]),r(z[1])],slm:e.slm||null,slx:e.slx,sly:e.sly,sla:e.sla,sld:e.sld,
+    slb:e.slb||null,slt:e.slt||null,sleb:e.sleb||null,slet:e.slet||null,level:e.level,baseOff:e.baseOff||0,top:e.top||null,topOff:e.topOff||0,
+    B:G?G.B.map(r):null,T:G?G.T.map(r):null,ang:G?Math.round(G.ang*100)/100:0}},
+  split:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},
+  gap:(id,zs,g)=>{let c=null;edit(()=>{c=sgDoC260(IDX.get(id),zs,g)});return c?c.id:null},
+  why:(id,zs,g)=>sgWhyC260(IDX.get(id),zs,g),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r265={
   geo:id=>{const e=IDX.get(id),G=e&&hnGeo265(P,e),r=x=>Math.round(x*10)/10;return G?{p:G.p,bf:G.bf,tf:G.tf,tw:G.tw,free:G.free,kg:Math.round(G.kg*100)/100,zb:r(G.F.zb),L:r(G.F.L),
     ends:G.ends.map(x=>({k:x.k,se:r(x.se),dir:x.dir,l:x.l,dh:x.dh,kg:Math.round(x.kg*100)/100,web:x.web.map(q=>[r(q[0]),r(q[1])]),fl:x.fl.map(q=>[r(q[0]),r(q[1])])}))}:null},
