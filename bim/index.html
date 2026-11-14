@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=288,V1_NAME='V1.278';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=289,V1_NAME='V1.279';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -39136,6 +39136,50 @@ const rbMarks278=Q=>{if(!RBM278||RBM278.Q!==Q||RBM278.v!==VER){const M=new Map()
     {k:'rbn278',l:tr('c_rbn278'),g:e=>{if(!on(e))return'';try{return rbSet(Q,e).length}catch(err){return''}},num:1,dec:0,sum:1,grp:'i'},
     {k:'rbkg278',l:tr('c_rbkg278'),g:(e,X)=>{if(!on(e))return'';const M=X&&X.Q||(Q===P?QTY():null),o=M&&M.get(e.id);return o&&typeof o.rbkg==='number'?o.rbkg:''},num:1,dec:1,sum:1,grp:'i'});return F}}
 Object.assign(STR,{c_rbno278:['หมายเลขเหล็ก (Rebar Number)','Rebar Numbers'],c_rbn278:['จำนวนเหล็ก (เส้น)','Bars'],c_rbkg278:['น้ำหนักเหล็ก (กก.)','Rebar weight (kg)']});
+/* ===== 279 Rebar Numbering (V1.279; Revit: Structure > Rebar Numbering — a start number for each partition, numbers that stay with their bars when
+   others change, Remove Gaps) =====
+   Bar marks were counted 01, 02, … afresh on every look, so a new or changed bar moved the numbers of the others.  Now P.rbn279 holds the numbering:
+   st {partition: start number} and, with Keep numbers on (keep 1), m {partition: {bar key: number}}: a bar keeps its number, a new kind of bar takes the
+   next one (given when the edit is committed, XD), a number whose bars are gone leaves a gap until Remove Gaps.  The bar key is size, shape, A, B and the
+   cut length (to 10 mm), as the bar schedule groups bars. */
+const RBN_MAX279=9999,rbKey279=r=>[r.d,r.shape,r.A,r.B||0,Math.round(r.cut/10)*10].join('|'),rbSt279=(N,p)=>N&&N.st&&N.st[p]>0?N.st[p]:1;
+{const f0=rbSched;rbSched=P0=>{const rows=f0(P0),N=P0.rbn279;if(!N||!rows.length)return rows;const by=new Map();for(const r of rows){const p=r.part||'';(by.get(p)||by.set(p,[]).get(p)).push(r)}
+  const out=[];for(const [p,L] of by){const st=rbSt279(N,p),M=N.keep&&N.m&&N.m[p]||null;let nx=st;if(M)for(const k in M)nx=Math.max(nx,M[k]+1);
+    for(const r of L){const n=M&&M[rbKey279(r)]||nx++;r.no=n;r.mark=(p?p+'-':'')+String(n).padStart(2,'0')}if(M)L.sort((a,b)=>a.no-b.no);out.push(...L)}return out}}
+/* numbers of new kinds of bars are kept when the edit is committed */
+XD.push(()=>{const N=P.rbn279;if(!N||!N.keep)return false;let ch=false;const rows=rbSched(P);if(!N.m)N.m={};
+  for(const r of rows){const p=r.part||'',k=rbKey279(r),M=N.m[p]||(N.m[p]={});if(!M[k]){M[k]=r.no;ch=true}}return ch});
+/* Remove Gaps: the bars there are now, numbered again from the start in the order of their numbers */
+function rbGaps279(N,p,rows){const L=rows.filter(r=>(r.part||'')===p).sort((a,b)=>a.no-b.no),st=rbSt279(N,p),M={};L.forEach((r,i)=>{M[rbKey279(r)]=st+i});if(!N.m)N.m={};N.m[p]=M}
+/* what a partition's numbers are: bar marks, first and last, gaps */
+function rbNumInfo279(Q){const rows=rbSched(Q),N=Q.rbn279||{},by=new Map();for(const r of rows){const p=r.part||'';(by.get(p)||by.set(p,[]).get(p)).push(r.no||+String(r.mark).split('-').pop()||0)}
+  for(const p of Object.keys(N.st||{}))if(!by.has(p))by.set(p,[]);
+  return[...by].sort((a,b)=>a[0]===b[0]?0:!a[0]?-1:!b[0]?1:a[0].localeCompare(b[0])).map(([p,ns])=>{const lo=ns.length?Math.min(...ns):0,hi=ns.length?Math.max(...ns):0;return{p,n:ns.length,lo,hi,gaps:ns.length?hi-lo+1-new Set(ns).size+(lo-rbSt279(N,p)):0,st:rbSt279(N,p)}})}
+/* sanitize */
+XC.push(()=>{const N=P.rbn279;if(N===undefined)return;if(!N||typeof N!=='object'||Array.isArray(N)){delete P.rbn279;return}const ok=p=>typeof p==='string'&&p.length<=RBP_MAX277,int=x=>{const v=Math.round(+x);return isFinite(v)&&v>=1&&v<=RBN_MAX279?v:0};
+  const o={};if(N.keep)o.keep=1;
+  if(N.st&&typeof N.st==='object'){const s={};for(const p in N.st){const v=int(N.st[p]);if(ok(p)&&v>1)s[p]=v}if(Object.keys(s).length)o.st=s}
+  if(o.keep&&N.m&&typeof N.m==='object'){const m={};for(const p in N.m){const M=N.m[p];if(!ok(p)||!M||typeof M!=='object')continue;const q={};for(const k in M){const v=int(M[k]);if(v&&k.length<=80)q[k]=v}if(Object.keys(q).length)m[p]=q}if(Object.keys(m).length)o.m=m}
+  if(Object.keys(o).length)P.rbn279=o;else delete P.rbn279});
+/* ---- the Rebar Numbering dialog ---- */
+function rbnBody279(){const N=P.rbn279||{},I=rbNumInfo279(P);
+  return`<p class="note">${t('rbn_note279')}</p><div class="fr"><label for="rbnKeep279">${t('rbn_keep279')}</label><input type="checkbox" id="rbnKeep279"${N.keep?' checked':''}></div>`+
+    (I.length?`<div class="tblw"><table class="tbl" id="rbnTb279"><thead><tr><th>${t('c_rbp277')}</th><th>${t('rbn_n279')}</th><th>${t('rbn_rng279')}</th><th>${t('rbn_gap279')}</th><th>${t('rbn_st279')}</th><th></th></tr></thead><tbody>`+
+      I.map(x=>`<tr data-rbnp="${esc(x.p)}"><td>${x.p?esc(x.p):'—'}</td><td>${x.n}</td><td>${x.n?esc((x.p?x.p+'-':'')+String(x.lo).padStart(2,'0')+(x.hi>x.lo?' … '+String(x.hi).padStart(2,'0'):'')):''}</td><td>${x.gaps||''}</td>`+
+        `<td><input type="number" data-rbnst="${esc(x.p)}" value="${x.st}" min="1" max="${RBN_MAX279}" step="1" style="width:80px"></td><td>${N.keep&&x.gaps?`<button class="btn" style="white-space:nowrap" data-rbngap="${esc(x.p)}">${t('rbn_rm279')}</button>`:''}</td></tr>`).join('')+'</tbody></table></div>':`<p>${t('rbn_none279')}</p>`)}
+function dlgRbn279(){const re=()=>{const d=$('#dlg .dc');if(d)d.innerHTML=rbnBody279()};
+  openDlg(t('a_rbn279'),rbnBody279(),`<span style="flex:1"></span><button class="btn" data-act="rbsched">${t('a_rbsched')}…</button><button class="btn primary" data-close="1">${t('close')}</button>`,{
+    change(ev){const el=ev.target;if(el.id==='rbnKeep279'){const on=el.checked;edit(()=>{const N=P.rbn279||(P.rbn279={});if(on){N.keep=1;const rows=rbSched(P);N.m={};for(const r of rows){const p=r.part||'';(N.m[p]||(N.m[p]={}))[rbKey279(r)]=r.no}}else{delete N.keep;delete N.m}});re();return}
+      if(el.dataset.rbnst!=null){const p=el.dataset.rbnst,v=clamp(Math.round(+el.value)||1,1,RBN_MAX279);edit(()=>{const N=P.rbn279||(P.rbn279={});if(!N.st)N.st={};N.st[p]=v;if(N.keep){const rows=rbSched(P);rbGaps279(N,p,rows)}});re()}},
+    click(ev){const b=ev.target.closest('[data-rbngap]');if(!b)return;const p=b.dataset.rbngap;edit(()=>{const N=P.rbn279;if(N)rbGaps279(N,p,rbSched(P))});re()}})}
+XA.rbn279=()=>dlgRbn279();
+{const f0=dlgRbSched;dlgRbSched=function(){f0.apply(this,arguments);const ft=$('#dlg footer');if(!ft||ft.querySelector('[data-act="rbn279"]'))return;
+  const c=ft.querySelector('[data-rs="csv"]');const h=`<button class="btn" data-act="rbn279">${t('a_rbn279')}…</button>`;if(c)c.insertAdjacentHTML('afterend',h);else ft.insertAdjacentHTML('afterbegin',h)}}
+Object.assign(STR,{a_rbn279:['การให้หมายเลขเหล็ก (Rebar Numbering)','Rebar Numbering'],
+  rbn_note279:['เหล็กที่ขนาด รูปร่าง และความยาวตัดเหมือนกันในพาร์ทิชันเดียวกันได้หมายเลขเดียวกัน ตั้งเลขเริ่มต้นของแต่ละพาร์ทิชันได้ ถ้าคงหมายเลข เหล็กที่มีอยู่แล้วจะไม่เปลี่ยนเลขเมื่อเพิ่มหรือแก้เหล็กอื่น เหล็กแบบใหม่ได้เลขถัดไป เลขที่ไม่มีเหล็กแล้วเว้นไว้จนกดลบช่องว่าง',
+    'Identical bars (size, shape, cut length) in one partition share a number. Each partition can start at its own number. With Keep numbers on, a bar keeps its number when others are added or changed, a new kind of bar takes the next number, and a number whose bars are gone stays free until Remove Gaps.'],
+  rbn_keep279:['คงหมายเลขเดิมของเหล็ก','Keep numbers'],rbn_n279:['จำนวนเบอร์','Numbers'],rbn_rng279:['ช่วงหมายเลข','Range'],rbn_gap279:['ช่องว่าง','Gaps'],rbn_st279:['เลขเริ่มต้น','Start number'],
+  rbn_rm279:['ลบช่องว่าง','Remove Gaps'],rbn_none279:['ยังไม่มีเหล็กเสริมในโครงการ','There is no rebar in the project yet']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -41188,6 +41232,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.276 · ลากป้ายของเส้นทางเดิน: เลือกเส้นทางเดิน (Path of Travel) แล้วลากป้ายความยาวและเวลาไปตามเส้นหรือห่างจากเส้นได้ ป้ายหมุนตามช่วงของเส้นที่มันอยู่ และอยู่ที่เดิมตามสัดส่วนของเส้นเมื่อเส้นทางคำนวณใหม่ เอาเครื่องหมายวางป้ายเองออกเพื่อให้โปรแกรมวางให้เหมือนเดิม
 - V1.277 · พาร์ทิชันและหมายเลขเหล็กเสริม: ชิ้นงานที่มีเหล็กเสริม (เสา คาน พื้น ฐานราก ผนัง เหล็กเสริมพื้นที่และตามแนว) ใส่พาร์ทิชันได้ เหล็กที่เหมือนกันในพาร์ทิชันเดียวกันได้หมายเลขเดียวกัน และนับใหม่ในแต่ละพาร์ทิชัน เช่น F1-01 คุณสมบัติบอกหมายเลขเหล็กของชิ้นงาน ตารางเหล็กมีคอลัมน์พาร์ทิชันให้จัดกลุ่มได้
 - V1.278 · เหล็กเสริมในตารางและป้าย: ตารางของเสา คาน พื้น ฐานราก และผนัง มีช่องพาร์ทิชัน (พิมพ์ในตารางได้) หมายเลขเหล็ก จำนวนเหล็ก และน้ำหนักเหล็กพร้อมผลรวม ป้ายของชิ้นงานเลือกแสดงช่องเหล่านี้ได้ในแก้ไขป้าย
+- V1.279 · การให้หมายเลขเหล็ก: ตั้งเลขเริ่มต้นของแต่ละพาร์ทิชันได้ และเลือกคงหมายเลขเดิมของเหล็กได้ เหล็กที่มีอยู่ไม่เปลี่ยนเลขเมื่อเพิ่มหรือแก้เหล็กอื่น เหล็กแบบใหม่ได้เลขถัดไป เลขที่ว่างลบได้ด้วยปุ่มลบช่องว่าง เปิดจากปุ่มในตารางตัดเหล็ก
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41605,6 +41650,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.276 · Path of Travel labels dragged: with a path selected its length and time label is dragged along the path or off it; it turns with the stretch it lies by and keeps its share of the way when the path is worked out again; clear Label Placed to let it place itself again
 - V1.277 · Rebar Partition and Rebar Number: a rebar host (column, beam, floor, footing, wall, area or path reinforcement) takes a Partition; identical bars in one partition share a number, counted again in each partition (F1-01); Properties show the host's Rebar Numbers and the bar schedule has a Partition column to group by
 - V1.278 · Rebar in schedules and tags: column, beam, floor, footing and wall schedules have Partition (typed in the schedule), Rebar Numbers, Bars and Rebar weight with totals, and a tag's Edit Label can show them
+- V1.279 · Rebar Numbering: a start number for each partition, and Keep numbers: bars keep their numbers when others are added or changed, a new kind of bar takes the next number, Remove Gaps closes the free ones; opened from the Rebar Schedule
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43798,6 +43844,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r279={
+  N:()=>P.rbn279?JSON.parse(JSON.stringify(P.rbn279)):null,info:()=>rbNumInfo279(P),
+  set:N=>{edit(()=>{if(N==null)delete P.rbn279;else P.rbn279=JSON.parse(JSON.stringify(N))});refresh()},
+  marks:()=>rbSched(P).map(r=>({mark:r.mark,no:r.no,part:r.part||'',key:rbKey279(r),n:r.n,hosts:[...r.hosts]})),
+  rb:(ids,rb)=>{edit(()=>{for(const id of ids){const e=IDX.get(id);if(rb==null)delete e.rb;else e.rb=Object.assign({},rb)}});refresh()},
+  del:ids=>{edit(()=>{P.els=P.els.filter(e=>!ids.includes(e.id))});refresh()},
+  gaps:p=>{edit(()=>{const N=P.rbn279;if(N)rbGaps279(N,p,rbSched(P))});refresh()},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r278={
   tb:(cat,flds)=>{const T=sfTable(P,{v:{scat:cat,flds}},t);return{cols:T.cols.map(c=>c.k),labels:T.cols.map(c=>c.label),rows:T.rows.map(r=>{const o={};for(const c of T.cols)o[c.k]=r[c.k];o._id=r.id;return o}),foot:T.foot||null}},
   fields:cat=>sfAll(P,cat,t).map(f=>f.k),tgf:()=>tgFieldList().map(x=>x[0]),
