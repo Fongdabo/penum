@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=286,V1_NAME='V1.276';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=287,V1_NAME='V1.277';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -39082,6 +39082,46 @@ XF.push((cat,o,key,raw)=>{if(key!=='lp276')return false;if(cat!=='pot')return tr
 Object.assign(STR,{g_lp276:['ป้ายของเส้นทาง (Label)','Label'],p_lp276:['วางป้ายเอง','Label Placed'],
   lp_note276:['เลือกเส้นทางแล้วลากป้ายไปตามเส้นได้ ป้ายอยู่ที่เดิมตามสัดส่วนของเส้นเมื่อเส้นทางคำนวณใหม่ เอาเครื่องหมายออกเพื่อให้โปรแกรมวางป้ายเอง',
     'Select the path and drag its label along it; it keeps its share of the way when the path is worked out again; clear the box to let the label place itself']});
+/* ===== 277 Rebar Partition and Rebar Number (V1.277; Revit: a bar's Partition, and Rebar Numbering: identical bars in one partition share a number,
+   the same bar in another partition has its own) =====
+   The bar schedule numbered bar marks 01, 02, … over the whole project.  Now a rebar host (column, beam, floor, footing, wall, area or path reinforcement)
+   has a Partition (e.rbp277, text, empty = the project's own): bars are grouped and numbered within their partition, the mark reading Partition-01
+   (no partition: 01 as before).  The host's Properties give the Partition and the Rebar Numbers its bars have; the bar schedule (dialog, view, CSV,
+   Excel) shows a Partition column when any host has one, so the view can be grouped by it. */
+const RBP_MAX277=20,rbp277=e=>e&&typeof e.rbp277==='string'?e.rbp277:'';
+{const f0=rbSched;
+  rbSched=P0=>{if(!P0.els.some(e=>rbp277(e)&&rbOf(e)))return f0(P0);
+    const G=new Map(),r10=x=>Math.round(x/10)*10;
+    for(const e of P0.els){const R=rbOf(e);if(!R)continue;const pt=rbp277(e);for(const b of rbSet(P0,e)){const c=rbCut(b,R.lap),seg=[];for(let i=1;i<b.p.length;i++)seg.push(Math.hypot(b.p[i][0]-b.p[i-1][0],b.p[i][1]-b.p[i-1][1],b.p[i][2]-b.p[i-1][2]));
+      const sh=b.k==='t'?'tie':(b.hk[0]?1:0)+(b.hk[1]?1:0)===2?'hk2':b.hk[0]||b.hk[1]?'hk1':'str',A=b.k==='t'?r10(seg[1]):r10(Math.max(...seg)),B=b.k==='t'?r10(seg[2]):sh==='str'?0:r10(Math.min(...seg)),
+        key=[pt,b.d,sh,A,B,r10(c.total)].join('|'),g=G.get(key)||G.set(key,{part:pt,d:b.d,shape:sh,hk:Math.max(b.hk[0],b.hk[1]),A,B,len:c.len,laps:c.laps,cut:c.total,n:0,hosts:new Set()}).get(key);g.n++;g.hosts.add(e.id)}}
+    const rows=[...G.values()].sort((a,b)=>(a.part===b.part?0:!a.part?-1:!b.part?1:a.part.localeCompare(b.part))||b.d-a.d||a.shape.localeCompare(b.shape)||b.cut-a.cut),N=new Map();
+    for(const r of rows){const i=(N.get(r.part)||0)+1;N.set(r.part,i);r.mark=(r.part?r.part+'-':'')+String(i).padStart(2,'0');r.m=r.cut*r.n/1000;r.kg=r.m*rbKg(r.d)}
+    return rows}}
+const rbParts277=Q=>Q.els.some(e=>rbp277(e)&&rbOf(e));
+/* the numbers a host's bars have */
+let RBN277=null;
+const rbNos277=e=>{if(!RBN277||RBN277.P!==P||RBN277.v!==VER)RBN277={P,v:VER,S:rbSched(P)};return RBN277.S.filter(r=>r.hosts.has(e.id)).map(r=>r.mark)};
+/* sanitize: a short text on a rebar host */
+XC.push(()=>{for(const e of P.els){if(e.rbp277===undefined)continue;const v=typeof e.rbp277==='string'?e.rbp277.replace(/[\r\n\t]+/g,' ').trim().slice(0,RBP_MAX277):'';
+  if(!v||!(RB_HOST.includes(e.cat)||AR214.includes(e.cat)))delete e.rbp277;else e.rbp277=v}});
+/* ---- Properties: Partition and Rebar Numbers in the Rebar group (area and path reinforcement: their own group) ---- */
+const rbpRows277=els=>{const v=els.every(x=>rbp277(x)===rbp277(els[0]))?rbp277(els[0]):'';let h=PR.text('rbp277','p_rbp277',v).replace('maxlength="60"',`maxlength="${RBP_MAX277}"`+(v===''&&els.some(x=>rbp277(x))?` placeholder="${t('varies')}"`:''));
+  if(els.length===1){const n=rbNos277(els[0]);h+=PR.ro('p_rbno277',n.length?n.length>12?n.slice(0,12).join(', ')+' … ('+n.length+')':n.join(', '):'—')}return h};
+{const f0=rbRows;rbRows=els=>{const h=f0(els);if(!h||!els.length||!els.every(e=>rbOf(e)))return h;const k='<div class="pa"><button class="btn" data-act="rbsched"',i=h.lastIndexOf(k);
+  return i<0?h+rbpRows277(els):h.slice(0,i)+rbpRows277(els)+h.slice(i)}}
+XP.push((c,els)=>{if(!AR214.includes(c)||!els.length||!els.every(e=>e.cat===c&&rbOf(e)))return'';return PR.grp('g_rbp277')+rbpRows277(els)});
+XF.push((cat,o,key,raw)=>{if(key!=='rbp277')return false;if(!(RB_HOST.includes(cat)||AR214.includes(cat)))return true;const v=String(raw==null?'':raw).replace(/[\r\n\t]+/g,' ').trim().slice(0,RBP_MAX277);
+  if(v)o.rbp277=v;else delete o.rbp277;return true});
+/* ---- the bar schedule: a Partition column when there are partitions ---- */
+{const f0=rbTable222;rbTable222=(Q,tr)=>{const T=f0(Q,tr);if(!rbParts277(Q))return T;const S=rbSched(Q),i=T.cols.findIndex(c=>c.k==='mark');
+  T.cols.splice(i+1,0,{k:'part',label:tr('c_rbp277')});T.rows.forEach((r,j)=>{r.part=S[j]?S[j].part:''});return T}}
+{const f0=dlgRbSched;dlgRbSched=function(){f0.apply(this,arguments);if(!rbParts277(P))return;const tb=$('#dlg .tbl');if(!tb)return;const S=rbSched(P),hr=tb.querySelector('thead tr');
+  if(!hr||hr.querySelector('.rbp277'))return;hr.children[0].insertAdjacentHTML('afterend',`<th class="rbp277">${esc(t('c_rbp277'))}</th>`);
+  for(const tr of tb.querySelectorAll('tbody tr')){const i=tr.dataset.rs;if(i!==undefined){const r=S[+i];tr.children[0].insertAdjacentHTML('afterend',`<td class="rbp277">${esc(r?r.part:'')}</td>`)}else{const td=tr.children[0];if(td&&td.colSpan>1)td.colSpan+=1}}}}
+{const f0=rbSchedCSV;rbSchedCSV=rows=>{const s=f0(rows);if(!rows.some(r=>r.part))return s;const q=x=>'"'+String(x).replace(/"/g,'""')+'"',L=s.split('\r\n').length>1?'\r\n':'\n',A=s.split(L);
+  A[0]=A[0].replace(/^(﻿?"[^"]*(?:""[^"]*)*")/,'$1,'+q(t('c_rbp277')));for(let i=0;i<rows.length&&i+1<A.length;i++)A[i+1]=A[i+1].replace(/^("[^"]*(?:""[^"]*)*")/,'$1,'+q(rows[i].part||''));return A.join(L)}}
+Object.assign(STR,{p_rbp277:['พาร์ทิชัน (Partition)','Partition'],p_rbno277:['หมายเลขเหล็ก (Rebar Number)','Rebar Numbers'],c_rbp277:['พาร์ทิชัน','Partition'],g_rbp277:['หมายเลขเหล็ก (Rebar Numbering)','Rebar Numbering']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -41132,6 +41172,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.274 · ลากลูกศรลาดในแปลน: เลือกพื้นหรือฝ้าที่ลาดในแปลนแล้วเห็นลูกศรจากหางถึงหัวพร้อมจุดจับสองปลาย ลากหางหรือหัวเพื่อวางลูกศร ทิศของลูกศรเป็นทิศของความลาด ในแบบความสูงที่หางลูกศร ระยะยกอยู่ที่หางและหัวลูกศรจริงเหมือน Revit ลูกศรไปกับแผ่นเมื่อย้าย คัดลอก หมุน หรือสะท้อน และทิศความลาดหมุนตามแผ่นที่หมุนแล้ว
 - V1.275 · ประเภทการปรับอากาศของห้อง: ห้องเลือกได้ว่าทำความร้อนและความเย็น ทำความร้อนอย่างเดียว ทำความเย็นอย่างเดียว ไม่ปรับอากาศ ระบายอากาศด้วยพัดลม หรือระบายอากาศธรรมชาติอย่างเดียว เหมือน Condition Type ของ Revit ห้องที่ทำความร้อนอย่างเดียวไม่มีภาระความเย็น ห้องที่ทำความเย็นอย่างเดียวไม่มีภาระความร้อน ตารางห้องและ gbXML ตามไปด้วย
 - V1.276 · ลากป้ายของเส้นทางเดิน: เลือกเส้นทางเดิน (Path of Travel) แล้วลากป้ายความยาวและเวลาไปตามเส้นหรือห่างจากเส้นได้ ป้ายหมุนตามช่วงของเส้นที่มันอยู่ และอยู่ที่เดิมตามสัดส่วนของเส้นเมื่อเส้นทางคำนวณใหม่ เอาเครื่องหมายวางป้ายเองออกเพื่อให้โปรแกรมวางให้เหมือนเดิม
+- V1.277 · พาร์ทิชันและหมายเลขเหล็กเสริม: ชิ้นงานที่มีเหล็กเสริม (เสา คาน พื้น ฐานราก ผนัง เหล็กเสริมพื้นที่และตามแนว) ใส่พาร์ทิชันได้ เหล็กที่เหมือนกันในพาร์ทิชันเดียวกันได้หมายเลขเดียวกัน และนับใหม่ในแต่ละพาร์ทิชัน เช่น F1-01 คุณสมบัติบอกหมายเลขเหล็กของชิ้นงาน ตารางเหล็กมีคอลัมน์พาร์ทิชันให้จัดกลุ่มได้
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41547,6 +41588,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.274 · Slope arrows dragged in plans: a selected sloped floor or ceiling shows its arrow from tail to head with a grip at each end; drag the tail or the head to place it, its way is the slope's way, and in Height at Tail the offsets are at the tail and the head themselves, as in Revit; the arrow moves, copies, rotates and mirrors with the slab, and a slope's way now turns with a rotated slab
 - V1.275 · Room Condition Type: a room can be heated and cooled, heated, cooled, unconditioned, vented or naturally vented only, as a Revit space's Condition Type; a heated room is given no cooling load and a cooled one no heating load, and room schedules and gbXML follow
 - V1.276 · Path of Travel labels dragged: with a path selected its length and time label is dragged along the path or off it; it turns with the stretch it lies by and keeps its share of the way when the path is worked out again; clear Label Placed to let it place itself again
+- V1.277 · Rebar Partition and Rebar Number: a rebar host (column, beam, floor, footing, wall, area or path reinforcement) takes a Partition; identical bars in one partition share a number, counted again in each partition (F1-01); Properties show the host's Rebar Numbers and the bar schedule has a Partition column to group by
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43740,6 +43782,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r277={
+  sched:()=>rbSched(P).map(r=>({mark:r.mark,part:r.part||'',d:r.d,shape:r.shape,A:r.A,B:r.B,n:r.n,cut:r.cut,kg:r.kg,hosts:[...r.hosts]})),
+  nos:id=>rbNos277(IDX.get(id)),el:id=>{const e=IDX.get(id);return e?{cat:e.cat,rbp:e.rbp277,rb:!!e.rb}:null},
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,key,raw)});refresh()},
+  set:(ids,v)=>{edit(()=>{for(const id of ids){const e=IDX.get(id);if(v==null)delete e.rbp277;else e.rbp277=v}});refresh()},
+  tb:()=>{const T=scheduleTable(P,'rebar',t);return{cols:T.cols.map(c=>c.k),labels:T.cols.map(c=>c.label),rows:T.rows.map(r=>({mark:r.mark,part:r.part,n:r.n,kg:r.kg,ids:r._ids}))}},
+  ar:(fid,pts)=>{arMake214('areinf',IDX.get(fid),pts);refresh();const a=P.els.filter(e=>e.cat==='areinf');return a.length?a[a.length-1].id:null},
+  vsort:k=>{const v=P.views.find(v=>v.kind==='schedule'&&v.sched==='rebar');if(!v)return null;edit(()=>{v.sp=Object.assign({},v.sp,{sort:{k,ftr:1}})});refresh();return v.id},
+  csv:()=>rbSchedCSV(rbSched(P)),str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r276={
   mk:(vid,pts)=>{const d=potCompute({id:0,cat:'pot',view:vid,pts,lab:1});if(d.st)return{st:d.st};edit(()=>{d.id=P.seq++;P.ann.push(d)});refresh();return{id:d.id,len:d.len}},
   lab:id=>{const d=IDX.get(id),v=d&&viewById(d.view);if(!d||!v)return null;const q=potLabAt(d,v.scale||100,v);return q?{p:q.p.map(x=>Math.round(x*10)/10),rot:Math.round(q.rot*1e4)/1e4,own:!!q.own,w:q.R.w,h:q.R.h}:null},
