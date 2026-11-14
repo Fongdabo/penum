@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=284,V1_NAME='V1.274';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=285,V1_NAME='V1.275';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -39004,6 +39004,42 @@ Object.assign(STR,{
   p_sar274:['วางลูกศรลาดเอง (Slope Arrow)','Slope Arrow Placed'],p_sarl274:['ความยาวลูกศร','Arrow Length'],
   sar_note274:['ลากหางหรือหัวลูกศรในแปลนเพื่อวางลูกศร ทิศของลูกศรเป็นทิศของความลาด ในแบบความสูงที่หางลูกศร ระยะยกอยู่ที่หางและหัวลูกศรจริง เอาเครื่องหมายออกเพื่อคืนลูกศรพาดตามขอบแผ่น',
     'Drag the arrow\'s tail or head in a plan to place it: its way is the slope\'s way, and in Height at Tail the offsets are at the tail and the head themselves; clear the box to put it back across the slab']});
+/* ===== 275 Condition Type of a room (V1.275; Revit: a Space's Condition Type — Heated, Cooled, Heated and cooled, Unconditioned, Vented, Naturally vented
+   only — sets which loads it is given and goes to gbXML) =====
+   A room was conditioned or not (e.cond, or its space type's Conditioned, roomCooled), and a conditioned one was given both its cooling and its heating
+   load.  Now e.ct275 says which: 'h' heated only (its heating load, no cooling: totals, supply air and the hourly profile are 0), 'c' cooled only (no
+   heating load), 'v' vented and 'nv' naturally vented only (not conditioned, as a room with Conditioned cleared).  Absent: heated and cooled when the
+   room is conditioned, unconditioned when not.  A Condition Type keeps e.cond in step; ticking or clearing Conditioned takes it back to the default.
+   Properties of a room, room schedules (Condition Type) and the gbXML conditionType follow. */
+const CT275=['hc','h','c','u','v','nv'],CT_ON275=new Set(['hc','h','c']),CT_GBX275={hc:'HeatedAndCooled',h:'HeatedOnly',c:'CooledOnly',u:'Unconditioned',v:'Vented',nv:'NaturallyVentedOnly'};
+const ctOf275=e=>{const on=roomCooled(e),c=e&&e.ct275;return c&&CT275.includes(c)&&CT_ON275.has(c)===on?c:on?'hc':'u'};
+/* sanitize: a type on a room, in step with its Conditioned */
+XC.push(()=>{for(const e of P.els){if(e.ct275===undefined)continue;if(e.cat!=='room'||!CT275.includes(e.ct275)||e.ct275==='hc'||e.ct275==='u'||CT_ON275.has(e.ct275)!==roomCooled(e))delete e.ct275}});
+/* the loads: a heated room has no cooling, a cooled one no heating */
+{const f0=roomLoads;roomLoads=P0=>{const rows=f0(P0),by=new Map();for(const e of P0.els)if(e.cat==='room'&&(e.ct275==='h'||e.ct275==='c'))by.set(e.id,e.ct275);if(!by.size)return rows;
+  for(const r of rows){const c=by.get(r.id);if(!c||!r.cond)continue;r.ct275=c;if(r.total==null)continue;
+    if(c==='c'){r.heat=0;r.heatBtu=0;if(r.hs251!=null)r.hs251=0}
+    else{for(const k of ['total','btu','tr','btum2','sens','lat','oa','supply','size'])if(r[k]!=null)r[k]=0;if(r.H)r.H=new Float64Array(r.H.length);if(r.HS)r.HS=new Float64Array(r.HS.length)}}
+  return rows}}
+/* gbXML: the Space's conditionType */
+{const f0=gbxText;gbxText=(P0,O,date)=>{const R=f0(P0,O,date),m=new Map();for(const e of P0.els)if(e.cat==='room'&&e.ct275)m.set(e.id,e.ct275);if(!m.size||!R||typeof R.text!=='string')return R;
+  R.text=R.text.replace(/<Space ([^>]*?)conditionType="[^"]*"([^>]*)>([\s\S]*?)<\/Space>/g,(w,a,b,body)=>{const k=/<CADObjectId>[^<]*\[(\d+)\]<\/CADObjectId>/.exec(body),c=k&&m.get(+k[1]);
+    return c?`<Space ${a}conditionType="${CT_GBX275[c]}"${b}>${body}</Space>`:w});return R}}
+/* ---- Properties: Condition Type after Conditioned ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(isNew||cat!=='room'||!els.length)return h;const k=h.indexOf('id="p_cond"');if(k<0)return h;const j=h.indexOf('</div></div>',k);if(j<0)return h;
+  const v=els.every(e=>ctOf275(e)===ctOf275(els[0]))?ctOf275(els[0]):'';h=h.slice(0,j+12)+PR.sel('ct275','p_ct275',v,CT275.map(c=>[c,t('ct_'+c+'275')]))+h.slice(j+12);
+  if(els.length===1&&els[0].ct275==='h'){const l=`<label>${t('p_acsize')}</label>`,i=h.indexOf(l);if(i>=0){const a=h.indexOf('<span class="ro">',i),b=h.indexOf('</span>',a);if(a>0&&b>a)h=h.slice(0,a)+'<span class="ro">—</span>'+h.slice(b+7)}}          // no cooling: no size to pick
+  return h}}
+XF.unshift((cat,o,key,raw)=>{if(cat==='room'&&key==='cond')delete o.ct275;return false});
+XF.push((cat,o,key,raw)=>{if(key!=='ct275')return false;if(cat!=='room'||!CT275.includes(raw))return true;o.cond=CT_ON275.has(raw);if(raw==='hc'||raw==='u')delete o.ct275;else o.ct275=raw;return true});
+/* the Heating and Cooling Loads window: a room that is not heated and cooled says what it is, beside its name */
+{const f0=dlgLoads;dlgLoads=(...a)=>{const r=f0(...a),D=$('#dlg');if(!D||!D.open||!ui.dlg||!ui.dlg.ld)return r;
+  for(const tr of D.querySelectorAll('tr[data-room]')){const e=IDX.get(+tr.dataset.room),c=e&&e.ct275,td=tr.children[1];if(!c||!td||td.querySelector('.ct275'))continue;
+    const s=document.createElement('small');s.className='ct275';s.style.cssText='display:block;color:var(--accent,#0a7)';s.textContent=t('ct_'+c+'275');td.appendChild(s);if(c==='h')for(const x of tr.children)if(/^>\s/.test(x.textContent.trim()))x.textContent='—'}return r}}
+/* schedules of rooms: Condition Type */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='room')return F;F.push({k:'ct275',l:tr('p_ct275'),g:e=>tr('ct_'+ctOf275(e)+'275'),grp:'i'});return F}}
+Object.assign(STR,{p_ct275:['ประเภทการปรับอากาศ (Condition Type)','Condition Type'],ct_hc275:['ทำความร้อนและความเย็น','Heated and cooled'],ct_h275:['ทำความร้อนอย่างเดียว','Heated'],
+  ct_c275:['ทำความเย็นอย่างเดียว','Cooled'],ct_u275:['ไม่ปรับอากาศ','Unconditioned'],ct_v275:['ระบายอากาศด้วยพัดลม','Vented'],ct_nv275:['ระบายอากาศธรรมชาติอย่างเดียว','Naturally vented only']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -41052,6 +41088,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.272 · ปริมาตรห้องใต้พื้นและฝ้าที่ลาด: ห้องที่อยู่ใต้ฝ้าหรือพื้นชั้นบนที่ลาด (ความลาดหรือความสูงที่หางลูกศร) หรือยกจุดพื้น และห้องที่ตั้งบนพื้นแบบนั้น คิดปริมาตรตามผิวแผ่นจริง ไม่ใช่แผ่นเรียบ เหมือน Revit ห้องที่แผ่นเรียบทั้งหมดได้ค่าเท่าเดิม
 - V1.273 · ปริมาตรห้องใต้ช่องเปิดหลังคา: ช่องชาฟต์หรือช่องเปิดที่ตัดหลังคา (รวมช่องของหลังคาโผล่) ไม่ตัดปริมาตรห้องข้างใต้แล้ว ใต้ช่องเปิดห้องสูงถึงระดับบนของห้องหรือฝ้าที่ปิดอยู่ เหมือน Revit หลังคาที่ไม่มีช่องเปิดเหนือห้องได้ค่าเท่าเดิม
 - V1.274 · ลากลูกศรลาดในแปลน: เลือกพื้นหรือฝ้าที่ลาดในแปลนแล้วเห็นลูกศรจากหางถึงหัวพร้อมจุดจับสองปลาย ลากหางหรือหัวเพื่อวางลูกศร ทิศของลูกศรเป็นทิศของความลาด ในแบบความสูงที่หางลูกศร ระยะยกอยู่ที่หางและหัวลูกศรจริงเหมือน Revit ลูกศรไปกับแผ่นเมื่อย้าย คัดลอก หมุน หรือสะท้อน และทิศความลาดหมุนตามแผ่นที่หมุนแล้ว
+- V1.275 · ประเภทการปรับอากาศของห้อง: ห้องเลือกได้ว่าทำความร้อนและความเย็น ทำความร้อนอย่างเดียว ทำความเย็นอย่างเดียว ไม่ปรับอากาศ ระบายอากาศด้วยพัดลม หรือระบายอากาศธรรมชาติอย่างเดียว เหมือน Condition Type ของ Revit ห้องที่ทำความร้อนอย่างเดียวไม่มีภาระความเย็น ห้องที่ทำความเย็นอย่างเดียวไม่มีภาระความร้อน ตารางห้องและ gbXML ตามไปด้วย
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41465,6 +41502,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.272 · Room volumes under sloped floors and ceilings: a room under a sloped ceiling or floor above (Slope or Height at Tail) or a floor with raised points, or standing on one, has its volume to the slab's real face, not a flat slab, as in Revit; rooms whose slabs are flat keep their volumes
 - V1.273 · Room volumes under roof openings: a shaft or void through a roof, or a dormer opening, no longer takes room volume out below it; under the opening the room goes up to its top or to a ceiling over it, as in Revit; roofs with no opening over a room keep their volumes
 - V1.274 · Slope arrows dragged in plans: a selected sloped floor or ceiling shows its arrow from tail to head with a grip at each end; drag the tail or the head to place it, its way is the slope's way, and in Height at Tail the offsets are at the tail and the head themselves, as in Revit; the arrow moves, copies, rotates and mirrors with the slab, and a slope's way now turns with a rotated slab
+- V1.275 · Room Condition Type: a room can be heated and cooled, heated, cooled, unconditioned, vented or naturally vented only, as a Revit space's Condition Type; a heated room is given no cooling load and a cooled one no heating load, and room schedules and gbXML follow
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43658,6 +43696,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r275={
+  ct:id=>{const e=IDX.get(id);return e?ctOf275(e):null},raw:id=>{const e=IDX.get(id);return e?{ct:e.ct275,cond:e.cond}:null},
+  ld:id=>{const r=LDm().find(x=>x.id===id);return r?{cond:r.cond,total:r.total,sens:r.sens,supply:r.supply,heat:r.heat,btu:r.btu,ct:r.ct275||null,H:r.H?Math.max(...r.H):null}:null},
+  blk:()=>{const b=lhBlock(LDm(),loadSet(P));return{sum:b.sum,heat:b.heat,n:b.n}},
+  gbx:()=>{const r=gbxText(P,{ld:1},'2026-01-01');return r&&r.text},
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,key,raw)});refresh()},
+  sched:()=>{const F=sfAll(P,'room',t);const f=F.find(x=>x.k==='ct275');return f?P.els.filter(e=>e.cat==='room').map(e=>[e.id,f.g(e)]):null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r274={
   sar:id=>{const e=IDX.get(id);return e&&sarHas274(e)?JSON.parse(JSON.stringify(sarOf274(e))):null},own:id=>sarOn274(IDX.get(id)),def:id=>{const e=IDX.get(id);return e&&sarHas274(e)?sarDef274(e):null},
   el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify({sp:e.sp,sa:e.sa,sph:e.sph271,sar:e.sar274,off:e.off,pts:e.pts})):null},
