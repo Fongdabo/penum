@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=282,V1_NAME='V1.272';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=283,V1_NAME='V1.273';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38915,6 +38915,29 @@ function slRange272(s,F){let lo=Infinity,hi=-Infinity;for(const f of F)for(const
       v+=vq;if(rec)rec.push({id:q.s.id,up,z:q.z,a:ar,v:vq,tilt:q.F?1:0});done.push(...parts)}return v};
   caps.sort((a,b)=>a.z-b.z);bases.sort((a,b)=>b.z-a.z);
   return Math.max(0,r.area*M.h-run(caps,true)-run(bases,false)-rfCut242(P0,e,r,M,CR,C,PI,ip,DS,rec))}}
+/* ===== 273 Room volumes under roof openings (V1.273; Revit: a shaft opening or a dormer opening cuts the roof, and a room under it has its volume up to its
+   upper limit there) =====
+   V1.242 took what lies above a roof's underside out of a room's volume face by face, openings left out ("Openings of roofs are not taken into account").  The
+   openings of a roof (roofHoles: shafts and voids through it, dormer openings) are now kept out of its faces: under an opening the room goes up to its top,
+   or to a ceiling or a floor above that covers it.  Roofs with no opening over the room are computed as before. */
+{const f0=rfCut242;rfCut242=(P0,e,r,M,CR,C,PI,ip,DS,rec)=>{let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of r.net){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
+  const RS=[];let any=false;
+  for(const s of P0.els){if(s.cat!=='roof'||!Array.isArray(s.pts)||s.pts.length<3)continue;if(PI&&!phThere(PI,s,ip))continue;if(s.dop&&!DS.has(s.dop))continue;
+    let H=[];try{H=roofHoles(P0,s)}catch(err){H=[]}H=H.filter(h=>{let a0=Infinity,b0=Infinity,a1=-Infinity,b1=-Infinity;for(const p of h){a0=Math.min(a0,p[0]);b0=Math.min(b0,p[1]);a1=Math.max(a1,p[0]);b1=Math.max(b1,p[1])}return!(a1<x0||a0>x1||b1<y0||b0>y1)});
+    RS.push({s,HP:H.length?holeParts(H).filter(k=>k.length>=3):[]});if(H.length)any=true}
+  if(!any)return f0(P0,e,r,M,CR,C,PI,ip,DS,rec);
+  let v=0;const CRp=CR.map(q=>({z:q.z,K:holeParts([q.R])}));
+  for(const {s,HP} of RS){let G=null;try{G=roofGeo(P0,s)}catch(err){G=null}if(!G||!Array.isArray(G.faces))continue;const th=+G.th||0;let vr=0,vh=0;
+    for(const f of G.faces){if(!f.loop||f.loop.length<3)continue;const pl=planeOf(f.loop),zu=p=>pl[0]*p[0]+pl[1]*p[1]+pl[2]-th,F2=f.loop.map(q=>[q[0],q[1]]);
+      let a0=Infinity,b0=Infinity,a1=-Infinity,b1=-Infinity,zl=Infinity;for(const q of f.loop){a0=Math.min(a0,q[0]);b0=Math.min(b0,q[1]);a1=Math.max(a1,q[0]);b1=Math.max(b1,q[1]);zl=Math.min(zl,q[2]-th)}
+      if(a1<x0||a0>x1||b1<y0||b0>y1||zl>=M.t-0.5)continue;
+      const up=p=>zu(p)-M.b,cut0=(S,cl,Z)=>{const hp=[up,p=>Z-zu(p)],a=-pl[0],b=-pl[1],c=Z-pl[2]+th;let x=rfInt242(S,cl,hp,a,b,c);for(const cc of C)for(const H of cc.parts)x-=rfInt242(S,cl.concat([H]),hp,a,b,c);return x};
+      const cut=(S,cl,Z)=>{let x=cut0(S,cl,Z);for(const H of HP){const y=cut0(S,cl.concat([H]),Z);x-=y;vh+=y}return x};          // less what lies under the openings
+      for(const K of holeParts([F2])){if(K.length<3)continue;
+        vr+=cut(r.net,[K],M.t);
+        for(const q of CRp)for(const R of q.K)vr+=cut(r.net,[R,K],q.z)-cut(r.net,[R,K],M.t)}}
+    if(vr>0.5){v+=vr;if(rec)rec.push({id:s.id,up:true,roof:1,v:vr,open:HP.length?1:0})}}
+  return v}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40961,6 +40984,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.270 · รูปกุญแจที่ช่องรอยต่อที่ล็อก: เลือกผนังหรือเสาที่แบ่งเว้นช่องตามแนวนอนในรูปด้าน รูปตัด หรือ 3 มิติ จะเห็นกุญแจที่กลางช่อง ชี้แล้วบอกว่าคลิกเพื่อปลดล็อก คลิกแล้วปลดล็อก (ย้อนกลับได้) · เปิดแสดงข้อจำกัด (Reveal Constraints) ในรูปด้านหรือรูปตัดเห็นกุญแจสีแดงของทุกช่องที่ล็อก
 - V1.271 · ลาดพื้นกำหนดด้วยความสูงที่หางลูกศร (Specify: Height at Tail): ในกลุ่มความลาดของพื้นและฝ้าเลือกกำหนดด้วยความลาดแบบเดิม หรือความสูงที่หางลูกศร แล้วตั้งระยะยกที่หางและหัวลูกศร แผ่นเอียงผ่านทั้งสองจุด ลาดขึ้นหรือลงตามลูกศรได้ ความลาดคำนวณให้เอง แก้รูปแผ่นแล้วระยะยกคงเดิม สลับกลับเป็นความลาดแผ่นยังอยู่ที่เดิม
 - V1.272 · ปริมาตรห้องใต้พื้นและฝ้าที่ลาด: ห้องที่อยู่ใต้ฝ้าหรือพื้นชั้นบนที่ลาด (ความลาดหรือความสูงที่หางลูกศร) หรือยกจุดพื้น และห้องที่ตั้งบนพื้นแบบนั้น คิดปริมาตรตามผิวแผ่นจริง ไม่ใช่แผ่นเรียบ เหมือน Revit ห้องที่แผ่นเรียบทั้งหมดได้ค่าเท่าเดิม
+- V1.273 · ปริมาตรห้องใต้ช่องเปิดหลังคา: ช่องชาฟต์หรือช่องเปิดที่ตัดหลังคา (รวมช่องของหลังคาโผล่) ไม่ตัดปริมาตรห้องข้างใต้แล้ว ใต้ช่องเปิดห้องสูงถึงระดับบนของห้องหรือฝ้าที่ปิดอยู่ เหมือน Revit หลังคาที่ไม่มีช่องเปิดเหนือห้องได้ค่าเท่าเดิม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41372,6 +41396,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.270 · The padlock of a locked gap: select a wall or a column split across with a gap in an elevation, a section or a 3D view and a padlock shows at the middle of the gap; pointed at, it says a click unlocks, and a click unlocks it (undoable) · Reveal Constraints in an elevation or a section shows every locked gap in red
 - V1.271 · Slope Arrow Specify: Height at Tail: in the Slope group of a floor or a ceiling choose Specify Slope (as before) or Height at Tail, then set Height Offset at Tail and at Head; the slab runs through both, rising or falling along the arrow, the slope follows, a changed outline keeps both heights, and going back to Slope keeps the slab where it is
 - V1.272 · Room volumes under sloped floors and ceilings: a room under a sloped ceiling or floor above (Slope or Height at Tail) or a floor with raised points, or standing on one, has its volume to the slab's real face, not a flat slab, as in Revit; rooms whose slabs are flat keep their volumes
+- V1.273 · Room volumes under roof openings: a shaft or void through a roof, or a dormer opening, no longer takes room volume out below it; under the opening the room goes up to its top or to a ceiling over it, as in Revit; roofs with no opening over a room keep their volumes
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43565,6 +43590,16 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r273={
+  vol:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);return i<0?null:Math.round(rmVol240(P,e,R[i])/1e3)/1e3},
+  rec:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y),o=[];if(i<0)return null;rmVol240(P,e,R[i],o);return o.map(x=>Object.assign({},x))},
+  holes:id=>{const e=IDX.get(id);return e?roofHoles(P,e):null},
+  /* the roof's underside over room id, sampled (step mm): the volume above it inside the room's limits, holes left out unless keep */
+  num:(id,rid,step,keep)=>{const e=IDX.get(id),s=IDX.get(rid);if(!e||!s)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);if(i<0)return null;const net=R[i].net,M=rmLim240(P,e),G=roofGeo(P,s),th=+G.th||0,H=keep?[]:roofHoles(P,s);
+    const F=G.faces.filter(f=>f.loop&&f.loop.length>=3).map(f=>({pl:planeOf(f.loop),P2:f.loop.map(q=>[q[0],q[1]])}));let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of net){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
+    let v=0;for(let x=x0+step/2;x<x1;x+=step)for(let y=y0+step/2;y<y1;y+=step){if(!inPoly(x,y,net)||H.some(h=>inPoly(x,y,h)))continue;let z=Infinity;for(const f of F)if(inPoly(x,y,f.P2))z=Math.min(z,f.pl[0]*x+f.pl[1]*y+f.pl[2]-th);if(z===Infinity)continue;
+      const c=Math.max(M.b,Math.min(M.t,z));v+=(M.t-c)*step*step}return v/1e9},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r272={
   vol:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);return i<0?null:Math.round(rmVol240(P,e,R[i])/1e3)/1e3},
   rec:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y),o=[];if(i<0)return null;rmVol240(P,e,R[i],o);return o.filter(x=>x.id!=null).map(x=>Object.assign({},x))},
