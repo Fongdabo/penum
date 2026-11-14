@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=273,V1_NAME='V1.263';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=274,V1_NAME='V1.264';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38490,6 +38490,94 @@ Object.assign(STR,{
   stf_has263:['มีแผ่นเสริมที่จุดนี้แล้ว','There is a stiffener here already'],stf_snap263:['ตรงคานที่มาต่อ','where a beam frames in'],
   stf_doneb263:['ใส่แผ่นเสริมที่ {0} จากปลายเริ่มของคาน','Stiffener {0} from the start of the beam'],stf_donec263:['ใส่แผ่นเสริมที่ {0} จากโคนเสา','Stiffener {0} above the bottom of the column'],
   stf_item263:['แผ่นเสริม (Stiffener) หนา {0} มม.','Stiffener plate {0} mm'],c_stf263:['จำนวนแผ่นเสริม','Stiffener Count']});
+/* ===== 264 Gusset Plates (V1.264; Revit: Steel Connections › brace connections with a gusset plate — a plate in the plane of a brace, welded to the column
+   and the beam at the joint the brace runs into, the brace bolted to it) =====
+   A steel brace has e.gp264 = {e: ends (1 start, 2 end, 3 both), t: plate thickness, n: bolts, d: bolt diameter}.  At each of those ends the plate stands in
+   the upright plane of the brace, centred on it; it is bounded by the faces it is welded to (the face of a column the end is at; the underside of a beam
+   there when the brace runs down from it, its top when it runs up; the floor at the bottom of a column) and reaches along the brace past them by the bolt lap
+   (40 mm ends, a pitch of 3 d).  An end that meets nothing has none.  Properties of braces set them, the Connection panel puts them on selected braces;
+   3D views, elevations and sections show them with their bolts (meshes of the brace, so IFC writes them), plans of Medium and Fine detail show their edge;
+   the BOQ counts the plates in kg and the bolts each, and beam schedules count the plates. */
+const GP_T264=[8,10,12,16,20,25],GP_D264=[16,20,22,24],GP_E264=40;
+const gpOK264=e=>!!e&&e.cat==='beam'&&e.use==='brace'&&!e.gx&&!!stlT(typ(P,e))&&Math.hypot(e.x2-e.x1,e.y2-e.y1)>=100;
+const gpOn264=e=>!!e&&e.cat==='beam'&&e.use==='brace'&&!!e.gp264&&(+e.gp264.e&3)>0;
+const gpPar264=e=>{const o=e.gp264||{},n=+o.n;return{e:(+o.e|0)&3,t:GP_T264.includes(+o.t)?+o.t:12,n:n>=1&&n<=8?Math.round(n):3,d:GP_D264.includes(+o.d)?+o.d:20}};
+/* where a ray from p along a leaves the plan outline of a column (bcHull) */
+function gpExit264(H,p,a){if(H.r){const dx=p[0]-H.c[0],dy=p[1]-H.c[1],b=dx*a[0]+dy*a[1],c=dx*dx+dy*dy-H.r*H.r,q=b*b-c;return q<0?0:Math.max(0,-b+Math.sqrt(q))}
+  let t=Infinity;const d=[p[0]-H.c[0],p[1]-H.c[1]];for(const [ev,h] of [[H.ex,H.hx],[H.ey,H.hy]]){const k=a[0]*ev[0]+a[1]*ev[1],o=d[0]*ev[0]+d[1]*ev[1];if(Math.abs(k)<1e-9)continue;t=Math.min(t,((k>0?h:-h)-o)/k)}return isFinite(t)?Math.max(0,t):0}
+/* the faces at one end of a brace: {E: [x, y, z], a (plan direction into the brace), dr, dz (the axis, unit, in the plane), rc (column face, or null),
+   zb and up (the beam or floor face: the plate keeps z <= zb when the brace runs down from it, z >= zb when it runs up), col, beam} */
+function gpEnd264(Q,e,k){const z=beamZ(Q,e),Lp=Math.hypot(e.x2-e.x1,e.y2-e.y1),A=k?[e.x2,e.y2,z[1]]:[e.x1,e.y1,z[0]],B=k?[e.x1,e.y1,z[0]]:[e.x2,e.y2,z[1]],a=[(B[0]-A[0])/Lp,(B[1]-A[1])/Lp],L3=Math.hypot(Lp,B[2]-A[2]);
+  const o={E:A,a,dr:Lp/L3,dz:(B[2]-A[2])/L3,rc:null,zb:null,up:B[2]>A[2]};
+  for(const c of Q.els){if(c.cat!=='column'||c.gx)continue;const H=bcHull(Q,c);if(!bcIn(H,[A[0],A[1]],60))continue;const zr=zRange(Q,c);if(A[2]<zr[0]-60||A[2]>zr[1]+60)continue;
+    o.col=c;o.rc=gpExit264(H,[A[0],A[1]],a);if(o.up&&Math.abs(A[2]-zr[0])<=60&&o.zb==null)o.zb=zr[0];break}
+  for(const b of Q.els){if(b===e||b.cat!=='beam'||b.use==='brace'||b.gx||beamSloped(Q,b))continue;if(segDist(A[0],A[1],b.x1,b.y1,b.x2,b.y2)>60)continue;const T=typ(Q,b)||{},d=+T.sd||+T.h||400,zt=beamZ(Q,b)[0]-(stlT(T)?4:0);
+    if(A[2]<zt-d-60||A[2]>zt+60)continue;o.beam=b;o.zb=o.up?zt:zt-d;break}
+  return o}
+/* a convex polygon cut by r >= r0 (s = 1) or z <= / >= z0 */
+function gpClip264(poly,f){const out=[];for(let i=0;i<poly.length;i++){const p=poly[i],q=poly[(i+1)%poly.length],fp=f(p),fq=f(q);if(fp>=0)out.push(p);if((fp>=0)!==(fq>=0)){const t=fp/(fp-fq);out.push([p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t])}}return out}
+function gpHull264(pts){const P0=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
+  for(const p of P0){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=1e-9)lo.pop();lo.push(p)}for(const p of P0.reverse()){while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=1e-9)up.pop();up.push(p)}
+  return lo.slice(0,-1).concat(up.slice(0,-1))}
+/* the plates of a brace: {p, ends: [{k, F (the faces), poly: [[r, z]] (r along a from E), bolts: [[r, z]], kg}], kg, nb} */
+function gpGeo264(Q,e){if(!gpOn264(e)||e.gx||!stlT(typ(Q,e)))return null;const T=typ(Q,e)||{},p=gpPar264(e),w0=Math.max(+T.sd||+T.h||100,+T.sb||+T.w||100),pitch=3*p.d,lap=2*GP_E264+(p.n-1)*pitch,G={p,ends:[],kg:0,nb:0};
+  if(Math.hypot(e.x2-e.x1,e.y2-e.y1)<100)return null;
+  for(const k of [0,1]){if(!(p.e&(1<<k)))continue;const F=gpEnd264(Q,e,k);if(F.rc==null&&F.zb==null)continue;const zE=F.E[2],d=[F.dr,F.dz],n=[-F.dz,F.dr],cons=[];
+    if(F.rc!=null)cons.push(q=>q[0]-F.rc);if(F.zb!=null)cons.push(F.up?q=>q[1]-F.zb:q=>F.zb-q[1]);
+    let tc=0;for(const s of [-w0/2,w0/2])for(const f of cons){const base=[n[0]*s,zE+n[1]*s],g0=f(base)-10,g1=f([base[0]+d[0],base[1]+d[1]])-f(base);if(g0<0&&g1>1e-9)tc=Math.max(tc,-g0/g1)}
+    const Lg=tc+lap,w=w0+80,at=(t,s)=>[d[0]*t+n[0]*s,zE+d[1]*t+n[1]*s],A1=at(Lg,w/2),A2=at(Lg,-w/2),pts=[A1,A2,at(0,w/2),at(0,-w/2)];
+    if(F.rc!=null)pts.push([F.rc,A1[1]],[F.rc,A2[1]]);if(F.zb!=null)pts.push([A1[0],F.zb],[A2[0],F.zb]);if(F.rc!=null&&F.zb!=null)pts.push([F.rc,F.zb]);
+    let poly=gpHull264(pts);for(const f of cons)poly=gpClip264(poly,f);poly=poly.filter((q,i)=>{const r=poly[(i+1)%poly.length];return Math.hypot(q[0]-r[0],q[1]-r[1])>0.5});if(poly.length<3)continue;
+    let ar=0;for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length];ar+=a[0]*b[1]-b[0]*a[1]}ar=Math.abs(ar)/2;
+    const bolts=[];for(let i=0;i<p.n;i++)bolts.push(at(tc+GP_E264+i*pitch,0));const kg=ar*p.t*STC_RHO;G.ends.push({k,F,poly,bolts,kg,area:ar});G.kg+=kg;G.nb+=bolts.length}
+  return G.ends.length?G:null}
+/* ---- 3D: the plate (pushed across the plane) and its bolts, of the brace ---- */
+function gpMeshes264(Q,items){for(const e of Q.els){if(!gpOn264(e)||e.gx)continue;const G=gpGeo264(Q,e);if(!G)continue;const T=typ(Q,e)||{},bt=Math.max(+T.stw||+T.st||8,6);
+  for(const x of G.ends){const F=x.F,K=modelKit({x:F.E[0],y:F.E[1],id:e.id,cat:'beam'},Math.atan2(F.a[1],F.a[0])*180/Math.PI,items),m=K.part(STC_COL);m.vc='beam';m.mt=MAT.metal;
+    K.sweepV(m,x.poly,-G.p.t/2,G.p.t/2);const mb=K.part(STC_BCOL);mb.vc='beam';mb.mt=MAT.metal;const r=G.p.d/2,h=G.p.t/2+bt+0.8*G.p.d,H6={n:6,nl:1};
+    for(const q of x.bolts){K.cyl(mb,[q[0],-h,q[1]],[q[0],h,q[1]],r,{nl:1});K.cyl(mb,[q[0],-h-0.6*G.p.d,q[1]],[q[0],-h,q[1]],0.9*G.p.d,H6);K.cyl(mb,[q[0],h,q[1]],[q[0],h+0.8*G.p.d,q[1]],0.9*G.p.d,H6)}}}}
+{const f0=stcMeshes;stcMeshes=(Q,items)=>{f0(Q,items);gpMeshes264(Q,items)}}
+/* ---- plans of Medium and Fine detail: the plate edge on (its reach along the brace, its thickness across) ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||(v.detail||'coarse')==='coarse')return;if(!P.els.some(gpOn264))return;const H=halfCols(col);
+  for(const [e] of of('beam')){if(!gpOn264(e))continue;const G=gpGeo264(P,e);if(!G)continue;g.el(e);const h=hl(e.id);ctx.strokeStyle=h||(discMode(P,v,e)===1?H.ink:col.ink);g.dash(null);ctx.lineWidth=h?1.2:g.lw(0.13);
+    for(const x of G.ends){let r0=Infinity,r1=-Infinity;for(const q of x.poly){r0=Math.min(r0,q[0]);r1=Math.max(r1,q[0])}const F=x.F,a=F.a,n=[-a[1],a[0]],t2=G.p.t/2,W=(r,s)=>[F.E[0]+a[0]*r+n[0]*s,F.E[1]+a[1]*r+n[1]*s];
+      g.path([W(r0,-t2),W(r1,-t2),W(r1,t2),W(r0,t2)]);ctx.stroke()}}g.dash(null)});
+/* ---- Properties of braces ---- */
+XP.push((c,els)=>{if(c!=='beam'||!els.length||!els.every(gpOK264))return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},on=els.filter(gpOn264);
+  let h=PR.grp('g_gp264')+PR.sel('gp264_e','p_gpe264',V(e=>String(gpOn264(e)?gpPar264(e).e:0)),[['0',t('gp_e0_264')],['1',t('gp_e1_264')],['2',t('gp_e2_264')],['3',t('gp_e3_264')]]);if(!on.length)return h;
+  const W=k=>{const a=gpPar264(on[0])[k];return on.every(x=>gpPar264(x)[k]===a)?a:''};
+  h+=PR.sel('gp264_t','p_gpt264',W('t'),GP_T264.map(x=>[x,x+' '+t('u_mm')]))+PR.num('gp264_n','p_gpn264',W('n'),'','min="1" max="8" step="1"')+PR.sel('gp264_d','p_gpd264',W('d'),GP_D264.map(x=>[x,'M'+x]));
+  let n=0,nb=0,kg=0,free=0;for(const e of on){const G=gpGeo264(P,e);const want=[1,2].filter(b=>gpPar264(e).e&b).length;if(!G){free+=want;continue}n+=G.ends.length;nb+=G.nb;kg+=G.kg;free+=want-G.ends.length}
+  h+=PR.ro('p_gpc264',n+' '+t('stf_pl263')+' · '+nb+' '+t('gp_bolts264'))+PR.ro('p_gpw264',(Math.round(kg*10)/10)+' '+t('u_kg262'));if(free)h+=`<div class="pnote">${esc(t('gp_free264',free))}</div>`;return h});
+XF.push((cat,o,key,raw)=>{if(!String(key).startsWith('gp264_'))return false;if(cat!=='beam'||o.use!=='brace'||raw===''||raw==null)return true;const k=key.slice(6),v=+raw;
+  if(k==='e'){const b=(v|0)&3;if(!b)delete o.gp264;else o.gp264=Object.assign(o.gp264&&typeof o.gp264==='object'?o.gp264:{},{e:b});return true}
+  if(!gpOn264(o))return true;if(k==='t'&&GP_T264.includes(v))o.gp264.t=v;if(k==='d'&&GP_D264.includes(v))o.gp264.d=v;if(k==='n'&&isFinite(v))o.gp264.n=Math.round(clamp(v,1,8));return true});
+/* ---- the button: both ends of the selected steel braces that have none ---- */
+XA.gp264=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(gpOK264);if(!S.length){toast(t('gp_sel0_264'));return}const L=S.filter(e=>!gpOn264(e));if(!L.length){toast(t('gp_has264'));return}
+  edit(()=>{for(const e of L)e.gp264={e:3}});let n=0;for(const e of L){const G=gpGeo264(P,e);if(G)n+=G.ends.length}toast(t('gp_done264',L.length,n))};
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-gp264" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+   +`<path class="i-Sa" fill="#e9edf4" ${E} d="M2 2h3.4v19H2zM5.4 2H22v3.2H5.4z"/><path class="i-Ta" fill="#aeefdc" ${E} d="M5.4 5.2h8.4l-3 6.4-5.4 2.6z"/>`
+   +`<path class="i-Pb" fill="#d7dfea" ${E} d="M8.2 8.2l2.2-1.8 11.6 12.4-2.2 1.8z"/><circle class="i-Sc" fill="#7184a2" cx="9.4" cy="8.6" r=".9"/><circle class="i-Sc" fill="#7184a2" cx="11" cy="10.2" r=".9"/></symbol>`)})();
+Object.assign(BTN,{'@gp264':['gp264','']});
+{const p=(RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('@gp264'))p.b.push('@gp264')}
+XR.push(tl=>tl==='modify'&&[...ui.sel].some(id=>gpOK264(IDX.get(id)))?[{t:'p_sconn',b:['@gp264']}]:[]);
+/* ---- the BOQ: plates by thickness in kg, bolts by size, each ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(gpOn264))return S;const PR0=Q0.prices||{},by=new Map();
+  const row=(pk,item,unit,cost,_c)=>{let r=by.get(pk);if(!r)by.set(pk,r={cat:tr('cat_gp264'),_c,tcat:'gp264',pk,item,qty:0,unit,cost:PR0[pk]!=null?+PR0[pk]||0:cost,amount:0});return r};
+  for(const e of Q0.els){if(e.gx||!gpOn264(e))continue;const G=gpGeo264(Q0,e);if(!G)continue;row('gp264|'+G.p.t,tr('gp_item264',G.p.t),tr('u_kg262'),45,9.36).qty+=G.kg;row('gpbolt264|'+G.p.d,tr('gp_bolt264',G.p.d),tr('u_ss262'),35,9.365).qty+=G.nb}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;F.push({k:'gp264',l:tr('c_gp264'),g:e=>{const G=gpGeo264(Q,e);return G?G.ends.length:''},num:1,sum:1,grp:'q'});return F}}
+Object.assign(STR,{
+  a_gp264:['แผ่นประกับค้ำยัน (Gusset Plate)','Gusset Plates'],cat_gp264:['แผ่นประกับค้ำยัน (Gusset Plate)','Gusset Plates'],g_gp264:['แผ่นประกับค้ำยัน (Gusset Plate)','Gusset Plates'],
+  p_gpe264:['แผ่นประกับที่ปลาย','Gusset Plates At'],gp_e0_264:['ไม่มี','None'],gp_e1_264:['ปลายเริ่ม','Start'],gp_e2_264:['ปลายสุด','End'],gp_e3_264:['ทั้งสองปลาย','Both Ends'],
+  p_gpt264:['ความหนาแผ่น','Plate Thickness'],p_gpn264:['จำนวนสลักเกลียวต่อปลาย','Bolts per End'],p_gpd264:['ขนาดสลักเกลียว','Bolt Size'],
+  p_gpc264:['จำนวน','Count'],p_gpw264:['น้ำหนักแผ่น','Plate Weight'],gp_bolts264:['สลักเกลียว','bolts'],
+  gp_free264:['{0} ปลายไม่ได้ชนเสา คาน หรือพื้น จึงไม่มีแผ่นประกับ','{0} ends meet no column, beam or floor, so they have no gusset plate'],
+  gp_sel0_264:['เลือกค้ำยันเหล็กก่อน แล้วกดแผ่นประกับค้ำยัน','Select steel braces first, then press Gusset Plates'],gp_has264:['ค้ำยันที่เลือกมีแผ่นประกับแล้ว แก้ค่าได้ในคุณสมบัติ','The selected braces have gusset plates already; change them in Properties'],
+  gp_done264:['ใส่แผ่นประกับให้ค้ำยัน {0} ชิ้น รวม {1} แผ่น','Gusset plates on {0} braces, {1} in all'],
+  gp_item264:['แผ่นประกับค้ำยัน (Gusset) หนา {0} มม.','Gusset plate {0} mm'],gp_bolt264:['สลักเกลียว M{0} ของแผ่นประกับ พร้อมแป้นเกลียวและแหวน','Gusset bolt M{0} with nut and washers'],c_gp264:['จำนวนแผ่นประกับ','Gusset Plate Count']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40527,6 +40615,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.261 · [[f_rcp261]] ของชนิดเฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์ เครื่องจักร หัวจ่ายลม โคม และอุปกรณ์ไฟฟ้า เหมือน Revit: ตั้ง ใช่ ในคุณสมบัติชนิดแล้วชิ้นนั้นนับว่าอยู่ในห้องที่จุดนั้นอยู่ (ตั้งค่าเลื่อนตามความกว้างและไปด้านหน้าได้ เว้นว่าง = หน้าชิ้น + 150 มม.) ใช้ในตาราง (ห้อง: เลขห้อง ชื่อห้อง และตารางฝังในห้อง) คุณสมบัติ (แถว อยู่ในห้อง) การสร้างวงจรตามห้อง และการนับท่อระบายน้ำพื้นของห้องเปียก เลือกชิ้นในแปลนจะเห็นจุดและเส้นประจากจุดวาง
 - V1.262 · [[a_ss262]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือน Steel › Fabrication › Shear Studs ของ Revit: หมุดหัวเชื่อมบนปีกบนของคานเหล็กให้พื้นคอนกรีตทำงานร่วมกับคาน · เลือกคานเหล็กที่วางระดับแล้วกดปุ่ม หรือตั้งในคุณสมบัติของคาน (ไม่มี 1 แถว 2 แถว) ตั้งเส้นผ่านศูนย์กลาง Ø13–Ø25 ความยาวรวมหัว ระยะห่าง ระยะจากปลายคาน และระยะระหว่างแถวได้ หมุดเรียงเท่ากันระหว่างระยะจากปลายทั้งสองข้าง ปีกที่แคบเกินสองแถวใส่เป็นแถวเดียว · เห็นในมุมมอง 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_fine]] (วงกลม) ไปกับคานเมื่อย้าย คัดลอก สะท้อน หรือแบ่ง คุณสมบัติบอกจำนวนและน้ำหนัก ตารางคานมีคอลัมน์หมุดและจำนวน [[a_boq]] นับเป็นตัวตามขนาด (ราคาสมมติ) และ IFC ส่งไปกับคาน
 - V1.263 · [[t_stf263]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Stiffener ของ Revit: แผ่นเหล็กหนึ่งหรือสองแผ่นเชื่อมในคานหรือเสาเหล็ก ตั้งฉากกับชิ้น อยู่ระหว่างปีกและชิดเอว · คลิกคานเหล็กที่วางระดับในแปลน 3 มิติ รูปด้าน หรือรูปตัด ตรงจุดที่จะใส่ (เกาะจุดที่คานอื่นมาต่อ) หรือคลิกเสาเหล็กในรูปด้าน รูปตัด หรือ 3 มิติ ตรงความสูงที่จะใส่ (เกาะระดับปีกของคานที่มาต่อ) · ใช้กับหน้าตัด H, I และรางน้ำ แผ่นเต็มความลึกระหว่างปีกและยื่นถึงปลายปีก ตัดมุม 15 มม. · คุณสมบัติตั้งความหนาและจำนวนแผ่นต่อจุด (สองข้างหรือข้างเดียว) และเอาออกได้ · แปลนระดับ [[det_medium]] และ [[det_fine]] เห็นแผ่นเสริมของคาน 3 มิติ รูปด้าน และรูปตัดเห็นทั้งหมด ไปกับชิ้นเมื่อย้าย คัดลอก หรือแบ่ง [[a_boq]] นับน้ำหนักเหล็กตามความหนา (ราคาสมมติ) และตารางคานและเสามีจำนวนแผ่นเสริม
+- V1.264 · [[a_gp264]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อค้ำยันแบบแผ่นประกับ (Gusset Plate) ของ Revit: แผ่นเหล็กในระนาบของค้ำยัน เชื่อมกับเสาและคานตรงจุดที่ค้ำยันวิ่งเข้าไป และยึดค้ำยันด้วยสลักเกลียว · เลือกค้ำยันเหล็กแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความหนา จำนวนและขนาดสลักเกลียวได้ · แผ่นตั้งในระนาบค้ำยัน ขอบชนผิวเสา ใต้คาน (หรือบนคานเมื่อค้ำยันชี้ขึ้น และพื้นที่โคนเสา) แล้วยื่นเลยไปตามค้ำยันเท่าระยะทาบสลักเกลียว ปลายที่ไม่ชนอะไรไม่มีแผ่นและคุณสมบัติบอกไว้ · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] [[a_boq]] นับน้ำหนักแผ่นและสลักเกลียว (ราคาสมมติ) ตารางคานมีจำนวนแผ่น และ IFC ส่งไปกับค้ำยัน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -40929,6 +41018,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.261 · a [[f_rcp261]] for furniture, plumbing fixtures, equipment, air terminals, lighting fixtures and devices, as in Revit: set it to Yes in the type and the component is in the room that point is in (with its offsets along the width and forward; left empty, 150 mm in front of its front face). Schedules (Room: Number / Name, Embedded Schedules), Properties (a Room row), Create Circuits by room and the floor drains of wet rooms go by it; a selected component shows the point in plans
 - V1.262 · [[a_ss262]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Steel › Fabrication › Shear Studs: headed studs on the top flange of a steel beam, so that the slab works with it. Select level steel beams and press the button, or set them in the beam's Properties (None, 1 row, 2 rows) with the diameter Ø13–Ø25, the length with the head, the spacing, the end distance and the row gauge; the studs are spread evenly between the end distances, and a flange too narrow for two rows takes one. They show in 3D views, elevations, sections and plans of [[det_fine]] detail (rings), go with the beam when it is moved, copied, mirrored or split, Properties gives their number and weight, beam schedules have a studs column and a count, [[a_boq]] counts them each by size (assumed prices) and IFC writes them with the beam
 - V1.263 · [[t_stf263]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Stiffener connection: one or two steel plates welded into a steel beam or column, square to it, between its flanges and against its web. Click a level steel beam in a plan, 3D view, elevation or section where it goes (it catches where another beam frames in), or a steel column in an elevation, a section or 3D at its height (it catches the flange levels of beams that frame in). H, I and channel sections; each plate fills the depth between the flanges out to the flange tip, with 15 mm corner snipes. Properties set the thickness and the plates per point (both sides or one) and remove them. Plans of [[det_medium]] and [[det_fine]] detail show beam stiffeners, 3D views, elevations and sections show them all, they go with the member when it is moved, copied or split, [[a_boq]] counts their steel by thickness in kg (assumed prices) and beam and column schedules count them
+- V1.264 · [[a_gp264]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's brace connections with a gusset plate: a plate in the plane of a brace, welded to the column and the beam at the joint the brace runs into, the brace bolted to it. Select steel braces and press the button, or set them in Properties (Start, End or Both Ends) with the plate thickness and the number and size of bolts. The plate stands in the brace's plane, bounded by the face of the column, the underside of the beam (its top for a brace running up, the floor at the foot of a column) and reaching along the brace by the bolt lap; an end that meets nothing has none, and Properties says so. They show in 3D views, elevations, sections and plans of [[det_medium]] and [[det_fine]] detail, [[a_boq]] counts the plates in kg and the bolts (assumed prices), beam schedules count the plates and IFC writes them with the brace
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43122,6 +43212,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r264={
+  geo:id=>{const e=IDX.get(id),G=e&&gpGeo264(P,e),r=x=>Math.round(x*10)/10;return G?{p:G.p,kg:Math.round(G.kg*100)/100,nb:G.nb,ends:G.ends.map(x=>({k:x.k,rc:x.F.rc==null?null:r(x.F.rc),zb:x.F.zb==null?null:r(x.F.zb),up:x.F.up,col:x.F.col?x.F.col.id:null,beam:x.F.beam?x.F.beam.id:null,
+    poly:x.poly.map(q=>[r(q[0]),r(q[1])]),bolts:x.bolts.map(q=>[r(q[0]),r(q[1])]),area:Math.round(x.area)}))}:null},
+  brace:(x1,y1,l1,o1,x2,y2,l2,o2,T)=>{let id=null;edit(()=>{const o={id:P.seq++,cat:'beam',type:T,level:l1,x1,y1,x2,y2,use:'brace',off:o1,off2:o2};if(l2!==l1)o.lv2=l2;P.els.push(o);id=o.id});return id},
+  set:(id,o)=>edit(()=>{const e=IDX.get(id);if(o==null)delete e.gp264;else e.gp264=JSON.parse(JSON.stringify(o))}),
+  place:ids=>{ui.sel=new Set(ids);XA.gp264();return ids.map(id=>{const e=IDX.get(id);return e&&e.gp264?Object.assign({},e.gp264):null})},
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>/^gp(bolt)?264\|/.test(String(r.pk||''))).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item,unit:r.unit})),
+  sched:(cat,flds)=>{const S=schedView(P,{id:-1,kind:'schedule',name:'x',sched:'cat',scat:cat,flds,hidden:[],hiddenCats:[],sp:{}},t);return S.rows.map(r=>[r.id,...S.cols.map(c=>r[c.k])])},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r263={
   geo:id=>{const e=IDX.get(id),G=e&&stfGeo263(P,e),r=x=>Math.round(x*100)/100;return G?{k:G.k,p:G.p,at:G.at,n:G.plates.length,plates:G.plates.map(q=>[r(q.a),r(q.u0),r(q.u1)]),hd:r(G.S.hd),kg:r(G.kg),zc:G.zc==null?null:r(G.zc),z0:G.z0==null?null:r(G.z0)}:null},
   at:(id,raw)=>{const e=IDX.get(id),r=e&&stfAt263(e,raw);return r?{a:r.a==null?null:r.a,snap:r.snap||'',why:r.why?t(r.why):null}:null},
