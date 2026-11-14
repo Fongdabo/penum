@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=272,V1_NAME='V1.262';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=273,V1_NAME='V1.263';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38378,6 +38378,118 @@ Object.assign(STR,{
   ss_sel0_262:['เลือกคานเหล็กที่วางระดับก่อน แล้วกดหมุดรับแรงเฉือน','Select level steel beams first, then press Shear Studs'],ss_has262:['คานที่เลือกมีหมุดรับแรงเฉือนแล้ว แก้ค่าได้ในคุณสมบัติ','The selected beams already have shear studs; change them in Properties'],
   ss_done262:['ใส่หมุดรับแรงเฉือนให้คาน {0} ท่อน รวม {1} ตัว (แก้ขนาดและระยะได้ในคุณสมบัติ)','Shear studs on {0} beams, {1} in all (sizes and spacing are in Properties)'],
   ss_item262:['หมุดรับแรงเฉือน Ø{0}×{1} มม.','Shear stud Ø{0}×{1} mm'],c_ss262:['หมุดรับแรงเฉือน','Shear Studs'],c_ss262n:['จำนวนหมุดรับแรงเฉือน','Shear Stud Count']});
+/* ===== 263 Stiffeners (V1.263; Revit: Steel Connections › Stiffener — one or two steel plates welded into a beam or a column, square to it, between its flanges
+   and against its web, placed at a point of the member: where a beam frames in, under a load, at a support) =====
+   A steel beam that lies level, or a steel column, of an H, I or channel section has e.stf263 = {p: [points], t: plate thickness, n: 1 or 2 plates (one on
+   each side of the web)}.  On a beam a point is the distance along its line from its start; on a column, the height above its bottom.  Each plate fills the
+   clear depth between the flanges and the outstand from the web face to the flange tip, less a 15 mm corner snipe that clears the root.  The Stiffener tool of
+   the Connection panel adds one where a beam is clicked in a plan, a 3D view, an elevation or a section, or a column in the last three; it catches where
+   another steel beam frames in (the flange levels of that beam on a column) or rounds to 10 mm.  Properties of the member set the thickness and the plates and
+   remove them; plans of Medium and Fine detail draw beam stiffeners, 3D views, elevations and sections show both (meshes of the member, which IFC writes);
+   the BOQ counts the steel by thickness in kg, and beam and column schedules count them. */
+const STF_SEC263=['H','I','C'],STF_SN263=15;
+const stfHostOK263=(Q,e)=>!!e&&(e.cat==='beam'?bcOk(Q,e):e.cat==='column'&&!e.gx&&!!stlT(typ(Q,e)));
+const stfOn263=e=>!!e&&(e.cat==='beam'||e.cat==='column')&&!!e.stf263&&Array.isArray(e.stf263.p)&&e.stf263.p.length>0;
+/* the section's plates: the web centre c across it, the outstands [u0, u1] on each side, the clear depth hd (half), the thickness of the web; null when none fit */
+function stfSec263(T){if(!stlT(T)||!STF_SEC263.includes(T.sec))return null;const d=+T.sd,b=+T.sb,tw=+T.stw,tf=+T.stf,w=b/2,h=d/2,c=T.sec==='C'?-w+tw/2:0,O=[];
+  if(c+tw/2<w-20)O.push([c+tw/2,w,1]);if(T.sec!=='C'&&c-tw/2>-w+20)O.push([-w,c-tw/2,-1]);const hd=h-tf;return hd>20&&O.length?{c,tw,tf,d,b,hd,O}:null}
+const stfPar263=e=>{const o=e.stf263||{};return{t:SS_T263.includes(+o.t)?+o.t:10,n:+o.n===1?1:2}};
+const SS_T263=[6,8,10,12,16,20,25];
+/* the plates of a member: {k: 'b' (beam) or 'c' (column), S (the section's plates), p (values), at: [points used], plates: [{a: point, u0, u1}], kg}; for a beam
+   the frame of bcFrame, for a column its plan point, turn and bottom */
+function stfGeo263(Q,e){if(!stfOn263(e)||!stfHostOK263(Q,e))return null;const T=typ(Q,e)||{},S=stfSec263(T);if(!S)return null;const p=stfPar263(e),th=p.t;
+  let L,G={k:e.cat==='beam'?'b':'c',S,p,e};if(G.k==='b'){G.F=bcFrame(Q,e);L=G.F.L;G.zc=G.F.zt-S.d/2}else{const z=zRange(Q,e);G.z0=z[0];L=z[1]-z[0]}
+  G.at=[...new Set(e.stf263.p.map(Number).filter(s=>isFinite(s)&&s>=th/2&&s<=L-th/2))].sort((a,b)=>a-b);G.plates=[];
+  const sides=p.n===2?S.O:[S.O.find(o=>o[2]>0)||S.O[0]];
+  for(const a of G.at)for(const o of sides)G.plates.push({a,u0:o[0],u1:o[1]});
+  G.kg=G.plates.reduce((s,q)=>s+((q.u1-q.u0)*2*S.hd-2*STF_SN263*STF_SN263/2)*th*STC_RHO,0);return G}
+/* ---- 3D: plates of the member ---- */
+function stfMeshes263(Q,items){for(const e of Q.els){if(e.gx||!stfOn263(e))continue;const G=stfGeo263(Q,e);if(!G||!G.plates.length)continue;const t2=G.p.t/2,hd=G.S.hd;let K;
+  if(G.k==='b'){K=modelKit({x:e.x1,y:e.y1,id:e.id,cat:'beam'},Math.atan2(G.F.a[1],G.F.a[0])*180/Math.PI,items)}else K=modelKit({x:e.x,y:e.y,id:e.id,cat:'column'},e.rot||0,items);
+  const m=K.part(STC_COL);m.vc=e.cat;m.mt=MAT.metal;
+  for(const q of G.plates){if(G.k==='b')K.box(m,q.a-t2,q.u0,G.zc-hd,q.a+t2,q.u1,G.zc+hd);else K.box(m,q.u0,-hd,G.z0+q.a-t2,q.u1,hd,G.z0+q.a+t2)}}}
+{const f0=stcMeshes;stcMeshes=(Q,items)=>{f0(Q,items);stfMeshes263(Q,items)}}
+/* ---- plans: a beam's stiffeners at Medium and Fine (seen from above, through the flange: hidden lines) ---- */
+const stfRects263=G=>G.plates.map(q=>{const t2=G.p.t/2;return[[q.a-t2,q.u0],[q.a+t2,q.u0],[q.a+t2,q.u1],[q.a-t2,q.u1]].map(r=>G.F.pt(r[0],r[1]))});
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||(v.detail||'coarse')==='coarse')return;if(!P.els.some(stfOn263))return;const H=halfCols(col);
+  for(const [e] of of('beam')){if(!stfOn263(e))continue;const G=stfGeo263(P,e);if(!G)continue;g.el(e);const h=hl(e.id);ctx.strokeStyle=h||(discMode(P,v,e)===1?H.ink:col.ink);
+    g.dash(null);ctx.lineWidth=h?1.2:g.lw(0.13);for(const pl of stfRects263(G)){g.path(pl);ctx.stroke()}}g.dash(null)});
+/* ---- the tool ---- */
+/* where on a member a pick is: {h, a (the point), snap: '' or 'beam'} or {h, why} */
+function stfAt263(h,raw){const Q=P,T=typ(Q,h)||{};if(!stfSec263(T))return{h,why:'stf_sec263'};const p=stfPar263(h),th=p.t;
+  if(h.cat==='beam'){const F=bcFrame(Q,h),s0=clamp(raw,0,F.L);let best=null,bd=150;
+    for(const o of Q.els){if(o===h||o.cat!=='beam'||!bcOk(Q,o)||o.gx)continue;for(const q of [[o.x1,o.y1],[o.x2,o.y2]]){const s=F.s(q),u=Math.abs(F.u(q));if(u>F.hw+100||s<0||s>F.L)continue;const d=Math.abs(s-s0);if(d<bd){bd=d;best=s}}}
+    const a=best!=null?Math.round(best*10)/10:Math.round(s0/10)*10;if(a<th/2||a>F.L-th/2)return{h,why:'stf_end263'};return{h,a,snap:best!=null?'beam':'',L:F.L}}
+  const z=zRange(Q,h),zs=raw,H0=bcHull(Q,h);let best=null,bd=150;
+  for(const o of Q.els){if(o.cat!=='beam'||!bcOk(Q,o)||o.gx)continue;if(!bcIn(H0,[o.x1,o.y1],60)&&!bcIn(H0,[o.x2,o.y2],60))continue;const F=bcFrame(Q,o),To=typ(Q,o)||{},tf=+To.stf||10;
+    for(const zz of [F.zt-tf/2,F.zt-F.d+tf/2]){const d=Math.abs(zz-zs);if(d<bd){bd=d;best=zz}}}
+  const a=best!=null?Math.round((best-z[0])*10)/10:Math.round((zs-z[0])/10)*10;if(a<th/2||a>z[1]-z[0]-th/2)return{h,why:'stf_end263'};return{h,a,snap:best!=null?'beam':'',L:z[1]-z[0]}}
+function stfPick263(pn,v,p){if(v.kind==='plan'){const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=10/nav.s;let best=null,bd=Infinity;
+    for(const e of P.els){if(e.cat!=='beam'||!bcOk(P,e)||!planShow(v,e))continue;const d=Math.max(0,segDist(w.x,w.y,e.x1,e.y1,e.x2,e.y2)-((typ(P,e)||{}).w||200)/2);if(d<=tol&&d<bd){bd=d;best=e}}
+    return best?stfAt263(best,bcFrame(P,best).s([w.x,w.y])):null}
+  const g=geoPick(pn,v,p);let e=g&&g.e;if(e&&e.cat==='sconn')e=IDX.get(e.host);if(!e||!g.p||!stfHostOK263(P,e))return null;
+  const r=e.cat==='beam'?stfAt263(e,bcFrame(P,e).s([g.p[0],g.p[2]])):stfAt263(e,g.p[1]);r.v3=1;return r}
+function stfAdd263(h,a){let why=null;edit(()=>{const o=h.stf263&&typeof h.stf263==='object'?h.stf263:(h.stf263={p:[]});if(!Array.isArray(o.p))o.p=[];
+  if(o.p.some(x=>Math.abs(x-a)<stfPar263(h).t+1)){why='stf_has263';if(!o.p.length)delete h.stf263;return}o.p.push(a);o.p.sort((x,y)=>x-y)});return why}
+function stfClick263(pk){if(!pk){toast(t('stf_need263'));return}if(pk.why){toast(t(pk.why));return}const w=stfAdd263(pk.h,pk.a);
+  toast(w?t(w):t(pk.h.cat==='beam'?'stf_doneb263':'stf_donec263',Math.round(pk.a*10)/10+' '+t('u_mm'))+(pk.snap?' · '+t('stf_snap263'):''))}
+/* the preview: the plates a click would add, as a member that has only them */
+function stfPrev263(pk){if(!pk||pk.why)return null;const h=pk.h,x=Object.assign({},h,{stf263:Object.assign({},h.stf263||{},{p:[pk.a]})});return stfGeo263(P,x)}
+function stfEdges263(G){const E=[],t2=G.p.t/2,hd=G.S.hd;for(const q of G.plates){let C;
+    if(G.k==='b'){const W=(s,u,z)=>{const r=G.F.pt(s,u);return[r[0],r[1],z]};C=[[q.a-t2,q.u0],[q.a+t2,q.u0],[q.a+t2,q.u1],[q.a-t2,q.u1]].flatMap(r=>[W(r[0],r[1],G.zc-hd),W(r[0],r[1],G.zc+hd)])}
+    else{const e=G.e,a=(e.rot||0)*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a),W=(u,v,z)=>[e.x+u*cs-v*sn,e.y+u*sn+v*cs,z],z=G.z0+q.a;C=[[q.u0,-hd],[q.u1,-hd],[q.u1,hd],[q.u0,hd]].flatMap(r=>[W(r[0],r[1],z-t2),W(r[0],r[1],z+t2)])}
+    for(let i=0;i<4;i++){const j=(i+1)%4;E.push([C[2*i],C[2*j]],[C[2*i+1],C[2*j+1]],[C[2*i],C[2*i+1]])}}return E}
+XT.stf263={ok:v=>(v.kind==='plan'&&!v.draft)||v.kind==='3d'||v.kind==='elev'||v.kind==='section',
+  on(){ui.sel.clear();ui.hov=null;ui.stfH=null},off(){ui.stfH=null},hint:()=>t('h_stf263'),opt(who){return who},
+  hov(pn,v,p){ui.stfH=null;const pk=stfPick263(pn,v,p);if(!pk)return null;ui.stfH=Object.assign(pk,{pn:pn.i});return pk.h.id},
+  click(pn,v,p){stfClick263(stfPick263(pn,v,p))},click3(pn,v,p){stfClick263(stfPick263(pn,v,p))},
+  draw(pn,ctx,v,nav,g){const H=ui.stfH;if(!H||H.v3||H.pn!==pn.i)return;const G=stfPrev263(H);if(!G)return;ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;g.dash(null);
+    for(const pl of stfRects263(G)){g.path(pl);ctx.stroke()}ctx.restore()},
+  draw3(pn,ctx,v){const H=ui.stfH;if(!H||!H.v3||H.pn!==pn.i)return;const G=stfPrev263(H);if(!G)return;ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=2;ctx.setLineDash([]);
+    for(const [a,b] of stfEdges263(G)){const p=projGL(pn,v,[a[0],a[2],a[1]]),q=projGL(pn,v,[b[0],b[2],b[1]]);if(!p||!q)continue;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke()}ctx.restore()}};
+CREATE_TOOLS.add('stf263');XS.push(()=>{ui.stfH=null});
+/* ---- a member split in two: each piece keeps the stiffeners on it ---- */
+{const f0=splitLine;splitLine=(e,w,gap)=>{const n0=P.seq,old=stfOn263(e)?e.stf263.p.slice():null,x1=e.x1,y1=e.y1;const r=f0(e,w,gap);if(!old||P.seq===n0)return r;
+  const c=P.els.find(x=>x.id===n0);if(!c||!c.stf263)return r;const Le=Math.hypot(e.x2-e.x1,e.y2-e.y1),off=Math.hypot(c.x1-x1,c.y1-y1);
+  e.stf263.p=old.filter(s=>s<=Le);c.stf263=Object.assign({},c.stf263,{p:old.map(s=>Math.round((s-off)*10)/10).filter(s=>s>=0)});if(!e.stf263.p.length)delete e.stf263;if(!c.stf263.p.length)delete c.stf263;return r}}
+{const f0=spcDo255;spcDo255=(e,zs)=>{const old=stfOn263(e)?e.stf263.p.slice():null,z0=old?zRange(P,e)[0]:0;const c=f0(e,zs);if(!old||!c)return c;
+  const ze=zRange(P,e),zc=zRange(P,c);e.stf263.p=old.filter(a=>z0+a<=ze[1]);c.stf263={...e.stf263,p:old.map(a=>Math.round((z0+a-zc[0])*10)/10).filter(a=>a>=0)};
+  if(!e.stf263.p.length)delete e.stf263;if(!c.stf263.p.length)delete c.stf263;return c}}
+/* ---- Properties ---- */
+XP.push((c,els)=>{if((c!=='beam'&&c!=='column')||!els.length||!els.every(e=>stfHostOK263(P,e))||!els.some(stfOn263))return'';const on=els.filter(stfOn263),W=k=>{const a=stfPar263(on[0])[k];return on.every(x=>stfPar263(x)[k]===a)?a:''};
+  let n=0,np=0,kg=0;for(const e of on){const G=stfGeo263(P,e);if(!G)continue;n+=G.at.length;np+=G.plates.length;kg+=G.kg}
+  return PR.grp('g_stf263')+PR.sel('stf263_t','p_stft263',W('t'),SS_T263.map(x=>[x,x+' '+t('u_mm')]))+PR.sel('stf263_n','p_stfn263',W('n'),[[2,t('stf_n2_263')],[1,t('stf_n1_263')]])+
+    PR.ro('p_stfc263',n+' '+t('stf_u263')+' ('+np+' '+t('stf_pl263')+')')+PR.ro('p_stfw263',(Math.round(kg*10)/10)+' '+t('u_kg262'))+`<div class="pa"><button class="btn" data-act="stf263clr">${esc(t('a_stfclr263'))}</button></div>`});
+XF.push((cat,o,key,raw)=>{if(!String(key).startsWith('stf263_'))return false;if((cat!=='beam'&&cat!=='column')||!stfOn263(o)||raw===''||raw==null)return true;const k=key.slice(7),v=+raw;
+  if(k==='t'&&SS_T263.includes(v))o.stf263.t=v;if(k==='n'&&(v===1||v===2))o.stf263.n=v;return true});
+XA.stf263clr=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(stfOn263);if(!S.length)return;edit(()=>{for(const e of S)delete e.stf263});toast(t('stf_clr263',S.length))};
+/* ---- the button ---- */
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-stf263" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+   +`<path class="i-Pb" fill="#d7dfea" ${E} d="M2 3h20v2.6H2zM2 17.4h20V20H2z"/><path class="i-Sa" fill="#e9edf4" ${E} d="M10.8 5.6h2.4v11.8h-2.4z"/>`
+   +`<path class="i-Ta" fill="#aeefdc" ${E} d="M4.2 5.6h6.6v11.8H4.2zM13.2 5.6h6.6v11.8h-6.6z"/></symbol>`)})();
+Object.assign(BTN,{stf263:['stf263','']});
+{const p=(RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('stf263'))p.b.splice(Math.max(0,p.b.indexOf('@stcplace')),0,'stf263')}
+/* ---- the BOQ: the plates by thickness, kg, after the connections ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(stfOn263))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.gx||!stfOn263(e))continue;const G=stfGeo263(Q0,e);if(!G||!G.plates.length)continue;const pk='stf263|'+G.p.t;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_stf263'),_c:9.37,tcat:'stf263',pk,item:tr('stf_item263',G.p.t),qty:0,unit:tr('u_kg262'),cost:PR0[pk]!=null?+PR0[pk]||0:45,amount:0});r.qty+=G.kg}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+/* ---- schedules of beams and columns: the count of stiffeners ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam'&&cat!=='column')return F;
+  F.push({k:'stf263',l:tr('c_stf263'),g:e=>{const G=stfGeo263(Q,e);return G?G.at.length:''},num:1,sum:1,grp:'q'});return F}}
+Object.assign(STR,{
+  t_stf263:['แผ่นเสริม (Stiffener)','Stiffener'],cat_stf263:['แผ่นเสริม (Stiffener)','Stiffeners'],g_stf263:['แผ่นเสริม (Stiffener)','Stiffeners'],
+  h_stf263:['คลิกคานเหล็กตรงจุดที่จะใส่แผ่นเสริม (เกาะจุดที่คานอื่นมาต่อ) · ในรูปด้าน รูปตัด หรือ 3 มิติ คลิกเสาเหล็กตรงความสูงที่จะใส่ (เกาะระดับปีกของคานที่มาต่อ)','Click a steel beam where a stiffener goes (it catches where another beam frames in) · in an elevation, a section or 3D, click a steel column at its height (it catches the flange levels of beams that frame in)'],
+  p_stft263:['ความหนาแผ่น','Plate Thickness'],p_stfn263:['จำนวนแผ่นต่อจุด','Plates'],stf_n2_263:['2 แผ่น (สองข้างเอว)','2 (both sides of the web)'],stf_n1_263:['1 แผ่น (ข้างเดียว)','1 (one side)'],
+  p_stfc263:['จำนวนแผ่นเสริม','Number of Stiffeners'],p_stfw263:['น้ำหนักแผ่นเสริม','Stiffener Weight'],stf_u263:['จุด','points'],stf_pl263:['แผ่น','plates'],
+  a_stfclr263:['เอาแผ่นเสริมออกทั้งหมด','Remove All Stiffeners'],stf_clr263:['เอาแผ่นเสริมออกจาก {0} ชิ้น','Stiffeners removed from {0} members'],
+  stf_need263:['คลิกคานเหล็กที่วางระดับ หรือเสาเหล็กในรูปด้าน รูปตัด หรือ 3 มิติ','Click a level steel beam, or a steel column in an elevation, a section or 3D'],
+  stf_sec263:['ใส่แผ่นเสริมได้เฉพาะหน้าตัด H, I และรางน้ำ (channel)','Stiffeners go in H, I and channel sections only'],stf_end263:['ใกล้ปลายชิ้นเกินไป','Too near the end of the member'],
+  stf_has263:['มีแผ่นเสริมที่จุดนี้แล้ว','There is a stiffener here already'],stf_snap263:['ตรงคานที่มาต่อ','where a beam frames in'],
+  stf_doneb263:['ใส่แผ่นเสริมที่ {0} จากปลายเริ่มของคาน','Stiffener {0} from the start of the beam'],stf_donec263:['ใส่แผ่นเสริมที่ {0} จากโคนเสา','Stiffener {0} above the bottom of the column'],
+  stf_item263:['แผ่นเสริม (Stiffener) หนา {0} มม.','Stiffener plate {0} mm'],c_stf263:['จำนวนแผ่นเสริม','Stiffener Count']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40414,6 +40526,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.260 · [[t_splitgap]] ใช้กับคานและเสาได้เหมือน Revit 2024: คานแบ่งเว้นช่องได้ในแปลน รูปด้าน รูปตัด และ 3 มิติ พร้อมล็อกช่องเหมือนผนัง เสาตั้งตรงคลิกตรงความสูงที่จะแบ่งในรูปด้าน รูปตัด หรือ 3 มิติ ต้นล่างหยุดใต้จุดแบ่งครึ่งช่อง ต้นบนเริ่มเหนือจุดแบ่งครึ่งช่อง ใส่แผ่นต่อเสาในช่องได้
 - V1.261 · [[f_rcp261]] ของชนิดเฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์ เครื่องจักร หัวจ่ายลม โคม และอุปกรณ์ไฟฟ้า เหมือน Revit: ตั้ง ใช่ ในคุณสมบัติชนิดแล้วชิ้นนั้นนับว่าอยู่ในห้องที่จุดนั้นอยู่ (ตั้งค่าเลื่อนตามความกว้างและไปด้านหน้าได้ เว้นว่าง = หน้าชิ้น + 150 มม.) ใช้ในตาราง (ห้อง: เลขห้อง ชื่อห้อง และตารางฝังในห้อง) คุณสมบัติ (แถว อยู่ในห้อง) การสร้างวงจรตามห้อง และการนับท่อระบายน้ำพื้นของห้องเปียก เลือกชิ้นในแปลนจะเห็นจุดและเส้นประจากจุดวาง
 - V1.262 · [[a_ss262]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือน Steel › Fabrication › Shear Studs ของ Revit: หมุดหัวเชื่อมบนปีกบนของคานเหล็กให้พื้นคอนกรีตทำงานร่วมกับคาน · เลือกคานเหล็กที่วางระดับแล้วกดปุ่ม หรือตั้งในคุณสมบัติของคาน (ไม่มี 1 แถว 2 แถว) ตั้งเส้นผ่านศูนย์กลาง Ø13–Ø25 ความยาวรวมหัว ระยะห่าง ระยะจากปลายคาน และระยะระหว่างแถวได้ หมุดเรียงเท่ากันระหว่างระยะจากปลายทั้งสองข้าง ปีกที่แคบเกินสองแถวใส่เป็นแถวเดียว · เห็นในมุมมอง 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_fine]] (วงกลม) ไปกับคานเมื่อย้าย คัดลอก สะท้อน หรือแบ่ง คุณสมบัติบอกจำนวนและน้ำหนัก ตารางคานมีคอลัมน์หมุดและจำนวน [[a_boq]] นับเป็นตัวตามขนาด (ราคาสมมติ) และ IFC ส่งไปกับคาน
+- V1.263 · [[t_stf263]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Stiffener ของ Revit: แผ่นเหล็กหนึ่งหรือสองแผ่นเชื่อมในคานหรือเสาเหล็ก ตั้งฉากกับชิ้น อยู่ระหว่างปีกและชิดเอว · คลิกคานเหล็กที่วางระดับในแปลน 3 มิติ รูปด้าน หรือรูปตัด ตรงจุดที่จะใส่ (เกาะจุดที่คานอื่นมาต่อ) หรือคลิกเสาเหล็กในรูปด้าน รูปตัด หรือ 3 มิติ ตรงความสูงที่จะใส่ (เกาะระดับปีกของคานที่มาต่อ) · ใช้กับหน้าตัด H, I และรางน้ำ แผ่นเต็มความลึกระหว่างปีกและยื่นถึงปลายปีก ตัดมุม 15 มม. · คุณสมบัติตั้งความหนาและจำนวนแผ่นต่อจุด (สองข้างหรือข้างเดียว) และเอาออกได้ · แปลนระดับ [[det_medium]] และ [[det_fine]] เห็นแผ่นเสริมของคาน 3 มิติ รูปด้าน และรูปตัดเห็นทั้งหมด ไปกับชิ้นเมื่อย้าย คัดลอก หรือแบ่ง [[a_boq]] นับน้ำหนักเหล็กตามความหนา (ราคาสมมติ) และตารางคานและเสามีจำนวนแผ่นเสริม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -40815,6 +40928,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.260 · [[t_splitgap]] works on beams and columns, as in Revit 2024: a beam splits with the gap in plans, elevations, sections and 3D, the gap locked as for walls; a vertical column clicked at a height in an elevation, a section or 3D splits there, the part below stopping half the gap under it and the part above starting half the gap over it, ready for a column splice
 - V1.261 · a [[f_rcp261]] for furniture, plumbing fixtures, equipment, air terminals, lighting fixtures and devices, as in Revit: set it to Yes in the type and the component is in the room that point is in (with its offsets along the width and forward; left empty, 150 mm in front of its front face). Schedules (Room: Number / Name, Embedded Schedules), Properties (a Room row), Create Circuits by room and the floor drains of wet rooms go by it; a selected component shows the point in plans
 - V1.262 · [[a_ss262]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Steel › Fabrication › Shear Studs: headed studs on the top flange of a steel beam, so that the slab works with it. Select level steel beams and press the button, or set them in the beam's Properties (None, 1 row, 2 rows) with the diameter Ø13–Ø25, the length with the head, the spacing, the end distance and the row gauge; the studs are spread evenly between the end distances, and a flange too narrow for two rows takes one. They show in 3D views, elevations, sections and plans of [[det_fine]] detail (rings), go with the beam when it is moved, copied, mirrored or split, Properties gives their number and weight, beam schedules have a studs column and a count, [[a_boq]] counts them each by size (assumed prices) and IFC writes them with the beam
+- V1.263 · [[t_stf263]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Stiffener connection: one or two steel plates welded into a steel beam or column, square to it, between its flanges and against its web. Click a level steel beam in a plan, 3D view, elevation or section where it goes (it catches where another beam frames in), or a steel column in an elevation, a section or 3D at its height (it catches the flange levels of beams that frame in). H, I and channel sections; each plate fills the depth between the flanges out to the flange tip, with 15 mm corner snipes. Properties set the thickness and the plates per point (both sides or one) and remove them. Plans of [[det_medium]] and [[det_fine]] detail show beam stiffeners, 3D views, elevations and sections show them all, they go with the member when it is moved, copied or split, [[a_boq]] counts their steel by thickness in kg (assumed prices) and beam and column schedules count them
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43008,6 +43122,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r263={
+  geo:id=>{const e=IDX.get(id),G=e&&stfGeo263(P,e),r=x=>Math.round(x*100)/100;return G?{k:G.k,p:G.p,at:G.at,n:G.plates.length,plates:G.plates.map(q=>[r(q.a),r(q.u0),r(q.u1)]),hd:r(G.S.hd),kg:r(G.kg),zc:G.zc==null?null:r(G.zc),z0:G.z0==null?null:r(G.z0)}:null},
+  at:(id,raw)=>{const e=IDX.get(id),r=e&&stfAt263(e,raw);return r?{a:r.a==null?null:r.a,snap:r.snap||'',why:r.why?t(r.why):null}:null},
+  add:(id,raw)=>{const e=IDX.get(id),r=stfAt263(e,raw);if(r.why)return{why:t(r.why)};const w=stfAdd263(e,r.a);return w?{why:t(w)}:{a:r.a,snap:r.snap||''}},
+  set:(id,o)=>edit(()=>{const e=IDX.get(id);if(o==null)delete e.stf263;else e.stf263=JSON.parse(JSON.stringify(o))}),
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>String(r.pk||'').startsWith('stf263|')).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item,unit:r.unit})),
+  sched:(cat,flds)=>{const S=schedView(P,{id:-1,kind:'schedule',name:'x',sched:'cat',scat:cat,flds,hidden:[],hiddenCats:[],sp:{}},t);return S.rows.map(r=>[r.id,...S.cols.map(c=>r[c.k])])},
+  hov:()=>{const H=ui.stfH;return H?{id:H.h.id,a:H.a==null?null:H.a,snap:H.snap||'',why:H.why||null}:null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r262={
   geo:id=>{const e=IDX.get(id),G=e&&ssGeo262(P,e);return G?{rows:G.rows,n:G.pts.length,z0:G.z0,p:G.p,pts:G.pts.map(q=>[Math.round(q[0]*10)/10,q[1]]),kg:Math.round(ssKg262(G)*100)/100}:null},
   set:(ids,o)=>edit(()=>{for(const id of ids){const e=IDX.get(id);if(!e)continue;if(o==null)delete e.ss262;else e.ss262=Object.assign({},o)}}),
