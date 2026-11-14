@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=297,V1_NAME='V1.287';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=298,V1_NAME='V1.288';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -39447,6 +39447,72 @@ Object.assign(STR,{z_st287:['ชนิดบริการ (Service Type)','Ser
   en_grp287:['ระบบตามชนิดบริการของโซน (Service Type)','Systems by the Service Type of the zones'],en_mix287:['ตามโซน (แบบปัจจุบัน)','By zone (this design)'],lhz_st287:['ชนิดบริการ','Service Type'],
   en_grpnote287:['ห้องในโซนที่ตั้งชนิดบริการคิดด้วยระบบนั้น (COP การทำงานบางส่วน พัดลม ปั๊ม) ห้องอื่นใช้ระบบของอาคารที่เลือกด้านบน แต่ละกลุ่มคิดแยกแล้วรวมกัน ความต้องการไฟฟ้าสูงสุดคิดจากชั่วโมงที่รวมกันแล้ว ตารางเทียบด้านล่างคิดทั้งอาคารเป็นระบบเดียว',
     'The rooms of a zone with a Service Type are taken by that system (COP, part load, fans, pumps); the other rooms by the building\'s system chosen above. Each group is worked out on its own and added; the peak demand is that of the hours added together. The comparison below takes the whole building on one system.']});
+/* ===== 288 Rebar Tag in sections (V1.288; Revit: Tag by Category on Structural Rebar — a tag of a bar that reads its quantity, size and
+   Rebar Number, its leader to the bar) =====
+   A tag of an elevation or a section (etag, V1.91) named its host, and the Rebar Numbers (V1.277) could only be read from the host (V1.278).  Now the
+   Rebar Tag tool tags one bar in a section: click near a bar of a column, beam, floor, footing or wall with rebar where the section cuts it (a dot), or a bar
+   lying in the cut (a tie); bars hidden in their hosts behind the cut are not picked, as they are not seen.
+   The tag is an etag of that host with rb288, the kind of the bar as the bar schedule groups bars (size|shape|A|B|cut length), and bi288 the bar it was
+   put on; it reads "n-DB20 (01)": how many bars of that kind the host has, their size, and their Rebar Number; its leader ends at that bar where the
+   section cuts it (a dot), else at the middle of its longest leg in the cut.  It moves with its host as other tags do, and hides with the Structural Rebar category. */
+const RBK288=/^\d{1,3}\|(tie|hk2|hk1|str)\|\d{1,6}\|\d{1,6}\|\d{1,7}$/;
+/* the kind of a bar, as rbSched groups bars */
+function rbKind288(b,lap){const c=rbCut(b,lap),seg=[],r10=x=>Math.round(x/10)*10;for(let i=1;i<b.p.length;i++)seg.push(Math.hypot(b.p[i][0]-b.p[i-1][0],b.p[i][1]-b.p[i-1][1],b.p[i][2]-b.p[i-1][2]));
+  const sh=b.k==='t'?'tie':(b.hk[0]?1:0)+(b.hk[1]?1:0)===2?'hk2':b.hk[0]||b.hk[1]?'hk1':'str',A=b.k==='t'?r10(seg[1]):r10(Math.max(...seg)),B=b.k==='t'?r10(seg[2]):sh==='str'?0:r10(Math.min(...seg)),cut=r10(c.total);
+  return{key:[b.d,sh,A,B,cut].join('|'),d:b.d,sh,A,B,cut}}
+/* the bars of a host with their kinds, once a change */
+let RBC288=null;
+function rbBarsK288(e){if(!RBC288||RBC288.P!==P||RBC288.v!==VER)RBC288={P,v:VER,m:new Map(),S:null};let L=RBC288.m.get(e.id);if(L)return L;const R=rbOf(e);
+  L=R?rbSet(P,e).map((b,i)=>Object.assign({b,i},rbKind288(b,R.lap))):[];RBC288.m.set(e.id,L);return L}
+/* the Rebar Number of the bars of a kind in a host */
+function rbMark288(e,key){if(!RBC288||RBC288.P!==P||RBC288.v!==VER)rbBarsK288(e);if(!RBC288.S)RBC288.S=rbSched(P);const K=key.split('|');
+  const r=RBC288.S.find(x=>x.hosts.has(e.id)&&x.d===+K[0]&&x.shape===K[1]&&x.A===+K[2]&&x.B===+K[3]&&Math.round(x.cut/10)*10===+K[4]);return r?r.mark:''}
+function rbLab288(e,key){const L=rbBarsK288(e).filter(x=>x.key===key);if(!L.length)return'?';const m=rbMark288(e,key);return L.length+'-'+rbName(L[0].d)+(m?' ('+m+')':'')}
+/* where a bar shows in a section: where the section cuts it (a dot, 'x'), else its longest leg lying in the plane of the cut ('in'), else the middle of its
+   longest leg (hidden in its host: false); {q: [h, -z], cut} */
+const rbCutD288=(v,q)=>{if(v.kind!=='section')return null;const c=ev3Cut(v,ev3Hq(v,q));return c?c.d:null};
+function rbAt288(v,b){const P2=b.p,tl=b.d/2+1,H=q=>[ev3Hq(v,q),-q[2]];let mid=null,bl=-1,inl=null;
+  for(let i=1;i<P2.length;i++){const a=P2[i-1],c=P2[i],l=Math.hypot(c[0]-a[0],c[1]-a[1],c[2]-a[2]),m=[(a[0]+c[0])/2,(a[1]+c[1])/2,(a[2]+c[2])/2];if(l>bl){bl=l;mid=m}
+    const cd=rbCutD288(v,a);if(cd==null)continue;const da=ev3Dq(v,a)-cd,dc=ev3Dq(v,c)-cd;
+    if(Math.abs(da)<=tl&&Math.abs(dc)<=tl){if(!inl||l>inl.l)inl={l,m};continue}
+    if(da*dc<0){const s=da/(da-dc);return{q:H([a[0]+(c[0]-a[0])*s,a[1]+(c[1]-a[1])*s,a[2]+(c[2]-a[2])*s]),cut:'x'}}}
+  return inl?{q:H(inl.m),cut:'in'}:mid?{q:H(mid),cut:false}:null}
+/* the bar a tag points at: the one it was put on while it is still of its kind, else the first of its kind */
+function rbAnc288(v,e,d){const L=rbBarsK288(e),x=(L[d.bi288]&&L[d.bi288].key===d.rb288)?L[d.bi288]:L.find(y=>y.key===d.rb288);const A=x&&rbAt288(v,x.b);return A?A.q:null}
+/* the bar under the pointer, within 10 px: a cut bar (a dot) first, else a bar lying in the plane of the cut; bars hidden in their hosts are not seen */
+function rbPick288(pn,v,p){if(v.kind!=='section'||catHid(v,'rebar'))return null;const n=navOf(v),w=[(p.x-n.ox)/n.s,(p.y-n.oy)/n.s],tol=10/n.s;let bx=null,dx=tol,bi=null,di=tol;
+  for(const e of P.els){if(!rbOf(e)||catHid(v,e.cat)||hidEl(v,e))continue;const B=ev3Box(v,e);if(!B||w[0]<B[0]-tol||w[0]>B[1]+tol||-w[1]<B[2]-tol||-w[1]>B[3]+tol)continue;
+    for(const x of rbBarsK288(e)){const A=rbAt288(v,x.b);if(!A||!A.cut)continue;
+      if(A.cut==='x'){const dd=Math.hypot(A.q[0]-w[0],A.q[1]-w[1]);if(dd<dx){dx=dd;bx={e,x,q:A.q}}continue}
+      const cd=rbCutD288(v,x.b.p[0]),tl=x.d/2+1;for(let i=1;i<x.b.p.length;i++){const a=x.b.p[i-1],c=x.b.p[i];if(cd==null||Math.abs(ev3Dq(v,a)-cd)>tl||Math.abs(ev3Dq(v,c)-cd)>tl)continue;
+        const dd=segDist(w[0],w[1],ev3Hq(v,a),-a[2],ev3Hq(v,c),-c[2]);if(dd<di){di=dd;bi={e,x,q:[w[0],w[1]]}}}}}
+  return bx||bi}
+/* the tool */
+XT.rbtag288={ok:v=>!!v&&v.kind==='section',on(){const v=activeView();if(v&&v.kind==='section')return;const s=P.views.find(x=>x.kind==='section');if(!s){toast(t('rbt_nov288'));return false}showView(s.id);toast(t('rbt_go288'))},hint:()=>t('rbt_h288')};
+XT3.rbtag288={ok:v=>!!v&&v.kind==='section',hint:()=>t('rbt_h288'),
+  click(pn,v,p){const k=rbPick288(pn,v,p);if(!k){toast(t('rbt_none288'));return}const sc=v.scale||100;
+    edit(()=>{P.ann.push({id:P.seq++,cat:'etag',view:avid(v),el:k.e.id,rb288:k.x.key,bi288:k.x.i,x:Math.round(k.q[0]+8*sc),y:Math.round(k.q[1]-8*sc),lead:true})})},
+  hov(){return null}};          // the host is not lit: its cut would cover the bars
+/* the tag reads the bar, its leader goes to the bar */
+{const f0=tgLines;tgLines=(d,e,T)=>d&&d.rb288&&e?[rbLab288(e,d.rb288)]:f0(d,e,T)}
+{const f0=etgDraw;etgDraw=(g,d,col,hi,v)=>{if(!d.rb288)return f0(g,d,col,hi,v);const e=IDX.get(d.el);if(!etgShown(v,d,e)||catHid(v,'rebar'))return;const A=rbAnc288(v,e,d)||etgAnchor(v,e);
+  tgPaint(g,col,hi,e,tgT(d),d,[d.x,d.y],A);if(A&&d.lead){const ctx=g.ctx;ctx.save();ctx.fillStyle=hi||col.ink;g.circle(A,0.5);ctx.fill();ctx.restore()}}}
+{const f0=etgHit;etgHit=(d,v,p,nav)=>{if(!d.rb288)return f0(d,v,p,nav);const e=IDX.get(d.el);if(!etgShown(v,d,e)||catHid(v,'rebar'))return false;const w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};
+  return tgDistAt(e,tgT(d),d,[d.x,d.y],rbAnc288(v,e,d)||etgAnchor(v,e),w,v.scale||100)<4/nav.s}}
+/* sanitize: a bar's kind on a tag of an elevation or a section */
+XC.push(()=>{for(const d of P.ann){if(d.rb288===undefined&&d.bi288===undefined)continue;if(d.cat!=='etag'||typeof d.rb288!=='string'||!RBK288.test(d.rb288)){delete d.rb288;delete d.bi288;continue}
+  if(!(Number.isInteger(d.bi288)&&d.bi288>=0&&d.bi288<4000))delete d.bi288}});
+/* Properties of the tag: the bar it reads */
+XP.push((c,els)=>{if(c!=='etag'||els.length!==1||!els[0].rb288)return'';const e=IDX.get(els[0].el);if(!e)return'';const K=els[0].rb288.split('|');
+  return PR.ro('p_rbt288',rbLab288(e,els[0].rb288))+PR.ro('p_rbsh288',t('rbs_'+K[1]+'288'))+PR.ro('p_rbcut288',money(+K[4])+' mm')});
+/* the ribbon: Annotate › Tag, beside Material Tag; and Structure › Reinforcement */
+{const an=RIBBON.find(r=>r.id==='annot'),pt=an&&an.panels.find(p=>p.t==='p_tag');if(pt&&!pt.b.includes('rbtag288')){const i=pt.b.indexOf('mtag');pt.b.splice(i<0?pt.b.length:i+1,0,'rbtag288')}}
+BTN.rbtag288=['tag',''];
+Object.assign(STR,{t_rbtag288:['ป้ายเหล็กเสริม','Rebar Tag'],rbt_h288:['คลิกใกล้เหล็กเสริมในรูปตัด (จุดที่รูปตัดตัดผ่านเหล็ก หรือเหล็กปลอกที่อยู่ในแนวตัด) เพื่อวางป้าย · Esc จบ','Click near a bar in a section (a dot where the section cuts it, or a tie lying in the cut) to tag it · Esc to finish'],
+  rbt_none288:['ตรงนี้ไม่มีเหล็กเสริมที่รูปตัดตัดผ่าน ลองคลิกใกล้จุดของเหล็ก (และเปิดการแสดงเหล็กเสริมในมุมมองนี้)','No bar cut here: click near the dot of a bar (with Structural Rebar shown in this view)'],
+  rbt_nov288:['ป้ายเหล็กเสริมใช้ในรูปตัด: สร้างรูปตัดก่อน','The Rebar Tag works in a section: make a section first'],rbt_go288:['ไปที่รูปตัดเพื่อวางป้ายเหล็กเสริม','Gone to a section to tag the rebar'],
+  p_rbt288:['เหล็กที่ป้ายบอก','Bar tagged'],p_rbsh288:['รูปทรงเหล็ก','Bar shape'],p_rbcut288:['ความยาวตัด','Cut length'],
+  rbs_tie288:['เหล็กปลอก','Tie / stirrup'],rbs_hk2288:['งอสองปลาย','Hooked both ends'],rbs_hk1288:['งอปลายเดียว','Hooked one end'],rbs_str288:['เหล็กตรง','Straight']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -41508,6 +41574,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.285 · ชั่วโมงของไฟและอุปกรณ์ (Lighting / Power Schedule): ตารางชั่วโมงของวิธีคิดรายชั่วโมงตั้งชั่วโมงเปิดไฟและอุปกรณ์ของแต่ละการใช้งานแยกจากชั่วโมงที่มีคนได้ ภาระรายชั่วโมงและพลังงานต่อปีคิดตามนั้น
 - V1.286 · ไฟและอุปกรณ์ที่เปิดค้างนอกเวลา: ตารางชั่วโมงตั้งส่วนของไฟและอุปกรณ์ที่ยังเปิดอยู่นอกชั่วโมงของมันได้ (%) เช่น ตู้เย็น ไฟกลางคืน ภาระรายชั่วโมงและพลังงานต่อปีคิดส่วนนั้นทุกชั่วโมงนอกเวลา
 - V1.287 · ชนิดบริการของโซน (Service Type): คุณสมบัติโซนเลือกชนิดระบบปรับอากาศที่บริการโซนได้ เช่น แอร์แยกส่วน VRF แฟนคอยล์ VAV คานเย็น พลังงานต่อปีคิดห้องในโซนนั้นด้วยระบบนั้น และแสดงผลแยกตามระบบ
+- V1.288 · ป้ายเหล็กเสริม (Rebar Tag): เครื่องมือในแท็บใส่ระยะ/ข้อความ › ป้ายกำกับ คลิกใกล้เหล็กในรูปตัด ป้ายบอกจำนวน ขนาด และหมายเลขเหล็ก เช่น 4-DB20 (03) พร้อมเส้นชี้ไปที่เหล็กเส้นนั้น
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41934,6 +42001,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.285 · Lighting and Power Schedules: the hours table of the hourly method takes hours for the lights and the equipment of each use apart from its occupancy; the hourly loads and the yearly energy follow them
 - V1.286 · Lights and equipment left on outside their hours: the hours table takes the share (%) of each use's lights and equipment still on outside their hours (a refrigerator, a night light); the hourly loads and the yearly energy count it in every other hour
 - V1.287 · Zone Service Type: Edit Zone picks the kind of HVAC system that serves the zone (split, VRF, fan coils, VAV, chilled beams and more); the yearly energy takes the zone's rooms by that system and shows each system's share
+- V1.288 · Rebar Tag: a tool in Annotate › Tag; click near a bar in a section and the tag reads its quantity, size and Rebar Number (4-DB20 (03)), its leader to that bar
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -44127,6 +44195,16 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r288={
+  sec:()=>{const v=P.views.find(x=>x.kind==='section');return v?v.id:0},
+  bars:(vid,id)=>{const v=viewById(vid),e=IDX.get(id);return v&&e?rbBarsK288(e).map(x=>{const A=rbAt288(v,x.b);return{i:x.i,key:x.key,k:x.b.k,d:x.d,q:A?A.q.map(z=>Math.round(z*10)/10):null,cut:A?A.cut:false}}):[]},
+  tag:(vid,id,key,bi)=>{let tid=0;const v=viewById(vid),e=IDX.get(id);edit(()=>{tid=P.seq++;const A=rbAnc288(v,e,{rb288:key,bi288:bi})||[0,0];P.ann.push({id:tid,cat:'etag',view:vid,el:id,rb288:key,bi288:bi,x:Math.round(A[0]+800),y:Math.round(A[1]-800),lead:true})});refresh();return tid},
+  lab:id=>{const d=IDX.get(id)||P.ann.find(x=>x.id===id);const e=d&&IDX.get(d.el);return d&&e?tgLines(d,e,tgT(d)):null},
+  anc:id=>{const d=P.ann.find(x=>x.id===id),v=d&&viewById(d.view),e=d&&IDX.get(d.el);return d&&v&&e?rbAnc288(v,e,d):null},
+  ann:id=>{const d=P.ann.find(x=>x.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  pick:(vid,h,y)=>{const v=viewById(vid),pn=PANES[ui.ap],n=navOf(v);const k=rbPick288(pn,v,{x:h*n.s+n.ox,y:y*n.s+n.oy});return k?{el:k.e.id,key:k.x.key,i:k.x.i}:null},
+  mark:(id,key)=>rbMark288(IDX.get(id),key),sched:()=>rbSched(P).map(r=>({mark:r.mark,d:r.d,shape:r.shape,n:r.n,hosts:[...r.hosts]})),
+  av:()=>{const v=activeView();return v?{id:v.id,kind:v.kind}:null},str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r287={
   zones:()=>zoneList(P).map(z=>({id:z.id,name:z.name,st:z.st287})),
   set:(id,st)=>{edit(()=>{const z=zoneList(P).find(x=>x.id===id);if(!z)return;if(st)z.st287=st;else delete z.st287});refresh()},
