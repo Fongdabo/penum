@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=264,V1_NAME='V1.254';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=265,V1_NAME='V1.255';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -37985,6 +37985,69 @@ Object.assign(STR,{
 STR.h_spl253=[STR.h_spl253[0]+' · หรือคลิกเสาเหล็ก H หรือ I ที่ตั้งบนเสาอีกต้นเพื่อใส่แผ่นต่อเสา',STR.h_spl253[1]+' · or click an H or I steel column standing on another to splice the two'];
 STR.h_sconnb=[STR.h_sconnb[0].replace(' · เลือกชนิดอื่น',' (เสาที่ตั้งบนเสาเหล็กอีกต้นได้แผ่นต่อเสา) · เลือกชนิดอื่น'),STR.h_sconnb[1].replace(' · choose another',' (one standing on another steel column gets a splice) · choose another')];
 STR.n_sconn=[STR.n_sconn[0].replace(' · เป็นรูปและปริมาณ',' · แผ่นต่อเสา: ที่โคนเสาเหล็กที่ตั้งบนเสาอีกต้น · เป็นรูปและปริมาณ'),STR.n_sconn[1].replace(' · these are shapes',' · column splice: at the base of a steel column standing on another · these are shapes')];
+/* ===== 255 Split Element in elevations, sections and 3D views (V1.255; Revit: Modify › Split Element — a column is split at the height clicked, in an
+   elevation, a section or a 3D view; walls, beams, ducts, pipes and trays where they are clicked, as in the plan; detail lines of an elevation or a section too) =====
+   A column splits into two at zs: itself below (its top on the level at or under zs, the rest its Top Offset; one without a top level keeps its height to zs), and
+   a copy above (its base on that level with zs − its height as Base Offset; the top as the column had it).  zs snaps to a level within 8 px (150 mm in 3D) and else
+   to 10 or 50 mm; both parts keep at least 100 mm.  What is hosted on the column (its base plate or splice, its rebar, a boundary condition at its foot, its
+   tags) stays with the part below; the part above stands on it, so a splice (254) can join the two.  A slanted column is not split.  A line element splits by
+   splitLine at the point of it under the pointer, so all that the plan's Split does follows (inserts, curves, sloped beams, connections). */
+const SPL3_CATS=['wall','beam','truss','duct','pipe','tray','conduit','railing'];
+/* the level a split at zs puts the joint on, and the two parts' new fields */
+function spcLv255(zs){const L=sortedLevels(P);let lv=null;for(const l of L)if(elev(P,l.id)<=zs+0.5)lv=l;return lv}
+function spcDo255(e,zs){const z=zRange(P,e),Ls=spcLv255(zs)||lvl(P,e.level),R=q=>Math.round(q*10)/10,hasTop=!!(e.top&&lvl(P,e.top)),c=JSON.parse(JSON.stringify(e));
+  c.id=P.seq++;for(const k of ['ifg','ifl','ifs','guid'])delete c[k];
+  if(hasTop){e.top=Ls.id;e.topOff=R(zs-elev(P,Ls.id))}else e.height=R(zs-z[0]);
+  c.level=Ls.id;c.baseOff=R(zs-elev(P,Ls.id));if(!hasTop)c.height=R(z[1]-zs);P.els.push(c);return c}
+/* what a click of Split means under p in a view drawn in GL: {k:'col', e, zs} | {k:'line', e, w, z} | {k:'dl', e, w} | {why, e} | null */
+function spl255At(pn,v,p){const nav=navOf(v);
+  if(ev3EV(v)&&!catHid(v,'dline')){const w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=8/nav.s;let best=null,bd=Infinity;
+    for(const d of P.ann)if(d.cat==='dline'&&d.view===avid(v)&&!hidDatum(v,d)){const q=bowDist(w.x,w.y,d);if(q<tol&&q<bd){bd=q;best=d}}if(best)return{k:'dl',e:best,w}}
+  const pk=pickAt3(pn,v,p),e=pk&&IDX.get(pk.id);if(!e||!pk.p)return null;
+  if(e.cat==='column'){if(slOn(e))return{why:'spc_slant255',e};const z=zRange(P,e),is3=v.kind==='3d',inc=is3?(nav.hh<4000?10:50):(snapInc(nav)>=100?50:10),tz=is3?150:8/nav.s;
+    let zs=Math.round(pk.p[1]/inc)*inc,bd=tz;for(const l of P.levels){const d=Math.abs(elev(P,l.id)-pk.p[1]);if(d<bd){bd=d;zs=elev(P,l.id)}}
+    if(zs-z[0]<100-1e-6||z[1]-zs<100-1e-6)return{why:'spc_short255',e,zs};return{k:'col',e,zs}}
+  if(SPL3_CATS.includes(e.cat))return{k:'line',e,w:{x:pk.p[0],y:pk.p[2]},z:pk.p[1]};
+  return{why:'spl_what255',e}}
+/* the words for a joint at zs: the level it stands on and the offset */
+function spcLbl255(zs){const l=spcLv255(zs);if(!l)return fmtLen(zs)+' '+unitName();const d=Math.round(zs-elev(P,l.id));return l.name+(d?(d>0?' + ':' − ')+fmtLen(Math.abs(d))+' '+unitName():'')}
+function spl255Click(pn,v,p){const r=spl255At(pn,v,p);if(!r){toast(t('spl_none255'));return}if(r.why){toast(t(r.why));return}const e=r.e;
+  if(r.k==='col'){if(isPinned(e.id)){toast(t('pin_block',1));return}let c=null;edit(()=>{c=spcDo255(e,r.zs)});ui.spl3=null;toast(t('spc_done255',spcLbl255(r.zs)));refresh();return}
+  if(lcBlock(e,'split'))return;if(!lcCurve(e)){const S=splitAt(e,r.w);if(S.tt<100||S.tt>S.L-100){toast(t('spl_end255'));return}}
+  const s0=P.seq;edit(()=>splitLine(e,r.w));if(P.seq===s0)toast(t('spl_end255'));ui.spl3=null;refresh()}
+/* the preview: a ring round the column at the height, or a mark across the line where it splits */
+function spl255Draw(pn,ctx,v,nav){const H=ui.spl3;if(!H||H.v!==v.id||!H.r||H.r.why)return;const r=H.r,e=r.e,is3=v.kind==='3d',pj=is3?ev3Proj(pn,v):null;
+  const sp=q=>is3?pj(q):[(r.k==='dl'?q[0]:ev3Hq(v,q))*nav.s+nav.ox,(r.k==='dl'?q[1]:-q[2])*nav.s+nav.oy];
+  ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=2;ctx.setLineDash([]);
+  if(r.k==='col'){if(is3){const lp=columnLoop(P,e);if(!lp||lp.length<2)return;const cx=lp.reduce((a,q)=>a+q[0],0)/lp.length,cy=lp.reduce((a,q)=>a+q[1],0)/lp.length,S=lp.map(q=>{const d=Math.hypot(q[0]-cx,q[1]-cy)||1,k=(d+60)/d;return pj([cx+(q[0]-cx)*k,cy+(q[1]-cy)*k,r.zs])});ctx.lineWidth=2.6;if(S.some(s=>!s))return;ctx.beginPath();S.forEach((s,i)=>i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]));ctx.closePath();ctx.stroke();
+      const c=S.reduce((a,s)=>[a[0]+s[0]/S.length,a[1]+s[1]/S.length],[0,0]);ev3Lbl(ctx,c[0],c[1],spcLbl255(r.zs));return}
+    const B=ev3Box(v,e);if(!B)return;const y=-r.zs*nav.s+nav.oy,x0=B[0]*nav.s+nav.ox-14,x1=B[1]*nav.s+nav.ox+14;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();ev3Lbl(ctx,x1,y,spcLbl255(r.zs));return}
+  if(lcCurve(e)){const s=sp([r.w.x,r.w.y]);ev3Mark(ctx,s[0],s[1],'on');return}const S=splitAt(e,r.w),q=[e.x1+S.ux*S.tt,e.y1+S.uy*S.tt],ux=S.ux,uy=S.uy;
+  if(r.k==='dl'){const a=sp([q[0]-uy*8/nav.s,q[1]+ux*8/nav.s]),b=sp([q[0]+uy*8/nav.s,q[1]-ux*8/nav.s]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();return}
+  const zr=zRange(P,e),z0=e.cat==='wall'?zr[0]:r.z-Math.min(400,(zr[1]-zr[0])/2+100),z1=e.cat==='wall'?zr[1]:r.z+Math.min(400,(zr[1]-zr[0])/2+100);
+  if(is3||e.cat==='wall'||Math.abs(ev3Hq(v,[ux,uy]))>0.3){const a=sp([q[0],q[1],z0]),b=sp([q[0],q[1],z1]);if(!a||!b)return;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
+    if(is3&&e.cat!=='wall'){const hw=lineHW(e)+150,c=sp([q[0]-uy*hw,q[1]+ux*hw,r.z]),d=sp([q[0]+uy*hw,q[1]-ux*hw,r.z]);if(c&&d){ctx.beginPath();ctx.moveTo(c[0],c[1]);ctx.lineTo(d[0],d[1]);ctx.stroke()}}}
+  else{const s=sp([q[0],q[1],r.z]);if(s)ev3Mark(ctx,s[0],s[1],'on')}}
+XT3.split={ok:v=>ev3GL(v),click:spl255Click,
+  hov(pn,v,p){const r=spl255At(pn,v,p);ui.spl3={v:v.id,r};return r&&r.e&&!r.why?r.e.id:null},
+  draw:spl255Draw,hint:v=>t(ev3EV(v)?'h_spl3e255':'h_spl3d255')};
+/* Delete Inner Segment is the plan's: its box is not shown in the other views */
+{const f0=renderOptbar;renderOptbar=()=>{f0();if(ui.tool==='split'&&ev3GL(activeView())){const b=$('#opt_dis');if(b&&b.parentElement)b.parentElement.remove()}}}
+{const f0=setTool;setTool=(tool,silent)=>{ui.spl3=null;f0(tool,silent)}}
+/* in a plan a column is not split: say where it is */
+{const f0=toolClick;toolClick=(pn,v,p,ev)=>{if(ui.tool==='split'&&v&&v.kind==='plan'&&!p.exact){const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};
+    if(!hitLine(v,w)){const h=hitPlan(v,p),e=h&&IDX.get(h.id);if(e&&e.cat==='column'){toast(t('spc_plan255'));return}}}return f0(pn,v,p,ev)}}
+Object.assign(STR,{
+  h_spl3e255:['คลิกเสาตรงความสูงที่จะแบ่ง หรือคลิกผนัง คาน ท่อ หรือรางตรงจุดที่จะแบ่ง (เส้นรายละเอียดก็แบ่งได้)','Click a column at the height to split it, or a wall, beam, duct, pipe or tray where it should be split (detail lines too)'],
+  h_spl3d255:['คลิกเสาตรงความสูงที่จะแบ่ง หรือคลิกผนัง คาน ท่อ หรือรางตรงจุดที่จะแบ่ง','Click a column at the height to split it, or a wall, beam, duct, pipe or tray where it should be split'],
+  spc_done255:['แบ่งเสาแล้วที่ {0}','Column split at {0}'],
+  spc_short255:['จุดแบ่งต้องห่างจากโคนและปลายเสาอย่างน้อย 100 มม.','The split must be at least 100 mm from the base and the top of the column'],
+  spc_slant255:['แบ่งได้เฉพาะเสาตั้งตรง เสาเอียงยังแบ่งไม่ได้','Only a vertical column can be split; a slanted one cannot'],
+  spl_end255:['จุดแบ่งอยู่ใกล้ปลายเกินไป ต้องห่างจากปลายอย่างน้อย 100 มม.','Too close to an end: the split must be at least 100 mm from either end'],
+  spl_what255:['ชิ้นนี้แบ่งไม่ได้ แบ่งได้เฉพาะเสา ผนัง คาน โครงถัก ท่อลม ท่อ ราง และราวกันตก','This cannot be split: Split takes columns, walls, beams, trusses, ducts, pipes, trays and railings'],
+  spl_none255:['คลิกบนเสา ผนัง คาน ท่อ หรือรางที่จะแบ่ง','Click on a column, wall, beam, duct, pipe or tray to split'],
+  spc_plan255:['เสาแบ่งในแปลนไม่ได้ ให้แบ่งในรูปด้าน รูปตัด หรือมุมมอง 3 มิติ โดยคลิกตรงความสูงที่จะแบ่ง','A column is not split in a plan: split it in an elevation, a section or a 3D view, clicking at the height']});
+STR.h_split=[STR.h_split[0]+' · เสาแบ่งได้ในรูปด้าน รูปตัด และ 3 มิติ',STR.h_split[1]+' · columns split in elevations, sections and 3D'];
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40013,6 +40076,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.252 · [[a_rcs252]] เหมือน Revit: ชื่อระยะหุ้มที่ใช้ซ้ำได้ และระยะหุ้มผิวบน ผิวล่าง ผิวอื่น (ผนัง: ผิวนอก ผิวใน) ของแต่ละชิ้น เหล็กเสริม ตารางตัดเหล็ก น้ำหนักเหล็ก และ 3 มิติตาม
 - V1.253 · [[t_sconn]] มีแบบ [[stck_splice]] เหมือน Revit: คลิกตรงรอยต่อของคานเหล็ก H หรือ I สองท่อนที่ปลายชนกันในแนวเดียวกัน (เช่นคานที่แยกด้วย Split) ได้แผ่นต่อปีกบนล่าง แผ่นต่อเอวสองข้าง และสลักเกลียว (เลือกแผ่นต่อปีกด้านในได้) ชนิดแผ่นต่อคานเพิ่มเข้าโครงการเองเมื่อใส่ครั้งแรก [[a_stcplace]] ใส่ให้ทุกรอยต่อแบบนี้ ตาราง BOQ IFC แปลน และ 3 มิติตาม
 - V1.254 · [[stck_splice]] ใช้กับเสาได้ด้วยเหมือน Revit: เสาเหล็ก H หรือ I ที่ตั้งบนเสาอีกต้นหน้าตัดเดียวกัน (ตำแหน่งและแนวเดียวกัน ห่างไม่เกิน 50 มม.) คลิกเสานั้นด้วย [[t_sconn]] ได้แผ่นต่อปีกสองข้าง แผ่นต่อเอวสองข้าง และสลักเกลียวข้ามรอยต่อที่โคนเสา แทนแผ่นฐานเสา [[a_stcplace]] ใส่แผ่นต่อให้เสาที่ตั้งบนเสา และแผ่นฐานให้เสาต้นล่างสุดเหมือนเดิม ตาราง BOQ IFC แปลน และ 3 มิติตาม
+- V1.255 · [[t_split]] ใช้ได้ในรูปด้าน รูปตัด และ 3 มิติเหมือน Revit: คลิกเสาตรงความสูงที่จะแบ่ง เสาจะเป็นสองต้น ต้นล่างยึดปลายที่ชั้นใต้จุดแบ่งพร้อมระยะเยื้อง ต้นบนตั้งจากจุดนั้นถึงปลายเดิม (จุดแบ่งเกาะระดับชั้นเมื่ออยู่ใกล้) แผ่นฐานเสา เหล็กเสริม และป้ายอยู่กับต้นล่าง ต้นบนตั้งบนต้นล่างจึงใส่ [[stck_splice]] ต่อได้ทันที ผนัง คาน ท่อ ราง และเส้นรายละเอียดในรูปด้านก็แบ่งตรงจุดที่คลิกได้เหมือนในแปลน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -40406,6 +40470,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.252 · [[a_rcs252]] as in Revit: named covers to reuse, and the cover of the top, bottom and other faces (walls: exterior, interior) of each host; its bars, the bar schedule, rebar weights and 3D follow
 - V1.253 · [[t_sconn]] has the kind [[stck_splice]] as in Revit: click where two H or I steel beams meet end to end in a line (such as a beam split with Split) for flange plates over and under, web plates on both sides and their bolts (inner flange plates too if wanted). The splice type comes into the project the first time one is placed; [[a_stcplace]] splices every such joint; schedules, BOQ, IFC, plans and 3D follow.
 - V1.254 · a [[stck_splice]] joins columns too, as in Revit: click an H or I steel column that stands on another of the same section (at the same spot, turned alike, at most 50 mm apart) with [[t_sconn]] for flange plates on both flanges, web plates on both sides of the web and bolts across the joint at its base, in place of a base plate. [[a_stcplace]] splices the columns that stand on columns and gives the lowest ones base plates as before; schedules, BOQ, IFC, plans and 3D follow.
+- V1.255 · [[t_split]] works in elevations, sections and 3D views, as in Revit: click a column at the height to split it in two, the lower one ending on the level under the split with an offset and the upper one standing from there to the old top (the split snaps to a level when near one). Its base plate, rebar and tags stay with the lower one, and the upper one stands on it, so a [[stck_splice]] joins them at once. Walls, beams, ducts, pipes, trays and the detail lines of an elevation split where they are clicked, as in a plan.
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -42599,6 +42664,16 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r255={
+  split:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},lbl:zs=>spcLbl255(zs),
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},zr:id=>{const e=IDX.get(id);return e?zRange(P,e).map(z=>Math.round(z*10)/10):null},
+  ids:c=>P.els.filter(e=>e.cat===c).map(e=>e.id),ann:c=>P.ann.filter(d=>d.cat===c).map(d=>JSON.parse(JSON.stringify(d))),
+  hov:()=>{const H=ui.spl3,r=H&&H.r;return r?{v:H.v,k:r.k||null,id:r.e?r.e.id:null,zs:r.zs==null?null:r.zs,why:r.why||null}:null},
+  allowed:(tool,vid)=>toolAllowed(tool,P.views.find(v=>v.id===vid)),seq:()=>P.seq,str:(k,...a)=>t(k,...a),
+  run:F=>{let r;edit(()=>{r=new Function('P',F)(P)});return r},
+  opt:()=>!!document.querySelector('#opt_dis'),
+  scr:(x,y,z)=>{const pn=PANES[0],v=paneView(0),nav=navOf(v),s=ev3Scr(pn,v,nav)([x,y,z]),r=pn.cv.getBoundingClientRect();return s?{x:r.left+s[0],y:r.top+s[1]}:null},
+  views:()=>P.views.map(v=>({id:v.id,kind:v.kind,name:v.name,dir:ev3GL(v)&&v.kind!=='3d'?viewDir(v):null}))};
 window.PenumBIM.r254={
   mate:id=>{const h=IDX.get(id),m=h&&scMate254(P,h);return m?{o:m.o.id,g:Math.round(m.g*100)/100,same:m.same}:null},
   ok:id=>scOk254(P,IDX.get(id)),find:id=>{const c=scFind254(P,IDX.get(id));return c?c.id:null},types:()=>JSON.parse(JSON.stringify(stcTL(P))),
