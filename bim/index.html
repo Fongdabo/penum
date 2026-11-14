@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=283,V1_NAME='V1.273';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=284,V1_NAME='V1.274';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38938,6 +38938,72 @@ function slRange272(s,F){let lo=Infinity,hi=-Infinity;for(const f of F)for(const
         for(const q of CRp)for(const R of q.K)vr+=cut(r.net,[R,K],q.z)-cut(r.net,[R,K],M.t)}}
     if(vr>0.5){v+=vr;if(rec)rec.push({id:s.id,up:true,roof:1,v:vr,open:HP.length?1:0})}}
   return v}}
+/* ===== 274 The Slope Arrow in a plan (V1.274; Revit: a floor's or a ceiling's Slope Arrow is a line in its sketch: its tail and its head are dragged to
+   where the slope starts and where it ends, and Height Offset at Tail / at Head are at those two points) =====
+   The slope (e.sp, e.sa; Height at Tail e.sph271, 271) was typed only, and the arrow drawn on a selected slab was a sign.  Now a selected sloped floor or
+   ceiling in a plan shows its arrow from tail to head with a grip at each end.  Dragging either end places the arrow (e.sar274 = [tail, head], plan points):
+   its way becomes the slope's way (e.sa), and in Height at Tail the two offsets are at the tail and the head themselves, so the slab runs through those
+   points (e.sp follows from the arrow's length).  In Slope the slab keeps its height along its lowest edge, as before, and the arrow gives the way only.
+   A placed arrow stays where it is when the outline changes; it moves, turns and mirrors with the slab (Move, Copy, Rotate, Mirror; a slope's way now
+   turns with a rotated or mirrored slab too, placed arrow or not).  Typing the direction turns a placed arrow about its tail.  Properties: Slope Arrow
+   Placed; clearing it puts the arrow back across the slab, the plane kept.  An end of the arrow on a corner of the outline leaves the corner's grip first. */
+const sarOn274=e=>!!e&&(e.cat==='floor'||e.cat==='ceiling')&&Array.isArray(e.sar274)&&e.sar274.length===2&&Array.isArray(e.pts)&&e.pts.length>=3;
+const sarHas274=e=>!!e&&(e.cat==='floor'||e.cat==='ceiling')&&Array.isArray(e.pts)&&e.pts.length>=3&&(!!+e.sp||Array.isArray(e.sph271));
+/* the arrow across the slab, through the middle of its points: tail on the edge where it starts along e.sa, head on the far one (where 271 has its offsets) */
+function sarDef274(e){const R=sphRun271(e);let x=0,y=0;for(const p of e.pts){x+=p[0];y+=p[1]}x/=e.pts.length;y/=e.pts.length;const s=x*R.ux+y*R.uy;
+  return[[x+R.ux*(R.p0-s),y+R.uy*(R.p0-s)],[x+R.ux*(R.p1-s),y+R.uy*(R.p1-s)]]}
+const sarOf274=e=>sarOn274(e)?e.sar274:sarDef274(e);
+/* the way of a to b as e.sa (degrees counter-clockwise on the plan, 90 = up the sheet) */
+const sarAng274=(a,b)=>{let d=Math.atan2(-(b[1]-a[1]),b[0]-a[0])*180/Math.PI;d=Math.round((((d%360)+360)%360)*100)/100;return d>=360?0:d};
+const sarSa274=(e,a,b)=>{const d=sarAng274(a,b);if(d)e.sa=d;else delete e.sa};
+/* Height at Tail with a placed arrow: the plane through the offsets at its two ends */
+{const f0=slabSlope;slabSlope=e=>{if(!sarOn274(e)||!sphOn271(e))return f0(e);const A=e.sar274[0],B=e.sar274[1],L=Math.hypot(B[0]-A[0],B[1]-A[1]);if(!(L>1))return f0(e);
+  const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,ht=+e.sph271[0]||0,hh=+e.sph271[1]||0,k=(hh-ht)/L||1e-12,o=A[0]*ux+A[1]*uy;let p0=Infinity,p1=-Infinity;
+  for(const p of e.pts){const q=p[0]*ux+p[1]*uy;p0=Math.min(p0,q);p1=Math.max(p1,q)}return{ux,uy,k,rise:Math.abs((p1-p0)*k),ht,hh,dz:(x,y)=>ht+(x*ux+y*uy-o)*k}}}
+/* what the slab is now, as Height at Tail: with a placed arrow, the offsets at its ends */
+{const f0=sphOf271;sphOf271=e=>{if(!sarOn274(e))return f0(e);const S=slabSlope(e);if(!S)return[0,0];return e.sar274.map(p=>Math.round(S.dz(p[0],p[1])*10)/10)}}
+/* sanitize: two points at least 50 apart on a sloped floor or ceiling; its way and (Height at Tail) its slope from them */
+XC.push(()=>{for(const e of P.els){if(e.sar274===undefined)continue;const A=e.sar274;
+  if(!((e.cat==='floor'||e.cat==='ceiling')&&Array.isArray(A)&&A.length===2&&A.every(p=>Array.isArray(p)&&p.length===2&&p.every(x=>x!==null&&isFinite(+x)))&&sarHas274(e))){delete e.sar274;continue}
+  const a=A.map(p=>[Math.round(+p[0]*10)/10,Math.round(+p[1]*10)/10]),L=Math.hypot(a[1][0]-a[0][0],a[1][1]-a[0][1]);if(!(L>=50)){delete e.sar274;continue}e.sar274=a;sarSa274(e,a[0],a[1]);
+  if(Array.isArray(e.sph271)){const sp=(e.sph271[1]-e.sph271[0])/L*100;if(Math.abs(sp)<1e-9)delete e.sp;else e.sp=Math.round(clamp(sp,-100,100)*10000)/10000}}});
+/* Move and Copy take a placed arrow along; Rotate and Mirror turn it, and the way of every slope with it */
+{const f0=translateIds;translateIds=(ids,dx,dy)=>{for(const id of new Set(ids)){const e=IDX.get(id);if(sarOn274(e))e.sar274=e.sar274.map(p=>[p[0]+dx,p[1]+dy])}return f0(ids,dx,dy)}}
+{const f0=mapPoints;mapPoints=(e,fn,mirror,ang)=>{if(!sarHas274(e))return f0(e,fn,mirror,ang);const A=sarOf274(e),own=sarOn274(e);f0(e,fn,mirror,ang);
+  const a=fn(A[0][0],A[0][1]),b=fn(A[1][0],A[1][1]);if(!a||!b||Math.hypot(b[0]-a[0],b[1]-a[1])<1e-6)return;if(own)e.sar274=[a,b];sarSa274(e,a,b)}}
+/* ---- the grips, in a plan with the slab alone selected ---- */
+const sarSel274=v=>{if(!v||v.kind!=='plan'||v.draft||ui.tool!=='modify'||ui.sel.size!==1)return null;const e=IDX.get([...ui.sel][0]);return sarHas274(e)&&planShow(v,e)?e:null};
+{const f0=hitPlan;hitPlan=(v,p,UL)=>{const e=sarSel274(v);if(!e)return f0(v,p,UL);const h=f0(v,p,UL);if(h&&h.id===e.id&&typeof h.grip==='number')return h;          // a corner of the outline first
+  const nav=navOf(v),x=(p.x-nav.ox)/nav.s,y=(p.y-nav.oy)/nav.s,gt=8/nav.s,A=sarOf274(e);
+  if(Math.hypot(A[1][0]-x,A[1][1]-y)<gt)return{id:e.id,grip:'sah274'};if(Math.hypot(A[0][0]-x,A[0][1]-y)<gt)return{id:e.id,grip:'sat274'};return h}}
+{const f0=moveElDrag;moveElDrag=(d,v,p)=>{const e=d.e,g=d.h&&d.h.grip;if(d.kind!=='grip'||!e||(g!=='sat274'&&g!=='sah274'))return f0(d,v,p);ui.dguide=null;if(!sarHas274(e))return;
+  const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},A=sarOf274(e).map(q=>q.slice()),i=g==='sah274'?1:0,o=A[1-i],s=snapPt(v,w,{from:{x:o[0],y:o[1]}});ui.snap=s;
+  if(Math.hypot(s.x-o[0],s.y-o[1])<100)return;A[i]=[Math.round(s.x*10)/10,Math.round(s.y*10)/10];e.sar274=A;sarSa274(e,A[0],A[1]);touch()}}
+XCT.push((pn,ctx,v,nav,g)=>{const e=sarSel274(v);if(!e)return;const A=sarOf274(e),a=[g.X(A[0][0]),g.Y(A[0][1])],b=[g.X(A[1][0]),g.Y(A[1][1])],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l<6)return;
+  const ux=(b[0]-a[0])/l,uy=(b[1]-a[1])/l;ctx.save();ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.4;ctx.setLineDash([7,4]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.setLineDash([]);
+  const hd=Math.min(14,l/3),hw=hd*0.42,c=[b[0]-ux*6,b[1]-uy*6];ctx.beginPath();ctx.moveTo(c[0],c[1]);ctx.lineTo(c[0]-ux*hd-uy*hw,c[1]-uy*hd+ux*hw);ctx.lineTo(c[0]-ux*hd+uy*hw,c[1]-uy*hd-ux*hw);ctx.closePath();ctx.fill();
+  slGrip(ctx,a[0],a[1]);slGrip(ctx,b[0],b[1]);
+  if(sphOn271(e)){const H=sphOf271(e),lab=x=>(x>0?'+':x<0?'−':'')+fmtLen(Math.abs(x));ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=3;ctx.strokeStyle=C.paper;ctx.fillStyle=C.sel;
+    for(const [q,s,k] of [[a,-1,0],[b,1,1]]){const x=q[0]+ux*s*16-uy*14,y=q[1]+uy*s*16+ux*14,txt=lab(H[k]);ctx.strokeText(txt,x,y);ctx.fillText(txt,x,y)}}
+  ctx.restore()});
+/* ---- Properties: Slope Arrow Placed, after the slope's way; the way typed turns a placed arrow about its tail ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(isNew||(cat!=='floor'&&cat!=='ceiling')||!els.length||!els.every(sarHas274)||!h.includes('id="p_sa"'))return h;
+  const k=h.indexOf('id="p_sa"'),j=h.indexOf('</div></div>',k);if(j<0)return h;let r=PR.chk('sar274','p_sar274',els.every(sarOn274));
+  if(els.length===1){const A=sarOf274(els[0]);r+=PR.ro('p_sarl274',fmtLen(Math.hypot(A[1][0]-A[0][0],A[1][1]-A[0][1]))+' '+unitName())}
+  h=h.slice(0,j+12)+r+h.slice(j+12);for(const n of ['slab_note','sph_note271']){const s=t(n),i=h.indexOf(s);if(i>=0){h=h.slice(0,i+s.length)+' · '+t('sar_note274')+h.slice(i+s.length);break}}return h}}
+XF.unshift((cat,o,key,raw)=>{if(key!=='sa'||!sarOn274(o))return false;const v=parseFloat(raw);if(!isFinite(v))return false;const A=o.sar274,L=Math.hypot(A[1][0]-A[0][0],A[1][1]-A[0][1]),a=v*Math.PI/180;
+  o.sar274=[A[0],[A[0][0]+Math.cos(a)*L,A[0][1]-Math.sin(a)*L]];return false});
+/* back to Slope with a placed arrow: the plane kept (its lowest edge's offset goes into the slab's height), the arrow kept for its way */
+XF.unshift((cat,o,key,raw)=>{if(key!=='sph271_m'||raw!=='s'||!sarOn274(o)||!sphOn271(o))return false;const S=slabSlope(o),R=sphRun271(o);if(!S)return false;
+  const lo=Math.min(S.dz(R.ux*R.p0,R.uy*R.p0),S.dz(R.ux*R.p1,R.uy*R.p1)),sp=S.k*100;delete o.sph271;if(Math.abs(sp)<1e-6)delete o.sp;else o.sp=Math.round(clamp(sp,-100,100)*100)/100;
+  const l=Math.round(lo*10)/10;if(l){if(o.cat==='floor')o.off=Math.round(((+o.off||0)+l)*10)/10;else o.off=Math.round(((o.off==null?2600:+o.off)+l)*10)/10}return true});
+XF.push((cat,o,key,raw)=>{if(key!=='sar274')return false;if(!sarHas274(o))return true;const on=!(raw===false||raw==='false'||raw===0||raw==='0'||raw==='');
+  if(on){if(!sarOn274(o))o.sar274=sarDef274(o)}
+  else if(sarOn274(o)){const S=sphOn271(o)?slabSlope(o):null;delete o.sar274;if(S){const D=sarDef274(o);o.sph271=D.map(p=>Math.round(S.dz(p[0],p[1])*10)/10)}}return true});
+Object.assign(STR,{
+  p_sar274:['วางลูกศรลาดเอง (Slope Arrow)','Slope Arrow Placed'],p_sarl274:['ความยาวลูกศร','Arrow Length'],
+  sar_note274:['ลากหางหรือหัวลูกศรในแปลนเพื่อวางลูกศร ทิศของลูกศรเป็นทิศของความลาด ในแบบความสูงที่หางลูกศร ระยะยกอยู่ที่หางและหัวลูกศรจริง เอาเครื่องหมายออกเพื่อคืนลูกศรพาดตามขอบแผ่น',
+    'Drag the arrow\'s tail or head in a plan to place it: its way is the slope\'s way, and in Height at Tail the offsets are at the tail and the head themselves; clear the box to put it back across the slab']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40985,6 +41051,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.271 · ลาดพื้นกำหนดด้วยความสูงที่หางลูกศร (Specify: Height at Tail): ในกลุ่มความลาดของพื้นและฝ้าเลือกกำหนดด้วยความลาดแบบเดิม หรือความสูงที่หางลูกศร แล้วตั้งระยะยกที่หางและหัวลูกศร แผ่นเอียงผ่านทั้งสองจุด ลาดขึ้นหรือลงตามลูกศรได้ ความลาดคำนวณให้เอง แก้รูปแผ่นแล้วระยะยกคงเดิม สลับกลับเป็นความลาดแผ่นยังอยู่ที่เดิม
 - V1.272 · ปริมาตรห้องใต้พื้นและฝ้าที่ลาด: ห้องที่อยู่ใต้ฝ้าหรือพื้นชั้นบนที่ลาด (ความลาดหรือความสูงที่หางลูกศร) หรือยกจุดพื้น และห้องที่ตั้งบนพื้นแบบนั้น คิดปริมาตรตามผิวแผ่นจริง ไม่ใช่แผ่นเรียบ เหมือน Revit ห้องที่แผ่นเรียบทั้งหมดได้ค่าเท่าเดิม
 - V1.273 · ปริมาตรห้องใต้ช่องเปิดหลังคา: ช่องชาฟต์หรือช่องเปิดที่ตัดหลังคา (รวมช่องของหลังคาโผล่) ไม่ตัดปริมาตรห้องข้างใต้แล้ว ใต้ช่องเปิดห้องสูงถึงระดับบนของห้องหรือฝ้าที่ปิดอยู่ เหมือน Revit หลังคาที่ไม่มีช่องเปิดเหนือห้องได้ค่าเท่าเดิม
+- V1.274 · ลากลูกศรลาดในแปลน: เลือกพื้นหรือฝ้าที่ลาดในแปลนแล้วเห็นลูกศรจากหางถึงหัวพร้อมจุดจับสองปลาย ลากหางหรือหัวเพื่อวางลูกศร ทิศของลูกศรเป็นทิศของความลาด ในแบบความสูงที่หางลูกศร ระยะยกอยู่ที่หางและหัวลูกศรจริงเหมือน Revit ลูกศรไปกับแผ่นเมื่อย้าย คัดลอก หมุน หรือสะท้อน และทิศความลาดหมุนตามแผ่นที่หมุนแล้ว
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41397,6 +41464,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.271 · Slope Arrow Specify: Height at Tail: in the Slope group of a floor or a ceiling choose Specify Slope (as before) or Height at Tail, then set Height Offset at Tail and at Head; the slab runs through both, rising or falling along the arrow, the slope follows, a changed outline keeps both heights, and going back to Slope keeps the slab where it is
 - V1.272 · Room volumes under sloped floors and ceilings: a room under a sloped ceiling or floor above (Slope or Height at Tail) or a floor with raised points, or standing on one, has its volume to the slab's real face, not a flat slab, as in Revit; rooms whose slabs are flat keep their volumes
 - V1.273 · Room volumes under roof openings: a shaft or void through a roof, or a dormer opening, no longer takes room volume out below it; under the opening the room goes up to its top or to a ceiling over it, as in Revit; roofs with no opening over a room keep their volumes
+- V1.274 · Slope arrows dragged in plans: a selected sloped floor or ceiling shows its arrow from tail to head with a grip at each end; drag the tail or the head to place it, its way is the slope's way, and in Height at Tail the offsets are at the tail and the head themselves, as in Revit; the arrow moves, copies, rotates and mirrors with the slab, and a slope's way now turns with a rotated slab
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43590,6 +43658,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r274={
+  sar:id=>{const e=IDX.get(id);return e&&sarHas274(e)?JSON.parse(JSON.stringify(sarOf274(e))):null},own:id=>sarOn274(IDX.get(id)),def:id=>{const e=IDX.get(id);return e&&sarHas274(e)?sarDef274(e):null},
+  el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify({sp:e.sp,sa:e.sa,sph:e.sph271,sar:e.sar274,off:e.off,pts:e.pts})):null},
+  dz:(id,x,y)=>{const S=slabSlope(IDX.get(id));return S?Math.round(S.dz(x,y)*100)/100:null},
+  /* the arrow's ends on the screen of the active pane */
+  scr:(id,i)=>{const e=IDX.get(id);if(!e||!sarHas274(e))return null;return sarOf274(e).map(q=>window.PenumBIM.toScreen(i||0,q[0],q[1]))},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh()},mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh()},mv:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));refresh()},
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,key,raw)});refresh()},set:(id,A)=>{edit(()=>{const e=IDX.get(id);if(A==null)delete e.sar274;else e.sar274=A});refresh()},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r273={
   vol:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y);return i<0?null:Math.round(rmVol240(P,e,R[i])/1e3)/1e3},
   rec:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y),o=[];if(i<0)return null;rmVol240(P,e,R[i],o);return o.map(x=>Object.assign({},x))},
