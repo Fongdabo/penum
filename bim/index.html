@@ -1978,7 +1978,7 @@ function footprints(P){
 function regions(P,levelId,ph,ds){          /* ph: the walls that stand when that phase is finished (true: the last phase); left out: all of them */
   const LV=lvl(P,levelId),cut=(LV?LV.elev:0)+CUT,segs=[],PI=ph!=null&&typeof phIndex==='function'?phIndex(P):null,ip=PI?(ph===true?PI.size-1:phAt(PI,ph)):0,there=w=>(!PI||phThere(PI,w,ip))&&!(w.dop&&!DS.has(w.dop)),DS=ds||dsMain(P);   /* ds: the design options whose walls count (left out: the primary ones) */   // walls that the plan of this level cuts through bound its rooms
   for(const w of P.els)if(w.cat==='wall'){if(!there(w)||w.rbd239===0)continue;const z=zRange(P,w);          /* V1.239: a wall that is not room bounding does not count */
-    if(!(z[0]<cut&&z[1]>=cut))continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,h:P.rac==='center'?0:(typ(P,w)||{thickness:150}).thickness/2,xt:w.stk&&w.stk.x>0?+w.stk.x:0})}          /* Area and Volume Computations: the area of a room measured at the wall finish, or at the wall centre */
+    if(!(z[0]<cut&&z[1]>=cut))continue;const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,...(H=>({h:Math.max(H[0],H[1]),hl:H[0],hr:H[1]}))(racH243(P,w)),xt:w.stk&&w.stk.x>0?+w.stk.x:0})}          /* Area and Volume Computations: the area of a room measured at the wall finish, or at the wall centre */
     else if(w.cat==='rsep'&&w.level===levelId&&there(w)){const L=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(L>1)segs.push({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,L,h:0})}          // a room separation line bounds rooms as a wall with no thickness would
   const nodes=[],node=(x,y)=>{for(let i=0;i<nodes.length;i++)if(Math.abs(nodes[i][0]-x)<3&&Math.abs(nodes[i][1]-y)<3)return i;nodes.push([x,y]);return nodes.length-1};
   const pts=segs.map(w=>[[0,w.x1,w.y1],[1,w.x2,w.y2]]),cl=t=>Math.max(0,Math.min(1,t));
@@ -1990,8 +1990,9 @@ function regions(P,levelId,ph,ds){          /* ph: the walls that stand when tha
     }else{const qx=b.x1-a.x1,qy=b.y1-a.y1,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den,ea=(3+(b.xt||0))/a.L,eb=(3+(a.xt||0))/b.L;          /* xt: a row of a stacked wall (190) that is off the line of its wall: the walls that end on that line run on to it */
       if(t>=-ea&&t<=1+ea&&u>=-eb&&u<=1+eb){const far=a.xt||b.xt,tc=far?t:cl(t),x=a.x1+rx*tc,y=a.y1+ry*tc,put=(k,q)=>{if(far&&(q<0||q>1))pts[k][q<0?0:1]=[q,x,y];else pts[k].push([cl(q),x,y])};put(i,t);put(j,u)}}}
   const adj=new Map(),eh=new Map(),key=(u,v)=>u<v?u+','+v:v+','+u;
-  const link=(u,v,h)=>{if(u===v)return;(adj.get(u)||adj.set(u,new Set()).get(u)).add(v);(adj.get(v)||adj.set(v,new Set()).get(v)).add(u);eh.set(key(u,v),Math.max(eh.get(key(u,v))||0,h))};
-  pts.forEach((p,i)=>{p.sort((m,n)=>m[0]-n[0]);const ids=p.map(q=>node(q[1],q[2]));for(let k=1;k<ids.length;k++)link(ids[k-1],ids[k],segs[i].h)});
+  const link=(u,v,sg)=>{if(u===v)return;(adj.get(u)||adj.set(u,new Set()).get(u)).add(v);(adj.get(v)||adj.set(v,new Set()).get(v)).add(u);          /* V1.243: u to v runs along the wall: the room on its right is on the wall's interior side */
+    const put=(k,h)=>eh.set(k,eh.has(k)?Math.max(eh.get(k),h):h);put(u+'>'+v,sg.hr!=null?sg.hr:sg.h);put(v+'>'+u,sg.hl!=null?sg.hl:sg.h)};
+  pts.forEach((p,i)=>{p.sort((m,n)=>m[0]-n[0]);const ids=p.map(q=>node(q[1],q[2]));for(let k=1;k<ids.length;k++)link(ids[k-1],ids[k],segs[i])});
   for(let again=true;again;){again=false;for(const [u,s] of adj)if(s.size<2){for(const v of s)adj.get(v).delete(u);adj.delete(u);again=true}}
   const nb=new Map();for(const [u,s] of adj)nb.set(u,[...s].sort((p,q)=>Math.atan2(nodes[p][1]-nodes[u][1],nodes[p][0]-nodes[u][0])-Math.atan2(nodes[q][1]-nodes[u][1],nodes[q][0]-nodes[u][0])));
   const seen=new Set(),out=[];
@@ -2001,12 +2002,12 @@ function regions(P,levelId,ph,ds){          /* ph: the walls that stand when tha
     const poly=face.map(i=>nodes[i]),A=area2(poly);if(A>-200000)continue;       // interior faces come out negative; the outer face positive
     let cx=0,cy=0;for(let k=0;k<poly.length;k++){const p=poly[k],q=poly[(k+1)%poly.length],c=p[0]*q[1]-q[0]*p[1];cx+=(p[0]+q[0])*c;cy+=(p[1]+q[1])*c}
     // net polygon: every edge moved inward by half the thickness of its wall
-    const m=poly.length,E=poly.map((p,k)=>{const q=poly[(k+1)%m],L=Math.hypot(q[0]-p[0],q[1]-p[1])||1,dx=(q[0]-p[0])/L,dy=(q[1]-p[1])/L;return{dx,dy,nx:dy,ny:-dx,h:eh.get(key(face[k],face[(k+1)%m]))||0}});
+    const m=poly.length,E=poly.map((p,k)=>{const q=poly[(k+1)%m],L=Math.hypot(q[0]-p[0],q[1]-p[1])||1,dx=(q[0]-p[0])/L,dy=(q[1]-p[1])/L;return{dx,dy,nx:dy,ny:-dx,h:eh.get(face[k]+'>'+face[(k+1)%m])||0}});
     const net=poly.map((p,k)=>{const e0=E[(k+m-1)%m],e1=E[k],c=e0.dx*e1.dy-e0.dy*e1.dx;
       if(Math.abs(c)<1e-6){const h=Math.max(e0.h,e1.h);return[p[0]+e1.nx*h,p[1]+e1.ny*h]}
       const ax=p[0]+e0.nx*e0.h,ay=p[1]+e0.ny*e0.h,bx=p[0]+e1.nx*e1.h,by=p[1]+e1.ny*e1.h,s=((bx-ax)*e1.dy-(by-ay)*e1.dx)/c;return[ax+e0.dx*s,ay+e0.dy*s]});
     let area=Math.abs(area2(net)),perim=0;for(let k=0;k<m;k++){const p=net[k],q=net[(k+1)%m];perim+=Math.hypot(q[0]-p[0],q[1]-p[1])}
-    if(!(area>0)||area>-A){area=Math.max(0,-A-E.reduce((s,e,k)=>{const p=poly[k],q=poly[(k+1)%m];return s+Math.hypot(q[0]-p[0],q[1]-p[1])*e.h},0))}
+    if(!(area>0)||area>-A+racOver243(E,poly)){area=Math.max(0,-A-E.reduce((s,e,k)=>{const p=poly[k],q=poly[(k+1)%m];return s+Math.hypot(q[0]-p[0],q[1]-p[1])*e.h},0))}
     out.push({poly,net,area,gross:-A,perim,cx:cx/(6*A),cy:cy/(6*A)})}
   out.sort((p,q)=>(p.cy-q.cy)||(p.cx-q.cx));return out}
 const regionAt=(regs,x,y)=>regs.findIndex(r=>inPoly(x,y,r.poly));
@@ -4074,7 +4075,7 @@ function areaFill(P,scheme,key){if(!AREA_FILL.includes(key))return null;const M=
   return{key:'name',akey:key,items,of}}
 /* keep what belongs to area plans sound: the schemes of the project, the area plans and schedules of schemes that are gone, and the boundary lines and areas that no
    area plan shows any more (they go with the last plan of their scheme and level) */
-function areaClean(P){if(P.rac!=null&&P.rac!=='center')delete P.rac;if(P.aschemes!=null){const seen=new Set(),names=new Set(),out=[];for(const s of Array.isArray(P.aschemes)?P.aschemes:[]){if(!s||typeof s!=='object'||!(s.id>0)||seen.has(s.id))continue;seen.add(s.id);let nm=String(s.name==null?'':s.name).trim().slice(0,60)||'Scheme';while(names.has(nm))nm+=' 2';names.add(nm);out.push({id:s.id,name:nm})}
+function areaClean(P){if(P.rac!=null&&!RAC243.includes(P.rac))delete P.rac;if(P.aschemes!=null){const seen=new Set(),names=new Set(),out=[];for(const s of Array.isArray(P.aschemes)?P.aschemes:[]){if(!s||typeof s!=='object'||!(s.id>0)||seen.has(s.id))continue;seen.add(s.id);let nm=String(s.name==null?'':s.name).trim().slice(0,60)||'Scheme';while(names.has(nm))nm+=' 2';names.add(nm);out.push({id:s.id,name:nm})}
     if(out.length)P.aschemes=out;else delete P.aschemes}
   const dead=new Set();P.views=P.views.filter(v=>{const s=v.kind==='plan'?v.area:v.kind==='schedule'&&v.sched==='area'?v.ascheme:null;if(v.kind==='plan'&&v.area==null&&'area' in v)delete v.area;if(s==null)return true;if(aschemeOk(P,s)&&(v.kind!=='plan'||(!v.draft&&!v.rcp)))return true;dead.add(v.id);return false});
   if(dead.size)P.ann=P.ann.filter(a=>!dead.has(a.view));
@@ -9867,13 +9868,13 @@ function dlgAreaAuto(ids){const vs=ids.map(viewById).filter(Boolean);if(!vs.leng
 function areaSchemeUse(id){return{plans:P.views.filter(v=>v.kind==='plan'&&v.area===id).length,areas:P.els.filter(e=>e.cat==='area'&&e.scheme===id).length}}
 function areaSchemeDrop(id){edit(()=>{const dead=new Set(P.views.filter(v=>(v.kind==='plan'&&v.area===id)||(v.kind==='schedule'&&v.sched==='area'&&v.ascheme===id)).map(v=>v.id));P.views=P.views.filter(v=>!dead.has(v.id));P.ann=P.ann.filter(a=>!dead.has(a.view));
     P.els=P.els.filter(e=>!((e.cat==='area'||e.cat==='aline')&&e.scheme===id));P.aschemes=(P.aschemes||[]).filter(s=>s.id!==id);if(!P.aschemes.length)delete P.aschemes})}
-function dlgAreaSchemes(arm){const rac=P.rac==='center'?'center':'finish';
+function dlgAreaSchemes(arm){const rac=RAC243.includes(P.rac)?P.rac:'finish';
   const rows=aschemes(P).map(s=>{const u=areaSchemeUse(s.id),own=!s.stock;return`<tr><td>${own?`<input type="text" data-asn="${s.id}" value="${esc(s.name)}" maxlength="60" aria-label="${esc(t('p_name'))}">`:esc(asName(s.id))}</td><td class="w">${esc(own?t('as_own_d'):t('as_'+s.id+'_d'))}</td><td class="n">${u.plans}</td><td class="n">${u.areas}</td>
       <td><button class="btn" data-as="sched" data-id="${s.id}">${t('as_schedbtn')}</button>${own?(arm===s.id?`<button class="btn danger" data-as="del2" data-id="${s.id}">${t('as_delsure',u.plans,u.areas)}</button>`:`<button class="btn" data-as="del" data-id="${s.id}">${t('delete')}</button>`):''}</td></tr>`}).join('');
-  openDlg(t('a_areacomp'),`<div class="pg" style="margin:0 -16px 4px;padding-left:16px">${t('ac_comp')}</div>${acVolRow240()}<div class="fr"><label for="acRac">${t('ac_rac')}</label><select id="acRac"><option value="finish"${rac==='finish'?' selected':''}>${t('ac_finish')}</option><option value="center"${rac==='center'?' selected':''}>${t('ac_center')}</option></select></div><p class="note">${t('ac_rac_note')}</p>
+  openDlg(t('a_areacomp'),`<div class="pg" style="margin:0 -16px 4px;padding-left:16px">${t('ac_comp')}</div>${acVolRow240()}<div class="fr"><label for="acRac">${t('ac_rac')}</label><select id="acRac"><option value="finish"${rac==='finish'?' selected':''}>${t('ac_finish')}</option><option value="center"${rac==='center'?' selected':''}>${t('ac_center')}</option><option value="core"${rac==='core'?' selected':''}>${t('ac_core243')}</option><option value="corec"${rac==='corec'?' selected':''}>${t('ac_corec243')}</option></select></div><p class="note">${t('ac_rac_note')}</p>
     <div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t('ac_schemes')}</div><div class="clr"><table><thead><tr><th>${t('p_name')}</th><th>${t('ac_desc')}</th><th class="n">${t('ac_plans')}</th><th class="n">${t('ac_areas')}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${t('ac_asnote240')}</p>`,
     `<button class="btn" data-as="new">${t('ac_new')}</button><span style="flex:1"></span><button class="btn" data-as="plan">${t('a_aplan')}…</button><button class="btn primary" data-close="1">${t('close')}</button>`,
-    {change(e){const el=e.target;if(el.id==='acVol240'){edit(()=>{if(el.value==='av')P.vol240=1;else delete P.vol240});dlgAreaSchemes();return}if(el.id==='acRac'){edit(()=>{if(el.value==='center')P.rac='center';else delete P.rac});dlgAreaSchemes();return}
+    {change(e){const el=e.target;if(el.id==='acVol240'){edit(()=>{if(el.value==='av')P.vol240=1;else delete P.vol240});dlgAreaSchemes();return}if(el.id==='acRac'){edit(()=>{if(RAC243.includes(el.value))P.rac=el.value;else delete P.rac});dlgAreaSchemes();return}
        if(el.dataset.asn){const id=+el.dataset.asn,s=String(el.value).trim().slice(0,60);if(!s||aschemes(P).some(x=>x.id!==id&&asName(x.id)===s)){toast(t(s?'as_dup':'as_noname'));dlgAreaSchemes();return}edit(()=>{const o=(P.aschemes||[]).find(x=>x.id===id);if(o)o.name=s});dlgAreaSchemes()}},
      click(e){const a=e.target.dataset.as,id=aschemeId(e.target.dataset.id);if(!a)return;
        if(a==='new'){let n=(P.aschemes||[]).length+1,nm;do{nm=t('as_newname')+' '+n++}while(aschemes(P).some(x=>asName(x.id)===nm));edit(()=>{(P.aschemes||(P.aschemes=[])).push({id:P.seq++,name:nm})});dlgAreaSchemes();return}
@@ -14616,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=252,V1_NAME='V1.242';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=253,V1_NAME='V1.243';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -37375,6 +37376,25 @@ const rmVolC242=(e,r)=>{if(!RV242.has(r))RV242.set(r,rmVol240(P,e,r));return RV2
 {const f0=rtagLines;rtagLines=(d,e)=>{if(d.k!=='vol')return f0(d,e);const L=f0(Object.assign({},d,{k:'full'}),e);if(e.cat!=='room'||L[2])return L;const r=spaceReg(e);if(!r)return L;
   return[L[0],L[1]+'  ·  '+(P.vol240?fmtVol(rmVolC242(e,r))+' '+volUnit():t('rk_nc242')),L[2]]}}
 Object.assign(STR,{rk_vol242:['ชื่อ เลขห้อง พื้นที่ ปริมาตร','Name, number, area, volume'],rk_nc242:['ปริมาตรไม่ได้คำนวณ','volume not computed']});
+/* ===== 243 rooms measured at the wall core (V1.243; Revit: Area and Volume Computations > Room Area Computation: At wall core layer, At wall core center) =====
+   P.rac: left out, at the wall finish; 'center', at the wall centre; 'core', at the faces of the core (the layers of Edit Structure between the core boundaries,
+   l.c); 'corec', at the centre line of the core.  A wall with no layers, or none in its core, is all core.  The exterior of a wall is the left of its line (its
+   layers run from there), so the rooms on its two sides can be measured at different distances from that line: racH243 gives [hl, hr], how far the room on the
+   left (exterior) side and the room on the right (interior) side stay off the line (less than 0: the room reaches past the line), and regions() keeps them per
+   direction of each edge.  The area, the perimeter and the volume of rooms, their schedules, tags, colour fills, cooling loads and IFC spaces follow. */
+const RAC243=['center','core','corec'];
+/* the faces of the core of wall type T, as offsets from the wall's line (+ to the exterior): [top, bottom] */
+function racCore243(T){const W=+(T&&T.thickness)||150,L=wlOf(T);let ot=W/2,ob=-W/2;
+  if(L&&L.some(l=>l.c)){let o=W/2,f=true;for(const l of L){if(l.c){if(f){ot=o;f=false}ob=o-l.t}o-=l.t}}
+  return[ot,ob]}
+/* [hl, hr] of wall w under the project's Room Area Computation */
+function racH243(P0,w){const T=typ(P0,w)||{thickness:150},m=P0.rac;
+  if(m!=='core'&&m!=='corec'){const h=m==='center'?0:T.thickness/2;return[h,h]}
+  const [ot,ob]=racCore243(T);if(m==='core')return[ot,-ob];const c=(ot+ob)/2;return[c,-c]}
+/* how much a room may grow past the centre lines of its walls (sides that reach past the line, h < 0), for the check in regions() that the net outline came out
+   right: 0 when no side does */
+function racOver243(E,poly){let s=0;const m=poly.length;for(let k=0;k<m;k++){const h=E[k].h;if(h<0){const p=poly[k],q=poly[(k+1)%m];s+=-h*Math.hypot(q[0]-p[0],q[1]-p[1])+4*h*h}}return s}
+Object.assign(STR,{ac_core243:['ผิวชั้นแกนผนัง (At wall core layer)','At wall core layer'],ac_corec243:['กึ่งกลางชั้นแกนผนัง (At wall core center)','At wall core center']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -38572,7 +38592,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_aline]]: คลิกผนังเพื่อวางเส้นตามแนวผนัง ([[o_arearules]]: ผนังรอบนอกวัดที่ผิวตามรูปแบบ ผนังภายในวัดที่กึ่งกลาง) หรือเลือก [[a_line]] / [[a_rect]] เพื่อวาดเอง เส้นต้องปิดล้อมครบรอบ — ปลายเส้นที่ขาดไม่เกิน 30 ซม. โปรแกรมถือว่าต่อถึงเส้นที่ชี้ไปหา ขอบเขตที่อยู่ข้างในอีกขอบเขตหนึ่งจะถูกหักออกจากพื้นที่รอบนอก
 - [[t_area]]: คลิกในบริเวณที่ปิดล้อม ตั้งชื่อและ [[p_atype]] ในแผงคุณสมบัติ · [[a_atag]] ติดป้ายชื่อและขนาดพื้นที่
 - [[p_acs]] ในคุณสมบัติของแปลน: ระบายสีตามประเภทพื้นที่หรือตามชื่อ และวาง [[t_cfleg]] ได้ · ตารางพื้นที่ของแต่ละรูปแบบอยู่ใน [[browser]]
-- [[a_areacomp]]: เลือกว่าพื้นที่ห้องวัดที่ผิวผนังหรือกึ่งกลางผนัง และสร้าง เปลี่ยนชื่อ หรือลบรูปแบบพื้นที่ของโครงการ
+- [[a_areacomp]]: เลือกว่าพื้นที่ห้องวัดที่ผิวผนัง กึ่งกลางผนัง ผิวชั้นแกน หรือกึ่งกลางชั้นแกน และสร้าง เปลี่ยนชื่อ หรือลบรูปแบบพื้นที่ของโครงการ
+- [[ac_rac]] ใน [[a_areacomp]] มีสี่แบบ: [[ac_finish]] [[ac_center]] [[ac_core243]] (ผิวของชั้นที่อยู่ในแกนตามแก้โครงสร้างผนัง) และ [[ac_corec243]] (กึ่งกลางของชั้นแกน) ผนังที่ไม่มีชั้นวัสดุนับทั้งผนังเป็นแกน ผนังที่ชั้นแกนไม่อยู่กลางผนังทำให้ห้องสองข้างวัดห่างจากแนวผนังไม่เท่ากัน
 - ลบแปลนพื้นที่แผ่นสุดท้ายของรูปแบบและชั้นใด เส้นขอบเขตและพื้นที่ของชั้นนั้นจะถูกลบไปด้วย (กด ((Ctrl+Z)) ย้อนได้)
 
 # เฟอร์นิเจอร์และของประกอบ ((CM))
@@ -38780,7 +38801,8 @@ An area plan divides the building into areas by a scheme, such as gross building
 - [[t_aline]]: click a wall to put a line along it ([[o_arearules]]: an outside wall at the face the scheme measures to, an inside wall at its centre), or choose [[a_line]] / [[a_rect]] and draw. The lines must close a loop — an end that stops up to 30 cm short is taken to reach the line it points at. A loop inside another one is an island and is left out of the area round it
 - [[t_area]]: click inside a closed loop; name and [[p_atype]] are in Properties · [[a_atag]] writes the name and the area
 - [[p_acs]] in the Properties of the plan fills the areas by area type or by name, and a [[t_cfleg]] can be placed · the [[browser]] has an area schedule for every scheme
-- [[a_areacomp]]: whether rooms are measured at the wall finish or at the wall centre, and the area schemes of the project: new, rename, delete
+- [[a_areacomp]]: whether rooms are measured at the wall finish, the wall centre, the wall core layer or the wall core center, and the area schemes of the project: new, rename, delete
+- [[ac_rac]] in [[a_areacomp]] has four choices: [[ac_finish]], [[ac_center]], [[ac_core243]] (the faces of the layers inside the core in Edit Structure of the wall) and [[ac_corec243]] (the centre of the core); a wall with no layers is all core, and a wall whose core is off its centre measures the rooms on its two sides at different distances from its line
 - Deleting the last area plan of a scheme and level deletes the boundary lines and the areas of that level with it (((Ctrl+Z)) brings them back)
 
 # Components ((CM))
@@ -39371,6 +39393,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.240 · ห้องมี ระดับบน ระยะเลื่อนระดับบน และระยะยกฐาน (Revit: Upper Limit, Limit Offset, Base Offset) แสดงความสูงห้อง และปริมาตรที่หักฝ้าและพื้นชั้นบน เมื่อตั้ง พื้นที่และปริมาตร ใน การคำนวณพื้นที่และปริมาตร
 - V1.241 · ชนิดพื้นมีชั้น แผ่นพื้นเหล็ก (Revit: Structural Deck) แบบเมทัลชีทมีลอน ใน แก้โครงสร้าง เลือกรูปลอนและการใช้ (ผูกกับชั้นบน / แผ่นเดี่ยว) ได้ ลอนวิ่งตามทิศทางแผ่นพื้น 3 มิติและรูปตัดเห็นลอน ปริมาตรพื้นนับคอนกรีตในร่องลอน และตารางถอดปริมาณวัสดุนับพื้นที่แผ่นคลี่และเหล็ก
 - V1.242 · ปริมาตรห้องหักส่วนเหนือท้องหลังคาด้วย (หลังคาจั่ว หลังคาปั้นหยา หลังคาเพิง ทีละผืน ร่วมกับฝ้าและพื้นชั้นบน) และป้ายห้องมีแบบ ชื่อ เลขห้อง พื้นที่ ปริมาตร (Revit: Room Tag With Volume)
+- V1.243 · การคำนวณพื้นที่และปริมาตร: วัดพื้นที่ห้องที่ผิวของชั้นแกนผนัง หรือที่กึ่งกลางชั้นแกน ได้ด้วย (Revit: At wall core layer, At wall core center)
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -39752,6 +39775,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.240 · Rooms take Upper Limit, Limit Offset and Base Offset (Revit), show their Unbounded Height, and their Volume less ceilings and the floor above once Areas and Volumes is set in Area and Volume Computations
 - V1.241 · Floor types take a Structural Deck layer in Edit Structure (Revit), with its Deck Profile and Deck Usage (Bound Layer Above / Standalone Deck); the ribs run along the Span Direction, show in 3D and sections, the floor's volume counts the concrete in the troughs and the Material Takeoff the sheet folded out and its steel
 - V1.242 · The volume of a room leaves out what lies above the underside of roofs too (gable, hip, shed, face by face, with ceilings and floors above), and room tags take the kind Name, number, area, volume (Revit: Room Tag With Volume)
+- V1.243 · Area and Volume Computations: rooms can be measured at the wall core layer or at the wall core center too (as in Revit)
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -41945,6 +41969,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r243={
+  rac:()=>P.rac,set:m=>{edit(()=>{if(RAC243.includes(m))P.rac=m;else delete P.rac})},
+  h:id=>{const w=P.els.find(e=>e.id===id);return w?racH243(P,w):null},core:tid=>racCore243((P.types.wall||[]).find(T=>T.id===tid)||null),
+  regs:lv=>regions(P,lv).map(r=>({area:r.area,gross:r.gross,perim:r.perim,net:r.net.map(p=>[Math.round(p[0]*1000)/1000,Math.round(p[1]*1000)/1000])})),
+  room:id=>{const e=P.els.find(x=>x.id===id),r=e&&spaceReg(e);return r?{area:r.area,perim:r.perim,net:r.net}:null},
+  opts:()=>{const s=document.querySelector('#acRac');return s?[...s.options].map(o=>o.value):null}};
 window.PenumBIM.r242={rec:id=>{const e=IDX.get(id);if(!e)return null;const R=REG(e.level,e.ph||'new',dsE(P,e)),i=regionAt(R,e.x,e.y),o=[];if(i>=0)rmVol240(P,e,R[i],o);return o},
   zu:(rid,x,y)=>{const s=IDX.get(rid),G=s&&roofGeo(P,s);if(!G)return null;for(const f of G.faces){const F2=f.loop.map(q=>[q[0],q[1]]);if(inPoly(x,y,F2)){const pl=planeOf(f.loop);return pl[0]*x+pl[1]*y+pl[2]-G.th}}return null},
   lines:aid=>{const d=P.ann.find(a=>a.id===aid),e=d&&IDX.get(d.el);return e?rtagLines(d,e):null},tags:(vid,rid)=>P.ann.filter(a=>a.cat==='rtag'&&(vid==null||a.view===vid)&&(rid==null||a.el===rid)).map(a=>({id:a.id,view:a.view,el:a.el,k:a.k||null})),
