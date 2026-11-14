@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=267,V1_NAME='V1.257';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=268,V1_NAME='V1.258';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38135,6 +38135,60 @@ Object.assign(STR,{
   scf_fb257:['ปีกล่าง {0} ที่{1}','bottom flange {0} on {1}'],scf_w257:['เอว {0} ที่{1}','web {0} on {1}'],scf_h257:['คานท่อนนี้','this beam'],scf_o257:['คานที่ต่อ','the beam it joins'],
   scf_noinn257:['ไม่มีแผ่นต่อปีกด้านในเมื่อคานสองท่อนหน้าตัดต่างกัน','no inner flange plates when the two beams differ'],
   spl_sec253:['คานสองท่อนต่างกันเกินกว่าที่แผ่นรองหนาจะชดเชยได้ (ต้องเป็น H หรือ I ลึกต่างกันได้ไม่เกิน 50 มม. เอวหนาต่างกันได้ไม่เกิน 40 มม.)','The two beams differ too much for fillers (both H or I, depths at most 50 mm apart, webs at most 40 mm)']});
+/* ===== 258 walls split horizontally (V1.258; Revit: Modify › Split Element in an elevation, a section or a 3D view — near a vertical edge of a wall the split line
+   turns horizontal, snaps to levels, and the wall becomes two, one above the other) =====
+   With Split in an elevation, a section or a 3D view, a wall pointed at within 14 px of either of its ends splits at the height zs (snapped as columns are in 255),
+   elsewhere along it upright as before.  The wall itself is the part below and a copy the part above.  At a level both join on it (the lower one's Top Constraint
+   that level, the upper one's Base Constraint, offsets 0); elsewhere, as in Revit, the lower one is left with an Unconnected Height up to zs and the upper one keeps
+   the Base Constraint with zs − its elevation as Base Offset, and the top as the wall had it.  An attached top goes with the upper part, an attached base stays below.
+   Doors, windows and openings go with the part they are in (a split through one is refused); a horizontal sweep or reveal goes with the part its bottom is in (one
+   measured from the top goes up), a vertical one is copied to both.  Not split horizontally: stacked walls (as in Revit), curtain walls, walls whose profile is
+   edited, and parts under 100 mm. */
+const WSH_PX258=14;
+function wshNear258(pn,v,p,e,z){const nav=navOf(v);if(ev3EV(v)){const B=ev3Box(v,e);if(!B)return false;const h=(p.x-nav.ox)/nav.s;return Math.min(Math.abs(h-B[0]),Math.abs(B[1]-h))*nav.s<=WSH_PX258}
+  if(v.kind!=='3d')return false;const pj=ev3Proj(pn,v);for(const q of [[e.x1,e.y1],[e.x2,e.y2]]){const s=pj([q[0],q[1],z]);if(s&&Math.hypot(s[0]-p.x,s[1]-p.y)<=WSH_PX258)return true}return false}
+/* the height a split at the pointer takes, as for a column (255) */
+function wshZ258(pn,v,p,z){const nav=navOf(v),is3=v.kind==='3d',inc=is3?(nav.hh<4000?10:50):(snapInc(nav)>=100?50:10),tz=is3?150:8/nav.s;let zs=Math.round(z/inc)*inc,bd=tz;
+  for(const l of P.levels){const d=Math.abs(elev(P,l.id)-z);if(d<bd){bd=d;zs=elev(P,l.id)}}return zs}
+/* what is hosted on wall e, sorted by the part it goes to: {up: [], both: [], why} */
+function wshHosted258(e,zs){const z=zRange(P,e),base=elev(P,e.level),up=[],both=[];let why=null;
+  for(const o of P.els){if(o.host!==e.id||GEOM[o.cat]!=='host')continue;
+    if(swpIs(o)){if(o.dir==='v'){both.push(o);continue}const w=+(typ(P,o)||{}).width||0,b=o.ft?z[1]-(+o.sill||0)-w:z[0]+(+o.sill||0);if(o.ft||b>=zs-0.5)up.push(o);continue}
+    const T=typ(P,o);if(!T)continue;const b=base+(+o.sill||0),tp=b+(+T.height||0);if(b>=zs-0.5)up.push(o);else if(tp>zs+0.5&&!why)why=o}
+  return{up,both,why}}
+/* the reason a wall is not split horizontally at zs, or null */
+function wshWhy258(e,zs){const T=typ(P,e)||{};if(e.stk||T.kind==='stack')return['wsh_stack258'];if(T.kind==='curtain')return['wsh_cw258'];if(e.prof)return['wsh_prof258'];
+  const z=zRange(P,e);if(zs-z[0]<100-1e-6||z[1]-zs<100-1e-6)return['wsh_short258'];const H=wshHosted258(e,zs);if(H.why)return['wsh_ins258',t(STR['wshk_'+H.why.cat+'258']?'wshk_'+H.why.cat+'258':'cat_'+H.why.cat)];return null}
+/* doing it: the copy above */
+function wshDo258(e,zs){const z=zRange(P,e),R=q=>Math.round(q*10)/10,H=wshHosted258(e,zs),hasTop=!!(e.top&&lvl(P,e.top)),c=JSON.parse(JSON.stringify(e)),L=P.levels.find(l=>Math.abs(elev(P,l.id)-zs)<0.5);
+  c.id=P.seq++;for(const k of ['ifg','ifl','ifs','guid','attB'])delete c[k];delete e.attT;
+  if(L){e.top=L.id;e.topOff=0;c.level=L.id;c.baseOff=0}else{delete e.top;delete e.topOff;e.height=R(zs-z[0]);c.baseOff=R(zs-elev(P,e.level))}
+  if(!hasTop)c.height=R(z[1]-zs);P.els.push(c);const nb=elev(P,c.level)+(c.baseOff||0);
+  for(const o of H.up){o.host=c.id;if(swpIs(o)&&!o.ft)o.sill=R((+o.sill||0)-(nb-z[0]));else if(!swpIs(o))o.sill=R((+o.sill||0)+elev(P,e.level)-elev(P,c.level))}
+  for(const o of H.both){const d=JSON.parse(JSON.stringify(o));d.id=P.seq++;d.host=c.id;P.els.push(d)}return c}
+/* the pick: near an end of a wall the split is horizontal */
+{const f0=spl255At;spl255At=(pn,v,p)=>{const r=f0(pn,v,p);if(!r||r.k!=='line'||!r.e||r.e.cat!=='wall'||!wshNear258(pn,v,p,r.e,r.z))return r;const zs=wshZ258(pn,v,p,r.z),w=wshWhy258(r.e,zs);
+  return w?{why:w[0],a:w.slice(1),e:r.e,zs,wh:1}:{k:'wh',e:r.e,zs}}}
+function wsh258Click(pn,v,p){const r=spl255At(pn,v,p);if(!r||!(r.k==='wh'||r.wh))return wsh258Click.f0(pn,v,p);if(r.why){toast(t(r.why,...(r.a||[])));return}
+  if(isPinned(r.e.id)){toast(t('pin_block',1));return}edit(()=>{wshDo258(r.e,r.zs)});ui.spl3=null;toast(t('wsh_done258',spcLbl255(r.zs)));refresh()}
+wsh258Click.f0=XT3.split.click;XT3.split.click=wsh258Click;
+/* the preview: a line across the wall at the height, with the level and offset */
+function wsh258Draw(pn,ctx,v,nav){const H=ui.spl3;if(!H||H.v!==v.id||!H.r||H.r.k!=='wh')return wsh258Draw.f0(pn,ctx,v,nav);const r=H.r,e=r.e;ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=2.4;ctx.setLineDash([]);
+  if(v.kind==='3d'){const pj=ev3Proj(pn,v),T=typ(P,e)||{},L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,nx=-(e.y2-e.y1)/L,ny=(e.x2-e.x1)/L,h=(+T.thickness||200)/2+20;let lab=null;
+    for(const sd of [-1,1]){const a=pj([e.x1+nx*h*sd,e.y1+ny*h*sd,r.zs]),b=pj([e.x2+nx*h*sd,e.y2+ny*h*sd,r.zs]);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();if(!lab||b[1]>lab[1])lab=b}
+    if(lab)ev3Lbl(ctx,lab[0],lab[1],spcLbl255(r.zs));return}
+  const B=ev3Box(v,e);if(!B)return;const y=-r.zs*nav.s+nav.oy,x0=B[0]*nav.s+nav.ox-14,x1=B[1]*nav.s+nav.ox+14;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();ev3Lbl(ctx,x1,y,spcLbl255(r.zs))}
+wsh258Draw.f0=XT3.split.draw;XT3.split.draw=wsh258Draw;
+Object.assign(STR,{
+  wsh_done258:['แบ่งผนังตามแนวนอนแล้วที่ {0}','Wall split horizontally at {0}'],
+  wsh_short258:['จุดแบ่งต้องห่างจากโคนและหลังผนังอย่างน้อย 100 มม.','The split must be at least 100 mm from the base and the top of the wall'],
+  wsh_stack258:['ผนังซ้อน (Stacked Wall) แบ่งได้เฉพาะตามแนวตั้ง','A stacked wall can only be split vertically'],
+  wsh_cw258:['ผนังกระจก (Curtain Wall) แบ่งตามแนวนอนไม่ได้','A curtain wall cannot be split horizontally'],
+  wsh_prof258:['ผนังที่แก้รูปร่าง (Edit Profile) แบ่งตามแนวนอนไม่ได้ ให้คืนรูปร่างเดิมก่อน','A wall whose profile is edited cannot be split horizontally: reset its profile first'],
+  wshk_door258:['ประตู','door'],wshk_window258:['หน้าต่าง','window'],wshk_opening258:['ช่องเปิดผนัง','wall opening'],
+  wsh_ins258:['เส้นแบ่งผ่าน{0} เลื่อนจุดแบ่งให้พ้นก่อน','The split line runs through a {0}: move it clear first']});
+STR.h_spl3e255=[STR.h_spl3e255[0]+' · ชี้ใกล้ขอบปลายผนังเพื่อแบ่งผนังตามแนวนอน',STR.h_spl3e255[1]+' · near the end of a wall the split runs across it, to split it horizontally'];
+STR.h_spl3d255=[STR.h_spl3d255[0]+' · ชี้ใกล้ขอบปลายผนังเพื่อแบ่งผนังตามแนวนอน',STR.h_spl3d255[1]+' · near the end of a wall the split runs across it, to split it horizontally'];
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40166,6 +40220,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.255 · [[t_split]] ใช้ได้ในรูปด้าน รูปตัด และ 3 มิติเหมือน Revit: คลิกเสาตรงความสูงที่จะแบ่ง เสาจะเป็นสองต้น ต้นล่างยึดปลายที่ชั้นใต้จุดแบ่งพร้อมระยะเยื้อง ต้นบนตั้งจากจุดนั้นถึงปลายเดิม (จุดแบ่งเกาะระดับชั้นเมื่ออยู่ใกล้) แผ่นฐานเสา เหล็กเสริม และป้ายอยู่กับต้นล่าง ต้นบนตั้งบนต้นล่างจึงใส่ [[stck_splice]] ต่อได้ทันที ผนัง คาน ท่อ ราง และเส้นรายละเอียดในรูปด้านก็แบ่งตรงจุดที่คลิกได้เหมือนในแปลน
 - V1.256 · [[stck_splice]] ต่อเสาต่างขนาดได้เหมือน Revit: เสาสองต้นที่ลึกไม่เท่ากัน แผ่นต่อปีกวางบนผิวปีกของเสาต้นที่ลึกกว่า และเสาต้นที่ตื้นกว่าได้แผ่นรองหนา (Filler) ใต้แผ่นต่อทั้งสองปีก หนาเท่าครึ่งหนึ่งของความลึกที่ต่างกัน เอวที่บางกว่าก็ได้แผ่นรองหนาแบบเดียวกัน (ลึกต่างกันได้ไม่เกิน 100 มม. เอวต่างกันไม่เกิน 40 มม.) คุณสมบัติบอกแผ่นรองหนาและอยู่ที่เสาต้นไหน น้ำหนัก BOQ IFC และ 3 มิติรวมแผ่นรองหนา เสาหน้าตัดเดียวกันได้แผ่นต่อเหมือนเดิม
 - V1.257 · [[stck_splice]] ต่อคานต่างขนาดได้เหมือน Revit: คานสองท่อนที่หลังคานเสมอกันแต่ลึกไม่เท่ากัน แผ่นต่อปีกบนวางบนทั้งสองท่อน แผ่นต่อปีกล่างวางใต้คานที่ลึกกว่า และคานที่ตื้นกว่าได้แผ่นรองหนา (Filler) ใต้ปีกล่างหนาเท่าความลึกที่ต่างกัน เอวที่บางกว่าก็ได้แผ่นรองหนา (ทั้งสองท่อนเป็น H หรือ I ลึกต่างกันได้ไม่เกิน 50 มม. เอวต่างกันไม่เกิน 40 มม.) คุณสมบัติบอกแผ่นรองหนาและอยู่ที่คานท่อนไหน น้ำหนัก BOQ IFC และ 3 มิติรวมแผ่นรองหนา คานหน้าตัดเดียวกันได้แผ่นต่อเหมือนเดิม
+- V1.258 · [[t_split]] แบ่งผนังตามแนวนอนได้ในรูปด้าน รูปตัด และ 3 มิติเหมือน Revit: ชี้ใกล้ขอบปลายผนังจะเห็นเส้นแบ่งพาดขวางผนังพร้อมระดับ (เกาะระดับชั้นเมื่อใกล้) คลิกแล้วได้ผนังสองชิ้นซ้อนกัน ชิ้นล่างสูงถึงจุดแบ่ง ชิ้นบนยกฐานจากจุดนั้นถึงหลังผนังเดิม แบ่งที่ระดับชั้นพอดีทั้งคู่ยึดชั้นนั้น ประตู หน้าต่าง และบัวผนังไปกับชิ้นที่มันอยู่ ไม่แบ่งและบอกเหตุผลเมื่อเส้นแบ่งผ่านประตูหรือหน้าต่าง ผนังซ้อน ผนังกระจก หรือผนังที่แก้รูปร่าง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -40562,6 +40617,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.255 · [[t_split]] works in elevations, sections and 3D views, as in Revit: click a column at the height to split it in two, the lower one ending on the level under the split with an offset and the upper one standing from there to the old top (the split snaps to a level when near one). Its base plate, rebar and tags stay with the lower one, and the upper one stands on it, so a [[stck_splice]] joins them at once. Walls, beams, ducts, pipes, trays and the detail lines of an elevation split where they are clicked, as in a plan.
 - V1.256 · a [[stck_splice]] joins columns of different sizes, as in Revit: with two columns of different depths the flange plates lie on the deeper one's flanges and the shallower one gets a filler plate under each, half the difference thick; a thinner web gets fillers the same way (depths at most 100 mm apart, webs at most 40 mm). Properties name the fillers and the column they are on; weight, BOQ, IFC and 3D include them. Columns of the same section get the splice as before.
 - V1.257 · a [[stck_splice]] joins beams of different sizes, as in Revit: with two beams whose tops are in line but whose depths differ, the top flange plate lies on both, the bottom one under the deeper beam, and the shallower beam gets a filler plate under its bottom flange, the difference thick; a thinner web gets fillers too (both H or I, depths at most 50 mm apart, webs at most 40 mm). Properties name the fillers and the beam they are on; weight, BOQ, IFC and 3D include them. Beams of the same section get the splice as before.
+- V1.258 · [[t_split]] splits walls horizontally in elevations, sections and 3D views, as in Revit: near the end of a wall the split line runs across it with its level (snapping to levels); a click makes two walls one above the other, the lower one up to the split, the upper one from there to the old top; at a level both are bound to it. Doors, windows and sweeps go with the part they are in; a split through a door or window, stacked walls, curtain walls and walls with an edited profile are refused with the reason.
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -42755,6 +42811,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r258={
+  why:(id,zs)=>{const w=wshWhy258(IDX.get(id),zs);return w?t(w[0],...w.slice(1)):null},
+  split:(id,zs)=>{const e=IDX.get(id),w=wshWhy258(e,zs);if(w)return{why:t(w[0],...w.slice(1))};let c=null;edit(()=>{c=wshDo258(e,zs)});return{id:c.id}},
+  zr:id=>zRange(P,IDX.get(id)),hov:()=>{const H=ui.spl3;return H&&H.r?{k:H.r.k||null,e:H.r.e?H.r.e.id:null,zs:H.r.zs==null?null:H.r.zs,why:H.r.why||null}:null},
+  scr3:(x,y,z)=>{const pn=PANES[0],v=paneView(0),s=ev3Proj(pn,v)([x,y,z]),r=pn.cv.getBoundingClientRect();return s?{x:r.left+s[0],y:r.top+s[1]}:null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r257={
   dims:(id,k)=>{const h=IDX.get(id),m=h&&spMate253(P,h,k),X=h&&spDims257(P,h,m);return X?{D:X.D,TW:X.TW,b:X.b,fF:X.fF.slice(),fW:X.fW.slice(),fits:spFits257(X)}:null},
   geo:id=>{const e=IDX.get(id),G=e&&stcGeo(e);if(!G)return null;const o=window.PenumBIM.r253.geo(id);o.fill=(G.fill||[]).map(f=>({sd:f.sd,w:f.w,k:f.k,t:f.t,txt:f.txt}));o.noInn=!!G.noInn;o.fillTxt=scFillTxt256(G);return o},
