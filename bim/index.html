@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=280,V1_NAME='V1.270';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=281,V1_NAME='V1.271';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38836,6 +38836,68 @@ const hgHit270=e=>{if(!HGC270.length)return null;for(let i=0;i<PANES.length;i++)
 document.addEventListener('pointerdown',e=>{if(e.button!==0||ui.tool!=='modify')return;const c=hgHit270(e);if(!c)return;e.stopPropagation();e.preventDefault();hgUnlock270(c.A)},true);
 document.addEventListener('pointermove',e=>{const c=hgHit270(e);if(!c)return;const cv=e.target;setTimeout(()=>{cv.style.cursor='pointer';hint(t('hg_tip270'))},0)},true);
 Object.assign(STR,{hg_tip270:['ช่องรอยต่อล็อกอยู่ คลิกเพื่อปลดล็อก','The joint gap is locked: click to unlock']});
+/* ===== 271 Slope Arrow of a floor (V1.271; Revit: a floor's boundary sketch takes a Slope Arrow — the floor becomes one tilted plane, given by Height Offset
+   at Tail and at Head, or by Height Offset at Tail and the Slope) =====
+   A floor has e.sla271 = {ang: the direction it rises, in plan (degrees from +x), m: 'h' (Height at Tail) or 's' (Slope), ht: offset at the tail, hh: offset at the
+   head, s: slope in degrees}.  The arrow runs across the whole floor along ang: its tail at the floor's lowest-lying edge on that line, its head at the far
+   side.  Every corner of the floor gets the plane's offset (e.zv, so the whole slab tilts as Shape Editing tilts it, its thickness kept, in 3D, sections,
+   elevations, IFC and whatever reads the shape); a changed outline follows.  Properties of a floor set it (Slope Arrow on, Specify, the offsets or the Slope,
+   the direction), the contextual panel turns it on along the floor's longer side, plans draw the arrow and its slope while the floor is selected.  Shape
+   Editing waits until the arrow is taken off. */
+const SLA_DEF271={m:'s',ht:0,hh:0,s:1};
+const slaOn271=e=>!!e&&e.cat==='floor'&&!!e.sla271&&Array.isArray(e.pts)&&e.pts.length>=3;
+/* the arrow of a floor: {u (unit, rising), a, b (tail and head points), L (run), rise, ht, hh, r (rise / run)} */
+function slaGeo271(e){if(!slaOn271(e))return null;const o=e.sla271,an=(+o.ang||0)*Math.PI/180,u=[Math.cos(an),Math.sin(an)];let d0=Infinity,d1=-Infinity,cx=0,cy=0;
+  for(const p of e.pts){const d=p[0]*u[0]+p[1]*u[1];d0=Math.min(d0,d);d1=Math.max(d1,d);cx+=p[0];cy+=p[1]}cx/=e.pts.length;cy/=e.pts.length;const dc=cx*u[0]+cy*u[1],L=d1-d0;if(!(L>1))return null;
+  const ht=+o.ht||0,hh=o.m==='h'?(+o.hh||0):ht+L*Math.tan(clamp(+o.s||0,-60,60)*Math.PI/180);
+  return{u,d0,L,ht,hh,rise:hh-ht,r:(hh-ht)/L,a:[cx+u[0]*(d0-dc),cy+u[1]*(d0-dc)],b:[cx+u[0]*(d1-dc),cy+u[1]*(d1-dc)]}}
+/* sanitize: the arrow's values, then the corners' offsets from it (after 76 has dropped stale ones) */
+XC.push(()=>{for(const e of P.els){if(e.sla271===undefined)continue;if(e.cat!=='floor'||!e.sla271||typeof e.sla271!=='object'){if(e.cat==='floor')delete e.zv;delete e.sla271;continue}
+  const o=e.sla271,n={ang:((+o.ang||0)%360+360)%360,m:o.m==='h'?'h':'s',ht:clamp(Math.round(+o.ht||0),-1e5,1e5)};if(n.m==='h')n.hh=clamp(Math.round(+o.hh||0),-1e5,1e5);else n.s=clamp(Math.round((+o.s||0)*1000)/1000,-60,60);
+  e.sla271=n;const G=slaGeo271(e);if(!G){delete e.zv;continue}const zv=e.pts.map(p=>Math.round((G.ht+((p[0]*G.u[0]+p[1]*G.u[1])-G.d0)*G.r)*10)/10);if(zv.some(z=>z))e.zv=zv;else delete e.zv}});
+/* the longer side of a floor's outline box: the default direction */
+const slaAng271=e=>{let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of e.pts){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}return x1-x0>=y1-y0?0:90};
+/* ---- Properties of floors ---- */
+XP.push((c,els)=>{if(c!=='floor'||!els.length||!els.every(e=>Array.isArray(e.pts)&&e.pts.length>=3))return'';const on=els.filter(slaOn271),U=t('u_mm');
+  let h=PR.grp('g_sla271')+PR.chk('sla271_on','p_sla271',on.length===els.length&&on.length>0);if(!on.length||on.length!==els.length)return h;
+  const V=f=>{const a=f(on[0]);return on.every(x=>f(x)===a)?a:''},m=V(e=>e.sla271.m);
+  h+=PR.sel('sla271_m','p_slam271',m,[['h',t('slam_h271')],['s',t('slam_s271')]])+PR.num('sla271_ht','p_slaht271',V(e=>e.sla271.ht),U,'step="10"');
+  if(m==='h')h+=PR.num('sla271_hh','p_slahh271',V(e=>e.sla271.hh),U,'step="10"');
+  if(m==='s'){const s=V(e=>e.sla271.s);h+=PR.num('sla271_s','p_slas271',s===''?'':roofSlopeIn(s),slopeSym('su'),'step="0.1"')}
+  h+=PR.num('sla271_ang','p_slaang271',V(e=>e.sla271.ang),'°','step="1"');
+  if(on.length===1){const G=slaGeo271(on[0]);if(G)h+=PR.ro('p_slarise271',(Math.round(G.rise*10)/10)+' '+U+' · '+fmtSlope(Math.abs(G.r),'su'))}
+  return h+`<div class="pnote">${esc(t('sla_note271'))}</div>`});
+XF.push((cat,o,key,raw)=>{if(!String(key).startsWith('sla271_'))return false;if(cat!=='floor')return true;const k=key.slice(7);
+  if(k==='on'){if(raw===true||raw==='true'||raw===1||raw==='1'){if(!o.sla271)o.sla271=Object.assign({ang:slaAng271(o)},SLA_DEF271);delete o.zv}else{delete o.sla271;delete o.zv}return true}
+  if(!o.sla271||raw===''||raw==null)return true;
+  if(k==='m'){const m=raw==='h'?'h':'s',G=slaGeo271(o);if(m===o.sla271.m)return true;o.sla271.m=m;if(G){if(m==='h')o.sla271.hh=Math.round(G.hh);else o.sla271.s=Math.round(Math.atan(G.r)*180/Math.PI*1000)/1000}return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;
+  if(k==='ht')o.sla271.ht=Math.round(v);if(k==='hh')o.sla271.hh=Math.round(v);if(k==='s')o.sla271.s=clamp(roofSlopeOut(v),-60,60);if(k==='ang')o.sla271.ang=v;return true});
+/* ---- the button: on along the longer side ---- */
+XA.sla271=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='floor'&&Array.isArray(e.pts)&&e.pts.length>=3);if(!S.length){toast(t('sla_sel0_271'));return}
+  const L=S.filter(e=>!e.sla271);if(!L.length){toast(t('sla_has271'));return}edit(()=>{for(const e of L){e.sla271=Object.assign({ang:slaAng271(e)},SLA_DEF271);delete e.zv}});toast(t('sla_done271',L.length));refresh()};
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-sla271" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+   +`<path class="i-Sa" fill="#e9edf4" ${E} d="M2 17L22 11v3L2 20z"/><path class="i-Pb" fill="#7184a2" ${E} d="M4 13.2L16 9.6l-.5-1.6L20 8.6l-3.2 3.3-.5-1.6L4.4 14.6z"/></symbol>`)})();
+Object.assign(BTN,{'@sla271':['sla271','']});
+XR.push(tl=>{if(tl!=='modify'||!ui.sel.size)return[];const e=IDX.get([...ui.sel][0]);return e&&e.cat==='floor'?[{t:'g_sla271',b:['@sla271']}]:[]});
+/* ---- Shape Editing waits for the arrow to go ---- */
+{const f0=XA.subel;XA.subel=()=>{const e=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&x.cat==='floor');if(e&&e.sla271){toast(t('sla_subel271'),6000);return}return f0()}}
+/* ---- plans: the arrow of a selected floor, with its slope ---- */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||v.kind!=='plan'||!ui.sel.size)return;const sc=v.scale||100;
+  for(const id of ui.sel){const e=IDX.get(id);if(!slaOn271(e)||e.level!==v.level)continue;const G=slaGeo271(e);if(!G)continue;
+    ctx.strokeStyle=col.sel;ctx.fillStyle=col.sel;ctx.lineWidth=1.4;g.dash(null);g.seg(G.a,G.b);arrowHead(g,G.a,G.b,3);ctx.beginPath();const ta=[g.X(G.a[0]),g.Y(G.a[1])];ctx.arc(ta[0],ta[1],3.5,0,7);ctx.stroke();
+    const m=[(G.a[0]+G.b[0])/2,(G.a[1]+G.b[1])/2];g.text(t('sla_lbl271',fmtSlope(Math.abs(G.r),'su')),[m[0]-G.u[1]*2*sc,m[1]+G.u[0]*2*sc],2.4,{align:'center',color:col.sel,halo:true})}});
+Object.assign(STR,{
+  a_sla271:['ลาดพื้น (Slope Arrow)','Slope Arrow'],g_sla271:['ลาดพื้น (Slope Arrow)','Slope Arrow'],p_sla271:['ลาดพื้นด้วยลูกศร','Slope Arrow'],
+  p_slam271:['กำหนดด้วย','Specify'],slam_h271:['ความสูงที่หางและหัว','Height at Tail and Head'],slam_s271:['ความลาด','Slope'],
+  p_slaht271:['ระยะยกที่หางลูกศร','Height Offset at Tail'],p_slahh271:['ระยะยกที่หัวลูกศร','Height Offset at Head'],p_slas271:['ความลาด','Slope'],p_slaang271:['ทิศที่พื้นลาดขึ้น','Rising Direction'],
+  p_slarise271:['ต่างระดับหางถึงหัว','Rise, Tail to Head'],
+  sla_note271:['ลูกศรวิ่งคร่อมพื้นตามทิศที่ตั้ง หางอยู่ที่ขอบด้านต่ำ หัวที่ขอบอีกด้าน ทั้งแผ่นเอียงเป็นระนาบเดียว ความหนาเท่าเดิม','The arrow crosses the whole floor along its direction, the tail at the low edge and the head at the far one; the whole slab tilts as one plane, its thickness kept'],
+  sla_sel0_271:['เลือกพื้นก่อน แล้วกดลาดพื้น','Select floors first, then press Slope Arrow'],sla_has271:['พื้นที่เลือกมีลูกศรลาดแล้ว แก้ค่าได้ในคุณสมบัติ','The selected floors have a slope arrow already; change it in Properties'],
+  sla_done271:['ใส่ลูกศรลาดให้พื้น {0} แผ่น ตามด้านยาว ลาด 1° แก้ได้ในคุณสมบัติ','Slope arrow on {0} floors along the longer side, 1°; change it in Properties'],
+  sla_subel271:['พื้นนี้มีลูกศรลาด เอาลูกศรลาดออกในคุณสมบัติก่อนจึงยกจุดพื้นได้','This floor has a slope arrow: take it off in Properties before editing its shape'],
+  sla_lbl271:['ลาด {0}','Slope {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40880,6 +40942,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.268 · [[a_hn265]] มีแผ่นเสริมได้เหมือน Revit: ในคุณสมบัติของคาน เลือกแผ่นเสริมที่ปลายลิ่ม (คู่แผ่นในเอวคานตรงปลายเหล็กเสริม) ในเสา (แผ่นในเสาระดับปีกบนของคานและปีกของเหล็กเสริม) หรือทั้งสอง หนาตามปีกคานปัดขึ้น · 3 มิติ รูปด้าน รูปตัด และ IFC เห็นแผ่น แปลนระดับปานกลางและละเอียดเห็นแผ่นที่ปลายลิ่ม · BOQ นับรวมกับแผ่นเสริมตามความหนา
 - V1.269 · แบ่งเว้นช่องตามแนวนอนล็อกช่องไว้เหมือน Revit: ผนังที่แบ่งเว้นช่องตามแนวนอนในรูปด้าน รูปตัด หรือ 3 มิติ และเสาที่แบ่งเว้นช่องที่ความสูง เมื่อแก้ปลายบนของชิ้นล่าง ชิ้นบนเลื่อนฐานตามโดยปลายบนอยู่ที่เดิม เมื่อแก้ฐานของชิ้นบน ชิ้นล่างเลื่อนปลายบนตาม ช่องเท่าเดิมเสมอ · คุณสมบัติของชิ้นบอกช่องและมีช่องติ๊ก ล็อกช่อง เอาติ๊กออกเพื่อปลดล็อก
 - V1.270 · รูปกุญแจที่ช่องรอยต่อที่ล็อก: เลือกผนังหรือเสาที่แบ่งเว้นช่องตามแนวนอนในรูปด้าน รูปตัด หรือ 3 มิติ จะเห็นกุญแจที่กลางช่อง ชี้แล้วบอกว่าคลิกเพื่อปลดล็อก คลิกแล้วปลดล็อก (ย้อนกลับได้) · เปิดแสดงข้อจำกัด (Reveal Constraints) ในรูปด้านหรือรูปตัดเห็นกุญแจสีแดงของทุกช่องที่ล็อก
+- V1.271 · ลาดพื้นด้วยลูกศร (Slope Arrow): พื้นเอียงเป็นระนาบเดียวได้เหมือน Revit เลือกพื้นแล้วกดลาดพื้นในแถบแก้ไข หรือติ๊กลาดพื้นด้วยลูกศรในคุณสมบัติ ตั้งระยะยกที่หางและหัวลูกศร หรือระยะยกที่หางกับความลาด และทิศที่พื้นลาดขึ้น ทั้งแผ่นเอียงตาม ความหนาเท่าเดิม ใน 3 มิติ รูปตัด และรูปด้าน แปลนแสดงลูกศรกับความลาดเมื่อเลือกพื้น แก้รูปพื้นแล้วลาดตามไป
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41289,6 +41352,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.268 · [[a_hn265]] can have stiffeners, as in Revit: in the beam's Properties pick plates At the Toe (a pair in the beam's web over the haunch's toe), In the Column (plates in the column level with the beam's top flange and the haunch's flange) or both, as thick as the beam's flange rounded up · 3D, elevations, sections and IFC show them, plans of Medium and Fine detail draw the toe plates · the BOQ counts them with the stiffeners by thickness
 - V1.269 · Split with Gap across locks the gap, as in Revit: for a wall split across with a gap in an elevation, a section or a 3D view and a column split with a gap at a height, moving the top of the part below takes the base of the part above along (its top stays), moving the base of the part above takes the top of the part below along, the gap always the same · Properties of either part show the gap with a Locked box; clear it to unlock
 - V1.270 · The padlock of a locked gap: select a wall or a column split across with a gap in an elevation, a section or a 3D view and a padlock shows at the middle of the gap; pointed at, it says a click unlocks, and a click unlocks it (undoable) · Reveal Constraints in an elevation or a section shows every locked gap in red
+- V1.271 · Slope Arrow of a floor: a floor tilts as one plane, as in Revit; select a floor and press Slope Arrow in the Modify bar, or tick Slope Arrow in Properties, then set Height Offset at Tail and at Head, or at Tail and the Slope, and the rising direction; the whole slab tilts with its thickness kept in 3D, sections and elevations, plans draw the arrow and its slope while the floor is selected, and a changed outline follows
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43482,6 +43546,13 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r271={
+  geo:id=>{const e=IDX.get(id),G=e&&slaGeo271(e);return G?{ang:e.sla271.ang,m:e.sla271.m,ht:G.ht,hh:Math.round(G.hh*10)/10,L:Math.round(G.L*10)/10,rise:Math.round(G.rise*10)/10,a:G.a.map(Math.round),b:G.b.map(Math.round),zv:e.zv||null}:null},
+  mz:id=>{const e=IDX.get(id),its=MSm().items.filter(i=>i.id===id&&i.cat==='floor');if(!e||!its.length)return null;return e.pts.map(q=>{let m=-Infinity,n=Infinity;for(const it of its)for(let i=0;i<it.t.length;i+=3)if(Math.abs(it.t[i]-q[0])<1&&Math.abs(it.t[i+2]-q[1])<1){m=Math.max(m,it.t[i+1]);n=Math.min(n,it.t[i+1])}return[Math.round(n*10)/10,Math.round(m*10)/10]})},
+  zv:id=>{const e=IDX.get(id);return e&&e.zv?e.zv.slice():null},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);if(!e)return;if(o===null){delete e.sla271;delete e.zv}else{e.sla271=Object.assign({ang:slaAng271(e)},SLA_DEF271,e.sla271||{},o);delete e.zv}});refresh()},
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,key,raw)});refresh()},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r270={
   pads:()=>HGC270.map(c=>({pane:c.pane,x:Math.round(c.x),y:Math.round(c.y),a:c.A.a,b:c.A.b})),
   at:id=>{const A=(P.hgl269||[]).find(x=>x.id===id);return A?hgAt270(A):null},
