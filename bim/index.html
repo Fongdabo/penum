@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=274,V1_NAME='V1.264';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=275,V1_NAME='V1.265';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -38578,6 +38578,80 @@ Object.assign(STR,{
   gp_sel0_264:['เลือกค้ำยันเหล็กก่อน แล้วกดแผ่นประกับค้ำยัน','Select steel braces first, then press Gusset Plates'],gp_has264:['ค้ำยันที่เลือกมีแผ่นประกับแล้ว แก้ค่าได้ในคุณสมบัติ','The selected braces have gusset plates already; change them in Properties'],
   gp_done264:['ใส่แผ่นประกับให้ค้ำยัน {0} ชิ้น รวม {1} แผ่น','Gusset plates on {0} braces, {1} in all'],
   gp_item264:['แผ่นประกับค้ำยัน (Gusset) หนา {0} มม.','Gusset plate {0} mm'],gp_bolt264:['สลักเกลียว M{0} ของแผ่นประกับ พร้อมแป้นเกลียวและแหวน','Gusset bolt M{0} with nut and washers'],c_gp264:['จำนวนแผ่นประกับ','Gusset Plate Count']});
+/* ===== 265 Haunches (V1.265; Revit: Steel Connections › Haunch — a tapered piece cut from a steel section, welded under the end of a beam where it
+   meets a column, deepening the beam there for a moment connection) =====
+   A level steel beam with a web (H, I, channel) has e.hn265 = {e: ends (1 start, 2 end, 3 both), l: its length along the beam (none: a tenth of the beam,
+   300 – 3000), d: how far it reaches under the beam at the column (none: the depth of the beam)}.  Only an end that runs into a column has one: it starts
+   where the beam's web ends as drawn (its cutback or connection gap kept) and runs along the beam for l, its sloping flange from d under the beam at the
+   column up to the beam's bottom flange; its web and flange are those of the beam.  Properties of beams set them, the Connection panel puts them on
+   selected beams; 3D views, elevations and sections show them (meshes of the beam, so IFC writes them), plans of Medium and Fine detail show them hidden
+   under the beam; the BOQ counts them in kg by section, beam schedules count them, and splitting a beam keeps each one on the piece at its end. */
+const hnWeb265=T=>{const W=stcWeb(T);return W&&(T.sec==='H'||T.sec==='I'||T.sec==='C'||T.sec==='LC')?W:null};
+const hnOK265=e=>!!e&&e.cat==='beam'&&!e.gx&&bcOk(P,e)&&!!hnWeb265(typ(P,e));
+const hnOn265=e=>!!e&&e.cat==='beam'&&!!e.hn265&&(+e.hn265.e&3)>0;
+const hnAutoL265=L=>clamp(Math.round(L/100)*10,300,3000);
+function hnPar265(e,F){const o=e.hn265||{},T=F.T||{},d0=Math.round(+T.sd||F.d||300),l=+o.l,d=+o.d,lmax=Math.max(100,Math.floor(0.4*F.L));
+  return{e:(+o.e|0)&3,l:clamp(l>0?l:hnAutoL265(F.L),100,lmax),la:!(l>0),d:clamp(d>0?d:d0,50,1500),da:!(d>0),lmax}}
+/* the haunches of a beam: {F, p, ends: [{k, se (where the web ends), dir, web: [[s, z]], fl: [[s, z]], kg}], free (ends asked for that meet no column), kg} */
+function hnGeo265(Q,e){if(!hnOn265(e)||e.gx||!bcOk(Q,e))return null;const T=typ(Q,e)||{},W=hnWeb265(T);if(!W)return null;const BG=bcGeo(Q,e);if(!BG||!BG.F||!BG.J||!BG.E)return null;
+  const F=BG.F,p=hnPar265(e,F),bf=+T.sb||+T.w||100,tf=T.sec==='LC'?+T.st||3:+T.stf||10,uc=W.c,tw=W.t,zb=F.zb,G={F,p,bf,tf,tw,uc,ends:[],free:0,kg:0};
+  for(const k of [0,1]){if(!(p.e&(1<<k)))continue;const J=BG.J[k],R=BG.E[k];if(!J||J.kind!=='col'){G.free++;continue}const dir=k?-1:1;
+    const se=BG.plain||(R.free&&!R.ext)?(k?F.L-4:4):bcS(R.l,uc),l=p.l,dh=p.d,len=Math.hypot(l,dh),nz=l/len,ns=-dir*dh/len;          // (ns, nz): up off the sloping face
+    const A=[se,zb-dh],B=[se+dir*l,zb],A1=[A[0]+ns*tf,A[1]+nz*tf],B1=[B[0]+ns*tf,B[1]+nz*tf],at=f=>[A1[0]+(B1[0]-A1[0])*f,A1[1]+(B1[1]-A1[1])*f],
+      A2=at((se-A1[0])/(B1[0]-A1[0])),fl=[A,B,B1,A2],web=[[se,zb],[se,A2[1]],at((zb-A1[1])/(B1[1]-A1[1]))];          // A2: the inner face at the end of the beam
+    const aw=Math.abs((web[1][1]-web[0][1])*(web[2][0]-web[0][0]))/2,kg=(aw*tw+len*tf*bf)*STC_RHO;G.ends.push({k,se,dir,web,fl,l,dh,kg});G.kg+=kg}
+  return G.ends.length||G.free?G:null}
+/* ---- 3D: web and sloping flange, of the beam ---- */
+function hnMeshes265(Q,items){for(const e of Q.els){if(e.cat!=='beam'||e.gx||!hnOn265(e))continue;const G=hnGeo265(Q,e);if(!G||!G.ends.length)continue;
+  const K=modelKit({x:e.x1,y:e.y1,id:e.id,cat:'beam'},Math.atan2(G.F.a[1],G.F.a[0])*180/Math.PI,items),m=K.part(STC_COL);m.vc='beam';m.mt=MAT.metal;
+  for(const x of G.ends){K.sweepV(m,x.web,G.uc-G.tw/2,G.uc+G.tw/2);K.sweepV(m,x.fl,-G.bf/2,G.bf/2)}}}
+{const f0=stcMeshes;stcMeshes=(Q,items)=>{f0(Q,items);hnMeshes265(Q,items)}}
+/* ---- plans of Medium and Fine detail: hidden under the beam, its outline dashed (the sloping flange's width, from the end to the toe) ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||(v.detail||'coarse')==='coarse')return;if(!P.els.some(hnOn265))return;const H=halfCols(col);
+  for(const [e] of of('beam')){if(!hnOn265(e))continue;const G=hnGeo265(P,e);if(!G||!G.ends.length)continue;g.el(e);const h=hl(e.id);ctx.strokeStyle=h||(discMode(P,v,e)===1?H.ink:col.ink);
+    g.dash([2,1.2]);ctx.lineWidth=h?1.2:g.lw(0.13);const w=G.bf/2;
+    for(const x of G.ends){const s1=x.se+x.dir*x.l;g.path([G.F.pt(x.se,-w),G.F.pt(s1,-w),G.F.pt(s1,w),G.F.pt(x.se,w)]);ctx.stroke()}}g.dash(null)});
+/* ---- Properties of beams ---- */
+XP.push((c,els)=>{if(c!=='beam'||!els.length||!els.every(hnOK265))return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},on=els.filter(hnOn265),U=t('u_mm');
+  let h=PR.grp('g_hn265')+PR.sel('hn265_e','p_hne265',V(e=>String(hnOn265(e)?(+e.hn265.e&3):0)),[['0',t('gp_e0_264')],['1',t('gp_e1_264')],['2',t('gp_e2_264')],['3',t('gp_e3_264')]]);
+  if(!on.length)return h;const Ps=on.map(e=>hnPar265(e,bcFrame(P,e))),W=k=>{const a=Ps[0][k];return Ps.every(x=>x[k]===a)?a:''};
+  h+=PR.num('hn265_l','p_hnl265',W('l'),U,'step="10"')+PR.num('hn265_d','p_hnd265',W('d'),U,'step="10"');
+  let n=0,kg=0,free=0;for(const e of on){const G=hnGeo265(P,e);if(!G){free+=[1,2].filter(b=>+e.hn265.e&b).length;continue}n+=G.ends.length;kg+=G.kg;free+=G.free}
+  h+=PR.ro('p_hnc265',String(n))+PR.ro('p_hnw265',(Math.round(kg*10)/10)+' '+t('u_kg262'));if(Ps.some(x=>x.la))h+=`<div class="pnote">${esc(t('hn_auto265'))}</div>`;
+  if(free)h+=`<div class="pnote">${esc(t('hn_free265',free))}</div>`;return h});
+XF.push((cat,o,key,raw)=>{if(!String(key).startsWith('hn265_'))return false;const k=key.slice(6),blank=raw===''||raw==null;if(cat!=='beam'||!hnOK265(o)||blank&&k==='e')return true;const v=blank?0:+raw;
+  if(k==='e'){const b=(v|0)&3;if(!b)delete o.hn265;else o.hn265=Object.assign(o.hn265&&typeof o.hn265==='object'?o.hn265:{},{e:b});return true}
+  if(!hnOn265(o)||!isFinite(v))return true;const F=bcFrame(P,o);
+  if(k==='l'){if(v>0)o.hn265.l=Math.round(clamp(v,100,Math.max(100,Math.floor(0.4*F.L))));else delete o.hn265.l}
+  if(k==='d'){if(v>0)o.hn265.d=Math.round(clamp(v,50,1500));else delete o.hn265.d}return true});
+/* ---- the button: both ends of the selected steel beams that have none ---- */
+XA.hn265=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(hnOK265);if(!S.length){toast(t('hn_sel0_265'));return}const L=S.filter(e=>!hnOn265(e));if(!L.length){toast(t('hn_has265'));return}
+  edit(()=>{for(const e of L)e.hn265={e:3}});let n=0;for(const e of L){const G=hnGeo265(P,e);if(G)n+=G.ends.length}toast(t('hn_done265',L.length,n))};
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='class="i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-hn265" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+   +`<path class="i-Sa" fill="#e9edf4" ${E} d="M2 2h3.4v19H2zM5.4 4H22v3.4H5.4z"/><path class="i-Ta" fill="#aeefdc" ${E} d="M5.4 7.4H17L5.4 14z"/>`
+   +`<path class="i-Pb" fill="#7184a2" ${E} d="M5.4 13.4L16.4 7.4h1.6L5.4 15z"/></symbol>`)})();
+Object.assign(BTN,{'@hn265':['hn265','']});
+{const p=(RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('@hn265'))p.b.push('@hn265')}
+XR.push(tl=>tl==='modify'&&[...ui.sel].some(id=>hnOK265(IDX.get(id)))?[{t:'p_sconn',b:['@hn265']}]:[]);
+/* ---- splitting a beam: the start's haunch stays on the first piece, the end's goes with the new one ---- */
+{const f0=splitLine;splitLine=(e,w,gap)=>{const n0=P.seq,old=hnOn265(e)?+e.hn265.e&3:0;const r=f0(e,w,gap);if(!old||P.seq===n0)return r;const c=P.els.find(x=>x.id===n0);
+  if(e.hn265){if(old&1)e.hn265.e=1;else delete e.hn265}if(c&&c.hn265){if(old&2)c.hn265=Object.assign({},c.hn265,{e:2});else delete c.hn265}return r}}
+/* ---- the BOQ: by the section they are cut from, in kg ---- */
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(hnOn265))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.gx||!hnOn265(e))continue;const G=hnGeo265(Q0,e);if(!G||!G.ends.length)continue;const T=typ(Q0,e)||{},nm=stlDesc(T),pk='hn265|'+nm;
+    let r=by.get(pk);if(!r)by.set(pk,r={cat:tr('cat_hn265'),_c:9.37,tcat:'hn265',pk,item:tr('hn_item265',nm),qty:0,unit:tr('u_kg262'),cost:PR0[pk]!=null?+PR0[pk]||0:45,amount:0});r.qty+=G.kg}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>a._c-b._c||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;F.push({k:'hn265',l:tr('c_hn265'),g:e=>{const G=hnGeo265(Q,e);return G&&G.ends.length?G.ends.length:''},num:1,sum:1,grp:'q'});return F}}
+Object.assign(STR,{
+  a_hn265:['เหล็กเสริมใต้ปลายคาน (Haunch)','Haunch'],cat_hn265:['เหล็กเสริมใต้ปลายคาน (Haunch)','Haunches'],g_hn265:['เหล็กเสริมใต้ปลายคาน (Haunch)','Haunch'],
+  p_hne265:['เหล็กเสริมที่ปลาย','Haunch At'],p_hnl265:['ความยาวเหล็กเสริม','Haunch Length'],p_hnd265:['ความลึกใต้คานที่เสา','Haunch Depth'],p_hnc265:['จำนวน','Count'],p_hnw265:['น้ำหนัก','Weight'],
+  hn_auto265:['ความยาวหรือความลึกที่เว้นว่างใช้ค่าตั้งต้น ยาวหนึ่งในสิบของคาน (300–3000 มม.) และลึกเท่าคาน','A blank length or depth uses its default: a tenth of the beam (300–3000 mm) long and as deep as the beam'],
+  hn_free265:['{0} ปลายไม่ได้ชนเสา จึงไม่มีเหล็กเสริม','{0} ends meet no column, so they have no haunch'],
+  hn_sel0_265:['เลือกคานเหล็กหน้าตัด H, I หรือรางน้ำก่อน แล้วกดเหล็กเสริมใต้ปลายคาน','Select steel H, I or channel beams first, then press Haunch'],hn_has265:['คานที่เลือกมีเหล็กเสริมใต้ปลายคานแล้ว แก้ค่าได้ในคุณสมบัติ','The selected beams have haunches already; change them in Properties'],
+  hn_done265:['ใส่เหล็กเสริมใต้ปลายคานให้คาน {0} ชิ้น รวม {1} ปลายที่ชนเสา','Haunches on {0} beams, {1} ends at columns'],
+  hn_item265:['เหล็กเสริมใต้ปลายคาน (Haunch) ตัดจาก {0}','Haunch cut from {0}'],c_hn265:['จำนวนเหล็กเสริมใต้ปลายคาน','Haunch Count']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -40616,6 +40690,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.262 · [[a_ss262]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือน Steel › Fabrication › Shear Studs ของ Revit: หมุดหัวเชื่อมบนปีกบนของคานเหล็กให้พื้นคอนกรีตทำงานร่วมกับคาน · เลือกคานเหล็กที่วางระดับแล้วกดปุ่ม หรือตั้งในคุณสมบัติของคาน (ไม่มี 1 แถว 2 แถว) ตั้งเส้นผ่านศูนย์กลาง Ø13–Ø25 ความยาวรวมหัว ระยะห่าง ระยะจากปลายคาน และระยะระหว่างแถวได้ หมุดเรียงเท่ากันระหว่างระยะจากปลายทั้งสองข้าง ปีกที่แคบเกินสองแถวใส่เป็นแถวเดียว · เห็นในมุมมอง 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_fine]] (วงกลม) ไปกับคานเมื่อย้าย คัดลอก สะท้อน หรือแบ่ง คุณสมบัติบอกจำนวนและน้ำหนัก ตารางคานมีคอลัมน์หมุดและจำนวน [[a_boq]] นับเป็นตัวตามขนาด (ราคาสมมติ) และ IFC ส่งไปกับคาน
 - V1.263 · [[t_stf263]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Stiffener ของ Revit: แผ่นเหล็กหนึ่งหรือสองแผ่นเชื่อมในคานหรือเสาเหล็ก ตั้งฉากกับชิ้น อยู่ระหว่างปีกและชิดเอว · คลิกคานเหล็กที่วางระดับในแปลน 3 มิติ รูปด้าน หรือรูปตัด ตรงจุดที่จะใส่ (เกาะจุดที่คานอื่นมาต่อ) หรือคลิกเสาเหล็กในรูปด้าน รูปตัด หรือ 3 มิติ ตรงความสูงที่จะใส่ (เกาะระดับปีกของคานที่มาต่อ) · ใช้กับหน้าตัด H, I และรางน้ำ แผ่นเต็มความลึกระหว่างปีกและยื่นถึงปลายปีก ตัดมุม 15 มม. · คุณสมบัติตั้งความหนาและจำนวนแผ่นต่อจุด (สองข้างหรือข้างเดียว) และเอาออกได้ · แปลนระดับ [[det_medium]] และ [[det_fine]] เห็นแผ่นเสริมของคาน 3 มิติ รูปด้าน และรูปตัดเห็นทั้งหมด ไปกับชิ้นเมื่อย้าย คัดลอก หรือแบ่ง [[a_boq]] นับน้ำหนักเหล็กตามความหนา (ราคาสมมติ) และตารางคานและเสามีจำนวนแผ่นเสริม
 - V1.264 · [[a_gp264]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อค้ำยันแบบแผ่นประกับ (Gusset Plate) ของ Revit: แผ่นเหล็กในระนาบของค้ำยัน เชื่อมกับเสาและคานตรงจุดที่ค้ำยันวิ่งเข้าไป และยึดค้ำยันด้วยสลักเกลียว · เลือกค้ำยันเหล็กแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความหนา จำนวนและขนาดสลักเกลียวได้ · แผ่นตั้งในระนาบค้ำยัน ขอบชนผิวเสา ใต้คาน (หรือบนคานเมื่อค้ำยันชี้ขึ้น และพื้นที่โคนเสา) แล้วยื่นเลยไปตามค้ำยันเท่าระยะทาบสลักเกลียว ปลายที่ไม่ชนอะไรไม่มีแผ่นและคุณสมบัติบอกไว้ · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] [[a_boq]] นับน้ำหนักแผ่นและสลักเกลียว (ราคาสมมติ) ตารางคานมีจำนวนแผ่น และ IFC ส่งไปกับค้ำยัน
+- V1.265 · [[a_hn265]] ที่แท็บ [[tab_struct]] แผง [[p_sconn]] เหมือนจุดต่อแบบ Haunch ของ Revit: ชิ้นเหล็กรูปลิ่มที่ตัดจากหน้าตัดเดียวกับคาน เชื่อมใต้ปลายคานตรงที่คานชนเสา ทำให้คานลึกขึ้นที่จุดต่อรับโมเมนต์ · เลือกคานเหล็ก H, I หรือรางน้ำแล้วกดปุ่ม หรือตั้งในคุณสมบัติ (ปลายเริ่ม ปลายสุด หรือทั้งสองปลาย) ตั้งความยาว (ตั้งต้นหนึ่งในสิบของคาน) และความลึกใต้คานที่เสา (ตั้งต้นเท่าคาน) ได้ · มีเฉพาะปลายที่ชนเสา เริ่มจากปลายเอวคานตามที่วาด ปีกเอียงจากใต้คานที่เสาขึ้นไปชนปีกล่างของคาน · เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลนระดับ [[det_medium]] และ [[det_fine]] เป็นเส้นประใต้คาน [[a_boq]] นับน้ำหนักตามหน้าตัด (ราคาสมมติ) ตารางคานมีจำนวน แบ่งคานแล้วเหล็กเสริมอยู่กับท่อนที่ปลายนั้น และ IFC ส่งไปกับคาน
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -41019,6 +41094,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.262 · [[a_ss262]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Steel › Fabrication › Shear Studs: headed studs on the top flange of a steel beam, so that the slab works with it. Select level steel beams and press the button, or set them in the beam's Properties (None, 1 row, 2 rows) with the diameter Ø13–Ø25, the length with the head, the spacing, the end distance and the row gauge; the studs are spread evenly between the end distances, and a flange too narrow for two rows takes one. They show in 3D views, elevations, sections and plans of [[det_fine]] detail (rings), go with the beam when it is moved, copied, mirrored or split, Properties gives their number and weight, beam schedules have a studs column and a count, [[a_boq]] counts them each by size (assumed prices) and IFC writes them with the beam
 - V1.263 · [[t_stf263]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Stiffener connection: one or two steel plates welded into a steel beam or column, square to it, between its flanges and against its web. Click a level steel beam in a plan, 3D view, elevation or section where it goes (it catches where another beam frames in), or a steel column in an elevation, a section or 3D at its height (it catches the flange levels of beams that frame in). H, I and channel sections; each plate fills the depth between the flanges out to the flange tip, with 15 mm corner snipes. Properties set the thickness and the plates per point (both sides or one) and remove them. Plans of [[det_medium]] and [[det_fine]] detail show beam stiffeners, 3D views, elevations and sections show them all, they go with the member when it is moved, copied or split, [[a_boq]] counts their steel by thickness in kg (assumed prices) and beam and column schedules count them
 - V1.264 · [[a_gp264]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's brace connections with a gusset plate: a plate in the plane of a brace, welded to the column and the beam at the joint the brace runs into, the brace bolted to it. Select steel braces and press the button, or set them in Properties (Start, End or Both Ends) with the plate thickness and the number and size of bolts. The plate stands in the brace's plane, bounded by the face of the column, the underside of the beam (its top for a brace running up, the floor at the foot of a column) and reaching along the brace by the bolt lap; an end that meets nothing has none, and Properties says so. They show in 3D views, elevations, sections and plans of [[det_medium]] and [[det_fine]] detail, [[a_boq]] counts the plates in kg and the bolts (assumed prices), beam schedules count the plates and IFC writes them with the brace
+- V1.265 · [[a_hn265]] on the [[tab_struct]] tab, [[p_sconn]] panel, as Revit's Haunch connection: a tapered piece cut from the beam's own section, welded under the end of a beam where it meets a column, deepening it for a moment connection. Select steel H, I or channel beams and press the button, or set it in Properties (Start, End or Both Ends) with its length (a tenth of the beam when left blank) and its depth under the beam at the column (the beam's depth when blank). Only ends at a column have one: it starts where the beam's web ends as drawn, its sloping flange running from under the beam at the column up to the beam's bottom flange. It shows in 3D views, elevations, sections and, dashed under the beam, plans of [[det_medium]] and [[det_fine]] detail; [[a_boq]] counts it in kg by section (assumed prices), beam schedules count it, splitting a beam keeps it on the piece at its end, and IFC writes it with the beam
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -43212,6 +43288,14 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r265={
+  geo:id=>{const e=IDX.get(id),G=e&&hnGeo265(P,e),r=x=>Math.round(x*10)/10;return G?{p:G.p,bf:G.bf,tf:G.tf,tw:G.tw,free:G.free,kg:Math.round(G.kg*100)/100,zb:r(G.F.zb),L:r(G.F.L),
+    ends:G.ends.map(x=>({k:x.k,se:r(x.se),dir:x.dir,l:x.l,dh:x.dh,kg:Math.round(x.kg*100)/100,web:x.web.map(q=>[r(q[0]),r(q[1])]),fl:x.fl.map(q=>[r(q[0]),r(q[1])])}))}:null},
+  set:(id,o)=>edit(()=>{const e=IDX.get(id);if(o==null)delete e.hn265;else e.hn265=JSON.parse(JSON.stringify(o))}),
+  place:ids=>{ui.sel=new Set(ids);XA.hn265();return ids.map(id=>{const e=IDX.get(id);return e&&e.hn265?Object.assign({},e.hn265):null})},
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>/^hn265\|/.test(String(r.pk||''))).map(r=>({pk:r.pk,qty:r.qty,cost:r.cost,amount:r.amount,item:r.item,unit:r.unit})),
+  sched:(cat,flds)=>{const S=schedView(P,{id:-1,kind:'schedule',name:'x',sched:'cat',scat:cat,flds,hidden:[],hiddenCats:[],sp:{}},t);return S.rows.map(r=>[r.id,...S.cols.map(c=>r[c.k])])},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r264={
   geo:id=>{const e=IDX.get(id),G=e&&gpGeo264(P,e),r=x=>Math.round(x*10)/10;return G?{p:G.p,kg:Math.round(G.kg*100)/100,nb:G.nb,ends:G.ends.map(x=>({k:x.k,rc:x.F.rc==null?null:r(x.F.rc),zb:x.F.zb==null?null:r(x.F.zb),up:x.F.up,col:x.F.col?x.F.col.id:null,beam:x.F.beam?x.F.beam.id:null,
     poly:x.poly.map(q=>[r(q[0]),r(q[1])]),bolts:x.bolts.map(q=>[r(q[0]),r(q[1])]),area:Math.round(x.area)}))}:null},
