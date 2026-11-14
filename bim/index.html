@@ -1560,7 +1560,7 @@ function zRange(P,e){
   if(c==='floor'){const T=typ(P,e),z1=base+(e.off||0);return[z1-(T?T.thickness:150),z1]}
   if(c==='ceiling'){const T=typ(P,e),z0=base+(e.off==null?2600:e.off);return[z0,z0+(T?T.thickness:12)]}          // off: height of the underside above the level
   if(c==='stair'){const top=e.top&&lvl(P,e.top)?elev(P,e.top):base+3000;return[base,Math.max(base+500,top)]}
-  if(c==='railing'){const g=railGeo(P,e);return[Math.min(g.z0,g.z1),Math.max(g.z0,g.z1)+g.h]}
+  if(c==='railing'){const g=railGeo(P,e);return g.zr237?[g.zr237[0],g.zr237[1]+g.h]:[Math.min(g.z0,g.z1),Math.max(g.z0,g.z1)+g.h]}
   if(c==='ramp'){const g=rampGeo(P,e);return[Math.min(g.z0,g.z1)-g.t,Math.max(g.z0,g.z1)]}
   if(c==='duct'||c==='pipe'||c==='tray'||c==='conduit'){const z=runZ(P,e),hh=runH(P,e)/2;return[Math.min(z[0],z[1])-hh,Math.max(z[0],z[1])+hh]}
   if(c==='terminal'){const z=base+(e.off||0);return[z-60,z]}
@@ -2589,10 +2589,10 @@ function rampGeo(P,e){const T=typ(P,e)||{},b=elev(P,e.level),z0=b+(e.baseOff||0)
   let rect=[[e.x1+nx*hw,e.y1+ny*hw],[e.x2+nx*hw,e.y2+ny*hw],[e.x2-nx*hw,e.y2-ny*hw],[e.x1-nx*hw,e.y1-ny*hw]];
   if(A){const l=[],r=[];for(let i=0;i<=A.n;i++){const q=A.at(L*i/A.n);l.push([q.p[0]-q.t[1]*hw,q.p[1]+q.t[0]*hw]);r.push([q.p[0]+q.t[1]*hw,q.p[1]-q.t[0]*hw])}rect=l.concat(r.reverse())}          // a curved ramp: its outline along both edges
   return{T,arc:A,z0,z1,L,dx,dy,nx,ny,W,t:T.thickness||150,slope:Math.abs(z1-z0)/L,max:T.maxSlope>0?1/T.maxSlope:1/12,rect}}
-function railMesh(P,e,items){const g=railGeo(P,e),A=g.arc;if(!A){railRun(P,e,g,items,[e.x1,e.y1],[e.x2,e.y2],0,g.L,0,1);return}
+function railMesh(P,e,items){const g=railGeo(P,e),A=g.arc;if(g.bu237){rshRuns237(P,e,g,items);return}if(!A){railRun(P,e,g,items,[e.x1,e.y1],[e.x2,e.y2],0,g.L,0,1);return}
   for(let i=0;i<A.n;i++)railRun(P,e,g,items,A.at(A.L*i/A.n).p,A.at(A.L*(i+1)/A.n).p,A.L*i/A.n,A.L*(i+1)/A.n,i,A.n)}          // a curved railing: a straight piece every 5 degrees
 /* one straight piece of a railing, from p0 to p1, over u0 … u1 of its length along the line: posts and balusters stay where they fall on the whole railing */
-function railRun(P,e,g,items,p0,p1,u0,u1,i,n){const T=g.T,Ls=Math.hypot(p1[0]-p0[0],p1[1]-p0[1])||1,K=modelKit({x:p0[0],y:p0[1],id:e.id,cat:'railing'},Math.atan2(p1[1]-p0[1],p1[0]-p0[0])*180/Math.PI,items),m=K.part(hex2rgb(T.color||'#3c4654')),kd=T.kind||'rvert',ps=g.ps,h=g.h,L=g.L,z=u=>g.z0+(g.z1-g.z0)*u/L,x=u=>(u-u0)*Ls/(u1-u0),mine=u=>u>=u0-1e-6&&(u<u1-1e-6||i===n-1);m.mt=MAT.metal;
+function railRun(P,e,g,items,p0,p1,u0,u1,i,n){const T=g.T,Ls=Math.hypot(p1[0]-p0[0],p1[1]-p0[1])||1,K=modelKit({x:p0[0],y:p0[1],id:e.id,cat:'railing'},Math.atan2(p1[1]-p0[1],p1[0]-p0[0])*180/Math.PI,items),m=K.part(hex2rgb(T.color||'#3c4654')),kd=T.kind||'rvert',ps=g.ps,h=g.h,L=g.L,z=g.zAt||(u=>g.z0+(g.z1-g.z0)*u/L),x=u=>(u-u0)*Ls/(u1-u0),mine=u=>u>=u0-1e-6&&(u<u1-1e-6||i===n-1);m.mt=MAT.metal;
   const rail=(dz,w,hh,mm)=>K.bar(mm||m,[0,0,z(u0)+dz],[Ls,0,z(u1)+dz],w,hh);
   for(const t of g.posts){const u=t*L;if(mine(u))K.bx(m,x(u),0,ps,ps,z(u),z(u)+h-ps*0.4)}
   {const tp=T.tr;if(tp==='round'){const r=(ps+12)/2;K.cyl(m,[0,0,z(u0)+h-r],[Ls,0,z(u1)+h-r],r)}else if(tp!=='none')rail(h-ps/2,ps+12,ps)}
@@ -12510,8 +12510,8 @@ function catRows(cat,els,isNew){
     case'roof':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('off','p_baseoff',V(x=>x.off||0),U,'step="50"');
       h+=PR.grp('g_shape')+PR.sel('shape','p_shape',V(x=>x.shape),[['hip',t('rs_hip')],['gable',t('rs_gable')],['shed',t('rs_shed')],['arc',t('rs_arc')],['ext',t('rs_ext')],['fp',t('rs_fp')],['flat',t('rs_flat')]])+(els.every(x=>x.shape==='ext')?(isNew?'':`<div class="pa"><button class="btn" data-act="roofprof">${t('a_roofprof')}…</button></div>`):els.every(x=>x.shape==='arc')?PR.num('rise','p_arcrise',V(x=>x.rise>0?x.rise:x.pts&&x.pts.length>2?Math.round(roofGeo(P,x).rise||0):''),U,'step="50" min="50"'):PR.num('slope','p_slope',V(x=>roofSlopeIn(x.slope)),slopeSym('su'),ufOf().su==='deg'?'step="1" min="1" max="70"':'step="any" min="0"'))+PR.num('overhang','p_overhang',V(x=>x.overhang),U,'step="50" min="0"')+PR.chk('gut','p_gutter',els.every(x=>x.gut))+(els.every(x=>x.gut)?PR.chk('ds','p_dsp',els.every(x=>x.ds))+(els.every(x=>x.ds)?PR.num('dss','p_dsps',V(x=>x.ds),U,'step="500" min="2000"'):''):'');
       if(!isNew)h+=PR.grp('g_dims')+PR.ro('p_area',fmtArea(S('area'))+' '+areaUnit())+(els.some(x=>x.gut)?PR.ro('p_gutlen',fmtLen(els.reduce((s,x)=>s+roofGutterLen(P,x),0))+' '+unitName()):'')+(els.some(x=>x.gut&&x.ds)?PR.ro('p_dspn',String(els.reduce((s,x)=>s+roofDownspouts(P,x).length,0)))+PR.ro('p_dsplen',fmtLen(els.reduce((s,x)=>s+roofDspLen(P,x),0))+' '+unitName()):'');break;
-    case'railing':h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('off','p_baseoff',V(x=>x.off||0),U,'step="50"');
-      if(!isNew)h+=PR.num('off2','p_off2',V(x=>x.off2!=null?x.off2:(x.off||0)),U,'step="50"')+PR.grp('g_dims')+PR.ro('p_length',fmtLen(S('len'))+' '+unitName())+PR.ro('p_height',((typ(P,e)||{}).h||900)+' '+U);break;
+    case'railing':{const H237=!isNew&&els.every(x=>rshHost237(P,x));h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('off',H237?'p_hoff237':'p_baseoff',V(x=>x.off||0),U,'step="50"');
+      if(!isNew)h+=(H237?'':PR.num('off2','p_off2',V(x=>x.off2!=null?x.off2:(x.off||0)),U,'step="50"'))+(els.some(x=>x.rhost!=null)?'':rshRows237(els))+PR.grp('g_dims')+PR.ro('p_length',fmtLen(S('len'))+' '+unitName())+PR.ro('p_height',((typ(P,e)||{}).h||900)+' '+U);break}
     case'ramp':{h+=PR.grp('g_constraints');if(!isNew)h+=PR.sel('level','p_baselevel',V(x=>x.level),L);h+=PR.num('baseOff','p_baseoff',V(x=>x.baseOff||0),U,'step="50"')+PR.sel('top','p_toplevel',V(x=>x.top||0),[[0,t('top_unconn')],...L]);
       if(V(x=>x.top||0)===0)h+=PR.num('rise','p_rise',V(x=>x.rise!=null?x.rise:450),U,'step="50"');else h+=PR.num('topOff','p_topoff',V(x=>x.topOff||0),U,'step="50"');
       if(!isNew&&els.length===1){const g=rampGeo(P,e),bad=g.slope>g.max+1e-6;h+=PR.grp('g_dims')+PR.ro('p_length',fmtLen(g.L)+' '+unitName())+PR.ro('p_width',fmtLen(g.W)+' '+unitName())+PR.ro('p_rslope',(g.slope>1e-6?'1:'+(1/g.slope).toFixed(1).replace(/\.0$/,''):'0')+' · '+(g.slope*100).toFixed(1)+'%')+PR.ro('p_area',fmtArea(g.L*g.W)+' '+areaUnit());
@@ -14614,7 +14614,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=246,V1_NAME='V1.236';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=247,V1_NAME='V1.237';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -36343,7 +36343,7 @@ function hrOf224(T){T=T||{};const pos=HR_POS224.includes(T.hr)?T.hr:'none';if(po
 /* the sides with a handrail: 1 left, -1 right of the line from its first point */
 const hrSides224=(e,H)=>{if(!H)return[];const f=e&&e.hrf224?-1:1;return(H.pos==='left'?[1]:H.pos==='right'?[-1]:[1,-1]).map(k=>k*f)};
 /* the line of a railing at u (0 … L along it): its point, its direction, the height of its line */
-function hrLine224(e,g){const A=g.arc,L=g.L;return u=>{u=Math.max(0,Math.min(L,u));const z=g.z0+(g.z1-g.z0)*u/L;if(A){const q=A.at(u);return{p:q.p,t:q.t,z}}return{p:[e.x1+g.ux*u,e.y1+g.uy*u],t:[g.ux,g.uy],z}}}
+function hrLine224(e,g){const A=g.arc,L=g.L;return u=>{u=Math.max(0,Math.min(L,u));const z=g.zAt?g.zAt(u):g.z0+(g.z1-g.z0)*u/L;if(A){const q=A.at(u);return{p:q.p,t:q.t,z}}return{p:[e.x1+g.ux*u,e.y1+g.uy*u],t:[g.ux,g.uy],z}}}
 /* the railing whose end meets this end (end 0: its first point, 1: its last), within 5 mm in plan and 100 mm in height */
 function hrNb224(P,e,end){const g=railGeo(P,e),p=end?[e.x2,e.y2]:[e.x1,e.y1],z=end?g.z1:g.z0;
   for(const r of P.els){if(r===e||r.cat!=='railing')continue;for(const j of [0,1]){const q=j?[r.x2,r.y2]:[r.x1,r.y1];if(Math.hypot(q[0]-p[0],q[1]-p[1])>5)continue;const gr=railGeo(P,r);if(Math.abs((j?gr.z1:gr.z0)-z)>100)continue;return{r,j,g:gr}}}return null}
@@ -36352,8 +36352,8 @@ function hrPaths224(P,e){if(!e||e.cat!=='railing')return[];const g=railGeo(P,e),
   const ks=hrSides224(e,H),L=g.L,ln=hrLine224(e,g),o=g.ps/2+H.c+H.d/2,kd=g.T.kind||'rvert',wl=v=>[-v[1],v[0]],out=[],d3=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]);
   const ends=[0,1].map(end=>{const q=ln(end?L:0);return{end,J:q.p,t:q.t,a:end?q.t:[-q.t[0],-q.t[1]],zb:q.z,nb:hrNb224(P,e,end)}});
   const us=kd==='rhand'||H.s<=0?g.posts.map(f=>f*L):(()=>{const n=Math.max(1,Math.round(L/H.s)),a=[];for(let i=0;i<n;i++)a.push((i+0.5)*L/n);return a})();
-  for(const k of ks){const N=g.arc?g.arc.n:1,main=[],segs=[],balls=[],posts=[],sup=[];
-    for(let i=0;i<=N;i++){const q=ln(L*i/N),n=wl(q.t);main.push([q.p[0]+n[0]*k*o,q.p[1]+n[1]*k*o,q.z+H.h])}
+  for(const k of ks){const UU=g.bu237,N=UU?UU.length-1:g.arc?g.arc.n:1,main=[],segs=[],balls=[],posts=[],sup=[];
+    for(let i=0;i<=N;i++){const q=ln(UU?UU[i]:L*i/N),n=wl(q.t);main.push([q.p[0]+n[0]*k*o,q.p[1]+n[1]*k*o,q.z+H.h])}
     for(const E of ends){const s=E.end?k:-k,M=main[E.end?main.length-1:0];
       if(E.nb){const r=E.nb.r,kr=E.nb.j?-s:s;if(hrSides224(r,hrOf224(typ(P,r))).includes(kr)){          // joined: both handrails end where their lines cross
           const qr=hrLine224(r,E.nb.g)(E.nb.j?E.nb.g.L:0),b=E.nb.j?[-qr.t[0],-qr.t[1]]:qr.t,a=E.a,dt=a[0]*b[0]+a[1]*b[1],cr=a[0]*b[1]-a[1]*b[0];
@@ -36383,7 +36383,7 @@ function hrPlan224(P,e,g,ctx,s){const R=hrPaths224(P,e);if(!R.length)return;
     const two=h.d*s>=2.5;for(const pl of pcs){if(!two){g.path(pl,true);ctx.stroke();continue}const A=hrOff224(pl,h.d/2),B=hrOff224(pl,-h.d/2);g.path(A,true);ctx.stroke();g.path(B,true);ctx.stroke();g.seg(A[0],B[0]);g.seg(A[A.length-1],B[B.length-1])}
     if(h.ps*s>=1.2)for(const q of h.posts){const k=h.ps/2;g.path([[q[0]-k,q[1]-k],[q[0]+k,q[1]-k],[q[0]+k,q[1]+k],[q[0]-k,q[1]+k]]);ctx.fill()}}}
 /* a handrail higher than the railing raises its top */
-{const f0=zRange;zRange=(P0,e)=>{const r=f0(P0,e);if(!e||e.cat!=='railing')return r;const H=hrOf224(typ(P0,e));if(!H)return r;const g=railGeo(P0,e);return[r[0],Math.max(r[1],Math.max(g.z0,g.z1)+H.h+H.d/2)]}}
+{const f0=zRange;zRange=(P0,e)=>{const r=f0(P0,e);if(!e||e.cat!=='railing')return r;const H=hrOf224(typ(P0,e));if(!H)return r;const g=railGeo(P0,e);return[r[0],Math.max(r[1],Math.max(g.z0,g.z1,g.zr237?g.zr237[1]:-Infinity)+H.h+H.d/2)]}}
 /* Mirror: the copy keeps its handrail on the mirrored side */
 {const f0=mapPoints;mapPoints=(e,fn,mirror,ang)=>{f0(e,fn,mirror,ang);if(!mirror||!e||e.cat!=='railing')return;const H=hrOf224(typ(P,e));if(!H||H.pos==='both')return;if(e.hrf224)delete e.hrf224;else e.hrf224=1}}
 /* the type editor: the top rail and the handrail after the post size */
@@ -37050,6 +37050,102 @@ Object.assign(STR,{wlm_topsoil:['หน้าดิน','Topsoil'],wlm_earth:['�
   tp_legacy236:['ชนิดนี้ไม่มีชั้นวัสดุ: ผิวดินอยู่บนก้นที่ตั้งไว้ใน การตั้งค่าผังบริเวณ เหมือนรุ่นก่อน · ทำสำเนาชนิดที่มีชั้นวัสดุแล้วแก้ ถ้าต้องการความหนาของผิวดินเอง',
     'This type has no layers: its ground stands on the base set in Site Settings, as before · duplicate a type with layers and edit it to give the ground its own thickness'],
   tp_bot236:['ก้นผิวดิน','Bottom elevation'],tp_botf236:['ขนานกับผิวดิน','Follows the ground']});
+/* ===== 237 Pick New Host for railings: a floor, a roof, a toposurface or a ramp (V1.237; Revit: Modify | Railings › Tools › Pick New Host: a railing hosted by
+   a floor, a roof, a toposolid or a ramp follows the top of its host, its Base Offset measured from that top; a railing on its level stays straight).
+   e.rsh237: the id of the host of a railing drawn as a line (a railing put on a stair or a ramp with Railings on Both Sides keeps rhost and goes with it).
+   rshProf237 reads the top of the host along the railing: at both ends, at the corners of a curved railing, where its line crosses an edge of the host (a triangle
+   of the ground, a face of a roof, a triangle of a floor raised with Modify Sub Elements, the outline) and every 250 mm; it keeps the points where the slope changes.
+   Where the line is off the host it takes the height of the nearest points on it (in a gap between them, the line between).  railGeo gives the railing that
+   line (zAt, bu237, zr237, len); railMesh makes a straight piece between each two of its points, so posts, balusters, rails and the handrails of V1.224 follow it.
+   Nothing set: as before. */
+const RSH_CATS237=['floor','roof','topo','ramp'],RSH237=new Map();
+function rshHost237(P0,e){if(!e||e.cat!=='railing'||e.rsh237==null||e.rhost!=null)return null;const h=P0===P&&IDX?IDX.get(e.rsh237):P0.els.find(x=>x.id===e.rsh237);
+  return h&&h!==e&&RSH_CATS237.includes(h.cat)?h:null}
+/* the top of host h: z(x,y) (null off it) and the edges where its slope may change, [x1,y1,x2,y2] */
+function rshSam237(P0,h){const E=[],loop=L=>{for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];E.push([a[0],a[1],b[0],b[1]])}},tris=T=>{for(let i=0;i+2<T.t.length;i+=3)loop([T.p[T.t[i]],T.p[T.t[i+1]],T.p[T.t[i+2]]])};
+  if(h.cat==='floor'){if(!Array.isArray(h.pts)||h.pts.length<3)return null;const z0=elev(P0,h.level)+(+h.off||0),S=slabSlope(h),ZT=Array.isArray(h.zv)?zvTin(h):null;loop(h.pts);if(ZT)tris(ZT);
+    return{E,z:(x,y)=>inPoly(x,y,h.pts)?z0+(S?S.dz(x,y):0)+(ZT?zvAt(ZT,h,x,y):0):null}}
+  if(h.cat==='roof'){const F=(roofGeo(P0,h).faces||[]).filter(f=>Array.isArray(f.loop)&&f.loop.length>=3);for(const f of F)loop(f.loop);
+    return{E,z:(x,y)=>{let z=null;for(const f of F){if(!inPoly(x,y,f.loop))continue;const q=spPlaneZ(f.loop,x,y);if(q!=null&&isFinite(q)&&(z==null||q>z))z=q}return z}}}
+  if(h.cat==='topo'){const T=P0===P?siteTinOf(h):siteTin(h);if(!T||!T.t.length)return null;tris(T);return{E,z:(x,y)=>siteZat(T,x,y)}}
+  if(h.cat==='ramp'){const G=rampGeo(P0,h);if(!G||!G.rect)return null;loop(G.rect);const A=G.arc,L=Math.hypot(h.x2-h.x1,h.y2-h.y1)||1;
+    return{E,z:(x,y)=>{if(!inPoly(x,y,G.rect))return null;let u=0;
+      if(A){let bd=Infinity;const n=A.n*8;for(let i=0;i<=n;i++){const q=A.at(A.L*i/n).p,d=Math.hypot(q[0]-x,q[1]-y);if(d<bd){bd=d;u=i/n}}}else u=clamp(((x-h.x1)*(h.x2-h.x1)+(y-h.y1)*(h.y2-h.y1))/(L*L),0,1);
+      return G.z0+(G.z1-G.z0)*u}}}
+  return null}
+/* the line of railing e on its host: {u, z (with its Base Offset), at(u), len, lo, hi, h} or null (no host, or the railing nowhere over it) */
+function rshProf237(P0,e,g){const h=rshHost237(P0,e);if(!h)return null;
+  const key=JSON.stringify([e.x1,e.y1,e.x2,e.y2,e.bow||0,+e.off||0,h,elev(P0,h.level),h.cat==='roof'||h.cat==='ramp'?typ(P0,h):0,h.cat==='ramp'&&h.top?elev(P0,h.top):0]),c=RSH237.get(e.id);
+  if(c&&c.key===key&&c.P===P0)return c.R;if(RSH237.size>4000)RSH237.clear();const R=rshMake237(P0,e,g,h);RSH237.set(e.id,{key,P:P0,R});return R}
+function rshMake237(P0,e,g,h){const S=rshSam237(P0,h),A=g.arc,L=g.L;if(!S||!(L>1))return null;
+  const n=A?A.n:1,cp=i=>A?A.at(A.L*i/n).p:(i?[e.x2,e.y2]:[e.x1,e.y1]),pt=u=>A?A.at(u).p:[e.x1+g.ux*u,e.y1+g.uy*u],U=new Map(),
+    add=(u,k)=>{u=Math.max(0,Math.min(L,u));const r=Math.round(u*1000)/1000;U.set(r,Math.max(k,U.get(r)||0))};
+  for(let i=0;i<=n;i++)add(L*i/n,2);          // the ends, and the corners of a curved railing, stay
+  const m=Math.min(400,Math.max(1,Math.ceil(L/250)));for(let i=1;i<m;i++)add(L*i/m,0);
+  for(let i=0;i<n;i++){const a=cp(i),b=cp(i+1),dx=b[0]-a[0],dy=b[1]-a[1];
+    for(const s of S.E){const ex=s[2]-s[0],ey=s[3]-s[1],d=dx*ey-dy*ex;if(Math.abs(d)<1e-9)continue;const fx=s[0]-a[0],fy=s[1]-a[1],t1=(fx*ey-fy*ex)/d,t2=(fx*dy-fy*dx)/d;
+      if(t1>-1e-9&&t1<1+1e-9&&t2>-1e-9&&t2<1+1e-9)add(L*(i+t1)/n,1)}}          // where it crosses an edge of the host
+  const us=[...U.keys()].sort((a,b)=>a-b),zr=us.map(u=>{const p=pt(u);let z=S.z(p[0],p[1]);
+    if((z==null||!isFinite(z))&&U.get(u)>=1)for(const du of [-0.5,0.5]){const q=pt(Math.max(0,Math.min(L,u+du))),w=S.z(q[0],q[1]);if(w!=null&&isFinite(w)){z=w;break}}          // just on an edge
+    return z!=null&&isFinite(z)?z:null});
+  if(zr.every(z=>z==null))return null;
+  const zs=zr.map((z,i)=>{if(z!=null)return z;let a=i-1;while(a>=0&&zr[a]==null)a--;let b=i+1;while(b<zr.length&&zr[b]==null)b++;
+    if(a<0)return zr[b];if(b>=zr.length)return zr[a];return zr[a]+(zr[b]-zr[a])*(us[i]-us[a])/((us[b]-us[a])||1)});          // off the host: the nearest heights on it
+  const off=+e.off||0,Q=us.map((u,i)=>[u,zs[i]+off,U.get(u)===2]),K=[Q[0]];
+  for(let i=1;i<Q.length-1;i++){const a=K[K.length-1],b=Q[i],c=Q[i+1];if(b[2]){K.push(b);continue}const zl=a[1]+(c[1]-a[1])*(b[0]-a[0])/((c[0]-a[0])||1);if(Math.abs(zl-b[1])>0.5)K.push(b)}
+  if(Q.length>1)K.push(Q[Q.length-1]);
+  const u=K.map(q=>q[0]),z=K.map(q=>Math.round(q[1]*1000)/1000);let len=0;for(let i=1;i<u.length;i++)len+=Math.hypot(u[i]-u[i-1],z[i]-z[i-1]);
+  const at=x=>{const N=u.length;if(x<=u[0])return z[0];if(x>=u[N-1])return z[N-1];let lo=0,hi=N-1;while(hi-lo>1){const md=(lo+hi)>>1;if(u[md]<=x)lo=md;else hi=md}return z[lo]+(z[hi]-z[lo])*(x-u[lo])/((u[hi]-u[lo])||1)};
+  return{u,z,at,len,lo:Math.min(...z),hi:Math.max(...z),h}}
+{const f0=railGeo;railGeo=(P0,e)=>{const g=f0(P0,e),R=rshProf237(P0,e,g);if(!R)return g;
+  return Object.assign(g,{z0:R.z[0],z1:R.z[R.z.length-1],zAt:R.at,bu237:R.u,zr237:[R.lo,R.hi],len:R.len})}}
+/* the pieces of a hosted railing: one straight piece between each two points of its line */
+function rshRuns237(P0,e,g,items){const U=g.bu237,A=g.arc,pt=u=>A?A.at(u).p:[e.x1+g.ux*u,e.y1+g.uy*u],n=U.length-1;for(let i=0;i<n;i++)railRun(P0,e,g,items,pt(U[i]),pt(U[i+1]),U[i],U[i+1],i,n)}
+XC.push(()=>{if(!P.els.some(e=>e.rsh237!==undefined))return;const M=new Map(P.els.map(e=>[e.id,e]));
+  for(const e of P.els){if(e.rsh237===undefined)continue;const h=e.cat==='railing'&&e.rhost==null&&Number.isInteger(e.rsh237)?M.get(e.rsh237):null;if(!h||h===e||!RSH_CATS237.includes(h.cat))delete e.rsh237}});          // a host gone: back on its level
+/* Pick New Host of railings (Modify | Railings › Tools): plans and GL views */
+const rshSel237=()=>[...ui.sel].map(id=>IDX.get(id)),RSH_PR237={ramp:4,floor:3,roof:2,topo:1};
+function rshAtPlan237(v,p){const nav=navOf(v),x=(p.x-nav.ox)/nav.s,y=(p.y-nav.oy)/nav.s;let best=null,bz=-Infinity;
+  for(const h of P.els){if(!RSH_CATS237.includes(h.cat)||!planShow(v,h))continue;const S=rshSam237(P,h),z=S&&S.z(x,y);if(z==null||!isFinite(z))continue;const k=z+RSH_PR237[h.cat]*1e-3;if(k>bz){bz=k;best=h}}
+  return best}          // what the railing stands on there: the highest top under the pointer
+function rshAt3D237(pn,v,p){const pk=pickAt3(pn,v,p),h=pk&&IDX.get(pk.id);return h&&RSH_CATS237.includes(h.cat)&&P.els.includes(h)?h:null}
+function rshGo237(h){const L=rshSel237().filter(e=>e&&e.cat==='railing');if(!L.length){setTool('modify');return}
+  if(!h){toast(t('rsh_pick237'));return}
+  const bad=L.filter(e=>!rshMake237(P,e,railGeo(P,e),h));          // the railing must be over its new host somewhere
+  if(bad.length){toast(t('rsh_off237',bad.length,elName(h)));return}
+  edit(()=>{for(const e of L)e.rsh237=h.id});ui.sel=new Set(L.map(e=>e.id));setTool('modify');toast(t('rsh_done237',L.length,elName(h)));refresh()}
+XT.rlhost237={ok:v=>v.kind==='plan'||ev3GL(v),
+  on(){const L=rshSel237();if(!L.length||L.some(e=>!e||e.cat!=='railing')){toast(t('rsh_need237'));return false}if(L.some(e=>e.rhost!=null)){toast(t('rsh_stair237'));return false}
+    const np=L.filter(e=>e.pin).length;if(np){toast(t('pin_block',np));return false}},
+  hov(pn,v,p){const h=v.kind==='plan'?rshAtPlan237(v,p):rshAt3D237(pn,v,p);return h?h.id:null},
+  hint(){return t('h_rsh237')},
+  click(pn,v,p){rshGo237(rshAtPlan237(v,p))},
+  click3(pn,v,p){rshGo237(rshAt3D237(pn,v,p))},
+  draw(pn,ctx,v,nav,g){if(ui.curPane!==pn.i||!ui.cur)return;const h=rshAtPlan237(v,ui.cur);if(!h)return;const x=(ui.cur.x-nav.ox)/nav.s,y=(ui.cur.y-nav.oy)/nav.s,sc=v.scale||100;
+    g.text(t('rsh_lbl237',elName(h)),[x+4*sc,y-4*sc],2.4,{color:C.sel,halo:true})},
+  draw3(pn,ctx,v,nav){if(ui.curPane!==pn.i||!ui.cur||!ev3GL(v))return;const h=rshAt3D237(pn,v,ui.cur);if(h)nhLbl234(ctx,ui.cur.x,ui.cur.y,t('rsh_lbl237',elName(h)),C.sel)}};
+Object.assign(BTN,{rlhost237:['railing','']});
+XR.push(tl=>{if(tl!=='modify'||!ui.sel.size)return[];const L=rshSel237();return L.every(e=>e&&e.cat==='railing'&&e.rhost==null)?[{t:'p_nwhost',b:['rlhost237']}]:[]});
+XA.rshpick237=()=>setTool('rlhost237');
+XA.rshreset237=()=>{const L=rshSel237().filter(e=>e&&e.cat==='railing'&&e.rsh237!==undefined);if(!L.length)return;edit(()=>{for(const e of L)delete e.rsh237});toast(t('rsh_reset237',L.length));refresh()};
+/* Properties of railings: the host (or the level), Pick New Host, back to the level */
+function rshRows237(els,H){const hs=els.map(x=>rshHost237(P,x)),one=hs.every(h=>h===hs[0]),lv=lvl(P,els[0].level);
+  const v=hs[0]?(one?elName(hs[0]):t('varies')):(els.every(x=>x.level===els[0].level)&&lv?t('rsh_lv237',lv.name):t('varies'));
+  return PR.ro('p_rsh237',v)+`<div class="pa"><button class="btn" data-act="rshpick237">${t('t_rlhost237')}</button>`+(hs.some(Boolean)?` <button class="btn" data-act="rshreset237">${t('a_rshreset237')}</button>`:'')+`</div>`}
+Object.assign(STR,{
+  t_rlhost237:['เลือกโฮสต์ใหม่ (Pick New Host)','Pick New Host'],
+  h_rsh237:['คลิกพื้น หลังคา ผิวดิน หรือทางลาดที่ราวจะวิ่งตาม · Esc ยกเลิก','Click the floor, roof, toposurface or ramp the railing is to follow · Esc to cancel'],
+  rsh_need237:['เลือกราวกันตกก่อน','Select railings first'],
+  rsh_stair237:['ราวที่วางกับบันไดหรือทางลาดด้วย ใส่ราวกันตกสองข้าง ไปกับมันอยู่แล้ว เลือกราวที่วาดเป็นเส้น','A railing put on a stair or ramp with Railings on Both Sides goes with it already: select railings drawn as lines'],
+  rsh_pick237:['คลิกพื้น หลังคา ผิวดิน หรือทางลาด','Click a floor, a roof, a toposurface or a ramp'],
+  rsh_off237:['ราว {0} เส้นไม่ได้อยู่บน {1} เลย','{0} railing(s) are nowhere over {1}'],
+  rsh_done237:['ราว {0} เส้นวิ่งตาม {1} แล้ว','{0} railing(s) now follow {1}'],
+  rsh_reset237:['ราว {0} เส้นกลับไปอยู่บนระดับชั้น','{0} railing(s) back on their level'],
+  rsh_lbl237:['วิ่งตาม {0}','Follow {0}'],
+  p_rsh237:['โฮสต์ (Host)','Host'],
+  rsh_lv237:['ระดับชั้น {0}','Level {0}'],
+  p_hoff237:['ระยะจากโฮสต์ (Base Offset)','Base Offset from Host'],
+  a_rshreset237:['กลับไปที่ระดับชั้น','Back to Level']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -38227,6 +38323,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > ต่างจาก Revit: ตั้งความยาวช่วงด้วยตัวเลข ไม่ได้ลากที่จับ · ใต้บันไดเป็นขั้น ๆ ไม่มีท้องเรียบ แม่บันได หรือผิวลูกตั้ง · แบบจุดเดียวเวียนเฉพาะขั้นในช่องมุม
 - [[t_ramp]]: คลิกปลายล่างแล้วปลายบน โปรแกรมเตือนถ้าชันเกินค่าของชนิด
 - [[t_railing]]: วาดเป็นเส้น หรือเลือกบันได/ทางลาดแล้วกด [[a_railhost]]
+- เลือกโฮสต์ใหม่ของราวกันตก (Revit: Modify | Railings › Pick New Host): เลือกราวที่วาดเป็นเส้น กด [[t_rlhost237]] ในแท็บตามบริบทหรือใน [[properties]] แล้วคลิกพื้น หลังคา ผิวดิน หรือทางลาด ในแปลนหรือมุมมอง 3 มิติ ราววิ่งตามผิวบนของมัน เสา ลูกกรง ราว และราวจับขึ้นลงตาม ระยะเริ่มต้นนับจากผิวนั้น · [[a_rshreset237]] ให้กลับไปตรงบนระดับชั้น · ลบโฮสต์ ราวก็กลับไปที่ระดับชั้น
 - ราวจับและราวบน (Revit: Railing Type › Top Rail, Handrail): ใน [[type_props]] ของราวกันตก ตั้ง [[f_tr]] (สี่เหลี่ยม กลม หรือไม่มี) และ [[f_hr]] (ซ้าย ขวา หรือทั้งสองข้าง ซ้ายคือด้านซ้ายเมื่อมองจากจุดแรกที่วาด) กับ [[f_hrh]] [[f_hrd]] [[f_hrc]] [[f_hrs]] [[f_hre]] และ [[f_hrx]] · ราวจับมีตัวยึดตามระยะ ปลายที่ว่างยื่นออกไปแนวนอนแล้วหักกลับเข้าหาราว หักลงพื้น หรือมีเสาที่ปลาย ปลายที่ชนราวอีกเส้นซึ่งมีราวจับข้างเดียวกันต่อกันเป็นมุม · [[p_hrf224]] ใน [[properties]] ย้ายราวจับไปอีกข้าง และกระจกเงา (Mirror) สลับให้เอง · แสดงในแปลน 3 มิติ รูปตัด รูปด้าน และ IFC
 > ต่างจาก Revit: ราวจับเป็นส่วนหนึ่งของราวกันตก เลือกแยกไม่ได้ · ส่วนยื่นเป็นแนวนอนทั้งสองปลาย (ไม่มี Plus Tread Depth)
 - โครงสร้างราวย่อยและลูกกรง (Revit: Railing Type › Rail Structure, Baluster Placement): ปุ่ม [[a_rs225]] ใน [[type_props]] ของราวกันตกเปิดตารางราวแนวนอนใต้ราวบน ทีละแถว (ชื่อ ความสูง ระยะเยื้อง รูปตัด ขนาด) เพิ่ม ลบ เลื่อนขึ้นลง หรือกลับไปใช้ราวตามชนิด · [[f_bpk]] (ตามชนิด ไม่มี สี่เหลี่ยม กลม) [[f_bsp]] [[f_bsz]] [[f_bbo]] [[f_bto]] และ [[f_bpt]] สำหรับราวที่วางบนบันได (เว้นที่เสา) · ไม่ได้ตั้งค่า ราวเหมือนเดิม
@@ -38430,6 +38527,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > Unlike Revit: legs are typed, not dragged · the underside is stepped, with no flat soffit, supports or riser finish · Single Point turns only the treads in the corner squares
 - [[t_ramp]]: click the low end, then the high end. The program warns when it is steeper than its type allows
 - [[t_railing]]: drawn as a line, or select a stair or ramp and press [[a_railhost]]
+- Pick New Host for railings (Revit: Modify | Railings › Pick New Host): select railings drawn as lines, press [[t_rlhost237]] on the contextual tab or in [[properties]] and click a floor, a roof, a toposurface or a ramp in a plan or a 3D view: the railing follows its top, posts, balusters, rails and handrails going up and down with it, and its Base Offset is measured from that top · [[a_rshreset237]] puts it straight on its level again · delete the host and the railing goes back to its level
 - Handrails and the top rail (Revit: Railing Type › Top Rail, Handrail): in the [[type_props]] of a railing, set [[f_tr]] (rectangular, circular or none) and [[f_hr]] (left, right or both; left as seen from the first point drawn) with [[f_hrh]], [[f_hrd]], [[f_hrc]], [[f_hrs]], [[f_hre]] and [[f_hrx]] · the handrail has supports at that spacing; a free end runs on level and returns to the wall, to the floor or onto a post; an end that meets another railing with a handrail on the same side joins it at the corner · [[p_hrf224]] in [[properties]] moves the handrail to the other side, and Mirror does it by itself · drawn in plans, 3D, sections, elevations and IFC
 > Unlike Revit: the handrails belong to the railing and are not picked on their own · extensions are level at both ends (no Plus Tread Depth)
 - Rail structure and balusters (Revit: Railing Type › Rail Structure, Baluster Placement): the [[a_rs225]] button in the [[type_props]] of a railing opens the list of horizontal rails under the top rail, a row each (name, height, offset, profile, size): add, delete, move up or down, or go back to the kind's rails · [[f_bpk]] (by the kind, none, square, round), [[f_bsp]], [[f_bsz]], [[f_bbo]], [[f_bto]] and [[f_bpt]] for a railing on a stair (none where a post stands) · nothing set: the railing as before
@@ -39030,6 +39128,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.234 · ย้ายไปผนังอื่น (Pick New Host) ในรูปด้าน รูปตัด และ 3 มิติ พร้อมตัวอย่างตำแหน่งใหม่ในทุกมุมมอง และวางประตูหน้าต่างในแปลนบนชั้นของแปลนเมื่อผนังสูงหลายชั้น ไม่วางซ้อนกัน
 - V1.235 · ปริมาณวัสดุทีละชั้นของผนังที่ห่อ (ตารางวัสดุ Material Takeoff) นับส่วนที่ห่อเข้าวงกบและรอบปลายผนัง เหมือน Revit
 - V1.236 · ชนิดของผิวดินที่มีชั้นวัสดุและความหนา (Revit: Toposolid Type, Structure, Variable) ก้นเรียบหรือขนานกับผิวดิน รูปตัดแสดงทีละชั้น และตารางวัสดุนับปริมาตรของแต่ละชั้น
+- V1.237 · ราวกันตกเลือกโฮสต์ใหม่ได้ (Revit: Pick New Host) วิ่งตามผิวพื้น หลังคา ผิวดิน หรือทางลาด ราวจับไปด้วย ความยาวและตารางนับตามแนวที่ขึ้นลง
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -39405,6 +39504,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.234 · Pick New Host in elevations, sections and 3D views, with a preview of where they go in every view; doors and windows placed in a plan stand on the plan's level in walls of several storeys and never overlap another
 - V1.235 · Material quantities of wrapped wall layers (Material Takeoff) count the returns at inserts and ends, as in Revit
 - V1.236 · Toposolid types with layers and a thickness (Revit: Toposolid Type, Structure, Variable): a flat bottom or one parallel to the ground, sections show each layer, and the material takeoff counts the volume of each
+- V1.237 · Railings take a new host (Revit: Pick New Host): they follow the top of a floor, a roof, a toposurface or a ramp, handrails too; their length in schedules runs along the slope
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -41596,6 +41696,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r237={host:id=>{const e=IDX.get(id),h=e&&rshHost237(P,e);return h?h.id:null},
+  prof:id=>{const e=IDX.get(id),g=e&&railGeo(P,e);return g&&g.bu237?g.bu237.map(u=>[Math.round(u*10)/10,Math.round(g.zAt(u)*10)/10]):null},
+  geo:id=>{const e=IDX.get(id),g=e&&railGeo(P,e);return g?{z0:Math.round(g.z0*10)/10,z1:Math.round(g.z1*10)/10,len:Math.round(g.len*10)/10,zr:zRange(P,e).map(z=>Math.round(z*10)/10),runs:g.bu237?g.bu237.length-1:null}:null},
+  items:id=>MSm().items.filter(it=>it.id===id).map(it=>{let lo=Infinity,hi=-Infinity;for(let i=1;i<it.t.length;i+=3){lo=Math.min(lo,it.t[i]);hi=Math.max(hi,it.t[i])}return{tri:it.t.length/9,lo:Math.round(lo),hi:Math.round(hi)}}),
+  hr:id=>{const e=IDX.get(id);return e?hrPaths224(P,e).map(h=>h.main.map(q=>q.map(v=>Math.round(v)))):null},
+  at:(id,x,y)=>{const h=IDX.get(id),S=h&&rshSam237(P,h),z=S&&S.z(x,y);return z==null?null:Math.round(z*10)/10}};
 window.PenumBIM.r236={types:()=>JSON.parse(JSON.stringify(P.types.topo||[])),lays:id=>{const e=IDX.get(id);return e?tpLays236(P,e):null},
   q:id=>{const e=IDX.get(id),G=e&&tpQty236(P,e);return G?{vol:G.vol.map(Math.round),area:G.area.map(Math.round),zb:G.zb,D:G.D}:null},
   items:id=>MSm().items.filter(it=>it.id===id).map(it=>{let z0=Infinity,z1=-Infinity;for(let i=1;i<it.t.length;i+=3){if(it.t[i]<z0)z0=it.t[i];if(it.t[i]>z1)z1=it.t[i]}return{eg:it.eg,ec:it.ec,tri:it.t.length/9,c:it.c,z0:Math.round(z0),z1:Math.round(z1)}}),
