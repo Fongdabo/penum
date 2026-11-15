@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=312,V1_NAME='V1.302';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=313,V1_NAME='V1.303';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -40017,6 +40017,40 @@ function rhlChange302(e){const q=String(e.target.dataset.rhl302).split(':'),k=q[
 Object.assign(STR,{rhl_note302:['ช่องความยาวของเหล็กแต่ละขนาดพิมพ์ทับได้ เมื่อโรงดัดหรือตารางมาตรฐานให้ค่าของขนาดนั้นไว้ (ตัวเลขหนาสีเข้มคือค่าที่พิมพ์เอง) ลบช่องให้ว่างหรือพิมพ์ค่าที่คำนวณได้ เพื่อกลับไปคำนวณจากตัวคูณ',
     'The length of each bar size can be typed over when the bending shop or the code table gives that size its own (bold, coloured: typed in); empty the cell, or type the worked-out length, to go back to the multipliers.'],
   rhl_auto302:['คำนวณจากตัวคูณ {0} มม.','Worked out from the multipliers: {0} mm'],rhl_ov302:['พิมพ์เอง (คำนวณได้ {0} มม.)','Typed in (worked out: {0} mm)']});
+/* ===== 303 Height Offset at Tail in Slope (V1.303; Revit: a Slope Arrow with Specify Slope has Level at Tail, Height Offset at Tail and Slope) =====
+   A floor or a ceiling sloped by Slope (e.sp, e.sa) kept its height along its lowest edge, so a placed arrow (V1.274) gave the way only.  In Revit the
+   tail of the arrow is where the slab is at its height plus the Height Offset at Tail, and the slab rises (or falls, a slope below 0) from there.
+   e.sto303 keeps that offset: the plane runs through the arrow's tail (placed, or across the slab on the edge it starts from) at it, with the slope
+   along the arrow.  Without it the lowest-edge rule stays, so an old project is as it was; the row shows the offset the tail has now either way.
+   Everything that reads slabSlope (3D, sections, spot elevations, railings and stairs on it, what hangs from a ceiling, room volumes, IFC) follows. */
+const stoOn303=e=>!!e&&(e.cat==='floor'||e.cat==='ceiling')&&typeof e.sto303==='number'&&isFinite(e.sto303)&&!!+e.sp&&!sphOn271(e)&&Array.isArray(e.pts)&&e.pts.length>=3;
+const stoHas303=e=>!!e&&(e.cat==='floor'||e.cat==='ceiling')&&!!+e.sp&&!Array.isArray(e.sph271)&&Array.isArray(e.pts)&&e.pts.length>=3;
+{const f0=slabSlope;slabSlope=e=>{if(!stoOn303(e))return f0(e);const S=f0(e);if(!S)return S;const A=sarOf274(e)[0],o=A[0]*S.ux+A[1]*S.uy,h=e.sto303,k=S.k,ux=S.ux,uy=S.uy;
+  let p0=Infinity,p1=-Infinity;for(const p of e.pts){const q=p[0]*ux+p[1]*uy;p0=Math.min(p0,q);p1=Math.max(p1,q)}
+  return{ux,uy,k,rise:Math.abs((p1-p0)*k),ht:h,sto:1,dz:(x,y)=>h+(x*ux+y*uy-o)*k}}}
+/* the offset the tail has now: the one kept, or what the lowest-edge rule gives there */
+function stoOf303(e){if(stoOn303(e))return e.sto303;const S=slabSlope(e);if(!S)return 0;const A=sarOf274(e)[0];return Math.round(S.dz(A[0],A[1])*10)/10}
+/* sanitize: a number on a floor or a ceiling sloped by Slope */
+XC.push(()=>{for(const e of P.els){if(e.sto303===undefined)continue;const v=e.sto303;
+  if(!stoHas303(e)||v===null||v===''||typeof v==='boolean'||!isFinite(+v)){delete e.sto303;continue}e.sto303=Math.round(clamp(+v,-1e5,1e5)*10)/10}});
+/* ---- Properties: Height Offset at Tail above the slope, in Slope ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(isNew||(cat!=='floor'&&cat!=='ceiling')||!els.length||!els.every(stoHas303))return h;
+  const k=h.indexOf('<div class="pr"><label for="p_sp">');if(k<0)return h;const v=els.map(stoOf303),V=v.every(x=>x===v[0])?v[0]:'';
+  return h.slice(0,k)+PR.num('sto303','p_sto303',V,t('u_mm'),'step="10"')+h.slice(k)}}
+XF.push((cat,o,key,raw)=>{if(key!=='sto303')return false;if(!stoHas303(o))return true;const s=String(raw==null?'':raw).trim();
+  if(s===''){delete o.sto303;return true}const v=parseFloat(s);if(!isFinite(v))return true;o.sto303=Math.round(clamp(v,-1e5,1e5)*10)/10;return true});
+/* the arrow cleared (back across the slab): the plane kept, the offset taken at the new tail */
+XF.unshift((cat,o,key,raw)=>{if(key!=='sar274'||!stoOn303(o)||!sarOn274(o))return false;const on=!(raw===false||raw==='false'||raw===0||raw==='0'||raw==='');if(on)return false;
+  const S=slabSlope(o),D=sarDef274(o);if(S)o.sto303=Math.round(S.dz(D[0][0],D[0][1])*10)/10;return false});
+/* ---- the plan: the tail's offset beside the arrow of a slab kept by it ---- */
+XCT.push((pn,ctx,v,nav,g)=>{const e=sarSel274(v);if(!e||!stoOn303(e))return;const A=sarOf274(e),a=[g.X(A[0][0]),g.Y(A[0][1])],b=[g.X(A[1][0]),g.Y(A[1][1])],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l<6)return;
+  const ux=(b[0]-a[0])/l,uy=(b[1]-a[1])/l,x=a[0]-ux*16-uy*14,y=a[1]-uy*16+ux*14,h=e.sto303,txt=(h>0?'+':h<0?'−':'±')+fmtLen(Math.abs(h));
+  ctx.save();ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=3;ctx.strokeStyle=C.paper;ctx.fillStyle=C.sel;ctx.strokeText(txt,x,y);ctx.fillText(txt,x,y);ctx.restore()});
+Object.assign(STR,{p_sto303:['ระยะยกที่หางลูกศร','Height Offset at Tail']});
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(isNew||(cat!=='floor'&&cat!=='ceiling')||!els.length||!els.every(stoHas303)||!h.includes('id="p_sto303"'))return h;
+  for(const n of ['slab_note']){const s=t(n),i=h.indexOf(s);if(i>=0){h=h.slice(0,i+s.length)+' · '+t('sto_note303')+h.slice(i+s.length);break}}return h}}
+Object.assign(STR,{sto_note303:['ระยะยกที่หางลูกศร: แผ่นสูงเท่านี้ที่หางลูกศร แล้วลาดตามลูกศรจากจุดนั้น (ลบค่าออกเพื่อกลับไปให้ขอบที่ต่ำที่สุดอยู่ที่ระดับของแผ่น)',
+  'Height Offset at Tail: the slab is this much higher at the arrow\'s tail and slopes along the arrow from there (empty it to keep the lowest edge at the slab\'s height again)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -42093,6 +42127,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.300 · ปลอกคานหลายขา (Stirrup Legs): คุณสมบัติคานเลือกจำนวนขาปลอกได้ 3 ถึง 6 ขา เฉลี่ยตามความกว้าง ปลอกในปิดซ้อนจากนอกเข้าใน ขาเดี่ยวตรงกลางมีขอ 135° กับ 90° สลับข้าง คานแคบวางได้เท่าที่ขาห่างกันไม่น้อยกว่า 50 มม. ความยาวตัด ตารางเหล็ก รูปดัด น้ำหนัก และ 3 มิตินับด้วย
 - V1.301 · ความยาวขอเหล็ก (Rebar Hook Lengths): ปุ่มในแผงเหล็กเสริมตั้งความยาวขอของโครงการได้ ขอมาตรฐานและขอปลอก 90° 135° 180° แต่ละแบบมีตัวคูณถึง DB16 ตัวคูณ DB20 ขึ้นไป และความยาวอย่างน้อย ตารางบอกความยาวขอของเหล็กแต่ละขนาด ค่าตั้งต้นตาม ACI 318 เหมือนเดิม เหล็กยืน ปลอก ปลอกเดี่ยว ขาเดี่ยว ความยาวตัด และน้ำหนักเปลี่ยนตาม
 - V1.302 · ความยาวขอทีละขนาดเหล็ก (Hook Lengths ของ Rebar Bar Type): ในหน้าต่างความยาวขอเหล็ก ช่องความยาวของเหล็กทุกขนาด RB6 ถึง DB32 พิมพ์ทับได้ ใช้เมื่อโรงดัดหรือตารางมาตรฐานกำหนดค่าของขนาดนั้นไว้ ค่าที่พิมพ์เองเป็นตัวหนาสีเข้ม ลบให้ว่างหรือพิมพ์ค่าที่คำนวณได้เพื่อกลับไปใช้ตัวคูณ ความยาวตัดและน้ำหนักเปลี่ยนตาม
+- V1.303 · ระยะยกที่หางลูกศรในแบบความลาด (Height Offset at Tail ของ Slope Arrow): พื้นหรือฝ้าที่ตั้งความลาดเป็นเปอร์เซ็นต์ มีช่องระยะยกที่หางลูกศรในคุณสมบัติ แผ่นสูงเท่านั้นที่หางลูกศร (ลูกศรที่วางเองหรือลูกศรพาดตามขอบ) แล้วลาดขึ้นหรือลงตามลูกศรจากจุดนั้นแบบ Revit ช่องบอกค่าที่หางลูกศรตอนนี้เสมอ ลบค่าออกเพื่อกลับไปให้ขอบต่ำสุดอยู่ที่ระดับของแผ่น 3 มิติ รูปตัด ระดับ ราวและบันไดบนแผ่น ปริมาตรห้อง และ IFC เปลี่ยนตาม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -42534,6 +42569,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.300 · Stirrup Legs of beams: the Properties of a beam give its stirrups 3 to 6 legs, evenly across the width: inner closed stirrups nested from the outside in, an odd middle leg as a single-leg tie with a 135° and a 90° hook turned round each station; a narrow beam takes as many as stand 50 mm apart; the cut length, the bar schedule, the bending detail, the weight and the 3D bars count them
 - V1.301 · Rebar Hook Lengths: a button in the Rebar panel sets the project's hook lengths: for each standard and stirrup/tie hook of 90°, 135° and 180°, its multiplier up to DB16 and for DB20 and up, and its least length, with the length each bar size gets; ACI 318 values to start with, as before; main bars, ties, cross ties, single legs, the cut lengths and the weights follow
 - V1.302 · Hook lengths of each bar size (Rebar Bar Type › Hook Lengths): in Rebar Hook Lengths the length of every bar size, RB6 to DB32, can be typed over when the bending shop or the code table gives that size its own; typed lengths show bold and coloured; empty the cell, or type the worked-out length, to go back to the multipliers; the cut lengths and the weights follow
+- V1.303 · Height Offset at Tail in Slope (Slope Arrow): a floor or a ceiling sloped by a percentage has a Height Offset at Tail in Properties; as in Revit the slab is that much higher at the arrow's tail (a placed arrow, or the one across the slab) and rises or falls along the arrow from there; the box always shows what the tail has now, and emptying it keeps the lowest edge at the slab's height again; 3D, sections, spot elevations, railings and stairs on it, room volumes and IFC follow
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -44727,6 +44763,11 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r303={
+  el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify({sp:e.sp,sa:e.sa,sph:e.sph271,sar:e.sar274,sto:e.sto303,off:e.off})):null},
+  sto:id=>{const e=IDX.get(id);return e&&stoHas303(e)?stoOf303(e):null},dz:(id,x,y)=>{const S=slabSlope(IDX.get(id));return S?Math.round(S.dz(x,y)*100)/100:null},
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,key,raw)});refresh()},set:(id,k,v)=>{edit(()=>{const e=IDX.get(id);if(v===undefined)delete e[k];else e[k]=v});refresh()},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r302={own:()=>P.rhl302?JSON.parse(JSON.stringify(P.rhl302)):null,len:(d,a,tie)=>rhk301(d,a,tie),auto:(d,a,tie)=>rhkAuto302(d,a,tie),
   set:o=>{edit(()=>{P.rhl302=o;rhlNorm302(P)});return P.rhl302?JSON.parse(JSON.stringify(P.rhl302)):null},open:()=>dlgRhk301(),str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r301={own:()=>P.rhk301?JSON.parse(JSON.stringify(P.rhk301)):null,len:(d,a,tie)=>rhk301(d,a,tie),std:(d,a)=>rbHook(d,a),
