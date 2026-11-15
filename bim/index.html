@@ -3794,9 +3794,9 @@ const schedOpt=(v,o)=>v.sched==='area'?Object.assign({scheme:v.ascheme},o||{}):v
 function schedView(P,v,tr,o){if(typeof phaseHidden==='function'&&(P.phases||P.dos||v.phase||v.pf||P.els.some(e=>e.ph||e.dem))){const H=phaseHidden(P,v);if(H)P=Object.assign({},P,{els:P.els.filter(e=>!H.has(e.id))})}          /* a schedule is a view: it lists what its phase and phase filter show */
   const S=scheduleTable(P,v.sched,tr,schedOpt(v,o)),sp=v.sched==='pnl'?null:v.sp;          /* the schedule of the areas of one scheme; of one panel, laid out as the panel is */
   if(!sp)return S;let rows=S.rows.slice(),cols=S.cols,foot=S.foot;
-  for(const F of [sp.filter].concat(Array.isArray(sp.filters)?sp.filters:[]))if(F&&F.k&&F.val!==''&&F.val!=null){const c=S.cols.find(x=>x.k===F.k);if(c){const num=!!c.num,want=num?parseFloat(F.val):String(F.val).toLowerCase(),op=F.op||(num?'eq':'has');
-      rows=rows.filter(r=>{const x=cellVal(c,r,P);if(num){if(typeof x!=='number'||!isFinite(want))return false;const d=x-want;return op==='eq'?Math.abs(d)<0.005:op==='ne'?Math.abs(d)>=0.005:op==='gt'?d>=0.005:op==='ge'?d>-0.005:op==='lt'?d<=-0.005:d<0.005}
-        const s=String(x==null?'':x).toLowerCase();return op==='eq'?s===want:op==='ne'?s!==want:op==='nhas'?!s.includes(want):s.includes(want)});
+  for(const F of [sp.filter].concat(Array.isArray(sp.filters)?sp.filters:[]))if(F&&F.k&&((F.val!==''&&F.val!=null)||F.op==='hv'||F.op==='nv')){const c=S.cols.find(x=>x.k===F.k);if(c){const num=!!c.num,want=num?parseFloat(F.val):String(F.val).toLowerCase(),op=F.op||(num?'eq':'has');
+      rows=rows.filter(r=>{const x=cellVal(c,r,P);if(op==='hv'||op==='nv')return opHv310(op,x);if(num){if(typeof x!=='number'||!isFinite(want))return false;const d=x-want;return op==='eq'?Math.abs(d)<0.005:op==='ne'?Math.abs(d)>=0.005:op==='gt'?d>=0.005:op==='ge'?d>-0.005:op==='lt'?d<=-0.005:d<0.005}
+        const s=String(x==null?'':x).toLowerCase();return op==='eq'?s===want:op==='ne'?s!==want:op==='nhas'?!s.includes(want):OPS310[op]?OPS310[op](s,want):s.includes(want)});
       if(foot){const f2=Object.assign({},foot);for(const k in foot)if(typeof foot[k]==='number'){let sum=0;for(const r of rows)if(typeof r[k]==='number')sum+=r[k];f2[k]=sum}foot=f2}}}          // totals of what is left
   /* calculated values: of the rows the filter leaves; a percentage is of their total */
   const CV=calcCols(sp,S.cols),CB=combCols107(sp,tr),all=CV.length||CB.length?S.cols.concat(CV.map(x=>x.col),CB.map(x=>x.col)):S.cols;
@@ -3831,8 +3831,8 @@ function schedShape(sp,cols,rows,foot,tr){const add=k=>!!foot&&typeof foot[k]===
   const cf=(Array.isArray(sp.cf)?sp.cf:[]).filter(q=>q&&cols.some(c=>c.k===q.k)&&/^#[0-9a-f]{6}$/i.test(q.c||''));
   const hg=hgSpans107(sp,cols);return Object.assign({cols,rows,foot,app:sp.app||null,cf:cf.length?cf:null},hg?{hg}:null)}
 /* the background a cell gets from the conditional format of its column (Revit: Formatting > Conditional Format), or '' */
-function schedCF(S,c,r){if(!S.cf||r._g)return'';for(const q of S.cf){if(q.k!==c.k)continue;const x=r[c.k];let ok=false;if(c.num){const a=typeof x==='number'?cellVal(c,r,P):NaN,b=parseFloat(q.v);ok=isFinite(a)&&isFinite(b)&&(q.op==='gt'?a>b:q.op==='ge'?a>=b:q.op==='lt'?a<b:q.op==='le'?a<=b:q.op==='ne'?Math.abs(a-b)>=0.005:Math.abs(a-b)<0.005)}
-    else{const a=String(x==null?'':x).toLowerCase(),b=String(q.v==null?'':q.v).toLowerCase();ok=q.op==='eq'?a===b:q.op==='ne'?a!==b:q.op==='nhas'?!a.includes(b):a.includes(b)}if(ok)return q.c}return''}
+function schedCF(S,c,r){if(!S.cf||r._g)return'';for(const q of S.cf){if(q.k!==c.k)continue;const x=r[c.k];let ok=false;if(q.op==='hv'||q.op==='nv')ok=opHv310(q.op,x);else if(c.num){const a=typeof x==='number'?cellVal(c,r,P):NaN,b=parseFloat(q.v);ok=isFinite(a)&&isFinite(b)&&(q.op==='gt'?a>b:q.op==='ge'?a>=b:q.op==='lt'?a<b:q.op==='le'?a<=b:q.op==='ne'?Math.abs(a-b)>=0.005:Math.abs(a-b)<0.005)}
+    else{const a=String(x==null?'':x).toLowerCase(),b=String(q.v==null?'':q.v).toLowerCase();ok=q.op==='eq'?a===b:q.op==='ne'?a!==b:q.op==='nhas'?!a.includes(b):OPS310[q.op]?OPS310[q.op](a,b):a.includes(b)}if(ok)return q.c}return''}
 /* ---- calculated values of a schedule (Revit: Schedule Properties > Fields > Calculated Value: a formula, or a percentage of a total) ----
    v.sp.calc=[{id,name,f:'{area} * 350',dec}] or [{id,name,pct:'area',dec}].  A formula is kept with the keys of the columns in braces, so that it survives a change
    of language; it is typed and shown with the names of the columns, bare, or in square brackets when a name has spaces or signs (as in Revit).
@@ -12837,17 +12837,17 @@ function showClash(c){const a=IDX.get(c.a),b=IDX.get(c.b);if(!a||!b){toast(t('cl
 
 /* Schedule Properties: fields shown and their order, a filter, sorting */
 function dlgSchedProps(){const v=activeView();if(!v||v.kind!=='schedule'){toast(t('csv_na'));return}const S=scheduleTable(P,v.sched,t,schedOpt(v,null)),sp=v.sp||{},CV=calcCols(sp,S.cols),all=S.cols.concat(CV.map(x=>x.col),combCols107(sp,t).map(x=>x.col)),ks=all.map(c=>c.k),od=sp.order||[],order=[...od.filter(k=>ks.includes(k)),...ks.filter(k=>!od.includes(k))],hid=new Set(sp.hide||[]),lab=k=>colLabel(all.find(c=>c.k===k));
-  const F=sp.filter||{},fc=S.cols.find(c=>c.k===F.k),ops=fc&&fc.num?['eq','ne','gt','ge','lt','le']:['has','nhas','eq','ne'],opt=(cur,list)=>`<option value="">${t('sp_none')}</option>`+list.map(c=>`<option value="${c.k}"${c.k===cur?' selected':''}>${esc(colLabel(c))}</option>`).join('');
+  const F=sp.filter||{},fc=S.cols.find(c=>c.k===F.k),ops=fc&&fc.num?OPN310:OPT310,opt=(cur,list)=>`<option value="">${t('sp_none')}</option>`+list.map(c=>`<option value="${c.k}"${c.k===cur?' selected':''}>${esc(colLabel(c))}</option>`).join('');
   const srt=(key,l)=>{const so=sp[key]||{};return`<div class="fr"><label for="sp_${key}">${t(l)}</label><span class="spr"><select id="sp_${key}" data-sp="${key}">${opt(so.k,all)}</select><select id="sp_${key}d" data-sp="${key}d" aria-label="${t('sp_sorting')}"><option value="0"${so.desc?'':' selected'}>${t('sp_asc')}</option><option value="1"${so.desc?' selected':''}>${t('sp_desc')}</option></select></span></div>`};
   const pg=l=>`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t(l)}</div>`,cv=k=>/^calc:/.test(k)?`<small class="fx" title="${esc(cvText(CV.find(x=>x.col.k===k),S.cols,CV))}">ƒx</small><button class="btn" data-spc="${k.slice(5)}">${t('cv_edit')}</button>`:/^comb:/.test(k)?`<small class="fx" title="${esc(t('cb_title'))}">⊕</small><button class="btn" data-spb="${k.slice(5)}">${t('cv_edit')}</button>`:'';
   const body=pg('sp_fields')+`<div class="spf">${order.map((k,i)=>`<div><label><input type="checkbox" data-spf="${k}"${hid.has(k)?'':' checked'}>${esc(lab(k))}${cv(k)}</label><button class="btn" data-spm="${k}:-1" aria-label="${t('sp_up')}"${i?'':' disabled'}>▲</button><button class="btn" data-spm="${k}:1" aria-label="${t('sp_down')}"${i<order.length-1?'':' disabled'}>▼</button></div>`).join('')}</div><div><button class="btn" data-spc="0">${t('sp_calc')}</button><button class="btn" data-spb="0" style="margin-left:6px">${t('sp_comb')}</button>${v.sched==='cat'||v.sched==='key'?`<button class="btn" data-act="schedflds" data-arg="${v.id}" style="margin-left:6px">${t('a_schedflds')}…</button>`:''}</div>`
     +pg('sp_filter')+`<div class="fr"><label for="sp_fk">${t('sp_filterby')}</label><span class="spr"><select id="sp_fk" data-sp="fk">${opt(F.k,S.cols)}</select><select id="sp_fo" data-sp="fo" aria-label="${t('sp_filter')}"${F.k?'':' disabled'}>${ops.map(o=>`<option value="${o}"${o===(F.op||ops[0])?' selected':''}>${t('op_'+o)}</option>`).join('')}</select><input id="sp_fv" data-sp="fv" value="${esc(F.val==null?'':F.val)}" aria-label="${t('value')}"${F.k?'':' disabled'}></span></div>`
-    +[0,1,2].map(i=>{const Q=(sp.filters||[])[i]||{},qc=S.cols.find(c=>c.k===Q.k),qo=qc&&qc.num?['eq','ne','gt','ge','lt','le']:['has','nhas','eq','ne'];if(i>0&&!((sp.filters||[])[i-1]||{}).k)return'';if(!F.k)return'';
+    +[0,1,2].map(i=>{const Q=(sp.filters||[])[i]||{},qc=S.cols.find(c=>c.k===Q.k),qo=qc&&qc.num?OPN310:OPT310;if(i>0&&!((sp.filters||[])[i-1]||{}).k)return'';if(!F.k)return'';
       return`<div class="fr"><label for="sp_q${i}k">${t('sp_and')}</label><span class="spr"><select id="sp_q${i}k" data-spq="${i}:k">${opt(Q.k,S.cols)}</select><select data-spq="${i}:o" aria-label="${t('sp_filter')}"${Q.k?'':' disabled'}>${qo.map(o=>`<option value="${o}"${o===(Q.op||qo[0])?' selected':''}>${t('op_'+o)}</option>`).join('')}</select><input data-spq="${i}:v" value="${esc(Q.val==null?'':Q.val)}" aria-label="${t('value')}"${Q.k?'':' disabled'}></span></div>`}).join('')
     +pg('sp_sorting')+srt('sort','sp_sortby')+`<div class="chks" style="padding:2px 0 6px">${[['ghdr','sp_ghdr',(sp.sort||{}).hdr],['gftr','sp_gftr',(sp.sort||{}).ftr],['gblank','sp_gblank',(sp.sort||{}).blank]].map(q=>`<label><input type="checkbox" data-sp="${q[0]}"${q[2]?' checked':''}${sp.sort&&sp.sort.k?'':' disabled'}> ${t(q[1])}</label>`).join(' ')}${fkSel309(sp,'sort')}</div>`+srt('sort2','sp_thenby')+`<div class="chks" style="padding:2px 0 6px">${[['g2hdr','sp_ghdr',(sp.sort2||{}).hdr],['g2ftr','sp_gftr',(sp.sort2||{}).ftr],['g2blank','sp_gblank',(sp.sort2||{}).blank]].map(q=>`<label><input type="checkbox" data-sp="${q[0]}"${q[2]?' checked':''}${sp.sort2&&sp.sort2.k?'':' disabled'}> ${t(q[1])}</label>`).join(' ')}${fkSel309(sp,'sort2')}</div>`
     +`<div class="chks" style="padding:6px 0 2px"><label><input type="checkbox" data-sp="grand"${sp.grand===0?'':' checked'}> ${t('sp_grand')}</label> <label><input type="checkbox" data-sp="item"${sp.item===0?'':' checked'}> ${t('sp_item')}</label></div>`+gkRow309(sp)
     +pg('sp_format')+`<div class="spf">${order.filter(k=>!hid.has(k)).map(k=>{const c=all.find(x=>x.k===k),a=(sp.align||{})[k]||'';return`<div><label style="flex:1">${esc(c.label)}</label><input data-sph="${k}" value="${esc((sp.head||{})[k]||'')}" placeholder="${esc(c.label)}" aria-label="${t('sp_heading')}" style="width:150px"><select data-spa="${k}" aria-label="${t('sp_align')}"><option value="">${t('sp_al_auto')}</option><option value="l"${a==='l'?' selected':''}>${t('sp_al_l')}</option><option value="c"${a==='c'?' selected':''}>${t('sp_al_c')}</option><option value="r"${a==='r'?' selected':''}>${t('sp_al_r')}</option></select>${c.num?`<select data-spt="${k}" aria-label="${t('sp_tot')}"><option value="">${t('sp_tot')}: ${t('sp_al_auto')}</option><option value="1"${(sp.tot||{})[k]===1?' selected':''}>${t('sp_tot')}: ${t('o_yes')}</option><option value="0"${(sp.tot||{})[k]===0?' selected':''}>${t('sp_tot')}: ${t('o_no')}</option>${[2,3,4].map(n=>`<option value="${n}"${(sp.tot||{})[k]===n?' selected':''}>${t('sp_tot')}: ${t(['sp_tmn308','sp_tmx308','sp_tmm308'][n-2])}</option>`).join('')}</select>`:''}${nfBtn304(c,k,sp)}</div>${nfPanel304(c,k,sp,S)}`}).join('')}</div>`
-    +pg('sp_cf')+[0,1,2].map(i=>{const Q=(sp.cf||[])[i]||{},qc=all.find(c=>c.k===Q.k),qo=qc&&qc.num?['gt','ge','lt','le','eq','ne']:['has','nhas','eq','ne'];if(i>0&&!((sp.cf||[])[i-1]||{}).k)return'';
+    +pg('sp_cf')+[0,1,2].map(i=>{const Q=(sp.cf||[])[i]||{},qc=all.find(c=>c.k===Q.k),qo=qc&&qc.num?OPC310:OPT310;if(i>0&&!((sp.cf||[])[i-1]||{}).k)return'';
       return`<div class="fr"><label for="sp_c${i}k">${t('sp_cf_if')}</label><span class="spr"><select id="sp_c${i}k" data-spcf="${i}:k">${opt(Q.k,order.filter(k=>!hid.has(k)).map(k=>all.find(c=>c.k===k)))}</select><select data-spcf="${i}:o" aria-label="${t('sp_filter')}"${Q.k?'':' disabled'}>${qo.map(o=>`<option value="${o}"${o===(Q.op||qo[0])?' selected':''}>${t('op_'+o)}</option>`).join('')}</select><input data-spcf="${i}:v" value="${esc(Q.v==null?'':Q.v)}" aria-label="${t('value')}"${Q.k?'':' disabled'} style="width:90px"><input type="color" data-spcf="${i}:c" value="${/^#[0-9a-f]{6}$/i.test(Q.c||'')?Q.c:'#ffd866'}" aria-label="${t('sp_cf_color')}"${Q.k?'':' disabled'}></span></div>`}).join('')
     +pg('sp_appear')+`<div class="chks" style="padding:4px 0">${[['grid','sp_ap_grid'],['title','sp_ap_title'],['head','sp_ap_head']].map(q=>`<label><input type="checkbox" data-sp="app_${q[0]}"${(sp.app||{})[q[0]]===0?'':' checked'}> ${t(q[1])}</label>`).join(' ')}</div>`+sp107Sizes(sp);
   openDlg(t('a_schedprops')+' — '+v.name,body,`<button class="btn" data-spx="reset">${t('sp_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,{
@@ -14617,7 +14617,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=319,V1_NAME='V1.309';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=320,V1_NAME='V1.310';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -33955,9 +33955,9 @@ function embFields(Q,E,tr){const F=sfAll(Q,E.cat,tr),by=new Set(F.map(f=>f.k));l
   if(!L.length)L=(SF_DEF[E.cat]||SF_DEF.def).filter(k=>by.has(k)&&!EMB_SKIP.includes(k));if(!L.length&&F.length)L=[F[0].k];return{F,L}}
 /* the table of the embedded category: its rows filtered and sorted, and the rooms each element is in */
 function embTable(Q,v,tr){const E=v.emb,{L}=embFields(Q,E,tr),T=sfTable(Q,{v:{scat:E.cat,flds:L}},tr,quantities(Q));let cols=T.cols,rows=T.rows.slice();
-  const f=E.f;if(f&&f.k&&f.val!==''&&f.val!=null){const c=cols.find(x=>x.k===f.k);if(c){const num=!!c.num,want=num?parseFloat(f.val):String(f.val).toLowerCase(),op=f.op||(num?'eq':'has');
-    rows=rows.filter(r=>{const x=cellVal(c,r,Q);if(num){if(typeof x!=='number'||!isFinite(want))return false;const d=x-want;return op==='eq'?Math.abs(d)<0.005:op==='ne'?Math.abs(d)>=0.005:op==='gt'?d>=0.005:op==='ge'?d>-0.005:op==='lt'?d<=-0.005:d<0.005}
-      const s=String(x==null?'':x).toLowerCase();return op==='eq'?s===want:op==='ne'?s!==want:op==='nhas'?!s.includes(want):s.includes(want)})}}
+  const f=E.f;if(f&&f.k&&((f.val!==''&&f.val!=null)||f.op==='hv'||f.op==='nv')){const c=cols.find(x=>x.k===f.k);if(c){const num=!!c.num,want=num?parseFloat(f.val):String(f.val).toLowerCase(),op=f.op||(num?'eq':'has');
+    rows=rows.filter(r=>{const x=cellVal(c,r,Q);if(op==='hv'||op==='nv')return opHv310(op,x);if(num){if(typeof x!=='number'||!isFinite(want))return false;const d=x-want;return op==='eq'?Math.abs(d)<0.005:op==='ne'?Math.abs(d)>=0.005:op==='gt'?d>=0.005:op==='ge'?d>-0.005:op==='lt'?d<=-0.005:d<0.005}
+      const s=String(x==null?'':x).toLowerCase();return op==='eq'?s===want:op==='ne'?s!==want:op==='nhas'?!s.includes(want):OPS310[op]?OPS310[op](s,want):s.includes(want)})}}
   const so=E.sort;if(so&&so.k){const c=cols.find(x=>x.k===so.k);if(c){const sg=so.desc?-1:1;rows=rows.map((r,i)=>[r,i]).sort((a,b)=>{const x=a[0][c.k],y=b[0][c.k],d=typeof x==='number'&&typeof y==='number'?x-y:String(x==null?'':x).localeCompare(String(y==null?'':y),undefined,{numeric:true});return d*sg||a[1]-b[1]}).map(q=>q[0])}}
   const X=sfCtx(Q,tr,quantities(Q)),by=new Map(Q.els.map(e=>[e.id,e])),RM=new Map(),side=E.cat==='door'||E.cat==='window';
   for(const r of rows){const e=by.get(r.id);if(!e)continue;const rs=side?[X.side(e,1),X.side(e,-1)]:[X.inRoom(e)];for(const m of new Set(rs.filter(Boolean)))(RM.get(m.id)||RM.set(m.id,[]).get(m.id)).push(r)}
@@ -34001,7 +34001,7 @@ document.addEventListener('change',e=>{const el=e.target,k=el&&el.dataset&&el.da
 function dlgEmb(){const v=activeView();if(!embOn(v)){toast(t('emb_na'));return}const E=v.emb,{F,L}=embFields(P,E,t),pg=l=>`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t(l)}</div>`;
   const G=[['i','sf_g_i'],['q','sf_g_q'],['r','sf_g_r'],['t','sf_g_t'],['p','sf_g_p'],['k','sf_g_k']],cols=L.map(k=>F.find(f=>f.k===k)).filter(Boolean);
   const opt=(cur,list)=>`<option value="">${t('emb_none')}</option>`+list.map(f=>`<option value="${esc(f.k)}"${f.k===cur?' selected':''}>${esc(f.l)}</option>`).join('');
-  const so=E.sort||{},fl=E.f||{},fc=cols.find(f=>f.k===fl.k),ops=fc&&fc.num?['eq','ne','gt','ge','lt','le']:['has','nhas','eq','ne'];
+  const so=E.sort||{},fl=E.f||{},fc=cols.find(f=>f.k===fl.k),ops=fc&&fc.num?OPN310:OPT310;
   const body=`<p class="note">${t('emb_pnote',t('cat_'+E.cat),v.name)}</p>`+pg('emb_flds')+G.map(([g,l])=>{const A=F.filter(f=>f.grp===g);if(!A.length)return'';
       return`<div style="margin:4px 0 2px;font-size:12px;color:var(--muted)">${t(l)}</div><div class="sfp">${A.map(f=>`<label><input type="checkbox" data-embf="${esc(f.k)}"${L.includes(f.k)?' checked':''}> ${esc(f.l)}</label>`).join('')}</div>`}).join('')
     +pg('sp_sorting')+`<div class="fr"><label for="emb_sk">${t('sp_sortby')}</label><span class="spr"><select id="emb_sk" data-embp="sk">${opt(so.k,cols)}</select><select id="emb_sd" data-embp="sd" aria-label="${t('sp_sorting')}"${so.k?'':' disabled'}><option value="0"${so.desc?'':' selected'}>${t('sp_asc')}</option><option value="1"${so.desc?' selected':''}>${t('sp_desc')}</option></select></span></div>`
@@ -34017,7 +34017,7 @@ XA.embprops=()=>dlgEmb();
 XC.push(()=>{for(const v of P.views||[]){if(v.emb===undefined)continue;const E=v.emb;if(!embCan(v)||!E||typeof E!=='object'||Array.isArray(E)){delete v.emb;continue}
   const o={on:E.on?1:0,cat:EMB_CATS().includes(E.cat)?E.cat:'furn'};if(Array.isArray(E.flds)){const L=E.flds.filter(k=>typeof k==='string'&&k.length<=40).slice(0,30);if(L.length)o.flds=L}
   if(E.sort&&typeof E.sort.k==='string')o.sort={k:E.sort.k,desc:!!E.sort.desc};if(E.item===0)o.item=0;
-  if(E.f&&typeof E.f.k==='string'){const ops=['eq','ne','gt','ge','lt','le','has','nhas'];o.f={k:E.f.k,op:ops.includes(E.f.op)?E.f.op:'',val:String(E.f.val==null?'':E.f.val).slice(0,80)}}v.emb=o}});
+  if(E.f&&typeof E.f.k==='string'){const ops=['eq','ne','gt','ge','lt','le','has','nhas','bw','nbw','ew','new','hv','nv'];o.f={k:E.f.k,op:ops.includes(E.f.op)?E.f.op:'',val:String(E.f.val==null?'':E.f.val).slice(0,80)}}v.emb=o}});
 /* the Properties of the schedule say what is embedded */
 XVR.push(v=>embCan(v)?PR.ro('emb_p',embOn(v)?t('cat_'+v.emb.cat):t('emb_off')):'');
 Object.assign(STR,{
@@ -40266,6 +40266,25 @@ XC.push(()=>{for(const v of P.views){if(v.kind!=='schedule'||!v.sp||typeof v.sp!
   if(sp.gtt309!==undefined){const s=typeof sp.gtt309==='string'?sp.gtt309.trim().slice(0,60):'';if(s)sp.gtt309=s;else delete sp.gtt309}}});
 Object.assign(STR,{fk309_tct:['ชื่อ จำนวน และยอดรวม','Title, count, and totals'],fk309_tt:['ชื่อและยอดรวม','Title and totals'],fk309_ct:['จำนวนและยอดรวม','Count and totals'],fk309_t:['ยอดรวมอย่างเดียว','Totals only'],
   sp_fk309:['สิ่งที่แสดงในท้ายกลุ่ม','What the footer shows'],sp_gk309:['แถวยอดรวมแสดง','Grand totals show'],sp_gtt309:['ชื่อแถวยอดรวม (Custom grand total title)','Custom grand total title']});
+/* ===== 310 More tests in schedule filters and conditional formats (V1.310; Revit: Schedule Properties › Filter and Conditional Formatting —
+   begins with, does not begin with, ends with, does not end with, has a value, has no value) =====
+   A text column could be filtered by contains, does not contain, equals and does not equal; a number column by equals to less than or equal.
+   Text columns now also take begins with, does not begin with, ends with and does not end with, and every column takes has a value and has
+   no value, which need no value to compare with.  The same tests work in the And filters, the conditional format and the filter of an
+   embedded schedule. */
+const OPT310=['has','nhas','eq','ne','bw','nbw','ew','new','hv','nv'],OPN310=['eq','ne','gt','ge','lt','le','hv','nv'],OPC310=['gt','ge','lt','le','eq','ne','hv','nv'];
+/* the text tests, on lower-case texts */
+const OPS310=Object.assign(Object.create(null),{bw:(s,w)=>s.startsWith(w),nbw:(s,w)=>!s.startsWith(w),ew:(s,w)=>s.endsWith(w),new:(s,w)=>!s.endsWith(w)});
+/* has a value: a number that is a number, a text that is not blank */
+const hasVal310=x=>x!=null&&(typeof x==='number'?isFinite(x):String(x).trim()!=='');
+const opHv310=(op,x)=>hasVal310(x)===(op==='hv');
+/* in Schedule Properties and Embedded Schedule Properties, the value box of a has a value / has no value test is off */
+function hvLock310(){for(const s of document.querySelectorAll('#dlg select')){const o=s.dataset;if(!(o.sp==='fo'||/:o$/.test(o.spq||'')||/:o$/.test(o.spcf||'')||o.embp==='fo'))continue;
+  const i=s.parentNode&&s.parentNode.querySelector('input:not([type="color"])');if(i&&(s.value==='hv'||s.value==='nv'))i.disabled=true}}
+{const f0=dlgSchedProps;dlgSchedProps=(...a)=>{const r=f0(...a);hvLock310();return r}}
+{const f0=dlgEmb;dlgEmb=(...a)=>{const r=f0(...a);hvLock310();return r}}
+Object.assign(STR,{op_bw:['ขึ้นต้นด้วย','begins with'],op_nbw:['ไม่ขึ้นต้นด้วย','does not begin with'],op_ew:['ลงท้ายด้วย','ends with'],op_new:['ไม่ลงท้ายด้วย','does not end with'],
+  op_hv:['มีค่า','has a value'],op_nv:['ไม่มีค่า','has no value']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -42349,6 +42368,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.307 · หน่วยของคอลัมน์ภาระความเย็น ความร้อน และกำลังไฟฟ้าในรูปแบบตัวเลข: ตารางภาระทำความเย็นรายห้อง ตารางงานระบบปรับอากาศ และตารางงานไฟฟ้าเลือกหน่วยของแต่ละคอลัมน์ได้ ภาระเป็น W kW BTU/h หรือตันความเย็น กำลังไฟฟ้าเป็น W kW หรือแรงม้า หัวคอลัมน์ ยอดรวม แผ่นงาน CSV และ Excel เปลี่ยนตาม
 - V1.308 · ค่าน้อยสุดและมากสุดในตาราง (Calculate minimum / maximum): ในตั้งค่าตาราง ช่องรวมยอดของคอลัมน์ตัวเลขเลือกค่าน้อยสุด ค่ามากสุด หรือน้อยสุดและมากสุดได้ แถวรวมและท้ายกลุ่มแสดงค่านั้นตามรูปแบบตัวเลขของคอลัมน์ CSV Excel และแผ่นงานใช้ค่าเดียวกัน
 - V1.309 · สิ่งที่แสดงในท้ายกลุ่มและแถวยอดรวม (Footer / Grand totals): ในตั้งค่าตาราง ท้ายกลุ่มและแถวยอดรวมเลือกแสดงชื่อ จำนวน และยอดรวม ชื่อและยอดรวม จำนวนและยอดรวม หรือยอดรวมอย่างเดียวได้ และตั้งชื่อแถวยอดรวมเองได้ (Custom grand total title) เลือกแบบมีจำนวนแล้วแถวยอดรวมแสดงจำนวนชิ้นแม้ไม่มีคอลัมน์ที่รวมยอด
+- V1.310 · ตัวกรองตารางแบบขึ้นต้นด้วย ลงท้ายด้วย มีค่า ไม่มีค่า (Filter / Conditional Format tests): ตัวกรองและสีตามเงื่อนไขของตาราง รวมทั้งตัวกรองของตารางย่อย (Embedded Schedule) เลือกขึ้นต้นด้วย ไม่ขึ้นต้นด้วย ลงท้ายด้วย ไม่ลงท้ายด้วย กับคอลัมน์ข้อความ และมีค่า ไม่มีค่า กับทุกคอลัมน์ได้ แบบมีค่าและไม่มีค่าไม่ต้องใส่ค่าเทียบ
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -42797,6 +42817,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.307 · Units of heating, cooling and power columns in Field Format: the loads, HVAC and electrical schedules can show each load column in W, kW, BTU/h or tons of refrigeration and each power column in W, kW or hp; the heading, totals, sheets, CSV and Excel follow
 - V1.308 · Calculate minimum, maximum, minimum and maximum: the total of a number column in Schedule Properties can be the smallest value, the largest or both, in the grand total row and in each group's footer, in the column's format; CSV, Excel and sheets carry them
 - V1.309 · Footer and grand total options: in Schedule Properties a group's footer and the grand total row can show the title, count and totals, the title and totals, the count and totals, or the totals only, and the grand total row can have a title of its own; with a count it shows even when no column is totalled
+- V1.310 · Begins with, ends with, has a value and has no value in schedule filters: schedule filters, conditional formats and embedded schedule filters take begins with, does not begin with, ends with and does not end with on text columns, and has a value and has no value on every column, with no value to type
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -44990,6 +45011,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r310={sp:(id,o)=>{const v=viewById(id);edit(()=>{v.sp=Object.assign({},v.sp||{},o)});refresh()},
+  col:(id,k)=>{const v=viewById(id),S=v&&schedView(P,v,t),c=S&&S.cols.find(x=>x.k===k);return c?S.rows.filter(r=>!r._g).map(r=>unesc(fmtCell(c,r[c.k]))):null},
+  foot:(id,k)=>{const v=viewById(id),S=v&&schedView(P,v,t),c=S&&S.cols.find(x=>x.k===k);return c&&S.foot?unesc(fmtCell(c,S.foot[c.k])):null},
+  cf:(id,k)=>{const v=viewById(id),S=v&&schedView(P,v,t),c=S&&S.cols.find(x=>x.k===k);return c?S.rows.filter(r=>!r._g).map(r=>schedCF(S,c,r)):null},
+  room:(no,o)=>{const e=P.els.find(e=>e.cat==='room'&&String(e.number)===String(no));if(!e)return null;edit(()=>{Object.assign(e,o)});refresh();return e.id},
+  emb:(id,f)=>{const v=viewById(id);if(!v||!v.emb)return null;edit(()=>{if(f)v.emb.f=f;else delete v.emb.f});refresh();const T=embTable(P,v,t),U=[...new Set([].concat(...T.RM.values()))];return{n:U.length,marks:U.map(r=>String(r.mark==null?'':r.mark)).sort(),f:v.emb.f||null}}};
 window.PenumBIM.r309={sp:(id,o)=>{const v=viewById(id);edit(()=>{v.sp=Object.assign({},v.sp||{},o)});refresh()},
   foot0:id=>{const v=viewById(id),S=v&&schedView(P,v,t);if(!S||!S.foot)return null;const c=S.cols[0];return{k:c.k,txt:unesc(fmtCell(c,S.foot[c.k])),keys:Object.keys(S.foot).filter(k=>S.foot[k]!=null&&S.foot[k]!=='')}},
   footers0:id=>{const v=viewById(id),S=v&&schedView(P,v,t);if(!S)return null;const c=S.cols[0];return S.rows.filter(r=>r._g==='f').map(r=>unesc(fmtCell(c,r[c.k])))},
