@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=370,V1_NAME='V1.360';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=371,V1_NAME='V1.361';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -43498,6 +43498,36 @@ Object.assign(STR,{a_sv360:['บันทึกเป็นไฟล์ใหม
   sv_done360:['บันทึก {0} มุมมองลงไฟล์ {1} แล้ว','{0} view(s) saved to {1}'],sv_none360:['ไม่มีมุมมองที่บันทึกได้','Nothing to save'],
   sv_na360:['บันทึกเป็นไฟล์ใหม่ได้เฉพาะแบบร่าง คำอธิบายสัญลักษณ์ ตาราง และแผ่นงาน','Only drafting views, legends, schedules and sheets can be saved to a new file'],
   sv_empty360:['โครงการนี้ยังไม่มีแบบร่าง คำอธิบายสัญลักษณ์ ตาราง หรือแผ่นงานให้บันทึก','This project has no drafting views, legends, schedules or sheets to save']});
+/* ===== 361 Delete a type that is in use (Revit: Project Browser › right-click a type › Delete: "the following elements will also be deleted", then the
+   type goes with its instances).  Until now the browser refused a type in use.  Now it asks, naming how many of the family use it and how many doors,
+   windows and other elements hosted by them go too, and Delete takes them all in one step of Undo.  The other rules of Type Properties still hold: the
+   last type of a family stays, a row of a stacked wall stays (the elements are put back when the type cannot go). */
+/* the elements hosted by the elements ids (doors and windows in walls, and what is hosted by those) */
+function ftHosted361(ids){const s=new Set(ids),out=[];let more=true;while(more){more=false;for(const e of P.els)if(!s.has(e.id)&&e.host!=null&&s.has(e.host)){s.add(e.id);out.push(e);more=true}}return out}
+/* the cats of elements, counted and named: "Walls 6, Doors 2" */
+const ftCount361=L=>{const m=new Map();for(const e of L){const c=e.cat;m.set(c,(m.get(c)||0)+1)}return[...m].map(([c,n])=>t('cat_'+c)+' '+n).join(', ')};
+/* delete the instances, then the type by the rules of Type Properties; as one step of Undo, or nothing when the type cannot go */
+function ftDelAll361(cat,id){const T=ftType355(cat,id);if(!T)return false;const nm=T.name,L=P.types[cat]||[];
+  if(L.length<2){toast(t('ft_cant355',nm,t('ft_last355')),5000);return false}
+  const ids=ftUses355(cat,T).map(x=>x.id);if(!ids.length)return ftDel355(cat,id);
+  const U0=undoS.slice(),R0=redoS.slice(),before=JSON.stringify(P);let ok=false;
+  edit(()=>{deleteIds(ids);ui.sel=new Set([...ui.sel].filter(x=>!ids.includes(x)))});
+  if(!ftUses355(cat,ftType355(cat,id)).length){try{dlgTypes(cat,id);const b=$('#dlg [data-td="del"]');if(b&&!b.disabled){b.click();ok=!ftType355(cat,id)}closeDlg()}catch(e){console.error(e)}}
+  if(!ok){closeDlg();P=JSON.parse(before);IDX=indexProject(P);undoS.length=0;undoS.push(...U0);redoS.length=0;redoS.push(...R0);commit();
+    toast(t('ft_cant355',nm,t('ft_keep361')),5000);return false}
+  if(undoS.length>=2)undoS.splice(undoS.length-1,1);          // the two edits as one step: Undo goes back to before the instances went
+  ui.sel=new Set([...ui.sel].filter(x=>IDX.has(x)));refresh();toast(t('ft_delall361',nm,ids.length),6000);return true}
+/* the question */
+function dlgFtDel361(cat,id){const T=ftType355(cat,id);if(!T)return;const U=ftUses355(cat,T),els=U.filter(x=>P.els.includes(x)),ann=U.filter(x=>!P.els.includes(x)),H=ftHosted361(els.map(e=>e.id));
+  const rows=[els.length?`<li>${esc(ftCount361(els))}</li>`:'',ann.length?`<li>${esc(t('ft_ann361',ann.length))}</li>`:'',H.length?`<li>${esc(t('ft_host361',ftCount361(H)))}</li>`:''].join('');
+  openDlg(t('ft_deltitle361'),`<p>${esc(t('ft_delq361',T.name,t('cat_'+cat),U.length))}</p><ul style="margin:6px 0 0 18px;padding:0">${rows}</ul><p class="note" style="margin-top:10px">${esc(t('ft_undo361'))}</p>`,
+    `<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-ftd361="ok">${t('a_delete')}</button>`,
+    {click(e){if(!(e.target.closest&&e.target.closest('[data-ftd361="ok"]')))return;closeDlg();ftDelAll361(cat,id)}})}
+XA.ftdel355=arg=>{const [c,id]=ftArg355(arg),T=ftType355(c,id);if(!T)return;const L=P.types[c]||[];
+  if(L.length<2||!ftUses355(c,T).length){ftDel355(c,id);return}dlgFtDel361(c,id)};
+Object.assign(STR,{ft_deltitle361:['ลบชนิด','Delete Type'],ft_delq361:['ชนิด “{0}” ของ{1}ใช้อยู่ {2} ชิ้น ลบชนิดนี้แล้วชิ้นเหล่านี้จะถูกลบด้วย:','Type “{0}” of {1} is used by {2}. Deleting it deletes these too:'],
+  ft_ann361:['คำอธิบายแบบ {0} ชิ้น','{0} annotation(s)'],ft_host361:['และชิ้นที่ฝังอยู่ในนั้น: {0}','and what they host: {0}'],ft_undo361:['กด Ctrl+Z เพื่อเอาคืนทั้งหมดได้','Ctrl+Z brings them all back'],
+  ft_delall361:['ลบชนิด “{0}” และ {1} ชิ้นที่ใช้ชนิดนี้แล้ว','Type “{0}” deleted with the {1} element(s) of it'],ft_keep361:['ชนิดนี้ลบไม่ได้ ชิ้นที่ใช้อยู่ยังอยู่ครบ','it cannot be deleted; its elements are kept']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -45632,6 +45662,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.358 · ลากจากเบราว์เซอร์โครงการแบบ Revit: ลากมุมมองไปวางบนแผ่นงานที่เปิดอยู่ กรอบของวิวพอร์ตตามเมาส์ไป ปล่อยแล้ววางตรงนั้นและถูกเลือกไว้ มุมมองที่อยู่บนแผ่นงานอื่นแล้ววางซ้ำไม่ได้ (บอกชื่อแผ่นงานที่อยู่) ตารางวางได้หลายแผ่นแต่แผ่นละครั้ง คำอธิบายสัญลักษณ์วางได้ทุกที่ และลากชนิดจากกลุ่มครอบครัวไปที่มุมมองเพื่อเริ่มวางชนิดนั้น กด Esc ระหว่างลากเพื่อยกเลิก
 - V1.359 · วางมุมมองแบบ Revit: รายการของ “วางมุมมอง” แสดงเฉพาะมุมมองที่วางบนแผ่นงานนี้ได้ (ชื่อนำหน้าด้วยประเภท เช่น แปลนพื้น: ชั้น 2) มุมมองที่อยู่บนแผ่นงานอื่นแล้วไม่อยู่ในรายการ ตารางที่อยู่บนแผ่นงานนี้แล้วไม่อยู่ในรายการ คำอธิบายสัญลักษณ์อยู่เสมอ เลือกแล้วกรอบของวิวพอร์ตตามเมาส์ คลิกบนแผ่นงานเพื่อวางตรงนั้น กด Esc คลิกขวา หรือคลิกนอกแผ่นงานเพื่อยกเลิก
 - V1.360 · บันทึกเป็นไฟล์ใหม่แบบ Revit: คลิกขวาที่แบบร่าง คำอธิบายสัญลักษณ์ ตาราง หรือแผ่นงานในเบราว์เซอร์โครงการ › บันทึกเป็นไฟล์ใหม่… หรือไฟล์ › บันทึกเป็นไลบรารี › มุมมอง… ติ๊กมุมมองได้หลายอัน ดูภาพตัวอย่าง ตั้งชื่อไฟล์ แล้วได้ไฟล์ .penbim ใหม่ที่มีเฉพาะมุมมองเหล่านั้นพร้อมเส้น ข้อความ ลายแรเงา ชิ้นงานรายละเอียด และชนิดที่ใช้ แผ่นงานพาแบบร่าง คำอธิบายสัญลักษณ์ และตารางที่วางบนแผ่นไปด้วย ใช้เก็บแบบรายละเอียดมาตรฐานของบริษัทไว้แทรกในโครงการอื่นด้วยแทรกมุมมองจากไฟล์
+- V1.361 · ลบชนิดที่ใช้อยู่แบบ Revit: คลิกขวาที่ชนิดในกลุ่มครอบครัวของเบราว์เซอร์โครงการ › ลบ ถ้ามีชิ้นใช้ชนิดนั้นอยู่ จะถามก่อนพร้อมบอกจำนวนชิ้น คำอธิบายแบบ และประตูหน้าต่างที่ฝังอยู่ที่จะถูกลบด้วย กดลบแล้วชนิดและชิ้นทั้งหมดหายในขั้นเดียว Ctrl+Z เอาคืนทั้งหมด ชนิดสุดท้ายของครอบครัวและชนิดที่เป็นแถวของผนังซ้อนชนิดยังลบไม่ได้เหมือนเดิม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -46131,6 +46162,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.358 · Drag from the Project Browser as in Revit: drag a view onto an open sheet, its viewport outline follows the pointer, and it is placed where you let go and selected; a view already on another sheet is refused (naming that sheet), a schedule goes on several sheets once each, a legend anywhere; drag a type from Families into a view to start placing that type; Esc while dragging cancels
 - V1.359 · Place View as in Revit: the Place View list holds only the views that can go on this sheet (named with their type, such as Floor Plan: Level 2); a view on another sheet is left out, a schedule already on this sheet is left out, a legend is always there; pick one and its viewport outline follows the pointer, click on the sheet to place it there; Esc, a right-click or a click off the sheet cancels
 - V1.360 · Save to New File as in Revit: right-click a drafting view, legend, schedule or sheet in the Project Browser › Save to New File…, or File › Save As Library › View…; tick one or more views (previewed), name the file, and a new .penbim holds just those views with their lines, texts, regions, detail components and the types they use; a sheet takes the drafting views, legends and schedules placed on it; keep a company library of standard details and bring them into other projects with Insert Views from File
+- V1.361 · Delete a type in use as in Revit: right-click a type under Families in the Project Browser › Delete; when elements use it you are asked first, with how many elements, annotations and hosted doors and windows go too; Delete removes the type and them in one step and Ctrl+Z brings them all back; the last type of a family and a row of a stacked wall still cannot be deleted
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -46299,6 +46331,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - ลากมุมมองจากเบราว์เซอร์ไปวางบนแผ่นงานที่เปิดอยู่: กรอบของมุมมองตามเมาส์ ปล่อยแล้ววางตรงนั้น มุมมองหนึ่งวางได้บนแผ่นงานเดียว (ตารางวางได้หลายแผ่น คำอธิบายสัญลักษณ์วางได้ทุกที่) ลากชนิดจากกลุ่มครอบครัวไปที่มุมมองเพื่อเริ่มวางชนิดนั้น
 - [[a_placeview]] แสดงเฉพาะมุมมองที่ยังวางได้ (มุมมองที่อยู่บนแผ่นงานแล้วไม่อยู่ในรายการ) เลือกแล้วกรอบของมุมมองตามเมาส์ คลิกบนแผ่นงานเพื่อวาง กด Esc หรือคลิกขวาเพื่อยกเลิก
 - คลิกขวาที่แบบร่าง คำอธิบายสัญลักษณ์ ตาราง หรือแผ่นงานในเบราว์เซอร์ › [[bm_sv360]]… (หรือไฟล์ › [[m_svl360]]…) ติ๊กมุมมองที่ต้องการ ตั้งชื่อไฟล์ แล้วได้ไฟล์โครงการใหม่ที่มีเฉพาะมุมมองเหล่านั้น ใช้เก็บแบบรายละเอียดมาตรฐานไว้แทรกในโครงการอื่นด้วย [[a_insviews]]
+- คลิกขวาที่ชนิดในกลุ่มครอบครัว › [[a_delete]]: ถ้าชนิดนั้นมีชิ้นใช้อยู่ จะถามก่อนและบอกจำนวนชิ้นที่จะถูกลบด้วย (รวมประตูหน้าต่างที่ฝังอยู่) กดลบแล้วชนิดและชิ้นทั้งหมดหายในขั้นเดียว Ctrl+Z เอาคืนได้
 - [[a_knlegend]]: ตารางรายการ Keynote ที่ใช้อยู่ วางบนแผ่นงานได้ · ติ๊ก [[p_knsheet]] เพื่อให้แต่ละแผ่นงานแสดงเฉพาะ Keynote ของมุมมองบนแผ่นนั้น
 - [[t_sym]]: สัญลักษณ์ 2 มิติของมุมมองนั้น ขนาดคงที่บนกระดาษ: ทิศเหนือ 2 แบบ มาตราส่วนกราฟิก (ปรับตามมาตราส่วนของมุมมอง) เส้นกึ่งกลาง ℄ ลูกศร เส้นตัดขาด สามเหลี่ยมระดับ · เลือกในแถบตัวเลือกแล้วคลิกวาง ((Space)) หมุน 90° · ใช้ได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์
 - [[t_rtag]] ((RT)): ชื่อห้องในแปลนเป็นป้ายห้อง วางห้องแล้วป้ายขึ้นเองในทุกแปลนของชั้นนั้น ลากเพื่อย้าย ถ้าลากออกนอกห้องจะมีเส้นชี้ให้เอง ดับเบิลคลิกเพื่อแก้ชื่อห้อง · ลบป้ายแล้วติดใหม่ได้โดยกด ((RT)) แล้วคลิกในห้อง · [[p_rtkind]] เลือกได้ว่าจะแสดงชื่อ เลขห้อง และพื้นที่ หรือเฉพาะบางอย่าง
@@ -46397,6 +46430,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - Drag a view from the browser onto an open sheet: its viewport outline follows the pointer and it is placed where you let go; a view goes on one sheet only (a schedule on several, a legend anywhere). Drag a type from Families into a view to start placing that type
 - [[a_placeview]] lists only the views that can still go on the sheet (a view already on a sheet is left out); pick one, its outline follows the pointer, click on the sheet to place it; Esc or a right-click cancels
 - Right-click a drafting view, legend, schedule or sheet in the browser › [[bm_sv360]]… (or File › [[m_svl360]]…): tick the views, name the file, and a new project file holds just those views, to bring into other projects with [[a_insviews]]
+- Right-click a type under Families › [[a_delete]]: when elements use it, you are asked first, with how many go too (the doors and windows in them included); Delete removes the type and them in one step that Ctrl+Z undoes
 - [[a_knlegend]]: the schedule of the keynotes in use; it can be placed on sheets · tick [[p_knsheet]] and every sheet lists only the keynotes of the views on it
 - [[t_sym]]: 2D marks of one view that keep their size on paper: two north arrows, a graphic scale (it follows the scale of the view), the centre line mark ℄, an arrow, a break mark, a level mark · choose one in the options bar and click to place it, ((Space)) turns it 90° · they work in plans, drafting views and legends
 - [[t_rtag]] ((RT)): the names of rooms in a plan are room tags. A room that is placed gets one in every plan of its level; drag it to move it — dragged out of its room it gets a leader — and double-click it to change the name of the room · a tag that was deleted is put back with ((RT)) and a click inside the room · [[p_rtkind]] chooses between name, number and area, or less
@@ -48368,6 +48402,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r361={
+  types:cat=>(P.types[cat]||[]).map(T=>({id:T.id,name:T.name})),uses:(cat,id)=>{const T=(P.types[cat]||[]).find(x=>x.id===id);return T?ftUses355(cat,T).map(x=>x.id):null},
+  hosted:ids=>ftHosted361(ids).map(e=>e.id),has:id=>IDX.has(id),els:()=>P.els.length,ann:()=>P.ann.length,undo:()=>undoS.length,redo:()=>redoS.length,
+  dlg:()=>{const d=document.querySelector('#dlg');if(!d||!d.open)return null;return{title:d.querySelector('header').textContent,text:d.querySelector('.dc').textContent,ok:!!d.querySelector('[data-ftd361="ok"]')}},
+  stackRow:()=>{const S=(P.types.wall||[]).find(x=>x.kind==='stack'&&(x.rows||[]).length);return S?S.rows[0].t:0}
+};
 window.PenumBIM.r360={
   build:(ids,name)=>{const r=svBuild360(ids,name),E=r.E;return{n:r.n,R:r.R,name:E.info&&E.info.name,guid:E.guid!==P.guid,els:E.els.length,txt:r.txt.length,
     views:E.views.filter(v=>(E.lib360||[]).includes(v.id)).map(v=>({id:v.id,k:ifvKind(v),name:v.name,number:v.number||'',vps:(v.vps||[]).length})),model:E.views.filter(v=>!ifvKind(v)).length,lib:E.lib360||null,
