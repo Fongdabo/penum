@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=374,V1_NAME='V1.364';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=375,V1_NAME='V1.365';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -44367,6 +44367,143 @@ for(const A of RIBBON)if(A.id==='view')for(const p of A.panels||[])if(p.t==='p_w
 BTN['@switchwin364']=['sw364',''];
 Object.assign(STR,{a_switchwin364:['สลับหน้าต่าง (Switch Windows)','Switch Windows'],tb_close364:['ปิด','Close'],tb_inact364:['ปิดมุมมองที่ไม่ได้ใช้ (Close Inactive Views)','Close Inactive Views'],
   tb_right364:['ปิดแท็บทางขวา','Close Tabs to the Right']});
+/* ===== 365 Text formatting as in Revit (a text note's Edit Text tab: Bold, Italic, Underline, Superscript, Subscript, All Caps; lists: Bullet, Numbered,
+   Lowercase Letters, Uppercase Letters; Increase / Decrease Indent; Start list at).  A text keeps its words in d.text, plain as before (schedules, Find and
+   Replace, search and the inline editor read them), and how they look in d.rt365 = [{li, ind, n0, R:[{s, b, i, u, v, c}]}], one row per line: li '' | 'b' | 'n' |
+   'a' | 'A' the list the line is in, ind its indent (0–4 steps), n0 the number a list restarts at there, R its runs: s the characters, b / i / u bold, italic,
+   underlined (on top of the type: a bold type stays bold), v 'p' superscript | 'b' subscript, c All Caps (shown in capitals, kept as typed).  The words changed
+   elsewhere (typed in the view, Find and Replace): the lines still the same keep their look, the others are plain.  Numbers count per indent: a deeper line starts
+   its own count, a line out of the list ends it.  The Edit Text dialog: Properties › Edit Text…, or a double-click on a formatted text. */
+const RT_LI365=['b','n','a','A'],RT_BUL365=['•','◦','▪'],RT_TAB365=2.4,RT_KEYS365=['b','i','u','v','c'];
+const rtLine365=l=>l.R.map(r=>r.s).join(''),rtPlain365=L=>L.map(rtLine365).join('\n');
+const rtRich365=L=>L.some(l=>l.li||l.ind||l.R.some(r=>r.b||r.i||r.u||r.v||r.c));
+/* runs tidied: no empty runs, no flags that are off, neighbours of the same look merged */
+function rtRuns365(R){const out=[];for(const r of R||[]){const s=String(r&&r.s!=null?r.s:'').replace(/[​\r\n]/g,'');if(!s)continue;const o={s};if(r.b)o.b=1;if(r.i)o.i=1;if(r.u)o.u=1;if(r.v==='p'||r.v==='b')o.v=r.v;if(r.c)o.c=1;
+    const q=out[out.length-1];if(q&&RT_KEYS365.every(k=>(q[k]||0)===(o[k]||0)))q.s+=s;else out.push(o)}return out}
+function rtClean365(l){const o={li:RT_LI365.includes(l&&l.li)?l.li:'',ind:clamp(Math.round(+(l&&l.ind)||0),0,4),R:rtRuns365(l&&l.R)};if(o.li&&+l.n0>=1)o.n0=Math.min(9999,Math.round(+l.n0));return o}
+/* the rows of a text in step with its words: the same lines (in order) keep their look */
+function rtSync365(old,txt){const lines=String(txt).split('\n');let j=0;return lines.map(s=>{let k=-1;for(let q=j;q<old.length;q++)if(rtLine365(old[q])===s){k=q;break}
+    if(k>=0){j=k+1;return old[k]}const o=old[Math.min(j,old.length-1)];return{li:o?o.li:'',ind:o?o.ind:0,R:s?[{s}]:[]}})}
+const RTC365=new WeakMap();
+function rtOf365(d){if(!d||d.cat!=='text'||!Array.isArray(d.rt365))return null;const txt=String(d.text==null?'':d.text),c=RTC365.get(d);if(c&&c.t===txt&&c.r===d.rt365)return c.L;
+  let L=d.rt365.map(rtClean365);if(rtPlain365(L)!==txt)L=rtSync365(L,txt);if(!rtRich365(L))L=null;RTC365.set(d,{t:txt,r:d.rt365,L});return L}
+const rtAbc365=n=>{let s='';for(;n>0;n=Math.floor((n-1)/26))s=String.fromCharCode(97+(n-1)%26)+s;return s};
+/* what each line starts with: a bullet by its indent, or its number in the list at that indent */
+function rtPre365(L){const C=[];return L.map(l=>{if(!l.li){C.length=0;return''}const k=l.ind||0;C.length=Math.min(C.length,k+1);let c=C[k];
+  if(l.li==='b'){C[k]={li:'b',n:0};return RT_BUL365[k%3]}
+  if(!c||c.li!==l.li)c=C[k]={li:l.li,n:(l.n0>=1?l.n0:1)-1};if(l.n0>=1)c.n=l.n0-1;c.n++;return(l.li==='n'?String(c.n):l.li==='a'?rtAbc365(c.n):rtAbc365(c.n).toUpperCase())+'.'})}
+function rtFont365(T,px,r){const k=txN(T,'tfont'),it=(r&&r.i)||txN(T,'tit')==='yes',bd=(r&&r.b)||txN(T,'tbold')==='yes';return(it?'italic ':'')+(bd?'600 ':'')+px+'px '+(k!=='auto'&&FONTS[k]?fontCss(k):FONT)}
+/* where each piece of each line goes, along the line in paper mm: the indent, the bullet or number, the runs (a superscript or subscript smaller, raised or lowered) */
+function rtGeo365(L,T,sz,wf,sc){const P0=rtPre365(L),tab=RT_TAB365*sz,mw=(s,r)=>{TXM.font=rtFont365(T,10,r);return TXM.measureText(s).width/10};
+  return L.map((l,i)=>{const x0=(l.ind||0)*tab,pre=P0[i];let x=x0;if(pre)x=x0+Math.max(2*sz,mw(pre,null)*sz*wf+0.6*sz);
+    const R=l.R.map(r=>{const f=r.v?0.62*sz:sz,s=r.c?r.s.toUpperCase():r.s,w=mw(s,r)*f*wf,o={s,f,x,w,dv:r.v==='p'?-0.36*sz:r.v==='b'?0.24*sz:0,b:!!r.b,i:!!r.i,u:!!r.u};x+=w;return o});
+    return{pre,x0,R,W:x*sc}})}
+{const f0=txLay;txLay=(d,sc,lh)=>{const Y=f0(d,sc,lh),L=rtOf365(d);if(!L||L.length!==Y.L.length)return Y;const G=rtGeo365(L,Y.T,Y.sz,Y.wf,sc);
+  Y.G=G;Y.W=G.map(g=>g.W);Y.U=Y.W.map(w=>d.ha==='c'?-w/2:d.ha==='r'?-w:0);let a0=Infinity,a1=-Infinity;Y.W.forEach((w,i)=>{a0=Math.min(a0,Y.U[i]);a1=Math.max(a1,Y.U[i]+w)});if(!isFinite(a0)){a0=0;a1=0}
+  Y.a0=a0;Y.a1=a1;Y.L=G.map(g=>(g.pre?g.pre+' ':'')+g.R.map(r=>r.s).join(''));return Y}}
+/* a formatted text: the background and border of its type, each line piece by piece, the underlines, the leader */
+function rtDraw365(g,d,col,hi,lh){const ctx=g.ctx,sc=g.scale,Y=txLay(d,sc,lh);if(!Y.G)return;const T=Y.T,ink=hi||DM_COL[txN(T,'tcol')]||col.ink,fk=txN(T,'tfont'),own=fk!=='auto'&&!!FONTS[fk],box=txN(T,'tbox')==='yes',bg=txN(T,'tbg')==='o';if(own)dmFontReq(fk);
+  if(box||bg){g.path(txPoly(Y,sc,true));if(bg){ctx.fillStyle=col.paper;ctx.fill()}if(box){ctx.strokeStyle=ink;ctx.lineWidth=hi?1.4:g.lw(0.13);ctx.stroke()}}
+  const tb=txN(T,'tbold')==='yes',ti=txN(T,'tit')==='yes',tu=txN(T,'tul')==='yes',font=own?fontCss(fk):null;
+  Y.G.forEach((G,i)=>{const u0=Y.U[i],t0=i*Y.st;
+    if(G.pre)g.text(G.pre,Y.at(u0+G.x0*sc,t0),Y.sz,{align:'left',color:ink,halo:!!hi,rot:Y.a,wf:Y.wf,bold:tb,it:ti,font});
+    for(const r of G.R){g.text(r.s,Y.at(u0+r.x*sc,t0+r.dv*sc),r.f,{align:'left',color:ink,halo:!!hi,rot:Y.a,wf:Y.wf,bold:tb||r.b,it:ti||r.i,font});
+      if((tu||r.u)&&r.s.trim()){ctx.strokeStyle=ink;ctx.lineWidth=hi?1.2:g.lw(0.13);const v=t0+0.62*Y.h;g.seg(Y.at(u0+r.x*sc,v),Y.at(u0+(r.x+r.w)*sc,v))}}});
+  const LP=txLead(d,Y,Y.a0,Y.a1,sc,box);if(LP){ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=hi?1.4:g.lw(0.13);g.path(LP,true);ctx.stroke();txArrow(g,LP[LP.length-2],LP[LP.length-1],txN(T,'tarr'))}}
+{const f0=txDraw;txDraw=(g,d,col,hi,lh)=>rtOf365(d)?rtDraw365(g,d,col,hi,lh):f0(g,d,col,hi,lh)}
+{const f0=drawText;drawText=(g,d,col,hi)=>rtOf365(d)?rtDraw365(g,d,col,hi,TEXT_LH):f0(g,d,col,hi)}
+{const f0=textBox;textBox=(d,sc)=>{if(!rtOf365(d))return f0(d,sc);const Y=txLay(d,sc,TEXT_LH);let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const p of txPoly(Y,sc,txBoxed(Y.T))){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}return[x0,y0,x1,y1]}}
+{const f0=textDist;textDist=(d,w,sc,tol)=>rtOf365(d)?txDist(d,w,sc,tol,TEXT_LH):f0(d,w,sc,tol)}
+/* a file: rows of a text tidied, put in step with its words, dropped when they add nothing */
+XC.push(()=>{for(const d of P.ann||[]){if(d.rt365==null)continue;if(d.cat!=='text'||!Array.isArray(d.rt365)){delete d.rt365;continue}
+  let L=d.rt365.filter(l=>l&&typeof l==='object').map(rtClean365);const txt=String(d.text==null?'':d.text);if(rtPlain365(L)!==txt)L=rtSync365(L,txt).map(rtClean365);if(rtRich365(L))d.rt365=L;else delete d.rt365}});
+
+/* ---- the Edit Text dialog ---- */
+function rtHTML365(L){return L.map(l=>{let h='';for(const r of l.R){if(!r.s)continue;let x=esc(r.s);if(r.c)x=`<span class="cp365">${x}</span>`;if(r.v==='p')x=`<sup>${x}</sup>`;else if(r.v==='b')x=`<sub>${x}</sub>`;
+    if(r.u)x=`<u>${x}</u>`;if(r.i)x=`<i>${x}</i>`;if(r.b)x=`<b>${x}</b>`;h+=x}
+  return`<div data-li="${l.li||''}" data-ind="${l.ind||0}"${l.n0>=1?` data-n0="${l.n0}"`:''}>${h||'<br>'}</div>`}).join('')}
+/* the lines of the editor read back: a block or a line break starts a line; the look from the tags (and the styles the browser may write) round each piece */
+function rtParse365(ed){const L=[];let cur=null;const line=a=>{cur={li:a.li||'',ind:+a.ind||0,R:[]};if(+a.n0>=1)cur.n0=+a.n0;L.push(cur)};
+  const walk=(n,f,a)=>{if(n.nodeType===3){const s=n.data.replace(/ /g,' ').replace(/[​\r\n]/g,'');if(!s)return;if(!cur)line(a);cur.R.push(Object.assign({s},f));return}
+    if(n.nodeType!==1)return;const tg=n.tagName,st=n.style||{};
+    if(tg==='BR'){const last=!n.nextSibling&&n.parentNode&&n.parentNode!==ed;if(!cur)line(a);if(!last)cur=null;return}
+    const blk=tg==='DIV'||tg==='P'||tg==='LI',A=blk?{li:n.dataset.li!=null?n.dataset.li:a.li,ind:n.dataset.ind!=null?n.dataset.ind:a.ind,n0:n.dataset.n0}:a,g=Object.assign({},f);
+    if(tg==='B'||tg==='STRONG'||st.fontWeight==='bold'||+st.fontWeight>=600)g.b=1;if(tg==='I'||tg==='EM'||st.fontStyle==='italic')g.i=1;
+    if(tg==='U'||/underline/.test(st.textDecoration||'')||/underline/.test(st.textDecorationLine||''))g.u=1;if(tg==='SUP'||st.verticalAlign==='super')g.v='p';if(tg==='SUB'||st.verticalAlign==='sub')g.v='b';
+    if(n.classList&&n.classList.contains('cp365'))g.c=1;
+    if(blk){cur=null;line(A);for(const c of n.childNodes)walk(c,g,A);cur=null;return}for(const c of n.childNodes)walk(c,g,A)};
+  for(const c of ed.childNodes)walk(c,{},{li:'',ind:0});const out=L.map(rtClean365);while(out.length>1&&!rtLine365(out[out.length-1])&&!out[out.length-1].li)out.pop();return out.length?out:[{li:'',ind:0,R:[]}]}
+/* stray text at the top of the editor goes into a line of its own; the bullets and numbers written beside each line */
+function rtFix365(ed){let cur=null;for(const n of [...ed.childNodes]){if(n.nodeType===1&&(n.tagName==='DIV'||n.tagName==='P')){cur=null;continue}if(n.nodeType===3&&!n.data){n.remove();continue}
+    if(!cur){cur=document.createElement('div');ed.insertBefore(cur,n)}cur.appendChild(n);if(n.nodeType===1&&n.tagName==='BR')cur=null}
+  if(!ed.children.length)ed.innerHTML='<div data-li="" data-ind="0"><br></div>';rtNum365(ed)}
+function rtNum365(ed){const D=[...ed.children],P0=rtPre365(D.map(x=>({li:RT_LI365.includes(x.dataset.li)?x.dataset.li:'',ind:+x.dataset.ind||0,n0:+x.dataset.n0||0,R:[]})));
+  D.forEach((x,i)=>{const k=+x.dataset.ind||0,li=RT_LI365.includes(x.dataset.li);x.dataset.pre=P0[i];x.style.paddingLeft=(k*RT_TAB365+(li?2:0))+'em';x.style.setProperty('--pl',(k*RT_TAB365)+'em')})}
+function rtSelLines365(ed){const s=getSelection();if(!s||!s.rangeCount)return[];const r=s.getRangeAt(0);if(!ed.contains(r.commonAncestorContainer)&&r.commonAncestorContainer!==ed)return[];
+  let D=[...ed.children].filter(x=>r.intersectsNode(x));if(!D.length){let n=r.startContainer;while(n&&n.parentNode!==ed)n=n.parentNode;if(n&&n.nodeType===1)D=[n]}return D}
+const rtInCp365=(n,ed)=>{for(;n&&n!==ed;n=n.parentNode)if(n.nodeType===1&&n.classList&&n.classList.contains('cp365'))return n;return null};
+function rtCaps365(ed){const s=getSelection();if(!s||!s.rangeCount)return;const r=s.getRangeAt(0);if(r.collapsed||!ed.contains(r.commonAncestorContainer)&&r.commonAncestorContainer!==ed)return;
+  const unwrap=x=>{const p=x.parentNode;while(x.firstChild)p.insertBefore(x.firstChild,x);p.removeChild(x)};
+  if(rtInCp365(r.startContainer,ed)){for(const x of [...ed.querySelectorAll('.cp365')])if(r.intersectsNode(x))unwrap(x);ed.normalize();return}          // in capitals: the capitals off
+  const D=rtSelLines365(ed),spans=[];for(const x of D){const q=document.createRange();q.selectNodeContents(x);if(x.contains(r.startContainer))q.setStart(r.startContainer,r.startOffset);if(x.contains(r.endContainer))q.setEnd(r.endContainer,r.endOffset);
+    if(q.collapsed)continue;const fr=q.extractContents();fr.querySelectorAll('.cp365').forEach(unwrap);const sp=document.createElement('span');sp.className='cp365';sp.appendChild(fr);q.insertNode(sp);spans.push(sp)}
+  if(spans.length){const q=document.createRange();q.setStartBefore(spans[0]);q.setEndAfter(spans[spans.length-1]);s.removeAllRanges();s.addRange(q)}}
+function rtCmd365(a){const ed=$('#rtEd365');if(!ed)return;ed.focus();
+  if(['bold','italic','underline','superscript','subscript'].includes(a)){try{document.execCommand('styleWithCSS',false,false)}catch(e){}document.execCommand(a,false,null)}
+  else if(a==='caps')rtCaps365(ed);
+  else if(RT_LI365.includes(a)){const D=rtSelLines365(ed),all=D.length&&D.every(x=>x.dataset.li===a);for(const x of D){x.dataset.li=all?'':a;if(all)delete x.dataset.n0}}
+  else if(a==='indent'||a==='outdent'){for(const x of rtSelLines365(ed))x.dataset.ind=clamp((+x.dataset.ind||0)+(a==='indent'?1:-1),0,4)}
+  rtFix365(ed);rtState365()}
+/* the buttons lit as the caret moves: bold, italic, underline, raised, lowered, capitals; the list of the line it is on, its Start at */
+function rtState365(){const ed=$('#rtEd365');if(!ed)return;const s=getSelection();if(!s||!s.rangeCount||!ed.contains(s.getRangeAt(0).startContainer))return;const q=k=>{try{return document.queryCommandState(k)}catch(e){return false}};
+  const on={bold:q('bold'),italic:q('italic'),underline:q('underline'),superscript:q('superscript'),subscript:q('subscript'),caps:!!rtInCp365(s.getRangeAt(0).startContainer,ed)};
+  const D=rtSelLines365(ed),li=D.length&&D.every(x=>x.dataset.li===D[0].dataset.li)?D[0].dataset.li:'';for(const k of RT_LI365)on[k]=li===k;
+  for(const b of $$('#dlg .rt365bar [data-rt365]'))b.classList.toggle('on',!!on[b.dataset.rt365]);
+  const n=$('#rtN365');if(n){const x=D[0];const ok=!!x&&(x.dataset.li==='n'||x.dataset.li==='a'||x.dataset.li==='A');n.disabled=!ok;if(document.activeElement!==n)n.value=ok?(x.dataset.n0||rtNumAt365(ed,x)):''}}
+const rtNumAt365=(ed,x)=>{const i=[...ed.children].indexOf(x),p=x.dataset.pre||'';if(i<0)return 1;const m=/^(\d+)\.$/.exec(p);if(m)return+m[1];const a=/^([a-z]+)\.$/i.exec(p);if(!a)return 1;let n=0;for(const ch of a[1].toLowerCase())n=n*26+(ch.charCodeAt(0)-96);return n};
+document.addEventListener('selectionchange',()=>{if($('#rtEd365'))rtState365()});
+function dlgRt365(d){if(!d||d.cat!=='text')return;const L=rtOf365(d)||String(d.text==null?'':d.text).split('\n').map(s=>({li:'',ind:0,R:s?[{s}]:[]})),T=txT(d);
+  const B=(a,lab,ttl)=>`<button type="button" data-rt365="${a}" title="${esc(ttl)}" aria-label="${esc(ttl)}">${lab}</button>`,sep='<span class="sep"></span>';
+  const bar=`<div class="rt365bar">${B('bold','<b>B</b>',t('rt_b365')+' (Ctrl+B)')+B('italic','<i>I</i>',t('rt_i365')+' (Ctrl+I)')+B('underline','<u>U</u>',t('rt_u365')+' (Ctrl+U)')+B('superscript','X<sup>2</sup>',t('rt_sup365'))+B('subscript','X<sub>2</sub>',t('rt_sub365'))+B('caps','Aa',t('rt_caps365'))
+    +sep+B('b','• ≡',t('rt_lb365'))+B('n','1. ≡',t('rt_ln365'))+B('a','a. ≡',t('rt_la365'))+B('A','A. ≡',t('rt_lA365'))+sep+B('outdent','⇤',t('rt_out365')+' (Shift+Tab)')+B('indent','⇥',t('rt_in365')+' (Tab)')
+    +`<label class="rt365n">${t('rt_start365')} <input type="number" id="rtN365" min="1" max="9999" step="1"></label>`}</div>`;
+  const fk=txN(T,'tfont'),fam=fk!=='auto'&&FONTS[fk]?fontCss(fk):FONT;
+  const body=bar+`<div id="rtEd365" class="rt365ed" contenteditable="true" spellcheck="false" style="font-family:${esc(fam)};${txN(T,'tbold')==='yes'?'font-weight:600;':''}${txN(T,'tit')==='yes'?'font-style:italic;':''}${txN(T,'tul')==='yes'?'text-decoration:underline;':''}">${rtHTML365(L)}</div>
+    <p class="hint" style="margin:8px 0 0">${t('rt_hint365',esc(T.name||''))}</p>`;
+  openDlg(t('a_rtedit365'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-rt365="ok">${t('ok')}</button>`,{
+    click(e){const b=e.target.closest&&e.target.closest('[data-rt365]');if(!b)return;const a=b.dataset.rt365;if(a==='ok'){if(rtSave365(d,$('#rtEd365')))closeDlg();return}rtCmd365(a)},
+    change(e){if(e.target.id!=='rtN365')return;const ed=$('#rtEd365'),D=rtSelLines365(ed).filter(x=>x.dataset.li==='n'||x.dataset.li==='a'||x.dataset.li==='A');const x=D[0]||RT_LAST365&&ed.contains(RT_LAST365)&&RT_LAST365;
+      const n=Math.round(+e.target.value);if(x&&n>=1){x.dataset.n0=Math.min(9999,n);rtFix365(ed)}}},'rt365');
+  const ed=$('#rtEd365');rtFix365(ed);
+  $('#dlg .rt365bar').addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault()});          // the editor keeps its selection while a button is pressed
+  ed.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();e.stopPropagation();rtCmd365(e.shiftKey?'outdent':'indent')}else if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();if(rtSave365(d,ed))closeDlg()}});
+  ed.addEventListener('input',()=>{rtFix365(ed);rtState365()});
+  ed.addEventListener('focusout',()=>{const D=rtSelLines365(ed);if(D[0])RT_LAST365=D[0]});
+  ed.focus();const s=getSelection(),q=document.createRange();q.selectNodeContents(ed);q.collapse(false);s.removeAllRanges();s.addRange(q);rtState365()}
+let RT_LAST365=null;
+function rtSave365(d,ed){if(!ed)return false;const L=rtParse365(ed),txt=rtPlain365(L);if(!txt.trim()){toast(t('rt_empty365'));return false}
+  const rich=rtRich365(L);edit(()=>{d.text=txt;if(rich)d.rt365=L;else delete d.rt365});return true}
+XA.rtedit365=()=>{const d=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&x.cat==='text');if(!d){toast(t('rt_pick365'));return}dlgRt365(d)};
+XP.push((c,els)=>c==='text'&&els.length===1?`<div class="pa"><button class="btn" data-act="rtedit365">${t('a_rtedit365')}…</button></div>`:'');
+/* a double-click on a formatted text opens Edit Text (typing in the view would keep the words only) */
+document.addEventListener('dblclick',e=>{const pn=PANES.find(q=>q&&q.cv===e.target);if(!pn||ui.tool!=='modify')return;const v=paneView(pn.i);if(!v||v.kind!=='plan')return;
+  const r=pn.cv.getBoundingClientRect(),p=rotIn(pn,v,{x:e.clientX-r.left,y:e.clientY-r.top}),h=hitPlan(v,p),el=h&&IDX.get(h.id);if(!el||el.cat!=='text'||!rtOf365(el))return;
+  e.preventDefault();e.stopPropagation();ui.sel=new Set([el.id]);refresh();dlgRt365(el)},true);
+{const st=document.createElement('style');st.textContent=`#dlg.rt365{width:min(780px,calc(100% - 32px))}#dlg .rt365bar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:0 0 8px}
+#dlg .rt365bar button{min-width:36px;height:32px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font-size:14px;padding:0 8px;cursor:pointer;white-space:nowrap}
+#dlg .rt365bar button:hover{border-color:var(--brand)}#dlg .rt365bar button.on{background:var(--brand);border-color:var(--brand);color:#fff}#dlg .rt365bar sup,#dlg .rt365bar sub{font-size:9px}
+#dlg .rt365bar .sep{width:1px;height:24px;background:var(--line);margin:0 4px}#dlg .rt365n{display:flex;align-items:center;gap:6px;margin-left:6px;font-size:13px;color:var(--muted);white-space:nowrap}#dlg .rt365n input{width:64px}
+#dlg .rt365ed{min-height:150px;max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff;color:#1d2733;white-space:pre-wrap;line-height:1.55;font-size:16px;outline:none}
+#dlg .rt365ed:focus{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 25%,transparent)}#dlg .rt365ed>div{position:relative;min-height:1.55em}
+#dlg .rt365ed>div[data-pre]:not([data-pre=""])::before{content:attr(data-pre);position:absolute;left:var(--pl,0);color:#1d2733}#dlg .rt365ed .cp365{text-transform:uppercase}`;document.head.appendChild(st)}
+Object.assign(STR,{a_rtedit365:['แก้ข้อความ (Edit Text)','Edit Text'],rt_b365:['ตัวหนา','Bold'],rt_i365:['ตัวเอียง','Italic'],rt_u365:['ขีดเส้นใต้','Underline'],rt_sup365:['ตัวยก','Superscript'],
+  rt_sub365:['ตัวห้อย','Subscript'],rt_caps365:['ตัวพิมพ์ใหญ่ทั้งหมด (All Caps)','All Caps'],rt_lb365:['รายการจุด (Bullet)','List: Bullet'],rt_ln365:['รายการเลข (Numbered)','List: Numbered'],
+  rt_la365:['รายการตัวอักษรเล็ก (a. b. c.)','List: Lowercase Letters'],rt_lA365:['รายการตัวอักษรใหญ่ (A. B. C.)','List: Uppercase Letters'],rt_in365:['เพิ่มระยะย่อหน้า','Increase Indent'],
+  rt_out365:['ลดระยะย่อหน้า','Decrease Indent'],rt_start365:['เริ่มที่','Start at'],rt_empty365:['ข้อความว่าง: พิมพ์อย่างน้อยหนึ่งตัว','The text is empty: type something'],
+  rt_pick365:['เลือกข้อความหนึ่งชิ้นก่อน','Select a text note first'],
+  rt_hint365:['ชนิดข้อความ: {0} · ตัวหนา ตัวเอียง ขีดเส้นใต้ ตัวยก ตัวห้อย และตัวพิมพ์ใหญ่ ใช้กับตัวอักษรที่เลือก รายการและย่อหน้าใช้กับบรรทัดที่เลือก · Tab เพิ่มย่อหน้า Shift+Tab ลด Ctrl+Enter ตกลง',
+    'Text type: {0} · Bold, Italic, Underline, Superscript, Subscript and All Caps apply to the characters selected, lists and indents to the lines · Tab indents, Shift+Tab outdents, Ctrl+Enter is OK']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -46505,6 +46642,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.362 · แฟมิลีในเบราว์เซอร์แบบ Revit: ชนิดองค์ประกอบ (Families) แบ่งเป็นหมวด › แฟมิลี › ชนิด เช่น ผนัง › ผนังพื้นฐาน / ผนังกระจก / ผนังซ้อนชนิด และประตู › แฟมิลีประตูของเราเองตามชื่อ คลิกขวาที่แฟมิลี: แก้ไขแฟมิลี (ประตู หน้าต่าง และชิ้นส่วนที่สร้างเอง) ชนิดใหม่ เลือกทุกชิ้นของแฟมิลีในมุมมองหรือทั้งโครงการ เปลี่ยนชื่อ ลบทั้งแฟมิลีพร้อมชิ้นที่ใช้ (ถามก่อน Ctrl+Z ครั้งเดียวเอาคืน แฟมิลีสุดท้ายของหมวดลบไม่ได้) และบันทึกแฟมิลีเป็นไฟล์ .penfam
 - V1.363 · เรนเดอร์แบบ Revit (แท็บมุมมอง › เรนเดอร์ หรือกด RR ในมุมมอง 3 มิติ): หน้าต่างเรนเดอร์เลือกคุณภาพตั้งแต่ร่างถึงดีที่สุด ขนาดภาพตามหน้าจอหรือเครื่องพิมพ์ 75 ถึง 600 DPI รูปแบบแสงหกแบบ (ภายนอกหรือภายใน กับดวงอาทิตย์ โคมไฟ หรือทั้งสอง) ฉากหลังท้องฟ้า สีเดียว หรือรูปของมุมมอง และปรับค่าแสง กดเรนเดอร์แล้วภาพแสดงบนมุมมองจนกว่าจะหมุนหรือเลื่อน สลับดูโมเดลได้ บันทึกลงโครงการใต้ภาพเรนเดอร์ หรือส่งออกเป็น PNG
 - V1.364 · แท็บมุมมองแบบ Revit: แท็บมุมมอง › หน้าต่าง › สลับหน้าต่าง (Switch Windows) แสดงรายการมุมมองที่เปิดอยู่พร้อมเครื่องหมายที่มุมมองปัจจุบัน คลิกเพื่อไป · Ctrl+Tab ไปมุมมองถัดไป Ctrl+Shift+Tab ย้อนกลับ · คลิกขวาที่แท็บ: ปิด ปิดมุมมองที่ไม่ได้ใช้ ปิดแท็บทางขวา แบบแท็บ และเรียงทุกมุมมอง · ลากแท็บไปซ้ายขวาเพื่อเรียงลำดับใหม่ ลำดับจำไว้กับมุมมองที่เปิด
+- V1.365 · จัดรูปแบบข้อความแบบ Revit: เลือกข้อความแล้วกดแก้ข้อความ (Edit Text) ใน Properties หรือดับเบิลคลิกข้อความที่จัดรูปแบบแล้ว ตัวอักษรที่เลือกทำเป็นตัวหนา ตัวเอียง ขีดเส้นใต้ ตัวยก ตัวห้อย หรือตัวพิมพ์ใหญ่ทั้งหมดได้ บรรทัดที่เลือกทำเป็นรายการจุด เลข ตัวอักษรเล็ก หรือตัวอักษรใหญ่ เพิ่มลดย่อหน้าด้วย Tab และตั้งเลขเริ่มของรายการได้ รายการย่อยนับแยกตามย่อหน้า แสดงในแปลน แผ่นงาน และ DXF
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -47009,6 +47147,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.362 · Families in the browser as in Revit: Families go category › family › type, e.g. Walls › Basic Wall / Curtain Wall / Stacked Wall and Doors › your own door families by name; right-click a family for Edit Family (doors, windows and families of your own), New Type, Select All Instances (visible in view or in the project), Rename, Delete (the family and every element of it, asked first, one Ctrl+Z brings it back; the last family of a category stays) and Save as a .penfam file
 - V1.363 · Render as in Revit (View tab › Render, or RR in a 3D view): the Rendering dialog picks the quality from Draft to Best, the size (the screen, or a printer at 75 to 600 DPI), one of six lighting schemes (exterior or interior, with the sun, the artificial lights or both), the background (sky, a colour or the image of the view) and the exposure; Render shows the picture over the view until it is turned or moved, Show the model switches back, and the rendering can be saved to the project under Renderings or exported as a PNG
 - V1.364 · View tabs as in Revit: View tab › Windows › Switch Windows lists the open views with a tick on the current one, and a click goes there · Ctrl+Tab goes to the next open view and Ctrl+Shift+Tab back · right-click a tab: Close, Close Inactive Views, Close Tabs to the Right, Tab Views and Tile Views · drag a tab sideways to reorder the tabs; the order is kept with the open views
+- V1.365 · Text formatting as in Revit: select a text note and press Edit Text in Properties (or double-click a formatted note): the characters selected can be Bold, Italic, Underlined, Superscript, Subscript or All Caps, the lines selected can be a bulleted, numbered, lowercase or uppercase letter list, Tab and Shift+Tab indent them, and a list can start at any number; nested lists count per indent, and the formatting shows in plans, on sheets and in DXF
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -47182,6 +47321,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - ชนิดองค์ประกอบ (Families) ในเบราว์เซอร์แบ่งเป็นหมวด › แฟมิลี › ชนิด แบบ Revit คลิกขวาที่แฟมิลี: แก้ไขแฟมิลี ชนิดใหม่ เลือกทุกชิ้นของแฟมิลี เปลี่ยนชื่อ ลบ (ทั้งแฟมิลีและชิ้นที่ใช้ ถามก่อน Ctrl+Z เอาคืนได้) และบันทึกเป็นไฟล์ .penfam
 - [[a_render363]] (RR หรือแท็บมุมมอง ในมุมมอง 3 มิติ): เลือกคุณภาพ ขนาดภาพตามหน้าจอหรือ DPI รูปแบบแสงหกแบบ ฉากหลัง แล้วกดเรนเดอร์ ภาพอยู่บนมุมมอง บันทึกลงโครงการหรือส่งออก PNG ได้
 - [[a_switchwin364]] (แท็บมุมมอง › หน้าต่าง หรือ Ctrl+Tab): ไปมุมมองที่เปิดอยู่ คลิกขวาที่แท็บเพื่อปิดหรือเรียงหน้าต่าง ลากแท็บเพื่อเรียงลำดับ
+- [[a_rtedit365]] (Properties ของข้อความ หรือดับเบิลคลิกข้อความที่จัดรูปแบบ): ตัวหนา ตัวเอียง ขีดเส้นใต้ ตัวยก ตัวห้อย ตัวพิมพ์ใหญ่ รายการจุดหรือเลข และย่อหน้า
 - [[a_knlegend]]: ตารางรายการ Keynote ที่ใช้อยู่ วางบนแผ่นงานได้ · ติ๊ก [[p_knsheet]] เพื่อให้แต่ละแผ่นงานแสดงเฉพาะ Keynote ของมุมมองบนแผ่นนั้น
 - [[t_sym]]: สัญลักษณ์ 2 มิติของมุมมองนั้น ขนาดคงที่บนกระดาษ: ทิศเหนือ 2 แบบ มาตราส่วนกราฟิก (ปรับตามมาตราส่วนของมุมมอง) เส้นกึ่งกลาง ℄ ลูกศร เส้นตัดขาด สามเหลี่ยมระดับ · เลือกในแถบตัวเลือกแล้วคลิกวาง ((Space)) หมุน 90° · ใช้ได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์
 - [[t_rtag]] ((RT)): ชื่อห้องในแปลนเป็นป้ายห้อง วางห้องแล้วป้ายขึ้นเองในทุกแปลนของชั้นนั้น ลากเพื่อย้าย ถ้าลากออกนอกห้องจะมีเส้นชี้ให้เอง ดับเบิลคลิกเพื่อแก้ชื่อห้อง · ลบป้ายแล้วติดใหม่ได้โดยกด ((RT)) แล้วคลิกในห้อง · [[p_rtkind]] เลือกได้ว่าจะแสดงชื่อ เลขห้อง และพื้นที่ หรือเฉพาะบางอย่าง
@@ -47284,6 +47424,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - Families in the browser go category › family › type, as in Revit. Right-click a family: Edit Family, New Type, Select All Instances, Rename, Delete (the family and its elements, asked first, one Ctrl+Z) and Save as a .penfam file
 - [[a_render363]] (RR or the View tab, in a 3D view): pick the quality, the size (the screen or a DPI), one of six lighting schemes and the background, then Render; the rendering shows over the view and can be saved to the project or exported as a PNG
 - [[a_switchwin364]] (View tab › Windows, or Ctrl+Tab): go to an open view; right-click a tab to close or arrange the windows, drag a tab to reorder
+- [[a_rtedit365]] (Properties of a text note, or double-click a formatted one): bold, italic, underline, superscript, subscript, all caps, bulleted or numbered lists and indents
 - [[a_knlegend]]: the schedule of the keynotes in use; it can be placed on sheets · tick [[p_knsheet]] and every sheet lists only the keynotes of the views on it
 - [[t_sym]]: 2D marks of one view that keep their size on paper: two north arrows, a graphic scale (it follows the scale of the view), the centre line mark ℄, an arrow, a break mark, a level mark · choose one in the options bar and click to place it, ((Space)) turns it 90° · they work in plans, drafting views and legends
 - [[t_rtag]] ((RT)): the names of rooms in a plan are room tags. A room that is placed gets one in every plan of its level; drag it to move it — dragged out of its room it gets a leader — and double-click it to change the name of the room · a tag that was deleted is put back with ((RT)) and a click inside the room · [[p_rtkind]] chooses between name, number and area, or less
@@ -49255,6 +49396,29 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r365={
+  mk:(text,vid,x,y)=>{let id;edit(()=>{const T=(P.types.text||[])[0];id=P.seq++;const d={id,cat:'text',view:vid||221,x:x==null?2000:x,y:y==null?2000:y,text,size:T?T.tsz:2.5};if(T)d.type=T.id;P.ann.push(d)});return id},
+  ann:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  set:(id,L)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{d.rt365=L;d.text=rtPlain365(L.map(rtClean365))});return true},
+  type:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{const T=(P.types.text||[]).find(x=>x.id===d.type);Object.assign(T,o)});return true},
+  of:id=>{const d=P.ann.find(a=>a.id===id);const L=rtOf365(d);return L?JSON.parse(JSON.stringify(L)):null},
+  pre:L=>rtPre365(L),
+  lay:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),Y=txLay(d,v.scale||100,TEXT_LH);return{W:Y.W,U:Y.U,a0:Y.a0,a1:Y.a1,L:Y.L,G:Y.G?Y.G.map(g=>({pre:g.pre,x0:g.x0,R:g.R.map(r=>({s:r.s,f:r.f,x:r.x,w:r.w,dv:r.dv}))})):null}},
+  box:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view);return textBox(d,v.scale||100)},
+  dist:(id,x,y)=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),sc=v.scale||100;return textDist(d,{x,y},sc,50*sc)},
+  draw:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),out=[],segs=[],no=()=>{},ctx=new Proxy({},{get:(o,k)=>k in o?o[k]:no,set:(o,k,x)=>{o[k]=x;return true}}),
+    g={ctx,X:x=>x,Y:y=>y,scale:v.scale||100,pm:1,lw:()=>1,circle:no,seg:(a,b)=>segs.push([a.slice(),b.slice()]),path:no,dash:no,text:(s,p,mm,o)=>{out.push({s:String(s),p:p.slice(),mm,b:!!(o&&o.bold),i:!!(o&&o.it)});return 1}};
+    drawText(g,d,{ink:'#000',paper:'#fff'},null);return{t:out,segs}},
+  open:id=>{const d=P.ann.find(a=>a.id===id);dlgRt365(d);return!!$('#rtEd365')},
+  dlg:()=>{const ed=$('#rtEd365');if(!ed||!$('#dlg').open)return null;return{lines:[...ed.children].map(x=>({li:x.dataset.li||'',ind:+x.dataset.ind||0,n0:+x.dataset.n0||0,pre:x.dataset.pre||'',text:x.textContent,html:x.innerHTML})),
+    on:[...$$('#dlg .rt365bar [data-rt365].on')].map(b=>b.dataset.rt365),title:$('#dlg header').textContent}},
+  sel:(l1,o1,l2,o2)=>{const ed=$('#rtEd365'),D=[...ed.children],at=(x,o)=>{const w=document.createTreeWalker(x,NodeFilter.SHOW_TEXT);let n,k=o;while((n=w.nextNode())){if(k<=n.data.length)return[n,k];k-=n.data.length}return[x,x.childNodes.length]};
+    ed.focus();const a=at(D[l1],o1),b=at(D[l2==null?l1:l2],o2==null?o1:o2),r=document.createRange();r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]);const s=getSelection();s.removeAllRanges();s.addRange(r);rtState365();return true},
+  cmd:a=>{rtCmd365(a);return true},parse:()=>JSON.parse(JSON.stringify(rtParse365($('#rtEd365')))),
+  ok:()=>{const b=$('#dlg [data-rt365="ok"]');if(b)b.click();return!$('#dlg').open},
+  inline:(id,val)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{d.text=val});return true},
+  dxf:vid=>planDXF(viewById(vid||221),{})
+};
 window.PenumBIM.r364={
   tabs:()=>[...$$('#vtabs .vtab[data-view]')].map(b=>+b.dataset.view),open:()=>tabIds364(),act:()=>ui.panes[ui.ap],
   next:d=>swNext364(d==null?1:d),move:(id,k)=>tabMove364(id,k),items:()=>swItems364().map(x=>({id:+x.arg,label:x.label})),
