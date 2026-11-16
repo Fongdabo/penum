@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=449,V1_NAME='V1.439';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=450,V1_NAME='V1.440';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49306,6 +49306,65 @@ Object.assign(STR,{ce439_g:['วัสดุแบบแนวคิด (Concept
   ce439_c_gp:['กระจก','Glazing'],ce439_c_sh:['ขอบล่างกระจก','Sill Height'],ce439_c_gs:['กันแดด','Shaded'],ce439_c_sd:['ยื่นกันแดด','Shade Depth'],ce439_c_sk:['ช่องแสงหลังคา','Skylights'],
   ce439_clear:['ล้างค่าเฉพาะผิว','Clear Overrides'],ce439_none:['มวลนี้ไม่มีค่าเฉพาะผิว','This mass has no face settings of its own'],ce439_cleared:['ล้างค่าเฉพาะผิวแล้ว','Face settings cleared'],
   ce439_note:['ค่าของแต่ละด้านแทนค่าของโครงการในแบบจำลองพลังงานจากมวล เว้นว่างไว้เพื่อใช้ค่าของโครงการ ใส่สัดส่วนกระจก 0 สำหรับผนังที่ติดอาคารอื่น','A side\'s values replace the project\'s in the energy model from masses; leave a box empty to use the project\'s. Type 0 % glazing on a party wall']});
+/* ===== V1.440 loads of the energy model from masses (as Revit's conceptual energy analysis gives a building's peak loads before there are rooms): the peak
+   cooling and the heating of every zone, counted the way the room loads count them (V1.84 Heating and Cooling Loads): outside walls and glazing by orientation,
+   roof and skylights, the people, lights and equipment of the zone's space type (from the Usage of its floor), outdoor air, the safety factor.  The U-values and
+   SHGC are the Conceptual Constructions (V1.439); a shade over the glazing cuts its sun by the projection-factor multipliers of ASHRAE 90.1 (approximate). ===== */
+const CL440_PF=[[0.1,1,1],[0.2,0.91,0.95],[0.3,0.82,0.91],[0.4,0.74,0.87],[0.5,0.67,0.84],[0.6,0.61,0.81],[0.7,0.56,0.78],[0.8,0.51,0.76],[0.9,0.47,0.75],[1,0.44,0.73]];
+const clPF440=(pf,north)=>{for(const r of CL440_PF)if(pf<r[0])return north?r[2]:r[1];return north?0.73:0.44};
+const clA440=L=>{const n=ceN438(L);return Math.hypot(n[0],n[1],n[2])/1e6};
+/* the rows: one a zone of the solid masses, in the shape of the room loads' rows */
+function clRows440(P0){const C=ce438(P0),M=ceModel438(P0,gbxOpts(P0),C),S=loadSet(P0),U=ceU439(P0,C),k=1+S.sf/100,dT=S.to-S.ti,dTh=Math.max(0,S.th-S.toh),gz=M.gz;
+  const dW=Math.max(0,(wFromWb(S.to,S.twb)-wFromRh(S.ti,S.rh))*1000),sunH=Math.max(...LOAD_DIRS.map(o=>S.sun[o]||0)),out=[];
+  const dirOf=(nx,ny)=>{let a=Math.atan2(nx,-ny)*180/Math.PI+S.north;a=((a%360)+360)%360;return LOAD_DIRS[Math.round(a/45)%8]};
+  for(const sp of M.spaces){const r=sp.room,m=IDX.get(sp.mass)||P0.els.find(e=>e.id===sp.mass),area=sp.area,use=loadUseOf(r),Lu=luOf246(P0,use),pq=plPar247(r,Lu,S),w=plW247(pq,0,area);
+    const row={id:sp.id,mass:sp.mass,level:sp.band.lv.id,lab:sp.lab,name:r.name,use,area:area*1e6,vol:sp.vol,wallA:{},glassA:{},roofA:0,skyA:0,q:{wall:0,glassC:0,glassS:0,roof:0,sky:0,people:0,peopleL:0,lights:w.lw,equip:w.ew}},q=row.q;
+    let ua=0;
+    for(const s of sp.surfs){if(s.adj[0]!==sp)continue;
+      if(s.type==='ExteriorWall'){const A=clA440(s.loop),g=s.ops.reduce((x,o)=>x+clA440(o.loop),0),nx=-(s.c[1]-s.a[1]),ny=s.c[0]-s.a[0],o=dirOf(nx,ny);
+        const Cf=ceFace439(m,s.side438,C);let f=1;if(Cf.gs&&Cf.sd>0&&s.ops.length){const o0=s.ops[0],h=Math.abs(o0.v1-o0.v0);if(h>0)f=clPF440(Cf.sd/h,o==='N')}
+        row.wallA[o]=(row.wallA[o]||0)+A-g;row.glassA[o]=(row.glassA[o]||0)+g;q.wall+=(A-g)*U.uw*(dT+S.cl[o]);q.glassC+=g*U.ug*dT;q.glassS+=g*U.gh*S.sun[o]*S.fsh*f;ua+=(A-g)*U.uw+g*U.ug}
+      else if(s.type==='Roof'){const A=clA440(s.loop),g=s.ops.reduce((x,o)=>x+clA440(o.loop),0);row.roofA+=A-g;row.skyA+=g;q.roof+=(A-g)*U.ur*(dT+S.cl.R);q.sky+=g*U.uk*dT+g*U.kh*sunH*S.fsh;ua+=(A-g)*U.ur+g*U.uk}
+      else if(s.type==='ExposedFloor')ua+=clA440(s.loop)*U.us}
+    /* a floor on the ground loses heat at its edge, as in the room loads (F-factor x the exposed perimeter) */
+    row.per=0;if(sp.surfs.some(s=>s.type==='SlabOnGrade'&&s.adj[0]===sp)){const Wl=sp.surfs.filter(s=>(s.type==='ExteriorWall'||s.type==='UndergroundWall')&&s.adj[0]===sp),z=Math.min(...Wl.map(s=>s.z0));
+      row.per=Wl.filter(s=>Math.abs(s.z0-z)<1).reduce((x,s)=>x+Math.hypot(s.c[0]-s.a[0],s.c[1]-s.a[1]),0)/1000;ua+=row.per*S.fp}
+    const people=Lu.d>0?Math.max(1,Math.ceil(area/Lu.d-1e-9)):0;row.people=people;q.people=people*pq.ps;q.peopleL=people*pq.pl;
+    const air=S.oa?oaAir245(r,people,area,sp.vol):0;row.air=air;q.oaS=1.21*air*dT;q.oaL=3.0*air*dW;
+    row.sens=q.wall+q.glassC+q.glassS+q.roof+q.sky+q.people+q.lights+q.equip;row.lat=q.peopleL;row.oa=q.oaS+q.oaL;row.total=(row.sens+row.lat+row.oa)*k;
+    row.btu=row.total*3.412;row.tr=row.total/3517;row.wm2=area>0?row.total/area:0;row.supply=S.dts>0?row.sens*k/(1.21*S.dts):0;
+    ua+=1.21*air;row.ua=ua;row.heat=ua*dTh*k;out.push(row)}
+  return out}
+/* the sums: all, by mass, by floor */
+function clSum440(R){const z={area:0,total:0,sens:0,lat:0,oa:0,heat:0,supply:0,tr:0,n:0};const add=(o,r)=>{o.area+=r.area/1e6;for(const k of ['total','sens','lat','oa','heat','supply','tr'])o[k]+=r[k];o.n++};
+  const all=Object.assign({},z),bm=new Map();for(const r of R){add(all,r);if(!bm.has(r.mass))bm.set(r.mass,Object.assign({},z));add(bm.get(r.mass),r)}return{all,bm}}
+/* the dialog: a row a zone, a total a mass, the whole */
+function dlgCL440(){const R=clRows440(P),Sm=clSum440(R),A=Sm.all,f0=v=>Math.round(v).toLocaleString('en-US'),f2=v=>(+v).toFixed(2),mN=id=>mflName437(P,IDX.get(id));
+  const head=`<tr><th>${t('cl440_mass')}</th><th>${t('c_level')}</th><th>${t('cl440_zone')}</th><th class="n">${t('c_area')} (${t('u_m2')})</th><th class="n">${t('cl440_env')} (W)</th><th class="n">${t('cl440_glass')} (W)</th><th class="n">${t('cl440_int')} (W)</th><th class="n">${t('cl440_oa')} (W)</th><th class="n">${t('cl440_tot')} (W)</th><th class="n">TR</th><th class="n">W/${t('u_m2')}</th><th class="n">${t('cl440_heat')} (W)</th></tr>`;
+  let body='',last=null;
+  for(const r of R){if(last!=null&&last!==r.mass){const s=Sm.bm.get(last);body+=`<tr class="cl440s"><th colspan="3">${esc(mN(last))}</th><th class="n">${f2(s.area)}</th><th></th><th></th><th></th><th></th><th class="n">${f0(s.total)}</th><th class="n">${f2(s.tr)}</th><th class="n">${s.area>0?f0(s.total/s.area):''}</th><th class="n">${f0(s.heat)}</th></tr>`}last=r.mass;const q=r.q;
+    body+=`<tr data-cl="${esc(r.id)}"><td>${esc(mN(r.mass))}</td><td>${esc((lvl(P,r.level)||{}).name||'')}</td><td>${esc(r.lab||t('ce438_whole'))}</td><td class="n">${f2(r.area/1e6)}</td><td class="n">${f0(q.wall+q.roof)}</td><td class="n">${f0(q.glassC+q.glassS+q.sky)}</td><td class="n">${f0(q.people+q.peopleL+q.lights+q.equip)}</td><td class="n">${f0(r.oa)}</td><td class="n">${f0(r.total)}</td><td class="n">${f2(r.tr)}</td><td class="n">${f0(r.wm2)}</td><td class="n">${f0(r.heat)}</td></tr>`}
+  if(last!=null){const s=Sm.bm.get(last);body+=`<tr class="cl440s"><th colspan="3">${esc(mN(last))}</th><th class="n">${f2(s.area)}</th><th></th><th></th><th></th><th></th><th class="n">${f0(s.total)}</th><th class="n">${f2(s.tr)}</th><th class="n">${s.area>0?f0(s.total/s.area):''}</th><th class="n">${f0(s.heat)}</th></tr>`}
+  const sum=R.length?`<p class="cl440t">${t('cl440_sum',A.n,f2(A.area),f2(A.total/1000),f2(A.tr),A.area>0?f0(A.total/A.area):'0',f0(A.total*3.412),f2(A.heat/1000),f0(A.supply))}</p>`:`<p class="note warn">${esc(t('ce438_none'))}</p>`;
+  openDlg(t('a_cl440'),`<p class="note">${esc(t('cl440_note'))}</p>${sum}${R.length?`<div class="tblw" style="max-height:52vh;overflow:auto"><table class="tbl" id="cl440Tbl"><thead>${head}</thead><tbody>${body}</tbody><tfoot><tr><th colspan="3">${t('c_total')}</th><th class="n">${f2(A.area)}</th><th></th><th></th><th></th><th></th><th class="n">${f0(A.total)}</th><th class="n">${f2(A.tr)}</th><th class="n">${A.area>0?f0(A.total/A.area):''}</th><th class="n">${f0(A.heat)}</th></tr></tfoot></table></div>`:''}`,
+    `<button class="btn" data-act="ce438">${t('a_ce438')}</button><button class="btn" data-act="cl440csv"${R.length?'':' disabled'}>${t('cl440_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {click(e){const tr=e.target.closest('tr[data-cl]');if(!tr)return;const r=R.find(x=>x.id===tr.dataset.cl);if(r&&IDX.get(r.mass)){ui.sel=new Set([r.mass]);for(const x of document.querySelectorAll('#cl440Tbl tr[data-cl]'))x.classList.toggle('on',x===tr);refresh()}}},'wide')}
+XA.cl440=()=>dlgCL440();
+/* CSV: a row a zone */
+XA.cl440csv=async()=>{const R=clRows440(P),q=v=>'"'+String(v).replace(/"/g,'""')+'"',n=v=>(Math.round(v*100)/100).toString();
+  const L=[[t('cl440_mass'),t('c_level'),t('cl440_zone'),t('c_area')+' m2',t('cl440_use'),t('cl440_people'),'Wall W','Glass W','Roof+Skylight W','People W','Lights W','Equipment W','OA L/s','OA W',t('cl440_tot')+' W','TR','W/m2',t('cl440_heat')+' W','Supply L/s'].map(q).join(',')];
+  for(const r of R){const x=r.q;L.push([q(mflName437(P,IDX.get(r.mass))),q((lvl(P,r.level)||{}).name||''),q(r.lab||t('ce438_whole')),n(r.area/1e6),q(r.use),r.people,n(x.wall),n(x.glassC+x.glassS),n(x.roof+x.sky),n(x.people+x.peopleL),n(x.lights),n(x.equip),n(r.air),n(r.oa),n(r.total),n(r.tr),n(r.wm2),n(r.heat),n(r.supply)].join(','))}
+  const ok=await saveFile(fname('','-mass-loads.csv'),'﻿'+L.join('\r\n'),'text/csv');if(!ok)toast(t('export_na'))};
+/* the mass's Properties: its peak cooling; the loads from the energy model dialog */
+XP.push((c,els)=>{if(c!=='mass'||els.length!==1||els[0].id==null||els[0].void||els[0].ctx)return'';const m=els[0],R=clRows440(Object.assign({},P,{els:[m]})),s=clSum440(R).all;if(!R.length)return'';
+  return PR.ro('p_cl440',(s.tr).toFixed(1)+' TR')+PR.ro('p_cl440w',(s.area>0?Math.round(s.total/s.area):0)+' W/'+t('u_m2'))+`<div class="pa"><button class="btn" data-act="cl440">${t('a_cl440')}</button></div>`});
+{const f0=dlgGBX;dlgGBX=function(){f0();if(ce438(P).src!=='mass')return;const b=document.querySelector('#dlg [data-act="loads"]');
+  if(b&&!document.querySelector('#dlg [data-act="cl440"]')){const n=document.createElement('button');n.className='btn';n.dataset.act='cl440';n.textContent=t('a_cl440');b.after(n)}}}
+Object.assign(STR,{a_cl440:['ภาระความเย็นจากมวล…','Mass Loads…'],p_cl440:['ภาระความเย็นสูงสุด','Peak Cooling'],p_cl440w:['ภาระความเย็นต่อพื้นที่','Cooling per Area'],cl440_mass:['มวล','Mass'],cl440_zone:['โซน','Zone'],cl440_env:['ผนังและหลังคา','Walls and Roof'],
+  cl440_glass:['กระจก','Glazing'],cl440_int:['คน ไฟ อุปกรณ์','People, Lights, Equipment'],cl440_oa:['อากาศภายนอก','Outdoor Air'],cl440_tot:['รวม','Total'],cl440_heat:['ภาระความร้อน','Heating'],
+  cl440_use:['ชนิดห้อง','Space Type'],cl440_people:['คน','People'],cl440_csv:['ส่งออก CSV','Export CSV'],
+  cl440_sum:['{0} โซน · พื้นที่ {1} ตร.ม. · ภาระความเย็นสูงสุด {2} kW ({3} TR, {4} W/ตร.ม., {5} BTU/h) · ภาระความร้อน {6} kW · ลมจ่าย {7} L/s','{0} zones · {1} m² · peak cooling {2} kW ({3} TR, {4} W/m², {5} BTU/h) · heating {6} kW · supply air {7} L/s'],
+  cl440_note:['คิดจากแบบจำลองพลังงานจากมวลด้วยวิธีเดียวกับภาระของห้อง: ผนัง กระจกตามทิศ หลังคา คน ไฟ อุปกรณ์ตามชนิดห้องของการใช้งาน อากาศภายนอก และค่าเผื่อ ใช้ค่า U และ SHGC จากวัสดุแบบแนวคิด กันแดดลดแดดบนกระจกตามตัวคูณ Projection Factor ของ ASHRAE 90.1 (ประมาณ) ใช้ประมาณขนาดระบบช่วงออกแบบแนวคิด','From the energy model from masses, counted as the room loads are: walls, glazing by orientation, roof, people, lights and equipment of each Usage\'s space type, outdoor air and the safety factor, with the U-values and SHGC of the Conceptual Constructions; shades cut the sun on the glazing by ASHRAE 90.1 projection-factor multipliers (approximate). For sizing at the concept stage']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -51568,6 +51627,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.437 · ตารางชั้นของมวล (Mass Floor schedule แบบ Revit): สร้างตารางหมวดชั้นของมวลได้จากตารางใหม่ แต่ละแถวคือชั้นหนึ่งของมวล มีพื้นที่ชั้น เส้นรอบรูป พื้นที่ผิวภายนอก ปริมาตรชั้น และการใช้งาน คิดตามรูปทรงจริงของมวลทรงสอบด้วย มวลมีพื้นที่ผิวรวม (Gross Surface Area) ใน Properties และตาราง ปุ่มชั้นของมวลใน Properties เปิดตารางชั้นของมวลนั้นและใส่การใช้งานรายชั้นได้
 - V1.438 · แบบจำลองพลังงานจากมวล (Use Conceptual Masses แบบ Revit): ในหน้าต่างแบบจำลองพลังงาน/ส่งออก gbXML เลือกสร้างจากมวลอาคารได้ แต่ละชั้นของมวลแบ่งเป็นโซนแกนกลางกับโซนรอบนอกด้านละโซนตามระยะแกนกลาง ผนังนอกมีแถบกระจกตามสัดส่วนที่ตั้ง ความสูงขอบล่าง และกันแดดยื่นออก หลังคามีช่องแสงได้ มวลบริบทเป็นเงาบัง การใช้งานของชั้นกำหนดชนิดห้อง ผนังมวลทรงสอบส่งมุมเอียงจริงใน gbXML
 - V1.439 · วัสดุแบบแนวคิดและค่าพลังงานรายผิวของมวล (Conceptual Constructions แบบ Revit): หน้าต่างแบบจำลองพลังงานเลือกวัสดุผนังนอก ผนังใต้ดิน หลังคา พื้น กระจก และช่องแสงหลังคาของมวลจากชุดสำเร็จหรือใส่ค่า U และ SHGC เอง (เว้นไว้ใช้ค่าภาระ) ส่งไปกับ gbXML ปุ่มผิวของมวลใน Properties ตั้งสัดส่วนกระจก ขอบล่าง กันแดด และช่องแสงหลังคาเฉพาะด้านได้ เช่น ผนังติดอาคารข้างเคียงไม่มีกระจก
+- V1.440 · ภาระความเย็นจากมวล: คิดภาระความเย็นสูงสุดและภาระความร้อนของทุกโซนในแบบจำลองพลังงานจากมวล ด้วยวิธีเดียวกับภาระของห้อง (ผนัง กระจกตามทิศ หลังคา คน ไฟ อุปกรณ์ตามการใช้งาน อากาศภายนอก ค่าเผื่อ) ใช้ค่า U และ SHGC จากวัสดุแบบแนวคิด กันแดดลดแดดบนกระจก ดูเป็นตารางรายโซน รวมรายมวล ส่งออก CSV และเห็นตันความเย็นใน Properties ของมวล ใช้ประมาณขนาดระบบปรับอากาศก่อนมีห้อง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -52152,6 +52212,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.437 · Mass Floor schedules (as in Revit): New Schedule offers Mass Floors; a row a mass floor with Floor Area, Floor Perimeter, Exterior Surface Area, Floor Volume and Usage, measured on the real form of tapered masses too. A mass shows its Gross Surface Area in Properties and schedules, and Mass Floors… in Properties lists its floors and takes the Usage of each
 - V1.438 · Energy model from masses (Use Conceptual Masses, as in Revit): the energy model / gbXML dialog can build from masses; each mass floor becomes a core zone and one perimeter zone a side at the Core Offset, outside walls get glazing at the Target Percentage with its sill height and a shade, roofs can have skylights, context masses shade, and the Usage of a floor sets its space type; tapered walls keep their real tilt in gbXML
 - V1.439 · Conceptual Constructions and face settings of masses (as in Revit): the energy model dialog picks the mass exterior wall, underground wall, roof, slab, glazing and skylight from presets or takes your own U-value and SHGC (empty: the Loads settings), written into gbXML; Mass Surfaces… in Properties sets the glazing, sill, shade and skylights of single faces, such as no glazing on a party wall
+- V1.440 · Mass Loads: the peak cooling and heating of every zone of the energy model from masses, counted as the room loads are (walls, glazing by orientation, roof, people, lights and equipment of each Usage, outdoor air, safety factor) with the Conceptual Constructions, shades cutting the sun on the glass; a table by zone with mass totals, CSV, and the tons of cooling in a mass's Properties, to size the air conditioning before there are rooms
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -54404,6 +54465,12 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r440={
+  rows:()=>clRows440(P).map(r=>({id:r.id,mass:r.mass,level:r.level,lab:r.lab,use:r.use,area:r.area/1e6,people:r.people,air:r.air,wallA:r.wallA,glassA:r.glassA,roofA:r.roofA,skyA:r.skyA,q:r.q,sens:r.sens,lat:r.lat,oa:r.oa,total:r.total,tr:r.tr,wm2:r.wm2,heat:r.heat,ua:r.ua,per:r.per,supply:r.supply})),
+  sum:()=>{const s=clSum440(clRows440(P));return{all:s.all,bm:[...s.bm].map(([k,v])=>[k,v])}},
+  S:()=>{const S=loadSet(P);return JSON.parse(JSON.stringify(S))},
+  pf:(pf,n)=>clPF440(pf,n),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r439={
   set:o=>{edit(()=>{P.ce438=Object.assign({},P.ce438||{},o)});return JSON.parse(JSON.stringify(P.ce438||null))},
   opts:()=>ce438(P),
