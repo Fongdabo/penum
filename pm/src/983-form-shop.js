@@ -105,10 +105,12 @@ const FS_UI=`<style>
 .fsg-c{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
 .fsg-c input[type=color]{width:44px;height:30px;padding:0 2px;border-radius:6px}
 </style>`;
+// 4.99.32 user: "เอา 2 อันนี้ออกได้ไหม": Excel คลาสสิก is no longer offered on the quotation page; a quotation already using it keeps its card and prints as before
+const FS_HIDE=new Set(['xl']);
 // ---- the gallery on the quotation page; it takes the place of the old "หน้าตาเอกสาร" list
 {const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
   const cur=fsCur(Q),F=fsForm(cur),f0=qForm(Q),fixed=!qmMa(Q)&&(f0==='G'||f0==='E');
-  const tiles=FS_FORMS.filter(x=>fsOwn(x)&&fsFits(x,Q)).map(x=>`<button type="button" class="${x.id===cur?'on':''}" data-a="fsPick" data-id="${Q.id}" data-v="${x.id}" aria-pressed="${x.id===cur}">${fsMini(x)}<b>${esc(x.n)}</b><small>${esc(x.d)}</small><span class="tag">${x.id===cur?'✓ ใช้อยู่':x.p?'ซื้อแล้ว':'ฟรี'}</span></button>`).join('')+fsShopTile(Q);
+  const tiles=FS_FORMS.filter(x=>fsOwn(x)&&fsFits(x,Q)&&(!FS_HIDE.has(x.id)||x.id===cur)).map(x=>`<button type="button" class="${x.id===cur?'on':''}" data-a="fsPick" data-id="${Q.id}" data-v="${x.id}" aria-pressed="${x.id===cur}">${fsMini(x)}<b>${esc(x.n)}</b><small>${esc(x.d)}</small><span class="tag">${x.id===cur?'✓ ใช้อยู่':x.p?'ซื้อแล้ว':'ฟรี'}</span></button>`).join('')+fsShopTile(Q);
   const col=F&&F.th==='brand'?`<div class="fsg-c">สีของบริษัท <input type="color" data-fsc="1" value="${fsRgb(C.formColor)?esc(C.formColor):'#1c8f9b'}" aria-label="สีของบริษัท">
     <button type="button" class="btn sm" data-a="fsLogo"${C.logo?'':' disabled title="ใส่โลโก้บริษัทในตั้งค่าบริษัทก่อน"'}>ใช้สีจากโลโก้</button><small class="muted">ใช้กับทุกใบเสนอราคาที่เลือกแบบนี้</small></div>`:'';
   const g=FS_UI+`<div class="fsg"><div class="fsg-h"><b>แบบฟอร์มเอกสาร</b><small class="muted">กดเลือกแล้วกด "พิมพ์ใบเสนอราคา" ข้อมูลเดิมพิมพ์ออกมาในแบบที่เลือก โลโก้และชื่อบริษัทเป็นของบริษัทคุณเอง</small></div>

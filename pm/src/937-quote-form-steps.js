@@ -15,9 +15,11 @@ const qfsPic=k=>{const ln=(y,w,x=6)=>`<rect x="${x}" y="${y}" width="${w}" heigh
     if(k==='A')s+=num(46,y,'#C58A1B')+num(62,y)+num(78,y,'#33545E');
     if(k==='B')s+=num(58,y)+num(78,y,'#33545E');
     if(k==='S'){s+=`<rect x="44" y="${y}" width="6" height="3" rx="1.5" fill="#B9C6CC"/>`;if(sec)s+=num(78,y,'#33545E')}});return s};
+// 4.99.32 user: "เอา 2 อันนี้ออกได้ไหม": ราชการ ปร.4 is no longer offered; a quotation already using it still shows its card (and prints as before)
+const QFS_HIDE=new Set(['G']);
 function qfsStep2(Q){const f0=qForm(Q),auto=!Q.lay,b=`co.quotes.${Q.id}`;
   return `<div class="qfs-st"><b>②</b> ตารางรายการ <label class="qfs-auto" title="มีค่าแรง = แยกของ / แรง · ไม่มีค่าแรง = ราคาเดียว"><input type="checkbox" class="qfsAuto" data-id="${Q.id}"${auto?' checked':''}> อัตโนมัติ</label></div>
-    <div class="qfs-l">${QFS_LAY.map(([v,k,t,d])=>`<button type="button" class="${f0===k?'on':''}" data-a="qfsLay" data-id="${Q.id}" data-v="${v}" aria-pressed="${f0===k}" title="BOQ-${k}"><svg viewBox="0 0 96 64" aria-hidden="true">${qfsPic(k)}</svg><b>${t}</b><small>${d}</small>${f0===k?`<span class="tag">${auto?'✓ อัตโนมัติ':'✓ ใช้อยู่'}</span>`:''}</button>`).join('')}</div>`};
+    <div class="qfs-l">${QFS_LAY.filter(([v,k])=>!QFS_HIDE.has(k)||f0===k).map(([v,k,t,d])=>`<button type="button" class="${f0===k?'on':''}" data-a="qfsLay" data-id="${Q.id}" data-v="${v}" aria-pressed="${f0===k}" title="BOQ-${k}"><svg viewBox="0 0 96 64" aria-hidden="true">${qfsPic(k)}</svg><b>${t}</b><small>${d}</small>${f0===k?`<span class="tag">${auto?'✓ อัตโนมัติ':'✓ ใช้อยู่'}</span>`:''}</button>`).join('')}</div>`};
 ACT.qfsLay=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;Q.lay=b.dataset.v;save();render();const x=QFS_LAY.find(r=>r[0]===Q.lay);toast(`ตารางรายการ: ${x?x[2]:''}`)};
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('qfsAuto'))return;const Q=CO().quotes.find(q=>q.id===t.dataset.id);if(!Q)return;
   Q.lay=t.checked?'':(QFS_LAY.find(r=>r[1]===qForm(Q))||QFS_LAY[0])[0];save();render()});
