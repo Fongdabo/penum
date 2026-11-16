@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=366,V1_NAME='V1.356';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=367,V1_NAME='V1.357';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -42885,6 +42885,7 @@ function nameUsed350(v,s){const k=vkKey350(v);return P.views.some(x=>x!==v&&x.ki
 function brMenu350(vid,at){const v=viewById(vid);if(!v)return;const it=[{act:'bropen350',arg:String(vid),label:t('bm_open350'),icon:viewIcon(v)}],sh=v.kind!=='sheet'?shOf350(vid):[];
   for(const s of sh.slice(0,4))it.push({act:'bropen350',arg:String(s.id),label:t('bm_opensh350',(s.number?s.number+' - ':'')+s.name),icon:'sheet'});
   if(ui.open.includes(vid)&&ui.open.length>1)it.push({act:'brclose354',arg:String(vid),label:t('bm_close354'),icon:'closeother'});
+  if(camOk357(v))it.push({act:'cam357',arg:String(vid),label:t('bm_cam357'),icon:'camera'});
   if(v.kind!=='sheet'&&v.kind!=='schedule')it.push({act:'brref353',arg:String(vid),label:t('bm_ref353')+'…',icon:'vref'});
   it.push('-');
   it.push({act:'brdo350',arg:vid+':dupv',label:t('a_dupv'),icon:'dup'});
@@ -43283,6 +43284,90 @@ Object.assign(STR,{bm_adp356:['ใช้มุมมองย่อยกับ�
   adp_note356:['มุมมองย่อย {1} มุมมองของ {0} จะถูกสร้างซ้ำในทุกมุมมองที่ติ๊ก พร้อมกรอบตัดหรือกล่องขอบเขตเดียวกัน (แปลนชนิดเดียวกันและมาตราส่วนเดียวกัน)','The {1} dependent views of {0} are made again under each view ticked, with the same crop region or scope box (plans of the same kind and scale)'],
   adp_deps356:['มุมมองย่อย','Dependent views'],adp_has356:['มีมุมมองย่อย {0}','has {0} dependent'],adp_nolist356:['ไม่มีแปลนชนิดเดียวกันที่มาตราส่วนเดียวกัน','No other plan of the same kind and scale'],
   adp_count356:['จะสร้าง {0} มุมมอง','{0} views to make'],adp_done356:['สร้างมุมมองย่อย {0} มุมมองใน {1} มุมมองแล้ว','{0} dependent views made under {1} views'],adp_none356:['มุมมองนี้ไม่มีมุมมองย่อย','This view has no dependent views']});
+/* ===== 357 Show Camera (Revit: Project Browser › right-click a perspective 3D view › Show Camera).  The camera of the view is shown, selected, in a plan,
+   an elevation or a section: its eye, the target it looks at and its field of view as a triangle, with a grip at the eye and one at the target.  Dragging
+   the eye or the target places it again (in a plan their heights stay; in an elevation or a section they go up and down and along the view), dragging
+   the line between them or the triangle's edge moves the whole camera.  Properties shows Eye Elevation and Target Elevation, which can be typed there
+   or in the Properties of the 3D view.  A click elsewhere or Esc puts the camera away; a double-click on it opens the view.
+   The camera kept with the view is v.cam {yaw, pitch, t, hh}; what an open 3D view shows is its navigation (ui.nav).  A change made here is written to
+   v.cam with a stamp (v.cam.k357) and the navigation takes it again whenever the stamp is not the one it last took (so also after Undo and Redo). */
+const camOk357=v=>!!v&&v.kind==='3d'&&!walkOf(v)&&!!(ui.nav[v.id]?ui.nav[v.id].persp:v.persp);
+const camIn357=(pn,v)=>!!pn&&!!v&&!actOf(pn.i)&&((v.kind==='plan'&&!v.draft)||v.kind==='elev'||v.kind==='section');
+const camV357=()=>{if(!ui.cam357)return null;const V=viewById(ui.cam357);if(!camOk357(V)){ui.cam357=0;return null}return V};
+const camSt357=V=>Math.max(Date.now(),((V.cam&&+V.cam.k357)||0)+1);
+/* the navigation of the view, worked out as opening it would where it was never opened */
+function camNav357(V){const n=navOf(V);if(n.fit){const pn=PANES.find(q=>!q.el.hidden&&paneView(q.i)===V&&q.w>0);fitView(V,pn?pn.w:1200,pn?pn.h:800)}return n}
+/* the camera in the model (points in GL order: x, height, plan y): eye E, target T, the way it looks f, its right r and up u, half the height (hh) and width (hw) seen at the target */
+function camGeo357(V){const n=camNav357(V),fov=n.fov>0?+n.fov:45,tan=Math.tan(fov/2*Math.PI/180),dist=n.hh/tan,cp=Math.cos(n.pitch),sp=Math.sin(n.pitch),cy=Math.cos(n.yaw),sy=Math.sin(n.yaw);
+  const f=[-cp*cy,-sp,-cp*sy],r=[sy,0,-cy],u=[r[1]*f[2]-r[2]*f[1],r[2]*f[0]-r[0]*f[2],r[0]*f[1]-r[1]*f[0]],T=n.t.slice(),E=[T[0]-f[0]*dist,T[1]-f[1]*dist,T[2]-f[2]*dist];
+  const pn=PANES.find(q=>!q.el.hidden&&paneView(q.i)===V&&q.w>0&&q.h>0),asp=pn?pn.w/pn.h:1.5;return{n,E,T,f,r,u,dist,fov,hh:n.hh,hw:n.hh*asp}}
+/* where a point of the model falls in view v (its own 2D coordinates: a plan's x, y; an elevation's along the view and minus the height) */
+function camP357(v){if(v.kind==='plan')return q=>[q[0],q[2]];const f=viewDir(v),a=-f[1],b=f[0];return q=>[q[0]*a+q[2]*b,-q[1]]}
+/* the camera that looks from E at T, as the view keeps it; null when they are too close */
+function camQ357(V,E,T){const d=[T[0]-E[0],T[1]-E[1],T[2]-E[2]],L=Math.hypot(d[0],d[1],d[2]);if(!(L>=200))return null;const n=camNav357(V),tan=Math.tan((n.fov>0?+n.fov:45)/2*Math.PI/180);
+  return{yaw:Math.round(Math.atan2(-d[2],-d[0])*1e6)/1e6,pitch:Math.round(clamp(Math.asin(clamp(-d[1]/L,-1,1)),-1.5,1.5)*1e6)/1e6,t:T.map(x=>Math.round(x)),hh:Math.max(50,Math.round(L*tan))}}
+/* the camera as it is now is kept with the view (not a step of its own to undo), so that Undo goes back to it */
+function camBake357(V){const n=camNav357(V),s=camSt357(V);V.cam=Object.assign({},V.cam||{},camKeep(n),{k357:s});n.k357=s}
+function camPut357(V,E,T){const q=camQ357(V,E,T);if(!q)return false;camBake357(V);const s=camSt357(V);edit(()=>{V.cam=Object.assign({},V.cam,q,{k357:s})});return true}
+function camLive357(V,E,T){const q=camQ357(V,E,T);if(!q)return false;Object.assign(camNav357(V),{yaw:q.yaw,pitch:q.pitch,t:q.t.slice(),hh:q.hh,fit:false,auto:false});return true}
+XD.push(()=>{for(const v of P.views){if(v.kind!=='3d')continue;const n=ui.nav[v.id];if(!n)continue;const c=v.cam,k=c&&c.k357!=null?+c.k357:undefined;if(n.k357===k)continue;n.k357=k;
+  if(k===undefined||!Array.isArray(c.t)||c.t.length!==3||!(+c.hh>0))continue;Object.assign(n,{yaw:+c.yaw||0,pitch:clamp(+c.pitch||0,-1.5,1.5),t:c.t.map(Number),hh:+c.hh,fit:false,auto:false})}return false});
+XC.push(()=>{for(const v of P.views)if(v.kind==='3d'&&v.cam&&v.cam.k357!==undefined&&!(isFinite(+v.cam.k357)&&+v.cam.k357>0))delete v.cam.k357});
+/* ---- drawn in a plan, an elevation or a section ---- */
+function camScr357(pn,v,V){const nav=navOf(v),G=camGeo357(V),P2=camP357(v),S=q=>{const a=P2(q);return[a[0]*nav.s+nav.ox,a[1]*nav.s+nav.oy]},side=v.kind!=='plan',ax=side?G.u:G.r,w=side?G.hh:G.hw,T=G.T;
+  return{G,e:S(G.E),t:S(T),a:S([T[0]+ax[0]*w,T[1]+ax[1]*w,T[2]+ax[2]*w]),b:S([T[0]-ax[0]*w,T[1]-ax[1]*w,T[2]-ax[2]*w])}}
+const camDir357=(e,t0)=>{let dx=t0[0]-e[0],dy=t0[1]-e[1];const l=Math.hypot(dx,dy);return l<1?[1,0]:[dx/l,dy/l]};
+function camGlyph357(ctx,e,t0){const[dx,dy]=camDir357(e,t0),nx=-dy,ny=dx,Q=(a,b)=>[e[0]+dx*a+nx*b,e[1]+dy*a+ny*b];
+  ctx.fillStyle=C.paper;ctx.strokeStyle=C.sel;ctx.lineWidth=1.3;for(const L of [[Q(-23,-6),Q(-9,-6),Q(-9,6),Q(-23,6)],[Q(-9,-3),Q(-2,-6.5),Q(-2,6.5),Q(-9,3)]]){ctx.beginPath();L.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fill();ctx.stroke()}}
+function camDraw357(pn,ctx,v,nav){if(ui.tool!=='modify'||!camIn357(pn,v))return;const V=camV357();if(!V)return;if(ui.sel.size){ui.cam357=0;return}const K=camScr357(pn,v,V),e=K.e,t0=K.t;
+  ctx.save();ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(e[0],e[1]);ctx.lineTo(K.a[0],K.a[1]);ctx.lineTo(K.b[0],K.b[1]);ctx.closePath();ctx.fillStyle=C.sel;ctx.globalAlpha=0.08;ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=C.sel;ctx.lineWidth=1.3;ctx.stroke();
+  ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(e[0],e[1]);ctx.lineTo(t0[0],t0[1]);ctx.stroke();ctx.setLineDash([]);camGlyph357(ctx,e,t0);slGrip(ctx,e[0],e[1]);slGrip(ctx,t0[0],t0[1]);
+  const[dx,dy]=camDir357(e,t0),lx=e[0]-dx*34,ly=e[1]-dy*34+(Math.abs(dx)>0.5?-14:0);ctx.font='600 11px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=3;ctx.strokeStyle=C.paper;ctx.strokeText(V.name,lx,ly);ctx.fillStyle=C.sel;ctx.fillText(V.name,lx,ly);ctx.restore()}
+{const f0=drawOverlay;drawOverlay=function(pn,ctx,v,nav){const r=f0.apply(this,arguments);camDraw357(pn,ctx,v,nav);return r}}
+/* what of the camera is under p (px of the pane): 'e' the eye, 't' the target, 'b' the line or the triangle's edges (the whole camera), or null */
+const camSeg357=(p,a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,u=l?clamp(((p.x-a[0])*dx+(p.y-a[1])*dy)/l,0,1):0;return Math.hypot(a[0]+dx*u-p.x,a[1]+dy*u-p.y)};
+function camHit357(pn,v,V,p){const K=camScr357(pn,v,V),e=K.e,t0=K.t;if(Math.hypot(e[0]-p.x,e[1]-p.y)<9)return'e';if(Math.hypot(t0[0]-p.x,t0[1]-p.y)<9)return't';
+  if(camSeg357(p,e,t0)<6||camSeg357(p,e,K.a)<5||camSeg357(p,e,K.b)<5||camSeg357(p,K.a,K.b)<5)return'b';
+  const[dx,dy]=camDir357(e,t0),qx=p.x-e[0],qy=p.y-e[1],al=qx*dx+qy*dy,ac=-qx*dy+qy*dx;return al<=0&&al>=-24&&Math.abs(ac)<=8?'b':null}
+const camXY357=(pn,e)=>{const r=pn.cv.getBoundingClientRect();return rotIn(pn,paneView(pn.i),{x:e.clientX-r.left,y:e.clientY-r.top})};
+const camPane357=e=>PANES.find(q=>q.cv===e.target)||null;
+let CD357=null;          /* a drag: {pane, vid: the view dragged in, V: the camera's view, h: what was taken, p0, E0, T0, moved} */
+document.addEventListener('pointerdown',e=>{if(!ui.cam357||ui.tool!=='modify'||e.button!==0)return;const pn=camPane357(e);if(!pn)return;const v=paneView(pn.i);if(!camIn357(pn,v))return;const V=camV357();if(!V)return;
+  const p=camXY357(pn,e),h=camHit357(pn,v,V,p);if(!h){ui.cam357=0;refresh();return}          /* a click elsewhere: the camera is no longer selected, and the click goes on */
+  e.preventDefault();e.stopImmediatePropagation();if(ui.ap!==pn.i)setActivePane(pn.i);try{pn.cv.setPointerCapture(e.pointerId)}catch(_){}
+  camBake357(V);const G=camGeo357(V);CD357={pane:pn.i,vid:v.id,V:V.id,h,p0:p,E0:G.E.slice(),T0:G.T.slice(),moved:false};refresh()},true);
+document.addEventListener('pointermove',e=>{const D=CD357;if(!D)return;e.preventDefault();e.stopImmediatePropagation();const pn=PANES[D.pane],v=viewById(D.vid),V=viewById(D.V);if(!pn||!v||!camOk357(V)){CD357=null;return}
+  const p=camXY357(pn,e);if(!D.moved&&Math.hypot(p.x-D.p0.x,p.y-D.p0.y)<3)return;D.moved=true;const nav=navOf(v),dx=Math.round((p.x-D.p0.x)/nav.s/10)*10,dy=Math.round((p.y-D.p0.y)/nav.s/10)*10;
+  const f=v.kind==='plan'?null:viewDir(v),mv=q=>f?[q[0]-f[1]*dx,q[1]-dy,q[2]+f[0]*dx]:[q[0]+dx,q[1],q[2]+dy],E=D.h==='t'?D.E0:mv(D.E0),T=D.h==='e'?D.T0:mv(D.T0);
+  if(camLive357(V,E,T))redraw()},true);
+function camUp357(e,keep){const D=CD357;if(!D)return;CD357=null;if(e){e.preventDefault();e.stopImmediatePropagation()}const V=viewById(D.V);if(!camOk357(V)){refresh();return}const n=navOf(V);
+  if(!D.moved||!keep){const c=V.cam;if(D.moved&&c&&Array.isArray(c.t))Object.assign(n,{yaw:+c.yaw,pitch:+c.pitch,t:c.t.slice(),hh:+c.hh});refresh();return}
+  const s=camSt357(V);edit(()=>{V.cam=Object.assign({},V.cam,camKeep(n),{k357:s})})}
+document.addEventListener('pointerup',e=>camUp357(e,true),true);document.addEventListener('pointercancel',e=>camUp357(e,false),true);
+document.addEventListener('pointermove',e=>{if(!ui.cam357||CD357||ui.tool!=='modify')return;const pn=camPane357(e);if(!pn)return;const v=paneView(pn.i),V=camIn357(pn,v)&&camV357();if(V&&camHit357(pn,v,V,camXY357(pn,e)))pn.cv.style.cursor='move'});
+document.addEventListener('dblclick',e=>{if(!ui.cam357||ui.tool!=='modify')return;const pn=camPane357(e);if(!pn)return;const v=paneView(pn.i);if(!camIn357(pn,v))return;const V=camV357();if(!V||!camHit357(pn,v,V,camXY357(pn,e)))return;
+  e.preventDefault();e.stopImmediatePropagation();ui.cam357=0;showView(V.id)},true);
+addEventListener('keydown',e=>{if(e.key!=='Escape'||!ui.cam357)return;if(CD357)camUp357(null,false);ui.cam357=0;refresh()},true);
+{const f0=setTool;setTool=function(tool){if(tool!=='modify'){ui.cam357=0;CD357=null}return f0.apply(this,arguments)}}
+/* ---- Show Camera: in the plan, elevation or section worked in, else in one beside it, else in the floor plan of the level the eye stands on ---- */
+function camPlan357(V){const G=camGeo357(V),L=sortedLevels(P),lv=L.filter(l=>l.elev<=G.E[1]+1).pop()||L[0],ok=x=>x.kind==='plan'&&!x.draft&&!x.legend&&!x.gcs&&!x.rcp&&!x.callout&&x.dep==null&&x.area==null;
+  return P.views.find(x=>ok(x)&&lv&&x.level===lv.id)||P.views.find(ok)||null}
+XA.cam357=a=>{const V=viewById(+a);if(!camOk357(V)){toast(t('cam_no357'));return}
+  if(!camIn357(PANES[ui.ap],activeView())){const q=PANES.find(x=>x.i<NPN()&&!x.el.hidden&&camIn357(x,paneView(x.i)));if(q)setActivePane(q.i);else{const pl=camPlan357(V);if(!pl){toast(t('cam_noplan357'));return}showView(pl.id)}}
+  if(ui.tool!=='modify')setTool('modify');ui.sel.clear();ui.hov=null;camNav357(V);ui.cam357=V.id;refresh();toast(t('cam_shown357',V.name),6000)};
+XA.cam357open=a=>{const V=viewById(+a);if(!V)return;ui.cam357=0;showView(V.id)};
+/* ---- Properties: Eye Elevation and Target Elevation, of the camera shown or of the 3D view ---- */
+function camRows357(V,sel){const G=camGeo357(V),U=t('u_mm');return PR.grp('g_cam357')+PR.num('cam357e','p_eye357',Math.round(G.E[1]),U,'step="50"')+PR.num('cam357t','p_tgt357',Math.round(G.T[1]),U,'step="50"')+PR.ro('p_cdist357',fmtLen(G.dist)+' '+unitName())
+  +`<div class="pa">${sel?`<button class="btn" data-act="cam357open" data-arg="${V.id}">${t('a_cam357open')}</button>`:`<button class="btn" data-act="cam357" data-arg="${V.id}">${t('bm_cam357')}</button>`}</div>`+(sel?`<div class="pnote">${t('n_cam357')}</div>`:'')}
+XVR.push(v=>camOk357(v)?camRows357(v,false):'');
+XVF.push((v,key,raw)=>{if(key!=='cam357e'&&key!=='cam357t')return false;const V=v&&v.kind==='3d'?v:camV357();if(!camOk357(V))return true;const z=parseFloat(raw);if(!isFinite(z)){refresh();return true}
+  const G=camGeo357(V),E=G.E.slice(),T=G.T.slice();if(key==='cam357e')E[1]=clamp(z,-1e6,1e7);else T[1]=clamp(z,-1e6,1e7);if(!camPut357(V,E,T)){toast(t('cam_short'));refresh()}return true});
+{const f0=renderProps;renderProps=function(){const r=f0.apply(this,arguments),V=ui.cam357?camV357():null;if(V&&!ui.sel.size&&ui.tool==='modify'&&camIn357(PANES[ui.ap],activeView())){const el=$('#props'),st=el.scrollTop;
+  el.innerHTML=`<div class="tsel">${icon('camera')}<div class="fam"><small>${t('cam_sel357')}</small><div class="none">${esc(V.name)}</div></div></div>`+camRows357(V,true);el.scrollTop=st}return r}}
+Object.assign(STR,{bm_cam357:['แสดงกล้อง','Show Camera'],cam_no357:['แสดงกล้องได้เฉพาะมุมมอง 3 มิติแบบทัศนียภาพ','Only a perspective 3D view has a camera to show'],
+  cam_noplan357:['ไม่มีแปลนให้แสดงกล้อง','There is no plan to show the camera in'],cam_shown357:['กล้องของ “{0}” แสดงอยู่ ลากตาหรือเป้าเพื่อย้าย ลากเส้นกลางเพื่อย้ายทั้งกล้อง ดับเบิลคลิกเพื่อเปิด กด Esc เพื่อซ่อน','The camera of “{0}” is shown. Drag its eye or target, or the line between them to move it all; double-click to open the view; Esc hides it'],
+  cam_sel357:['กล้อง (Camera)','Camera'],g_cam357:['กล้อง (Camera)','Camera'],p_eye357:['ระดับตา (Eye Elevation)','Eye Elevation'],p_tgt357:['ระดับเป้า (Target Elevation)','Target Elevation'],p_cdist357:['ระยะถึงเป้า','Distance to target'],
+  a_cam357open:['เปิดมุมมอง 3 มิติ','Open the 3D view'],n_cam357:['ลากตาหรือเป้าในมุมมองเพื่อย้าย ในรูปด้านและรูปตัดลากขึ้นลงเพื่อเปลี่ยนระดับ กด Esc หรือคลิกที่อื่นเพื่อซ่อนกล้อง','Drag the eye or the target in the view to move it; in an elevation or a section drag it up or down to change its height. Esc or a click elsewhere hides the camera']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -45413,6 +45498,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.354 · บันทึกลงโครงการเป็นภาพแบบ Revit: คลิกขวาที่มุมมองในเบราว์เซอร์โครงการ › บันทึกลงโครงการเป็นภาพ… ตั้งชื่อ ทั้งมุมมองหรือเฉพาะส่วนที่เห็น ขนาดเป็นพิกเซล และซ่อนระนาบอ้างอิง กล่องขอบเขต กรอบครอป และสัญลักษณ์ที่ไม่ได้ใช้ ภาพเก็บในไฟล์โครงการใต้กลุ่มภาพเรนเดอร์ เปิดดู เปลี่ยนชื่อ ส่งออก ลบ และลากไปวางบนแผ่นงานได้ และเมนูคลิกขวามีปิดสำหรับมุมมองที่เปิดเป็นแท็บอยู่
 - V1.355 · เมนูคลิกขวาของชนิดในเบราว์เซอร์โครงการแบบ Revit: คลิกขวาที่ชนิดในกลุ่มครอบครัว มีคุณสมบัติของชนิด… สร้างชิ้นใหม่ (เริ่มเครื่องมือด้วยชนิดนั้น) เลือกชนิดเดียวกันที่เห็นในมุมมองหรือทั้งโครงการ ทำสำเนา (ชื่อถัดไปเช่น ผนัง 200 2 แล้วตั้งชื่อ) เปลี่ยนชื่อ (ไม่ซ้ำชนิดอื่นในหมวด) และลบตามกติกาของคุณสมบัติของชนิด พร้อมบอกเหตุผลเมื่อลบไม่ได้
 - V1.356 · ใช้มุมมองย่อยกับมุมมองอื่นแบบ Revit: คลิกขวาที่แปลนที่มีมุมมองย่อยในเบราว์เซอร์โครงการ › ใช้มุมมองย่อยกับมุมมองอื่น… ติ๊กแปลนชนิดเดียวกันที่มาตราส่วนเดียวกัน (เลือกทั้งหมดหรือไม่เลือกเลยได้) แล้วมุมมองย่อยถูกสร้างซ้ำในทุกแปลนที่ติ๊ก พร้อมกรอบตัดหรือกล่องขอบเขตเดียวกันและชื่อท้ายเดียวกัน ย้อนกลับครั้งเดียวได้ทั้งหมด
+- V1.357 · แสดงกล้องแบบ Revit: คลิกขวาที่มุมมอง 3 มิติแบบทัศนียภาพในเบราว์เซอร์โครงการ › แสดงกล้อง แล้วตา เป้า และมุมมองของกล้องแสดงในแปลน รูปด้าน หรือรูปตัด ลากตาหรือเป้าเพื่อย้าย (ในรูปด้านและรูปตัดลากขึ้นลงเพื่อเปลี่ยนระดับ) ลากเส้นกลางเพื่อย้ายทั้งกล้อง มุมมอง 3 มิติที่เปิดอยู่เปลี่ยนตามทันที ระดับตาและระดับเป้าพิมพ์ได้ใน Properties ย้อนกลับได้
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
 
@@ -45908,6 +45994,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.354 · Save to Project as Image as in Revit: right-click a view in the Project Browser › Save to Project as Image… with a name, Current window or Visible portion, a size in pixels and the four Hide options; the image is kept in the project file under Renderings, where it opens, is renamed, exported, deleted and dragged onto a sheet. The right-click menu also has Close for a view open in a tab
 - V1.355 · The right-click menu of a type in the Project Browser as in Revit: right-click a type under Families for Type Properties…, Create Instance (its tool with that type), Select All Instances visible in the view or in the entire project, Duplicate (the next free name, then named), Rename (not the name of another type of the family) and Delete by the rules of Type Properties, saying why when it cannot
 - V1.356 · Apply Dependent Views as in Revit: right-click a plan that has dependent views in the Project Browser › Apply Dependent Views…, tick plans of the same kind and scale (Check All, Check None), and its dependent views are made again under each, with the same crop region or scope box and the same ending to their names; one Undo takes them all back
+- V1.357 · Show Camera as in Revit: right-click a perspective 3D view in the Project Browser › Show Camera, and its eye, target and field of view show in a plan, elevation or section; drag the eye or the target (up and down in an elevation or section to change its height), or the line between them to move the whole camera, and the open 3D view follows at once; Eye Elevation and Target Elevation can be typed in Properties; Undo takes it back
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
 
@@ -46072,6 +46159,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - คลิกขวาที่มุมมองในเบราว์เซอร์ › [[bm_simg354]]…: เก็บภาพของมุมมองไว้ในโครงการใต้กลุ่ม[[br_rnd354]] คลิกเพื่อเปิดดู ลากไปวางบนแผ่นงาน หรือคลิกขวาเพื่อเปลี่ยนชื่อและลบ · [[bm_close354]]: ปิดแท็บของมุมมองนั้น
 - คลิกขวาที่ชนิดในกลุ่มครอบครัวของเบราว์เซอร์: [[type_props]]… [[ft_new355]] เลือกชนิดเดียวกันที่เห็นในมุมมองหรือทั้งโครงการ ทำสำเนา เปลี่ยนชื่อ และลบ (ลบได้เมื่อไม่มีชิ้นใช้และไม่ใช่ชนิดสุดท้ายของหมวด)
 - คลิกขวาที่แปลนที่มีมุมมองย่อย › [[bm_adp356]]…: ติ๊กแปลนชนิดเดียวกันที่มาตราส่วนเดียวกัน แล้วมุมมองย่อยพร้อมกรอบตัดเดียวกันถูกสร้างในแปลนเหล่านั้น
+- คลิกขวาที่มุมมอง 3 มิติแบบทัศนียภาพ › [[bm_cam357]]: กล้องแสดงในแปลน รูปด้าน หรือรูปตัด ลากตาหรือเป้าเพื่อย้าย ลากเส้นกลางเพื่อย้ายทั้งกล้อง พิมพ์ระดับตาและระดับเป้าใน Properties ดับเบิลคลิกเพื่อเปิดมุมมอง กด Esc เพื่อซ่อน
 - [[a_knlegend]]: ตารางรายการ Keynote ที่ใช้อยู่ วางบนแผ่นงานได้ · ติ๊ก [[p_knsheet]] เพื่อให้แต่ละแผ่นงานแสดงเฉพาะ Keynote ของมุมมองบนแผ่นนั้น
 - [[t_sym]]: สัญลักษณ์ 2 มิติของมุมมองนั้น ขนาดคงที่บนกระดาษ: ทิศเหนือ 2 แบบ มาตราส่วนกราฟิก (ปรับตามมาตราส่วนของมุมมอง) เส้นกึ่งกลาง ℄ ลูกศร เส้นตัดขาด สามเหลี่ยมระดับ · เลือกในแถบตัวเลือกแล้วคลิกวาง ((Space)) หมุน 90° · ใช้ได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์
 - [[t_rtag]] ((RT)): ชื่อห้องในแปลนเป็นป้ายห้อง วางห้องแล้วป้ายขึ้นเองในทุกแปลนของชั้นนั้น ลากเพื่อย้าย ถ้าลากออกนอกห้องจะมีเส้นชี้ให้เอง ดับเบิลคลิกเพื่อแก้ชื่อห้อง · ลบป้ายแล้วติดใหม่ได้โดยกด ((RT)) แล้วคลิกในห้อง · [[p_rtkind]] เลือกได้ว่าจะแสดงชื่อ เลขห้อง และพื้นที่ หรือเฉพาะบางอย่าง
@@ -46166,6 +46254,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - Right-click a view in the browser › [[bm_simg354]]…: keeps a picture of the view in the project under [[br_rnd354]]; click to open it, drag it onto a sheet, right-click to rename or delete it · [[bm_close354]]: closes the view's tab
 - Right-click a type under Families in the browser: [[type_props]]…, [[ft_new355]], Select All Instances visible in the view or in the entire project, Duplicate, Rename and Delete (when nothing uses it and it is not the last type of its family)
 - Right-click a plan that has dependent views › [[bm_adp356]]…: tick plans of the same kind and scale, and its dependent views, with the same crop regions, are made under them
+- Right-click a perspective 3D view › [[bm_cam357]]: its camera shows in a plan, elevation or section; drag the eye or the target, or the line between them to move it all, type Eye and Target Elevation in Properties, double-click it to open the view, Esc hides it
 - [[a_knlegend]]: the schedule of the keynotes in use; it can be placed on sheets · tick [[p_knsheet]] and every sheet lists only the keynotes of the views on it
 - [[t_sym]]: 2D marks of one view that keep their size on paper: two north arrows, a graphic scale (it follows the scale of the view), the centre line mark ℄, an arrow, a break mark, a level mark · choose one in the options bar and click to place it, ((Space)) turns it 90° · they work in plans, drafting views and legends
 - [[t_rtag]] ((RT)): the names of rooms in a plan are room tags. A room that is placed gets one in every plan of its level; drag it to move it — dragged out of its room it gets a leader — and double-click it to change the name of the room · a tag that was deleted is put back with ((RT)) and a click inside the room · [[p_rtkind]] chooses between name, number and area, or less
@@ -48137,6 +48226,21 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r357={
+  menu:vid=>{brMenu350(vid,{x:300,y:200});return $$('#menu > button').map(b=>[b.dataset.act,b.dataset.arg,b.textContent.trim()])},hideMenu:()=>{$('#menu').hidden=true},
+  shown:()=>ui.cam357||0,tool:()=>ui.tool,active:()=>{const v=activeView();return v?v.id:0},sel:()=>[...ui.sel],
+  geo:vid=>{const V=viewById(vid);if(!V)return null;const G=camGeo357(V);return{E:G.E.map(Math.round),T:G.T.map(Math.round),dist:Math.round(G.dist)}},
+  cam:vid=>{const v=viewById(vid);return v&&v.cam?JSON.parse(JSON.stringify(v.cam)):null},nav:vid=>ui.nav[vid]?JSON.parse(JSON.stringify(ui.nav[vid])):null,
+  /* where the eye ('e'), the target ('t') and the middle of the line ('m') of the camera are on the screen, in the active pane */
+  scr:(vid,w)=>{const pn=PANES[ui.ap],v=activeView(),V=viewById(vid);if(!camIn357(pn,v)||!V)return null;const K=camScr357(pn,v,V),r=pn.cv.getBoundingClientRect(),q=w==='e'?K.e:w==='t'?K.t:[(K.e[0]+K.t[0])/2,(K.e[1]+K.t[1])/2];return[r.left+q[0],r.top+q[1]]},
+  toScr:(x,y)=>{const pn=PANES[ui.ap],v=activeView(),nav=navOf(v),r=pn.cv.getBoundingClientRect();return[r.left+x*nav.s+nav.ox,r.top+y*nav.s+nav.oy]},
+  put:(vid,E,T)=>camPut357(viewById(vid),E,T),show:vid=>XA.cam357(String(vid)),hit:(vid,x,y)=>{const pn=PANES[ui.ap],v=activeView(),r=pn.cv.getBoundingClientRect();return camHit357(pn,v,viewById(vid),{x:x-r.left,y:y-r.top})},
+  make:(plan,a,b)=>{const v=viewById(plan);const nv=camMake(v,{x:a[0],y:a[1]},{x:b[0],y:b[1]});return nv?nv.id:0},
+  props:()=>[...$$('#props [data-p]')].map(i=>[i.dataset.p,i.value]),head:()=>($('#props .tsel')||{textContent:''}).textContent.trim(),
+  setProp:(k,val)=>{const i=$('#props [data-p="'+k+'"]');if(!i)return false;i.value=val;i.dispatchEvent(new Event('change',{bubbles:true}));return true},
+  views:()=>P.views.map(v=>({id:v.id,kind:v.kind,name:v.name,persp:!!v.persp,level:v.level,draft:!!v.draft,rcp:!!v.rcp,dir:v.dir})),
+  toast:()=>($('#toast')||{textContent:''}).textContent,proj:()=>projStr()
+};
 window.PenumBIM.r356={
   menu:vid=>{brMenu350(vid,{x:300,y:200});return $$('#menu > button').map(b=>[b.dataset.act,b.dataset.arg,b.textContent.trim()])},hideMenu:()=>{$('#menu').hidden=true},
   deps:vid=>adpDeps356(viewById(vid)).map(v=>({id:v.id,name:v.name,crop:v.crop||null,scope:v.scope||null,level:v.level})),list:vid=>adpList356(viewById(vid)).map(v=>v.id),
