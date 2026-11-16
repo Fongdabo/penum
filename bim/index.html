@@ -12579,7 +12579,7 @@ function catRows(cat,els,isNew){
       if(!isNew)h+=PR.grp('g_graphics')+PR.sel('style','p_lstyle',V(x=>x.style||'thin'),lsOpts())+PR.grp('g_dims')+PR.ro('p_length',fmtLen(S('len'))+' '+unitName());else h+=`<div class="pnote">${t('n_mline')}</div>`;break;
     case'rplane':if(!isNew)h+=PR.grp('g_identity')+PR.text('name','p_name',V(x=>x.name||''))+PR.grp('g_dims')+PR.ro('p_length',fmtLen(S('len'))+' '+unitName());h+=`<div class="pnote">${t('n_rplane')}</div>`;break;
     case'dline':h+=PR.grp('g_graphics')+PR.sel('style','p_lstyle',V(x=>x.style||'thin'),lsOpts())+(els.length===1?PR.ro('p_length',saOn(viewById(e.view))?saFmt(lnLen(e))+' '+t('u_mm'):fmtLen(lnLen(e))+' '+unitName()):'');break;
-    case'region':if(!isNew)h+=PR.grp('g_graphics')+PR.sel('rgls','rg_bline',V(x=>x.ls||'~'),rgLsOpts())+(els.length===1?PR.ro('p_area',fmtArea(Math.abs(area2(e.pts)))+' '+areaUnit()):'');break;
+    case'region':if(!isNew)h+=PR.grp('g_graphics')+PR.sel('rgls','rg_bline',V(x=>x.ls||'~'),rgLsOpts())+(els.length===1?PR.ro('p_area',fmtArea(rg402Area(e))+' '+areaUnit()):'');break;
     case'rdim':if(els.length===1){const G=rdimGeo(e);if(G){h+=PR.grp('g_dims')+PR.ro('p_rdkind',t('rdk_'+G.k))+(G.col?PR.ro('p_value',fmtLen(G.val)+' '+unitName()):PR.num('rdval','p_value',+fmtLen(G.val),unitName(),'step="any" min="0"'))+(G.col||G.lc?'':PR.sel('s','p_rdside',e.s||0,[[-1,t('rds_in')],[0,t('rds_c')],[1,t('rds_out')]]))+PR.ro('p_radius',fmtLen(G.R)+' '+unitName())
           +PR.grp('g_text')+PR.text('txt','p_dimtext',e.txt||'')+PR.text('pre','p_dimpre',e.pre||'')+PR.text('suf','p_dimsuf',e.suf||'')}}break;
     case'adim':if(els.length===1){const G=adimGeo(e);if(G)h+=PR.grp('g_graphics')+PR.ro('p_angle',fmtAng(G.val))+PR.ro('p_radius',fmtLen(G.r)+' '+unitName())}break;
@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=411,V1_NAME='V1.401';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=412,V1_NAME='V1.402';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -46742,6 +46742,43 @@ function sed401Find(F,a,b){const nr=(p,q)=>Math.abs(p[0]-q[0])<1&&Math.abs(p[1]-
 function sed401Lab(f,k){const r=sed401R(f,k);return r?t('sd_hole401',r.j+1)+' · '+(r.i+1)+' / '+r.ring.length:(+k+1)+' / '+f.pts.length}
 Object.assign(STR,{sd_hole401:['ขอบช่องเปิด {0}','Opening {0}'],
   sd_lost401:['ลบขอบพื้น {0} ชิ้นที่ขอบของมันไม่อยู่แล้ว','{0} slab edge(s) deleted: their edges are gone']});
+/* ===== V1.402 Filled and masking regions with several loops, and Edit Boundary of a region, as in Revit (a filled region is sketched in closed loops:
+   a loop inside another leaves a hole in the pattern, loops apart are more regions). A region keeps its holes in d.holes, as floors do (V1.397).
+   Also: Paste moves the openings of a floor, ceiling, roof or region along with its outline (they stayed where they were copied from) */
+SH397.add('region');
+const RG402V=v=>!!v&&(v.kind==='plan'||v.kind==='elev'||v.kind==='section');
+{const f0=sk397Can;sk397Can=function(){if(ui.tool==='region')return RG402V(activeView());return f0.apply(this,arguments)}}
+{const f0=sk400New;sk400New=function(tl,d,v){return tl==='region'?rgNew(avid(v),null):f0.apply(this,arguments)}}
+/* sk397Fin puts what it makes in P.els: regions go to the annotations of their view */
+{const f0=sk397Fin;sk397Fin=function(){if(ui.tool!=='region')return f0.apply(this,arguments);const e0=edit;
+  edit=function(fn){return e0.call(this,()=>{fn();const R=P.els.filter(x=>x.cat==='region');if(R.length){P.els=P.els.filter(x=>x.cat!=='region');for(const r of R)P.ann.push(r)}})};
+  try{return f0.apply(this,arguments)}finally{edit=e0;IDX=indexProject(P)}}}
+/* Edit Boundary of a region: in the view it belongs to */
+{const f0=XA.ebd397;XA.ebd397=function(){const v=activeView(),e=ui.sel.size===1?IDX.get([...ui.sel][0]):null;if(!e||e.cat!=='region')return f0.apply(this,arguments);
+  if(!Array.isArray(e.pts)||e.pts.length<3||!v||e.view!==avid(v)||!RG402V(v)){toast(t('ebd_rgv402'));return}if(isPinned(e.id)){toast(t('pin_block',1));return}
+  setTool('region');ui.sketch=null;ui.pts=[];ui.sk397={tool:'region',loops:[e.pts.map(q=>[+q[0],+q[1]])].concat(sh397(e).map(h=>h.map(q=>[+q[0],+q[1]]))),edit:e.id};ui.sel=new Set();refresh()}}
+{const f0=renderOptbar;renderOptbar=function(){const r=f0.apply(this,arguments);if(ui.tool==='region'){const s=document.querySelector('#optbar .ml397e');if(s)s.textContent=t('ebd_ong402')}return r}}
+/* drawing: the outline path of the region takes its holes (the pattern, the paper under it and the boundary leave them out);
+   a DXF file gets the pattern piece by piece and the outlines of the holes, as its clipping takes one outline at a time */
+function rg402Pieces(d){return polyMinus(d.pts,holeParts(sh397(d)))}
+{const f0=rgDraw;rgDraw=function(g,d,col,hi){const H=sh397(d);if(!H.length)return f0.apply(this,arguments);const c=g.ctx;
+  if(c.layer&&!c.canvas){for(const pc of rg402Pieces(d))f0.call(this,g,Object.assign({},d,{pts:pc,holes:undefined,ls:'inv'}),col,null);
+    const ls=d.ls;if(ls==='inv')return;const S=ls&&lsKeys(P).includes(ls)?lsGet(P,ls):null;c.strokeStyle=(S&&S[2])||col.ink;c.lineWidth=g.lw(S?S[0]:0.18);g.dash(S&&S[1]);for(const q of [d.pts].concat(H)){g.path(q);c.stroke()}g.dash(null);return}
+  sh397G(g,d);try{return f0.apply(this,arguments)}finally{sh397G(g,null)}}}
+/* picked inside only where the pattern is; on the outline of a hole too */
+{const f0=detailDist;detailDist=function(v,d,w,sc){if(!d||d.cat!=='region'||!sh397(d).length)return f0.apply(this,arguments);const H=sh397(d);
+  if(inPoly(w.x,w.y,d.pts)&&!H.some(h=>inPoly(w.x,w.y,h))&&rgFull(d))return 0.6*sc;return sh397Dist(w.x,w.y,d)}}
+const rg402Area=d=>Math.max(0,Math.abs(area2(d.pts))-sh397(d).reduce((s,h)=>s+Math.abs(area2(h)),0));
+/* the corners of its holes: grips in plans and drafting views, as for floors */
+{const f0=sh397Sel;sh397Sel=function(v){const e=ui.sel.size===1?IDX.get([...ui.sel][0]):null;if(!e||e.cat!=='region')return f0.apply(this,arguments);
+  return v&&v.kind==='plan'&&ui.tool==='modify'&&e.view===avid(v)&&sh397(e).length&&!isPinned(e.id)?e:null}}
+/* Paste: the openings go with the outline */
+{const f0=pasteObjs;pasteObjs=function(objs,dx,dy){const ids=f0.apply(this,arguments);if((dx||dy)&&Array.isArray(ids))for(const id of ids){const c=IDX.get(id);if(c&&Array.isArray(c.holes))c.holes=c.holes.map(h=>Array.isArray(h)?h.map(p=>[p[0]+dx,p[1]+dy]):h)}return ids}}
+/* what a project may hold: a region's holes as for floors */
+XC.push(()=>{for(const d of P.ann){if(d.cat!=='region'||d.holes===undefined)continue;const H=Array.isArray(d.holes)?d.holes.filter(h=>Array.isArray(h)).map(h=>sk397Clean(h.filter(p=>Array.isArray(p)))).filter(Boolean):[];
+    if(H.length)d.holes=H;else delete d.holes}});
+Object.assign(STR,{ebd_ong402:['แก้ขอบเขตบริเวณ','Edit Boundary: region'],ebd_rgv402:['แก้ขอบเขตบริเวณได้ในมุมมองที่มันอยู่ (แปลน มุมมองร่าง รูปด้าน รูปตัด)','Edit the boundary of a region in its own view (plan, drafting view, elevation or section)'],
+  ebd_pick397:['เลือกพื้น ฝ้า หลังคา หรือบริเวณระบายสีหนึ่งชิ้นก่อน','Select one floor, ceiling, roof or filled region first']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -48961,6 +48998,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.399 · ขอบเขตที่เลือกจากผนังล็อกกับผนัง (Pick Walls › Lock) แบบ Revit: พื้น ฝ้า และหลังคาที่สร้างด้วย เลือกผนัง ขยับตามเมื่อย้ายหรือยืดผนัง ย้ายทั้งผนังและพื้นพร้อมกัน หมุน สะท้อน หรือคัดลอกไปพร้อมผนังยังล็อกอยู่ ย้ายพื้นเอง ลากมุม หรือลบผนังจะปลดล็อก เลือกพื้นแล้วเห็นแม่กุญแจบนขอบในแปลน คลิกแม่กุญแจหรือปุ่ม ปลดจากผนัง เพื่อปลด ติ๊ก ล็อกกับผนัง ที่แถบตัวเลือกได้ (เปิดไว้เป็นค่าเริ่มต้น)
 - V1.400 · หลังคาหลายวงในสเก็ตช์เดียว และแก้ขอบเขตหลังคา (Edit Boundary) แบบ Revit: ติ๊ก หลายวง ที่แถบตัวเลือกของเครื่องมือหลังคา วงที่อยู่ในวงอื่นเป็นช่องเปิดในหลังคา วงที่แยกกันเป็นหลังคาอีกหลัง · เลือกหลังคาแล้วกด แก้ขอบเขต เพื่อเพิ่มหรือเอาช่องเปิดออก หรือวาดขอบใหม่ ขอบที่ยังอยู่คงค่าลาด (Defines Slope) เดิม · ช่องเปิดเจาะทะลุหลังคาใน 3 มิติ พื้นที่หลังคา ปริมาตรห้องใต้หลังคา และแปลนแสดงขอบช่องโดยเส้นสันหลังคาไม่ผ่านช่อง ครอบสันและครอบตะเข้ใน 3 มิติหยุดที่ขอบช่อง (ช่องชาฟต์ที่ทะลุหลังคาก็เช่นกัน)
 - V1.401 · ขอบพื้น (Slab Edge) บนขอบช่องเปิดของพื้นแบบ Revit: คลิกขอบช่องบันไดหรือช่องเปิดที่ร่างไว้ในพื้น ขอบพื้นวางตลอดขอบนั้น ห้อยหรือตั้งด้านเนื้อพื้น ต่อมุมกับขอบพื้นชนิดเดียวกันรอบช่อง ใช้ได้ทั้งในแปลน 3 มิติ รูปด้าน และรูปตัด · คลิกในช่องเปิดไม่ถือว่าคลิกในพื้นแล้ว · แก้ขอบเขตพื้นแล้วขอบพื้นอยู่บนขอบเดิมของมัน (แม้ลำดับมุมเปลี่ยนหรือพื้นแยกเป็นหลายชิ้น) ขอบที่หายไปพาขอบพื้นของมันไปด้วยพร้อมแจ้ง · Properties › ขอบด้านที่ บอกช่องเปิดและด้านของมัน
+- V1.402 · บริเวณระบายสีและบริเวณบังพื้นหลังหลายวงแบบ Revit: ติ๊ก หลายวง ที่แถบตัวเลือก วงที่อยู่ในวงอื่นเป็นรูในลาย (ลาย พื้นหลัง และเส้นขอบเว้นรู) วงที่แยกกันเป็นบริเวณอีกชิ้น ใช้ได้ในแปลน มุมมองร่าง รูปด้าน และรูปตัด · เลือกบริเวณแล้วกด แก้ขอบเขต เพื่อเพิ่ม ลบ หรือวาดวงใหม่ · คลิกในรูไม่เลือกบริเวณ ลากมุมรูได้ พื้นที่ใน Properties หักรูออก ส่ง DXF ได้ลายเว้นรู · วางสำเนา (Paste) พื้น ฝ้า หลังคา และบริเวณที่มีช่องเปิด ช่องเปิดย้ายไปกับขอบด้วย (ก่อนหน้านี้ค้างที่เดิม)
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -49504,6 +49542,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.399 · A boundary picked from walls is locked to them, as in Revit: a floor, ceiling or roof made with Pick Walls follows when a wall is moved or stretched; moving, rotating, mirroring or copying it together with its walls keeps the lock, while moving the floor alone, dragging a corner or deleting a wall unlocks it. A selected one shows padlocks on its edges in plans; click one, or Unlock from Walls, to unlock. Lock on the Options Bar (on by default)
 - V1.400 · Several loops in a roof sketch, and Edit Boundary for roofs, as in Revit: tick Multiple Loops on the Options Bar of the Roof tool; a loop inside another is an opening in the roof, a loop on its own is another roof · select a roof and press Edit Boundary to add or take away openings or draw its edges again; edges that stay keep their Defines Slope · openings go through the roof in 3D, its area and the volume of the rooms under it, and plans draw them with the roof's lines left out; ridge and hip caps in 3D stop at the opening (shafts through a roof too)
 - V1.401 · Slab Edge round the openings of a floor, as in Revit: click the edge of a stair void or of a sketched opening and a slab edge runs along it, on the slab's side, mitred with slab edges of its type round the opening; in plans, 3D, elevations and sections · a click inside an opening is no longer a click on the floor · after Edit Boundary each slab edge stays on its own edge (even when the corners are numbered anew or the floor splits); one whose edge is gone is deleted, with a note · Properties › Side names the opening and its side
+- V1.402 · Filled and masking regions with several loops, as in Revit: tick Multiple Loops on the Options Bar; a loop inside another is a hole in the pattern (pattern, background and boundary leave it out), loops apart are more regions; in plans, drafting views, elevations and sections · select a region and press Edit Boundary to add, take away or redraw loops · a click in a hole does not pick the region, hole corners can be dragged, its Area in Properties leaves the holes out, DXF export keeps them clear · Paste takes the openings of a floor, ceiling, roof or region along with its outline (they stayed behind)
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -49694,6 +49733,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 > ต่างจาก Revit: ลายที่มีมาให้แก้ไม่ได้ ให้ทำสำเนาเป็นลายของโครงการแล้วแก้
 - [[a_fpats]] (แท็บ [[tab_manage]]): ลายแบบเขียนแบบ (ขนาดคงที่บนกระดาษทุกมาตราส่วน) และแบบโมเดล (ขนาดของจริง เช่น กระเบื้อง 600 × 600) · [[fpt_new]] สร้างเส้นขนานหรือตาราง กำหนดมุมและระยะห่าง · [[duplicate]] ลายที่มีมาให้แล้วแก้ · [[fpt_imp]] อ่านลายจากไฟล์ .pat ของ AutoCAD หรือ Revit · ชนิดของพื้นที่ลาย และ [[mt_sp]] / [[mt_cp]] ของ [[a_materials]] ใช้ลายเหล่านี้ · ลบลายแล้วสิ่งที่ใช้อยู่เปลี่ยนเป็นไม่มีลาย
 - [[t_region]]: วาดขอบเขตแล้วระบายลายตามชนิดของพื้นที่ (เส้นทแยง ตาราง ทึบ จุด คอนกรีต ดิน ฯลฯ) · เลือกชนิดที่ Properties · แก้ชนิด (Edit Type): ลายด้านหน้าและด้านหลัง สีของลาย น้ำหนักเส้นลาย และการบังสิ่งที่อยู่ข้างใต้ · เลือกเส้นขอบที่แถบตัวเลือก ([[rg_bline]]: แบบเส้นใดก็ได้ หรือ [[lw_inv]]) · [[t_mregion]]: พื้นที่ว่างที่บังสิ่งที่อยู่ข้างใต้ เส้นขอบมองไม่เห็น · [[t_cloud]]: วงรอบส่วนที่แก้ไขแบบ
+- หลายวง: ติ๊ก หลายวง ที่แถบตัวเลือกของ [[t_region]] วงในเป็นรูในลาย วงแยกเป็นบริเวณอีกชิ้น · เลือกบริเวณแล้วกด [[a_ebd397]] เพื่อแก้วงทั้งหมด
 - [[t_dcomp]]: ภาพ 2 มิติของชิ้นส่วนตามขนาดจริง — ไม้หน้าตัด เหล็ก H รางน้ำ ฉาก เหล็กกล่อง ท่อ เหล็กเส้น อิฐ อิฐบล็อก แผ่นเหล็ก สลักเกลียว และเส้นตัดย่อ · เลือกชนิดที่ Type Selector แล้วคลิกวาง กด ((Space)) หมุนทีละ 90° · ชิ้นส่วนบังเส้นที่อยู่ข้างใต้ · เส้นตัดย่อปรับ [[p_dcw]] และ [[p_dch]] ได้ที่แผงคุณสมบัติ · ขนาดของชนิดแก้ที่ [[edit_type]]
 - [[t_rdet]]: คลิกสองจุด ชิ้นส่วนจะเรียงซ้ำไปตามแนว เช่น อิฐก่อเรียงชั้น โครงคร่าว เหล็กเสริม · ชนิดกำหนด [[f_detail]] · [[f_layout]] — [[rdl_fixed]] · [[rdl_fill]] · [[rdl_num]] · [[rdl_max]] — [[f_spacing]] · [[f_inside]] · [[f_rot]] · ติ๊ก [[p_rdflip]] เพื่อย้ายไปอีกด้านของเส้น
 - [[t_dins]]: เส้นฉนวนใยแก้ว คลิกจุดเริ่มและจุดปลาย · ตั้ง [[p_dinsw]] บนแถบตัวเลือก และ [[p_dinsr]] ที่แผงคุณสมบัติ (ค่าน้อย ลอนใหญ่)
@@ -49798,6 +49838,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 > Unlike Revit: the stock patterns cannot be changed; duplicate one to make it the project's own
 - [[a_fpats]] (the [[tab_manage]] tab): drafting patterns (the same size on paper at any scale) and model patterns (the size of the real thing, such as 600 × 600 tiles) · [[fpt_new]] makes parallel lines or a crosshatch at an angle and spacing · [[duplicate]] a stock pattern to change it · [[fpt_imp]] reads patterns from an AutoCAD or Revit .pat file · filled region types and the [[mt_sp]] and [[mt_cp]] of [[a_materials]] use them · what used a deleted pattern has none
 - [[t_region]]: an outline filled with the patterns of its type (diagonal, crosshatch, solid, dots, concrete, earth …) · pick the type in Properties · Edit Type: the foreground and background patterns, their colours, the line weight of the patterns and whether it masks what is under it · the boundary is chosen on the options bar ([[rg_bline]]: any line style, or [[lw_inv]]) · [[t_mregion]]: a blank area that hides what is under it, with invisible lines · [[t_cloud]]: a cloud around what was revised
+- Multiple Loops: tick it on the Options Bar of [[t_region]]; a loop inside another is a hole in the pattern, a loop apart is another region · select a region and press [[a_ebd397]] to edit its loops
 - [[t_dcomp]]: a 2D drawing of a part at its real size — lumber cut across, wide flange, channel, angle, tube, pipe, rebar, brick, hollow block, plate, anchor bolt, and the break line · choose the type in the Type Selector and click to place it, ((Space)) turns it 90° · a component covers the lines under it · a break line takes its own [[p_dcw]] and [[p_dch]] in Properties · the sizes of a type are edited with [[edit_type]]
 - [[t_rdet]]: click two points and the component repeats along the line — brick courses, studs, rebar · the type sets [[f_detail]] · [[f_layout]] — [[rdl_fixed]] · [[rdl_fill]] · [[rdl_num]] · [[rdl_max]] — [[f_spacing]] · [[f_inside]] · [[f_rot]] · tick [[p_rdflip]] to put it on the other side of the line
 - [[t_dins]]: batt insulation lines; click the start and the end · [[p_dinsw]] is in the options bar, [[p_dinsr]] in Properties (a smaller value makes larger loops)
@@ -51754,6 +51795,76 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r402={
+  plan:lid=>{const v=planOf(lid);return v?v.id:null},lv1:()=>sortedLevels(P)[0].id,show:vid=>{showView(vid);return activeView().id},
+  rcp:lid=>{const v=P.views.find(x=>x.kind==='plan'&&x.level===lid&&x.rcp);return v?v.id:null},
+  tool:tl=>{setTool(tl);return ui.tool},mode:m=>{act(m);return drawMode()},opt:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  click:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);toolClick(PANES[ui.ap],v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy,exact:{x,y}},null);return ui.pts.length},
+  rect:(vid,a,b)=>{const f=window.PenumBIM.r397.click;f(vid,a[0],a[1]);return f(vid,b[0],b[1])},
+  poly:(vid,Q)=>{const f=window.PenumBIM.r397.click;for(const q of Q)f(vid,q[0],q[1]);return f(vid,Q[0][0],Q[0][1])},
+  seq:()=>P.seq,
+  since:s=>P.els.filter(e=>e.id>=s).map(e=>({id:e.id,cat:e.cat,type:e.type,level:e.level,off:e.off,pts:e.pts?e.pts.map(q=>[Math.round(q[0]),Math.round(q[1])]):null,holes:e.holes?e.holes.map(h=>h.map(q=>[Math.round(q[0]),Math.round(q[1])])):null})),
+  inhole:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,RH=roofHoles(P,IDX.get(id));let l=0,t=0,n=0,c=0;const ins=(x,y,d)=>RH.some(h=>inPoly(x,y,h)&&polyEdgeDist(x,y,h)>d);
+    for(const m of B){if(m.id!==id)continue;for(let k=0;k+5<m.l.length;k+=6)if(ins((m.l[k]+m.l[k+3])/2,(m.l[k+2]+m.l[k+5])/2,5))l++;for(let k=0;k+8<m.t.length;k+=9){n++;const x=(m.t[k]+m.t[k+3]+m.t[k+6])/3,y=(m.t[k+2]+m.t[k+5]+m.t[k+8])/3;if(ins(x,y,100))t++}if(m.mt===MAT.plain||m.mt===MAT.sheet)c+=m.t.length/9}return{l,t,n,c,h:RH.length}},
+  toast:()=>{const e=document.querySelector('#toast');return e?e.textContent:''},
+  sdH:()=>{const H=ui.sdH;return H?{id:H.f.id,k:H.k==null?null:H.k,all:!!H.all}:null},curTool:()=>ui.tool,selIds:()=>[...ui.sel],
+  ctrls:()=>{redraw();return(ui.ctrls||[]).map(c=>({x:c.x,y:c.y,tip:c.tip}))},
+  sedType:i=>{const T=(P.types.sedge||[])[i];if(T)defs('sedge').type=T.id;return T?T.id:null},
+  sedTool:()=>{setTool('sedge');return ui.tool},
+  sedAt:(vid,x,y,tol)=>{const v=viewById(vid),pk=sedPickPlan(v,{x,y},tol==null?8/navOf(v).s:tol);return pk?{id:pk.f.id,k:pk.k==null?null:pk.k,all:!!pk.all}:null},
+  sedClick:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);XT.sedge.click(PANES[ui.ap],v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy},{x,y});return P.els.filter(e=>e.cat==='sedge').length},
+  sedPlace:(fid,ks)=>{const f=IDX.get(fid);sedPlace(ks.map(k=>({f,k})));return P.els.filter(e=>e.cat==='sedge'&&e.host===fid).map(e=>e.ed)},
+  sedges:()=>P.els.filter(e=>e.cat==='sedge').map(e=>({id:e.id,host:e.host,ed:e.ed,type:e.type,level:e.level})),
+  sedG:id=>{const G=sedGeo(sedX(),IDX.get(id));if(!G)return null;return{pp:G.pp.map(q=>[Math.round(q[0]),Math.round(q[1])]),z:G.z.map(Math.round),len:Math.round(G.len),vol:Math.round(G.vol),m0:G.E0.mate||null,m1:G.E1.mate||null,n:G.s.n.map(x=>Math.round(x*1000)/1000),qi:G.qi,qo:G.qo}},
+  sedMesh:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let n=0;for(const m of B)if(m.id===id)n+=m.t.length/9;return n},
+  pick3:(fid,x,y,z)=>{const r=sedPick3({e:IDX.get(fid),p:[x,z,y]});return r?{id:r.f.id,k:r.k}:null},
+  sedQ:id=>{const q=QTY().get(id);return q?{len:Math.round(q.len),vol:Math.round(q.vol)}:null},
+  hov:()=>ui.hov==null?null:ui.hov,
+  ann:s=>P.ann.filter(d=>d.id>=s).map(d=>({id:d.id,cat:d.cat,view:d.view,type:d.type,pts:d.pts?d.pts.map(q=>[Math.round(q[0]),Math.round(q[1])]):null,holes:d.holes?d.holes.map(h=>h.map(q=>[Math.round(q[0]),Math.round(q[1])])):null})),
+  inEls:id=>P.els.some(e=>e.id===id),
+  rgArea:id=>{const d=IDX.get(id);return d?Math.round(rg402Area(d)):null},
+  dd:(vid,id,x,y)=>{const v=viewById(vid),d=IDX.get(id);return Math.round(detailDist(v,d,{x,y},v.scale||100)*10)/10},
+  rgTypes:()=>(P.types.region||[]).map(T=>({id:T.id,fp:T.fp||'',name:T.name})),rgType:id=>{defs('region').type=id;return id},
+  views:()=>P.views.map(v=>({id:v.id,kind:v.kind,draft:!!v.draft,name:v.name})),
+  copyPaste:(ids,dx,dy)=>{ui.sel=new Set(ids);act('copyclip');return true},
+  paste:(ids,vid,dx,dy)=>{let o;const objs=ids.map(id=>JSON.parse(JSON.stringify(IDX.get(id))));edit(()=>{o=pasteObjs(objs,dx,dy,null,vid?viewById(vid):null)});return o},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  st:()=>{const S=ui.sk397;return{on:sk397A(),tool:ui.tool,loops:S?S.loops.length:0,edit:S?S.edit:null,roles:S?S.loops.map((q,i)=>sk397Role(S.loops,i)):[],sketch:ui.sketch?ui.sketch.length:0,sel:[...ui.sel]}},
+  qty:id=>{const q=QTY().get(id);return q?{area:Math.round(q.area),vol:Math.round(q.vol||0)}:null},
+  holes:id=>slabHoles(P,IDX.get(id)).length,pieces:id=>slabPieces(P,IDX.get(id)).reduce((s,pc)=>s+Math.abs(area2(pc)),0),
+  top3:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,T=[];for(const m of B)if(m.id===id)for(let i=0;i+8<m.t.length;i+=9)T.push(m.t.slice(i,i+9));if(!T.length)return null;let y=-1e12;for(const q of T)y=Math.max(y,q[1],q[4],q[7]);let a=0;
+    for(const q of T)if(Math.abs(q[1]-y)<1&&Math.abs(q[4]-y)<1&&Math.abs(q[7]-y)<1)a+=Math.abs((q[3]-q[0])*(q[8]-q[2])-(q[5]-q[2])*(q[6]-q[0]))/2;return Math.round(a)},
+  sel:ids=>{ui.sel=new Set(ids);setTool('modify');ui.sel=new Set(ids);refresh();return ui.sel.size},
+  hit:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);const h=hitPlan(v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});return h?{id:h.id,grip:h.grip==null?null:h.grip}:null},
+  drag:(vid,id,grip,x,y)=>{const v=viewById(vid),nav=navOf(v),e=IDX.get(id);snapshot();moveElDrag({kind:'grip',e,h:{id,grip}},v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});commit();return JSON.parse(JSON.stringify(e.holes||null))},
+  move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));return true},
+  mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));return true},
+  scale:(ids,ox,oy,k)=>{ui.sel=new Set(ids);scaleSel(ox,oy,k);return true},
+  copy:ids=>{let o;edit(()=>{o=cloneIds(ids);translateIds(o,0,20000)});return o},
+  props:()=>{renderProps();const p=document.querySelector('#props');return p?p.textContent.replace(/\s+/g,' '):''},
+  ctx:()=>[...document.querySelectorAll('#ribbon .rctx [data-act]')].map(b=>b.dataset.act),
+  pressed:id=>pressed(id),bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
+  chips:()=>[...document.querySelectorAll('#optbar [data-ml397]')].map(b=>b.textContent.trim()),
+  chip:i=>{const b=document.querySelector('#optbar [data-ml397="'+i+'"]');if(!b)return false;b.click();return true},
+  mlbox:()=>{const b=document.querySelector('#opt_ml397');return b?{checked:b.checked}:null},
+  hint:()=>{hint();return $('#prompt').textContent},
+  esc:()=>{cancelTool();return{tool:ui.tool,pts:ui.pts.length}},
+  key:k=>{document.body.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return ui.sk397?ui.sk397.loops.length:-1},
+  act:a=>{act(a);return ui.tool},
+  undo:()=>{undo();return P.seq},
+  ink:(x,y,r,thr)=>{const pn=PANES[ui.ap],B=window.PenumBIM.toScreen(ui.ap,x,y),c=pn.cv,Rc=c.getBoundingClientRect(),k=c.width/Rc.width,X=Math.round((B.x-Rc.left)*k),Y=Math.round((B.y-Rc.top)*k),n=Math.round((r||4)*k);
+    const q=c.getContext('2d').getImageData(X-n,Y-n,2*n+1,2*n+1).data;let m=0;for(let j=0;j<q.length;j+=4)if(q[j]+q[j+1]+q[j+2]<(thr||600))m++;return m},
+  px:(x,y)=>{const pn=PANES[ui.ap],B=window.PenumBIM.toScreen(ui.ap,x,y),c=pn.cv,Rc=c.getBoundingClientRect(),k=c.width/Rc.width,X=Math.round((B.x-Rc.left)*k),Y=Math.round((B.y-Rc.top)*k);return[...c.getContext('2d').getImageData(X,Y,1,1).data]},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(ui.ap,x,y);return[s.x,s.y]},
+  fit:()=>{act('fit');return true},det:(vid,d)=>{viewById(vid).detail=d;touch();refresh();return viewById(vid).detail},
+  json:()=>projStr(),load:s=>{setProject(migrate(JSON.parse(s),ui.lang==='en'),true);return true},
+  fl:(lid,pts,o)=>{let id;edit(()=>{const d=defs('floor'),e=Object.assign({id:P.seq++,cat:'floor',type:d.type,level:lid,pts,off:0},o||{});P.els.push(e);id=e.id});return id},
+  dxf:(vid,bb)=>{const v=viewById(vid),rec=dxfRecorder({paper:C.paper,scale:v.scale||100,layerOf:dxfLayerOf});drawPlan(rec.ctx,v,{s:1,ox:0,oy:0},{C,thin:false,screen:false});const d=rec.done();
+    const near=(a,b)=>Math.abs(Math.abs(a)-Math.abs(b))<2;return{n:d.ents.length,hole:d.ents.filter(e=>e.k==='pl'&&e.bb&&near(Math.min(e.bb[0],e.bb[2]),bb[0])&&near(Math.max(e.bb[0],e.bb[2]),bb[2])&&near(Math.min(Math.abs(e.bb[1]),Math.abs(e.bb[3])),Math.min(Math.abs(bb[1]),Math.abs(bb[3])))&&near(Math.max(Math.abs(e.bb[1]),Math.abs(e.bb[3])),Math.max(Math.abs(bb[1]),Math.abs(bb[3])))).length}},
+  rh:id=>{const e=IDX.get(id);return e?roofHoles(P,e).length:-1},ed:id=>{const e=IDX.get(id);return e&&e.ed?JSON.parse(JSON.stringify(e.ed)):null},set:(id,o)=>{edit(()=>Object.assign(IDX.get(id),o));return true},rarea:id=>{const q=QTY().get(id);return q?Math.round(q.area):null},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r401={
   plan:lid=>{const v=planOf(lid);return v?v.id:null},lv1:()=>sortedLevels(P)[0].id,show:vid=>{showView(vid);return activeView().id},
   rcp:lid=>{const v=P.views.find(x=>x.kind==='plan'&&x.level===lid&&x.rcp);return v?v.id:null},
