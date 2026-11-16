@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=432,V1_NAME='V1.422';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=433,V1_NAME='V1.423';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47826,6 +47826,71 @@ Object.assign(STR,{
   p_rjns422:['มุมที่จุดเริ่ม','Corner at Start'],p_rjne422:['มุมที่จุดปลาย','Corner at End'],
   p_rjs422:['การต่อที่จุดเริ่ม','Join at Start'],p_rje422:['การต่อที่จุดปลาย','Join at End'],p_rjrs422:['รัศมีโค้งที่จุดเริ่ม','Fillet Radius at Start'],p_rjre422:['รัศมีโค้งที่จุดปลาย','Fillet Radius at End'],
   rjk422_miter:['ตัดเฉียง','Miter'],rjk422_fillet:['ดัดโค้ง','Fillet'],rjn422_free:['ปลายอิสระ ไม่มีราวต่อ','Free end'],rjn422_straight:['ต่อตรงเป็นแนวเดียว','Straight on'],rjn422_sq:['ปลายตัดตรง','Square ends']});
+/* ===== V1.423 top rail extensions (Revit: Top Rail Type › Extension (Beginning/Bottom) and Extension (End/Top): Extension Style None / Wall / Floor / Post, Length,
+   Plus Tread Depth): at a free end of a railing path the top rail runs on level by the length, then returns to the nearest wall face beside it (Wall), turns
+   down to the floor (Floor) or ends on a post (Post).  The beginning is a sloping railing's lower end, otherwise its first point.  Plus Tread Depth carries a
+   stair railing's rail on down the slope for one tread before the level part. */
+const TE_K423=['none','wall','floor','post'];
+Object.assign(HR_DEF224,{teb423:'none',tebl423:300,tebt423:'0',tee423:'none',teel423:300});
+function teOf423(T){T=T||{};if(T.tr==='none')return null;const n=k=>{const v=T[k]===''||T[k]==null?NaN:+T[k];return isFinite(v)?Math.max(0,Math.min(3000,v)):300};
+  const b=TE_K423.includes(T.teb423)?T.teb423:'none',e=TE_K423.includes(T.tee423)?T.tee423:'none';if(b==='none'&&e==='none')return null;
+  return{b:{k:b,L:n('tebl423'),tt:T.tebt423==='1'||T.tebt423===1},e:{k:e,L:n('teel423'),tt:false}}}
+/* the free ends that get one: [{j (0 first point, 1 last), s 'b'|'e', k, L, tt}] */
+function teEnds423(P0,e,g){if(!e||e.cat!=='railing')return[];const X=teOf423(g.T);if(!X)return[];const lo=Math.abs(g.z1-g.z0)>1&&g.z1<g.z0?1:0,out=[];
+  for(const j of [0,1]){const s=j===lo?'b':'e',o=X[s];if(o.k==='none'||rlNb420(P0,e,g,j))continue;out.push(Object.assign({j,s},o))}return out}
+/* the nearest wall face beside point p (either side, along n), within 1000 mm, in a wall that stands at height z: {d, s (+1 along n, −1 against), id} */
+function teWall423(P0,p,n,z){if(P0!==P)return null;const FP=FPm();let best=null;
+  for(const w of P0.els){if(w.cat!=='wall')continue;const f=FP.get(w.id);if(!f||!f.poly)continue;const zr=zRange(P0,w);if(!zr||z<zr[0]-1||z>zr[1]+1)continue;const Q=f.poly;
+    if(inPoly(p[0],p[1],Q))continue;
+    for(const s of [1,-1]){const dx=n[0]*s,dy=n[1]*s;for(let i=0;i<Q.length;i++){const A=Q[i],B=Q[(i+1)%Q.length],ex=B[0]-A[0],ey=B[1]-A[1],den=dx*ey-dy*ex;if(Math.abs(den)<1e-9)continue;
+      const t=((A[0]-p[0])*ey-(A[1]-p[1])*ex)/den,u=((A[0]-p[0])*dy-(A[1]-p[1])*dx)/den;if(t>1&&t<=1000&&u>=-1e-9&&u<=1+1e-9&&(!best||t<best.d))best={d:t,s,id:w.id}}}}
+  return best}
+/* each extension of railing e: its centre line (pts: from the end of the rail on), the post under it, the wall it returns to; rect rails w wide and hgt tall, round ones r */
+function tePaths423(P0,e,g){g=g||railGeo(P0,e);const E=teEnds423(P0,e,g);if(!E.length)return[];const T=g.T,ps=g.ps,h=g.h,round=T.tr==='round',r=(ps+12)/2,hh=round?r:ps/2,out=[];
+  for(const x of E){const q=rlEnd420(e,g,x.j),a=x.j?q.t:[-q.t[0],-q.t[1]],n=[-a[1],a[0]],zb=q.z,zc=zb+h-hh,pts=[[q.p[0],q.p[1],zc]];let p=pts[0];
+    if(x.tt&&rlOnStair420(P0,e)){const S=IDX.get(e.rhost)||(P0.els||[]).find(y=>y.id===e.rhost),tr=(typ(P0,S)||{}).tread||250,sl=(g.z1-g.z0)/(g.L||1)*(x.j?1:-1);
+      p=[p[0]+a[0]*tr,p[1]+a[1]*tr,p[2]+sl*tr];pts.push(p)}
+    if(x.L>0.5){p=[p[0]+a[0]*x.L,p[1]+a[1]*x.L,p[2]];pts.push(p)}
+    const zf=zb+(p[2]-zc);let wall=null,post=null;
+    if(x.k==='wall'){wall=teWall423(P0,p,n,zc);if(wall)pts.push([p[0]+n[0]*wall.d*wall.s,p[1]+n[1]*wall.d*wall.s,p[2]])}
+    else if(x.k==='floor'){if(p[2]-zf>1)pts.push([p[0],p[1],zf])}
+    else if(x.k==='post')post=[p[0],p[1],zf,p[2]-hh];
+    out.push({j:x.j,s:x.s,k:x.k,a,n,pts,post,wall,round,r,w:ps+12,hgt:round?2*r:ps,ps})}
+  return out}
+/* 3D: the extensions in the rail's own section; round rails get a ball at each bend and at a free end */
+function teMesh423(P0,e,items){const R=tePaths423(P0,e);if(!R.length)return;const T=typ(P0,e)||{},K=modelKit({x:0,y:0,id:e.id,cat:'railing'},0,items),m=K.part(hex2rgb(T.color||'#3c4654'));m.mt=MAT.metal;
+  const vert=(A,B)=>Math.abs(B[0]-A[0])+Math.abs(B[1]-A[1])<1e-6;
+  for(const x of R){const p=x.pts;
+    if(x.round){for(let i=1;i<p.length;i++)K.cyl(m,p[i-1],p[i],x.r);for(let i=0;i<p.length;i++)if(i<p.length-1||x.k==='post'||(x.k==='wall'&&!x.wall))K.ball(m,p[i],x.r)}
+    else for(let i=1;i<p.length;i++){const A=p[i-1],B=p[i];
+      if(vert(A,B)){const a=[x.n[0]*x.w/2,x.n[1]*x.w/2,0],b=[x.a[0]*x.hgt/2,x.a[1]*x.hgt/2,0];K.rsweep(m,[{c:[A[0],A[1],B[2]],a,b},{c:[A[0],A[1],A[2]+x.hgt/2],a,b}]);continue}
+      const N=p[i+1],l=Math.hypot(B[0]-A[0],B[1]-A[1])||1,u=[(B[0]-A[0])/l,(B[1]-A[1])/l],ext=!N?(x.post?x.ps/2:0):vert(B,N)?x.hgt/2:Math.abs(N[2]-B[2])<1e-6&&Math.abs(u[0]*(N[0]-B[0])+u[1]*(N[1]-B[1]))<1e-6?x.w/2:0;
+      K.bar(m,A,[B[0]+u[0]*ext,B[1]+u[1]*ext,B[2]],x.w,x.hgt)}
+    if(x.post){const q=x.post,a=[x.n[0]*x.ps/2,x.n[1]*x.ps/2,0],b=[x.a[0]*x.ps/2,x.a[1]*x.ps/2,0];if(q[3]-q[2]>1)K.rsweep(m,[{c:[q[0],q[1],q[2]],a,b},{c:[q[0],q[1],q[3]],a,b}])}}}
+{const f0=railMesh;railMesh=(P0,e,items)=>{f0(P0,e,items);teMesh423(P0,e,items)}}
+/* the plan: the extension by its two edges, closed at its far end, with the post filled; the rail itself is left open where an extension carries on */
+function tePlanGeo423(P0,e,g,w){const R=tePaths423(P0,e,g),segs=[],fills=[];
+  for(const x of R){const pl=[];for(const p of x.pts){const q=[p[0],p[1]],l=pl[pl.length-1];if(!l||Math.hypot(q[0]-l[0],q[1]-l[1])>0.5)pl.push(q)}
+    if(x.post&&pl.length>=2){const l=pl[pl.length-1];pl[pl.length-1]=[l[0]+x.a[0]*x.ps/2,l[1]+x.a[1]*x.ps/2]}
+    if(pl.length>=2){const A=hrOff224(pl,w),B=hrOff224(pl,-w);for(let i=1;i<pl.length;i++){segs.push([A[i-1],A[i]]);segs.push([B[i-1],B[i]])}segs.push([A[A.length-1],B[B.length-1]])}
+    if(x.post){const q=x.post,k=x.ps/2,a=x.a,n=x.n;fills.push([[q[0]-a[0]*k-n[0]*k,q[1]-a[1]*k-n[1]*k],[q[0]+a[0]*k-n[0]*k,q[1]+a[1]*k-n[1]*k],[q[0]+a[0]*k+n[0]*k,q[1]+a[1]*k+n[1]*k],[q[0]-a[0]*k+n[0]*k,q[1]-a[1]*k+n[1]*k]])}}
+  return{R,segs,fills}}
+{const f0=hrPlan224;hrPlan224=(P0,e,g,ctx,s)=>{f0(P0,e,g,ctx,s);if(!e||e.cat!=='railing')return;const r=railGeo(P0,e),w=Math.max(r.ps/2+6,0.25*(g.scale||0)),G=tePlanGeo423(P0,e,r,w);
+  for(const q of G.segs)g.seg(q[0],q[1]);for(const f of G.fills){g.path(f);ctx.fill()}}}
+/* a straight railing with an extension: its two lines as before, without the end line where the extension carries on */
+{const f0=rlPlan421;rlPlan421=function(g,ctx,P0,e,r,w){const X=r&&!r.arc?teEnds423(P0,e,r):[];if(!X.length)return f0.apply(this,arguments);const G=rlPlanGeo421(P0,e,r,w),[s,en]=G?rjG421(P0,e,r):[null,null],L=r.L,
+    W=(u,v)=>[e.x1+r.ux*u-r.uy*v,e.y1+r.uy*u+r.ux*v],open=j=>X.some(x=>x.j===j);
+  if(G){g.seg(G.segs[0][0],G.segs[0][1]);g.seg(G.segs[1][0],G.segs[1][1]);for(const a of G.arcs){g.path(a,true);ctx.stroke()}}else{g.seg(W(0,w),W(L,w));g.seg(W(0,-w),W(L,-w))}
+  if(!s&&!open(0))g.seg(W(0,w),W(0,-w));if(!en&&!open(1))g.seg(W(L,w),W(L,-w));return true}}
+/* the type editor: the extensions after the join of the top rail */
+{const F=TYPE_FIELDS.railing,i=F.findIndex(f=>f[0]==='rjr421');F.splice(i<0?F.length:i+1,0,['teb423','sel',TE_K423,'te423_'],['tebl423','num'],['tebt423','sel',['0','1'],'tebt423_'],['tee423','sel',TE_K423,'te423_'],['teel423','num'])}
+XC.push(()=>{for(const T of P.types.railing||[]){for(const k of ['teb423','tee423'])if(k in T&&!TE_K423.includes(T[k]))delete T[k];
+  for(const k of ['tebl423','teel423'])if(k in T){const v=+T[k];if(T[k]===''||T[k]==null||!isFinite(v)||v<0)delete T[k];else T[k]=Math.min(3000,Math.round(v))}
+  if('tebt423' in T){const v=String(T.tebt423);if(v==='1')T.tebt423='1';else delete T.tebt423}}});
+Object.assign(STR,{
+  f_teb423:['ส่วนยื่นปลายเริ่ม/ล่าง (Extension Beginning/Bottom)','Extension (Beginning/Bottom)'],f_tebl423:['ความยาวส่วนยื่นปลายเริ่ม/ล่าง','Extension (Beginning/Bottom) Length'],
+  f_tebt423:['บวกความลึกลูกนอน (Plus Tread Depth)','Plus Tread Depth'],f_tee423:['ส่วนยื่นปลายท้าย/บน (Extension End/Top)','Extension (End/Top)'],f_teel423:['ความยาวส่วนยื่นปลายท้าย/บน','Extension (End/Top) Length'],
+  te423_none:['ไม่มี','None'],te423_wall:['หักเข้าผนัง (Wall)','Wall'],te423_floor:['หักลงพื้น (Floor)','Floor'],te423_post:['ตั้งบนเสา (Post)','Post'],tebt423_0:['ไม่','No'],tebt423_1:['ใช่','Yes']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -50071,6 +50136,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.420 · เสามุม (Corner Post) การเริ่มชุดใหม่ (Break Pattern at) และเติมส่วนที่เหลือด้วยลูกกรง (Use Baluster) ในการจัดลูกกรงแบบ Revit: ราวกันตกชนิดเดียวกันที่ปลายชนกันเป็นแนวเดียวกัน ที่รอยต่อไม่มีเสาต้นและเสาปลาย มีเสามุมทุกปลายช่วงหรือเฉพาะมุมหักมากกว่าที่ตั้ง ลำดับลูกกรงเริ่มใหม่ทุกปลายช่วง เฉพาะมุมหักมาก หรือต่อไปทั้งแนว และส่วนที่เหลือเติมด้วยลูกกรงที่ระยะห่างที่ตั้งได้
 - V1.421 · การต่อราวที่มุม (Default Join) แบบ Revit: ราวกันตกชนิดเดียวกันที่ปลายชนกันเป็นมุม ราวบน ราวล่าง และราวที่ตั้งเองใน Rail Structure ต่อกันแบบตัดเฉียงชนกัน (Miter) หรือดัดโค้งตามรัศมี (Fillet Radius) ทั้งในแปลนและ 3D ส่วนแบบไม่ต่อ (None) ปลายตัดตรงเหมือนเดิม ตั้งได้ใน Type Properties ของราวกันตก ราวกลมที่ตัดเฉียงมีลูกกลมปิดมุม เสาและลูกกรงยังอยู่บนเส้นที่วาด ราวโค้งและราวที่ตั้งบนพื้นยังปลายตัดตรง
 - V1.422 · ตั้งการต่อราวเฉพาะมุม (Edit Rail Joins) แบบ Revit: ใน Properties ของราวกันตกมีกลุ่มการต่อราวที่ปลาย บอกมุมหักที่จุดเริ่มและจุดปลาย และเลือกการต่อของแต่ละปลายได้ (ตามชนิด ตัดเฉียง ดัดโค้ง หรือไม่ต่อ) พร้อมรัศมีโค้งของปลายนั้น ราวสองเส้นที่มุมเดียวกันใช้ค่าเดียวกันเสมอ ถ้าตั้งทั้งสองเส้น เส้นที่วาดก่อนเป็นหลัก
+- V1.423 · ส่วนยื่นที่ปลายราวบน (Top Rail Extension) แบบ Revit: ในชนิดราวกันตกตั้งส่วนยื่นของปลายเริ่ม/ล่าง และปลายท้าย/บนได้ เลือกได้ว่าไม่มี หักเข้าผนัง หักลงพื้น หรือตั้งบนเสา พร้อมความยาว และปลายล่างของราวบันไดยื่นต่อตามความชันอีกหนึ่งลูกนอนได้ (Plus Tread Depth) แสดงทั้งในแปลนและ 3D ปลายที่ต่อกับราวเส้นอื่นไม่ยื่น
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50638,6 +50704,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.420 · Corner Posts, Break Pattern at and Excess Length Fill › Use Baluster in Baluster Placement, as in Revit: railings of one type that meet end to end are one path, with no Start or End post where they meet but a Corner Post at each segment end or where the path turns more than an Angle; the pattern starts again at each segment end, at sharp turns only or never; what the whole patterns leave can be filled with one baluster at a spacing
 - V1.421 · Rail joins at corners (Default Join), as in Revit: where railings of one type meet end to end at a corner, the top rail, the bottom rail and the rails of Rail Structure are mitred (Miter) or bent round an arc (Fillet, with its Fillet Radius), in plans and in 3D; None keeps square ends as before. Set in the railing's Type Properties; round rails mitred get a ball at the corner; posts and balusters stay on the lines drawn; curved and hosted railings keep square ends
 - V1.422 · Edit Rail Joins, as in Revit: a railing's Properties have a Rail Joins group showing the turn at its start and its end, and each end's join can be set apart from the type (By Type, Miter, Fillet or None) with its own Fillet Radius; both railings at a corner always agree, the one drawn first winning when both set it
+- V1.423 · Top Rail Extensions, as in Revit: a railing type sets the extension at its beginning/bottom and end/top (None, Wall, Floor or Post) with its length, and a stair railing's bottom end can carry on down the slope for one tread first (Plus Tread Depth); drawn in plan and 3D, never at an end joined to another railing
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52890,6 +52957,23 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r423={
+  rl:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('railing'),e=Object.assign({id:P.seq++,cat:'railing',type:d.type,level:lid,x1,y1,x2,y2,off:0},o||{});P.els.push(e);id=e.id});return id},
+  wall:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('wall'),e=Object.assign({id:P.seq++,cat:'wall',type:d.type,level:lid,x1,y1,x2,y2,height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});return id},
+  ty:id=>{const e=IDX.get(id);return e?e.type:null},
+  setT:(tid,o)=>{const T=(P.types.railing||[]).find(x=>x.id===tid);if(!T)return false;edit(()=>{for(const k in o){if(o[k]==null)delete T[k];else T[k]=o[k]}});return true},
+  get:tid=>{const T=(P.types.railing||[]).find(x=>x.id===tid);if(!T)return null;const o={};for(const k of ['teb423','tebl423','tebt423','tee423','teel423','tr','ps'])o[k]=T[k]===undefined?'gone':T[k];return o},
+  /* the extensions of railing id: their centre lines, the post under one, the wall one returns to */
+  ends:id=>{const e=IDX.get(id);if(!e)return null;const R=x=>Math.round(x*10)/10;return tePaths423(P,e).map(x=>({j:x.j,s:x.s,k:x.k,pts:x.pts.map(p=>p.map(R)),post:x.post&&x.post.map(R),wall:x.wall&&{d:R(x.wall.d),s:x.wall.s,id:x.wall.id},round:x.round}))},
+  top:(id,z0,z1)=>window.PenumBIM.r421.top(id,z0,z1),
+  near:(id,x,y,r,z0,z1)=>window.PenumBIM.r421.near(id,x,y,r,z0,z1),
+  plan:(id,w)=>{const e=IDX.get(id);if(!e)return null;const g=railGeo(P,e),G=tePlanGeo423(P,e,g,w==null?g.ps/2+6:w),R=q=>[Math.round(q[0]*10)/10,Math.round(q[1]*10)/10];return{segs:G.segs.map(s=>s.map(R)),fills:G.fills.map(f=>f.map(R))}},
+  /* what the plan draws for railing id's own two lines (null when it leaves them to the plain drawing) */
+  rail:(id,w)=>{const e=IDX.get(id);if(!e)return null;const g=railGeo(P,e),S=[],R=q=>[Math.round(q[0]*10)/10,Math.round(q[1]*10)/10],G={seg:(a,b)=>S.push([R(a),R(b)]),path:()=>{},scale:0},ctx={stroke(){},fill(){}};
+    return rlPlan421(G,ctx,P,e,g,w==null?g.ps/2+6:w)?S:null},
+  tidy:tid=>{for(const f of XC)f();const T=(P.types.railing||[]).find(x=>x.id===tid);if(!T)return null;const o={};for(const k of ['teb423','tebl423','tebt423','tee423','teel423'])o[k]=T[k]===undefined?'gone':T[k];return o},
+  fields:()=>TYPE_FIELDS.railing.map(f=>f[0]),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r422={
   rl:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('railing'),e=Object.assign({id:P.seq++,cat:'railing',type:d.type,level:lid,x1,y1,x2,y2,off:0},o||{});P.els.push(e);id=e.id});return id},
   ty:id=>{const e=IDX.get(id);return e?e.type:null},
