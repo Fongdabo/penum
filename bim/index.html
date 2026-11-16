@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=454,V1_NAME='V1.444';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=455,V1_NAME='V1.445';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49557,6 +49557,131 @@ function cjJoin444(M,P0,C){if(!M||!M.ce438||!M.surfs.length)return M;
   const top=$('#dlg p.note');if(!top)return;const p=document.createElement('p');p.className='note ce444';p.textContent=t('ce444_note',J.if,J.iw);top.after(p)}}
 Object.assign(STR,{ce444_ciw:['ผนังภายในของมวล (Mass Interior Wall)','Mass Interior Wall'],
   ce444_note:['มวลที่วางบนกันหรือติดกันใช้ผิวร่วมกัน: พื้นภายใน {0} ผิว ผนังภายใน {1} ผิว (ไม่นับเป็นหลังคา พื้นยื่น หรือผนังนอก)','Masses that stand on or beside each other share faces: {0} interior floors, {1} interior walls (not counted as roof, exposed floor or outside wall)']});
+/* ===== V1.445 Solar Analysis (Revit: Solar Analysis, the sun a roof or a face gets over a year or a month, as a colour map, what stands in the way taken
+   out).  The surfaces are the roofs (and the outside walls) of the energy model, from masses or from rooms, each cut into squares of the grid size.  At the
+   middle of each square the sun of every hour of the 21st of each month (the clear sky of the cooling loads, ASHRAE) counts when nothing of the model is
+   between, the part of the sky the square sees (72 patches) and the ground always; the sum over the days of the period is kWh/m², times how clear the sky is.  Settings in P.sol445; a 3D view
+   shows the map with v.sol445. ===== */
+const SOL445_D={s:'rw',m:0,g:2000,k:70,rf:20},SOL445_DAYS=[31,28,31,30,31,30,31,31,30,31,30,31],SOL445_MAX=6000;
+function sol445(P0){const o=Object.assign({},SOL445_D),g=P0.sol445;if(!g||typeof g!=='object'||Array.isArray(g))return o;
+  if(g.s==='r'||g.s==='rw')o.s=g.s;if(Number.isInteger(g.m)&&g.m>=0&&g.m<=12)o.m=g.m;
+  for(const [k,a,b] of [['g',500,10000],['k',10,100],['rf',0,80]])if(g[k]!=null&&g[k]!==''&&isFinite(+g[k]))o[k]=clamp(+g[k],a,b);return o}
+const solV445=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],solD445=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],solX445=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  solU445=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l]};
+/* the outward normal of a loop in the plan's axes (x east, y south when north is up, z up) */
+const solN445=L=>{const n=ceN438(L);return solU445([n[0],-n[1],n[2]])};
+/* the sun of each hour (at the half hour) of the 21st of month m: the way to it in the plan's axes, the sine of its height, beam and sky (W/m²) */
+function solSun445(m,north){const pl=sunPlace(),L=pl.lat*Math.PI/180,dS=(pl.lon-15*pl.tz)/15,de=LH_DEC[m]*Math.PI/180,out=[];
+  for(let h=0;h<24;h++){const H=(h+0.5-12+dS)*Math.PI/12,sb=Math.cos(L)*Math.cos(de)*Math.cos(H)+Math.sin(L)*Math.sin(de);if(sb<=0.02)continue;
+    const sE=-Math.cos(de)*Math.sin(H),sN=Math.sin(de)*Math.cos(L)-Math.cos(de)*Math.cos(H)*Math.sin(L),hz=Math.hypot(sE,sN),az=Math.atan2(sE,sN)-north*Math.PI/180;
+    const dn=LH_A[m]*Math.exp(-LH_B[m]/sb);out.push({h,s:solU445([hz*Math.sin(az),-hz*Math.cos(az),sb]),sb,dn,dif:LH_C[m]*dn})}return out}
+/* a surface cut into the squares of the grid (in its own plane): each piece, its middle and its area */
+function solCells445(s,g){const L=s.loop,n=solN445(L),o=L[0],u=Math.abs(n[2])>0.9?solU445([1-n[0]*n[0],-n[0]*n[1],-n[0]*n[2]]):solU445([-n[1],n[0],0]),v=solX445(n,u);
+  const Q=L.map(p=>{const d=solV445(p,o);return[solD445(d,u),solD445(d,v)]}),xs=Q.map(q=>q[0]),ys=Q.map(q=>q[1]),x0=Math.min(...xs),y0=Math.min(...ys),x1=Math.max(...xs),y1=Math.max(...ys),out=[];
+  const back=q=>[o[0]+u[0]*q[0]+v[0]*q[1],o[1]+u[1]*q[0]+v[1]*q[1],o[2]+u[2]*q[0]+v[2]*q[1]];
+  for(let a=x0;a<x1-1;a+=g)for(let b=y0;b<y1-1;b+=g){const a1=Math.min(a+g,x1),b1=Math.min(b+g,y1),r=dsClip425(Q,[[a,b],[a1,b],[a1,b1],[a,b1]]);if(r.length<3)continue;const A=Math.abs(area2(r));if(A<100)continue;
+    let cx=0,cy=0,w=0;for(let i=0;i<r.length;i++){const p=r[i],q=r[(i+1)%r.length],f=p[0]*q[1]-q[0]*p[1];cx+=(p[0]+q[0])*f;cy+=(p[1]+q[1])*f;w+=f}
+    const c=Math.abs(w)>1e-9?[cx/(3*w),cy/(3*w)]:[r.reduce((x,p)=>x+p[0],0)/r.length,r.reduce((x,p)=>x+p[1],0)/r.length];
+    out.push({P:r.map(back),c:back(c),A,v:0})}
+  return{n,cells:out}}
+/* what can stand in the way, and for one sun a test: is the point q (of surface self) in shadow */
+const solOcc445=M=>M.surfs.filter(s=>s.type!=='Air'&&s.loop.length>=3).map(s=>({s,n:solN445(s.loop),p:s.loop[0]}));
+function solShade445(O,s){const a=solU445(Math.abs(s[2])<0.9?solX445(s,[0,0,1]):solX445(s,[1,0,0])),b=solX445(s,a),G=40,it=[];let X0=Infinity,Y0=Infinity,X1=-Infinity,Y1=-Infinity;
+  for(const o of O){const ns=solD445(o.n,s);if(Math.abs(ns)<1e-9)continue;const Q=o.s.loop.map(p=>[solD445(p,a),solD445(p,b)]),xs=Q.map(q=>q[0]),ys=Q.map(q=>q[1]);
+    const r={o,Q,ns,d:solD445(o.n,o.p),bb:[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]};it.push(r);X0=Math.min(X0,r.bb[0]);Y0=Math.min(Y0,r.bb[1]);X1=Math.max(X1,r.bb[2]);Y1=Math.max(Y1,r.bb[3])}
+  if(!it.length)return()=>false;const W=(X1-X0)/G||1,H=(Y1-Y0)/G||1,B=Array.from({length:G*G},()=>[]),ix=x=>Math.max(0,Math.min(G-1,Math.floor((x-X0)/W))),iy=y=>Math.max(0,Math.min(G-1,Math.floor((y-Y0)/H)));
+  for(const r of it)for(let j=iy(r.bb[1]);j<=iy(r.bb[3]);j++)for(let i=ix(r.bb[0]);i<=ix(r.bb[2]);i++)B[j*G+i].push(r);
+  return(q,self)=>{const x=solD445(q,a),y=solD445(q,b);if(x<X0||x>X1||y<Y0||y>Y1)return false;
+    for(const r of B[iy(y)*G+ix(x)]){if(r.o.s===self||x<r.bb[0]||x>r.bb[2]||y<r.bb[1]||y>r.bb[3])continue;const tt=(r.d-solD445(r.o.n,q))/r.ns;if(tt>1&&inPoly(x,y,r.Q))return true}return false}}
+/* the sky in 72 patches (12 ways round, 6 bands up), each with the way to its middle and its solid angle: how much of the sky a square sees, for the light of the sky */
+const SOL445_SKY=(()=>{const o=[];for(let j=0;j<6;j++){const a0=j*Math.PI/12,a1=(j+1)*Math.PI/12,am=(a0+a1)/2;for(let i=0;i<12;i++){const z=(i+0.5)*Math.PI/6;
+  o.push({d:[Math.cos(am)*Math.sin(z),-Math.cos(am)*Math.cos(z),Math.sin(am)],w:Math.PI/6*(Math.sin(a1)-Math.sin(a0))})}}return o})();
+/* the analysis: every square with its kWh/m², every surface with its area, mean and total, the whole; kept until the model or the settings change */
+let SOL445C=null;
+function solRun445(P0){const o=sol445(P0),M=gbxM(),S=loadSet(P0),pl=sunPlace(),key=JSON.stringify([o,S.north,pl,M.surfs.length]);
+  if(SOL445C&&SOL445C.P===P0&&SOL445C.ver===VER&&SOL445C.M===M&&SOL445C.key===key)return SOL445C.R;
+  const t0=performance.now(),T=M.surfs.filter(s=>s.type==='Roof'||(o.s==='rw'&&s.type==='ExteriorWall')),area=T.reduce((x,s)=>x+Math.hypot(...ceN438(s.loop)),0);
+  let g=o.g;if(area/(g*g)>SOL445_MAX)g=Math.ceil(Math.sqrt(area/SOL445_MAX)/100)*100;
+  const SF=T.map(s=>Object.assign({s},solCells445(s,g))),O=solOcc445(M),ms=o.m?[o.m-1]:[0,1,2,3,4,5,6,7,8,9,10,11];
+  for(const F of SF){F.wa=0;for(const k of SOL445_SKY){const cs=solD445(F.n,k.d);if(cs>0)F.wa+=cs*k.w}for(const c of F.cells){c.q=[c.c[0]+F.n[0]*30,c.c[1]+F.n[1]*30,c.c[2]+F.n[2]*30];c.sv=0}}   // a little out from the face
+  for(const k of SOL445_SKY){const sh=solShade445(O,k.d);for(const F of SF){const cs=solD445(F.n,k.d);if(cs>0)for(const c of F.cells)if(!sh(c.q,F.s))c.sv+=cs*k.w}}
+  for(const F of SF)for(const c of F.cells)c.sv=F.wa>0?c.sv/F.wa:1;                                           // the share of its sky a square sees
+  for(const m of ms){const D=SOL445_DAYS[m];for(const sun of solSun445(m,S.north)){const sh=solShade445(O,sun.s);
+    for(const F of SF){const n=F.n,cs=solD445(n,sun.s),sk=sun.dif*(1+n[2])/2,gr=o.rf/100*(sun.dn*sun.sb+sun.dif)*(1-n[2])/2;
+      for(const c of F.cells){let w=sk*c.sv+gr;if(cs>0&&!sh(c.q,F.s))w+=sun.dn*cs;c.v+=w*D}}}}
+  const k=o.k/100/1000,cells=[],surfs=[];let A=0,E=0,mn=Infinity,mx=-Infinity;
+  for(const F of SF){let a=0,e=0,sv=0;for(const c of F.cells){c.v*=k;const ca=c.A/1e6;a+=ca;e+=c.v*ca;sv+=c.sv*ca;mn=Math.min(mn,c.v);mx=Math.max(mx,c.v);cells.push({s:F.s.id,P:c.P,v:c.v,A:ca,sv:c.sv})}
+    const sp=F.s.adj[0],r=sp&&sp.room,az=((Math.atan2(F.n[0],-F.n[1])*180/Math.PI+S.north)%360+360)%360,tilt=Math.acos(clamp(F.n[2],-1,1))*180/Math.PI;
+    surfs.push({id:F.s.id,type:F.s.type,sp:r?[r.number,r.name].filter(Boolean).join(' '):sp?sp.id:'',lv:r&&r.level!=null?((lvl(P0,r.level)||{}).name||''):'',mass:sp?sp.mass:null,az:tilt<1?null:az,tilt,area:a,avg:a>0?e/a:0,tot:e,sv:a>0?sv/a:1});A+=a;E+=e}
+  surfs.sort((x,y)=>y.tot-x.tot);
+  const R={o,g,cells,surfs,area:A,tot:E,avg:A>0?E/A:0,min:cells.length?mn:0,max:cells.length?mx:0,ms:performance.now()-t0};SOL445C={P:P0,ver:VER,M,key,R};return R}
+/* the colours: blue (little sun) to red (much) */
+const SOL445_RAMP=[[44,123,182],[171,217,233],[255,255,191],[253,174,97],[215,25,28]];
+const solCol445=f=>{f=clamp(f,0,1)*(SOL445_RAMP.length-1);const i=Math.min(SOL445_RAMP.length-2,Math.floor(f)),r=f-i,a=SOL445_RAMP[i],b=SOL445_RAMP[i+1];return`rgb(${Math.round(a[0]+(b[0]-a[0])*r)},${Math.round(a[1]+(b[1]-a[1])*r)},${Math.round(a[2]+(b[2]-a[2])*r)})`};
+/* the map over a 3D view, the farthest first, and its legend at the bottom right */
+function sol3D445(pn,ctx,v){if(!v||v.kind!=='3d'||!v.sol445||walkOf(v))return;const R=solRun445(P);if(!R.cells.length){ui.sol445L={v:v.id,n:0};return}
+  const box=sboxGL(v),cam=camOf(pn,v),X=camMatrix(cam,MSm().bb),dk=document.documentElement.getAttribute('data-ui')!=='light';
+  const pj=p=>{const x=p[0],y=p[1],z=p[2];if(box&&boxOut(box,x,z,y,1))return null;const cx=X[0]*x+X[4]*z+X[8]*y+X[12],cy=X[1]*x+X[5]*z+X[9]*y+X[13],cz=X[2]*x+X[6]*z+X[10]*y+X[14],cw=cam.ortho?1:X[3]*x+X[7]*z+X[11]*y+X[15];
+    if(cw<=1e-6)return null;return[(cx/cw+1)/2*pn.w,(1-cy/cw)/2*pn.h,cz/cw]};
+  const lo=R.min,hi=R.max>R.min+1e-6?R.max:R.min+1,I=[];
+  for(const c of R.cells){const S=c.P.map(pj);if(S.some(q=>!q))continue;I.push({S,d:S.reduce((x,q)=>x+q[2],0)/S.length,col:solCol445((c.v-lo)/(hi-lo))})}
+  I.sort((a,b)=>b.d-a.d);ctx.save();ctx.lineJoin='round';
+  for(const it of I){ctx.beginPath();it.S.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.globalAlpha=0.92;ctx.fillStyle=it.col;ctx.fill();ctx.globalAlpha=0.35;ctx.strokeStyle=dk?'#1d2733':'#ffffff';ctx.lineWidth=0.6;ctx.stroke()}
+  const u=R.o.m?t('sol445_um'):t('sol445_uy'),f0=x=>Math.round(x).toLocaleString('en-US'),tt=t('sol445_lg'),bw=16,bh=120,x0=pn.w-160,y0=pn.h-bh-64;
+  ctx.globalAlpha=1;ctx.fillStyle=dk?'rgba(24,30,38,.86)':'rgba(255,255,255,.92)';ctx.strokeStyle=dk?'#4a5662':'#c9d1da';ctx.beginPath();ctx.rect(x0-8,y0-46,150,bh+60);ctx.fill();ctx.stroke();
+  ctx.fillStyle=dk?'#e6edf3':'#1d2733';ctx.font='600 12px sans-serif';ctx.textBaseline='middle';ctx.fillText(tt,x0,y0-33);ctx.font='11px sans-serif';ctx.fillText(u,x0,y0-17);
+  const gr=ctx.createLinearGradient(0,y0+bh,0,y0);SOL445_RAMP.forEach((c,i)=>gr.addColorStop(i/(SOL445_RAMP.length-1),`rgb(${c[0]},${c[1]},${c[2]})`));ctx.fillStyle=gr;ctx.fillRect(x0,y0,bw,bh);ctx.strokeRect(x0,y0,bw,bh);
+  ctx.fillStyle=dk?'#e6edf3':'#1d2733';ctx.font='12px sans-serif';[[hi,y0],[(lo+hi)/2,y0+bh/2],[lo,y0+bh]].forEach(([val,y])=>ctx.fillText(f0(val),x0+bw+8,y));ctx.restore();
+  ui.sol445L={v:v.id,n:I.length,min:R.min,max:R.max,avg:R.avg}}
+{const f0=drawSunPath;drawSunPath=(pn,ctx,v)=>{f0(pn,ctx,v);if(v&&v.kind==='3d')sol3D445(pn,ctx,v)}}
+/* the view's Properties: Show Solar Analysis, and what it found */
+XVR.push(v=>{if(!v||v.kind!=='3d')return'';let h=PR.grp('g_sol445')+PR.chk('sol445','p_sol445',!!v.sol445);
+  if(v.sol445){const R=solRun445(P),u=R.o.m?t('sol445_um'):t('sol445_uy');h+=PR.ro('p_sol445a',Math.round(R.avg).toLocaleString('en-US')+' '+u)+PR.ro('p_sol445x',Math.round(R.max).toLocaleString('en-US')+' '+u)+PR.ro('p_sol445t',(R.tot/1000).toFixed(1)+' MWh')}
+  return h+`<div class="pa"><button class="btn" data-act="sol445">${t('a_sol445')}</button></div>`});
+XVF.push((v,key,raw)=>{if(key!=='sol445')return false;if(!v||v.kind!=='3d')return true;const on=raw===true||raw===1||raw==='1'||raw==='true'||raw==='on';edit(()=>{if(on)v.sol445=1;else delete v.sol445});return true});
+/* the dialog */
+function dlgSol445(){const o=sol445(P),R=solRun445(P),f0=x=>Math.round(x).toLocaleString('en-US'),f1=x=>(+x).toFixed(1),f2=x=>(+x).toFixed(2),u=o.m?t('sol445_um'):t('sol445_uy'),MO=t('sol445_mo').split(',');
+  const sel=(id,k,opts,val)=>`<select id="${id}" data-sol="${k}">${opts.map(([v,l])=>`<option value="${v}"${String(v)===String(val)?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
+  const num=(id,k,val,mn,mx,st,un)=>`<span><input type="number" id="${id}" data-sol="${k}" value="${val}" min="${mn}" max="${mx}" step="${st}" style="width:90px"> ${esc(un)}</span>`;
+  const fr=(l,h)=>`<div class="fr"><label>${esc(t(l))}</label>${h}</div>`;
+  const set=fr('sol445_s',sel('sol445_s','s',[['r',t('sol445_sr')],['rw',t('sol445_srw')]],o.s))+fr('sol445_m',sel('sol445_m','m',[[0,t('sol445_yr')]].concat(MO.map((x,i)=>[i+1,x])),o.m))
+    +fr('sol445_g',num('sol445_g','g',o.g,500,10000,100,t('u_mm')))+fr('sol445_k',num('sol445_k','k',o.k,10,100,1,'%'))+fr('sol445_rf',num('sol445_rf','rf',o.rf,0,80,1,'%'));
+  const typ=s=>t(s.type==='Roof'?'sol445_tR':'sol445_tW'),dir=s=>s.az==null?'—':Math.round(s.az)+'°';
+  const body=R.surfs.map(s=>`<tr data-s="${esc(s.id)}"><td>${esc(s.lv)}</td><td>${esc(s.sp)}</td><td>${esc(typ(s))}</td><td class="n">${dir(s)}</td><td class="n">${Math.round(s.tilt)}°</td><td class="n">${f2(s.area)}</td><td class="n">${f0(s.avg)}</td><td class="n">${f2(s.tot/1000)}</td></tr>`).join('');
+  const sum=R.cells.length?`<p class="sol445t">${esc(t('sol445_sum',f2(R.area),f0(R.avg),u,f0(R.min),f0(R.max),f1(R.tot/1000),R.cells.length,R.g))}</p>`:`<p class="note warn">${esc(t('sol445_none'))}</p>`;
+  openDlg(t('a_sol445'),`<p class="note">${esc(t('sol445_note'))}</p><div class="sol445f">${set}</div>${sum}${R.surfs.length?`<div class="tblw" style="max-height:44vh;overflow:auto"><table class="tbl" id="sol445Tbl"><thead><tr><th>${t('c_level')}</th><th>${t('sol445_sp')}</th><th>${t('sol445_ty')}</th><th class="n">${t('sol445_az')}</th><th class="n">${t('sol445_tl')}</th><th class="n">${t('c_area')} (${t('u_m2')})</th><th class="n">${esc(u)}</th><th class="n">MWh</th></tr></thead><tbody>${body}</tbody><tfoot><tr><th colspan="5">${t('c_total')}</th><th class="n">${f2(R.area)}</th><th class="n">${f0(R.avg)}</th><th class="n">${f2(R.tot/1000)}</th></tr></tfoot></table></div>`:''}`,
+    `<button class="btn" data-act="sol445v">${t('a_sol445v')}</button><button class="btn" data-act="sol445csv"${R.surfs.length?'':' disabled'}>${t('sol445_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(e){const el=e.target.closest('[data-sol]');if(!el)return;const k=el.dataset.sol;let val=el.value;if(k==='m')val=+val;else if(k!=='s'){val=+val;if(!isFinite(val))return}
+        edit(()=>{const g=Object.assign({},P.sol445&&typeof P.sol445==='object'&&!Array.isArray(P.sol445)?P.sol445:{},{[k]:val});P.sol445=g;for(const f of XC)f()});dlgSol445()},
+     click(e){const tr=e.target.closest('#sol445Tbl tr[data-s]');if(!tr)return;const s=R.surfs.find(x=>x.id===tr.dataset.s);for(const x of document.querySelectorAll('#sol445Tbl tr[data-s]'))x.classList.toggle('on',x===tr);
+       if(s&&s.mass!=null&&IDX.get(s.mass)){ui.sel=new Set([s.mass]);refresh()}}},'wide')}
+XA.sol445=()=>dlgSol445();
+/* the "3D Solar Analysis" view: made the first time, the masses hidden in the mass mode, the energy model under the map */
+XA.sol445v=()=>{let v=P.views.find(x=>x.kind==='3d'&&x.sol445&&x.solv445);
+  if(!v)edit(()=>{v={id:P.seq++,kind:'3d',name:t('sol445_v'),style:'shaded',persp:false,cam:{yaw:-2.4,pitch:0.6},scale:100,detail:'coarse',hidden:[],hiddenCats:ce438(P).src==='mass'?['mass']:[],enm442:1,sol445:1,solv445:1};P.views.push(v)});
+  closeDlg();showView(v.id);refresh()};
+/* CSV: a row a surface */
+XA.sol445csv=async()=>{const R=solRun445(P),q=v=>'"'+String(v).replace(/"/g,'""')+'"',n=v=>(Math.round(v*100)/100).toString(),u=R.o.m?'kWh/m2 '+t('sol445_mo').split(',')[R.o.m-1]:'kWh/m2/yr';
+  const L=[[t('c_level'),t('sol445_sp'),t('sol445_ty'),t('sol445_az'),t('sol445_tl'),t('c_area')+' m2',u,'kWh'].map(q).join(',')];
+  for(const s of R.surfs)L.push([q(s.lv),q(s.sp),q(s.type),s.az==null?'':n(s.az),n(s.tilt),n(s.area),n(s.avg),n(s.tot)].join(','));
+  const ok=await saveFile(fname('','-solar-analysis.csv'),'﻿'+L.join('\r\n'),'text/csv');if(!ok)toast(t('export_na'))};
+/* the energy model dialog (after its loads button) and the ribbon (Analyze › Cooling Loads) lead to it */
+{const f0=dlgGBX;dlgGBX=function(){f0();const b=document.querySelector('#dlg [data-act="loads"]')||document.querySelector('#dlg [data-act="enm442"]');if(b&&!document.querySelector('#dlg [data-act="sol445"]')){const n=document.createElement('button');n.className='btn';n.dataset.act='sol445';n.textContent=t('a_sol445');b.after(n)}}}
+{const an=RIBBON.find(r=>r.id==='analyze'),pl=an&&an.panels.find(p=>p.t==='p_loads');if(pl&&!pl.b.includes('@sol445'))pl.b.push('@sol445')}
+Object.assign(BTN,{'@sol445':['sun','']});
+/* the cleaner */
+XC.push(()=>{const g=P.sol445;if(g!==undefined){if(!g||typeof g!=='object'||Array.isArray(g))delete P.sol445;else{const o=sol445(P),r={};for(const k of Object.keys(SOL445_D))if(o[k]!==SOL445_D[k])r[k]=o[k];if(Object.keys(r).length)P.sol445=r;else delete P.sol445}}
+  for(const v of P.views||[])for(const k of ['sol445','solv445'])if(v[k]!=null){if(v.kind==='3d'&&v[k])v[k]=1;else delete v[k]}});
+Object.assign(STR,{a_sol445:['วิเคราะห์แสงอาทิตย์ (Solar Analysis)','Solar Analysis'],a_sol445v:['แสดงใน 3 มิติ','Show in 3D'],sol445_v:['3 มิติ วิเคราะห์แสงอาทิตย์','3D Solar Analysis'],
+  sol445_note:['พลังงานแสงอาทิตย์ที่ตกบนหลังคาและผนังนอกของแบบจำลองพลังงาน (จากมวลหรือจากห้อง) รวมทั้งปีหรือเดือนเดียว แต่ละผิวแบ่งเป็นช่องตามขนาดตาราง กลางช่องนับแดดทุกชั่วโมงของวันที่ 21 ของแต่ละเดือนตามท้องฟ้าใสแบบ ASHRAE เมื่อไม่มีส่วนใดของแบบจำลองบัง (รวมมวลบริบทและกันแดด) บวกแสงจากท้องฟ้าส่วนที่มองเห็นได้และแสงที่สะท้อนจากพื้น คูณสัดส่วนฟ้าใส (ค่าสมมติ ตั้งต้น 70 %) ที่ตั้งตามตำแหน่งโครงการ',
+    'The sun on the roofs and outside walls of the energy model (from masses or rooms) over a year or one month: each surface is cut into squares of the grid size; at the middle of each the beam of every hour of the 21st of each month (ASHRAE clear sky) counts when nothing of the model is in the way (context masses and shades too), plus the part of the sky each square sees and the light off the ground, times how clear the sky is (an assumption, 70 % to start), at the project\'s location'],
+  sol445_s:['ผิวที่วิเคราะห์','Surfaces'],sol445_tR:['หลังคา','Roof'],sol445_tW:['ผนังภายนอก','Exterior wall'],sol445_sr:['หลังคา','Roofs'],sol445_srw:['หลังคาและผนังนอก','Roofs and outside walls'],sol445_m:['ช่วงเวลา','Period'],sol445_yr:['ทั้งปี','Whole year'],
+  sol445_mo:['มกราคม,กุมภาพันธ์,มีนาคม,เมษายน,พฤษภาคม,มิถุนายน,กรกฎาคม,สิงหาคม,กันยายน,ตุลาคม,พฤศจิกายน,ธันวาคม','January,February,March,April,May,June,July,August,September,October,November,December'],
+  sol445_g:['ขนาดตาราง (Grid)','Grid size'],sol445_k:['สัดส่วนฟ้าใส','Sky clearness'],sol445_rf:['การสะท้อนของพื้น','Ground reflectance'],
+  sol445_sum:['พื้นที่ {0} ตร.ม. เฉลี่ย {1} {2} ต่ำสุด {3} สูงสุด {4} รวม {5} MWh · {6} ช่อง ตาราง {7} มม.','{0} m² · mean {1} {2} · least {3} · most {4} · total {5} MWh · {6} squares, grid {7} mm'],
+  sol445_none:['ยังไม่มีหลังคาหรือผนังนอกในแบบจำลองพลังงาน','The energy model has no roof or outside wall yet'],sol445_sp:['พื้นที่','Space'],sol445_ty:['ชนิด','Type'],sol445_az:['ทิศ (Azimuth)','Azimuth'],sol445_tl:['มุมเอียง','Tilt'],
+  sol445_csv:['ส่งออก CSV','Export CSV'],sol445_uy:['kWh/ตร.ม./ปี','kWh/m²/yr'],sol445_um:['kWh/ตร.ม./เดือน','kWh/m²/month'],sol445_lg:['แสงอาทิตย์ (Insolation)','Insolation'],
+  g_sol445:['วิเคราะห์แสงอาทิตย์ (Solar Analysis)','Solar Analysis'],p_sol445:['แสดงผลวิเคราะห์แสงอาทิตย์','Show Solar Analysis'],p_sol445a:['เฉลี่ย','Mean'],p_sol445x:['สูงสุด','Most'],p_sol445t:['รวม','Total']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -51824,6 +51949,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.442 · แบบจำลองพลังงานในมุมมอง 3 มิติ (3D Energy Model แบบ Revit): มุมมอง 3 มิติติ๊ก "แสดงแบบจำลองพลังงาน" ใน Properties ได้ แล้วเห็นผิวของแบบจำลองพลังงาน (จากมวลหรือจากห้อง) ทับบนโมเดลตามสีของหน้าต่างแบบจำลองพลังงาน กระจก ช่องแสง ขอบเขตอากาศเส้นประ และคำอธิบายสีพร้อมจำนวน ปุ่มแสดงใน 3 มิติในหน้าต่างแบบจำลองพลังงานเปิดมุมมอง 3 มิติ แบบจำลองพลังงาน
 - V1.443 · เลือกพื้นผิวและช่องเปิดของแบบจำลองพลังงานในมุมมอง 3 มิติ (Analytical Surface/Opening/Space แบบ Revit): คลิกบนแบบจำลองพลังงานในมุมมอง 3 มิติแล้วผิวหรือช่องเปิดนั้นถูกเลือก เน้นเส้นหนา พื้นที่สองข้างมีเส้นประ Properties แสดงชนิด วัสดุ ค่า U พื้นที่ ทิศ มุมเอียง พื้นที่ทั้งสองด้าน ช่องเปิดและสัดส่วนกระจก ช่องเปิดแสดงชนิดหน้าต่าง ค่า U และ SHGC ตามไฟล์ gbXML
 - V1.444 · มวลที่วางบนกันหรือติดกันในแบบจำลองพลังงาน (แบบ Revit): ทาวเวอร์ที่ตั้งบนโพเดียม ส่วนที่พื้นของทาวเวอร์ทับหลังคาของโพเดียมเป็นพื้นภายในผิวเดียวระหว่างสองโซน ไม่นับเป็นหลังคาหรือพื้นยื่นอีก ช่องแสงหลังคาที่ถูกทับหายไป มวลสองก้อนที่ผนังชนกันบนระนาบเดียว ส่วนที่ชนกันเป็นผนังภายใน ส่วนที่เหลือยังเป็นผนังนอกพร้อมกระจกและกันแดดตามสัดส่วนเดิม ภาระความเย็นและความร้อนของมวลตามไปด้วย
+- V1.445 · วิเคราะห์แสงอาทิตย์ (Solar Analysis แบบ Revit): พลังงานแสงอาทิตย์ที่ตกบนหลังคาและผนังนอกของแบบจำลองพลังงาน (จากมวลหรือจากห้อง) ทั้งปีหรือรายเดือน เป็น kWh/ตร.ม. หักส่วนที่ถูกบังด้วยอาคารเอง มวลบริบท และกันแดด แสดงเป็นแผนที่สีในมุมมอง 3 มิติพร้อมแถบสี ตารางต่อผิว (ทิศ มุมเอียง พื้นที่ เฉลี่ย รวม) ส่งออก CSV ได้ ตั้งขนาดตาราง สัดส่วนฟ้าใส และการสะท้อนของพื้นได้ เปิดจากแท็บวิเคราะห์หรือหน้าต่างแบบจำลองพลังงาน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -52413,6 +52539,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.442 · The energy model in 3D views (Revit's 3D Energy Model): tick Show Energy Model in a 3D view's Properties to see the surfaces of the energy model (from masses or rooms) over the model in the energy model dialog's colours, with glazing, skylights, dashed air boundaries and a legend with counts; Show in 3D in the energy model dialog opens the 3D Energy Model view
 - V1.443 · Picking the energy model in 3D views (Revit's Analytical Surfaces, Openings and Spaces): a click on the energy model in a 3D view picks the surface or opening, drawn bold with its spaces dashed; the Properties show its type, construction, U-value, area, azimuth, tilt, the spaces on each side, its openings and glazing share, and for an opening its window type, U-value and SHGC, as the gbXML file has them
 - V1.444 · Masses that meet in the energy model (as Revit): where a tower stands on a podium, the part of its floor on the podium roof becomes one interior floor between the two zones, no longer roof or exposed floor, and skylights under it go; where walls of two masses touch on one plane, the shared part becomes an interior wall and the rest stays outside with its glazing and shade made again; the mass loads follow
+- V1.445 · Solar Analysis (as Revit): the sun on the roofs and outside walls of the energy model (from masses or rooms) over a year or a month in kWh/m², with what the building, context masses and shades shade taken out; a colour map with a scale in 3D views, a table a surface (azimuth, tilt, area, mean, total), CSV; grid size, sky clearness and ground reflectance can be set; from the Analyze tab or the energy model dialog
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -54665,6 +54792,21 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r445={
+  set:o=>{edit(()=>{if(o===null)delete P.sol445;else P.sol445=Object.assign({},P.sol445||{},o);for(const f of XC)f()});return P.sol445?JSON.parse(JSON.stringify(P.sol445)):null},
+  raw:o=>{P.sol445=o;for(const f of XC)f();return P.sol445===undefined?null:JSON.parse(JSON.stringify(P.sol445))},
+  opts:()=>sol445(P),
+  run:()=>{const R=solRun445(P);return{g:R.g,n:R.cells.length,area:R.area,tot:R.tot,avg:R.avg,min:R.min,max:R.max,ms:R.ms,cellA:R.cells.reduce((x,c)=>x+c.A,0),surfs:R.surfs.map(s=>Object.assign({},s))}},
+  cells:sid=>solRun445(P).cells.filter(c=>c.s===sid).map(c=>({v:c.v,A:c.A,sv:c.sv,c:c.P.reduce((a,p)=>[a[0]+p[0]/c.P.length,a[1]+p[1]/c.P.length,a[2]+p[2]/c.P.length],[0,0,0])})),
+  sun:m=>solSun445(m,loadSet(P).north),
+  k:()=>({A:LH_A,B:LH_B,C:LH_C,D:LH_DEC,pl:sunPlace(),north:loadSet(P).north}),
+  /* by hand: what an open plane facing n gets over the period (kWh/m²), nothing in the way */
+  open:n=>{const o=sol445(P),N=(()=>{const l=Math.hypot(...n);return n.map(x=>x/l)})(),ms=o.m?[o.m-1]:[0,1,2,3,4,5,6,7,8,9,10,11];let s=0;
+    for(const m of ms)for(const u of solSun445(m,loadSet(P).north)){const c=N[0]*u.s[0]+N[1]*u.s[1]+N[2]*u.s[2];s+=SOL445_DAYS[m]*(u.dif*(1+N[2])/2+o.rf/100*(u.dn*u.sb+u.dif)*(1-N[2])/2+(c>0?u.dn*c:0))}return s*o.k/100/1000},
+  last:()=>ui.sol445L?JSON.parse(JSON.stringify(ui.sol445L)):null,
+  find:()=>{const v=P.views.find(x=>x.kind==='3d'&&x.sol445&&x.solv445);return v?v.id:null},
+  view:id=>{const v=viewById(id);return v?{kind:v.kind,name:v.name,sol445:v.sol445||0,enm442:v.enm442||0,hc:v.hiddenCats||[]}:null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r444={
   j:()=>{const M=gbxM();return M&&M.j444?Object.assign({},M.j444):null},
   /* the surfaces of a type (of the spaces of one mass, when given): how many, their area, their openings and the openings' area (m²) */
