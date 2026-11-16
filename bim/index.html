@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=423,V1_NAME='V1.413';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=424,V1_NAME='V1.414';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47265,6 +47265,40 @@ XF.push((cat,o,key,raw)=>{if(cat!=='column'||!/^cas[TB]$/.test(key))return false
 XC.push(()=>{for(const e of P.els)for(const k of ['asT','asB'])if(e[k]!==undefined&&(e.cat!=='column'||!['tgt','none'].includes(e[k])||!e['att'+k[2]]))delete e[k]});
 Object.assign(STR,{o_as413:['รูปแบบการยึด (Attachment Style)','Attachment Style'],as_col413:['ตัดเสา (Cut Column)','Cut Column'],as_tgt413:['ตัดสิ่งที่ยึด (Cut Target)','Cut Target'],
   as_none413:['ไม่ตัด (Do Not Cut)','Do Not Cut'],p_casT413:['รูปแบบการยึดด้านบน','Attachment Style at Top'],p_casB413:['รูปแบบการยึดด้านล่าง','Attachment Style at Base']});
+/* ===== V1.414 Slab Edge round a whole loop, as Revit's Tab chain: pointing at a side of a floor and pressing Tab picks every side of its loop (the outline,
+   or the opening the side is on) and one click places slab edges along all of them, mitred at the corners; a click inside an opening (away from its sides)
+   runs them round that opening, as a click inside the floor runs them round the floor (V1.95).  In a plan, a 3D view, an elevation or a section.
+   ui.sd414 = {f: floor id, k: the side pointed at} while Tab holds the loop; moving to another side lets it go. ===== */
+/* the sides of the loop of side k of floor f: [{f, k}] */
+function sd414Loop(f,k){if(+k>=1000){const j=Math.floor(+k/1000)-1,H=Array.isArray(f.holes)?f.holes[j]:null,o=[];if(!H)return o;for(let i=0;i<H.length;i++){const kk=1000*(j+1)+i;if(sedSide(f,kk))o.push({f,k:kk})}return o}return sedAll(f)}
+/* what a pick places: the loop when Tab holds it, every side of an opening when it is the inside of one, the outline when it is the floor's inside, else the side */
+function sd414List(pk){if(!pk)return[];if(pk.hole!=null)return sd414Loop(pk.f,1000*(pk.hole+1));if(pk.all)return sedAll(pk.f);
+  const S=ui.sd414;if(S&&S.f===pk.f.id&&+S.k===+pk.k)return sd414Loop(pk.f,pk.k);return[pk]}
+const sd414Ring=pk=>pk.hole!=null?pk.f.holes[pk.hole]:+pk.k>=1000?pk.f.holes[Math.floor(+pk.k/1000)-1]:pk.f.pts;
+/* in a plan: the inside of an opening of a floor the plan shows (and not near any side) */
+{const f0=sedPickPlan;sedPickPlan=function(v,w,tol){const r=f0.apply(this,arguments);if(r)return r;
+  for(const f of P.els){if(f.cat!=='floor'||!Array.isArray(f.holes)||!Array.isArray(f.pts)||!planShow(v,f)||!inPoly(w.x,w.y,f.pts))continue;
+    const j=f.holes.findIndex(H=>Array.isArray(H)&&H.length>=3&&inPoly(w.x,w.y,H));if(j>=0&&sd414Loop(f,1000*(j+1)).length)return{f,hole:j,all:1}}return null}}
+{const T=XT.sedge,click0=T.click,hov0=T.hov,opt0=T.opt;
+  T.hov=function(pn,v,p){const r=hov0.apply(this,arguments),H=ui.sdH,S=ui.sd414;if(S&&!(H&&!H.all&&H.f.id===S.f&&+H.k===+S.k))ui.sd414=null;if(H&&ui.sd414)H.chain=1;return r};
+  T.click=function(pn,v,p,w){const pk=sedPickPlan(v,w,8/navOf(v).s);if(!pk){toast(t('sd_pick'));return}sedPlace(sd414List(pk));ui.sd414=null;if(ui.sdH)ui.sdH.chain=0};
+  T.click3=function(pn,v,p){const pk=sedPick3(geoPick(pn,v,p));if(!pk){toast(t('sd_pick'));return}sedPlace(sd414List(pk));ui.sd414=null;if(ui.sdH)ui.sdH.chain=0};
+  T.draw=function(pn,ctx,v,nav,g){const H=ui.sdH;if(!H||H.v3||H.pn!==pn.i)return;ctx.save();ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.6;
+    if(H.all||H.chain){ctx.setLineDash([6,4]);g.path(sd414Ring(H));ctx.stroke();ctx.setLineDash([])}
+    for(const G of sedPrev(sd414List(H))){g.path(G.pp);ctx.globalAlpha=0.3;ctx.fill();ctx.globalAlpha=1;ctx.stroke()}ctx.restore()};
+  T.draw3=function(pn,ctx,v){const H=ui.sdH;if(!H||!H.v3||H.pn!==pn.i)return;const line=A=>{const s=A.map(q=>projGL(pn,v,q));if(s.some(x=>!x))return;ctx.beginPath();s.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.stroke()};
+    ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=2;for(const G of sedPrev(sd414List(H))){const A=sedRing(G,G.E0,G.zA),B=sedRing(G,G.E1,G.zB);line([...A,A[0]]);line([...B,B[0]]);for(let i=0;i<A.length;i++)line([A[i],B[i]])}ctx.restore()};
+  T.opt=function(who){return opt0.apply(this,arguments)+`<span>${t('o_sd414')}</span>`};
+  const off0=T.off;T.off=function(){ui.sd414=null;return off0.apply(this,arguments)}}
+/* Tab: the whole loop of the side pointed at, Tab again: that side alone */
+window.addEventListener('keydown',e=>{if(e.key!=='Tab'||ui.tool!=='sedge'||e.ctrlKey||e.altKey||e.metaKey||/^(INPUT|TEXTAREA|SELECT)$/.test((e.target&&e.target.tagName)||''))return;const H=ui.sdH;if(!H||H.all)return;
+  e.preventDefault();e.stopImmediatePropagation();if(ui.sd414){ui.sd414=null;H.chain=0}else{ui.sd414={f:H.f.id,k:+H.k};H.chain=1}hint();redraw()},true);
+{const f0=hint;hint=function(msg){if(!msg&&!ui.zoomr&&ui.tool==='sedge'){const H=ui.sdH;if(H&&!H.all){msg=t(H.chain?'h_sd2414':'h_sd1414',H.chain?sd414List(H).length:0)}
+  else if(H&&H.hole!=null)msg=t('h_sd3414',H.hole+1)}return f0.call(this,msg)}}
+Object.assign(STR,{o_sd414:['Tab: ทุกด้านของวงขอบที่ชี้ (รอบพื้นหรือรอบช่องเปิด) · คลิกในช่องเปิดเพื่อวางรอบช่องนั้น','Tab: every side of the loop pointed at (the floor or an opening) · a click inside an opening runs round it'],
+  h_sd1414:['คลิกเพื่อวางขอบพื้นด้านนี้ · กด Tab เพื่อเลือกทุกด้านของวงนี้','Click to place a slab edge on this side · Tab picks every side of its loop'],
+  h_sd2414:['คลิกเพื่อวางขอบพื้นทั้ง {0} ด้านของวงนี้ · กด Tab อีกครั้งเพื่อกลับไปด้านเดียว','Click to place slab edges on all {0} sides of this loop · Tab again for the one side'],
+  h_sd3414:['คลิกเพื่อวางขอบพื้นรอบช่องเปิด {0}','Click to run slab edges round opening {0}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -49501,6 +49535,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.411 · ยึดบน/ล่าง (Attach Top/Base) ใช้กับเสาได้แบบ Revit: เลือกเสา กดยึดบน/ล่าง เลือกด้านบนหรือล่าง ตำแหน่งที่ยึด (ตัดกันน้อยสุด ตัดที่แกนกลางเสา ตัดกันมากสุด) และระยะเลื่อนจากที่ยึดในแถบตัวเลือก แล้วคลิกพื้น หลังคา ฝ้า หรือคาน ปลายเสาจะจบที่ผิวนั้น ถ้าผิวลาดหรือปรับรูปทรง ปลายเสาถูกตัดตามผิว · Properties บอกสิ่งที่ยึดและแก้ตำแหน่งกับระยะเลื่อนได้ ปลดการยึดได้ ความยาวและปริมาตรตามรูปจริง
 - V1.412 · เส้นโค้งผ่านจุด (Spline Through Points) ในแผงวาดของเส้นรายละเอียดและเส้นแบบจำลองแบบ Revit: เส้นโค้งผ่านทุกจุดที่คลิก (ต่างจากเส้นโค้งอิสระที่แค่เอนเข้าหาจุดควบคุม) จบด้วย Enter, Esc หรือคลิกจุดสุดท้ายซ้ำ Backspace ย้อนจุด · เลือกแล้วลากจุดบนเส้นแก้รูปได้ ย้าย คัดลอก หมุน สะท้อน ลงแผ่นงาน 3 มิติ และ DXF ได้ตามรูปโค้ง Properties บอกชนิดและจำนวนจุด
 - V1.413 · รูปแบบการยึด (Attachment Style) ของเสาที่ยึดบน/ล่างแบบ Revit: ตัดเสา (ปลายเสาถูกตัดตามผิวสิ่งที่ยึด) ตัดสิ่งที่ยึด (ปลายเสาเรียบ พื้นหรือคานเสียปริมาตรส่วนที่เสาแทรกเข้าไป) หรือไม่ตัด (ปลายเรียบ ปริมาตรเต็มทั้งคู่) เลือกในแถบตัวเลือกของยึดบน/ล่าง และแก้ใน Properties แยกด้านบนกับล่าง
+- V1.414 · ขอบพื้น (Slab Edge) รอบทั้งวงแบบเลือกต่อเนื่องด้วย Tab ของ Revit: ชี้ขอบด้านหนึ่งแล้วกด Tab จะเลือกทุกด้านของวงนั้น (รอบพื้นหรือรอบช่องเปิด) คลิกครั้งเดียววางขอบพื้นครบทุกด้าน ตัดมุมชนกันเรียบร้อย กด Tab อีกครั้งกลับเป็นด้านเดียว และคลิกในช่องเปิดเพื่อวางรอบช่องนั้น ใช้ได้ในแปลน 3 มิติ รูปด้าน และรูปตัด
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50059,6 +50094,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.411 · Attach Top/Base for columns, as in Revit: select columns, press Attach Top/Base, choose Top or Base, the Attachment Justification (Minimum Intersection, Intersect Column Midline, Maximum Intersection) and an Offset from Attachment on the Options Bar, and click a floor, roof, ceiling or beam: the column ends on it, cut to its shape where it slopes or was shape edited · Properties show what it is attached to and change the justification and offset; Detach Top/Base lets it go; length and volume follow
 - V1.412 · Spline Through Points in the Draw panel of detail lines and model lines, as in Revit: the curve passes through every point clicked (a Spline only leans towards its control points); Enter, Esc or a second click on the last point ends it, Backspace takes a point back · its points are grips on the curve; it moves, copies, rotates, mirrors and goes onto sheets, into 3D and DXF along its curve; Properties name it and count its points
 - V1.413 · Attachment Style for attached columns, as in Revit: Cut Column (the end is cut to the target), Cut Target (a flat end; the floor or beam loses the part of the column inside it) or Do Not Cut (a flat end, both keep their volume), on the Options Bar of Attach Top/Base and in Properties for the top and the base
+- V1.414 · Slab Edge round a whole loop, as with Revit's Tab chain: point at a side and press Tab to pick every side of its loop (the floor's outline or an opening), one click places them all, mitred at the corners; Tab again goes back to the one side; a click inside an opening runs slab edges round it; in plans, 3D views, elevations and sections
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52311,6 +52347,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r414={
+  hov:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),pn=PANES[ui.ap];ui.cur={x:x*nav.s+nav.ox,y:y*nav.s+nav.oy};XT.sedge.hov(pn,v,ui.cur);const H=ui.sdH;return H?{f:H.f.id,k:H.k==null?null:+H.k,all:!!H.all,hole:H.hole==null?null:H.hole,chain:!!H.chain,n:sd414List(H).length}:null},
+  tab:()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));const H=ui.sdH;return H?!!H.chain:null},
+  edges:fid=>P.els.filter(e=>e.cat==='sedge'&&e.host===fid).map(e=>+e.ed).sort((a,b)=>a-b),
+  hint:()=>{hint();return $('#prompt').textContent},
+  scr3:(x,h,y)=>{const i=ui.ap,pn=PANES[i],v=paneView(i),s=projGL(pn,v,[x,h,y]);if(!s)return null;const r=pn.cv.getBoundingClientRect();return[r.left+s[0]*r.width/pn.w,r.top+s[1]*r.height/pn.h]},
+  sdH:()=>{const H=ui.sdH;return H?{f:H.f.id,k:H.k==null?null:+H.k,all:!!H.all,hole:H.hole==null?null:H.hole,chain:!!H.chain,n:sd414List(H).length,v3:!!H.v3}:null},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r413={
   over:(id,s)=>{const o=cs413Over(P,IDX.get(id),s);return o?{T:o.T.id,v:Math.round(o.v)}:null},
   st:(id,s)=>{const r=ca411(P,IDX.get(id),s);return r?{st:r.st,cut:r.cut,z:Math.round(r.z*10)/10}:null},
