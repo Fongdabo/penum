@@ -14619,7 +14619,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=437,V1_NAME='V1.427';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=438,V1_NAME='V1.428';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -48164,6 +48164,147 @@ function spFree427(v,p,pn){const G=sunPathGeo(v);if(!G)return null;const sn=sunO
 Object.assign(STR,{sp427_light:['ทิศ {0}° · มุมเงย {1}°','Azimuth {0}° · Altitude {1}°'],sp427_hfree:['ลากอิสระ (Lighting) · ทิศ {0}° · มุมเงย {1}°','Lighting · azimuth {0}° · altitude {1}°'],
   sp427_badt:['พิมพ์เวลาเป็น ชั่วโมง:นาที เช่น 14:30','Type a time as hours:minutes, e.g. 14:30'],sp427_badd:['พิมพ์วันที่เป็น วัน/เดือน/ปี เช่น 21/6/2026','Type a date as day/month/year, e.g. 21/6/2026'],
   sp427_bada:['พิมพ์ทิศและมุมเงย เช่น 135, 40 (หรือเวลา เช่น 14:30)','Type the azimuth and altitude, e.g. 135, 40 (or a time, e.g. 14:30)']});
+/* ===== V1.428 Area Based Loads (Revit: Electrical Analysis › Area Based Load, Area Based Load Types; each load is connected to a distribution node and the
+   nodes add up what is fed from them).  An early estimate of the electrical load before lights, outlets and machines are placed: a room is given a load type
+   whose density (VA per m² for each load classification: lighting, power, HVAC, other) times the room's area is the room's load.  The load is connected to a
+   panel; a panel's analytical load is its own and that of the panels fed from it, with the demand factors of the Electrical Settings.
+   Kept on the room (e.abl428 {t type, n name, p panel mark}) and in the project (P.abt428, the types; the stock list while it is not there). */
+const ABL_CL428=['light','power','hvac','other'],ABL_C428='#d9730d';
+const ABT0_428=[['off',12,25,50,0],['ret',20,15,60,0],['cls',12,10,50,0],['hsp',12,30,70,5],['res',8,20,40,0],['wh',6,5,0,0],['pk',3,2,0,0]];
+function abTypes428(Q){Q=Q||P;return Array.isArray(Q.abt428)&&Q.abt428.length?Q.abt428:ABT0_428.map(r=>({id:r[0],n:t('abt428_'+r[0]),d:{light:r[1],power:r[2],hvac:r[3],other:r[4]}}))}
+const abType428=(id,Q)=>abTypes428(Q).find(x=>x.id===id)||null;
+const abKva428=va=>(Math.round(va/10)/100).toFixed(2);
+/* the next free load name: AL-1, AL-2 … */
+function abNext428(){let n=0;for(const e of P.els){const m=e.cat==='room'&&e.abl428&&/^AL-(\d+)$/.exec(e.abl428.n||'');if(m)n=Math.max(n,+m[1])}return'AL-'+(n+1)}
+/* the load of room e: a m², cls VA by classification, va VA in all (an open room has no area, so no load) */
+function abLoad428(e){const A=e&&e.abl428,ty=A&&abType428(A.t);if(!ty)return null;const r=spaceReg(e),a=r?r.area/1e6:0,cls={};let va=0;
+  for(const k of ABL_CL428){cls[k]=a*(+ty.d[k]||0);va+=cls[k]}return{a,cls,va,ty,ok:!!r}}
+/* every load and every panel: own loads, tot with the panels fed from it (each load goes up the feeders to the top), dem after the demand factors,
+   amp, main the smallest breaker of the settings that carries it; free: loads with no panel or a panel that is not in the model */
+function abCalc428(){const E=esOf(P),pan=new Map(),L=[],z=()=>({light:0,power:0,hvac:0,other:0});
+  for(const e of P.els)if(e.cat==='eequip'&&e.mark&&!pan.has(e.mark))pan.set(e.mark,{mark:e.mark,e,n:0,a:0,own:z(),tot:z()});
+  for(const e of P.els){if(e.cat!=='room'||!e.abl428)continue;const q=abLoad428(e);if(!q)continue;const p=e.abl428.p||'';
+    L.push({id:e.id,n:e.abl428.n||'',room:[e.number,e.name].filter(Boolean).join(' '),lv:e.level,t:q.ty.id,tn:q.ty.n,a:q.a,cls:q.cls,va:q.va,p,ok:q.ok,miss:!!p&&!pan.has(p)});
+    const o=pan.get(p);if(o){o.n++;o.a+=q.a;for(const k of ABL_CL428)o.own[k]+=q.cls[k]}}
+  for(const o of pan.values()){const seen=new Set();let c=o;while(c&&!seen.has(c.mark)){seen.add(c.mark);for(const k of ABL_CL428)c.tot[k]+=o.own[k];c=c.e.panel&&c.e.panel!==c.mark?pan.get(c.e.panel):null}}
+  const sum=x=>ABL_CL428.reduce((s,k)=>s+x[k],0);
+  for(const o of pan.values()){o.con=sum(o.own);o.ctot=sum(o.tot);o.dem=ABL_CL428.reduce((s,k)=>s+demOf(E,k,o.tot[k]),0);o.dist=panelDist(P,o.e);
+    o.amp=o.dem/(o.dist==='3p'?E.vll*Math.sqrt(3):E.vln);o.main=o.ctot>0?(E.brk.find(b=>b>=o.amp*E.brkK-1e-9)||E.brk[E.brk.length-1]):0}
+  return{L,pan:[...pan.values()].sort((a,b)=>a.mark.localeCompare(b.mark)),free:L.filter(x=>!x.p||x.miss)}}
+/* ---- the tool: click inside rooms of a floor plan ---- */
+const abOptType428=()=>abType428(ui.opt.abt428)?ui.opt.abt428:abTypes428()[0].id,abOptPan428=()=>ui.opt.abp428&&ui.opt.abp428!=='~'?ui.opt.abp428:'';
+function abPut428(e,ty,pnl){const A=e.abl428;e.abl428=Object.assign({t:ty,n:A&&A.n||abNext428()},pnl?{p:pnl}:{})}
+XT.abl428={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&!v.rcp&&v.area==null,
+  on(){ui.opt.abt428=abOptType428();if(!ui.opt.abp428)ui.opt.abp428='~';ui.sel.clear();ui.hov=null},
+  hint:()=>t('h_abl428'),
+  hov(pn,v,p){const nav=navOf(v),e=roomAt(v,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s});return e&&e.cat==='room'?e.id:null},
+  opt(who){const ty=abOptType428(),pp=ui.opt.abp428||'~';
+    return who+`<label>${esc(t('o_abt428'))} <select data-opt="abt428" id="opt_abt428">${abTypes428().map(x=>`<option value="${esc(x.id)}"${x.id===ty?' selected':''}>${esc(x.n)}</option>`).join('')}</select></label>`
+      +`<label>${esc(t('o_abp428'))} <select data-opt="abp428" id="opt_abp428">${panelOpts(pp==='~'?'':pp).map(x=>`<option value="${esc(x[0])}"${x[0]===pp?' selected':''}>${esc(x[1])}</option>`).join('')}</select></label>`
+      +`<button type="button" class="btn" data-act="aball428">${esc(t('a_aball428'))}</button><button type="button" class="btn" data-act="abt428">${esc(t('a_abt428'))}</button>`},
+  click(pn,v,p,w){const e=roomAt(v,w);if(!e||e.cat!=='room'){toast(t('abl428_pick'));return}const ty=abOptType428(),pnl=abOptPan428(),A=e.abl428;
+    if(A&&A.t===ty&&(A.p||'')===pnl){edit(()=>{delete e.abl428});toast(t('abl428_off',A.n||''));return}
+    edit(()=>abPut428(e,ty,pnl));const q=abLoad428(e);toast(q&&q.ok?t('abl428_on',e.abl428.n,abKva428(q.va)):t('abl428_open'))}};
+XA.aball428=()=>{const v=activeView();if(!XT.abl428.ok(v))return;const ty=abOptType428(),pnl=abOptPan428(),R=P.els.filter(e=>e.cat==='room'&&e.level===v.level&&!e.abl428&&planShow(v,e));
+  if(!R.length){toast(t('abl428_all0'));return}edit(()=>{for(const e of R)abPut428(e,ty,pnl)});toast(t('abl428_all',R.length))};
+/* ---- the plan: each load hatched over its room, with its name, load and panel ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||v.rcp||v.area!=null)return;const tool=ui.tool==='abl428';if(!tool&&['struct','mech','plumb','fire'].includes(v.disc))return;          // shown with the architecture and in electrical plans
+  const sc=v.scale||100,lab={};ui.ab428L=ui.ab428L||{};
+  for(const [e] of of('room')){const A=e.abl428,hot=tool&&ui.hov===e.id;if(!A&&!hot)continue;const r=spaceReg(e);if(!r)continue;const c=hl(e.id)||ABL_C428;
+    g.path(r.net);ctx.fillStyle=A?'rgba(217,115,13,.07)':'rgba(217,115,13,.16)';ctx.fill();if(A)g.hatch(r.net,4,'rgba(217,115,13,.45)');
+    ctx.strokeStyle=c;ctx.lineWidth=g.lw(0.3);g.dash([3,1.5]);g.path(r.net);ctx.closePath();ctx.stroke();g.dash(null);if(!A)continue;
+    const q=abLoad428(e);if(!q)continue;const x=e.x,y=e.y+9*sc;
+    g.text((A.n||'')+' · '+abKva428(q.va)+' kVA',[x,y],2.4,{color:c,bold:true,halo:true});g.text(q.ty.n+(A.p?' · '+t('abl428_to',A.p):''),[x,y+3.4*sc],2,{color:c,halo:true});lab[e.id]=[x,y]}
+  if(o.screen)ui.ab428L[v.id]=lab});
+/* ---- Properties of rooms: the load type, its name and panel, the load; of a panel: what is connected to it ---- */
+XP.push((c,els)=>{if(c!=='room')return'';const A=els.map(e=>e.abl428||null),V=f=>{const a=A.map(f);return a.every(x=>x===a[0])?a[0]:''};
+  let h=PR.grp('g_abl428')+PR.sel('abt428','p_abt428',V(x=>x?x.t:'~'),[['~',t('abl428_none')],...abTypes428().map(x=>[x.id,x.n])]);
+  if(A.every(Boolean)){const pp=V(x=>x.p||'~');h+=PR.text('abn428','p_abn428',V(x=>x.n||''))+PR.sel('abp428','p_abp428',pp,panelOpts(pp==='~'?'':pp))}
+  if(els.length===1&&A[0]){const q=abLoad428(els[0]);if(q){h+=PR.ro('p_abva428',q.ok?abKva428(q.va)+' kVA':t('not_enclosed'))+`<div class="pnote">${esc(q.ty.n+': '+ABL_CL428.map(k=>t('abc428_'+k)+' '+(+q.ty.d[k]||0)).join(' · ')+' VA/'+t('u_m2'))}</div>`}}
+  return h+`<div class="pa"><button class="btn" data-act="abt428">${t('a_abt428')}</button><button class="btn" data-act="absum428">${t('a_absum428')}</button></div>`});
+XP.push((c,els)=>{if(c!=='eequip'||els.length!==1||!els[0].mark)return'';const o=abCalc428().pan.find(x=>x.mark===els[0].mark);if(!o||!(o.ctot>0))return'';
+  return PR.grp('g_ablp428')+PR.ro('p_abln428',t('abl428_nla',o.n,Math.round(o.a*100)/100))+PR.ro('p_ablc428',abKva428(o.con)+' kVA')+(Math.abs(o.ctot-o.con)>0.5?PR.ro('p_ablt428',abKva428(o.ctot)+' kVA'):'')
+    +PR.ro('p_abld428',abKva428(o.dem)+' kVA · '+(Math.round(o.amp*10)/10)+' A')+PR.ro('p_ablm428',o.main+' A')+`<div class="pa"><button class="btn" data-act="absum428">${t('a_absum428')}</button></div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||!['abt428','abn428','abp428'].includes(key))return false;
+  if(key==='abt428'){if(raw==='~'||!abType428(raw))delete o.abl428;else o.abl428=Object.assign(o.abl428||{n:abNext428()},{t:raw});return true}
+  if(!o.abl428)return true;if(key==='abn428'){const s=String(raw==null?'':raw).trim().slice(0,24);o.abl428.n=s||abNext428();return true}
+  if(!raw||raw==='~')delete o.abl428.p;else o.abl428.p=String(raw).slice(0,40);return true});
+/* ---- Area Based Load Types ---- */
+function abUse428(){const m=new Map();for(const e of P.els)if(e.cat==='room'&&e.abl428)m.set(e.abl428.t,(m.get(e.abl428.t)||0)+1);return m}
+function dlgAbt428(){const L=abTypes428(),U=abUse428(),dc=$('#dlg').open&&ui.dlg&&ui.dlg.abt428?$('#dlg .dc'):null,k0=dc?dc.scrollTop:0,stock=!(Array.isArray(P.abt428)&&P.abt428.length);
+  const ids0=new Set(ABT0_428.map(r=>r[0])),canReset=!stock&&[...U.keys()].every(id=>ids0.has(id));
+  const rows=L.map(x=>`<tr><td><input type="text" data-abt="${esc(x.id)}" data-f="n" value="${esc(x.n)}" maxlength="40" style="width:150px" aria-label="${esc(t('abt428_name'))}"></td>`
+    +ABL_CL428.map(k=>`<td><input type="number" data-abt="${esc(x.id)}" data-f="${k}" value="${+x.d[k]||0}" min="0" max="1000" step="1" style="width:64px" aria-label="${esc(x.n+' '+t('abc428_'+k))}"></td>`).join('')
+    +`<td style="text-align:right">${ABL_CL428.reduce((s,k)=>s+(+x.d[k]||0),0)}</td><td style="text-align:right">${U.get(x.id)||0}</td><td><button class="btn" data-abtdel="${esc(x.id)}"${U.get(x.id)||L.length<2?' disabled':''} title="${esc(U.get(x.id)?t('abt428_inuse',U.get(x.id)):t('abt428_del'))}">×</button></td></tr>`).join('');
+  openDlg(t('a_abt428').replace(/…$/,''),`<p class="note">${esc(t('abt428_note'))}</p><div class="tblw" style="overflow-x:auto"><table class="tbl" id="abt428Tbl"><thead><tr><th>${esc(t('abt428_name'))}</th>${ABL_CL428.map(k=>`<th>${esc(t('abc428_'+k))}<br><small>VA/${esc(t('u_m2'))}</small></th>`).join('')}<th>${esc(t('abt428_sum'))}</th><th>${esc(t('abt428_use'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    `<button class="btn" data-abtx="add">${esc(t('abt428_add'))}</button><button class="btn" data-abtx="reset"${canReset?'':' disabled'}>${esc(t('abt428_reset'))}</button><span style="flex:1"></span><button class="btn" data-act="absum428">${esc(t('a_absum428'))}</button><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {abt428:1,click(ev){const d=ev.target.closest('[data-abtdel]'),x=ev.target.closest('[data-abtx]');
+       if(d&&!d.disabled){const id=d.dataset.abtdel;edit(()=>{P.abt428=abCopy428().filter(y=>y.id!==id)});dlgAbt428();return}
+       if(x&&!x.disabled){if(x.dataset.abtx==='add')edit(()=>{const M=abCopy428();let n=1;while(M.some(y=>y.id==='u'+n))n++;M.push({id:'u'+n,n:t('abt428_new',n),d:{light:10,power:20,hvac:0,other:0}});P.abt428=M});
+         else edit(()=>{delete P.abt428});dlgAbt428()}},
+     change(ev){const el=ev.target,id=el.dataset.abt,f=el.dataset.f;if(!id||!f)return;
+       edit(()=>{const M=abCopy428(),y=M.find(q=>q.id===id);if(!y)return;if(f==='n'){const s=el.value.trim().slice(0,40);if(s)y.n=s}else y.d[f]=Math.round(clamp(+el.value||0,0,1000)*100)/100;P.abt428=M});dlgAbt428()}},'wide');
+  if(k0&&$('#dlg .dc'))$('#dlg .dc').scrollTop=k0}
+const abCopy428=()=>abTypes428().map(x=>({id:x.id,n:x.n,d:Object.assign({},x.d)}));
+XA.abt428=()=>dlgAbt428();
+/* ---- the summary: each panel (with the panels it feeds) and each load ---- */
+function dlgAbSum428(){const S=abCalc428(),PC=new Map(panelCalc(P).map(p=>[p.mark,p])),kv=abKva428,m2=a=>(Math.round(a*100)/100).toLocaleString(ui.lang==='en'?'en':'th',{maximumFractionDigits:2}),lvN=id=>(lvl(P,id)||{}).name||'';
+  const pr=S.pan.filter(o=>o.ctot>0||o.n),fr=S.free;let body=`<p class="note">${esc(t('absum428_note'))}</p>`;
+  if(!S.L.length)body+=`<p class="note" id="absum428None">${esc(t('absum428_none'))}</p>`;
+  else{body+=`<div class="tblw" style="overflow-x:auto"><table class="tbl" id="absum428Pan"><thead><tr><th>${esc(t('absum428_pan'))}</th><th>${esc(t('absum428_sys'))}</th><th>${esc(t('absum428_n'))}</th><th>${esc(t('absum428_a'))}</th>`
+      +ABL_CL428.map(k=>`<th>${esc(t('abc428_'+k))}<br><small>kVA</small></th>`).join('')+`<th>${esc(t('absum428_tot'))}<br><small>kVA</small></th><th>Demand<br><small>kVA</small></th><th>${esc(t('absum428_amp'))}<br><small>A</small></th><th>${esc(t('absum428_main'))}<br><small>A</small></th><th>${esc(t('absum428_ck'))}<br><small>kVA</small></th></tr></thead><tbody>`
+      +pr.map(o=>{const pc=PC.get(o.mark);return`<tr data-abpan="${esc(o.mark)}"><td><b>${esc(o.mark)}</b>${o.e.panel&&o.e.panel!==o.mark?`<br><small>${esc(t('absum428_from',o.e.panel))}</small>`:''}</td><td>${o.dist==='3p'?'3φ':'1φ'}</td><td style="text-align:right">${o.n}</td><td style="text-align:right">${m2(o.a)}</td>`
+        +ABL_CL428.map(k=>`<td style="text-align:right">${kv(o.own[k])}</td>`).join('')+`<td style="text-align:right">${kv(o.ctot)}</td><td style="text-align:right"><b>${kv(o.dem)}</b></td><td style="text-align:right">${(Math.round(o.amp*10)/10).toFixed(1)}</td><td style="text-align:right">${o.main}</td><td style="text-align:right">${pc&&pc.va?kv(pc.va):'–'}</td></tr>`}).join('')
+      +(fr.length?`<tr class="abfree"><td colspan="2"><i>${esc(t('absum428_free'))}</i></td><td style="text-align:right">${fr.length}</td><td style="text-align:right">${m2(fr.reduce((s,x)=>s+x.a,0))}</td>`+ABL_CL428.map(k=>`<td style="text-align:right">${kv(fr.reduce((s,x)=>s+x.cls[k],0))}</td>`).join('')+`<td colspan="5"></td></tr>`:'')+`</tbody></table></div>`;
+    body+=`<h4 class="esh">${esc(t('absum428_loads'))}</h4><div class="tblw" style="overflow-x:auto;max-height:260px"><table class="tbl" id="absum428Ld"><thead><tr><th>${esc(t('p_abn428'))}</th><th>${esc(t('absum428_room'))}</th><th>${esc(t('c_level'))}</th><th>${esc(t('p_abt428'))}</th><th>${esc(t('absum428_a'))}</th><th>kVA</th><th>${esc(t('p_abp428'))}</th></tr></thead><tbody>`
+      +S.L.slice().sort((a,b)=>a.n.localeCompare(b.n,undefined,{numeric:true})).map(x=>`<tr data-abid="${x.id}" style="cursor:pointer"><td>${esc(x.n)}</td><td>${esc(x.room)}</td><td>${esc(lvN(x.lv))}</td><td>${esc(x.tn)}</td><td style="text-align:right">${x.ok?m2(x.a):esc(t('not_enclosed'))}</td><td style="text-align:right">${kv(x.va)}</td><td>${x.miss?`<span style="color:#b3261e">${esc(t('absum428_miss',x.p))}</span>`:x.p?esc(x.p):`<i>${esc(t('absum428_free'))}</i>`}</td></tr>`).join('')+`</tbody></table></div>`}
+  openDlg(t('a_absum428').replace(/…$/,''),body,`<button class="btn" data-act="abt428">${esc(t('a_abt428'))}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {absum428:1,click(ev){const r=ev.target.closest('[data-abid]');if(!r)return;const e=IDX.get(+r.dataset.abid);if(!e)return;closeDlg();const pv=planOf(e.level);if(pv&&activeView()!==pv&&(activeView()||{}).level!==e.level)showView(pv.id);setTool('modify');ui.sel=new Set([e.id]);refresh()}},'wide')}
+XA.absum428=()=>dlgAbSum428();
+/* ---- schedules of rooms ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='room')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{}));
+  add('abn428',tr('c_abn428'),e=>e.abl428&&e.abl428.n||'');
+  add('abt428',tr('c_abt428'),e=>{const x=e.abl428&&abType428(e.abl428.t,Q);return x?x.n:''});
+  add('abp428',tr('c_abp428'),e=>e.abl428&&e.abl428.p||'');
+  add('abva428',tr('c_abva428'),e=>{const q=e.abl428&&Q===P?abLoad428(e):null;return q?Math.round(q.va/10)/100:''},{num:1,dec:2,sum:1});
+  return F}}
+/* ---- what is kept ---- */
+XC.push(()=>{if('abt428' in P){const A=P.abt428;if(!Array.isArray(A))delete P.abt428;else{const seen=new Set();
+    P.abt428=A.filter(x=>x&&typeof x==='object'&&typeof x.id==='string'&&/^[a-z0-9]{1,8}$/.test(x.id)&&!seen.has(x.id)&&seen.add(x.id))
+      .map(x=>({id:x.id,n:String(x.n||x.id).slice(0,40),d:Object.fromEntries(ABL_CL428.map(k=>[k,Math.round(clamp(+((x.d||{})[k])||0,0,1000)*100)/100]))}));if(!P.abt428.length)delete P.abt428}}
+  const ids=new Set(abTypes428().map(x=>x.id));
+  for(const e of P.els){if(!('abl428' in e))continue;const A=e.abl428;if(e.cat!=='room'||!A||typeof A!=='object'||Array.isArray(A)||!ids.has(A.t)){delete e.abl428;continue}
+    const o={t:A.t};if(typeof A.n==='string'&&A.n.trim())o.n=A.n.trim().slice(0,24);if(typeof A.p==='string'&&A.p&&A.p!=='~')o.p=A.p.slice(0,40);e.abl428=o}});
+/* ---- the ribbon: Analyze › Electrical Analysis, and Systems › Electrical ---- */
+{const an=RIBBON.find(r=>r.id==='analyze');if(an&&!an.panels.some(p=>p.t==='p_elan428')){const i=an.panels.findIndex(p=>p.t==='p_loads');an.panels.splice(i+1,0,{t:'p_elan428',b:['abl428','@abt428','@absum428']})}
+  const sy=RIBBON.find(r=>r.id==='sys'),pe=sy&&sy.panels.find(p=>p.t==='p_elec');if(pe&&!pe.b.includes('abl428'))pe.b.push('abl428')}
+Object.assign(BTN,{abl428:['abl428',''],'@abt428':['types',''],'@absum428':['sched','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-abl428" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9.5" ry="1.3"/><path ${e('i-Sa')} fill="#f3e3cf" d="M1.5 14.5 12 9.5 22.5 14.5 12 19.5z"/>`
+    +`<path class="i-e" fill="none" stroke="#d9730d" stroke-width=".7" stroke-dasharray="1.6 1" d="M4.2 14.5 12 10.8 19.8 14.5 12 18.2z"/><path class="i-e" fill="none" stroke="#d9730d" stroke-width=".45" opacity=".7" d="M7 15.8 13.5 12.7M9.6 17 16.2 13.9"/>`
+    +`<path ${e('i-Mb')} fill="#f6b21b" d="M13.6 1.8 8.2 9.6h3.4l-1.6 6.2 5.8-8.4h-3.5z"/></symbol>`)})();
+Object.assign(STR,{t_abl428:['โหลดตามพื้นที่ (Area Based Load)','Area Based Load'],a_abt428:['ชนิดโหลดตามพื้นที่…','Area Based Load Types…'],a_absum428:['สรุปโหลดตามพื้นที่…','Area Based Load Summary…'],
+  a_aball428:['วางทุกห้องของชั้นนี้','Place on All Rooms of This Level'],p_elan428:['วิเคราะห์ไฟฟ้า (Electrical Analysis)','Electrical Analysis'],
+  h_abl428:['โหลดตามพื้นที่: คลิกในห้องเพื่อวางโหลดชนิดที่เลือกและต่อเข้าตู้ที่เลือก (คลิกซ้ำด้วยชนิดและตู้เดิมเพื่อเอาออก)','Area Based Load: click inside rooms to put a load of the chosen type on them, connected to the chosen panel (click again with the same type and panel to take it off)'],
+  o_abt428:['ชนิดโหลด','Load type'],o_abp428:['ต่อเข้าตู้','Connect to'],abl428_pick:['คลิกในห้อง (Room) บนแปลนพื้น','Click inside a room of a floor plan'],
+  abl428_on:['วาง {0} แล้ว: {1} kVA','{0} placed: {1} kVA'],abl428_off:['เอา {0} ออกแล้ว','{0} taken off'],abl428_open:['ห้องนี้ยังไม่มีผนังล้อมรอบ พื้นที่และโหลดจึงเป็น 0','This room is not enclosed, so its area and load are 0'],
+  abl428_all:['วางโหลดแล้ว {0} ห้อง','Loads placed in {0} rooms'],abl428_all0:['ทุกห้องของชั้นนี้มีโหลดแล้ว','Every room of this level has a load already'],abl428_none:['ไม่มี','None'],abl428_to:['ตู้ {0}','Panel {0}'],
+  abl428_nla:['{0} โหลด · {1} ตร.ม.','{0} loads · {1} m²'],
+  g_abl428:['โหลดตามพื้นที่ (Area Based Load)','Area Based Load'],p_abt428:['ชนิดโหลด','Load Type'],p_abn428:['ชื่อโหลด','Load Name'],p_abp428:['ต่อเข้าตู้','Connected To'],
+  p_abva428:['โหลด','Load'],
+  g_ablp428:['โหลดตามพื้นที่ที่ต่อเข้าตู้ (วิเคราะห์)','Area Based Loads (analytical)'],p_abln428:['โหลดที่ต่อเข้า','Loads connected'],p_ablc428:['โหลดของตู้นี้','Connected load'],
+  p_ablt428:['รวมตู้ที่รับไฟจากตู้นี้','With the panels it feeds'],p_abld428:['โหลดหลังคิด Demand','Estimated demand'],p_ablm428:['เมนเบรกเกอร์โดยประมาณ','Estimated main breaker'],
+  abt428_off:['สำนักงาน','Office'],abt428_ret:['ร้านค้า','Retail'],abt428_cls:['ห้องเรียน','Classroom'],abt428_hsp:['โรงพยาบาล','Hospital'],abt428_res:['ที่พักอาศัย','Residential'],abt428_wh:['โกดัง','Warehouse'],abt428_pk:['ที่จอดรถ','Parking'],
+  abt428_new:['ชนิดใหม่ {0}','New type {0}'],abt428_name:['ชื่อชนิด','Type name'],abt428_sum:['รวม VA/ตร.ม.','Total VA/m²'],abt428_use:['ใช้อยู่ (ห้อง)','In use (rooms)'],abt428_add:['เพิ่มชนิด','Add Type'],
+  abt428_del:['ลบชนิดนี้','Delete this type'],abt428_inuse:['ใช้อยู่ใน {0} ห้อง จึงลบไม่ได้','In use in {0} rooms, so it cannot be deleted'],abt428_reset:['กลับเป็นค่าตั้งต้น','Reset to Stock'],
+  abt428_note:['ความหนาแน่นของโหลด (VA ต่อ ตร.ม.) แยกตามประเภทโหลด คูณพื้นที่ห้องได้โหลดของห้อง ค่า Demand Factor ของแต่ละประเภทใช้ตาม Electrical Settings','Load density (VA per m²) by load classification; times the room\'s area it is the room\'s load. The demand factor of each classification is that of the Electrical Settings'],
+  abc428_light:['แสงสว่าง','Lighting'],abc428_power:['กำลัง','Power'],abc428_hvac:['HVAC','HVAC'],abc428_other:['อื่น ๆ','Other'],
+  absum428_note:['โหลดตามพื้นที่ของแต่ละตู้ รวมโหลดของตู้ที่รับไฟจากตู้นั้นด้วย คิด Demand Factor ตาม Electrical Settings แล้วเทียบกับโหลดของวงจรที่วาดไว้จริง','The area based loads of each panel, with those of the panels fed from it, after the demand factors of the Electrical Settings, beside the load of the circuits modelled'],
+  absum428_none:['ยังไม่มีโหลดตามพื้นที่ ใช้เครื่องมือ โหลดตามพื้นที่ แล้วคลิกในห้อง','No area based loads yet: use the Area Based Load tool and click inside rooms'],
+  absum428_pan:['ตู้','Panel'],absum428_sys:['ระบบ','System'],absum428_n:['จำนวนโหลด','Loads'],absum428_a:['พื้นที่ ตร.ม.','Area m²'],absum428_tot:['รวมตู้ย่อย','With fed panels'],
+  absum428_amp:['กระแส','Current'],absum428_main:['เมนโดยประมาณ','Est. main'],absum428_ck:['วงจรที่วาดไว้','Circuits modelled'],absum428_from:['รับไฟจาก {0}','fed from {0}'],
+  absum428_free:['ไม่ได้ต่อเข้าตู้','Not connected'],absum428_miss:['ไม่มีตู้ {0} ในแบบ','No panel {0} in the model'],absum428_loads:['โหลดแต่ละห้อง','Each load'],absum428_room:['ห้อง','Room'],
+  c_abn428:['ชื่อโหลดตามพื้นที่','Area Based Load Name'],c_abt428:['ชนิดโหลดตามพื้นที่','Area Based Load Type'],c_abp428:['ตู้ของโหลดตามพื้นที่','Area Based Load Panel'],c_abva428:['โหลดตามพื้นที่ (kVA)','Area Based Load (kVA)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -50414,6 +50555,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.425 · แบ่งผิวมวลอาคาร (Divide Surface) แบบ Revit: เครื่องมือแบ่งผิวในแผงมวลอาคาร คลิกผิวด้านข้างหรือผิวบนของมวลแล้วกด Enter ผิวนั้นถูกแบ่งด้วย U Grid และ V Grid ตามจำนวนช่องหรือระยะ ผิวบนหมุนแนวได้ เลือกลายแผงได้ 9 แบบ (สี่เหลี่ยม หมากรุก เหลื่อม 1/2 และ 1/3 สามเหลี่ยม ข้าวหลามตัด หกเหลี่ยม ซิกแซก) และแผงที่ขอบให้ตัดตามขอบ ยื่นเลยขอบ หรือเว้นว่าง เห็นใน 3D และนับจำนวนแผงใน Properties
 - V1.426 · แผงตามลายบนผิวที่แบ่ง (Curtain Panel by Pattern) แบบ Revit: ผิวมวลที่แบ่งแล้วเลือกชิ้นแผงได้ 4 แบบ (กระจกมีกรอบ แผงทึบมีกรอบ กรอบเปล่า แผ่นผิวเรียบ) ชิ้นแผงวางลงทุกช่องของลายและตามรูปช่อง สามเหลี่ยม หกเหลี่ยม หรือช่องที่ตัดตามขอบก็ได้ ตั้งกว้างกรอบ ลึกกรอบ หนาแผ่น และระยะยื่นจากผิว ลายหมากรุกให้ช่องสลับเป็นอีกชิ้นได้ เห็นใน 3 มิติ นับจำนวนและพื้นที่ใน Properties และหน้าต่างแก้การแบ่งผิว และเข้า BOQ เป็นตารางเมตร
 - V1.427 · ตัวควบคุมบนเส้นทางดวงอาทิตย์และการลากแบบ Lighting แบบ Revit: เวลาและวันที่ข้างดวงอาทิตย์คลิกแล้วพิมพ์แก้ได้ทันที (วันที่พิมพ์แบบ 21/6/2026 ปี พ.ศ. หรือ 2026-06-21 ก็ได้) กด Shift ค้างตอนลากดวงอาทิตย์เพื่อลากไปที่ใดก็ได้บนท้องฟ้าโดยไม่ต้องอยู่บนเส้นทาง (เก็บแค่ทิศกับมุมเงยแบบ Lighting) ดวงอาทิตย์ที่ไม่มีเวลาลากได้อิสระเสมอ ป้ายบอกทิศกับมุมเงยและคลิกพิมพ์แก้ได้ พิมพ์เวลาลงไปเพื่อกลับไปตามวันเวลา
+- V1.428 · โหลดไฟฟ้าตามพื้นที่ (Area Based Load) แบบ Revit Electrical Analysis: ประมาณโหลดไฟฟ้าได้ตั้งแต่ยังไม่วางโคมไฟ เต้ารับ หรือเครื่องจักร คลิกในห้องบนแปลนเพื่อใส่ชนิดโหลด (สำนักงาน ร้านค้า ห้องเรียน โรงพยาบาล ฯลฯ ความหนาแน่น VA ต่อ ตร.ม. แยกแสงสว่าง กำลัง HVAC และอื่น ๆ แก้ได้ในหน้าต่างชนิดโหลด) แล้วต่อเข้าตู้ไฟ ตู้แต่ละใบรวมโหลดของตัวเองกับตู้ย่อยที่รับไฟจากมัน คิด Demand Factor ตาม Electrical Settings ได้กระแสและเมนเบรกเกอร์โดยประมาณ ดูได้ใน Properties ของตู้ ในหน้าสรุปโหลดตามพื้นที่ (เทียบกับวงจรที่วาดจริง) และในตารางห้อง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50986,6 +51128,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.425 · Divide Surface, as in Revit: a Divide Surface tool in the Massing panel: click side or top faces of masses and press Enter; each face gets a U Grid and a V Grid by Number or Distance (the top can be turned), one of nine panel patterns (Rectangle, Rectangle Checkerboard, 1/2 Step, 1/3 Step, Triangle, Triangle Checkerboard, Rhomboid, Hexagon, Zigzag) and a Border Tile (Partial, Overhanging, Empty); drawn in 3D, panels counted in Properties
 - V1.426 · Curtain Panel by Pattern, as in Revit: a divided mass face takes a component in every tile of its pattern (Glazed Panel, Solid Panel, Frame Only, Flat Panel), shaped to the tile, triangles, hexagons and cut border tiles included; Frame Width, Frame Depth, Panel Thickness and Offset; a checkerboard's filled tiles can take another component; shown in 3D, counted with their area in Properties and Edit Divided Surface, and in the BOQ by m²
 - V1.427 · Sun Path on-screen controls and the Lighting drag, as in Revit: click the time or the date beside the sun and type a new one (dates as 21/6/2026, a Buddhist year or 2026-06-21); hold Shift while dragging the sun to move it anywhere over the sky, off its paths (azimuth and altitude only, as Lighting); a sun without a time always drags freely, its label shows the azimuth and altitude and can be typed over, or given a time to go back to date and time
+- V1.428 · Area Based Loads, as in Revit's Electrical Analysis: estimate the electrical load before lights, outlets or machines are placed; click inside rooms of a plan to give them a load type (office, retail, classroom, hospital …, a density in VA per m² for lighting, power, HVAC and other, edited in Area Based Load Types) connected to a panel; each panel adds its own loads and those of the panels fed from it, after the demand factors of the Electrical Settings, to an estimated current and main breaker, shown in the panel's Properties, the Area Based Load Summary (beside the circuits modelled) and room schedules
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -53238,6 +53381,28 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r428={
+  types:()=>abTypes428().map(x=>({id:x.id,n:x.n,d:Object.assign({},x.d)})),
+  setTypes:L=>{edit(()=>{if(L==null)delete P.abt428;else P.abt428=L});return abTypes428().length},
+  room:(lid,x,y,name)=>{let id;edit(()=>{const e={id:P.seq++,cat:'room',level:lid,x,y,name:name||'R',number:nextRoomNumber(lid)};P.els.push(e);id=e.id});return id},
+  panel:(lid,x,y,mark,up)=>{let id;edit(()=>{const d=defs('eequip'),e=Object.assign({id:P.seq++,cat:'eequip',type:d.type,level:lid,x,y,rot:0,off:1400,mark},up?{panel:up}:{});P.els.push(e);id=e.id});return id},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);if(o==null)delete e.abl428;else e.abl428=o});return true},
+  raw:(id,o)=>{const e=IDX.get(id);e.abl428=o;return true},rawP:L=>{P.abt428=L;return true},
+  get:id=>{const e=IDX.get(id);return e&&e.abl428?JSON.parse(JSON.stringify(e.abl428)):null},
+  area:id=>{const r=spaceReg(IDX.get(id));return r?r.area/1e6:null},
+  load:id=>{const q=abLoad428(IDX.get(id));return q?{a:q.a,va:q.va,cls:q.cls,ok:q.ok}:null},
+  calc:()=>{const S=abCalc428();return{L:S.L.map(x=>({id:x.id,n:x.n,t:x.t,a:x.a,va:x.va,p:x.p,miss:x.miss})),free:S.free.map(x=>x.n),
+    pan:S.pan.map(o=>({mark:o.mark,n:o.n,a:o.a,own:o.own,tot:o.tot,con:o.con,ctot:o.ctot,dem:o.dem,amp:o.amp,main:o.main,dist:o.dist}))}},
+  tidy:()=>{for(const f of XC)f();return{abt:P.abt428||null,els:P.els.filter(e=>'abl428' in e).map(e=>({id:e.id,cat:e.cat,a:e.abl428}))}},
+  fields:()=>sfAll(P,'room',t).filter(f=>/428$/.test(f.k)).map(f=>[f.k,f.l]),
+  fval:(id,k)=>{const f=sfAll(P,'room',t).find(x=>x.k===k);return f?f.g(IDX.get(id),{}):null},
+  next:()=>abNext428(),
+  E:()=>{const E=esOf(P);return{vln:E.vln,vll:E.vll,brk:E.brk,brkK:E.brkK,pf:E.pf}},
+  es:o=>{edit(()=>{if(o==null)delete P.es;else P.es=o});return true},
+  /* a point of plan view vid on the page; the labels drawn in it, on the page */
+  scr:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),i=PANES.findIndex((p,k)=>paneView(k)===v),r=PANES[i<0?ui.ap:i].cv.getBoundingClientRect();return[x*nav.s+nav.ox+r.left,y*nav.s+nav.oy+r.top]},
+  lab:vid=>{const L=ui.ab428L&&ui.ab428L[vid];if(!L)return null;const o={};for(const k in L)o[k]=window.PenumBIM.r428.scr(vid,L[k][0],L[k][1]);return o},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r427={
   /* the label's parts on the page: t time, d date, a azimuth/altitude, [x0,y0,x1,y1] */
   lab:i=>{const B=ui.spt427&&ui.spt427[i];if(!B)return null;const r=PANES[i].cv.getBoundingClientRect(),o={};for(const k in B)o[k]=[B[k][0]+r.left,B[k][1]+r.top,B[k][2]+r.left,B[k][3]+r.top];return o},
