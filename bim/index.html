@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=396,V1_NAME='V1.386';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=397,V1_NAME='V1.387';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -45690,6 +45690,37 @@ XC.push(()=>{const ids=new Set((P.grids||[]).map(g=>g.id));for(const v of P.view
   if(!Object.keys(v.ge386).length)delete v.ge386}});
 Object.assign(STR,{h_gzeon386:['เพิ่มข้อศอก (Add Elbow): หัวกริดปลายนี้หลบไปด้านข้าง','Add Elbow: this end\'s bubble to the side'],h_gzeoff386:['ลบข้อศอกที่ปลายนี้','Remove the elbow at this end'],
   h_gzedrag386:['ข้อศอก {0} มม. บนกระดาษ (ขวาเป็นบวก)','Elbow {0} mm on paper (right is +)'],p_gelt386:['ข้อศอก ปลายบน (มม.)','Elbow at the top (mm)'],p_gelb386:['ข้อศอก ปลายล่าง (มม.)','Elbow at the bottom (mm)']});
+/* ===== V1.387 Convert Lines as in Revit (Modify | Lines › Convert Lines): the selected detail lines become model lines and the selected model lines detail
+   lines of this view, keeping their line style (and in a plan their arcs and circles).  In a plan a detail line goes onto the view's work plane (its level
+   unless a work plane is set); in an elevation or a section onto the plane of the view.  A model line becomes a detail line of an elevation or a section
+   only when it lies parallel to the view (Revit the same).  Lines in a group, and views with no model (drafting views, legends, sheets, 3D) are left alone ===== */
+const cvlView387=v=>!!v&&!v.draft&&!v.legend&&(v.kind==='plan'||lxV383(v));
+const cvlLine387=e=>!!e&&(e.cat==='dline'||e.cat==='mline');
+/* the line of the other kind for e in view v, or null when it cannot be made (a new id) */
+function cvlOne387(v,e){const st=e.style||'thin',r=x=>Math.round(x);
+  if(e.cat==='dline'){if(e.view!==avid(v))return null;
+    if(v.kind==='plan'){const o={id:P.seq++,cat:'mline',level:v.level,x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,style:st},off=wpOff(P,v,v.level,0);if(off)o.off=off;if(e.circ)o.circ=1;else if(e.bow)o.bow=e.bow;return o}
+    if(e.circ||e.bow)return null;const A=eaPlanPt(v,e.x1),B=eaPlanPt(v,e.x2),za=-e.y1,zb=-e.y2,lo=Math.min(za,zb),L=sortedLevels(P);let lv=L[0];for(const l of L)if(l.elev<=lo+1)lv=l;if(!lv)return null;
+    return{id:P.seq++,cat:'mline',level:lv.id,x1:r(A.p[0]),y1:r(A.p[1]),x2:r(B.p[0]),y2:r(B.p[1]),vz:[r(za),r(zb)],style:st}}
+  if(e.cat!=='mline')return null;
+  if(v.kind==='plan'){if((e.vz&&Math.abs(e.vz[0]-e.vz[1])>=1)||!planShow(v,e))return null;const o={id:P.seq++,cat:'dline',view:avid(v),x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,style:st};if(e.circ)o.circ=1;else if(e.bow&&!e.vz)o.bow=e.bow;return o}
+  if(e.circ||(e.bow&&!e.vz))return null;const f=viewDir(v),R=[-f[1],f[0]],dx=e.x2-e.x1,dy=e.y2-e.y1,Lp=Math.hypot(dx,dy);if(Lp>=1&&Math.abs(dx*f[0]+dy*f[1])>0.01*Lp)return null;          // across the view: not parallel to it
+  const z=elev(P,e.level)+(e.off||0),za=e.vz?e.vz[0]:z,zb=e.vz?e.vz[1]:z,o={id:P.seq++,cat:'dline',view:avid(v),x1:r(e.x1*R[0]+e.y1*R[1]),y1:r(-za),x2:r(e.x2*R[0]+e.y2*R[1]),y2:r(-zb),style:st};
+  return Math.hypot(o.x2-o.x1,o.y2-o.y1)>=1?o:null}
+XA.cvl387=()=>{const v=activeView();if(!cvlView387(v)){toast(t('cvl_view387'));return}const ids0=[...ui.sel].filter(id=>cvlLine387(IDX.get(id)));if(!ids0.length){toast(t('cvl_need387'));return}
+  let nm=0,nd=0,sk=0;const ids=[];
+  edit(()=>{const gone=new Set();for(const id of ids0){const e=IDX.get(id);if(!cvlLine387(e)||grpOf(id)){sk++;ids.push(id);continue}const n=cvlOne387(v,e);if(!n){sk++;ids.push(id);continue}
+      if(n.cat==='dline'){P.ann.push(n);nd++}else{P.els.push(n);nm++}gone.add(id);ids.push(n.id)}
+    if(gone.size){P.els=P.els.filter(x=>!gone.has(x.id));P.ann=P.ann.filter(x=>!gone.has(x.id))}});
+  ui.sel=new Set(ids);refresh();toast((nm||nd?t('cvl_done387',nm,nd)+(sk?' · ':''):'')+(sk?t('cvl_skip387',sk):''),6000)};          // what could not be converted stays selected
+/* the button on the Modify | Lines tab */
+{const f0=ctxPanels;ctxPanels=()=>{const out=f0();if(ui.tool!=='modify'||!ui.sel.size||!cvlView387(activeView())||![...ui.sel].every(id=>cvlLine387(IDX.get(id))))return out;
+  const pre=t('p_modify')+' | ',p=out.find(q=>q.title&&q.title.startsWith(pre));if(p){p.b=p.b.slice();const i=p.b.indexOf('@delete');p.b.splice(i<0?p.b.length:i,0,'@cvl387')}else out.push({t:'p_edit236',b:['@cvl387']});return out}}
+Object.assign(BTN,{'@cvl387':['cvl387','']});
+{const sp=document.querySelector('#sprite defs');if(sp&&!document.getElementById('i-cvl387'))sp.insertAdjacentHTML('beforeend','<symbol id="i-cvl387" viewBox="0 0 24 24"><path d="M3 7h12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M9 17h12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.4 1.8"/><path d="M18 4l3 3-3 3M21 7h-3M6 14l-3 3 3 3M3 17h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>')}
+Object.assign(STR,{a_cvl387:['แปลงเส้น (Convert Lines)','Convert Lines'],cvl_view387:['แปลงเส้นได้ในแปลน รูปด้าน และรูปตัด (ไม่ใช่มุมมองเขียนแบบ ตำนาน แผ่นงาน หรือ 3D)','Convert Lines works in plans, elevations and sections (not in drafting views, legends, sheets or 3D)'],
+  cvl_need387:['เลือกเส้นรายละเอียดหรือเส้นโมเดลก่อน','Select detail lines or model lines first'],cvl_done387:['แปลงเป็นเส้นโมเดล {0} เส้น เป็นเส้นรายละเอียด {1} เส้น','{0} made model lines, {1} made detail lines'],
+  cvl_skip387:['{0} เส้นแปลงไม่ได้ (อยู่ในกลุ่ม ไม่เห็นในมุมมองนี้หรือไม่ขนานกับมุมมอง หรือเป็นเส้นโค้งในรูปด้าน)','{0} could not be converted (in a group, not seen in this view or not parallel to it, or a curve in an elevation)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -46749,6 +46780,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ปลายเส้นกริดในรูปด้าน: คลิกเส้นหรือหัวกริดในรูปด้านหรือรูปตัด ลากจุดกลมที่ปลายบนหรือล่าง ป้าย 3D/2D แม่กุญแจ และช่องติ๊กหัวกริดอยู่ข้างปลาย คืนปลายเดิมหรือใช้ปลาย 2D กับมุมมองอื่นได้ในคุณสมบัติ
 - ข้อศอกเส้นระดับ: เลือกเส้นระดับ คลิกไอคอนเส้นหักใต้ปลายเส้น ลากจุดกลางข้อศอกขึ้นลง หรือพิมพ์ในคุณสมบัติ (มม.บนกระดาษ ขึ้นเป็นบวก)
 - ข้อศอกเส้นกริดในรูปด้าน: เลือกเส้นกริด คลิกไอคอนเส้นหักข้างปลาย ลากจุดกลางข้อศอกซ้ายขวา หรือพิมพ์ในคุณสมบัติ (มม.บนกระดาษ ขวาเป็นบวก)
+- แปลงเส้น: เลือกเส้นรายละเอียดหรือเส้นโมเดลในแปลน รูปด้าน หรือรูปตัด แล้วกดแปลงเส้น (Convert Lines) ที่แท็บ Modify เส้นโมเดลในรูปด้านต้องขนานกับรูปจึงแปลงได้
 - ปลายกริดตรงกันเอง: เมื่อวาดกริดเส้นถัดไป ให้เลื่อนเมาส์เข้าใกล้แนวปลายของกริดที่มีอยู่ จะมีเส้นประนำแนวขึ้นและจุดจะเข้าแนวเดียวกันพอดี ทั้งจุดเริ่มและจุดปลาย หัวกริดจึงเรียงเป็นแถว · ก่อนคลิกจุดเริ่ม โปรแกรมบอกระยะห่างจากกริดข้างเคียง พิมพ์ระยะที่ต้องการแล้วกด Enter เพื่อเริ่มที่ระยะนั้นได้เลย · ถ้าวาดเกือบขนานหรือเกือบตั้งฉากกับกริดเดิม เส้นใหม่จะขนานหรือตั้งฉากให้พอดี
 - [[o_gridmatch]] (ช่องติ๊กบนแถบตัวเลือกขณะใช้เครื่องมือกริด เปิดไว้ตั้งแต่ต้น): กริดที่วาดด้วยมือแล้วปลายสั้นหรือยาวกว่ากริดข้างเคียงเล็กน้อย จะถูกยืดหรือหดให้ปลายเท่ากับกริดข้างเคียงทันทีที่วาง · หัวกริดจะอยู่ด้านเดียวกับกริดข้างเคียงเสมอ แม้ลากเส้นกลับทิศ (ขณะวาดมีวงกลมบอกว่าหัวกริดจะอยู่ปลายไหน) · ปลายที่จับจุดไว้แน่นอนหรือพิมพ์ความยาวเองจะไม่ถูกเปลี่ยน · เอาเครื่องหมายออกเมื่อต้องการกริดที่ยาวไม่เท่าเส้นอื่น หรือต้องการหัวกริดอยู่อีกด้าน
 - ย้ายกริด: ลากที่ตัวเส้น กริดจะขยับไปด้านข้างเท่านั้น (ตั้งฉากกับตัวเอง) ปลายจึงไม่เหลื่อมกัน · กด Shift ค้างถ้าต้องการขยับอิสระ · [[t_move]] [[t_copy]] และ [[t_array]] ของกริดก็เช่นกัน ถ้าจุดที่คลิกเยื้องตามแนวเส้นเพียงเล็กน้อย
@@ -46973,6 +47005,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Grid ends in elevations: click a grid's line or bubble in an elevation or a section and drag the round grip at its top or bottom; the 3D/2D tag, the lock and the bubble boxes are by the ends; Reset Grid Ends and Propagate Extents are in Properties
 - Level elbows: select a level, click the jog icon under an end, drag the grip in the middle of the elbow up or down, or type it in Properties (paper mm, up is +)
 - Grid elbows in elevations: select a grid, click the jog icon by an end, drag the grip in the middle of the elbow left or right, or type it in Properties (paper mm, right is +)
+- Convert Lines: select detail or model lines in a plan, an elevation or a section and click Convert Lines on the Modify tab; in an elevation a model line must lie parallel to the view
 - The ends of grids fall into line: when you draw the next grid, bring the pointer near the end line of the grids there — a dashed guide shows and the point lands exactly on that line, at the start and at the end, so the bubbles stand in a row · before the first click the distance from the grid beside it is shown; type the distance you want and press Enter to start there · a grid drawn all but along or across the grids there is made exactly so
 - [[o_gridmatch]] (a tick in the options bar while the grid tool is on; ticked to begin with): a grid drawn by eye whose ends are a little short of or beyond those of the grid beside it is stretched or shortened to match them as it is placed · its bubble comes on the side where the grid beside it has its own, even when it is drawn the other way round (a circle shows the bubble end while you draw) · an end put on a snap point, or a length you typed, is left as it is · untick it when a grid is meant to be of another length, or to have its bubble on the other side
 - Moving a grid: drag its line and it goes sideways only (at right angles to itself), so its ends stay in line · hold Shift to move it freely · [[t_move]], [[t_copy]] and [[t_array]] of grids do the same when the two picked points are only slightly askew
@@ -47864,6 +47897,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.384 · เส้นกริดในรูปด้านและรูปตัดแบบ Revit: คลิกเส้นหรือหัวกริดเพื่อเลือก (ดูคุณสมบัติ ลบ ดับเบิลคลิกเปลี่ยนชื่อ) ลากจุดกลมที่ปลายบนหรือล่างให้กริดเริ่มหรือจบที่ความสูงอื่น ปลายแบบ 3D ใช้กับทุกรูปด้านและรูปตัด คลิกป้าย 3D ให้เป็น 2D เฉพาะมุมมองนี้ ปลายที่สูงเท่ากันลากไปด้วยกัน แม่กุญแจปลดให้ลากเส้นเดียว ช่องติ๊กเปิดปิดหัวกริดบนและล่างของกริดนั้น
 - V1.385 · ข้อศอกเส้นระดับแบบ Revit (Add Elbow): เลือกเส้นระดับในรูปด้านหรือรูปตัด คลิกไอคอนข้อศอกข้างปลาย เส้นหักขึ้นให้หัวระดับยกสูงหรือต่ำลง (ระดับที่อยู่ชิดกันหัวไม่ทับกัน) ลากจุดกลางข้อศอกเพื่อปรับ หรือพิมพ์ขนาดในคุณสมบัติ คลิกไอคอนอีกครั้งเพื่อลบ
 - V1.386 · ข้อศอกเส้นกริดในรูปด้านและรูปตัดแบบ Revit (Add Elbow): เลือกเส้นกริด คลิกไอคอนข้อศอกข้างปลายบนหรือล่าง เส้นหักให้หัวกริดหลบไปด้านข้าง (กริดที่อยู่ชิดกันหัวไม่ทับกัน) ลากจุดกลางข้อศอกเพื่อปรับ หรือพิมพ์ขนาดในคุณสมบัติ แต่ละรูปด้านและรูปตัดเก็บข้อศอกของตัวเองเหมือน Revit
+- V1.387 · แปลงเส้นแบบ Revit (Convert Lines): เลือกเส้นรายละเอียดแล้วกดแปลงเส้นที่แท็บ Modify เส้นกลายเป็นเส้นโมเดล (เห็นในทุกมุมมองและ 3D) และเส้นโมเดลกลายเป็นเส้นรายละเอียดของมุมมองนี้ คงลักษณะเส้น เส้นโค้งและวงกลมในแปลน ในรูปด้านและรูปตัดเส้นไปอยู่บนระนาบของรูป
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -48392,6 +48426,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.384 · Grids in elevations and sections as in Revit: click a grid's line or bubble to select it (Properties, Delete, double-click to rename), drag the round grip at its top or bottom end to start or stop it at another height. 3D ends are the same in every elevation and section; click the 3D tag for 2D ends of this view only. Ends at the same height drag together, the lock lets one go alone, and the boxes show or hide that grid's top and bottom bubbles
 - V1.385 · Level elbows as in Revit (Add Elbow): select a level in an elevation or a section and click the elbow icon by an end: the line jogs so that the head stands higher or lower (levels close together, heads apart). Drag the grip in the middle of the jog, or type the size in Properties; click the icon again to remove it
 - V1.386 · Grid elbows in elevations and sections as in Revit (Add Elbow): select a grid and click the elbow icon by its top or bottom end: the line jogs so that the bubble stands to the side (grids close together, bubbles apart). Drag the grip in the middle of the jog, or type the size in Properties; each elevation and section keeps its own, as in Revit
+- V1.387 · Convert Lines as in Revit: select detail lines and click Convert Lines on the Modify tab: they become model lines (seen in every view and 3D), and model lines become detail lines of this view, keeping their line style, and in a plan their arcs and circles. In an elevation or a section the lines go onto the plane of the view
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -50642,6 +50677,29 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r387={
+  view:k=>{const v=k==='plan'?P.views.find(x=>x.kind==='plan'&&!x.draft&&!x.rcp&&!x.area):k==='sec'?P.views.find(x=>x.kind==='section'):k==='draft'?P.views.find(x=>x.draft):P.views.find(x=>x.kind==='elev'&&x.dir===k&&!x.ea);return v?v.id:null},
+  lv:n=>{const l=P.levels.find(x=>String(x.name)===String(n));return l?l.id:null},
+  mkd:(vid,a,o)=>{let id;edit(()=>{id=P.seq++;P.ann.push(Object.assign({id,cat:'dline',view:vid,x1:a[0],y1:a[1],x2:a[2],y2:a[3],style:'thin'},o||{}))});refresh();return id},
+  mkm:(lv,a,o)=>{let id;edit(()=>{id=P.seq++;P.els.push(Object.assign({id,cat:'mline',level:lv,x1:a[0],y1:a[1],x2:a[2],y2:a[3],style:'thin'},o||{}))});refresh();return id},
+  get:id=>{const e=IDX.get(id);if(!e)return null;const o={};for(const k of ['cat','view','level','x1','y1','x2','y2','vz','style','off','bow','circ','grp'])if(e[k]!==undefined)o[k]=e[k];return o},
+  conv:ids=>{ui.sel=new Set(ids);refresh();window.PenumBIM.act('cvl387');return[...ui.sel]},
+  sel:()=>[...ui.sel],
+  toast:()=>{const t0=document.querySelector('#toast');return t0?t0.textContent:''},
+  rib:()=>!!document.querySelector('#ribbon [data-act="cvl387"]'),
+  ribTitle:()=>{const b=document.querySelector('#ribbon [data-act="cvl387"]');const p=b&&b.closest('.rp');return p?p.querySelector('.tl').textContent:null},
+  hplane:vid=>{const v=viewById(vid),f=viewDir(v);return[-f[1],f[0]]},
+  plane:(vid,x)=>{const r=eaPlanPt(viewById(vid),x);return r.p.map(Math.round)},
+  wp:(vid,on)=>{const v=viewById(vid);return wpOff(P,v,v.level,0)},
+  group:ids=>{ui.sel=new Set(ids);refresh();window.PenumBIM.act('group');return ids.map(id=>(IDX.get(id)||{}).grp||0)},
+  keys:()=>lsKeys(P),
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(0,x,y);return[s.x,s.y]},
+  ink:(x,y,r)=>{const pn=PANES[0],B=window.PenumBIM.toScreen(0,x,y),c=pn.cv,Rc=c.getBoundingClientRect(),k=c.width/Rc.width,X=Math.round((B.x-Rc.left)*k),Y=Math.round((B.y-Rc.top)*k),n=Math.round((r||4)*k);
+    const q=c.getContext('2d').getImageData(X-n,Y-n,2*n+1,2*n+1).data;let m=0;for(let j=0;j<q.length;j+=4)if(q[j]+q[j+1]+q[j+2]<690)m++;return m},
+  bb:()=>{const b=MSm().bb;return b.map(Math.round)},
+  json:()=>projStr(),load:s=>{setProject(migrate(JSON.parse(s),ui.lang==='en'),true);return true},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r386={
   grid:n=>{const g=P.grids.find(x=>String(x.name)===String(n));return g?g.id:null},
   view:dir=>{const v=P.views.find(x=>x.kind==='elev'&&x.dir===dir&&!x.ea);return v?v.id:null},
