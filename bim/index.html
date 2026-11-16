@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=434,V1_NAME='V1.424';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=435,V1_NAME='V1.425';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47928,6 +47928,103 @@ function spSegD424(p,L){let d=Infinity;for(let i=0;i<L.length;i++){const A=L[i],
   if(!M.m){if(Math.hypot(p.x-M.x,p.y-M.y)<6)return null;M.m=a&&spSegD424(p,g.ana)<spSegD424(p,g.pts)?'ana':'day';if(M.m==='day')return f0(v,p,pn)}
   if(!a)return null;v.sun={az:Math.round(a.az*10)/10,alt:Math.round(clamp(a.alt,2,90)*10)/10,date:a.date,time:g.time};redraw();return v.sun}}
 Object.assign(STR,{sol424_sum:['ครีษมายัน','Summer Solstice'],sol424_win:['เหมายัน','Winter Solstice'],sol424_jun:['21 มิ.ย.','Jun 21'],sol424_dec:['21 ธ.ค.','Dec 21']});
+/* ===== V1.425 Divide Surface on a mass (Revit: select a face of a mass, Divide Surface; the divided surface's U Grid and V Grid by Number or Distance, its
+   rotation, its pattern (Rectangle, Rectangle Checkerboard, 1/2 Step, 1/3 Step, Triangle, Triangle Checkerboard, Rhomboid, Hexagon, Zigzag) and its Border Tile
+   (Partial, Overhanging, Empty)).  Kept on the mass: m.ds425 = {t: top face, '0'…: the side from outline point k} → options.  Drawn as lines on the face in 3D,
+   the checkerboard patterns with every other panel filled; panels counted per face. */
+const DS_PAT425=['none','rect','rcheck','half','third','tri','tcheck','rhomb','hex','zig'],DS_BD425=['partial','over','empty'],DS_MAX425=100;
+function dsOpt425(o){o=o||{};const L=(x,a,b,d)=>{const v=x===''||x==null?NaN:+x;return isFinite(v)?Math.max(a,Math.min(b,v)):d};
+  return{ul:o.ul==='d'?'d':'n',un:Math.round(L(o.un,1,DS_MAX425,10)),ud:L(o.ud,50,100000,1000),vl:o.vl==='d'?'d':'n',vn:Math.round(L(o.vn,1,DS_MAX425,10)),vd:L(o.vd,50,100000,1000),
+    rot:L(o.rot,-360,360,0),pat:DS_PAT425.includes(o.pat)?o.pat:'none',bd:DS_BD425.includes(o.bd)?o.bd:'partial'}}
+const dsKeys425=m=>m&&m.cat==='mass'&&!m.void&&m.ds425&&typeof m.ds425==='object'?Object.keys(m.ds425).filter(k=>k==='t'||(/^\d+$/.test(k)&&+k<m.pts.length)):[];
+/* the face of mass m: D its outline in face coordinates (u along, v up; the top turned by the rotation), W(u, v) the point 3 mm off it, U and V its size */
+function dsFace425(P0,m,key,o){const zr=zRange(P0,m),np=m.pts.length;
+  if(key==='t'){const r=(o.rot||0)*Math.PI/180,cu=[Math.cos(r),Math.sin(r)],cv=[-Math.sin(r),Math.cos(r)],Q=m.pts.map(p=>[p[0]*cu[0]+p[1]*cu[1],p[0]*cv[0]+p[1]*cv[1]]);
+    const u0=Math.min(...Q.map(q=>q[0])),v0=Math.min(...Q.map(q=>q[1])),D=Q.map(q=>[q[0]-u0,q[1]-v0]);
+    return{D,U:Math.max(...D.map(q=>q[0])),V:Math.max(...D.map(q=>q[1])),W:(u,v)=>{const a=u+u0,b=v+v0;return[a*cu[0]+b*cv[0],a*cu[1]+b*cv[1],zr[1]+3]}}}
+  const k=+key;if(!(k>=0&&k<np))return null;const A=m.pts[k],B=m.pts[(k+1)%np],L=Math.hypot(B[0]-A[0],B[1]-A[1]);if(L<1)return null;const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,sg=area2(m.pts)>0?1:-1,H=zr[1]-zr[0];
+  return{D:[[0,0],[L,0],[L,H],[0,H]],U:L,V:H,W:(u,v)=>[A[0]+ux*u+uy*sg*3,A[1]+uy*u-ux*sg*3,zr[0]+v]}}
+/* one direction of the grid over length len: by Number n equal parts, by Distance d from the middle (Revit's Justification: Center); nodes at o + i·s for i from i0 */
+function dsAxis425(len,lay,n,d){if(lay!=='d')return{s:len/n,o:0,i0:0,n};const s=Math.max(d,len/DS_MAX425),r=len-Math.floor(len/s+1e-9)*s,o=r>1e-6?r/2:0;return{s,o,i0:o>1e-6?-1:0,n:Math.ceil((len-o)/s-1e-9)}}
+/* the tiles of a pattern over cells I0..I1 × J0..J1 (index space, a node every 1): [{q, f (filled in a checkerboard)}] */
+function dsTiles425(pat,I0,I1,J0,J1){const out=[],md=(a,b)=>((a%b)+b)%b,R=(i,j,s)=>[[i+s,j],[i+1+s,j],[i+1+s,j+1],[i+s,j+1]];
+  if(pat==='none'||pat==='rect'||pat==='rcheck'){for(let i=I0;i<I1;i++)for(let j=J0;j<J1;j++)out.push({q:R(i,j,0),f:pat==='rcheck'&&md(i+j,2)===0?1:0})}
+  else if(pat==='half'||pat==='third'){for(let j=J0;j<J1;j++){const s=pat==='half'?md(j,2)/2:md(j,3)/3;for(let i=I0-1;i<I1;i++)out.push({q:R(i,j,s),f:0})}}
+  else if(pat==='tri'||pat==='tcheck'){for(let i=I0;i<I1;i++)for(let j=J0;j<J1;j++){if(pat==='tri'||md(i+j,2)===0){out.push({q:[[i,j],[i+1,j],[i+1,j+1]],f:pat==='tcheck'?1:0});out.push({q:[[i,j],[i+1,j+1],[i,j+1]],f:0})}
+    else{out.push({q:[[i,j],[i+1,j],[i,j+1]],f:0});out.push({q:[[i+1,j],[i+1,j+1],[i,j+1]],f:1})}}}
+  else if(pat==='rhomb'){for(let i=I0-1;i<=I1+1;i++)for(let j=J0-1;j<=J1+1;j++)if(md(i+j,2)===0)out.push({q:[[i,j-1],[i+1,j],[i,j+1],[i-1,j]],f:0})}
+  else if(pat==='hex'){const H=[[0,1],[1,0],[2,0],[3,1],[2,2],[1,2]];for(let a=Math.floor((I0-3)/2)-1;a<=Math.ceil(I1/2)+1;a++)for(let b=Math.floor((J0-2-a)/2)-1;b<=Math.ceil((J1-a)/2)+1;b++){const dx=2*a,dy=a+2*b;out.push({q:H.map(p=>[p[0]+dx,p[1]+dy]),f:0})}}
+  else if(pat==='zig'){const o=i=>md(i,2);for(let i=I0;i<I1;i++)for(let j=J0-1;j<J1;j++)out.push({q:[[i,j+o(i)],[i+1,j+o(i+1)],[i+1,j+1+o(i+1)],[i,j+1+o(i)]],f:0})}
+  return out}
+const dsArea425=q=>Math.abs(area2(q));
+/* what is left of outline D inside the convex tile q */
+function dsClip425(D,q){const sg=area2(q)>0?1:-1;let r=D;for(let i=0;i<q.length&&r.length>=3;i++){const a=q[i],b=q[(i+1)%q.length];r=clipHP(r,p=>sg*((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])))}return r}
+/* the divided face key of mass m: its panels (face coordinates) by the Border Tile, how many, and W to place them */
+function dsGeo425(P0,m,key){const o=dsOpt425((m.ds425||{})[key]),F=dsFace425(P0,m,key,o);if(!F||F.U<1||F.V<1)return null;
+  const ax=dsAxis425(F.U,o.ul,o.un,o.ud),ay=dsAxis425(F.V,o.vl,o.vn,o.vd),uv=p=>[ax.o+p[0]*ax.s,ay.o+p[1]*ay.s],panels=[];
+  for(const T of dsTiles425(o.pat,ax.i0,ax.n,ay.i0,ay.n)){const q=T.q.map(uv),A=dsArea425(q);if(A<1)continue;const c=dsClip425(F.D,q),a=c.length>=3?dsArea425(c):0;if(a<1)continue;
+    if(o.bd==='empty'&&a<A*0.995)continue;panels.push({q:o.bd==='over'?q:c,f:T.f,whole:a>=A*0.995})}
+  return{o,F,ax,ay,panels,n:o.pat==='none'?0:panels.length}}
+/* 3D: the panels' edges on the mass (its lines), the filled ones of a checkerboard a second, darker part */
+{const f0=buildMeshes;buildMeshes=function(P0,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items)return R;
+  for(const m of P0.els||[]){const K=dsKeys425(m);if(!K.length)continue;const it=items.find(x=>x.id===m.id&&x.cat==='mass');if(!it)continue;let fill=null;
+    for(const key of K){const G=dsGeo425(P0,m,key);if(!G)continue;
+      for(const pn of G.panels){const W=pn.q.map(p=>G.F.W(p[0],p[1]));for(let i=0;i<W.length;i++){const a=W[i],b=W[(i+1)%W.length];it.l.push(a[0],a[2],a[1],b[0],b[2],b[1])}
+        if(pn.f){if(!fill){fill={id:m.id,cat:'mass',c:[0.42,0.32,0.7],a:0.55,t:[],l:[],s:[]};items.push(fill)}const ix=earclip(pn.q);for(let i=0;i+2<ix.length;i+=3){const Q=[ix[i],ix[i+1],ix[i+2]].map(k=>G.F.W(pn.q[k][0],pn.q[k][1]));
+          fill.t.push(Q[0][0],Q[0][2],Q[0][1],Q[1][0],Q[1][2],Q[1][1],Q[2][0],Q[2][2],Q[2][1],Q[0][0],Q[0][2],Q[0][1],Q[2][0],Q[2][2],Q[2][1],Q[1][0],Q[1][2],Q[1][1])}}}}}
+  return R}}
+/* the tool: pick faces of masses (sides and tops) in a plan, 3D, elevation or section, then Divide Surface */
+function dsPick425(pn,v,p){if(v.kind==='plan'){const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=10/nav.s;return mfPickPlan(v,w,tol,'wall')||mfPickPlan(v,w,tol,'roof')}
+  const f=mfPick3(pn,v,p,'wall');return f?{m:f.m,k:f.top?-1:f.k}:null}
+function dsToggle425(f){const S=ui.mf;if(!S)return;const m=f&&IDX.get(f.m);if(!m||m.void){toast(t('ds425_pick'));return}const i=S.f.findIndex(q=>q.m===f.m&&q.k===f.k);if(i>=0)S.f.splice(i,1);else S.f.push({m:f.m,k:f.k});refresh()}
+function dsMake425(){const S=ui.mf;if(!S)return;const F=S.f.filter(mfFaceOk);if(!F.length){toast(t('mf_pick0'));return}let n=0;const ms=new Set();
+  edit(()=>{for(const f of F){const m=IDX.get(f.m);if(!m||m.void)continue;const key=f.k===-1?'t':String(f.k);m.ds425=m.ds425||{};if(!m.ds425[key]){m.ds425[key]={};n++}ms.add(m.id)}});
+  setTool('modify');ui.sel=new Set(ms);refresh();toast(t('ds425_made',n))}
+{const base=mfTool('roof');XT.ds425=Object.assign({},base,{on(){ui.mf={kind:'ds',f:[],h:null};ui.sel.clear();ui.hov=null},
+  hint(){const n=ui.mf?ui.mf.f.length:0;return n?t('h_mf_n',n):t('h_ds425')},
+  hov(pn,v,p){const S=ui.mf;if(!S)return null;const f=dsPick425(pn,v,p);S.h=f?{m:f.m,k:f.k,pn:pn.i}:null;return null},
+  opt(who){const n=ui.mf?ui.mf.f.length:0;return who+`<span>${esc(t('o_ds425'))}</span><button type="button" class="btn${n?' primary':''}" data-act="dsmake425"${n?'':' disabled'}>${esc(t('t_ds425'))}${n?' ('+n+')':''}</button><button type="button" class="btn" data-act="mfclear"${n?'':' disabled'}>${esc(t('a_mfclear'))}</button>`},
+  click(pn,v,p){dsToggle425(dsPick425(pn,v,p))},click3(pn,v,p){dsToggle425(dsPick425(pn,v,p))},fin(){dsMake425()}})}
+XA.dsmake425=()=>{if(ui.mf&&ui.mf.kind==='ds')dsMake425()};
+/* Edit Divided Surface: a row per divided face of the mass */
+const dsName425=key=>key==='t'?t('ds425_top'):t('ds425_side',+key+1);
+function dlgDS425(id){const m=IDX.get(id!=null?id:[...ui.sel][0]);if(!m||m.cat!=='mass')return;const was=$('#dlg').open&&ui.dlg&&ui.dlg.ds425,k0=was&&$('#dlg .dc')?$('#dlg .dc').scrollTop:0,K=dsKeys425(m);
+  const sel=(key,f,L,pre,v)=>`<select data-ds="${key}" data-f="${f}">${L.map(x=>`<option value="${x}"${x===v?' selected':''}>${esc(t(pre+x))}</option>`).join('')}</select>`,
+    num=(key,f,v,st)=>`<input type="number" data-ds="${key}" data-f="${f}" value="${Math.round(v*100)/100}" step="${st}" style="width:68px">`;let tot=0;
+  const rows=K.map(key=>{const G=dsGeo425(P,m,key),o=G?G.o:dsOpt425(m.ds425[key]);tot+=G?G.n:0;
+    return`<tr><td>${esc(dsName425(key))}</td><td>${sel(key,'ul',['n','d'],'ds425_lay_',o.ul)} ${o.ul==='d'?num(key,'ud',o.ud,50):num(key,'un',o.un,1)}</td><td>${sel(key,'vl',['n','d'],'ds425_lay_',o.vl)} ${o.vl==='d'?num(key,'vd',o.vd,50):num(key,'vn',o.vn,1)}</td>`
+      +`<td>${key==='t'?num(key,'rot',o.rot,5):'–'}</td><td>${sel(key,'pat',DS_PAT425,'ds425_p_',o.pat)}</td><td>${sel(key,'bd',DS_BD425,'ds425_b_',o.bd)}</td><td style="text-align:right">${G?G.n:0}</td><td><button class="btn" data-dsdel="${key}" title="${esc(t('ds425_del'))}">×</button></td></tr>`}).join('');
+  openDlg(t('a_dsedit425'),`<p class="note">${esc(t('ds425_note'))}</p><div class="tblw" style="overflow-x:auto"><table class="tbl" id="ds425Tbl"><thead><tr><th>${esc(t('ds425_face'))}</th><th>U Grid</th><th>V Grid</th><th>${esc(t('ds425_rot'))}</th><th>${esc(t('ds425_pat'))}</th><th>${esc(t('ds425_bd'))}</th><th>${esc(t('ds425_n'))}</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="8">${esc(t('ds425_none'))}</td></tr>`}</tbody></table></div><p class="note">${esc(t('ds425_tot',tot))}</p>`,
+    `<button class="btn" data-act="ds425tool">${esc(t('t_ds425'))}</button><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {ds425:m.id,click(ev){const b=ev.target.closest('[data-dsdel]');if(!b)return;const key=b.dataset.dsdel;edit(()=>{if(m.ds425){delete m.ds425[key];if(!Object.keys(m.ds425).length)delete m.ds425}});dlgDS425(m.id)},
+     change(ev){const el=ev.target,key=el.dataset.ds,f=el.dataset.f;if(!key||!f||!m.ds425||!m.ds425[key])return;const o=m.ds425[key];
+       edit(()=>{if(['ul','vl','pat','bd'].includes(f))o[f]=el.value;else{const v=+el.value;if(el.value===''||!isFinite(v))delete o[f];else o[f]=v}Object.assign(o,(({ul,un,ud,vl,vn,vd,rot,pat,bd})=>{const r={ul,vl,pat,bd};if(ul==='n')r.un=un;else r.ud=ud;if(vl==='n')r.vn=vn;else r.vd=vd;if(key==='t'&&rot)r.rot=rot;return r})(dsOpt425(o)));
+         for(const k of ['un','ud','vn','vd','rot'])if(o.ul==='n'&&k==='ud'||o.ul==='d'&&k==='un'||o.vl==='n'&&k==='vd'||o.vl==='d'&&k==='vn'||k==='rot'&&(key!=='t'||!o.rot))delete o[k]});dlgDS425(m.id)}},'wide');
+  if(k0)$('#dlg .dc').scrollTop=k0}
+XA.dsedit425=()=>dlgDS425();XA.ds425tool=()=>{closeDlg();setTool('ds425')};
+/* Properties of one mass: how many faces are divided and into how many panels, the tool and the dialog */
+XP.push((c,els)=>{if(c!=='mass'||els.length!==1||els[0].void)return'';const m=els[0],K=dsKeys425(m);let n=0;for(const key of K){const G=dsGeo425(P,m,key);if(G)n+=G.n}
+  return PR.grp('g_ds425')+PR.ro('p_ds425',K.length?t('ds425_sum',K.length,n):t('ds425_none'))+`<div class="pa"><button class="btn" data-act="ds425tool">${t('t_ds425')}</button>${K.length?`<button class="btn" data-act="dsedit425">${t('a_dsedit425')}</button>`:''}</div>`});
+XC.push(()=>{for(const m of P.els){if(!('ds425' in m))continue;if(m.cat!=='mass'||m.void||!m.ds425||typeof m.ds425!=='object'||Array.isArray(m.ds425)){delete m.ds425;continue}
+  for(const key of Object.keys(m.ds425)){const o=m.ds425[key];if(!(key==='t'||(/^\d+$/.test(key)&&+key<(m.pts||[]).length))||!o||typeof o!=='object'||Array.isArray(o)){delete m.ds425[key];continue}
+    const d=dsOpt425(o);for(const k of Object.keys(o)){if(!['ul','un','ud','vl','vn','vd','rot','pat','bd'].includes(k))delete o[k];else if(o[k]!==d[k])o[k]=d[k]}}
+  if(!Object.keys(m.ds425).length)delete m.ds425}});
+/* the ribbon: Architecture › Massing, after Wall by Face */
+{const ar=RIBBON.find(r=>r.id==='arch'),pl=ar&&ar.panels.find(p=>p.t==='p_mass');if(pl&&!pl.b.includes('ds425'))pl.b.push('ds425')}
+Object.assign(BTN,{ds425:['ds425','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`,ln=d=>`<path class="i-e" fill="none" stroke="#2a3550" stroke-width=".5" d="${d}"/>`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-ds425" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.8" rx="9" ry="1.3"/><path ${e('i-Sb')} fill="#acbbd2" d="M3 8.5 12 12.5 12 21 3 17z"/><path ${e('i-Mb')} fill="#b7a6e3" d="M12 12.5 21 8.5 21 17 12 21z"/><path ${e('i-Sa')} fill="#e9edf4" d="M3 8.5 12 4.5 21 8.5 12 12.5z"/>`
+    +ln('M15 11.2V19.7M18 9.8V18.3M12 15.3 21 11.3M12 18.2 21 14.2')+`<path class="i-Mb" fill="#6b52b3" opacity=".7" d="M12 12.5 15 11.2 15 14 12 15.3zM15 14 18 12.7 18 15.5 15 16.8zM18 9.8 21 8.5 21 11.3 18 12.7z"/></symbol>`)})();
+Object.assign(STR,{t_ds425:['แบ่งผิว (Divide Surface)','Divide Surface'],h_ds425:['แบ่งผิว: คลิกผิวด้านข้างหรือผิวบนของมวลทีละผิว (คลิกซ้ำเพื่อเอาออก) แล้วกด Enter','Divide Surface: click side or top faces of masses one by one (click again to drop one), then press Enter'],
+  o_ds425:['ผิวมวลที่จะแบ่ง','Mass faces to divide'],ds425_pick:['คลิกผิวของมวลอาคาร (ไม่ใช่มวลเจาะ)','Click a face of a mass (not a void)'],ds425_made:['แบ่งผิวแล้ว {0} ผิว แก้จำนวนช่องและลายใน Properties','{0} faces divided: set their grids and pattern in Properties'],
+  a_dsedit425:['แก้การแบ่งผิว… (Edit Divided Surface)','Edit Divided Surface…'],g_ds425:['แบ่งผิว (Divided Surface)','Divided Surface'],p_ds425:['ผิวที่แบ่ง','Divided faces'],
+  ds425_sum:['{0} ผิว · {1} แผง','{0} faces · {1} panels'],ds425_none:['ยังไม่ได้แบ่งผิว','No face divided'],ds425_top:['ผิวบน','Top'],ds425_side:['ด้าน {0}','Side {0}'],ds425_face:['ผิว','Face'],
+  ds425_rot:['หมุน (°)','Rotation (°)'],ds425_pat:['ลาย (Pattern)','Pattern'],ds425_bd:['แผงที่ขอบ (Border Tile)','Border Tile'],ds425_n:['แผง','Panels'],ds425_del:['เลิกแบ่งผิวนี้','Undivide this face'],
+  ds425_tot:['รวม {0} แผง','{0} panels in all'],ds425_note:['U Grid แบ่งตามแนวนอนของผิว V Grid ตามแนวตั้ง (ผิวบน: ตามแนวที่หมุน) ใส่เป็นจำนวนช่อง (Number) หรือระยะ (Distance มม. เริ่มจากกลางผิว) ลายเลือกแบบ Revit','U Grid runs across the face, V Grid up it (on the top, along the rotation); by Number of parts or by Distance (mm, from the middle of the face); the pattern as in Revit'],
+  ds425_lay_n:['จำนวน','Number'],ds425_lay_d:['ระยะ','Distance'],
+  ds425_p_none:['ไม่มีลาย (No Pattern)','No Pattern'],ds425_p_rect:['สี่เหลี่ยม (Rectangle)','Rectangle'],ds425_p_rcheck:['สี่เหลี่ยมหมากรุก','Rectangle Checkerboard'],ds425_p_half:['เหลื่อม 1/2 (1/2 Step)','1/2 Step'],
+  ds425_p_third:['เหลื่อม 1/3 (1/3 Step)','1/3 Step'],ds425_p_tri:['สามเหลี่ยม (Triangle)','Triangle (Bent)'],ds425_p_tcheck:['สามเหลี่ยมหมากรุก','Triangle Checkerboard'],ds425_p_rhomb:['ข้าวหลามตัด (Rhomboid)','Rhomboid'],
+  ds425_p_hex:['หกเหลี่ยม (Hexagon)','Hexagon'],ds425_p_zig:['ซิกแซก (Zigzag)','Zigzag'],ds425_b_partial:['ตัดตามขอบ (Partial)','Partial'],ds425_b_over:['ยื่นเลยขอบ (Overhanging)','Overhanging'],ds425_b_empty:['เว้นว่าง (Empty)','Empty']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -50175,6 +50272,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.422 · ตั้งการต่อราวเฉพาะมุม (Edit Rail Joins) แบบ Revit: ใน Properties ของราวกันตกมีกลุ่มการต่อราวที่ปลาย บอกมุมหักที่จุดเริ่มและจุดปลาย และเลือกการต่อของแต่ละปลายได้ (ตามชนิด ตัดเฉียง ดัดโค้ง หรือไม่ต่อ) พร้อมรัศมีโค้งของปลายนั้น ราวสองเส้นที่มุมเดียวกันใช้ค่าเดียวกันเสมอ ถ้าตั้งทั้งสองเส้น เส้นที่วาดก่อนเป็นหลัก
 - V1.423 · ส่วนยื่นที่ปลายราวบน (Top Rail Extension) แบบ Revit: ในชนิดราวกันตกตั้งส่วนยื่นของปลายเริ่ม/ล่าง และปลายท้าย/บนได้ เลือกได้ว่าไม่มี หักเข้าผนัง หักลงพื้น หรือตั้งบนเสา พร้อมความยาว และปลายล่างของราวบันไดยื่นต่อตามความชันอีกหนึ่งลูกนอนได้ (Plus Tread Depth) แสดงทั้งในแปลนและ 3D ปลายที่ต่อกับราวเส้นอื่นไม่ยื่น
 - V1.424 · เส้นทางดวงอาทิตย์แบบ Revit: แสดงเลขแปดของแต่ละชั่วโมง (Analemma) คือตำแหน่งดวงอาทิตย์ที่ชั่วโมงนั้นตลอดปี พร้อมเส้นทางวันครีษมายันและเหมายัน ลากดวงอาทิตย์ไปตามเส้นทางของวันเพื่อเปลี่ยนเวลา หรือไปตามเลขแปดของชั่วโมงนั้น (เส้นประ) เพื่อเปลี่ยนวันที่โดยเวลาคงเดิม
+- V1.425 · แบ่งผิวมวลอาคาร (Divide Surface) แบบ Revit: เครื่องมือแบ่งผิวในแผงมวลอาคาร คลิกผิวด้านข้างหรือผิวบนของมวลแล้วกด Enter ผิวนั้นถูกแบ่งด้วย U Grid และ V Grid ตามจำนวนช่องหรือระยะ ผิวบนหมุนแนวได้ เลือกลายแผงได้ 9 แบบ (สี่เหลี่ยม หมากรุก เหลื่อม 1/2 และ 1/3 สามเหลี่ยม ข้าวหลามตัด หกเหลี่ยม ซิกแซก) และแผงที่ขอบให้ตัดตามขอบ ยื่นเลยขอบ หรือเว้นว่าง เห็นใน 3D และนับจำนวนแผงใน Properties
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50744,6 +50842,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.422 · Edit Rail Joins, as in Revit: a railing's Properties have a Rail Joins group showing the turn at its start and its end, and each end's join can be set apart from the type (By Type, Miter, Fillet or None) with its own Fillet Radius; both railings at a corner always agree, the one drawn first winning when both set it
 - V1.423 · Top Rail Extensions, as in Revit: a railing type sets the extension at its beginning/bottom and end/top (None, Wall, Floor or Post) with its length, and a stair railing's bottom end can carry on down the slope for one tread first (Plus Tread Depth); drawn in plan and 3D, never at an end joined to another railing
 - V1.424 · Sun Path as in Revit: each hour's analemma (where the sun stands at that hour through the year) and the summer and winter solstice paths; drag the sun along its day's path to change the time, or along its hour's analemma (dashed) to change the date at the same time of day
+- V1.425 · Divide Surface, as in Revit: a Divide Surface tool in the Massing panel: click side or top faces of masses and press Enter; each face gets a U Grid and a V Grid by Number or Distance (the top can be turned), one of nine panel patterns (Rectangle, Rectangle Checkerboard, 1/2 Step, 1/3 Step, Triangle, Triangle Checkerboard, Rhomboid, Hexagon, Zigzag) and a Border Tile (Partial, Overhanging, Empty); drawn in 3D, panels counted in Properties
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52996,6 +53095,21 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r425={
+  mass:(lid,pts,h,o)=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'mass',level:lid,pts,baseOff:0,height:h||9000},o||{});P.els.push(e);id=e.id});return id},
+  setDS:(id,key,o)=>{const m=IDX.get(id);if(!m)return false;edit(()=>{m.ds425=m.ds425||{};if(o==null)delete m.ds425[key];else m.ds425[key]=o;if(!Object.keys(m.ds425).length)delete m.ds425});return true},
+  ds:id=>{const m=IDX.get(id);return m&&m.ds425?JSON.parse(JSON.stringify(m.ds425)):null},
+  /* face key of mass id: the grid (cell size, offset, first index, count), how many panels, the first panels (face coordinates), whole or cut */
+  geo:(id,key,k)=>{const m=IDX.get(id);if(!m)return null;const G=dsGeo425(P,m,key);if(!G)return null;const R=x=>Math.round(x*10)/10,A=a=>({s:R(a.s),o:R(a.o),i0:a.i0,n:a.n});
+    return{o:G.o,U:R(G.F.U),V:R(G.F.V),ax:A(G.ax),ay:A(G.ay),n:G.n,np:G.panels.length,whole:G.panels.filter(p=>p.whole).length,filled:G.panels.filter(p=>p.f).length,
+      area:R(G.panels.reduce((s,p)=>s+Math.abs(area2(p.q)),0)/1e6*1000)/1000,first:G.panels.slice(0,k||3).map(p=>p.q.map(q=>[R(q[0]),R(q[1])]))}},
+  /* the 3D of mass id: its lines (count, extent) and the triangles of its filled panels */
+  mesh:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,I=B.filter(m=>m.id===id);let nl=0,nt=0,lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+    for(const m of I){nl+=m.l.length/6;nt+=m.t.length/9;for(let i=0;i+2<m.l.length;i+=3){const p=[m.l[i],m.l[i+2],m.l[i+1]];for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],p[k]);hi[k]=Math.max(hi[k],p[k])}}}
+    return{parts:I.length,nl,nt,fillParts:I.filter(m=>m.a===0.55).length,ft:I.filter(m=>m.a===0.55).reduce((s,m)=>s+m.t.length/9,0),box:[...lo,...hi].map(v=>Math.round(v))}},
+  W:(id,key,u,v)=>{const m=IDX.get(id),o=dsOpt425((m.ds425||{})[key]),F=dsFace425(P,m,key,o);return F?F.W(u,v).map(x=>Math.round(x*10)/10):null},
+  tidy:id=>{for(const f of XC)f();const m=IDX.get(id)||P.els.find(x=>x.id===id);return m&&m.ds425?JSON.parse(JSON.stringify(m.ds425)):'gone'},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r424={
   /* the sun path of 3D view vid: its date, each hour's analemma (points, how many above the horizon), the solstice paths (highest altitude), the sun's hour */
   geo:vid=>{const v=viewById(vid);if(!v)return null;const G=sunPathGeo(v);if(!G)return null;const R=x=>Math.round(x*100)/100;
