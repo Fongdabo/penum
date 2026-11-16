@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=447,V1_NAME='V1.437';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=448,V1_NAME='V1.438';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49111,6 +49111,127 @@ Object.assign(STR,{cat_mfloor:['ชั้นของมวล (Mass Floors)','M
   sf_mfa437:['พื้นที่ชั้น (Floor Area)','Floor Area'],sf_mfp437:['เส้นรอบรูปชั้น (Floor Perimeter)','Floor Perimeter'],sf_mfs437:['พื้นที่ผิวภายนอก (Exterior Surface Area)','Exterior Surface Area'],sf_mfv437:['ปริมาตรชั้น (Floor Volume)','Floor Volume'],
   g_mfl437:['ชั้นของมวล (Mass Floors)','Mass Floors'],a_mfl437:['ชั้นของมวล…','Mass Floors…'],a_mflsched437:['ตารางชั้นของมวล','Mass Floor Schedule'],
   mfl437_note:['แต่ละชั้นนับจากระดับของชั้นนั้นขึ้นไปถึงชั้นถัดไปหรือยอดมวล พื้นที่ผิวภายนอกคือผิวด้านข้างในช่วงนั้น ใส่การใช้งานของแต่ละชั้นได้ จะแสดงในตารางชั้นของมวล','Each floor reaches from its level up to the next one or the top of the mass; its Exterior Surface Area is the sides over that height. Type the Usage of each floor: it shows in Mass Floor schedules']});
+/* ===== V1.438 the energy model made from masses (Revit: Energy Settings › Mode: Use Conceptual Masses, with Core Offset, Target Percentage Glazing, Target Sill
+   Height, Glazing is Shaded, Shade Depth and Target Percentage Skylights; context masses become shading).  Every mass floor (V1.437) of every solid mass is a core
+   zone and one perimeter zone a side, Core Offset in from the outside (one zone when the core would not fit); the outside walls get a strip of glazing with a shade
+   over it, the roof skylights.  gbXML and the energy model dialog use it in place of the rooms when the mode is masses.
+   Settings: P.ce438 = {src:'mass', co, gp, sh, gs, sd, sk} (mm and %). ===== */
+const CE438={co:3660,gp:40,sh:760,gs:1,sd:600,sk:0};
+function ce438(P0){const g=P0&&P0.ce438&&typeof P0.ce438==='object'&&!Array.isArray(P0.ce438)?P0.ce438:{},o={src:g.src==='mass'?'mass':'el'};
+  const num=(k,a,b)=>{const v=+g[k];o[k]=g[k]!=null&&g[k]!==''&&isFinite(v)?Math.min(b,Math.max(a,v)):CE438[k]};
+  num('co',0,30000);num('gp',0,95);num('sh',0,10000);num('sd',0,5000);num('sk',0,80);o.gs=g.gs===0?0:1;return o}
+/* outline Q moved in by d on every side; null when a side would flip or vanish or the outline would cross itself */
+function ceIn438(Q,d){const n=Q.length,sg=area2(Q)>0?1:-1,L=[],C=[];
+  for(let k=0;k<n;k++){const a=Q[k],b=Q[(k+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l<1)return null;const ux=(b[0]-a[0])/l,uy=(b[1]-a[1])/l;L.push([a[0]-uy*sg*d,a[1]+ux*sg*d,ux,uy])}
+  for(let k=0;k<n;k++){const p=L[(k+n-1)%n],q=L[k],den=p[2]*q[3]-p[3]*q[2];if(Math.abs(den)<1e-9){C.push([q[0],q[1]]);continue}const s=((q[0]-p[0])*q[3]-(q[1]-p[1])*q[2])/den;C.push([p[0]+p[2]*s,p[1]+p[3]*s])}
+  for(let k=0;k<n;k++){const a=C[k],b=C[(k+1)%n];if((b[0]-a[0])*L[k][2]+(b[1]-a[1])*L[k][3]<50)return null}
+  const o=(p,q,r)=>(q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0]);
+  for(let i=0;i<n;i++)for(let j=i+2;j<n;j++){if(i===0&&j===n-1)continue;const a=C[i],b=C[(i+1)%n],c=C[j],d2=C[(j+1)%n];if(o(a,b,c)*o(a,b,d2)<0&&o(c,d2,a)*o(c,d2,b)<0)return null}
+  return C}
+/* the zones of outline Q: one a side and the core, or Q alone */
+const ceZones438=(Q,co,cored)=>{if(!cored)return[{k:-1,poly:Q}];const C=ceIn438(Q,co),n=Q.length;if(!C)return[{k:-1,poly:Q}];const Z=[];for(let k=0;k<n;k++)Z.push({k,poly:[Q[k],Q[(k+1)%n],C[(k+1)%n],C[k]]});Z.push({k:-1,core:1,poly:C});return Z};
+/* the area vector of a loop as gbXML has it (y the other way), and a loop turned so that it faces out along `out` (model axes) */
+const ceN438=L=>{let x=0,y=0,z=0;for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],ay=-a[1],by=-b[1];x+=(ay-by)*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(ay+by)}return[x/2,y/2,z/2]};
+const ceOr438=(L,out)=>{const n=ceN438(L);return n[0]*out[0]-n[1]*out[1]+n[2]*out[2]<0?L.slice().reverse():L};
+/* the strip of glazing of an outside wall (foot a0→c0 at za, top a1→c1 at zb): C.gp % of its area, its sill C.sh above the foot, 5 % (300 mm at most) in from
+   the edges; when it would not fit, it sits lower, then fills the wall */
+function ceGlz438(a0,c0,c1,a1,za,zb,C){const sub=(p,q)=>[p[0]-q[0],p[1]-q[1],p[2]-q[2]],dot=(p,q)=>p[0]*q[0]+p[1]*q[1]+p[2]*q[2];
+  const e=sub(c0,a0),la=Math.hypot(e[0],e[1]);if(la<300||C.gp<=0)return null;const u=[e[0]/la,e[1]/la,0],r=sub(a1,a0),ru=dot(r,u),w=[r[0]-u[0]*ru,r[1]-u[1]*ru,r[2]],hs=Math.hypot(w[0],w[1],w[2]);if(hs<300)return null;
+  const v=w.map(x=>x/hs),t0=ru,t1=dot(sub(c1,a0),u),H=zb-za,mg=Math.min(300,0.05*Math.min(la,hs));
+  const uL=y=>t0*y/hs,uR=y=>la+(t1-la)*y/hs,Wm=y=>uR(y)-uL(y)-2*mg,k=(Wm(hs)-Wm(0))/hs,At=C.gp/100*(la+t1-t0)/2*hs;
+  const hOf=y=>{const w0=Wm(y);if(w0<=0)return Infinity;return Math.abs(k)<1e-9?At/w0:(-w0+Math.sqrt(Math.max(0,w0*w0+2*k*At)))/k};
+  let v0=Math.max(mg,C.sh*hs/H),h=hOf(v0);if(v0+h>hs-mg){v0=Math.max(mg,hs-mg-h);h=hOf(v0)}if(!(h>0)||v0+h>hs-mg+1){v0=mg;h=hs-2*mg}const v1=v0+h;if(Wm(v0)<=1||Wm(v1)<=1)return null;
+  const P3=(x,y)=>[a0[0]+u[0]*x+v[0]*y,a0[1]+u[1]*x+v[1]*y,a0[2]+v[2]*y];
+  return{loop:[P3(uL(v0)+mg,v0),P3(uR(v0)-mg,v0),P3(uR(v1)-mg,v1),P3(uL(v1)+mg,v1)],A:h*(Wm(v0)+Wm(v1))/2,u0:Math.min(uL(v0),uL(v1))+mg,u1:Math.max(uR(v0),uR(v1))-mg,z0:za+v0*v[2],z1:za+v1*v[2]}}
+/* the use of a zone from the Usage typed for its mass floor (V1.437) */
+const ceUse438=s=>{if(!s)return null;for(const [k,re] of LOAD_GUESS)if(re.test(s))return k;return null};
+/* the energy model of the masses, in the shape gbxModel gives (bands, spaces, surfaces with their openings) */
+function ceModel438(P0,O,C){const S=loadSet(P0),PI=phIndex(P0),ip=phAt(PI,O.ph),gz=elev(P0,O.gl),co=C.co;
+  const M={O,gz,bands:[],spaces:[],surfs:[],warn:{open:[],dup:[]},S,hosts:new Map(),P:P0,nop:0,ce438:1},BZ=new Map(),LV0=sortedLevels(P0);
+  const band=(z,lv,zt)=>{const key=Math.round(z);let b=BZ.get(key);if(!b){b={lv,zb:z,zt,regs:[],sp:[],E:[],at:()=>-1,cls:()=>'o'};BZ.set(key,b)}b.zt=Math.max(b.zt,zt);return b};
+  const P3=(p,z)=>[p[0],p[1],z],A2=Q=>Math.abs(area2(Q));let no=0;
+  const ac=(p,q,out)=>-(q[1]-p[1])*out[0]+(q[0]-p[0])*out[1]>=0?{a:p,c:q}:{a:q,c:p};          // a→c with the outside on the right, as gbxWall has it
+  const mk=(ty,adj,loop,out,x)=>{const s=gbxSurf(M,ty,adj,ceOr438(loop,out));Object.assign(s,x||{});return s};
+  const masses=P0.els.filter(m=>m.cat==='mass'&&!m.void&&Array.isArray(m.pts)&&m.pts.length>2&&phThere(PI,m,ip));
+  for(const m of masses){const zr=zRange(P0,m),at=z=>mflAt437(P0,m,z),n=m.pts.length;
+    if(m.ctx){const A=at(zr[0]),B=at(zr[1]),sg=area2(A)>0?1:-1;          // a context mass shades: its sides and its top
+      for(let k=0;k<n;k++){const a=A[k],b=A[(k+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l<1)continue;mk('Shade',[],[P3(a,zr[0]),P3(b,zr[0]),P3(B[(k+1)%n],zr[1]),P3(B[k],zr[1])],[(b[1]-a[1])/l*sg,-(b[0]-a[0])/l*sg,0],Object.assign(ac(a,b,[(b[1]-a[1])/l*sg,-(b[0]-a[0])/l*sg]),{con:'c-wall',horiz:0,z0:zr[0],z1:zr[1],sh438:'ctx'}))}
+      mk('Shade',[],B.map(p=>P3(p,zr[1])),[0,0,1],{con:'c-wall',horiz:1,z0:0,sh438:'ctx'});continue}
+    const F=massFloors(P0,m),U=m.mfu437||{},nm=mflName437(P0,m),bl=lvl(P0,m.level)||LV0.filter(l=>l.elev<=zr[0]+1).pop()||LV0[0],cuts=[];
+    if(!F.length)cuts.push({z0:zr[0],z1:zr[1],lv:bl,use:''});
+    else{if(F[0].z-zr[0]>100)cuts.push({z0:zr[0],z1:F[0].z,lv:bl,use:''});F.forEach((f,i)=>cuts.push({z0:f.z,z1:i+1<F.length?F[i+1].z:zr[1],lv:lvl(P0,f.id),use:U[f.id]||''}))}
+    cuts.forEach((c,i)=>{const {z0,z1}=c,O0=at(z0),B=band(z0,c.lv,z1);c.cored=co>0&&!!ceIn438(O0,co)&&!!ceIn438(at(z1),co)&&!!ceIn438(at((z0+z1)/2),co);
+      c.Z=z=>ceZones438(at(z),co,c.cored);const Z0=c.Z(z0),Zm=c.Z((z0+z1)/2),Z1=c.Z(z1);
+      c.sps=Z0.map((zn,j)=>{const reg=B.regs.length;B.regs.push({poly:zn.poly.map(p=>[p[0],p[1]])});const lab=zn.k<0?(c.cored?'C':''):'P'+(zn.k+1),ue=ceUse438(c.use);
+        const r={id:'mz'+m.id+'-'+i+'-'+j,cat:'room',level:c.lv.id,number:lab,name:[nm,c.use,t(zn.k<0?(c.cored?'ce438_core':'ce438_whole'):'ce438_per',zn.k+1)].filter(Boolean).join(' · '),cond:true};if(ue)r.use=ue;
+        const sp={n:M.spaces.length,id:'sp-m'+m.id+'-'+i+'-'+j,room:r,band:B,reg,vn:0,surfs:[],mass:m.id,zk:zn.k,lab};
+        sp.area=A2(zn.poly)/1e6;sp.vol=(z1-z0)/6*(A2(zn.poly)+4*A2(Zm[j].poly)+A2(Z1[j].poly))/1e9;M.spaces.push(sp);B.sp[reg]=sp;return sp});
+      const own=k=>c.cored?c.sps[k]:c.sps[0];
+      /* the outside walls, below and above the ground, with their glazing and shades */
+      const parts=[];if(z0<gz-1)parts.push(['UndergroundWall',z0,Math.min(z1,gz)]);if(z1>gz+1)parts.push(['ExteriorWall',Math.max(z0,gz),z1]);
+      for(const [ty,za,zb] of parts){if(zb-za<10)continue;const A=at(za),Bq=at(zb),sg=area2(A)>0?1:-1;
+        for(let k=0;k<n;k++){const a=A[k],b=A[(k+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(l<1)continue;const ox=(b[1]-a[1])/l*sg,oy=-(b[0]-a[0])/l*sg,out=[ox,oy,0];
+          const a0=P3(a,za),c0=P3(b,za),c1=P3(Bq[(k+1)%n],zb),a1=P3(Bq[k],zb),d=(Bq[k][0]-a[0])*ox+(Bq[k][1]-a[1])*oy;
+          const AC=ac(a,b,out),sw=AC.a!==a,s=mk(ty,[own(k)],[a0,c0,c1,a1],out,Object.assign(AC,{z0:za,z1:zb,con:'c-wall',side438:k}));if(Math.abs(d)>1){s.tl438=90+Math.atan2(d,zb-za)*180/Math.PI;s.hs438=Math.hypot(zb-za,d)}
+          if(ty!=='ExteriorWall')continue;const g=ceGlz438(a0,c0,c1,a1,za,zb,C);if(!g)continue;no++;
+          s.ops.push({id:'op-ce'+no,type:'FixedWindow',wt:'wt-g438',loop:ceOr438(g.loop,out),u0:sw?l-g.u1:g.u0,u1:sw?l-g.u0:g.u1,v0:g.z0,v1:g.z1,A438:g.A});
+          if(C.gs&&C.sd>0){const h0=g.loop[3],h1=g.loop[2];mk('Shade',[],[h0,h1,[h1[0]+ox*C.sd,h1[1]+oy*C.sd,h1[2]],[h0[0]+ox*C.sd,h0[1]+oy*C.sd,h0[2]]],[0,0,1],{con:'c-wall',horiz:1,z0:0,sh438:'glz'})}}}
+      /* between the zones: the core's sides and the lines from the corners in */
+      if(c.cored){const Q0=at(z0),Q1=at(z1),K0=ceIn438(Q0,co),K1=ceIn438(Q1,co),core=c.sps[n],sg=area2(Q0)>0?1:-1;
+        for(let k=0;k<n;k++){const a=Q0[k],b=Q0[(k+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1])||1,ux=(b[0]-a[0])/l,uy=(b[1]-a[1])/l;
+          mk('Air',[c.sps[k],core],[P3(K0[k],z0),P3(K0[(k+1)%n],z0),P3(K1[(k+1)%n],z1),P3(K1[k],z1)],[-uy*sg,ux*sg,0],Object.assign(ac(K0[k],K0[(k+1)%n],[-uy*sg,ux*sg]),{con:'c-air',z0,z1}));
+          mk('Air',[c.sps[k],c.sps[(k+n-1)%n]],[P3(Q0[k],z0),P3(K0[k],z0),P3(K1[k],z1),P3(Q1[k],z1)],[-ux,-uy,0],Object.assign(ac(Q0[k],K0[k],[-ux,-uy]),{con:'c-air',z0,z1}))}}});
+    /* the floors and the roof: the lowest on the ground or over the outside, one between each two mass floors, the roof on top */
+    const hz=(ty,adj,poly,z,out,x)=>mk(ty,adj,poly.map(p=>P3(p,z)),out,Object.assign({horiz:1,z0:0},x||{}));
+    cuts.forEach((c,i)=>{const z=c.z0;
+      if(i===0){const ty=z<gz-1?'UndergroundSlab':z<=gz+1?'SlabOnGrade':'ExposedFloor';c.Z(z).forEach((zn,j)=>hz(ty,[c.sps[j]],zn.poly,z,[0,0,-1],{con:ty==='ExposedFloor'?'c-floor':'c-slab'}))}
+      else{const lo=cuts[i-1];let Z,adj;          // where one of the two has a core and the other not, the floor is cut as the one with the core
+        if(c.cored===lo.cored){Z=c.Z(z);adj=j=>[c.sps[j],lo.sps[j]]}else if(c.cored){Z=c.Z(z);adj=j=>[c.sps[j],lo.sps[0]]}else{Z=lo.Z(z);adj=j=>[c.sps[0],lo.sps[j]]}
+        Z.forEach((zn,j)=>hz('InteriorFloor',adj(j),zn.poly,z,[0,0,-1],{con:'c-floor',adjT:['InteriorFloor','Ceiling']}))}
+      if(i===cuts.length-1){const zt=c.z1,ty=zt>gz+1?'Roof':'UndergroundCeiling';c.Z(zt).forEach((zn,j)=>{const s=hz(ty,[c.sps[j]],zn.poly,zt,[0,0,1],{con:'c-roof'});
+        if(ty!=='Roof'||C.sk<=0)return;const Q=zn.poly,A=area2(Q);if(!A)return;let cx=0,cy=0;for(let q=0;q<Q.length;q++){const a=Q[q],b=Q[(q+1)%Q.length],f=a[0]*b[1]-b[0]*a[1];cx+=(a[0]+b[0])*f;cy+=(a[1]+b[1])*f}cx/=6*A;cy/=6*A;
+        const f=Math.sqrt(C.sk/100),K=Q.map(p=>[cx+(p[0]-cx)*f,cy+(p[1]-cy)*f]);if(!K.every(p=>inPoly(p[0],p[1],Q)))return;no++;
+        const x0=Math.min(...Q.map(p=>p[0])),y0=Math.min(...Q.map(p=>p[1])),kx=K.map(p=>p[0]-x0),ky=K.map(p=>p[1]-y0);
+        s.ops.push({id:'op-ce'+no,type:'FixedSkylight',wt:'wt-s438',loop:ceOr438(K.map(p=>P3(p,zt)),[0,0,1]),u0:Math.min(...kx),u1:Math.max(...kx),v0:Math.min(...ky),v1:Math.max(...ky),A438:Math.abs(area2(K))})})}})}
+  M.bands=[...BZ.values()].sort((a,b)=>a.zb-b.zb);M.area=M.spaces.reduce((a,s)=>a+s.area,0);return M}
+/* gbxModel, its settings and the file: the masses when the mode says so */
+{const f0=gbxOpts;gbxOpts=function(P0,O){const o=f0(P0,O),C=ce438(P0);if(C.src==='mass')o.ce438=C;return o}}
+{const f0=gbxModel;gbxModel=function(P0,O){const C=ce438(P0);if(C.src!=='mass')return f0(P0,O);return ceModel438(P0,gbxOpts(P0,O),C)}}
+{const f0=gbxText;gbxText=function(P0,O,date){const R=f0(P0,O,date);if(!R||!R.text||!R.M||!R.M.ce438)return R;let s=R.text;
+  for(const S of R.M.surfs){if(S.tl438==null)continue;const i=s.indexOf(`<Surface id="${S.id}" surfaceType`);if(i<0)continue;const j=s.indexOf('</RectangularGeometry>',i);if(j<0)continue;          // a leaning wall: its tilt and its height on the slope
+    s=s.slice(0,i)+s.slice(i,j).replace('<Tilt>90</Tilt>',`<Tilt>${gbxN(S.tl438,3)}</Tilt>`).replace(/<Height>[^<]*<\/Height>/,`<Height>${gbxN(S.hs438/1000)}</Height>`)+s.slice(j)}
+  R.text=s.split('surfaceType="Shade" constructionIdRef="c-wall" exposedToSun="false"').join('surfaceType="Shade" constructionIdRef="c-wall" exposedToSun="true"');return R}}
+GBX_COL.Shade='#8fa27e';GBX_OUT.add('Shade');GBX_OCOL.FixedSkylight='#5fb4f2';
+/* the dialog: where the model comes from and, for masses, the settings */
+{const f0=dlgGBX;dlgGBX=function(){f0();const box=$('#dlg .gbxs');if(!box)return;const C=ce438(P),ms=C.src==='mass';
+  const num=(k,u,st)=>`<div class="fr"><label for="ce438_${k}">${t('ce438_'+k)}</label><span><input type="number" id="ce438_${k}" data-ce="${k}" value="${C[k]}" step="${st}" min="0" style="width:90px"> ${esc(u)}</span></div>`;
+  const d=document.createElement('div');d.className='ce438';
+  d.innerHTML=`<div class="fr"><label for="ce438_src">${t('ce438_src')}</label><select id="ce438_src" data-ce="src"><option value="el"${ms?'':' selected'}>${esc(t('ce438_el'))}</option><option value="mass"${ms?' selected':''}>${esc(t('ce438_mass'))}</option></select></div>`
+    +(ms?`<div class="pg" style="margin:8px -16px 4px;padding-left:16px">${t('ce438_g')}</div>${num('co',t('u_mm'),10)}${num('gp','%',1)}${num('sh',t('u_mm'),10)}<label class="gbxc"><input type="checkbox" data-ce="gs"${C.gs?' checked':''}> ${t('ce438_gs')}</label>${num('sd',t('u_mm'),10)}${num('sk','%',1)}`:'');
+  const hd=box.querySelector('.pg');if(hd)hd.after(d);else box.prepend(d);
+  d.addEventListener('change',ev=>{const el=ev.target,k=el.dataset.ce;if(!k)return;ev.stopPropagation();const v=el.type==='checkbox'?(el.checked?1:0):k==='src'?el.value:el.value.trim()===''?null:+el.value;
+    edit(()=>{const o=Object.assign({},P.ce438&&typeof P.ce438==='object'&&!Array.isArray(P.ce438)?P.ce438:{});if(v==null||(k==='src'&&v!=='mass')||(k==='gs'&&v===1))delete o[k];else o[k]=k==='src'?v:k==='gs'?0:Math.min({co:30000,gp:95,sh:10000,sd:5000,sk:80}[k],Math.max(0,v));
+      if(Object.keys(o).length)P.ce438=o;else delete P.ce438});dlgGBX()});
+  const top=document.querySelector('#dlg p.note');if(ms&&top)top.textContent=t('ce438_note');          // the note at the top says how masses become spaces
+  if(ms&&!gbxM().spaces.length){const w=box.querySelector('.note.warn');if(w)w.textContent=t('ce438_none')}}}
+/* a mass: its zones with these settings; the energy model made from the masses */
+const ceOf438=m=>ceModel438(Object.assign({},P,{els:[m]}),gbxOpts(P),ce438(P));
+XP.push((c,els)=>{if(c!=='mass'||els.length!==1||els[0].id==null||els[0].void)return'';const m=els[0];if(m.ctx)return PR.grp('g_ce438')+PR.ro('p_ce438c',t('ce438_shade'));
+  const M=ceOf438(m),gl=M.surfs.reduce((a,s)=>a+s.ops.reduce((b,o)=>b+(o.type==='FixedWindow'?o.A438:0),0),0);
+  return PR.grp('g_ce438')+PR.ro('p_ce438',t('ce438_nz',M.spaces.length,M.bands.length))+PR.ro('p_ce438g',fmtArea(gl)+' '+areaUnit())+`<div class="pa"><button class="btn" data-act="ce438">${t('a_ce438')}</button></div>`});
+XA.ce438=()=>{if(ce438(P).src!=='mass')edit(()=>{P.ce438=Object.assign({},P.ce438&&typeof P.ce438==='object'&&!Array.isArray(P.ce438)?P.ce438:{},{src:'mass'})});dlgGBX()};
+XC.push(()=>{const g=P.ce438;if(g===undefined)return;if(!g||typeof g!=='object'||Array.isArray(g)){delete P.ce438;return}const o={};if(g.src==='mass')o.src='mass';
+  for(const [k,a,b] of [['co',0,30000],['gp',0,95],['sh',0,10000],['sd',0,5000],['sk',0,80]]){const v=+g[k];if(g[k]!=null&&g[k]!==''&&isFinite(v))o[k]=Math.min(b,Math.max(a,Math.round(v*10)/10))}if(g.gs===0)o.gs=0;
+  if(Object.keys(o).length)P.ce438=o;else delete P.ce438});
+Object.assign(STR,{gst_Shade:['กันแดด/เงาบัง (Shade)','Shade'],ce438_src:['สร้างแบบจำลองจาก (Mode)','Mode'],ce438_el:['ห้องและองค์ประกอบอาคาร (Use Building Elements)','Use Building Elements'],
+  ce438_mass:['มวลอาคาร (Use Conceptual Masses)','Use Conceptual Masses'],ce438_g:['มวลอาคาร (Conceptual Mass)','Conceptual Mass'],ce438_co:['ระยะแกนกลาง (Core Offset)','Core Offset'],
+  ce438_gp:['สัดส่วนกระจก (Target Percentage Glazing)','Target Percentage Glazing'],ce438_sh:['ความสูงขอบล่างกระจก (Target Sill Height)','Target Sill Height'],ce438_gs:['กระจกมีกันแดด (Glazing is Shaded)','Glazing is Shaded'],
+  ce438_sd:['ระยะยื่นกันแดด (Shade Depth)','Shade Depth'],ce438_sk:['สัดส่วนช่องแสงหลังคา (Target Percentage Skylights)','Target Percentage Skylights'],
+  ce438_note:['แต่ละชั้นของมวลแบ่งเป็นโซนแกนกลางกับโซนรอบนอกด้านละโซน (ถ้าแกนกลางไม่พอดี ทั้งชั้นเป็นโซนเดียว) ผนังนอกมีแถบกระจกตามสัดส่วนพร้อมกันแดด มวลบริบท (อาคารข้างเคียง) เป็นเงาบัง การใช้งานของชั้นกำหนดชนิดห้อง','Each mass floor is a core zone and one perimeter zone a side (one zone when the core does not fit); outside walls get a strip of glazing with a shade; context masses shade; the Usage of a floor sets its space type'],
+  ce438_none:['ยังไม่มีมวลอาคารทึบ (Mass) ในเฟสนี้ วาดมวลก่อน แล้วชั้นของมวลจะเป็นโซน','There is no solid mass in this phase: draw a mass and its mass floors become zones'],
+  ce438_core:['แกนกลาง','Core'],ce438_per:['รอบนอก {0}','Perimeter {0}'],ce438_whole:['ทั้งชั้น','Whole floor'],
+  g_ce438:['แบบจำลองพลังงาน (Energy Model)','Energy Model'],p_ce438:['โซน','Zones'],p_ce438g:['พื้นที่กระจก','Glazing Area'],p_ce438c:['ในแบบจำลองพลังงาน','In the energy model'],
+  ce438_shade:['เป็นเงาบัง (Shade)','Shading'],ce438_nz:['{0} โซน ใน {1} ชั้น','{0} zones on {1} floors'],a_ce438:['แบบจำลองพลังงานจากมวล…','Energy Model from Masses…']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -51371,6 +51492,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.435 · ชิ้นงานปรับตามจุดใน 3 มิติ รูปด้าน รูปตัด และบนผิวที่แบ่ง (แบบ Revit): เครื่องมือชิ้นงานปรับตามจุดใช้ได้ในมุมมอง 3 มิติ รูปด้าน และรูปตัดด้วย คลิกจะจับจุดที่ใกล้เคอร์เซอร์ที่สุด ทั้งจุดของเส้นที่แบ่ง จุดตารางของผิวมวลที่แบ่งแล้ว (Divide Surface) และจุดของชิ้นงานอื่น ถ้าไม่มีจุดจะวางบนผิวของโมเดลตรงนั้น ชิ้นงานที่วางบนจุดตารางของผิวจะเกาะผิวไว้ แก้มวลหรือตารางแล้วตามไปด้วย กดวางซ้ำจะเรียงเต็มผิวทั้งสองทิศ เช่น ท่อโครงตาข่ายหรือแผงพับบนผนังมวล
 - V1.436 · มวลอาคารทรงสอบและทรงเอียง (แบบ Create Form จากสองโปรไฟล์ของ Revit): มวลมีผิวบนเป็นรูปของตัวเองได้ ตั้งระยะร่นด้านบนหรือมุมลาดของผนังข้าง เลื่อนยอดไปตามแกน X และ Y และแก้ระยะร่นรายด้านในหน้าต่างแก้รูปทรงมวล ขอบบนของทุกด้านขนานกับขอบล่าง ทุกด้านจึงเป็นผิวเรียบที่แบ่งผิว วางแผงตามลาย และวางชิ้นงานปรับตามจุดได้เหมือนเดิม แปลนแสดงผิวบนเป็นเส้นประ ชั้นของมวล พื้นที่พื้นรวม และปริมาตรคิดตามรูปทรงจริง พื้นและหลังคาจากผิวใช้รูปที่ระดับนั้น ส่วนผนังจากผิวใช้ได้กับด้านที่ตั้งตรง
 - V1.437 · ตารางชั้นของมวล (Mass Floor schedule แบบ Revit): สร้างตารางหมวดชั้นของมวลได้จากตารางใหม่ แต่ละแถวคือชั้นหนึ่งของมวล มีพื้นที่ชั้น เส้นรอบรูป พื้นที่ผิวภายนอก ปริมาตรชั้น และการใช้งาน คิดตามรูปทรงจริงของมวลทรงสอบด้วย มวลมีพื้นที่ผิวรวม (Gross Surface Area) ใน Properties และตาราง ปุ่มชั้นของมวลใน Properties เปิดตารางชั้นของมวลนั้นและใส่การใช้งานรายชั้นได้
+- V1.438 · แบบจำลองพลังงานจากมวล (Use Conceptual Masses แบบ Revit): ในหน้าต่างแบบจำลองพลังงาน/ส่งออก gbXML เลือกสร้างจากมวลอาคารได้ แต่ละชั้นของมวลแบ่งเป็นโซนแกนกลางกับโซนรอบนอกด้านละโซนตามระยะแกนกลาง ผนังนอกมีแถบกระจกตามสัดส่วนที่ตั้ง ความสูงขอบล่าง และกันแดดยื่นออก หลังคามีช่องแสงได้ มวลบริบทเป็นเงาบัง การใช้งานของชั้นกำหนดชนิดห้อง ผนังมวลทรงสอบส่งมุมเอียงจริงใน gbXML
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -51953,6 +52075,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.435 · Adaptive Components in 3D views, elevations and sections, and on divided surfaces (as in Revit): the Adaptive Component tool works in 3D views, elevations and sections too. A click takes the nearest node of a divided path, grid node of a divided mass surface or point of another adaptive component, else the model face under the pointer. A component on surface grid nodes keeps to them and follows the mass and its grid; Repeat fills the surface in both directions, such as a lattice of tubes or folded panels over a mass face
 - V1.436 · Tapered and leaning masses (as Revit's Create Form from two profiles): a mass can have a top outline of its own. Set its Top Inset or Taper Angle, shift the top by Top Shift X and Y, and give each side its own inset in Edit Form. Every top edge keeps parallel to its foot, so each side stays a flat face that can be divided, panelled and take adaptive components as before. Plans show the top dashed; mass floors, Gross Floor Area and Volume follow the real form; Floor and Roof by Face take the outline at their height, and Wall and Curtain System by Face take the upright sides
 - V1.437 · Mass Floor schedules (as in Revit): New Schedule offers Mass Floors; a row a mass floor with Floor Area, Floor Perimeter, Exterior Surface Area, Floor Volume and Usage, measured on the real form of tapered masses too. A mass shows its Gross Surface Area in Properties and schedules, and Mass Floors… in Properties lists its floors and takes the Usage of each
+- V1.438 · Energy model from masses (Use Conceptual Masses, as in Revit): the energy model / gbXML dialog can build from masses; each mass floor becomes a core zone and one perimeter zone a side at the Core Offset, outside walls get glazing at the Target Percentage with its sill height and a shade, roofs can have skylights, context masses shade, and the Usage of a floor sets its space type; tapered walls keep their real tilt in gbXML
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -54205,6 +54328,26 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r438={
+  set:o=>{edit(()=>{if(o===null)delete P.ce438;else P.ce438=Object.assign({},P.ce438||{},o)});return P.ce438?JSON.parse(JSON.stringify(P.ce438)):null},
+  raw:o=>{P.ce438=o;for(const f of XC)f();return P.ce438===undefined?null:JSON.parse(JSON.stringify(P.ce438))},
+  opts:()=>ce438(P),
+  model:()=>{const M=gbxM(),r=v=>Math.round(v*1000)/1000,A3=L=>{const n=ceN438(L);return Math.hypot(n[0],n[1],n[2])/1e6};
+    return{ce:!!M.ce438,bands:M.bands.map(b=>({lv:b.lv.id,zb:b.zb,zt:b.zt,n:b.regs.length})),
+      spaces:M.spaces.map(s=>({id:s.id,lv:s.band.lv.id,num:s.room?s.room.number:null,name:s.room?s.room.name:null,use:s.room&&s.room.use||null,area:r(s.area),vol:r(s.vol),ns:s.surfs.length,mass:s.mass})),
+      surfs:M.surfs.map(s=>({id:s.id,type:s.type,adj:s.adj.map(a=>a.id),A:r(A3(s.loop)),z:[Math.min(...s.loop.map(p=>p[2])),Math.max(...s.loop.map(p=>p[2]))],tl:s.tl438==null?null:r(s.tl438),
+        ops:s.ops.map(o=>({type:o.type,A:r(A3(o.loop)),A0:r((o.A438||0)/1e6),z:[Math.round(Math.min(...o.loop.map(p=>p[2]))),Math.round(Math.max(...o.loop.map(p=>p[2])))]}))}))}},
+  /* every space closed: the sum of its faces' area vectors (outward) and the volume by the divergence theorem */
+  shells:()=>{const M=gbxM();return M.spaces.map(sp=>{let v=[0,0,0],V=0;for(const s of sp.surfs){const L=s.adj[0]===sp?s.loop:s.loop.slice().reverse(),n=ceN438(L),p=L[0];v=[v[0]+n[0],v[1]+n[1],v[2]+n[2]];V+=(p[0]*n[0]-p[1]*n[1]+p[2]*n[2])/3}
+    const a=sp.surfs.reduce((x,s)=>{const n=ceN438(s.loop);return x+Math.hypot(n[0],n[1],n[2])},0);return{id:sp.id,open:Math.hypot(v[0],v[1],v[2])/a,vol:V/1e9,vs:sp.vol}})},
+  /* the faces of each space meet edge to edge: every edge of a space's shell is used twice */
+  edges:()=>{const M=gbxM(),bad=[];for(const sp of M.spaces){const E=new Map(),K=p=>p.map(v=>Math.round(v)).join(',');for(const s of sp.surfs){const L=s.loop;for(let i=0;i<L.length;i++){const a=K(L[i]),b=K(L[(i+1)%L.length]);if(a===b)continue;const k=a<b?a+'|'+b:b+'|'+a;E.set(k,(E.get(k)||0)+1)}}
+    let odd=0;for(const v of E.values())if(v%2)odd++;if(odd)bad.push([sp.id,odd])}return bad},
+  text:O=>{const R=gbxText(P,O||{},'2026-01-01');return R.text},
+  valid:O=>{const R=gbxText(P,O||{},'2026-01-01');if(!R.text)return null;const d=new DOMParser().parseFromString(R.text,'application/xml');return!d.querySelector('parsererror')},
+  el:id=>{const e=IDX.get(id)||P.els.find(x=>x.id===id);return e?JSON.parse(JSON.stringify(e)):null},
+  gbx:o=>{edit(()=>{P.gbx=Object.assign({},P.gbx||{},o)});return gbxOpts(P)},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r437={
   rows:()=>mflRows437(P).map(r=>({mass:r.mass,level:r.level,fa:Math.round(r.fa),fp:Math.round(r.fp),fs:Math.round(r.fs),fv:Math.round(r.fv/1e6)/1e3,use:r.use})),
   gsa:id=>Math.round(mflGsa437(P,IDX.get(id))),
