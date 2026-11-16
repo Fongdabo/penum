@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=424,V1_NAME='V1.414';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=425,V1_NAME='V1.415';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47299,6 +47299,37 @@ Object.assign(STR,{o_sd414:['Tab: ทุกด้านของวงขอบ�
   h_sd1414:['คลิกเพื่อวางขอบพื้นด้านนี้ · กด Tab เพื่อเลือกทุกด้านของวงนี้','Click to place a slab edge on this side · Tab picks every side of its loop'],
   h_sd2414:['คลิกเพื่อวางขอบพื้นทั้ง {0} ด้านของวงนี้ · กด Tab อีกครั้งเพื่อกลับไปด้านเดียว','Click to place slab edges on all {0} sides of this loop · Tab again for the one side'],
   h_sd3414:['คลิกเพื่อวางขอบพื้นรอบช่องเปิด {0}','Click to run slab edges round opening {0}']});
+/* ===== V1.415 Simplify Surface, as in Revit (Modify | Edit Surface › Tools › Simplify Surface, Surface Accuracy): the points of a toposurface are thinned so
+   that the surface left over stays within the accuracy of every point taken away.  Each pass takes away points that do not touch one another and whose
+   surrounding points carry the surface within the accuracy at them; then every point taken away so far is checked against the whole surface left over and
+   put back (for good) where it is out by more.  The points on the edge of the surface stay, so its outline does not change.  One step to undo. ===== */
+function tp415Simplify(e,acc){const n=e.pts.length,P0=[];for(let i=0;i<n;i++)P0.push([+e.pts[i][0],+e.pts[i][1],+(e.zs&&e.zs[i])||0]);if(n<4)return null;
+  const alive=new Uint8Array(n).fill(1),keep=new Uint8Array(n),dup=new Uint8Array(n),seen=new Map();
+  for(let i=0;i<n;i++){const k=Math.round(P0[i][0])+','+Math.round(P0[i][1]);if(seen.has(k)){alive[i]=0;dup[i]=1}else seen.set(k,i)}
+  const tin=()=>{const I=[];for(let i=0;i<n;i++)if(alive[i])I.push(i);const p=I.map(i=>P0[i]);return{I,p,t:siteDelaunay(p)}};
+  const off=(T,i)=>{const z=siteZat(T,P0[i][0],P0[i][1]);return z==null?Infinity:Math.abs(z-P0[i][2])};
+  for(let pass=0;pass<80;pass++){const T=tin(),m=T.p.length,nb=Array.from({length:m},()=>new Set()),cnt=new Map(),key=(a,b)=>a<b?a*m+b:b*m+a;
+    for(let i=0;i<T.t.length;i+=3)for(let k=0;k<3;k++){const a=T.t[i+k],b=T.t[i+(k+1)%3];nb[a].add(b);nb[b].add(a);const kk=key(a,b);cnt.set(kk,(cnt.get(kk)||0)+1)}
+    for(const [kk,c] of cnt)if(c===1){keep[T.I[Math.floor(kk/m)]]=1;keep[T.I[kk%m]]=1}
+    const C=[];for(let j=0;j<m;j++){const i=T.I[j];if(keep[i]||nb[j].size<3)continue;const R=[...nb[j]].map(q=>T.p[q]),L={p:R,t:siteDelaunay(R)},d=off(L,i);if(d<=acc)C.push([d,j])}
+    C.sort((a,b)=>a[0]-b[0]);const blk=new Set();let gone=0;for(const [,j] of C){if(blk.has(j))continue;alive[T.I[j]]=0;gone++;blk.add(j);for(const q of nb[j])blk.add(q)}
+    if(!gone)break;
+    for(let g=0;g<20;g++){const U=tin();let back=0;for(let i=0;i<n;i++)if(!alive[i]&&!dup[i]&&off(U,i)>acc+1e-6){alive[i]=1;keep[i]=1;back++}if(!back)break}}
+  const K=[];for(let i=0;i<n;i++)if(alive[i])K.push(i);return K}
+XA.tpsimp415=()=>{const e=tpEl()||[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&x.cat==='topo');if(!e){toast(t('site_notopo'));return}const a=+ui.opt.tpAcc415>0?+ui.opt.tpAcc415:100;
+  openDlg(t('tps_title415'),`<label class="szl348"><span>${esc(t('tps_acc415'))}</span><input id="tpsAcc415" type="number" min="1" step="10" value="${a}"> ${t('u_mm')}</label><p class="note">${esc(t('tps_note415',e.pts.length))}</p>`,
+    `<button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-tps415="1">${t('ok')}</button>`,
+    {click(ev){if(!ev.target.closest('[data-tps415]'))return;const v=parseFloat($('#tpsAcc415').value);if(!(v>0)){toast(t('tps_bad415'));return}closeDlg();tp415Run(e,v)}})};
+function tp415Run(e,acc){ui.opt.tpAcc415=Math.round(acc*10)/10;const n0=e.pts.length,K=tp415Simplify(e,acc);if(!K||K.length>=n0){toast(t('tps_none415',acc));return}
+  edit(()=>{e.pts=K.map(i=>e.pts[i]);e.zs=K.map(i=>(e.zs||[])[i]||0)});if(ui.tp)ui.tp.sel=-1;toast(t('tps_done415',n0,K.length));refresh()}
+/* the Tools panel of Edit Surface, and the Surface panel of a selected toposurface */
+XR.push((tl,v)=>{if(tl==='topo'&&tpEl())return[{t:'p_tptools415',b:['@tpsimp415']}];return[]});
+{const f0=ctxPanels;ctxPanels=function(){const out=f0.apply(this,arguments),p=out.find(q=>q.t==='p_surface');if(p&&!p.b.includes('@tpsimp415')){const i=p.b.indexOf('@topoedit');p.b.splice(i<0?p.b.length:i+1,0,'@tpsimp415')}return out}}
+Object.assign(BTN,{'@tpsimp415':['topoedit','']});
+Object.assign(STR,{a_tpsimp415:['ลดจุดผิวดิน (Simplify Surface)','Simplify Surface'],p_tptools415:['เครื่องมือ','Tools'],tps_title415:['ลดจุดผิวดิน (Simplify Surface)','Simplify Surface'],
+  tps_acc415:['ความแม่นยำของผิว (Surface Accuracy)','Surface Accuracy'],tps_note415:['ผิวดินนี้มี {0} จุด จุดที่ตัดออกจะห่างจากผิวที่เหลือไม่เกินค่าความแม่นยำ จุดขอบผิวดินคงไว้','This surface has {0} points. A point taken away stays within the accuracy of the surface left over; the points on its edge stay'],
+  tps_done415:['ลดจุดผิวดินจาก {0} เหลือ {1} จุด','Points of the surface: {0} → {1}'],tps_none415:['ไม่มีจุดที่ตัดออกได้ที่ความแม่นยำ {0} มม.','No point can go at an accuracy of {0} mm'],
+  tps_bad415:['ใส่ค่าความแม่นยำที่มากกว่า 0','Type an accuracy above 0']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -49536,6 +49567,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.412 · เส้นโค้งผ่านจุด (Spline Through Points) ในแผงวาดของเส้นรายละเอียดและเส้นแบบจำลองแบบ Revit: เส้นโค้งผ่านทุกจุดที่คลิก (ต่างจากเส้นโค้งอิสระที่แค่เอนเข้าหาจุดควบคุม) จบด้วย Enter, Esc หรือคลิกจุดสุดท้ายซ้ำ Backspace ย้อนจุด · เลือกแล้วลากจุดบนเส้นแก้รูปได้ ย้าย คัดลอก หมุน สะท้อน ลงแผ่นงาน 3 มิติ และ DXF ได้ตามรูปโค้ง Properties บอกชนิดและจำนวนจุด
 - V1.413 · รูปแบบการยึด (Attachment Style) ของเสาที่ยึดบน/ล่างแบบ Revit: ตัดเสา (ปลายเสาถูกตัดตามผิวสิ่งที่ยึด) ตัดสิ่งที่ยึด (ปลายเสาเรียบ พื้นหรือคานเสียปริมาตรส่วนที่เสาแทรกเข้าไป) หรือไม่ตัด (ปลายเรียบ ปริมาตรเต็มทั้งคู่) เลือกในแถบตัวเลือกของยึดบน/ล่าง และแก้ใน Properties แยกด้านบนกับล่าง
 - V1.414 · ขอบพื้น (Slab Edge) รอบทั้งวงแบบเลือกต่อเนื่องด้วย Tab ของ Revit: ชี้ขอบด้านหนึ่งแล้วกด Tab จะเลือกทุกด้านของวงนั้น (รอบพื้นหรือรอบช่องเปิด) คลิกครั้งเดียววางขอบพื้นครบทุกด้าน ตัดมุมชนกันเรียบร้อย กด Tab อีกครั้งกลับเป็นด้านเดียว และคลิกในช่องเปิดเพื่อวางรอบช่องนั้น ใช้ได้ในแปลน 3 มิติ รูปด้าน และรูปตัด
+- V1.415 · ลดจุดผิวดิน (Simplify Surface) แบบ Revit: ในโหมดแก้ไขผิวดินหรือเมื่อเลือกผิวดิน กดลดจุดผิวดิน ใส่ความแม่นยำของผิว (Surface Accuracy) โปรแกรมตัดจุดที่ไม่จำเป็นออก โดยจุดที่ตัดออกทุกจุดห่างจากผิวที่เหลือไม่เกินค่าที่ใส่ จุดขอบผิวดินคงไว้ รูปร่างไม่เปลี่ยน ย้อนกลับได้ในขั้นเดียว
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50095,6 +50127,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.412 · Spline Through Points in the Draw panel of detail lines and model lines, as in Revit: the curve passes through every point clicked (a Spline only leans towards its control points); Enter, Esc or a second click on the last point ends it, Backspace takes a point back · its points are grips on the curve; it moves, copies, rotates, mirrors and goes onto sheets, into 3D and DXF along its curve; Properties name it and count its points
 - V1.413 · Attachment Style for attached columns, as in Revit: Cut Column (the end is cut to the target), Cut Target (a flat end; the floor or beam loses the part of the column inside it) or Do Not Cut (a flat end, both keep their volume), on the Options Bar of Attach Top/Base and in Properties for the top and the base
 - V1.414 · Slab Edge round a whole loop, as with Revit's Tab chain: point at a side and press Tab to pick every side of its loop (the floor's outline or an opening), one click places them all, mitred at the corners; Tab again goes back to the one side; a click inside an opening runs slab edges round it; in plans, 3D views, elevations and sections
+- V1.415 · Simplify Surface for toposurfaces, as in Revit: in Edit Surface, or with a toposurface selected, press Simplify Surface and give a Surface Accuracy; points are taken away while every point taken away stays within that accuracy of the surface left over; the points on its edge stay, so its outline does not change; one step to undo
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52347,6 +52380,15 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r415={
+  topo:(lid,pts,zs)=>{let id;edit(()=>{id=P.seq++;P.els.push({id,cat:'topo',level:lid,pts:pts.map(q=>[q[0],q[1]]),zs:zs.slice()})});return id},
+  n:id=>{const e=IDX.get(id);return e?e.pts.length:null},
+  run:(id,acc)=>{tp415Run(IDX.get(id),acc);return IDX.get(id).pts.length},
+  /* the largest gap between the heights z at (x, y) given and the surface of toposurface id */
+  dev:(id,pts)=>{const T=siteTin(IDX.get(id));let m=0;for(const q of pts){const z=siteZat(T,q[0],q[1]);if(z==null)return null;m=Math.max(m,Math.abs(z-q[2]))}return Math.round(m*100)/100},
+  hull:id=>{const T=siteTin(IDX.get(id));return T.hull.length},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r414={
   hov:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),pn=PANES[ui.ap];ui.cur={x:x*nav.s+nav.ox,y:y*nav.s+nav.oy};XT.sedge.hov(pn,v,ui.cur);const H=ui.sdH;return H?{f:H.f.id,k:H.k==null?null:+H.k,all:!!H.all,hole:H.hole==null?null:H.hole,chain:!!H.chain,n:sd414List(H).length}:null},
   tab:()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));const H=ui.sdH;return H?!!H.chain:null},
