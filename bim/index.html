@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=382,V1_NAME='V1.372';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=383,V1_NAME='V1.373';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -44964,6 +44964,65 @@ Object.assign(STR,{t_ewl372:['แก้เส้นช่วย (Edit Witness Li
   ewl_two372:['เส้นบอกระยะต้องมีเส้นช่วยอย่างน้อยสองเส้น','A dimension needs two witness lines at least'],
   ewl_line372:['จุดนี้ไม่อยู่ในแนวของเส้นบอกระยะแบบตามแนว','That reference is not in line with this aligned dimension'],
   ewl_cons372:['เอาระยะเท่ากัน (EQ) และการล็อกของเส้นบอกระยะชุดนี้ออกแล้ว','EQ and locks of this dimension string were taken off']});
+/* ===== V1.373 Alternate Units and Show Opening Height of dimension types as in Revit: a type may write each value a second time in other units (Alternate Units: None,
+   Right of the value or Below the line; Alternate Units Format: feet and fractional inches, fractional inches, decimal feet, millimetres, centimetres or metres, with its
+   rounding; Alternate Units Prefix and Suffix), and the height of a door or window under a dimension across its opening (Show Opening Height).  What goes under the line
+   stacks: the alternate value, the opening height, then the dimension's Below text (V1.370); all of it moves with a dragged value (V1.371) ===== */
+const DAL_U373=['ftin','in','ft','mm','cm','m'],DAL_F373=['8','16','32','4','2','1'],DAL_N373=12;
+const dalM373=T=>{const x=T&&T.dalt373;return x==='right'||x==='below'?x:null};
+const dalTx373=(T,k)=>String((T&&T[k])||'').slice(0,DAL_N373);
+/* a length in the alternate units: 5000 mm is 16' - 4 7/8" to the nearest 1/8" */
+function dalFmt373(T,mm){const u=DAL_U373.includes(T&&T.dalu373)?T.dalu373:'ftin',sg=mm<0?'-':'';mm=Math.abs(mm);
+  if(u==='ftin'||u==='in'){const den=DAL_F373.includes(String(T&&T.dalf373))?+T.dalf373:8,n=Math.round(mm/25.4*den);
+    const fr=k=>{let a=k,b=den;while(a%2===0&&b%2===0){a/=2;b/=2}return a+'/'+b};          // the fraction in its lowest terms (the steps are halves, quarters, eighths …)
+    if(u==='in'){const w=Math.floor(n/den),k=n%den;return sg+(k?(w?w+' ':'')+fr(k):w)+'"'}
+    const ft=Math.floor(n/(12*den)),r=n-ft*12*den,w=Math.floor(r/den),k=r%den;return sg+ft+"' - "+w+(k?' '+fr(k):'')+'"'}
+  const dd=T&&T.dald373,dec=dd!=null&&dd!=='auto'&&isFinite(+dd)?clamp(+dd,0,3):u==='mm'?0:u==='cm'?1:2;
+  return sg+nfix(u==='ft'?mm/304.8:u==='mm'?mm:u==='cm'?mm/10:mm/1000,dec)+(u==='ft'?"'":'')}
+const dalStr373=(T,mm)=>dalTx373(T,'dalp373')+dalFmt373(T,mm)+dalTx373(T,'dals373');
+/* the height of the opening a plan dimension runs across (its two references the two sides of one door or window), when its type shows it */
+function dohH373(d,T){if(!d||d.cat!=='dim'||!T||T.doh373!=='yes')return null;const a=d.a,b=d.b;if(!a||!b||a.k!=='op'||b.k!=='op'||a.id!==b.id||!((a.s||0)*(b.s||0)<0))return null;
+  const e=IDX.get(a.id);if(!e||!['door','window','opening'].includes(e.cat))return null;const Y=typ(P,e),h=Y&&+Y.height;return h>0?h:null}
+/* what a type adds to a label: the alternate value right of it, and the lines under the dimension line (a replaced value, EQ or a global parameter take no alternate) */
+function dalInfo373(d,G,T,s){const out={s,stk:[]};if(!d||!G||!isFinite(G.val))return out;const m=dalM373(T),own=!d.txt&&!d.gp&&s!=='EQ';
+  if(m&&own){const a=dalStr373(T,G.val);if(m==='right')out.s=s+' '+a;else out.stk.push(a)}
+  const h=dohH373(d,T);if(h!=null)out.stk.push(dmFmt(T,h));return out}
+/* the label was just written: the alternate value goes on it (and on what V1.370 and V1.371 keep of it); the drawDim of that line that follows writes the lines under it */
+let DAL373=null;
+function dalLab373(d,G,T,s){DAL373=null;const I=dalInfo373(d,G,T,s);if(I.s!==s){if(DMX370&&DMX370.s===s)DMX370.s=I.s;if(DMT371&&DMT371.s===s)DMT371.s=I.s}
+  if(I.stk.length&&G&&G.p&&G.q){if(DMX370&&DMX370.d===d&&d.be370){DMX370.d=Object.assign({},d);delete DMX370.d.be370}DAL373={d,G,s:I.s,stk:I.stk.concat(d.be370?[d.be370]:[])}}
+  return I.s}
+let dalRaw373=null;          // the label as it was before (for the boxes that pick)
+{const f0=dimLabel;dalRaw373=f0;dimLabel=(d,G)=>dalLab373(d,G,dimT(d),f0(d,G))}
+{const f0=edLabel;edLabel=(d,G,T)=>dalLab373(d,G,T||dimT(d),f0(d,G,T))}
+/* under the line, one line apart: the first as far under it as the value stands over it (as Below), from where the value is drawn (moved or not) */
+function dalPts373(F,c,k,sc){const be=[2*F.mid[0]-F.m0[0]+c[0]-F.m0[0],2*F.mid[1]-F.m0[1]+c[1]-F.m0[1]],st=F.sz*1.3*sc,out=[];
+  for(let j=0;j<k;j++)out.push([be[0]-F.n[0]*st*j,be[1]-F.n[1]*st*j]);return out}
+{const f0=drawDim;drawDim=(g,G,color,label,T)=>{const X=DAL373;DAL373=null;const r=f0(g,G,color,label,T);
+  if(X&&X.G===G&&X.s===label&&Array.isArray(r)){const sc=g.scale,F=dtmFr371(G,T,sc),o=dtxStyle370(T,color,G),P2=dalPts373(F,r,X.stk.length,sc);X.stk.forEach((s,j)=>g.text(s,P2[j],F.sz,o))}
+  return r}}
+{const f0=dsDraw;dsDraw=(g,d,I,color)=>{const m=f0(g,d,I,color);DAL373=null;return m}}
+/* picked by the alternate value and the lines under the line; Below (V1.370) is picked where it is now drawn */
+function dalBoxes373(d,G,sc){const T=dimT(d),lab=dalRaw373(d,G);DMX370=null;DMT371=null;const I=dalInfo373(d,G,T,lab),F=dtmFr371(G,T,sc),q=dtmOf371(d),c=q?dtmAt371(F,q):F.m0,rot=Math.atan2(F.u[1],F.u[0]),out=[];
+  if(!q&&dalM373(T)==='right'&&I.s!==lab)out.push({m:c,rot,tw:dtmTw371(I.s,T,F.sz,sc),sz:F.sz});
+  const P2=dalPts373(F,c,I.stk.length,sc);I.stk.forEach((s,j)=>out.push({m:P2[j],rot,tw:dtmTw371(s,T,F.sz,sc),sz:F.sz}));return{out,k:I.stk.length,F}}
+{const f0=dtxBoxes370;dtxBoxes370=(d,G,sc)=>{const B=f0(d,G,sc);if(!d.be370||!B.length||dsSeg(d))return B;const X=dalBoxes373(d,G,sc);if(!X.k)return B;
+  const b=B[B.length-1],st=X.F.sz*1.3*sc;B[B.length-1]=Object.assign({},b,{m:[b.m[0]-X.F.n[0]*st*X.k,b.m[1]-X.F.n[1]*st*X.k]});return B}}
+{const f0=XHA.dim;XHA.dim=(v,d,w,sc)=>{let m=f0(v,d,w,sc);if(dsSeg(d))return m;const T=dimT(d);if(!dalM373(T)&&!dohH373(d,T))return m;const G=dimGeo(d);if(!G)return m;
+  for(const b of dalBoxes373(d,G,sc).out)m=Math.min(m,dsBox(b,w,sc));return m}}
+/* ---- the type's parameters (Edit Type), and a file ---- */
+TYPE_FIELDS.dim.push(['doh373','sel',['no','yes']],['dalt373','sel',['none','right','below'],'dalt_'],['dalu373','sel',DAL_U373,'dalu_'],['dald373','sel',['auto','0','1','2','3'],'dald_'],
+  ['dalf373','sel',DAL_F373,'dalf_'],['dalp373','text'],['dals373','text']);
+XC.push(()=>{for(const T of (P.types&&P.types.dim)||[]){const one=(k,L)=>{if(T[k]!==undefined&&!L.includes(String(T[k])))delete T[k]};
+  one('doh373',['no','yes']);one('dalt373',['none','right','below']);one('dalu373',DAL_U373);one('dald373',['auto','0','1','2','3']);one('dalf373',DAL_F373);
+  for(const k of ['dalp373','dals373'])if(T[k]!==undefined){if(typeof T[k]!=='string')delete T[k];else T[k]=T[k].slice(0,DAL_N373)}}});
+Object.assign(STR,{f_doh373:['แสดงความสูงช่องเปิด (Show Opening Height)','Show Opening Height'],f_dalt373:['หน่วยที่สอง (Alternate Units)','Alternate Units'],
+  dalt_none:['ไม่มี','None'],dalt_right:['ทางขวาของตัวเลข','Right'],dalt_below:['ใต้เส้นบอกระยะ','Below'],
+  f_dalu373:['รูปแบบหน่วยที่สอง','Alternate Units Format'],dalu_ftin:['ฟุตและเศษนิ้ว (16\' - 4 7/8")','Feet and fractional inches (16\' - 4 7/8")'],dalu_in:['เศษนิ้ว (196 7/8")','Fractional inches (196 7/8")'],
+  dalu_ft:['ฟุตทศนิยม (16.40\')','Decimal feet (16.40\')'],dalu_mm:['มิลลิเมตร','Millimeters'],dalu_cm:['เซนติเมตร','Centimeters'],dalu_m:['เมตร','Meters'],
+  f_dald373:['ทศนิยมหน่วยที่สอง','Alternate Units Rounding'],dald_auto:['ตามหน่วย','By unit'],dald_0:['0','0'],dald_1:['0.1','0.1'],dald_2:['0.01','0.01'],dald_3:['0.001','0.001'],
+  f_dalf373:['เศษนิ้วละเอียดถึง','Alternate Units Fraction'],dalf_1:['1"','1"'],dalf_2:['1/2"','1/2"'],dalf_4:['1/4"','1/4"'],dalf_8:['1/8"','1/8"'],dalf_16:['1/16"','1/16"'],dalf_32:['1/32"','1/32"'],
+  f_dalp373:['คำนำหน้าหน่วยที่สอง','Alternate Units Prefix'],f_dals373:['คำต่อท้ายหน่วยที่สอง','Alternate Units Suffix']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -47110,6 +47169,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.370 · ข้อความเส้นบอกระยะแบบ Revit: กล่อง ข้อความเส้นบอกระยะ (Dimension Text) เปิดจากริบบอนหรือ Properties เลือกใช้ค่าจริงหรือแทนด้วยข้อความ ใส่ข้อความบน คำนำหน้า คำต่อท้าย และข้อความล่าง พร้อมตัวอย่าง ข้อความบนเขียนเหนือค่าระยะ ข้อความล่างเขียนใต้เส้น ทั้งในแปลน รูปด้าน รูปตัด แผ่นงาน และ DXF คลิกที่ข้อความบนหรือล่างก็เลือกเส้นบอกระยะได้
 - V1.371 · ย้ายตัวเลขของเส้นบอกระยะแบบ Revit: เลือกเส้นบอกระยะแล้วลากจุดสี่เหลี่ยมใต้ตัวเลขเพื่อย้ายตัวเลขไปที่ไหนก็ได้ ตัวเลขไปกับเส้นบอกระยะเมื่อชิ้นงานขยับ ย้ายพ้นเส้นช่วยแล้วมีเส้นชี้กลับมาที่เส้น เลือกชนิดเส้นชี้โค้งหรือตรง และแสดงเส้นชี้เมื่อพ้นเส้นช่วยหรือเมื่อย้ายจากที่เดิมได้ในชนิดของเส้นบอกระยะ ปิดเส้นชี้ทีละเส้นได้ใน Properties มีปุ่ม คืนตำแหน่งตัวเลข ข้อความบนและล่างไปพร้อมตัวเลข
 - V1.372 · แก้เส้นช่วยของเส้นบอกระยะแบบ Revit (Edit Witness Lines): เลือกเส้นบอกระยะแล้วกด แก้เส้นช่วย คลิกผนัง เสา เส้นกริด หรือจุดอ้างอิงอื่นเพื่อเพิ่มเส้นช่วย ช่วงที่จุดนั้นตกอยู่จะแบ่งเป็นสองช่วง หรือต่อชุดออกไปถ้าอยู่นอกปลาย คลิกเส้นช่วยที่มีอยู่เพื่อเอาออก สองช่วงรวมเป็นช่วงเดียว คลิกที่ว่าง กด Enter หรือ เสร็จสิ้น เพื่อจบ ย้อนกลับได้ทีละคลิก ถ้าชุดนั้นมีระยะเท่ากันหรือล็อกไว้จะเอาออกให้ก่อนเพื่อไม่ให้ชิ้นงานขยับ
+- V1.373 · หน่วยที่สองและความสูงช่องเปิดของเส้นบอกระยะแบบ Revit: ในแก้ชนิดของเส้นบอกระยะตั้ง หน่วยที่สอง (Alternate Units) ให้เขียนค่าซ้ำอีกหน่วยทางขวาของตัวเลขหรือใต้เส้นได้ เป็นฟุตและเศษนิ้ว (16' - 4 7/8") เศษนิ้ว ฟุตทศนิยม มม. ซม. หรือ ม. เลือกความละเอียด คำนำหน้า และคำต่อท้ายได้ และตั้ง แสดงความสูงช่องเปิด (Show Opening Height) ให้เส้นบอกระยะที่วัดความกว้างประตูหรือหน้าต่างเขียนความสูงไว้ใต้เส้น เรียงต่อกับข้อความล่าง ไปกับตัวเลขที่ลากย้าย แผ่นงาน และ DXF
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -47622,6 +47682,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.370 · Dimension Text as in Revit: the Dimension Text dialog, from the ribbon or Properties, with Use Actual Value or Replace With Text, Above, Prefix, Suffix and Below, and a preview; the Above text is written over the value and the Below text under the line, in plans, elevations, sections, sheets and DXF; a click on either picks the dimension
 - V1.371 · Drag Text of dimensions as in Revit: select a dimension and drag the square under its value to move the value anywhere; it goes with the dimension when elements move; moved beyond the witness lines it gets a leader back to the line; the dimension type has Leader Type Arc or Line and Show Leader When Text Moves Beyond Witness Lines or Away from Origin; each dimension's Leader box in Properties; Reset Text Position; the Above and Below text moves with the value
 - V1.372 · Edit Witness Lines as in Revit: select a dimension and click Edit Witness Lines; click a wall, column, grid or other reference to add a witness line (the segment it falls in is split in two, or the string grows past its end); click a witness line to take it away (its two segments become one); click empty space, Enter or Finish to end; each click undoes on its own; EQ and locks of a string that changes are taken off so that nothing moves
+- V1.373 · Alternate Units and Show Opening Height of dimensions as in Revit: in a dimension type's Edit Type set Alternate Units to write each value again in other units right of it or below the line, as feet and fractional inches (16' - 4 7/8"), fractional inches, decimal feet, mm, cm or m, with its rounding, prefix and suffix; and set Show Opening Height so that a dimension across a door or window writes its height under the line; they stack with the Below text and go with a moved value, onto sheets and into DXF
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -49870,6 +49931,32 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r373={
+  get:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  set:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete d[k];else d[k]=o[k]});refresh();return true},
+  fmt:(o,mm)=>dalFmt373(o,mm),
+  types:()=>P.types.dim.map(x=>({id:x.id,name:x.name,doh373:x.doh373,dalt373:x.dalt373,dalu373:x.dalu373,dald373:x.dald373,dalf373:x.dalf373,dalp373:x.dalp373,dals373:x.dals373})),
+  setType:(id,o)=>{const T=P.types.dim.find(x=>x.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete T[k];else T[k]=o[k]});refresh();return true},
+  doors:lv=>P.els.filter(e=>(e.cat==='door'||e.cat==='window')&&(lv==null||e.level===lv)).map(e=>{const w=IDX.get(e.host),T=typ(P,e);return{id:e.id,cat:e.cat,host:e.host,pos:e.pos,w:T&&T.width,h:T&&T.height,wall:w?[w.x1,w.y1,w.x2,w.y2]:null}}),
+  /* a dimension across an opening (its two sides), its line through (cx, cy) */
+  mkop:(id,cx,cy,vid)=>{const A={k:'op',id,s:-1},B={k:'op',id,s:1},pa=refPoint(A),pb=refPoint(B),o=dimFromPts({x:pa[0],y:pa[1],ref:A},{x:pb[0],y:pb[1],ref:B},{x:cx,y:cy},null);if(!o)return null;
+    const d=Object.assign({id:P.seq++,cat:'dim',view:vid||activeView().id},o);edit(()=>P.ann.push(d));refresh();return d.id},
+  mk:o=>{const d=Object.assign({id:P.seq++,cat:'dim',view:activeView().id},o);edit(()=>P.ann.push(d));refresh();return d.id},
+  draw:id=>{const d=IDX.get(id),v=viewById(d.view),tx=[],sg=[],no=()=>{},ctx=new Proxy({measureText:s=>({width:String(s).length*6})},{get:(o,k)=>k in o?o[k]:no,set:(o,k,x)=>{o[k]=x;return true}}),
+    g={ctx,X:x=>x,Y:y=>y,scale:v.scale||100,pm:1,lw:()=>1,circle:no,seg:(a,b)=>sg.push([a.slice(),b.slice()]),path:no,dash:no,text:(s,p,mm,o)=>{tx.push({s:String(s),p:p.slice()});return 1}};
+    const G=dimGeo(d),m=drawDim(g,G,'#000',dimLabel(d,G),dimT(d));return{tx,m}},
+  edl:(o,val)=>{const s=edLabel(o,{val},dimT(o));DAL373=null;DMX370=null;return s},
+  label:id=>{const d=IDX.get(id),G=dimGeo(d);const s=dimLabel(d,G);DAL373=null;DMX370=null;DMT371=null;return s},
+  fr:id=>{const d=IDX.get(id),v=viewById(d.view),F=dtmFr371(dimGeo(d),dimT(d),v.scale||100);return{u:F.u,n:F.n,m0:F.m0,mid:F.mid,L:F.L,sz:F.sz}},
+  dist:(id,x,y)=>{const d=IDX.get(id),v=viewById(d.view);return XHA.dim(v,d,{x,y},v.scale||100)},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(0,x,y);return[s.x,s.y]},
+  hitAt:(sx,sy)=>{const pn=PANES[0],r=pn.cv.getBoundingClientRect(),v=paneView(0);return hitPlan(v,{x:sx-r.left,y:sy-r.top})},
+  dxf:vid=>{const v=viewById(vid),s=v.kind==='plan'?planDXF(v,{}):evDXF(v),L=s.split(/\r?\n/),out=[];
+    for(let i=0;i+1<L.length;i+=2)if(L[i].trim()==='0'&&/^(TEXT|MTEXT)$/.test(L[i+1].trim())){for(let j=i+2;j+1<L.length&&L[j].trim()!=='0';j+=2)if(L[j].trim()==='1'){out.push(L[j+1]);break}}return out},
+  tdlg:()=>{const D=$('#dlg');if(!D||!D.open)return null;const f=[...D.querySelectorAll('[data-tf]')].map(x=>x.dataset.tf);return{f,v:Object.fromEntries([...D.querySelectorAll('[data-tf]')].map(x=>[x.dataset.tf,x.value]))}},
+  tidy:id=>{for(const f of XC)f();const T=P.types.dim.find(x=>x.id===id);return JSON.parse(JSON.stringify(T))},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r372={
   get:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
   set:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete d[k];else d[k]=o[k]});refresh();return true},
