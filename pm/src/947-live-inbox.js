@@ -22,8 +22,15 @@ if(window.penumLive){
   // and a quote already here is replaced only if it came in this way (DB.co.live.q), keeping its number
   function liveQuotes(pid,L){const Q=DB.co.quotes=DB.co.quotes||[],lv=DB.co.live=DB.co.live||{},got=lv.q=lv.q||{};
     for(const src of L){if(!src||!src.id||src.pj!==pid)continue;const q=JSON.parse(JSON.stringify(src)),i=Q.findIndex(x=>x.id===q.id);
-      if(i>=0){if(!got[q.id])continue;q.no=Q[i].no;Q[i]=q}
-      else{if(!q.no||Q.some(x=>x.no===q.no))q.no=nextNo('QT-',Q);Q.push(q);got[q.id]=1}}}
+      if(i>=0){if(!got[q.id])continue;q.no=Q[i].no;liveKeep(q,Q[i],Q);Q[i]=q}
+      else{if(!q.no||Q.some(x=>x.no===q.no))q.no=nextNo('QT-',Q);liveKeep(q,null,Q);Q.push(q);got[q.id]=1}}}
+  // 4.99.31 ("ผู้ลงนาม กับผู้เสนอราคา ทำไมไม่เหมือนตัวอื่น"): a sent quote leaves the customer, signer and ผู้เสนอราคา empty, so
+  // keep what was picked here on the quote it replaces; a new one takes the signer and ผู้เสนอราคา of the latest quote that has them, as NEW.quotes does
+  function liveKeep(q,old,Q){const e=k=>!String(q[k]||'').trim(),has=(x,k)=>x&&String(x[k]||'').trim();
+    if(old){['cust','by'].forEach(k=>{if(e(k)&&has(old,k))q[k]=old[k]});if(e('signName')&&has(old,'signName')){q.signName=old.signName;q.signPos=old.signPos||'';if(old.sgMan)q.sgMan=1}}
+    const last=k=>{for(let j=Q.length-1;j>=0;j--)if(Q[j]!==old&&has(Q[j],k))return Q[j];return null};
+    if(e('signName')){const s=last('signName');if(s){q.signName=s.signName;q.signPos=s.signPos||'';if(s.sgMan)q.sgMan=1}}
+    if(e('by')){const s=last('by');if(s)q.by=s.by}}
   // 4.86: bids (ปร.4 / ปร.5) the same way, into ทำราคาประมูล (DB.co.tenders): only ones for this project (t.pj), new ones take the
   // next TD- number here, and a bid already here is replaced only if it came in this way (DB.co.live.t), keeping its number
   function liveTenders(pid,L){const T=DB.co.tenders=DB.co.tenders||[],lv=DB.co.live=DB.co.live||{},got=lv.t=lv.t||{};

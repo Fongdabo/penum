@@ -201,6 +201,8 @@ function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),
   // a label in the chosen language; bilingual puts the English under (or beside) the Thai
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
+  // 4.99.31 a section named with the customer's own item number ("1.1 กั้นห้อง…", KCE BOQ) prints that number instead of 1, 2, 3…
+  const gNo=(s,k)=>{const m=String(s).match(/^(\d+(?:\.\d+)+)\.?\s+(.+)$/);return m?[m[1],m[2]]:[k,s]};
   const dt=s=>{if(!okD(s))return '';const d=pd(s);return EN?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)};
   const cu=C.customers.find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'',cuA=EN&&cu.addrEn||cu.addr||'',biE=(th,en)=>L==='bi'&&en&&en!==th?`<i class="en">${esc(en)}</i>`:'',st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
   const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={e:0,m:0,l:0,t:0};order.push(i.g)}const g=G[i.g],e=eqs&&qmIsEq(i);g.e+=e?x.mt:0;g.m+=e?0:x.mt;g.l+=x.lt;g.t+=x.t});
@@ -241,7 +243,7 @@ function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),
     const hOn=g=>{if(!Q.hsub||S0)return false;const I=Q.items.filter(i=>i.g===g),H=new Set(I.map(i=>String(i.head||'').split(' · ')[0]).filter(Boolean));return H.size>1||(H.size===1&&I.some(i=>!String(i.head||'').trim()))};
     const sumH=()=>{if(!HA||!lh||!hOn(lg))return;body.push(`<tr class="hs"><td></td><td>${tx('รวม','Subtotal')} ${esc(hn)}</td>${emp(2)}${MG.length?MG.map(k=>`<td></td><td class="r">${M(HA[k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(HA.t,2)}</td></tr>`)};
     const sumG=(g)=>`<tr class="s"><td></td><td>${tx('รวม','Subtotal')} ${esc(gN(g))}${L==='bi'?'<i class="en il">Subtotal</i>':''}</td>${emp(2)}${MG.length?MG.map(k=>`<td></td><td class="r">${M(G[g][k])}</td>`).join(''):'<td></td>'}<td class="r">${fmt(G[g].t,2)}</td></tr>`;
-    Q.items.forEach(i=>{if(i.g!==lg){sumH();HA=null;if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;body.push(S0?`<tr class="g"><td class="n">${gi}</td><td colspan="3">${esc(gN(i.g))}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gi}</td><td colspan="${nc-1}">${esc(gN(i.g))}</td></tr>`)}
+    Q.items.forEach(i=>{if(i.g!==lg){sumH();HA=null;if(lg!==null&&order.length>1&&!S0)body.push(sumG(lg));gi++;hi=0;li=0;lh=ls=null;lg=i.g;const gx=gNo(gN(i.g),gi);body.push(S0?`<tr class="g"><td class="n">${gx[0]}</td><td colspan="3">${esc(gx[1])}</td>${MG.map(k=>`<td class="r">${M(G[i.g][k])}</td>`).join('')}<td class="r">${fmt(G[i.g].t,2)}</td></tr>`:`<tr class="g"><td class="n">${gx[0]}</td><td colspan="${nc-1}">${esc(gx[1])}</td></tr>`)}
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
       if(h1!==lh){sumH();HA=null;lh=h1;ls=null;if(h1){hi++;const m=h1.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h1);HA={e:0,m:0,l:0,t:0};body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
       if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h h2"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
@@ -256,7 +258,7 @@ function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),
   const detail=(withMini)=>`<table class="qm-t">${cols(wD)}<thead>${withMini?mini:''}${S0?thS:thD2}</thead><tbody>${det()}</tbody></table>`;
   // page-one summary by section
   const summary=()=>{const w=eqs?fill([7,0,14,14,14,16]):sp?fill([7,0,17,17,18]):fill([7,0,20]);
-    const rows=order.map((g,k)=>`<tr><td class="n">${k+1}</td><td>${esc(gN(g))}</td>${MG.map(k=>`<td class="r">${M(G[g][k])}</td>`).join('')}<td class="r">${fmt(G[g].t,2)}</td></tr>`).join('');
+    const rows=order.map((g,k)=>{const gx=gNo(gN(g),k+1);return `<tr><td class="n">${gx[0]}</td><td>${esc(gx[1])}</td>${MG.map(k=>`<td class="r">${M(G[g][k])}</td>`).join('')}<td class="r">${fmt(G[g].t,2)}</td></tr>`}).join('');
     return `<table class="qm-t">${cols(w)}<thead><tr class="ch"><th>${t('ลำดับ','No.')}</th><th>${t('รายการ','Description')}</th>${MG.map(k=>`<th>${lab[k]}</th>`).join('')}<th>${t('จำนวนเงิน','Amount')}</th></tr></thead>
       <tbody>${rows}<tr class="tt"><td></td><td>${t('รวม','Total',1)}</td>${MG.map(k=>`<td class="r">${M(T[k])}</td>`).join('')}<td class="r">${fmt(T.t,2)}</td></tr></tbody></table>`};
   // ---- totals, amount in words, terms
