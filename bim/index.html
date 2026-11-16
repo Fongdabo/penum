@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=386,V1_NAME='V1.376';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=387,V1_NAME='V1.377';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -45160,6 +45160,38 @@ Object.assign(STR,{f_deqt376:['ข้อความแทน EQ (Equality Text)
   f_dint376:['ขีดที่เส้นช่วยด้านใน (Interior Tick Mark)','Interior Tick Mark'],dint_none:['ไม่มี (ลูกศรกลับด้านทุกช่วงแบบเดิม)','None (arrows flip in each segment, as before)'],
   dint_diag:['ขีดเฉียง','Diagonal'],dint_heavy:['ขีดหนา','Heavy'],dint_dot:['จุด','Dot'],
   f_dfde376:['ส่วนยื่นเส้นบอกระยะเมื่อลูกศรกลับด้าน (Flipped Dimension Line Extension)','Flipped Dimension Line Extension']});
+/* ===== V1.377 the pens and the snap of dimension types as in Revit: Line Weight (the pen of the dimension line, the witness lines and the leader) and Tick Mark
+   Line Weight (the pen of the tick marks and arrows), pens 1–16 read through Line Weights (V1.219); Dimension Line Snap Distance (a new dimension, or one whose
+   line is dragged, falls that far from a parallel dimension beside it, so strings stack evenly) ===== */
+const DLW377=['auto',...Array.from({length:16},(_,i)=>String(i+1))];
+const dlwP377=v=>{const i=parseInt(v,10);return i>=1&&i<=16&&String(i)===String(v)?LW_PEN219[i-1]:null};
+const dsnap377=T=>{const v=T&&T.dsnap377!=null&&T.dsnap377!==''?+T.dsnap377:NaN;return isFinite(v)&&v>0?clamp(v,0.5,50):null};
+/* a painter that draws the lines of a dimension of type T with its pens: what dmDraw asks 0.13 mm for (lines) with the Line Weight, what it asks 0.35, 0.5 or 0.18
+   for (ticks, the heavy tick, open arrows) with the Tick Mark Line Weight; an arrowhead of V1.346 takes the Tick Mark Line Weight whole */
+function dlwG377(g,T){const a=dlwP377(T&&T.dlw377),b=dlwP377(T&&T.dtlw377);if((a==null&&b==null)||g.__dlw377)return g;const g2=Object.create(g),L=g.lw;g2.__dlw377=1;
+  g2.lw=mm=>L(a!=null&&Math.abs(mm-0.13)<1e-9?a:b!=null&&(Math.abs(mm-0.35)<1e-9||Math.abs(mm-0.5)<1e-9||Math.abs(mm-0.18)<1e-9)?b:mm);
+  if(b!=null){g2.__tk377=b;g2.__lw377=L}return g2}
+{const f0=drawDim;drawDim=(g,G,color,label,T)=>f0(dlwG377(g,T),G,color,label,T)}
+{const f0=dsDraw;dsDraw=(g,d,I,color)=>f0(dlwG377(g,I&&I.S&&I.S.T),d,I,color)}
+{const f0=arhDraw346;arhDraw346=(g,e,u,A)=>{if(!g||g.__tk377==null)return f0(g,e,u,A);const g2=Object.create(g),w=g.__tk377,L=g.__lw377;g2.lw=()=>L(w);return f0(g2,e,u,A)}}
+/* ---- Dimension Line Snap Distance: in line with a parallel dimension stays first (as before); else that far from one beside it, over the same stretch ---- */
+function dsnapAt377(v,d,skip){const T=d.type!=null?dimT(d):dimT({type:(defs('dim')||{}).type}),S=dsnap377(T);if(!S)return null;const G=dimGeo(d);if(!G)return null;
+  const L=Math.hypot(G.q[0]-G.p[0],G.q[1]-G.p[1]);if(L<1)return null;const ux=(G.q[0]-G.p[0])/L,uy=(G.q[1]-G.p[1])/L,nx=-uy,ny=ux,D=S*(v.scale||100),tol=9/navOf(v).s;
+  const t0=Math.min(0,L),t1=Math.max(0,L);let best=null,bd=tol;
+  for(const o of P.ann){if(o.cat!=='dim'||o.view!==avid(v)||o===d||(d.id!=null&&o.id===d.id)||(skip&&skip.has(o.id))||hidDatum(v,o))continue;const H=dimGeo(o);if(!H)continue;
+    const l=Math.hypot(H.q[0]-H.p[0],H.q[1]-H.p[1]);if(l<1||Math.abs(ux*(H.q[1]-H.p[1])-uy*(H.q[0]-H.p[0]))/l>GE_PAR)continue;
+    const s0=(H.p[0]-G.p[0])*ux+(H.p[1]-G.p[1])*uy,s1=(H.q[0]-G.p[0])*ux+(H.q[1]-G.p[1])*uy;if(Math.max(s0,s1)<t0-D||Math.min(s0,s1)>t1+D)continue;          // beside it, not far along
+    const dist=(H.p[0]-G.p[0])*nx+(H.p[1]-G.p[1])*ny,e=Math.abs(Math.abs(dist)-D);if(Math.abs(dist)>1&&e<bd){bd=e;best={dist,H}}}
+  if(!best)return null;const H=best.H,mv=best.dist-Math.sign(best.dist)*D,delta=d.mode==='h'?mv*ny:d.mode==='v'?mv*nx:mv,mx=(G.p[0]+G.q[0])/2+nx*mv,my=(G.p[1]+G.q[1])/2+ny*mv;
+  return{delta,guide:[(H.p[0]+H.q[0])/2,(H.p[1]+H.q[1])/2,mx,my],snap377:D}}
+{const f0=dimLineSnap;dimLineSnap=(v,d,skip)=>{const r=f0(v,d,skip);if(r||ui.snapOv==='off'||!v||catHid(v,'dim')||!d)return r;return dsnapAt377(v,d,skip)}}
+/* ---- the type's parameters, and a file ---- */
+TYPE_FIELDS.dim.push(['dlw377','sel',DLW377,'dlwp_'],['dtlw377','sel',DLW377,'dlwp_'],['dsnap377','num',null,0.5]);
+XC.push(()=>{for(const T of (P.types&&P.types.dim)||[]){for(const k of ['dlw377','dtlw377'])if(T[k]!==undefined&&(T[k]==='auto'||dlwP377(T[k])==null))delete T[k];
+  if(T.dsnap377!==undefined){const v=T.dsnap377===''||T.dsnap377===null?NaN:+T.dsnap377;if(!isFinite(v)||v<=0)delete T.dsnap377;else T.dsnap377=clamp(v,0.5,50)}}});
+Object.assign(STR,{f_dlw377:['ความหนาเส้น (Line Weight)','Line Weight'],f_dtlw377:['ความหนาเส้นของขีด (Tick Mark Line Weight)','Tick Mark Line Weight'],
+  f_dsnap377:['ระยะดูดของเส้นบอกระยะ (Dimension Line Snap Distance)','Dimension Line Snap Distance'],dlwp_auto:['ตามเดิม','As before']});
+for(let i=1;i<=16;i++)STR['dlwp_'+i]=[i+' ('+LW_PEN219[i-1]+' มม.)',i+' ('+LW_PEN219[i-1]+' mm)'];
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -47310,6 +47342,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.374 · ตัวอักษรและเส้นช่วยของชนิดเส้นบอกระยะแบบ Revit: ในแก้ชนิดตั้ง ตัวเอียง ขีดเส้นใต้ ความกว้างตัวอักษร และพื้นหลังตัวอักษร (ทึบหรือโปร่ง) ใช้กับทุกข้อความของเส้นบอกระยะ ตั้ง การควบคุมเส้นช่วย เป็นยาวคงที่จากเส้นบอกระยะพร้อมความยาวเส้นช่วยได้ และเส้นช่วยที่วัดจากแนวศูนย์กลางของผนัง เสา ประตู หรือหน้าต่าง มีสัญลักษณ์ CL และลายเส้นศูนย์กลางได้
 - V1.375 · สูตรระยะเท่ากันแบบ Revit (Equality Formula): ชุดเส้นบอกระยะที่ตั้งระยะเท่ากัน (EQ) เลือก แสดงเป็น › สูตรระยะเท่ากัน ใน Properties แล้วทั้งชุดเขียนสูตรเดียวกลางชุด เช่น 3 x 1.50 = 4.50 แทน EQ ทุกช่วง ชนิดของเส้นบอกระยะเลือกรูปแบบสูตรได้ (จำนวน x ระยะ = รวม, @, EQ SPA หรือระยะรวมอย่างเดียว) ไปกับแผ่นงานและ DXF
 - V1.376 · ค่าระยะเท่ากันและลูกศรของชนิดเส้นบอกระยะแบบ Revit: ข้อความแทน EQ (Equality Text) ตั้งคำที่ชุดระยะเท่ากันเขียนแทน EQ ได้ เส้นช่วยด้านในของชุดระยะเท่ากัน (Equality Witness Display) เลือกขีดและเส้น ขีดอย่างเดียว หรือซ่อน ขีดที่เส้นช่วยด้านใน (Interior Tick Mark) เมื่อช่วงสั้นจนลูกศรไม่พอที่ ใส่ขีดเฉียง ขีดหนา หรือจุดที่เส้นช่วยด้านในแทน ส่วนปลายชุดลูกศรกลับเข้าจากด้านนอก และส่วนยื่นเส้นบอกระยะเมื่อลูกศรกลับด้าน (Flipped Dimension Line Extension) ไปกับแผ่นงานและ DXF
+- V1.377 · ความหนาเส้นและระยะดูดของชนิดเส้นบอกระยะแบบ Revit: ความหนาเส้น (Line Weight) ของเส้นบอกระยะ เส้นช่วย และเส้นชี้ ความหนาเส้นของขีด (Tick Mark Line Weight) ของขีดและลูกศร เลือกปากกา 1 ถึง 16 ตามตารางความหนาเส้นของโครงการ และระยะดูดของเส้นบอกระยะ (Dimension Line Snap Distance) เส้นบอกระยะที่วางใหม่หรือที่ลากเส้นดูดเข้าระยะนั้นจากเส้นที่ขนานอยู่ข้างกัน ชุดเส้นบอกระยะจึงเรียงห่างเท่ากัน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -47826,6 +47859,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.374 · The text and witness lines of dimension types as in Revit: in Edit Type set Italic, Underline, Width Factor and Text Background (Opaque or Transparent) for every text of a dimension; Witness Line Control Fixed to Dimension Line with a Witness Line Length; and a Centerline Symbol (CL) and Centerline Pattern on witness lines that stand on the centre line of a wall, column, door or window
 - V1.375 · Equality Formula as in Revit: an equal dimension string (EQ) set to Equality Display › Equality Formula in Properties writes one formula in the middle of the string, such as 3 x 1.50 = 4.50, in place of EQ on every segment; the dimension type picks the formula (Number x Length = Total, @, EQ SPA or the Total alone); onto sheets and into DXF
 - V1.376 · The equality and arrow settings of dimension types as in Revit: Equality Text sets the word an equal string writes in place of EQ; Equality Witness Display shows the inner witness lines of an equal string as Tick and Line, Tick Only or Hide; Interior Tick Mark puts a diagonal, heavy or dot tick at the inner witness lines of a string where a segment is too short for its arrows, the arrows at the ends of the string pointing in from outside; Flipped Dimension Line Extension sets how far the line runs past such an arrow; onto sheets and into DXF
+- V1.377 · The pens and the snap of dimension types as in Revit: Line Weight (the dimension line, witness lines and leader) and Tick Mark Line Weight (the ticks and arrows) pick pens 1 to 16 from the project's Line Weights; Dimension Line Snap Distance makes a new dimension, or one whose line is dragged, fall that far from a parallel dimension beside it, so strings stack evenly
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -50074,6 +50108,31 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r377={
+  get:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  set:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete d[k];else d[k]=o[k]});refresh();return true},
+  types:()=>P.types.dim.map(x=>({id:x.id,name:x.name,dtick:x.dtick,dlw377:x.dlw377,dtlw377:x.dtlw377,dsnap377:x.dsnap377})),
+  setType:(id,o)=>{const T=P.types.dim.find(x=>x.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete T[k];else T[k]=o[k]});refresh();return true},
+  arh:A=>{edit(()=>{P.arh346=(P.arh346||[]).concat([A])});refresh();return true},
+  mk:o=>{const d=Object.assign({id:P.seq++,cat:'dim',view:activeView().id},o);edit(()=>P.ann.push(d));refresh();return d.id},
+  draw:id=>{const d=IDX.get(id),v=viewById(d.view),tx=[],sg=[],fl=[],pa=[];let cur=null;const no=()=>{},
+    ctx=new Proxy({lineWidth:1,measureText:s=>({width:String(s).length*6}),fill:()=>{if(cur)fl.push({p:cur,w:ctx.lineWidth})},stroke:()=>{if(cur)pa.push({p:cur,w:ctx.lineWidth})}},{get:(o,k)=>k in o?o[k]:no,set:(o,k,x)=>{o[k]=x;return true}}),
+    g={ctx,C:{paper:'#fff'},X:x=>x,Y:y=>y,scale:v.scale||100,pm:10,lw:mm=>mm,circle:(p,r)=>{cur={c:p.slice(),r}},seg:(a,b)=>sg.push({a:a.slice(),b:b.slice(),w:ctx.lineWidth}),
+      path:pts=>{cur=pts.map(q=>q.slice())},dash:no,text:(s,p,mm,o)=>{tx.push({s:String(s),p:p.slice()});return String(s).length*6}};
+    const G=dimGeo(d),m=drawDim(g,G,'#000',dimLabel(d,G),dimT(d));return{tx,sg,fl,pa,m}},
+  draw2:id=>{const d=IDX.get(id),v=viewById(d.view),W=[];let lw=1;const no=()=>{},ctx=new Proxy({measureText:s=>({width:String(s).length*6}),stroke:()=>W.push(Math.round(lw*1000)/1000)},
+      {get:(o,k)=>k==='lineWidth'?lw:k in o?o[k]:no,set:(o,k,x)=>{if(k==='lineWidth')lw=x;else o[k]=x;return true}});
+    const g=painter(ctx,{s:0.2,ox:0,oy:0},v.scale||100,C,false),G=dimGeo(d);g.lay('dim');drawDim(g,G,'#000',dimLabel(d,G),dimT(d));return W},
+  lwa:a=>{edit(()=>{if(a)P.lwa=a.slice();else delete P.lwa});refresh();return true},
+  snap:o=>{const v=activeView(),r=dimLineSnap(v,Object.assign({view:avid(v)},o),null);return r?{delta:r.delta,guide:r.guide,d:r.snap377||0}:null},
+  tool:o=>{const v=activeView();ui.defs.dim=Object.assign(ui.defs.dim||{},o);return defs('dim').type},
+  last:()=>{const d=P.ann.filter(a=>a.cat==='dim').sort((a,b)=>b.id-a.id)[0],G=dimGeo(d);return{id:d.id,type:d.type,a:d.a,b:d.b,p:G.p,q:G.q}},
+  dark:(x,y,r)=>{const pn=PANES[0],B=window.PenumBIM.toScreen(0,x,y),c=pn.cv,R=c.getBoundingClientRect(),k=c.width/R.width,X=Math.round((B.x-R.left)*k),Y=Math.round((B.y-R.top)*k),n=r||4,q=c.getContext('2d').getImageData(X,Y-n,1,2*n+1).data;let s=0;for(let i=0;i<q.length;i+=4)s+=765-q[i]-q[i+1]-q[i+2];return s},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(0,x,y);return[s.x,s.y]},
+  tdlg:()=>{const D=$('#dlg');if(!D||!D.open)return null;return{f:[...D.querySelectorAll('[data-tf]')].map(x=>x.dataset.tf),v:Object.fromEntries([...D.querySelectorAll('[data-tf]')].map(x=>[x.dataset.tf,x.value]))}},
+  tidy:id=>{for(const f of XC)f();const T=P.types.dim.find(x=>x.id===id);return JSON.parse(JSON.stringify(T))},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r376={
   get:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
   set:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete d[k];else d[k]=o[k]});refresh();return true},
