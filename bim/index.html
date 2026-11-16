@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=380,V1_NAME='V1.370';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=381,V1_NAME='V1.371';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -44842,6 +44842,68 @@ Object.assign(STR,{a_dtx370:['ข้อความเส้นบอกระ�
   dtx_pv370:['ตัวอย่าง','Preview'],dtx_apply370:['นำไปใช้','Apply'],dtx_pick370:['เลือกเส้นบอกระยะหนึ่งเส้นก่อน','Select one dimension first'],
   dtx_empty370:['พิมพ์ข้อความที่จะใช้แทนค่าระยะ หรือเลือก ใช้ค่าจริง','Type the text to replace the value with, or pick Use Actual Value'],
   dtx_ds370:['เส้นบอกระยะแบบฐานเดียวกันหรือแบบพิกัดยังไม่แสดงข้อความบนและล่าง','Baseline and ordinate dimensions do not show the Above and Below text yet']});
+/* ===== V1.371 Drag Text of dimensions as in Revit: the value of a plan dimension moved by the square grip under it (d.tx371: [along the line, out from it] from where
+   it stands, so it goes with the dimension); a leader back to the middle of the line when the value is moved beyond the witness lines (type: Leader Type Arc / Line,
+   Show Leader When Text Moves Beyond Witness Lines / Away from Origin; the dimension's Leader box); Reset Text Position.  Above and Below (V1.370) go with it ===== */
+const dtmOf371=d=>d&&d.cat==='dim'&&Array.isArray(d.tx371)&&d.tx371.length===2&&d.tx371.every(x=>typeof x==='number'&&isFinite(x))?d.tx371:null;
+const dtmLd371=T=>(T&&T.dld371)==='line'?'line':'arc',dtmSh371=T=>(T&&T.dls371)==='away'?'away':'beyond';
+/* the frame of a dimension's value: u along the line, n out to the side the value is written on, m0 where the value stands unmoved (as dmDraw puts it) */
+function dtmFr371(G,T,sc){const dx=G.q[0]-G.p[0],dy=G.q[1]-G.p[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L;let nx=-uy,ny=ux;if(ny>0.01||(Math.abs(ny)<=0.01&&nx>0)){nx=-nx;ny=-ny}
+  const sz=dtxSz370(T),o=T?(clamp(+dmN(T,'dtoff')||0,0,20)+sz/2)*sc:1.9*sc,mid=[(G.p[0]+G.q[0])/2,(G.p[1]+G.q[1])/2];return{u:[ux,uy],n:[nx,ny],L,sz,mid,m0:[mid[0]+nx*o,mid[1]+ny*o]}}
+const dtmAt371=(F,q)=>[F.m0[0]+F.u[0]*q[0]+F.n[0]*q[1],F.m0[1]+F.u[1]*q[0]+F.n[1]*q[1]];
+const dtmTw371=(s,T,sz,sc)=>{const own=!!T&&dmN(T,'dfont')!=='auto'&&!!FONTS[dmN(T,'dfont')];return twmm(String(s||''),!!T&&dmN(T,'dbold')==='yes',!own&&/^[\d.,\s+\-]+$/.test(String(s||'')))*sz/2.2*sc};
+/* the leader: from the middle of the dimension line to the near end of the moved value, straight or an arc bowed away from the line */
+function dtmLeader371(d,G,T,sc,lab){const q=dtmOf371(d);if(!q||d.nl371)return null;const F=dtmFr371(G,T,sc);
+  if(dtmSh371(T)==='beyond'?Math.abs(q[0])<=F.L/2:Math.hypot(q[0],q[1])<=F.sz*sc)return null;
+  const c=dtmAt371(F,q),S=F.mid,k=Math.sign((S[0]-c[0])*F.u[0]+(S[1]-c[1])*F.u[1])||1,h=dtmTw371(lab,T,F.sz,sc)/2+0.6*sc,E=[c[0]+F.u[0]*k*h,c[1]+F.u[1]*k*h];
+  if(Math.hypot(E[0]-S[0],E[1]-S[1])<sc)return null;if(dtmLd371(T)==='line')return[S,E];
+  const ch=Math.hypot(E[0]-S[0],E[1]-S[1]);let px=-(E[1]-S[1])/ch,py=(E[0]-S[0])/ch;if(px*F.n[0]+py*F.n[1]<0){px=-px;py=-py}          // bowed out from the line by an eighth of its length
+  const C=[(S[0]+E[0])/2+px*0.24*ch,(S[1]+E[1])/2+py*0.24*ch],out=[];
+  for(let i=0;i<=12;i++){const s=i/12,r=1-s;out.push([r*r*S[0]+2*r*s*C[0]+s*s*E[0],r*r*S[1]+2*r*s*C[1]+s*s*E[1]])}return out}
+/* drawn: the label of a dimension with a moved value was just written; its drawDim writes every text of it moved (the value, Above, Below) and the leader */
+let DMT371=null;
+{const f0=dimLabel;dimLabel=(d,G)=>{const s=f0(d,G);DMT371=dtmOf371(d)&&G?{d,G,s}:null;return s}}
+{const f0=drawDim;drawDim=(g,G,color,label,T)=>{const X=DMT371;DMT371=null;if(!X||X.G!==G||X.s!==label)return f0(g,G,color,label,T);
+  const sc=g.scale,F=dtmFr371(G,T,sc),c=dtmAt371(F,X.d.tx371),dx=c[0]-F.m0[0],dy=c[1]-F.m0[1],g2=Object.create(g);g2.text=(s,p,mm,o)=>g.text(s,[p[0]+dx,p[1]+dy],mm,o);
+  f0(g2,G,color,label,T);const Ld=dtmLeader371(X.d,G,T,sc,label);if(Ld){const ctx=g.ctx;ctx.strokeStyle=color;ctx.lineWidth=g.lw(0.13);g.dash(null);for(let i=0;i+1<Ld.length;i++)g.seg(Ld[i],Ld[i+1])}
+  return c}}
+{const f0=dsDraw;dsDraw=(g,d,I,color)=>{const m=f0(g,d,I,color);DMT371=null;return m}}
+/* picked by the moved value, its Above and Below, and the leader (not where the value stood) */
+{const f0=XHA.dim;XHA.dim=(v,d,w,sc)=>{const q=dtmOf371(d);if(!q||dsSeg(d))return f0(v,d,w,sc);const G=dimGeo(d);if(!G)return f0(v,d,w,sc);
+  const T=dimT(d),F=dtmFr371(G,T,sc),c=dtmAt371(F,q),lab=dimLabel(d,G);DMT371=null;DMX370=null;const dx=c[0]-F.m0[0],dy=c[1]-F.m0[1],rot=Math.atan2(F.u[1],F.u[0]);
+  let m=Math.min(segDist(w.x,w.y,G.p[0],G.p[1],G.q[0],G.q[1])-1.2*sc,dsBox({m:c,rot,tw:dtmTw371(lab,T,F.sz,sc),sz:F.sz},w,sc));
+  if(dtxHas370(d))for(const B of dtxBoxes370(d,G,sc))m=Math.min(m,dsBox(Object.assign({},B,{m:[B.m[0]+dx,B.m[1]+dy]}),w,sc));
+  const Ld=dtmLeader371(d,G,T,sc,lab);if(Ld)for(let i=0;i+1<Ld.length;i++)m=Math.min(m,segDist(w.x,w.y,Ld[i][0],Ld[i][1],Ld[i+1][0],Ld[i+1][1]));return m}}
+/* ---- the Drag Text grip of the one selected dimension: a square just under its value ---- */
+const dtmSel371=v=>{if(!v||v.kind!=='plan'||ui.tool!=='modify'||ui.sel.size!==1||catHid(v,'dim'))return null;const d=IDX.get([...ui.sel][0]);
+  return d&&d.cat==='dim'&&d.view===avid(v)&&!d.pin&&!dsSeg(d)&&!hidDatum(v,d)?d:null};
+function dtmGrip371(d,sc){const G=dimGeo(d);if(!G)return null;const F=dtmFr371(G,dimT(d),sc),c=dtmAt371(F,dtmOf371(d)||[0,0]),k=(F.sz/2+0.6)*sc;return[c[0]-F.n[0]*k,c[1]-F.n[1]*k]}
+/* the grip put at (x, y): the value over it; back within 1.5 mm of paper of its place, it goes back there */
+function dtmSet371(d,sc,x,y){const G=dimGeo(d);if(!G)return;const F=dtmFr371(G,dimT(d),sc),k=(F.sz/2+0.6)*sc,dx=x+F.n[0]*k-F.m0[0],dy=y+F.n[1]*k-F.m0[1];
+  if(Math.hypot(dx,dy)<1.5*sc){delete d.tx371;return}d.tx371=[Math.round(dx*F.u[0]+dy*F.u[1]),Math.round(dx*F.n[0]+dy*F.n[1])]}
+{const f0=hitPlan;hitPlan=(v,p,UL)=>{const d=UL?null:dtmSel371(v);if(!d)return f0(v,p,UL);const nav=navOf(v),q=dtmGrip371(d,v.scale||100);
+  return q&&Math.hypot(q[0]-(p.x-nav.ox)/nav.s,q[1]-(p.y-nav.oy)/nav.s)<7/nav.s?{id:d.id,grip:'dtx371'}:f0(v,p,UL)}}
+{const f0=moveElDrag;moveElDrag=(dr,v,p)=>{const d=dr.e,g=dr.h&&dr.h.grip;if(dr.kind!=='grip'||!d||d.cat!=='dim'||g!=='dtx371')return f0(dr,v,p);ui.dguide=null;
+  const nav=navOf(v);dtmSet371(d,v.scale||100,(p.x-nav.ox)/nav.s,(p.y-nav.oy)/nav.s);touch()}}
+XCT.push((pn,ctx,v,nav,g)=>{const d=dtmSel371(v);if(!d)return;const q=dtmGrip371(d,v.scale||100);if(!q)return;const X=g.X(q[0]),Y=g.Y(q[1]);
+  ctx.save();ctx.fillStyle=C.raise;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.rect(X-4,Y-4,8,8);ctx.fill();ctx.stroke();ctx.restore()});
+/* ---- Reset Text Position (ribbon and Properties), the dimension's Leader box, the type's Leader Type and Show Leader When Text Moves ---- */
+XA.dtr371=()=>{const L=[...ui.sel].map(id=>IDX.get(id)).filter(d=>dtmOf371(d));if(!L.length){toast(t('dtr_none371'));return}edit(()=>{for(const d of L)delete d.tx371})};
+XR.push(tl=>{if(tl!=='modify'||!ui.sel.size)return[];const L=[...ui.sel].map(id=>IDX.get(id));return L.every(d=>d&&d.cat==='dim')&&L.some(d=>dtmOf371(d))?[{t:'g_dtp371',b:['@dtr371']}]:[]});
+BTN['@dtr371']=['reset',''];
+XP.push((c,els)=>{if(c!=='dim'||!els.length)return'';const a=els.map(d=>!d.nl371),v=a.every(x=>x===a[0])&&a[0];
+  return PR.grp('g_dtp371')+PR.chk('ld371','p_ld371',v)+(els.some(d=>dtmOf371(d))?`<div class="pa"><button class="btn" data-act="dtr371">${t('a_dtr371')}</button></div>`:'')+`<div class="pnote">${t('dtp_note371')}</div>`});
+XF.push((c,o,key,raw)=>{if(c!=='dim'||key!=='ld371')return false;if(raw===true||raw==='true'||raw==='1'||raw===1)delete o.nl371;else o.nl371=1;return true});
+TYPE_FIELDS.dim.push(['dld371','sel',['arc','line'],'dld_'],['dls371','sel',['beyond','away'],'dls_']);
+/* a file: a moved value two numbers on a dimension, the Leader box off as 1 */
+XC.push(()=>{for(const d of P.ann||[]){if(d.tx371!==undefined){if(!dtmOf371(d))delete d.tx371;else d.tx371=d.tx371.map(x=>clamp(Math.round(x),-1e6,1e6))}
+  if(d.nl371!==undefined&&(d.cat!=='dim'||d.nl371!==1))delete d.nl371}
+  for(const T of (P.types&&P.types.dim)||[]){if(T.dld371!==undefined&&T.dld371!=='arc'&&T.dld371!=='line')delete T.dld371;if(T.dls371!==undefined&&T.dls371!=='beyond'&&T.dls371!=='away')delete T.dls371}});
+Object.assign(STR,{g_dtp371:['ตำแหน่งตัวเลข','Text Position'],a_dtr371:['คืนตำแหน่งตัวเลข','Reset Text Position'],p_ld371:['เส้นชี้ (Leader)','Leader'],
+  dtr_none371:['ตัวเลขของเส้นบอกระยะที่เลือกอยู่ที่เดิมแล้ว','The text of the selected dimensions is in its place already'],
+  dtp_note371:['ลากจุดสี่เหลี่ยมใต้ตัวเลขเพื่อย้ายตัวเลข ลากกลับใกล้ที่เดิมเพื่อคืนที่ เส้นชี้ขึ้นเมื่อย้ายตัวเลขพ้นเส้นช่วย','Drag the square under the value to move it, back near its place to put it back; a leader shows when the value is moved beyond the witness lines'],
+  f_dld371:['ชนิดเส้นชี้ (Leader Type)','Leader Type'],dld_arc:['เส้นโค้ง (Arc)','Arc'],dld_line:['เส้นตรง (Line)','Line'],
+  f_dls371:['แสดงเส้นชี้เมื่อย้ายตัวเลข','Show Leader When Text Moves'],dls_beyond:['เมื่อพ้นเส้นช่วย','Beyond Witness Lines'],dls_away:['เมื่อย้ายจากที่เดิม','Away from Origin']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -46986,6 +47048,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.368 · ป้ายกำกับชี้หลายชิ้นแบบ Revit (Multi-Reference): เลือกป้ายกำกับหนึ่งป้ายแล้วกดเพิ่ม/เอาชิ้นที่ป้ายชี้ในแท็บที่ขึ้นตามการเลือก คลิกชิ้นหมวดเดียวกันเพื่อเพิ่มเข้าหรือเอาออก กด Enter หรือ เสร็จสิ้น เพื่อจบ หรือยกเลิกเพื่อคืนค่าเดิม ป้ายแสดงค่าที่ทุกชิ้นเหมือนกัน ส่วนที่ต่างกันแสดงเป็น ? และมีเส้นชี้ไปทุกชิ้น ลบชิ้นหลักแล้วชิ้นถัดไปรับแทน คัดลอกและวางพร้อมชิ้นที่ชี้ ป้ายใหม่ก็ชี้ชิ้นที่คัดลอกไปด้วย
 - V1.369 · เส้นชี้ของป้ายกำกับแบบ Revit: ชนิดเส้นชี้ปลายติดชิ้นงานหรือปลายอิสระ (Attached End / Free End) เลือกได้ใน Properties และในแถบตัวเลือกตอนติดป้าย ปลายอิสระลากหัวลูกศรไปที่ไหนก็ได้ ลากจุดกลางเส้นชี้เพื่อหักข้อศอก ลากกลับแนวตรงเพื่อเอาข้อศอกออก ข้อศอกและปลายอิสระไปกับชิ้นงานเมื่อย้าย หมุน หรือสะท้อน
 - V1.370 · ข้อความเส้นบอกระยะแบบ Revit: กล่อง ข้อความเส้นบอกระยะ (Dimension Text) เปิดจากริบบอนหรือ Properties เลือกใช้ค่าจริงหรือแทนด้วยข้อความ ใส่ข้อความบน คำนำหน้า คำต่อท้าย และข้อความล่าง พร้อมตัวอย่าง ข้อความบนเขียนเหนือค่าระยะ ข้อความล่างเขียนใต้เส้น ทั้งในแปลน รูปด้าน รูปตัด แผ่นงาน และ DXF คลิกที่ข้อความบนหรือล่างก็เลือกเส้นบอกระยะได้
+- V1.371 · ย้ายตัวเลขของเส้นบอกระยะแบบ Revit: เลือกเส้นบอกระยะแล้วลากจุดสี่เหลี่ยมใต้ตัวเลขเพื่อย้ายตัวเลขไปที่ไหนก็ได้ ตัวเลขไปกับเส้นบอกระยะเมื่อชิ้นงานขยับ ย้ายพ้นเส้นช่วยแล้วมีเส้นชี้กลับมาที่เส้น เลือกชนิดเส้นชี้โค้งหรือตรง และแสดงเส้นชี้เมื่อพ้นเส้นช่วยหรือเมื่อย้ายจากที่เดิมได้ในชนิดของเส้นบอกระยะ ปิดเส้นชี้ทีละเส้นได้ใน Properties มีปุ่ม คืนตำแหน่งตัวเลข ข้อความบนและล่างไปพร้อมตัวเลข
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -47496,6 +47559,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.368 · Multi-reference tags as in Revit: select a tag and press Add/Remove Host in the contextual tab, then click elements of its category to add them to the tag or take them out; Enter or Finish ends it, Cancel puts back what it named; the tag shows what all of them share and ? where they differ, with a leader to each; when its main element is deleted the next one takes its place, and a tag copied or pasted with its elements names the copies
 - V1.369 · Tag leaders as in Revit: Leader Type Attached End or Free End, in Properties and in the Tag tool's options bar; a free end's arrow drags anywhere; drag the middle of a tag's leader to make an elbow, and back onto the straight line to take it away; the elbow and the free end go with the element when it is moved, rotated or mirrored
 - V1.370 · Dimension Text as in Revit: the Dimension Text dialog, from the ribbon or Properties, with Use Actual Value or Replace With Text, Above, Prefix, Suffix and Below, and a preview; the Above text is written over the value and the Below text under the line, in plans, elevations, sections, sheets and DXF; a click on either picks the dimension
+- V1.371 · Drag Text of dimensions as in Revit: select a dimension and drag the square under its value to move the value anywhere; it goes with the dimension when elements move; moved beyond the witness lines it gets a leader back to the line; the dimension type has Leader Type Arc or Line and Show Leader When Text Moves Beyond Witness Lines or Away from Origin; each dimension's Leader box in Properties; Reset Text Position; the Above and Below text moves with the value
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -49744,6 +49808,27 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r371={
+  get:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  set:(id,o)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{for(const k in o)if(o[k]===null)delete d[k];else d[k]=o[k]});refresh();return true},
+  draw:id=>{const d=IDX.get(id),v=viewById(d.view),tx=[],sg=[],no=()=>{},ctx=new Proxy({measureText:s=>({width:String(s).length*6})},{get:(o,k)=>k in o?o[k]:no,set:(o,k,x)=>{o[k]=x;return true}}),
+    g={ctx,X:x=>x,Y:y=>y,scale:v.scale||100,pm:1,lw:()=>1,circle:no,seg:(a,b)=>sg.push([a.slice(),b.slice()]),path:no,dash:no,text:(s,p,mm,o)=>{tx.push({s:String(s),p:p.slice()});return 1}};
+    const G=dimGeo(d),m=drawDim(g,G,'#000',dimLabel(d,G),dimT(d));return{tx,sg,m}},
+  fr:id=>{const d=IDX.get(id),v=viewById(d.view),F=dtmFr371(dimGeo(d),dimT(d),v.scale||100);return{u:F.u,n:F.n,m0:F.m0,mid:F.mid,L:F.L}},
+  grip:id=>{const d=IDX.get(id),v=viewById(d.view);return dtmGrip371(d,v.scale||100)},
+  gripScr:id=>{const d=IDX.get(id),v=viewById(d.view),q=dtmGrip371(d,v.scale||100);if(!q)return null;const s=window.PenumBIM.toScreen(0,q[0],q[1]);return[s.x,s.y]},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(0,x,y);return[s.x,s.y]},
+  drag:(id,x,y)=>{const d=IDX.get(id),v=viewById(d.view);edit(()=>dtmSet371(d,v.scale||100,x,y));refresh();return true},
+  dist:(id,x,y)=>{const d=IDX.get(id),v=viewById(d.view);return XHA.dim(v,d,{x,y},v.scale||100)},
+  hitAt:(sx,sy)=>{const pn=PANES[0],r=pn.cv.getBoundingClientRect(),v=paneView(0);return hitPlan(v,{x:sx-r.left,y:sy-r.top})},
+  dxf:vid=>{const s=planDXF(viewById(vid),{});return(s.match(/\n(LINE|POLYLINE|LWPOLYLINE)\r?\n/g)||[]).length},
+  props:()=>{const c=$('#p_ld371');return c?{ld:c.checked,btn:!!$('#props [data-act="dtr371"]')}:null},
+  rib:()=>[...document.querySelectorAll('[data-act="dtr371"]')].filter(b=>!b.closest('#props')).map(b=>({vis:b.offsetParent!==null})),
+  types:()=>P.types.dim.map(x=>({id:x.id,dld371:x.dld371,dls371:x.dls371,sz:x.dtsz})),
+  setType:(id,o)=>{const T=P.types.dim.find(x=>x.id===id);edit(()=>Object.assign(T,o));refresh();return true},
+  tidy:o=>{const d=P.ann.find(a=>a.id===o.id);Object.assign(d,o);for(const f of XC)f();return{tx:d.tx371===undefined?null:d.tx371,nl:d.nl371===undefined?null:d.nl371}},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r370={
   dims:vid=>P.ann.filter(a=>(a.cat==='dim'||a.cat==='edim')&&(vid==null||a.view===vid)).map(a=>({id:a.id,cat:a.cat,view:a.view,ds:!!dsSeg(a),txt:a.txt||'',pin:!!a.pin})),
   views:()=>P.views.map(v=>({id:v.id,kind:v.kind,name:v.name,level:v.level})),
