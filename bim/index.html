@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=428,V1_NAME='V1.418';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=429,V1_NAME='V1.419';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47565,6 +47565,92 @@ Object.assign(STR,{
   bpl_xf418:['ส่วนที่เหลือ (Excess Length Fill)','Excess Length Fill'],bpl_xf_trunc418:['วางต่อจนสุด (Truncate)','Truncate'],bpl_xf_none418:['เว้นว่าง (None)','None'],
   bpl_posts418:['เสา (Posts)','Posts'],bpl_ps418:['เสาต้น (Start Post)','Start Post'],bpl_pm418:['เสากลาง (ตามระยะเสาของชนิด)','Posts between (at the type\'s spacing)'],bpl_pe418:['เสาปลาย (End Post)','End Post'],
   bpl_sh_sq418:['สี่เหลี่ยม','Square'],bpl_sh_round418:['กลม','Round'],bpl_sh_none418:['ไม่มี','None']});
+/* ===== 419 Pick Lines in sketch mode, and Pick Path for a Sweep (Revit: Boundary Line / Path › Draw › Pick Lines) =====
+   V1.394 gave walls, model lines and detail lines Pick Lines, V1.398 the sketch of a floor, ceiling or roof Pick Walls.  The sketch of a floor, roof, ceiling,
+   filled region, shaft, mass and of the forms of an in-place component (Extrusion, Blend, the path of a Sweep and of a Swept Blend) can now pick lines too:
+   a click on a line of a linked drawing, a grid, a detail or model line, a face of a wall, an edge of a floor, roof, ceiling, shaft or mass, or the line of a beam
+   adds it to the sketch, moved by the Offset of the Options Bar toward the pointer.  Each line picked goes on from the end (or the start) of the sketch: where
+   it touches, it carries on; where it crosses or falls short of the last line, both are trimmed or extended to the corner (as Revit's Trim/Extend to Corner
+   would after picking); an arc of a linked drawing comes in as an arc.  A sketch that comes round to its start closes as a drawn one does (a Sweep's path
+   then is closed).  Backspace takes back the last pick; the other Draw tools carry on from the sketch.  ui.pk419 = {tool, hist: the sketch before each pick}. */
+const PK419=()=>SK395;
+function pk419On(){const v=activeView();return PK419().has(ui.tool)&&!!v&&v.kind==='plan'&&drawMode()==='pkl419'}
+function pk419S(){const S=ui.pk419;if(S&&S.tool===ui.tool)return S;return ui.pk419={tool:ui.tool,hist:[]}}
+/* what a click at w would pick: {a, b} a straight line, {k} a curve (V1.394's), with the element or line it came from in 'src' */
+function pk419Pick(v,w){const R=10/navOf(v).s;let best=null,bd=R;try{best=dr394Pick(v,w)}catch(_){best=null}
+  const pd=q=>{let m=Infinity;for(let i=1;i<q.length;i++)m=Math.min(m,segDist(w.x,w.y,q[i-1][0],q[i-1][1],q[i][0],q[i][1]));return m};
+  if(best){bd=best.k?pd(best.k.arc(0)):segDist(w.x,w.y,best.a[0],best.a[1],best.b[0],best.b[1]);if(!(bd<R))best=null,bd=R}
+  const curve=(d,src)=>{const A=lcArc(d);if(!A)return;const k={full:A.closed,arc:o=>arcPts(A.c,Math.max(1,A.r+o),A.a0,A.sw),inside:p=>Math.hypot(p.x-A.c[0],p.y-A.c[1])<A.r},q=pd(k.arc(0));if(q<bd-1e-9){bd=q;best={k,src}}};          // curved detail and model lines (V1.394 takes them only outside plans)
+  if(!catHid(v,'dline'))for(const d of P.ann)if(d.cat==='dline'&&d.view===avid(v)&&!hidDatum(v,d)&&lcCurve(d))curve(d,d.id);
+  const seg=(a,b,src)=>{const d=segDist(w.x,w.y,a[0],a[1],b[0],b[1]);if(d<bd-1e-9){bd=d;best={a:[a[0],a[1]],b:[b[0],b[1]],src}}};
+  const ed=ui.sk397&&ui.sk397.edit;
+  for(const e of P.els){if(e.id===ed)continue;
+    if(['floor','roof','ceiling','shaft','mass'].includes(e.cat)&&Array.isArray(e.pts)&&e.pts.length>=3&&planShow(v,e)){const q=e.pts;for(let i=0;i<q.length;i++)seg(q[i],q[(i+1)%q.length],e.id);
+      for(const h of Array.isArray(e.holes)?e.holes:[])if(Array.isArray(h)&&h.length>=3)for(let i=0;i<h.length;i++)seg(h[i],h[(i+1)%h.length],e.id)}
+    else if(e.cat==='beam'&&e.x1!=null&&planShow(v,e))seg([e.x1,e.y1],[e.x2,e.y2],e.id);
+    else if(e.cat==='mline'&&lcCurve(e)&&planShow(v,e))curve(e,e.id)}
+  return best}
+/* the piece a pick adds, moved by the Offset toward the pointer: points (inside an arc marked [x, y, 1]), or {loop} for a whole circle */
+function pk419Piece(v,w,b){const o=Math.max(0,+ui.opt.pkOff394||0);
+  if(b.k){const k=b.k,q=k.arc(o?(k.inside(w)?-o:o):0);if(!q||q.length<2)return null;if(k.full){const L=q.slice();if(L.length>2&&Math.hypot(L[0][0]-L[L.length-1][0],L[0][1]-L[L.length-1][1])<1)L.pop();return{loop:L.map(p=>[p[0],p[1]])}}
+    return q.map((p,i)=>i&&i<q.length-1?[p[0],p[1],1]:[p[0],p[1]])}
+  const L=Math.hypot(b.b[0]-b.a[0],b.b[1]-b.a[1]);if(L<1)return null;if(!o)return[b.a.slice(),b.b.slice()];
+  const side=((w.x-b.a[0])*(b.b[1]-b.a[1])-(w.y-b.a[1])*(b.b[0]-b.a[0]))>=0?1:-1;return offSeg(b.a,b.b,o*side).map(p=>[p[0],p[1]])}
+/* where the lines a0–a1 and b0–b1 meet, or null when they run side by side */
+function pk419X(a0,a1,b0,b1){const u=[a1[0]-a0[0],a1[1]-a0[1]],r=[b1[0]-b0[0],b1[1]-b0[1]],cr=u[0]*r[1]-u[1]*r[0];if(Math.abs(cr)<1e-9*Math.hypot(...u)*Math.hypot(...r))return null;
+  const t=((b0[0]-a0[0])*r[1]-(b0[1]-a0[1])*r[0])/cr;return[a0[0]+u[0]*t,a0[1]+u[1]*t]}
+const pk419D=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+/* the sketch s with piece Q put on: {s, how} ('new', 'end', 'start', 'corner'), or null when Q neither touches nor meets an end of it */
+function pk419Join(s,Q,tol){const cp=q=>q.map(p=>p.slice()),R=q=>q.slice().reverse();if(!s||!s.length)return{s:cp(Q),how:'new'};
+  s=cp(s);const n=s.length,E=s[n-1],S0=s[0],a=Q[0],b=Q[Q.length-1];
+  if(pk419D(E,a)<=tol)return{s:s.concat(cp(Q.slice(1))),how:'end'};if(pk419D(E,b)<=tol)return{s:s.concat(cp(R(Q).slice(1))),how:'end'};
+  if(n>=2&&pk419D(S0,b)<=tol)return{s:cp(Q.slice(0,-1)).concat(s),how:'start'};if(n>=2&&pk419D(S0,a)<=tol)return{s:cp(R(Q).slice(0,-1)).concat(s),how:'start'};
+  if(n<2||Q.length!==2)return null;const Lq=pk419D(a,b),best=[];
+  const tryEnd=(atEnd)=>{const P0=atEnd?s[n-2]:s[1],P1=atEnd?s[n-1]:s[0];if(atEnd?s[n-2][2]:s[1][2])return;const X=pk419X(P0,P1,a,b);if(!X)return;const Ls=pk419D(P0,P1),near=pk419D(X,a)<=pk419D(X,b)?a:b,far=near===a?b:a,
+      mv=pk419D(X,P1),mq=pk419D(X,near),lim=Math.max(Ls,Lq);if(mv>lim||mq>lim||pk419D(X,far)<1||pk419D(X,P0)<1)return;best.push({atEnd,X,far,cost:mv+mq})};
+  tryEnd(true);if(n>=2)tryEnd(false);if(!best.length)return null;best.sort((p,q)=>p.cost-q.cost);const B=best[0];
+  if(B.atEnd){s[n-1]=[B.X[0],B.X[1]];s.push(B.far.slice())}else{s[0]=[B.X[0],B.X[1]];s.unshift(B.far.slice())}return{s,how:'corner'}}
+/* is the sketch closed now (its two ends one point, or, for a closed outline, its last line crossing its first one near both ends)? the closed points, or null */
+function pk419Closed(s,tol,open){const n=s.length;if(n<4)return null;if(pk419D(s[0],s[n-1])<=tol){const q=s.slice(0,-1);return q.length>=3?q:null}
+  if(open||s[n-2][2]||s[1][2])return null;const X=pk419X(s[n-2],s[n-1],s[1],s[0]);if(!X)return null;
+  if(pk419D(X,s[n-1])<=pk419D(s[n-2],s[n-1])*0.5&&pk419D(X,s[0])<=pk419D(s[1],s[0])*0.5){const q=s.slice(1,-1);q.unshift([X[0],X[1]]);return q}return null}
+const pk419Open=tl=>tl==='ipswp'||tl==='ipsbl';
+/* ---- a click ---- */
+function pk419Click(v,w){const S=pk419S(),b=pk419Pick(v,w);if(!b){toast(t('pk_none394'));return true}const Q=pk419Piece(v,w,b);if(!Q){toast(t('pk_none394'));return true}
+  const tol=Math.max(1,Math.min(10,12/navOf(v).s)),before=ui.sketch?ui.sketch.map(p=>p.slice()):null;
+  if(Q.loop){if(ui.sketch&&ui.sketch.length){toast(t('pk_loop419'));return true}if(ui.tool==='ipsbl'){toast(t('sb_open416'),6000);return true}S.hist.push(before);ui.sketch=Q.loop.map((p,i)=>i?[p[0],p[1],1]:[p[0],p[1]]);finishSketch();refresh();return true}
+  const J=pk419Join(ui.sketch,Q,tol);if(!J){toast(t('pk_join419'),5000);return true}S.hist.push(before);
+  const C=J.how==='new'?null:pk419Closed(J.s,tol,false);
+  if(C){if(ui.tool==='ipsbl'){ui.sketch=J.s;toast(t('sb_open416'),6000);refresh();return true}ui.sketch=C;finishSketch();refresh();return true}
+  ui.sketch=J.s;ui.pts=[];refresh();return true}
+/* ---- under the pointer: the line that would be picked (hot) and where it goes in (the sketch colour) ---- */
+function pk419Prev(ctx,g,pt){const v=activeView(),w={x:pt[0],y:pt[1]},b=pk419Pick(v,w);if(!b)return true;ctx.save();
+  try{ctx.strokeStyle=C.hot;ctx.lineWidth=3;ctx.globalAlpha=0.55;if(b.k){const q=b.k.arc(0);g.path(q,true);ctx.stroke()}else g.seg(b.a,b.b);ctx.globalAlpha=1;
+    const Q=pk419Piece(v,w,b);if(Q){ctx.strokeStyle=C.sketch;ctx.lineWidth=1.6;g.dash([2,1.4]);const q=Q.loop||Q;g.path(q,!Q.loop);ctx.stroke();g.dash(null)}}
+  finally{ctx.restore()}return true}
+/* ---- hooks ---- */
+XA.pkl419=()=>{if(!PK419().has(ui.tool))return;ui.drawBy[ui.tool]='pkl419';ui.pts=[];ui.dr394=null;ui.pk398=null;refresh()};          // the sketch drawn so far stays
+{const f0=lcClick;lcClick=function(v,pt,s){if(pk419On())return pk419Click(v,pt);return f0.apply(this,arguments)}}
+{const f0=bowModePreview;bowModePreview=function(ctx,g,nav,pt,ac){if(pk419On())return pk419Prev(ctx,g,pt);return f0.apply(this,arguments)}}
+{const f0=toolSnap;toolSnap=function(v,w){if(pk419On())return{x:w.x,y:w.y,kind:'free',guides:[]};return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(tool){if(tool!==ui.tool)ui.pk419=null;return f0.apply(this,arguments)}}
+{const f0=finishSketch;finishSketch=function(){const r=f0.apply(this,arguments);if(ui.pk419&&!ui.sketch)ui.pk419.hist=[];return r}}
+{const f0=pressed;pressed=id=>id==='@pkl419'?PK419().has(ui.tool)&&drawMode()==='pkl419':f0(id)}
+{const f0=ctxPanels;ctxPanels=function(){const out=f0.apply(this,arguments),v=activeView();if(PK419().has(ui.tool)&&v&&v.kind==='plan'){const p=out.find(q=>q.t==='p_draw');
+    if(p&&!p.b.includes('@pkl419')){const i=p.b.indexOf('@fil394');p.b.splice(i<0?p.b.length:i+1,0,'@pkl419')}}return out}}
+{const f0=hint;hint=function(msg){if(!msg&&!ui.zoomr&&pk419On())msg=t(ui.sketch&&ui.sketch.length?'h_pk2419':pk419Open(ui.tool)?'h_pkp419':'h_pk1419');return f0.call(this,msg)}}
+{const f0=renderOptbar;renderOptbar=function(){const r=f0.apply(this,arguments),el=$('#optbar');if(!el||!pk419On())return r;
+  el.insertAdjacentHTML('beforeend',`<label>${t('o_dist')}<input type="number" id="opt_pkOff419" data-opt="pkOff394" value="${+ui.opt.pkOff394||0}" step="10" min="0"> ${t('u_mm')}</label><span>${t('o_pk419')}</span>`);return r}}
+/* Backspace: the last pick back (on the window, before the keys of a sketch) */
+window.addEventListener('keydown',e=>{if(!pk419On()||ui.typed||/^(INPUT|TEXTAREA|SELECT)$/.test((e.target&&e.target.tagName)||''))return;const S=pk419S();
+  if(e.key==='Backspace'&&S.hist.length){e.preventDefault();e.stopImmediatePropagation();const q=S.hist.pop();ui.sketch=q&&q.length?q:null;refresh()}},true);
+Object.assign(BTN,{'@pkl419':['pickl','']});
+Object.assign(STR,{a_pkl419:['เลือกเส้น (Pick Lines)','Pick Lines'],
+  h_pk1419:['คลิกเส้น ผิวผนัง หรือขอบพื้น หลังคา ฝ้า คาน หรือเส้นในแบบที่ลิงก์ เพื่อใส่เป็นขอบเขต','Click a line, a wall face, an edge of a floor, roof, ceiling or beam, or a line of a linked drawing to put it in the sketch'],
+  h_pkp419:['เลือกเส้นทาง (Pick Path): คลิกเส้น ผิวผนัง หรือขอบที่จะใช้เป็นเส้นทาง','Pick Path: click the lines, wall faces or edges the path runs along'],
+  h_pk2419:['คลิกเส้นต่อไปที่ต่อหรือตัดกับปลายของเส้นที่ร่าง (ตัดหรือยืดให้ถึงมุมให้เอง) · Backspace ยกเลิกเส้นล่าสุด · เสร็จ เมื่อครบ','Click the next line, touching or crossing an end of the sketch (trimmed or extended to the corner) · Backspace takes the last one back · Finish when done'],
+  pk_join419:['เส้นนี้ไม่ต่อและไม่ตัดกับปลายของเส้นที่ร่างอยู่','This line neither touches nor meets an end of the sketch'],pk_loop419:['วงกลมทั้งวงใส่ได้เฉพาะเมื่อยังไม่มีเส้นร่าง','A whole circle goes in only when the sketch is empty'],
+  o_pk419:['ระยะเลื่อนไปทางที่ชี้','Offset toward the pointer']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -49806,6 +49892,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.416 · รูปทรงกวาดผสาน (Swept Blend) ในชิ้นงานในโครงการแบบ Revit: ร่างเส้นทางเปิด (เส้นตรงหรือโค้ง) กด เสร็จ แล้วเลือกรูปตัดที่ต้นทางและปลายทาง (สี่เหลี่ยม วงกลม เหล็กฉาก หรือพิกัดเอง) รูปทรงค่อย ๆ เปลี่ยนจากรูปตัดแรกเป็นรูปตัดที่สองตามเส้นทาง ใส่มุมของแต่ละรูปตัดได้ ถ้ามุมต่างกันรูปทรงจะบิด ทำเป็นช่องว่างได้ แก้เส้นทางหรือรูปตัดได้ภายหลัง · การร่างรูปทรงยื่น ผสาน กวาด และกวาดผสาน ใช้ส่วนโค้ง วงกลม และรูปหลายเหลี่ยมในแผงวาดได้แล้ว
 - V1.417 · ยึดบน/ล่างของเสาเอียง (Attach Top/Base) แบบ Revit: เลือกเสาเอียงแล้วกดยึดบน/ล่าง คลิกพื้น หลังคา ฝ้า หรือคาน ปลายเสายืดหรือหดตามแนวแกนจนถึงผิวที่ยึด ทั้งผิวเรียบและผิวลาด เลือกตำแหน่งที่ยึด (ตัดกันน้อยสุด ที่แกนกลาง ตัดกันมากสุด) และระยะเลื่อนได้ การตัดปลาย (Cut Style) ความยาวในตาราง ปริมาตร และ IFC ตามไปด้วย ระยะยื่นปลายที่ตั้งไว้กลับมาเมื่อปลดการยึด
 - V1.418 · การจัดลูกกรง (Baluster Placement) แบบ Revit: ปุ่มในคุณสมบัติของชนิดราวกันตกเปิดตารางลำดับลูกกรงหลัก (Main Pattern) ลูกกรงแต่ละตัวเลือกสี่เหลี่ยม กลม หรือเว้นช่อง พร้อมขนาด ระยะบนล่าง ระยะจากตัวก่อน และระยะเยื้อง ระยะถึงปลายชุด การจัดชุด (เริ่มจากต้น ชิดปลาย กึ่งกลาง กระจายให้พอดี) ส่วนที่เหลือ (วางต่อจนสุด หรือเว้นว่าง) และเสาต้น เสากลาง เสาปลาย แยกรูปทรงและขนาด แสดงทั้งในแปลนและ 3 มิติ
+- V1.419 · เลือกเส้น (Pick Lines) ในการร่างขอบเขตแบบ Revit: การร่างพื้น หลังคา ฝ้า บริเวณแรเงา ช่องเปิดพื้น มวลอาคาร และรูปทรงของชิ้นงานในโครงการ มีปุ่มเลือกเส้น คลิกเส้นของแบบที่ลิงก์ กริด เส้นรายละเอียด เส้นแบบจำลอง ผิวผนัง ขอบพื้น หลังคา ฝ้า หรือแนวคาน เพื่อใส่ในเส้นร่าง เลื่อนตามระยะที่ตั้งไปทางที่ชี้ เส้นที่ตัดหรือไม่ถึงกันจะตัดหรือยืดให้ถึงมุมเอง ครบรอบแล้วปิดเอง และใช้เลือกเส้นทาง (Pick Path) ของรูปทรงกวาดและกวาดผสานได้ Backspace ยกเลิกเส้นล่าสุด
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -50369,6 +50456,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.416 · Swept Blend in the in-place editor, as in Revit: sketch an open path (lines or arcs), Finish, then choose the profile at its start and at its end (rectangle, circle, angle or points of your own); the form changes from one to the other along the path; each profile has an angle, and two different angles twist it; Void Swept Blend too; the path and the profiles can be edited later · the sketches of Extrusion, Blend, Sweep and Swept Blend take the arcs, circles and polygons of the Draw panel
 - V1.417 · Attach Top/Base for slanted columns, as in Revit: select a slanted column, Attach Top/Base, click a floor, roof, ceiling or beam; the end runs on or stops short along the column's axis until it meets that surface, flat or sloped; Attachment Justification (Minimum, Midline, Maximum) and Offset from Attachment as for upright columns; its Cut Style, schedule length, volume and IFC follow; the end's Extension comes back on Detach
 - V1.418 · Baluster Placement, as in Revit: a button in a railing type's properties opens its Main Pattern, a row per baluster (square, round or a gap, its size, base and top offsets, distance from the previous one and offset), the distance to the pattern end, Justify (Beginning, End, Center, Spread Pattern to Fit), Excess Length Fill (Truncate or None), and the Start, between and End posts with their own shape and size; in plans and in 3D
+- V1.419 · Pick Lines in sketch mode, as in Revit: the sketch of a floor, roof, ceiling, filled region, shaft, mass and of an in-place component's forms has Pick Lines: click a line of a linked drawing, a grid, a detail or model line, a wall face, an edge of a floor, roof or ceiling, or a beam's line to add it, moved by the Offset toward the pointer; lines that cross or fall short are trimmed or extended to the corner, a ring closes by itself; it is Pick Path for a Sweep or Swept Blend; Backspace takes the last pick back
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52621,6 +52709,22 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r419={
+  on:()=>pk419On(),mode:()=>drawMode(),
+  pick:(x,y)=>{const v=activeView(),b=pk419Pick(v,{x,y});if(!b)return null;if(b.k)return{k:1,full:!!b.k.full};const R=q=>q.map(z=>Math.round(z*10)/10);return{a:R(b.a),b:R(b.b),src:b.src||null}},
+  piece:(x,y)=>{const v=activeView(),b=pk419Pick(v,{x,y});if(!b)return null;const Q=pk419Piece(v,{x,y},b);if(!Q)return null;const R=q=>q.map(p=>p.map(z=>Math.round(z*10)/10));return Q.loop?{loop:Q.loop.length}:R(Q)},
+  join:(s,Q,tol)=>{const J=pk419Join(s,Q,tol||1);return J?{s:J.s.map(p=>p.map(z=>Math.round(z*10)/10)),how:J.how}:null},
+  closed:(s,tol,open)=>{const q=pk419Closed(s,tol||1,!!open);return q?q.map(p=>p.map(z=>Math.round(z*10)/10)):null},
+  sk:()=>ui.sketch?ui.sketch.map(p=>p.map(z=>typeof z==='number'?Math.round(z*10)/10:z)):null,
+  hist:()=>ui.pk419?ui.pk419.hist.length:0,
+  els:cat=>P.els.filter(e=>e.cat===cat).map(e=>({id:e.id,pts:e.pts?e.pts.map(p=>p.map(Math.round)):null,holes:e.holes||null})),
+  panel:()=>{const p=ctxPanels().find(q=>q.t==='p_draw');return p?p.b:null},
+  opt:()=>{const el=document.querySelector('#optbar');return el?el.textContent.replace(/\s+/g,' '):''},
+  dl:(x1,y1,x2,y2,o)=>{let id;edit(()=>{id=P.seq++;P.ann.push(Object.assign({id,cat:'dline',view:avid(activeView()),x1,y1,x2,y2,style:'thin'},o||{}))});return id},
+  setOpt:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  bs:()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true}));return ui.sketch?ui.sketch.length:0},
+  toast:()=>{const e=document.querySelector('#toast');return e&&!e.hidden?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r418={
   rl:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('railing'),e=Object.assign({id:P.seq++,cat:'railing',type:d.type,level:lid,x1,y1,x2,y2,off:0},o||{});P.els.push(e);id=e.id});return id},
   ty:id=>{const e=IDX.get(id);return e?e.type:null},
