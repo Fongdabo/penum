@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=418,V1_NAME='V1.408';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=419,V1_NAME='V1.409';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -47109,6 +47109,32 @@ function in408(pc,fn){const o=EX408;EX408=pc&&pc.ie408&&pc.ie408.size?pc.ie408:n
   for(let i=0;i+8<t.length;i+=9){const a=[t[i],t[i+2]],b=[t[i+3],t[i+5]],c=[t[i+6],t[i+8]];
     if(Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))<1e-3){let p=a,q=b;if(Math.hypot(b[0]-a[0],b[1]-a[1])<0.05)q=c;if(K.has(r408k(p,q)))continue}
     for(let j=0;j<9;j++)out.push(t[i+j])}}}
+/* ===== V1.409 a slab edge on a shape-edited floor follows its edge, as in Revit: where a split line or a point of Shape Editing meets the edge (or an edge
+   of the triangles of its top crosses it) the top of the floor folds, and the slab edge now folds with it, segment by segment, instead of running straight
+   from corner to corner.  The heights come from the triangles the floor's top is worked out on (zvTin, zvAt), so a slab edge on the side of an opening
+   (V1.401) follows a shape-edited floor too.  Its length and volume are measured along the folds. ===== */
+/* the stations along the side where the top folds: [[d, z]] between the two ends (z as zA / zB are: the height it hangs from), or null */
+function sed409K(X,G){const f=G&&G.f,F=f&&(f.h401||f);if(!F||!Array.isArray(F.zv)||!G.s)return null;let T;try{T=zvTin(F)}catch(err){return null}if(!T||!T.p||!T.t)return null;
+  const s=G.s,L=s.L,S=slabSlope(F),z0=zRange(X.Q,F)[1],dn=G.pr&&G.pr.at==='b'?G.th:0,top=(x,y)=>z0+(S?S.dz(x,y):0)+zvAt(T,F,x,y)-dn+(+G.ov||0),
+    loc=p=>{const vx=p[0]-s.a[0],vy=p[1]-s.a[1];return[vx*s.u[0]+vy*s.u[1],vx*s.n[0]+vy*s.n[1]]},D=[];
+  for(const p of T.p){const q=loc(p);if(Math.abs(q[1])<1&&q[0]>1&&q[0]<L-1)D.push(q[0])}
+  for(let i=0;i+2<T.t.length;i+=3)for(let k=0;k<3;k++){const a=loc(T.p[T.t[i+k]]),b=loc(T.p[T.t[i+(k+1)%3]]);if(a[1]*b[1]<0&&Math.abs(a[1])>=1&&Math.abs(b[1])>=1){const d=a[0]+(b[0]-a[0])*a[1]/(a[1]-b[1]);if(d>1&&d<L-1)D.push(d)}}
+  const pt=d=>[s.a[0]+s.u[0]*d,s.a[1]+s.u[1]*d];let Q=[[0,top(s.a[0],s.a[1])]];D.sort((x,y)=>x-y);for(const d of D)if(d-Q[Q.length-1][0]>=1){const p=pt(d);Q.push([d,top(p[0],p[1])])}
+  if(L-Q[Q.length-1][0]<1)Q.pop();Q.push([L,top(s.b[0],s.b[1])]);
+  /* only where it really folds: a station on the straight line between its neighbours is left out */
+  let ch=true;while(ch&&Q.length>2){ch=false;for(let i=1;i+1<Q.length;i++){const a=Q[i-1],b=Q[i],c=Q[i+1],zl=a[1]+(c[1]-a[1])*(b[0]-a[0])/(c[0]-a[0]);if(Math.abs(b[1]-zl)<0.5){Q.splice(i,1);ch=true;break}}}
+  return{zA:Q[0][1],zB:Q[Q.length-1][1],K:Q.slice(1,-1)}}
+{const f0=sedGeo0;sedGeo0=function(X,e){const G=f0.apply(this,arguments);if(!G)return G;const R=sed409K(X,G);if(!R)return G;
+  G.zA=R.zA;G.zB=R.zB;G.K409=R.K;const dAt=c=>swpCutD(G.s,c,G.oc),P2=[[dAt(G.E0),G.zA]].concat(R.K.map(k=>[k[0],k[1]]),[[dAt(G.E1),G.zB]]);let len=0;
+  for(let i=1;i<P2.length;i++)len+=Math.hypot(P2[i][0]-P2[i-1][0],P2[i][1]-P2[i-1][1]);G.len=len;G.vol=G.area*len;
+  const zs=P2.map(q=>q[1]);G.z=[Math.min(...zs)+G.vlo,Math.max(...zs)+G.vhi];return G}}
+/* the mesh: one loft per stretch between folds; the ends keep their caps (and mitres), the folds have none */
+function sed409Mesh(m,G){const R=[sedRing(G,G.E0,G.zA)].concat(G.K409.map(k=>sedRing(G,{d:k[0]},k[1])),[sedRing(G,G.E1,G.zB)]),nc=G.tri.length/3;m.t=[];m.l=[];m.s=[];
+  for(let i=0;i+1<R.length;i++){const t={t:[],l:[],s:[]};swpLoft(t,R[i],R[i+1],G.tri,G.hard);
+    for(let k=0;k<nc*2;k++){if((k%2===0&&i===0)||(k%2===1&&i===R.length-2))for(let j=0;j<9;j++)m.t.push(t.t[k*9+j])}
+    for(let j=nc*18;j<t.t.length;j++)m.t.push(t.t[j]);m.l.push(...t.l);m.s.push(...t.s)}}
+{const f0=sedMeshes;sedMeshes=function(Q,items){const n0=items.length;f0.apply(this,arguments);const X=Q===P?sedX():sedCtx(Q);
+  for(let i=n0;i<items.length;i++){const m=items[i];if(m.cat!=='sedge')continue;const e=Q.els.find(x=>x.id===m.id);const G=e&&sedGeo(X,e);if(G&&G.K409&&G.K409.length)sed409Mesh(m,G)}}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -49340,6 +49366,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.406 · หลังคาแบนที่ปรับรูปทรงแล้วเป็นตัวรองรับได้ครบแบบ Revit: ห้องใต้หลังคาคิดปริมาตรถึงท้องหลังคาที่แอ่นตามจุดระบาย (ถ้ามีชั้นแปรผัน ท้องเรียบ ปริมาตรเท่าเดิม) · ระดับ Spot Elevation บนหลังคาอ่านผิวที่ยกหรือลดแล้ว · ราวกันตกที่วางบนหลังคา (Host) ขึ้นลงตามผิวและหักตามเส้นพับ · ชิ้นส่วนย่อย (Parts) ของหลังคาและพื้นคิดช่วงความสูงตามรูปทรงจริง ชั้นแปรผันท้องเรียบ
 - V1.407 · ช่องเปิดพื้น (Shaft) หลายวงในสเก็ตช์เดียว และแก้ขอบเขตช่องชาฟต์แบบ Revit: ติ๊ก หลายวง ที่แถบตัวเลือกของเครื่องมือช่องชาฟต์ วงที่อยู่ในวงอื่นเป็นเกาะที่พื้นยังอยู่ (เช่น รอบเสาหรือแกนที่ไม่เจาะ) วงแยกกันเป็นช่องชาฟต์อีกช่อง · พื้น ฝ้า และหลังคาทุกแผ่นที่ช่องผ่านเหลือเกาะไว้ทั้งใน 3 มิติ รูปตัด พื้นที่ ห้อง และ IFC ไม่มีเส้นรอยต่อกลางช่อง พื้นที่อยู่ในเกาะทั้งแผ่นไม่ถูกเจาะ · แปลนวาดขอบเกาะและเว้นกากบาทในเกาะ · เลือกช่องชาฟต์แล้วกด แก้ขอบเขต เพื่อแก้ เพิ่ม หรือเอาวงออก มุมเกาะมีจุดจับ ย้าย หมุน สะท้อน ย่อขยาย และวางสำเนาพาเกาะไปด้วย พื้นที่ของช่องชาฟต์หักเกาะออก
 - V1.408 · พื้น ฝ้า และหลังคาที่มีช่องเปิดเป็นแผ่นเดียวเรียบร้อยใน 3 มิติ: เดิมช่องเปิดแบ่งแผ่นเป็นชิ้นย่อยและแต่ละชิ้นมีผนังด้านข้างยืนอยู่ในเนื้อแผ่น ผิวบนจึงเห็นเส้นบางเป็นรูปพัดรอบช่องกลมหรือช่องเฉียง ตอนนี้ชิ้นที่ติดกันใช้มุมร่วมกันและไม่มีผนังด้านข้างระหว่างชิ้น เหลือเฉพาะขอบแผ่นและขอบช่องเปิด พื้นที่และปริมาตรเท่าเดิม
+- V1.409 · ขอบพื้น (Slab Edge) บนพื้นที่ปรับรูปทรงแล้วหักตามขอบพื้นแบบ Revit: ตรงที่เส้นแบ่งหรือจุดของการปรับรูปทรงมาถึงขอบพื้น ผิวพื้นหักมุม ขอบพื้นก็หักตามเป็นช่วงๆ แทนที่จะวิ่งตรงจากมุมถึงมุม รวมถึงขอบพื้นรอบช่องเปิด · ความยาวและปริมาตรวัดตามแนวที่หัก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -49893,6 +49920,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.406 · A shape-edited flat roof works as a host everywhere, as in Revit: a room under it is cut by its underside as it dips to the drains (with a Variable layer the underside is flat and the volume stays) · spot elevations on it read the top as raised or lowered · a railing hosted on its top rises and falls with it and bends at the folds · the parts of a shape-edited roof or floor span the heights they reach, a Variable layer keeping the bottom
 - V1.407 · Several loops in one Shaft Opening sketch, and Edit Boundary of a shaft, as in Revit: tick Multiple Loops on the Options Bar of the Shaft tool; a loop inside another is an island the floors keep (round a column or a core that is not cut), a loop apart is another shaft · every floor, ceiling and roof the shaft passes keeps the island in 3D, sections, areas, rooms and IFC, with no seam across the opening; a floor wholly inside an island is not cut · the plan draws the islands and keeps the cross out of them · select a shaft and press Edit Boundary to change, add or take away loops; island corners have grips; Move, Rotate, Mirror, Scale and Paste carry the islands; the area of the shaft leaves them out
 - V1.408 · Floors, ceilings and roofs with openings are whole in 3D: an opening used to leave the slab in pieces, each with sides of its own standing inside it, so its top showed a fan of fine lines round a round or slanted opening; now neighbouring pieces share their corners and have no sides between them, only the outline and the openings do; areas and volumes are as they were
+- V1.409 · A slab edge on a shape-edited floor follows its edge, as in Revit: where a split line or a point of Shape Editing meets the edge the top of the floor folds, and the slab edge folds with it stretch by stretch instead of running straight from corner to corner, on the sides of openings too · its length and volume are measured along the folds
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -52145,6 +52173,18 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r409={
+  fl:(lid,pts,o)=>{let id;edit(()=>{const d=defs('floor'),e=Object.assign({id:P.seq++,cat:'floor',type:d.type,level:lid,pts,off:0},o||{});P.els.push(e);id=e.id});return id},
+  sed:(host,ed,o)=>{let id;edit(()=>{const T=sedDefT(),f=IDX.get(host),e=Object.assign({id:P.seq++,cat:'sedge',type:T&&T.id,level:f.level,host,ed},o||{});P.els.push(e);id=e.id});return id},
+  set:(id,o)=>{edit(()=>Object.assign(IDX.get(id),o));return true},
+  geo:id=>{const e=IDX.get(id),G=e&&sedGeo(sedX(),e);if(!G)return null;const R=x=>Math.round(x*10)/10;return{len:R(G.len),vol:Math.round(G.vol),zA:R(G.zA),zB:R(G.zB),z:G.z.map(R),K:(G.K409||[]).map(k=>[R(k[0]),R(k[1])])}},
+  /* the slab edge in 3D: the lowest and highest point of its mesh near plan point (x, y), and its lines across it (folds) */
+  m3:(id,x,y,r)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let lo=Infinity,hi=-Infinity,n=0,tris=0;
+    for(const m of B){if(m.id!==id)continue;tris+=m.t.length/9;for(let k=0;k+2<m.t.length;k+=3){if(Math.hypot(m.t[k]-x,m.t[k+2]-y)<=(r||5)){lo=Math.min(lo,m.t[k+1]);hi=Math.max(hi,m.t[k+1]);n++}}}return{lo:Math.round(lo),hi:Math.round(hi),n,tris}},
+  top:(id,x,y)=>{const F=IDX.get(id);const T=zvTin(F),S=slabSlope(F);return Math.round(zRange(P,F)[1]+(S?S.dz(x,y):0)+zvAt(T,F,x,y))},
+  qty:id=>{const q=QTY().get(id);return q?{len:Math.round(q.len),vol:Math.round(q.vol||0)}:null},
+  zr:id=>zRange(P,IDX.get(id)).map(Math.round)
+};
 window.PenumBIM.r408={
   /* the 3D mesh of element id: its top (triangles at the highest level: count, area, sides used by one triangle away from the outline and holes = cracks),
      its upright sides: inner (along no outline or hole: between two pieces), on the outline, on the holes; and the area it encloses (divergence) */
