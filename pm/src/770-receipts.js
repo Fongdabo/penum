@@ -24,8 +24,8 @@ function rcCard(sel){const c=billCalc(sel),R=sel.rcpts||[],got=billRecv(sel),out
 function rcIns(h,sel){const pb=h.indexOf(`data-a="print" data-k="bill" data-id="${sel.id}"`),end=pb<0?-1:h.indexOf('</section>',pb);return end<0?h+rcCard(sel):h.slice(0,end+10)+rcCard(sel)+h.slice(end+10)}
 {const f=VIEWS.cost;VIEWS.cost=()=>{let h=f();if((S.sub.cost||'sum')!=='bill')return h;
   // bills paid in part show it in the list
-  P.bills.forEach(b=>{if(b.status==='paid'||b.status==='draft')return;const got=billRecv(b);if(got<=0.005)return;const k=h.indexOf(`data-k="bill" data-id="${b.id}"`);if(k<0)return;
-    const a=h.indexOf('<span class="pill',k),e=a<0?-1:h.indexOf('</span>',a);if(a<0||e<0)return;h=h.slice(0,a)+`<span class="pill warn" title="รับแล้ว ${fmt(got,2)}">รับบางส่วน · ค้าง ${fmt(billCalc(b).net-got)}</span>`+h.slice(e+7)});
+  P.bills.forEach(b=>{if(b.status==='paid'||b.status==='draft')return;const got=billRecv(b);const k=h.indexOf(`data-k="bill" data-id="${b.id}"`);if(k<0)return;
+    const a=h.indexOf('<span class="pill',k),e=a<0?-1:h.indexOf('</span>',a);if(a<0||e<0)return;h=h.slice(0,a)+`${got>0.005?`<span class="pill warn" title="รับแล้ว ${fmt(got,2)}">รับบางส่วน · ค้าง ${fmt(billCalc(b).net-got)}</span>`:`<span class="pill warn" title="${esc((BSTAT.find(s=>s[0]===b.status)||['',''])[1])}">ค้างรับ ${fmt(billCalc(b).net)}</span>`}`+h.slice(e+7)});
   const sel=P.bills.find(x=>x.id===S.sel.bill);if(!sel)return h;
   // right under the bill's own details (above ชุดเอกสารส่งงวด), so the amount box is where people look
   const pb=h.indexOf(`data-a="print" data-k="bill" data-id="${sel.id}"`),end=pb<0?-1:h.indexOf('</section>',pb);
