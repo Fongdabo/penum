@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=407,V1_NAME='V1.397';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=409,V1_NAME='V1.399';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -46502,6 +46502,166 @@ Object.assign(STR,{a_ebd397:['แก้ขอบเขต (Edit Boundary)','Edit
   ml_n397:['วง {0}','Loop {0}'],ml_out397:['ขอบ','boundary'],ml_hole397:['ช่องเปิด','opening'],ml_del397:['เอาวงนี้ออก','Take this loop away'],
   ml_x397:['เส้นของวงตัดหรือแตะกัน: แต่ละวงต้องปิดและไม่ตัดกัน','Loops cross or touch: each loop must be closed and apart from the others'],
   ml_done397:['ได้ {0} ชิ้น ช่องเปิด {1} ช่อง','{0} piece(s), {1} opening(s)'],p_holes397:['ช่องเปิดในสเก็ตช์','Sketch Openings']});
+/* ===== V1.398 Pick Walls in the sketch of a floor, ceiling or roof (Revit: Boundary Line › Pick Walls, with Offset and Extend into wall (to core) /
+   Extend to wall core on the Options Bar; Tab picks the whole chain of joined walls).  A click on a wall keeps it (a curved wall all its pieces); the walls
+   picked are put in order by how they join, and when they go round the outline closes by itself (Enter or Finish closes it with three or more).  The outline
+   is made where each wall's line meets the next: on the face toward the inside of the ring for a floor or a ceiling (the face of the core with Extend into
+   wall), on the outside face for a roof (the core's outside face with Extend to wall core; the roof's overhang is added to it as for any roof); Offset moves
+   it out.  Walls in line are one edge; walls in line but not flush get a step.  The outline goes on as any sketch does (finishSketch), so Multiple Loops and
+   Edit Boundary (V1.397) keep it as a loop.  ui.pk398 = {tool, ids, chain}. */
+const PK398=new Set(['floor','ceiling','roof']);
+function pk398On(){const v=activeView();return PK398.has(ui.tool)&&!!v&&v.kind==='plan'&&drawMode()==='pkw398'}
+function pk398S(){const S=ui.pk398;if(S&&S.tool===ui.tool)return S;return ui.pk398={tool:ui.tool,ids:[],chain:null}}
+const pk398T=e=>+((typ(P,e)||{}).thickness)||150;
+/* the wall under w */
+function pk398At(v,w){const R=10/navOf(v).s;let best=null,bd=Infinity;
+  for(const e of P.els){if(e.cat!=='wall'||!planShow(v,e))continue;const d=segDist(w.x,w.y,e.x1,e.y1,e.x2,e.y2)-pk398T(e)/2;if(d<R&&d<bd){bd=d;best=e}}return best}
+/* the walls a click takes: a curved wall is all its pieces */
+const pk398Of=e=>e.arc?P.els.filter(x=>x.cat==='wall'&&x.arc===e.arc).map(x=>x.id):[e.id];
+/* the walls picked in the order they join: {ord, ring} (as picked when they branch or one stands apart) */
+function pk398G(ids){const W=ids.map(id=>IDX.get(id)).filter(e=>e&&e.cat==='wall'),n=W.length,asis={ord:W.map(e=>e.id),ring:false};if(n<2)return asis;
+  const con=(a,b)=>{const tol=Math.max(pk398T(a),pk398T(b))/2+20;for(const [x,y] of [[a,b],[b,a]])for(const p of [[x.x1,x.y1],[x.x2,x.y2]])if(segDist(p[0],p[1],y.x1,y.y1,y.x2,y.y2)<=tol)return true;return false},
+    N=W.map((a,i)=>W.map((b,j)=>i!==j&&con(a,b)?j:-1).filter(j=>j>=0));
+  if(N.some(x=>x.length>2||!x.length))return asis;const ring=n>=3&&N.every(x=>x.length===2),st=ring?0:N.findIndex(x=>x.length===1);if(st<0)return asis;
+  const ord=[st],seen=new Set(ord);while(ord.length<n){const nx=N[ord[ord.length-1]].find(j=>!seen.has(j));if(nx==null)return asis;ord.push(nx);seen.add(nx)}
+  return{ord:ord.map(i=>W[i].id),ring}}
+/* where two lines meet: [] when they are one line, [a, b] when they are parallel apart, [p] otherwise */
+function pk398Meet(A,B){const cr=A.u[0]*B.u[1]-A.u[1]*B.u[0];
+  if(Math.abs(cr)<1e-9){const d=Math.abs((B.p[0]-A.p[0])*A.u[1]-(B.p[1]-A.p[1])*A.u[0]);if(d<1)return[];
+    const ea=[A.a,A.b].sort((x,y)=>pk398D(x,B)-pk398D(y,B))[0],eb=[B.a,B.b].sort((x,y)=>Math.hypot(x[0]-ea[0],x[1]-ea[1])-Math.hypot(y[0]-ea[0],y[1]-ea[1]))[0];return[ea.slice(),eb.slice()]}
+  const t=((B.p[0]-A.p[0])*B.u[1]-(B.p[1]-A.p[1])*B.u[0])/cr;return[[A.p[0]+A.u[0]*t,A.p[1]+A.u[1]*t]]}
+const pk398D=(q,L)=>Math.min(Math.hypot(q[0]-L.a[0],q[1]-L.a[1]),Math.hypot(q[0]-L.b[0],q[1]-L.b[1]));
+/* the lines of the walls (in order) moved to the face the tool takes; inside = within the ring of their centre lines (else the walls' interior, their right) */
+function pk398Lines(ids,tl,closed,op){const W=ids.map(id=>IDX.get(id)).filter(e=>e&&e.cat==='wall');if(!W.length)return[];
+  const base=W.map(e=>{const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,u=[(e.x2-e.x1)/L,(e.y2-e.y1)/L];return{e,u,n:[-u[1],u[0]],a:[e.x1,e.y1],b:[e.x2,e.y2],p:[e.x1,e.y1]}});
+  let C=null,M=null;if(closed&&base.length>=3){const n=base.length,K=base.map((b,i)=>pk398Meet(b,base[(i+1)%n]));C=[].concat(...K);if(C.length<3||Math.abs(area2(C))<1)C=null;
+    else M=base.map((b,i)=>{const A=K[(i+n-1)%n],B=K[i];if(!A.length||!B.length)return null;const a=A[A.length-1],c=B[0];return[(a[0]+c[0])/2,(a[1]+c[1])/2]})}          // M: the middle of each wall's part of the ring (a wall may run on past it)
+  op=op||pk398Op();const core=!!op.core&&tl!=='ceiling',d=+op.off||0;
+  return base.map((B,i)=>{const e=B.e,Wt=pk398T(e),m=M&&M[i]||[(B.a[0]+B.b[0])/2,(B.a[1]+B.b[1])/2],q=[m[0]+B.n[0]*(Wt/2+1),m[1]+B.n[1]*(Wt/2+1)],s=C?(inPoly(q[0],q[1],C)?1:-1):-1;
+    const cf=core?racCore243(typ(P,e)):null;let o;          // racCore243: the faces of the core along n (n is the left of the wall, its exterior)
+    if(tl==='roof')o=cf?(s>0?cf[1]:cf[0]):-s*Wt/2;else o=cf?(s>0?cf[0]:cf[1]):s*Wt/2;o+=-s*d;
+    const sh=p=>[p[0]+B.n[0]*o,p[1]+B.n[1]*o];return{e,u:B.u,a:sh(B.a),b:sh(B.b),p:sh(B.a),s}})}
+const pk398Op=()=>({core:!!ui.opt.pkCore398,off:+ui.opt.pkOff398||0});          // the Options Bar: Offset and the core faces
+const pk398Far=(L,c)=>Math.hypot(L.a[0]-c[0],L.a[1]-c[1])>Math.hypot(L.b[0]-c[0],L.b[1]-c[1])?L.a:L.b;
+/* the outline (closed) or the run so far (open), of walls in order */
+function pk398Path(ids,tl,closed,op){const L=pk398Lines(ids,tl,closed,op),n=L.length;if(!n)return[];if(n===1)return[L[0].a,L[0].b];
+  const out=[];if(!closed){const m=pk398Meet(L[0],L[1]);out.push(pk398Far(L[0],m[0]||L[0].b))}
+  for(let i=0;i<(closed?n:n-1);i++)out.push(...pk398Meet(L[i],L[(i+1)%n]));
+  if(!closed){const m=pk398Meet(L[n-2],L[n-1]);out.push(pk398Far(L[n-1],m[m.length-1]||L[n-1].a))}return out}
+/* the outline of the walls picked as a ring, or null */
+function pk398Out(ids,tl,op){if(ids.length<3)return null;const G=pk398G(ids),q=sk397Clean(pk398Path(G.ord,tl,true,op));return q&&polySimple(q)&&Math.abs(area2(q))>=1e4?q:null}
+/* the walls joined end to end round from e (the outermost ring), or null */
+function pk398Chain(v,e){const W=P.els.filter(x=>x.cat==='wall'&&planShow(v,x)),ends=x=>[[x.x1,x.y1],[x.x2,x.y2]];let best=null;
+  for(const turn of [1,-1]){const ids=[e.id];let cur=e,at=[e.x2,e.y2],from=[e.x1,e.y1],ok=false;
+    for(let k=0;k<400;k++){const dir=[at[0]-from[0],at[1]-from[1]],dl=Math.hypot(dir[0],dir[1])||1,cand=[];
+      for(const x of W){if(x===cur)continue;const tol=Math.max(pk398T(x),pk398T(cur))/2+20;for(const [i,q] of ends(x).entries())if(Math.hypot(q[0]-at[0],q[1]-at[1])<=tol){const o=ends(x)[1-i],d2=[o[0]-q[0],o[1]-q[1]],l2=Math.hypot(d2[0],d2[1])||1;
+        cand.push({x,q,o,a:Math.atan2((dir[0]*d2[1]-dir[1]*d2[0])/dl/l2,(dir[0]*d2[0]+dir[1]*d2[1])/dl/l2)})}}
+      if(!cand.length)break;cand.sort((p,q)=>turn*(q.a-p.a));const c=cand[0];if(c.x===e){ok=ids.length>=3;break}if(ids.includes(c.x.id))break;ids.push(c.x.id);cur=c.x;from=c.q;at=c.o}
+    if(ok){const q=pk398Out(ids,'floor'),a=q?Math.abs(area2(q)):0;if(a>0&&(!best||a>best.a))best={ids,a}}}
+  return best?best.ids:null}
+/* ---- picking ---- */
+function pk398Close(){const S=pk398S(),q=pk398Out(S.ids,ui.tool);if(!q){toast(t('pk_bad398'));return false}S.ids=[];S.chain=null;ui.pts=[];ui.sketch=q;finishSketch();refresh();return true}
+function pk398Click(v,w){const S=pk398S(),e=pk398At(v,w);
+  if(S.chain&&e&&S.chain.includes(e.id)){const keep=S.ids;S.ids=S.chain.slice();S.chain=null;if(!pk398Close())S.ids=keep;return true}S.chain=null;
+  if(!e){toast(t('pk_none398'));return true}
+  if(S.ids.includes(e.id)){if(S.ids.length>=3&&pk398G(S.ids).ord[0]===e.id&&pk398Close())return true;toast(t('pk_dup398'));return true}
+  for(const id of pk398Of(e))if(!S.ids.includes(id))S.ids.push(id);if(pk398G(S.ids).ring&&pk398Out(S.ids,ui.tool)){pk398Close();return true}refresh();return true}
+function pk398Draw(ctx,g,ids,closed){if(!ids.length)return;const G=pk398G(ids),q=pk398Path(G.ord,ui.tool,closed);if(q.length<2)return;ctx.save();ctx.strokeStyle=C.sketch;ctx.lineWidth=1.8;g.path(q,!closed);ctx.stroke();
+  ctx.fillStyle=C.sketch;for(const p of q)ctx.fillRect(g.X(p[0])-2.5,g.Y(p[1])-2.5,5,5);ctx.restore()}
+function pk398Prev(ctx,g,pt){const v=activeView(),S=pk398S(),e=pk398At(v,{x:pt[0],y:pt[1]});ctx.save();
+  if(S.chain){ctx.strokeStyle=C.hot;ctx.lineWidth=2.4;for(const id of S.chain){const x=IDX.get(id);if(x)g.seg([x.x1,x.y1],[x.x2,x.y2])}
+    if(e&&S.chain.includes(e.id))pk398Draw(ctx,g,S.chain,true)}
+  else if(e){const add=pk398Of(e).filter(id=>!S.ids.includes(id)),ids=S.ids.concat(add);ctx.strokeStyle=C.hot;ctx.globalAlpha=0.5;ctx.lineWidth=3;for(const id of pk398Of(e)){const x=IDX.get(id);if(x)g.seg([x.x1,x.y1],[x.x2,x.y2])}ctx.globalAlpha=1;
+    if(add.length)pk398Draw(ctx,g,ids,pk398G(ids).ring&&!!pk398Out(ids,ui.tool))}
+  ctx.restore();return true}
+/* ---- hooks ---- */
+XA.pkw398=()=>dr394Set('pkw398');
+{const f0=lcClick;lcClick=function(v,pt,s){if(pk398On())return pk398Click(v,pt);return f0.apply(this,arguments)}}
+{const f0=bowModePreview;bowModePreview=function(ctx,g,nav,pt,ac){if(pk398On())return pk398Prev(ctx,g,pt);return f0.apply(this,arguments)}}
+{const f0=sk397Draw;sk397Draw=function(ctx,g,v){f0.apply(this,arguments);if(pk398On()&&v===activeView()&&ui.pk398&&ui.pk398.tool===ui.tool)pk398Draw(ctx,g,ui.pk398.ids,false)}}
+{const f0=toolSnap;toolSnap=function(v,w){if(pk398On())return{x:w.x,y:w.y,kind:'free',guides:[]};return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(tool){if(tool!==ui.tool)ui.pk398=null;return f0.apply(this,arguments)}}
+{const f0=dr394Set;dr394Set=function(m){ui.pk398=null;return f0.apply(this,arguments)}}
+{const f0=act;act=function(a){if(pk398On()&&a==='finish'){const S=pk398S();if(S.ids.length){pk398Close();return}}return f0.apply(this,arguments)}}
+{const f0=cancelTool;cancelTool=function(hard){if(!hard&&pk398On()){const S=pk398S();if(S.chain){S.chain=null;refresh();return}if(S.ids.length){S.ids=[];refresh();return}}return f0.apply(this,arguments)}}
+/* on the window, so that it comes before the keys of Multiple Loops */
+window.addEventListener('keydown',e=>{if(!pk398On()||ui.typed||/^(INPUT|TEXTAREA|SELECT)$/.test((e.target&&e.target.tagName)||''))return;const S=pk398S();
+  if(e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();const v=activeView(),nav=navOf(v),c=ui.cur,x=c?pk398At(v,{x:(c.x-nav.ox)/nav.s,y:(c.y-nav.oy)/nav.s}):null;
+    if(!x){toast(t('pk_none398'));return}const ch=pk398Chain(v,x);if(!ch){toast(t('pk_chain398'));return}S.chain=ch;refresh();return}
+  if(e.key==='Enter'&&S.ids.length){e.preventDefault();e.stopImmediatePropagation();pk398Close();return}
+  if(e.key==='Backspace'&&S.ids.length){e.preventDefault();e.stopImmediatePropagation();const x=IDX.get(S.ids[S.ids.length-1]),k=x&&x.arc;do S.ids.pop();while(k&&S.ids.length&&(IDX.get(S.ids[S.ids.length-1])||{}).arc===k);refresh()}},true);
+{const f0=pressed;pressed=id=>id==='@pkw398'?PK398.has(ui.tool)&&drawMode()==='pkw398':f0(id)}
+{const f0=ctxPanels;ctxPanels=function(){const out=f0.apply(this,arguments),v=activeView();if(PK398.has(ui.tool)&&v&&v.kind==='plan'){const p=out.find(q=>q.t==='p_draw');if(p&&!p.b.includes('@pkw398')){const i=p.b.indexOf('@pick');p.b.splice(i<0?p.b.length:i,0,'@pkw398')}
+    const S=ui.pk398&&ui.pk398.tool===ui.tool?ui.pk398:null;if(pk398On()&&S&&S.ids.length&&!out.some(q=>q.t==='p_mode'))out.push({t:'p_mode',b:['@finish','@cancel']})}return out}}
+{const f0=hint;hint=function(msg){if(!msg&&!ui.zoomr&&pk398On()){const S=pk398S();msg=t(S.chain?'h_pk3398':S.ids.length?'h_pk2398':'h_pk1398',S.ids.length)}return f0.call(this,msg)}}
+{const f0=renderOptbar;renderOptbar=function(){const r=f0.apply(this,arguments),el=$('#optbar');if(!el||!pk398On())return r;const o=ui.opt,tl=ui.tool;
+  let h=`<label>${t('o_pkoff398')}<input type="number" id="opt_pkOff398" data-opt="pkOff398" value="${+o.pkOff398||0}" step="10"> ${t('u_mm')}</label>`;
+  if(tl!=='ceiling')h+=`<label><input type="checkbox" id="opt_pkCore398" data-opt="pkCore398"${o.pkCore398?' checked':''}>${t(tl==='roof'?'o_pkcr398':'o_pkcf398')}</label>`;
+  el.insertAdjacentHTML('beforeend',h+`<span>${t('o_pk398')}</span>`);return r}}
+Object.assign(BTN,{'@pkw398':['pkw398','']});
+{const sp=document.querySelector('#sprite defs'),S=(id,b)=>`<symbol id="i-${id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${b}</symbol>`;
+  if(sp&&!document.getElementById('i-pkw398'))sp.insertAdjacentHTML('beforeend',S('pkw398','<path d="M3 4h18v16H3z" stroke-width="1"/><path d="M5.5 6.5h13v11h-13z" stroke-width="1"/><path d="M7.5 8.5h9v7h-9z" stroke-width="1.9" stroke-dasharray="2 1.6"/><path d="M15 13l5 5M15 13v4M15 13h4" stroke-width="1.6"/>'))}
+Object.assign(STR,{a_pkw398:['เลือกผนัง (Pick Walls)','Pick Walls'],
+  o_pkoff398:['ระยะเลื่อน (Offset)','Offset'],o_pkcf398:['ขยายเข้าในผนังถึงแกน (Extend into wall (to core))','Extend into wall (to core)'],o_pkcr398:['วัดจากแกนผนัง (Extend to wall core)','Extend to wall core'],
+  o_pk398:['คลิกผนังทีละด้านให้ครบรอบ หรือชี้ผนังแล้วกด Tab เลือกทั้งแนว · Backspace ย้อน','Click the walls one by one round, or point at a wall and press Tab for the whole chain · Backspace takes one back'],
+  h_pk1398:['คลิกผนังด้านแรก หรือชี้ผนังแล้วกด Tab เลือกผนังที่ต่อกันทั้งรอบ','Click the first wall, or point at one and press Tab for the walls joined all round'],
+  h_pk2398:['เลือกแล้ว {0} ผนัง · คลิกผนังถัดไป ครบรอบแล้วขอบเขตจะปิดเอง หรือกด Enter เพื่อปิด','{0} walls picked · click the next; the outline closes when they go round (Enter closes it)'],
+  h_pk3398:['คลิกผนังในแนวที่เน้นไว้เพื่อใช้ทั้งรอบ (Esc ยกเลิก)','Click a wall of the highlighted chain to use it all (Esc drops it)'],
+  pk_none398:['ไม่มีผนังตรงนี้','No wall here'],pk_dup398:['ผนังนี้เลือกไว้แล้ว','That wall is picked already'],
+  pk_chain398:['ผนังที่ต่อกันไม่ครบรอบ','The walls joined to it do not go all round'],pk_bad398:['ผนังที่เลือกยังไม่เป็นขอบเขตที่ปิดได้','The walls picked do not make a closed outline yet']});
+/* ===== V1.399 a boundary picked from walls stays with them (Revit: the sketch lines Pick Walls makes are locked to the walls, so the floor, ceiling or roof
+   follows when a wall moves).  e.pkw399 = {w: the walls in order, o: Offset, c: 1 with the core faces, p: the outline as last made}.  After every change (XD)
+   the outline is made again from the walls.  When the element's own outline was changed some other way (moved alone, a corner dragged, Edit Boundary drawn
+   otherwise) the link is dropped, as Revit removes the locks; so is it when one of the walls is deleted.  Moving the walls and the floor together keeps it.
+   Lock on the Options Bar of Pick Walls (on by default); a selected element shows closed padlocks on its edges in plans, a click on one unlocks it, and the
+   Mode panel has Unlock from Walls.  Copies made together with their walls are linked to the copied walls. */
+const pk399Sig=q=>q.map(p=>Math.round(p[0])+','+Math.round(p[1])).join(';');
+function pk399Same(a,b){if(!a||!b||a.length!==b.length)return false;return a.every(p=>b.some(q=>Math.abs(q[0]-p[0])<0.6&&Math.abs(q[1]-p[1])<0.6))}
+const pk399On=()=>ui.opt.pkLock399!==false;
+function pk399Link(e,L){e.pkw399={w:L.w.slice(),o:+L.o||0,c:L.c?1:0,p:pk399Sig(e.pts)}}
+const pk399Ok=e=>!!e&&PK398.has(e.cat)&&!!e.pkw399;
+function pk399Unlock(ids){const L=ids.map(id=>IDX.get(id)).filter(pk399Ok);if(!L.length)return false;edit(()=>{for(const e of L)delete e.pkw399});toast(t('pk_unl399'));return true}
+/* the outline its walls make now, or null */
+function pk399Out(e){const k=e.pkw399;return pk398Out(k.w,e.cat,{core:!!k.c,off:+k.o||0})}
+/* ---- linking what Pick Walls makes ---- */
+{const f0=pk398Close;pk398Close=function(){const S=pk398S(),tl=ui.tool,op=pk398Op(),ids=S.ids.slice(),q=pk398Out(ids,tl,op);if(!q||!pk399On())return f0.apply(this,arguments);
+  const L={q,w:pk398G(ids).ord,o:op.off,c:op.core&&tl!=='ceiling'?1:0};
+  if(sk397A()){(ui.pk399L||(ui.pk399L=[])).push(L);return f0.apply(this,arguments)}          // a loop of Multiple Loops or Edit Boundary: linked when the sketch is finished
+  const e0=edit;edit=function(fn){return e0.call(this,()=>{const s0=P.seq;fn();for(const e of P.els)if(e.id>=s0&&e.cat===tl&&pk399Same(e.pts,q))pk399Link(e,L)})};
+  try{return f0.apply(this,arguments)}finally{edit=e0}}}
+{const f0=sk397Fin;sk397Fin=function(){const Ls=ui.pk399L||[],S0=sk397St(),ed=S0?S0.edit:null;if(!Ls.length&&ed==null)return f0.apply(this,arguments);
+  const e0=edit;edit=function(fn){return e0.call(this,()=>{const s0=P.seq;fn();for(const e of P.els){if(!(e.id>=s0||e.id===ed)||!PK398.has(e.cat))continue;const L=Ls.find(L=>pk399Same(e.pts,L.q));if(L)pk399Link(e,L);else delete e.pkw399}})};
+  try{return f0.apply(this,arguments)}finally{edit=e0;const S=ui.sk397;if(!(S&&S.loops&&S.loops.length))ui.pk399L=null}}}
+{const f0=XA.ebd397;XA.ebd397=function(){const r=f0.apply(this,arguments),S=ui.sk397;if(S&&S.edit!=null){const e=IDX.get(S.edit);ui.pk399L=pk399Ok(e)?[{q:e.pts.map(p=>[p[0],p[1]]),w:e.pkw399.w,o:e.pkw399.o,c:e.pkw399.c}]:[]}return r}}
+{const f0=sk397Cancel;sk397Cancel=function(){ui.pk399L=null;return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(tool){if(tool!==ui.tool)ui.pk399L=null;return f0.apply(this,arguments)}}
+/* copies made with their walls follow the copied walls */
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;for(const id of out){const c=IDX.get(id);if(!c||!c.pkw399)continue;const w=c.pkw399.w.map(x=>M.get(x));if(w.every(x=>x!=null))c.pkw399.w=w;else delete c.pkw399}return out}}
+/* ---- following the walls ---- */
+XD.push(()=>{let ch=false;for(const e of P.els){const k=e.pkw399;if(!k)continue;
+  if(!PK398.has(e.cat)||!Array.isArray(e.pts)||!Array.isArray(k.w)||k.w.length<3||k.w.some(id=>{const w=IDX.get(id);return!w||w.cat!=='wall'})){delete e.pkw399;continue}
+  const q=pk399Out(e);
+  if(pk399Sig(e.pts)!==k.p){if(q&&pk399Same(q,e.pts))k.p=pk399Sig(e.pts);else delete e.pkw399;continue}          // changed by itself: unlocked, unless it still sits on the walls
+  if(q&&!pk399Same(q,e.pts)){e.pts=q;k.p=pk399Sig(q);delete e.zv;ch=true}}
+  return ch});
+/* ---- what shows ---- */
+XCT.push((pn,ctx,v,nav,g)=>{if(v.kind!=='plan'||ui.tool!=='modify'||ui.sel.size!==1)return;const e=IDX.get([...ui.sel][0]);if(!pk399Ok(e)||!planShow(v,e))return;const q=e.pts,n=q.length;
+  for(let i=0;i<n;i++){const a=q[i],b=q[(i+1)%n],x=(g.X(a[0])+g.X(b[0]))/2,y=(g.Y(a[1])+g.Y(b[1]))/2;if(Math.hypot(g.X(b[0])-g.X(a[0]),g.Y(b[1])-g.Y(a[1]))<44)continue;
+    lockGlyph(ctx,x,y,true,C.sel,C.paper);ui.ctrls.push({x,y,r:11,tip:'pk_unlock399',run:()=>pk399Unlock([e.id])})}});
+XA.pku399=()=>{if(!pk399Unlock([...ui.sel]))toast(t('pk_none399'))};
+{const f0=ctxPanels;ctxPanels=function(){const out=f0.apply(this,arguments);if(ui.tool==='modify'&&ui.sel.size===1&&pk399Ok(IDX.get([...ui.sel][0]))){const p=out.find(q=>q.t==='p_mode'&&q.b.includes('@ebd397'));
+  if(p){if(!p.b.includes('@pku399'))p.b.push('@pku399')}else out.push({t:'p_mode',b:['@pku399']})}return out}}
+{const f0=renderOptbar;renderOptbar=function(){const r=f0.apply(this,arguments),el=$('#optbar');if(!el||!pk398On())return r;
+  const h=`<label><input type="checkbox" id="opt_pkLock399" data-opt="pkLock399"${pk399On()?' checked':''}>${t('o_pklk399')}</label>`,sp=[...el.querySelectorAll('span')].find(s=>s.textContent===t('o_pk398'));
+  if(sp)sp.insertAdjacentHTML('beforebegin',h);else el.insertAdjacentHTML('beforeend',h);return r}}
+XP.push((cat,els)=>{if(!PK398.has(cat)||els.length!==1||!pk399Ok(els[0]))return'';return PR.ro('p_pkw399',t('p_pkwn399',els[0].pkw399.w.length))});
+Object.assign(BTN,{'@pku399':['pku399','']});
+{const sp=document.querySelector('#sprite defs'),S=(id,b)=>`<symbol id="i-${id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${b}</symbol>`;
+  if(sp&&!document.getElementById('i-pku399'))sp.insertAdjacentHTML('beforeend',S('pku399','<path d="M3 4h18v16H3z" stroke-width="1"/><path d="M6.5 7.5h11v9h-11z" stroke-width="1.6" stroke-dasharray="2 1.6"/><rect x="9" y="12" width="7" height="5.5" rx="1" stroke-width="1.6"/><path d="M10.5 12V9.6a2.2 2.2 0 0 1 4.3-.6" stroke-width="1.6"/>'))}
+Object.assign(STR,{a_pku399:['ปลดจากผนัง (Unlock from Walls)','Unlock from Walls'],o_pklk399:['ล็อกกับผนัง (Lock)','Lock'],
+  pk_unlock399:['ขอบนี้ล็อกกับผนัง คลิกเพื่อปลด','Locked to the walls: click to unlock'],pk_unl399:['ปลดขอบเขตจากผนังแล้ว ย้ายผนังแล้วขอบเขตจะไม่ตาม','Unlocked from the walls: it no longer follows them'],
+  pk_none399:['ขอบเขตนี้ไม่ได้ล็อกกับผนัง','This boundary is not locked to walls'],
+  p_pkw399:['ขอบเขตล็อกกับผนัง','Boundary Locked to Walls'],p_pkwn399:['{0} ผนัง','{0} walls']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -47582,6 +47742,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - แผงวาดในโหมดร่างขอบเขต (พื้น หลังคา ฝ้า บริเวณ ช่องเปิด มวล ในแปลน): หลายเหลี่ยมและวงกลมได้ขอบเขตทั้งรูปทันที · โค้ง 3 จุด โค้งจากจุดศูนย์กลาง และโค้งต่อเนื่อง เริ่มจากปลายขอบเขต (ถ้ายังไม่มีให้คลิกจุดเริ่ม) และปิดรูปเองเมื่อโค้งจบที่จุดแรก · โค้งมุม: คลิกสองเส้นของขอบเขตที่ต่อกัน แล้วคลิกกำหนดรัศมี · สลับเส้นตรงกับโค้งกลางทางได้ · Backspace ย้อนทั้งโค้ง · ความละเอียดของโค้งตั้งที่ แบ่งโค้งทุก (องศา) บนแถบตัวเลือก
 - เส้นโค้งอิสระ วงรี และครึ่งวงรี (เส้นรายละเอียดทุกมุมมอง เส้นแบบจำลองในแปลน): Spline คลิกจุดควบคุม เส้นผ่านจุดแรกและจุดสุดท้าย จบด้วย Enter, Esc หรือคลิกจุดสุดท้ายซ้ำ (Backspace ย้อนจุด) · Ellipse คลิกศูนย์กลาง ปลายแกนหนึ่ง แล้วรัศมีอีกแกน (พิมพ์ค่าได้) · Partial Ellipse คลิกปลายแกนสองข้าง แล้วรัศมีอีกแกนทางด้านที่จะให้ครึ่งวงรีอยู่ · เลือกแล้วลากจุดจับ (จุดควบคุม ศูนย์กลาง ปลายแกน) เพื่อแก้รูป ตัด แบ่ง และระยะขนานใช้กับเส้นเหล่านี้ไม่ได้
 - หลายวงและแก้ขอบเขต (พื้น ฝ้า ในแปลน): ติ๊ก หลายวง (Multiple Loops) ที่แถบตัวเลือก วงที่ปิดแล้ว (คลิกจุดแรก สี่เหลี่ยม วงกลม รูปหลายเหลี่ยม เลือกห้อง) จะเก็บไว้ วาดวงต่อไปได้ทันที กด Enter หรือ เสร็จสิ้น เพื่อสร้าง วงที่อยู่ในวงอื่นเป็นช่องเปิด วงในช่องเปิดเป็นชิ้นใหม่ วงที่ตัดหรือแตะกันใช้ไม่ได้ · เลือกพื้นหรือฝ้าหนึ่งชิ้นแล้วกด แก้ขอบเขต (Edit Boundary) วงเดิมขึ้นมาให้แก้ เอาวงออกด้วยปุ่ม ✕ ของวงนั้นที่แถบตัวเลือก หรือ Backspace (วงล่าสุด) Esc ยกเลิก
+- เลือกผนัง (Pick Walls) (พื้น ฝ้า หลังคา ในแปลน): กดปุ่ม เลือกผนัง ในแผงวาด คลิกผนังทีละด้าน ลำดับไม่สำคัญ เมื่อผนังที่เลือกต่อกันครบรอบ ขอบเขตจะปิดเองที่จุดที่ผิวผนังมาชนกัน (Enter หรือ เสร็จสิ้น ปิดเองได้เมื่อมีสามผนังขึ้นไปแม้ผนังไม่ชนกัน) ชี้ผนังแล้วกด Tab จะเน้นผนังที่ต่อกันทั้งรอบ คลิกเพื่อใช้ทั้งรอบ · พื้นและฝ้าอยู่ที่ผิวด้านในของรอบ หลังคาอยู่ที่ผิวนอก (ระยะชายคาของหลังคาเพิ่มจากตรงนั้น) ระยะเลื่อน (Offset) บวกคือออกไปทางนอก ติ๊ก ขยายเข้าในผนังถึงแกน (พื้น) หรือ วัดจากแกนผนัง (หลังคา) เพื่อใช้ผิวของชั้นแกน (Core) แทน · Backspace เอาผนังล่าสุดออก Esc ล้างที่เลือก
+- ล็อกกับผนัง: ขอบเขตที่ได้จาก เลือกผนัง (ติ๊ก ล็อกกับผนัง ไว้) จะตามผนังเมื่อย้าย ยืด หรือเปลี่ยนชนิดผนัง (ผิวผนังเปลี่ยน ขอบเขตเปลี่ยนตาม) ย้ายผนังพร้อมพื้นยังล็อกอยู่ ถ้าย้ายพื้นอย่างเดียว ลากมุม แก้ขอบเขตเป็นรูปอื่น หรือลบผนังที่ใช้ จะปลดล็อกเอง เลือกพื้นในแปลนแล้วมีแม่กุญแจบนขอบ คลิกแม่กุญแจหรือปุ่ม ปลดจากผนัง (Unlock from Walls) เพื่อปลด Properties บอกจำนวนผนังที่ล็อก
 - [[o_wallloc]]: วาดตามกึ่งกลางผนัง ผิวนอก หรือผิวใน · [[o_chain]]: ผนังเส้นถัดไปเริ่มจากปลายเส้นก่อนหน้า
 - ผนังที่ปลายชนกันจะต่อมุมให้เอง ความสูงตั้งที่ [[p_top]] ในแผงคุณสมบัติ
 - ความหนา วัสดุ และราคา เป็นของชนิดผนัง กด [[edit_type]] เพื่อแก้ หรือทำสำเนาเป็นชนิดใหม่
@@ -47817,6 +47979,8 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - The Draw panel in sketch mode (floor, roof, ceiling, region, shaft, mass, in plans): Polygons and Circle make a whole outline at once · the 3-point Arc, Center-ends Arc and Tangent End Arc go on from the end of the outline (or click where it starts) and close it when they end on the first point · Fillet Arc: click two lines of the sketch that meet, then click for the radius · Line and the arcs can be mixed in one outline · Backspace takes a whole arc back · how fine an arc is drawn: Segment every (degrees) on the Options Bar
 - Spline, Ellipse and Partial Ellipse (detail lines in any view, model lines in plans): Spline: click the control points (it passes through the first and the last), end with Enter, Esc or a second click on the last point (Backspace takes one back) · Ellipse: the centre, the end of one axis, then the other radius (it can be typed) · Partial Ellipse: both ends of an axis, then the other radius on the side the half goes · select one and drag its grips (control points, centre, axis ends) to reshape it; Trim, Split and Offset do not take them
 - Multiple loops and Edit Boundary (floors, ceilings, in plans): tick Multiple Loops on the Options Bar; a loop that closes (clicking the first point, Rectangle, Circle, Polygon, Pick) is kept and the next can be drawn at once; Enter or Finish makes it. A loop inside another is an opening, a loop inside an opening is a piece again, loops that cross or touch are refused · select one floor or ceiling and press Edit Boundary: its loops come back to edit; take one away with its ✕ on the Options Bar or Backspace (the last), Esc cancels
+- Pick Walls (floors, ceilings, roofs, in plans): press Pick Walls in the Draw panel and click the walls one by one, in any order; when the walls picked join all round the outline closes by itself where the faces meet (Enter or Finish closes it with three or more even when they do not touch). Point at a wall and press Tab to highlight the walls joined all round, and click to use them all · floors and ceilings go on the inside faces of the ring, roofs on the outside faces (the roof's overhang is added from there); a positive Offset goes outward; tick Extend into wall (to core) (floors) or Extend to wall core (roofs) to use the faces of the core layers instead · Backspace takes the last wall back, Esc clears the picks
+- Lock to walls: a boundary made with Pick Walls (Lock ticked) follows its walls when they are moved, stretched or given another type (their faces move, so does it); moving the walls with the floor keeps the lock. Moving the floor alone, dragging a corner, editing the boundary into another shape or deleting one of its walls unlocks it. A selected floor shows padlocks on its edges in plans: click one, or Unlock from Walls, to unlock. Properties shows how many walls it is locked to
 - [[o_wallloc]]: draw by the wall's centre line, its outer or its inner face · [[o_chain]]: each wall starts where the last one ended
 - Walls that meet at their ends are joined. The height is set by [[p_top]] in Properties
 - Thickness, material and cost belong to the wall type: [[edit_type]] changes them, or duplicates the type
@@ -48709,6 +48873,8 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.395 · แผงวาด (Draw) ในโหมดร่างขอบเขตแบบ Revit: พื้น หลังคา ฝ้า บริเวณระบายสี ช่องเปิดทะลุชั้น และมวล วาดขอบเขตด้วยหลายเหลี่ยมแนบในวงหรือล้อมวง วงกลม โค้ง 3 จุด โค้งจากจุดศูนย์กลาง โค้งต่อเนื่องจากปลายขอบเขต และโค้งมุมระหว่างสองเส้นของขอบเขตได้ เปลี่ยนวิธีวาดระหว่างเส้นตรงกับโค้งกลางทางได้โดยขอบเขตไม่หาย กด Backspace ย้อนทั้งโค้งในครั้งเดียว
 - V1.396 · เส้นโค้งอิสระ (Spline) วงรี (Ellipse) และครึ่งวงรี (Partial Ellipse) ในแผงวาดของเส้นรายละเอียดและเส้นแบบจำลองแบบ Revit: คลิกจุดควบคุมทีละจุดแล้วจบด้วย Enter หรือ Esc · วงรีคลิกศูนย์กลาง ปลายแกน แล้วรัศมีอีกแกน · ครึ่งวงรีคลิกปลายแกนสองข้างแล้วรัศมีด้านที่ต้องการ เลือกแล้วลากจุดควบคุมหรือปลายแกนแก้รูปได้ ย้าย คัดลอก หมุน สะท้อน แปลงเส้น ลงแผ่นงาน 3 มิติ และ DXF ได้ตามรูปโค้ง
 - V1.397 · พื้นและฝ้าหลายวงในสเก็ตช์เดียว และแก้ขอบเขต (Edit Boundary) แบบ Revit: ติ๊ก หลายวง ที่แถบตัวเลือกของเครื่องมือพื้นหรือฝ้า ปิดวงแล้ววาดวงต่อไปได้ กด Enter หรือ เสร็จสิ้น เมื่อครบ วงที่อยู่ในวงอื่นเป็นช่องเปิด วงที่แยกกันเป็นอีกชิ้น · เลือกพื้นหรือฝ้าแล้วกด แก้ขอบเขต เพื่อเปิดสเก็ตช์เดิม เพิ่มวง เอาวงออก แล้วกด เสร็จสิ้น · ช่องเปิดเว้นในแปลน 3 มิติ รูปตัด IFC และปริมาณงาน ย้าย หมุน สะท้อน ย่อขยายตามพื้น ลากมุมของช่องเปิดได้
+- V1.398 · เลือกผนัง (Pick Walls) ในสเก็ตช์พื้น ฝ้า และหลังคา แบบ Revit: คลิกผนังทีละด้าน เมื่อครบรอบขอบเขตจะปิดเอง (หรือชี้ผนังแล้วกด Tab เลือกผนังที่ต่อกันทั้งรอบ) พื้นและฝ้าอยู่ที่ผิวในของผนัง หลังคาอยู่ที่ผิวนอก ตั้งระยะเลื่อน (Offset) และ ขยายเข้าในผนังถึงแกน / วัดจากแกนผนัง ได้ที่แถบตัวเลือก ผนังที่อยู่ในแนวเดียวกันเป็นเส้นเดียว ผนังโค้งเลือกได้ทั้งเส้น ใช้กับ หลายวง และ แก้ขอบเขต ได้
+- V1.399 · ขอบเขตที่เลือกจากผนังล็อกกับผนัง (Pick Walls › Lock) แบบ Revit: พื้น ฝ้า และหลังคาที่สร้างด้วย เลือกผนัง ขยับตามเมื่อย้ายหรือยืดผนัง ย้ายทั้งผนังและพื้นพร้อมกัน หมุน สะท้อน หรือคัดลอกไปพร้อมผนังยังล็อกอยู่ ย้ายพื้นเอง ลากมุม หรือลบผนังจะปลดล็อก เลือกพื้นแล้วเห็นแม่กุญแจบนขอบในแปลน คลิกแม่กุญแจหรือปุ่ม ปลดจากผนัง เพื่อปลด ติ๊ก ล็อกกับผนัง ที่แถบตัวเลือกได้ (เปิดไว้เป็นค่าเริ่มต้น)
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -49248,6 +49414,8 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.395 · Revit's Draw panel in sketch mode: the boundary of a floor, roof, ceiling, filled region, shaft or mass can be drawn with Inscribed or Circumscribed Polygon, Circle, a 3-point Arc, Center-ends Arc, Tangent End Arc from the end of the outline and Fillet Arc between two of its lines. Switching between Line and the arcs keeps the outline; Backspace takes a whole arc back
 - V1.396 · Spline, Ellipse and Partial Ellipse in the Draw panel of detail lines and model lines, as in Revit: click the control points and end with Enter or Esc · an ellipse from its centre, the end of one axis and the other radius · a half ellipse from both ends of an axis and the other radius on its side. Their control points and axis ends are dragged to reshape them; they move, copy, rotate, mirror, convert, and go on sheets, in 3D and in DXF as curves
 - V1.397 · Several loops in one floor or ceiling sketch, and Edit Boundary, as in Revit: tick Multiple Loops on the Options Bar of the Floor or Ceiling tool, close a loop and draw the next, then Enter or Finish; a loop inside another is an opening, a loop on its own is another piece · select a floor or ceiling and press Edit Boundary to open its sketch again, add loops, take loops away and Finish · openings are left out of plans, 3D, sections, IFC and the quantities; they move, rotate, mirror and scale with the floor, and their corners can be dragged
+- V1.398 · Pick Walls in floor, ceiling and roof sketches, as in Revit: click the walls one by one and the outline closes when they go round (or point at a wall and press Tab for the walls joined all round); floors and ceilings go on the inside faces of the walls, roofs on the outside faces; Offset and Extend into wall (to core) / Extend to wall core on the Options Bar; walls in line make one edge, a curved wall is picked whole; works with Multiple Loops and Edit Boundary
+- V1.399 · A boundary picked from walls is locked to them, as in Revit: a floor, ceiling or roof made with Pick Walls follows when a wall is moved or stretched; moving, rotating, mirroring or copying it together with its walls keeps the lock, while moving the floor alone, dragging a corner or deleting a wall unlocks it. A selected one shows padlocks on its edges in plans; click one, or Unlock from Walls, to unlock. Lock on the Options Bar (on by default)
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -51498,6 +51666,63 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r399={
+  plan:lid=>{const v=planOf(lid);return v?v.id:null},lv1:()=>sortedLevels(P)[0].id,show:vid=>{showView(vid);return activeView().id},
+  tool:tl=>{setTool(tl);return ui.tool},mode:m=>{act(m);return drawMode()},opt:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  click:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);toolClick(PANES[ui.ap],v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy,exact:{x,y}},null);return ui.pk398?ui.pk398.ids.length:-1},
+  cur:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);ui.cur={x:x*nav.s+nav.ox,y:y*nav.s+nav.oy};return true},
+  seq:()=>P.seq,
+  since:s=>P.els.filter(e=>e.id>=s).map(e=>({id:e.id,cat:e.cat,type:e.type,level:e.level,pts:e.pts?e.pts.map(q=>[Math.round(q[0]*10)/10,Math.round(q[1]*10)/10]):null,holes:e.holes?e.holes.length:0})),
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  wall:(lid,a,b,type,o)=>{let id;edit(()=>{const e=newLineEl('wall',lid,{x:a[0],y:a[1]},{x:b[0],y:b[1]});if(type!=null)e.type=type;if(o)Object.assign(e,o);P.els.push(e);id=e.id});return id},
+  wtypes:()=>P.types.wall.map(T=>({id:T.id,name:T.name,th:+T.thickness,core:racCore243(T),lay:(wlOf(T)||[]).length})),
+  st:()=>{const S=ui.pk398;return{tool:ui.tool,mode:drawMode(),on:pk398On(),ids:S?S.ids.slice():[],chain:S&&S.chain?S.chain.slice():null,sketch:ui.sketch?ui.sketch.length:0,loops:ui.sk397?ui.sk397.loops.length:0,edit:ui.sk397?ui.sk397.edit:null,sel:[...ui.sel]}},
+  order:ids=>pk398G(ids),out:(ids,tl)=>pk398Out(ids,tl||ui.tool),chain:(vid,id)=>pk398Chain(viewById(vid),IDX.get(id)),
+  ctx:()=>[...document.querySelectorAll('#ribbon .rctx [data-act]')].map(b=>b.dataset.act),
+  pressed:id=>pressed(id),bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
+  hasOpt:id=>!!document.getElementById(id),
+  hint:()=>{hint();return $('#prompt').textContent},
+  esc:()=>{cancelTool();return{tool:ui.tool,ids:ui.pk398?ui.pk398.ids.length:0}},
+  key:k=>{document.body.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return ui.pk398?ui.pk398.ids.length:-1},
+  act:a=>{act(a);return ui.tool},sel:ids=>{setTool('modify');ui.sel=new Set(ids);refresh();return ui.sel.size},
+  undo:()=>{undo();return P.seq},toast:()=>{const e=document.querySelector('#toast');return e?e.textContent:''},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(ui.ap,x,y);return[s.x,s.y]},
+  fit:()=>{act('fit');return true},del:ids=>{edit(()=>{P.els=P.els.filter(e=>!ids.includes(e.id))});return P.els.length},
+  ar:id=>{const e=IDX.get(id);return e?Math.abs(area2(e.pts)):null},
+  ink:(x,y,r,thr)=>{const pn=PANES[ui.ap],B=window.PenumBIM.toScreen(ui.ap,x,y),c=pn.cv,Rc=c.getBoundingClientRect(),k=c.width/Rc.width,X=Math.round((B.x-Rc.left)*k),Y=Math.round((B.y-Rc.top)*k),n=Math.round((r||4)*k);
+    const q=c.getContext('2d').getImageData(X-n,Y-n,2*n+1,2*n+1).data;let m=0;for(let j=0;j<q.length;j+=4)if(q[j]+q[j+1]+q[j+2]<(thr||600))m++;return m},
+  pkw:id=>{const e=IDX.get(id);return e&&e.pkw399?JSON.parse(JSON.stringify(e.pkw399)):null},move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));return true},rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));return true},mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));return true},copy:(ids,dx,dy)=>{let o;edit(()=>{o=cloneIds(ids);translateIds(o,dx,dy)});return o},
+  setw:(id,o)=>{edit(()=>Object.assign(IDX.get(id),o));return true},grip:(vid,id,i,x,y)=>{const v=viewById(vid),nav=navOf(v),e=IDX.get(id);snapshot();moveElDrag({kind:'grip',e,h:{id,grip:i}},v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});commit();return JSON.parse(JSON.stringify(e.pts))},
+  ctrls:()=>{redraw();return(ui.ctrls||[]).map(c=>({x:c.x,y:c.y,tip:c.tip}))},ctrlRun:i=>{const c=(ui.ctrls||[])[i];if(!c)return false;c.run();return true},props:()=>{renderProps();const p=document.querySelector('#props');return p?p.textContent.replace(/\s+/g,' '):''},
+  str:(k,...a)=>t(k,...a)
+};
+window.PenumBIM.r398={
+  plan:lid=>{const v=planOf(lid);return v?v.id:null},lv1:()=>sortedLevels(P)[0].id,show:vid=>{showView(vid);return activeView().id},
+  tool:tl=>{setTool(tl);return ui.tool},mode:m=>{act(m);return drawMode()},opt:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  click:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);toolClick(PANES[ui.ap],v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy,exact:{x,y}},null);return ui.pk398?ui.pk398.ids.length:-1},
+  cur:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v);ui.cur={x:x*nav.s+nav.ox,y:y*nav.s+nav.oy};return true},
+  seq:()=>P.seq,
+  since:s=>P.els.filter(e=>e.id>=s).map(e=>({id:e.id,cat:e.cat,type:e.type,level:e.level,pts:e.pts?e.pts.map(q=>[Math.round(q[0]*10)/10,Math.round(q[1]*10)/10]):null,holes:e.holes?e.holes.length:0})),
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  wall:(lid,a,b,type,o)=>{let id;edit(()=>{const e=newLineEl('wall',lid,{x:a[0],y:a[1]},{x:b[0],y:b[1]});if(type!=null)e.type=type;if(o)Object.assign(e,o);P.els.push(e);id=e.id});return id},
+  wtypes:()=>P.types.wall.map(T=>({id:T.id,name:T.name,th:+T.thickness,core:racCore243(T),lay:(wlOf(T)||[]).length})),
+  st:()=>{const S=ui.pk398;return{tool:ui.tool,mode:drawMode(),on:pk398On(),ids:S?S.ids.slice():[],chain:S&&S.chain?S.chain.slice():null,sketch:ui.sketch?ui.sketch.length:0,loops:ui.sk397?ui.sk397.loops.length:0,edit:ui.sk397?ui.sk397.edit:null,sel:[...ui.sel]}},
+  order:ids=>pk398G(ids),out:(ids,tl)=>pk398Out(ids,tl||ui.tool),chain:(vid,id)=>pk398Chain(viewById(vid),IDX.get(id)),
+  ctx:()=>[...document.querySelectorAll('#ribbon .rctx [data-act]')].map(b=>b.dataset.act),
+  pressed:id=>pressed(id),bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
+  hasOpt:id=>!!document.getElementById(id),
+  hint:()=>{hint();return $('#prompt').textContent},
+  esc:()=>{cancelTool();return{tool:ui.tool,ids:ui.pk398?ui.pk398.ids.length:0}},
+  key:k=>{document.body.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));return ui.pk398?ui.pk398.ids.length:-1},
+  act:a=>{act(a);return ui.tool},sel:ids=>{setTool('modify');ui.sel=new Set(ids);refresh();return ui.sel.size},
+  undo:()=>{undo();return P.seq},toast:()=>{const e=document.querySelector('#toast');return e?e.textContent:''},
+  scr:(x,y)=>{const s=window.PenumBIM.toScreen(ui.ap,x,y);return[s.x,s.y]},
+  fit:()=>{act('fit');return true},del:ids=>{edit(()=>{P.els=P.els.filter(e=>!ids.includes(e.id))});return P.els.length},
+  ar:id=>{const e=IDX.get(id);return e?Math.abs(area2(e.pts)):null},
+  ink:(x,y,r,thr)=>{const pn=PANES[ui.ap],B=window.PenumBIM.toScreen(ui.ap,x,y),c=pn.cv,Rc=c.getBoundingClientRect(),k=c.width/Rc.width,X=Math.round((B.x-Rc.left)*k),Y=Math.round((B.y-Rc.top)*k),n=Math.round((r||4)*k);
+    const q=c.getContext('2d').getImageData(X-n,Y-n,2*n+1,2*n+1).data;let m=0;for(let j=0;j<q.length;j+=4)if(q[j]+q[j+1]+q[j+2]<(thr||600))m++;return m},
+  str:(k,...a)=>t(k,...a)
+};
 window.PenumBIM.r397={
   plan:lid=>{const v=planOf(lid);return v?v.id:null},lv1:()=>sortedLevels(P)[0].id,show:vid=>{showView(vid);return activeView().id},
   rcp:lid=>{const v=P.views.find(x=>x.kind==='plan'&&x.level===lid&&x.rcp);return v?v.id:null},
