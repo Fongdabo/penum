@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=446,V1_NAME='V1.436';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=447,V1_NAME='V1.437';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49053,6 +49053,64 @@ Object.assign(STR,{g_tp436:['รูปทรงมวล (Form)','Form'],p_tpi43
 const tpRnd436=Q=>Q.map(p=>[tpR436(p[0]),tpR436(p[1])]);
 const tpRoofPts436=m=>{const T=tpTop436(P,m);return T?tpRnd436(T):m.pts.map(p=>p.slice())};
 const tpFlPts436=(m,lv)=>{const L=lvl(P,lv),Q=L?tpAt436(P,m,L.elev):null;return Q?tpRnd436(Q):m.pts.map(p=>p.slice())};
+/* ===== V1.437 Mass Floor schedules and the mass's Gross Surface Area (Revit: View › Schedules › Mass Floor, with Floor Area, Floor Perimeter, Exterior Surface
+   Area, Floor Volume and Usage of every mass floor; Gross Surface Area of a mass).  A mass floor is a level crossing a solid mass (V1.84 massFloors); it reaches
+   up to the next one or the top of the mass.  The schedule's rows are made from the masses each time (the row's element is its mass, so a click picks the
+   mass); Usage is kept on the mass by level: m.mfu437 = {level id: text}.  Lofted masses (V1.436) are measured at their real outline. ===== */
+/* the outline of mass m at height z (the loft's when it has one) */
+const mflAt437=(P0,m,z)=>tpAt436(P0,m,z)||m.pts;
+const mflPer437=Q=>{let s=0;for(let i=0;i<Q.length;i++){const a=Q[i],b=Q[(i+1)%Q.length];s+=Math.hypot(b[0]-a[0],b[1]-a[1])}return s};
+/* the sides of mass m from z0 to z1: their area (mm²); each side is a flat trapezoid whose width at the top and foot are its edges there */
+function mflSides437(P0,m,z0,z1){if(z1-z0<=0)return 0;const A=mflAt437(P0,m,z0),B=mflAt437(P0,m,z1),G=tpLive436(P0,m),n=A.length;let s=0;
+  for(let k=0;k<n;k++){const la=Math.hypot(A[(k+1)%n][0]-A[k][0],A[(k+1)%n][1]-A[k][1]),lb=Math.hypot(B[(k+1)%n][0]-B[k][0],B[(k+1)%n][1]-B[k][1]),d=G?G.sides[k].d*(z1-z0)/G.H:0;s+=(la+lb)/2*Math.hypot(z1-z0,d)}
+  return s}
+/* volume from z0 to z1 (Simpson's rule, exact for a loft and a prism) */
+const mflVol437=(P0,m,z0,z1)=>{const A=z=>Math.abs(area2(mflAt437(P0,m,z)));return(z1-z0)/6*(A(z0)+4*A((z0+z1)/2)+A(z1))};
+/* Gross Surface Area: every face of the mass, the foot and the top too (mm²) */
+function mflGsa437(P0,m){if(!m||m.cat!=='mass'||!Array.isArray(m.pts)||m.pts.length<3)return 0;const zr=zRange(P0,m);return mflSides437(P0,m,zr[0],zr[1])+Math.abs(area2(mflAt437(P0,m,zr[0])))+Math.abs(area2(mflAt437(P0,m,zr[1])))}
+/* the mass floors of every solid mass as rows: {id: the mass, cat 'mfloor', level, the mass's mark, comments and phases, fa, fp, fs, fv (mm, mm², mm³), use} */
+function mflRows437(P0){const out=[];
+  for(const m of P0.els){if(m.cat!=='mass'||m.void||!Array.isArray(m.pts)||m.pts.length<3)continue;const zr=zRange(P0,m),F=massFloors(P0,m),U=m.mfu437||{};
+    F.forEach((f,i)=>{const z1=i+1<F.length?F[i+1].z:zr[1],O=mflAt437(P0,m,f.z),r={id:m.id,cat:'mfloor',level:f.id,mass:m.id,mk:m.mark||'',fa:Math.abs(area2(O)),fp:mflPer437(O),fs:mflSides437(P0,m,f.z,z1),fv:mflVol437(P0,m,f.z,z1),use:U[f.id]||'',z:f.z};
+      for(const k of ['mark','comment','ph','dem'])if(m[k]!=null)r[k]=m[k];out.push(r)})}
+  return out}
+const mflName437=(P0,m)=>m?(m.mark||m.comment||sfSing(t('cat_mass'))+' '+((P0.els.filter(x=>x.cat==='mass'&&!x.void).indexOf(m))+1)):'';
+/* the category in schedules: Architecture, after Masses; its own fields; the default ones */
+{const i=SF_DISC.arch.indexOf('mass');SF_DISC.arch.splice(i<0?SF_DISC.arch.length:i+1,0,'mfloor')}SF_CATS.push('mfloor');
+SF_DEF.mfloor=['mfm437','level','mfu437','mfa437','mfp437','mfs437','mfv437'];
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);
+  if(cat==='mass')F.push({k:'gsa437',l:tr('sf_gsa437'),g:e=>mflGsa437(Q,e),grp:'q',num:1,u:'m2',sum:1});
+  if(cat!=='mfloor')return F;const keep=new Set(['mark','level','comment','count','phc','phd']),R=F.filter(f=>keep.has(f.k));
+  for(const f of R)if(f.k==='mark'||f.k==='comment')f.l=tr(f.k==='mark'?'sf_mfmk437':'sf_mfcm437');          // they are the mass's
+  const add=(k,l,g,o)=>R.push(Object.assign({k,l,g,grp:'q'},o||{}));
+  R.unshift({k:'mfm437',l:tr('sf_mfm437'),g:e=>mflName437(P,IDX.get(e.mass)),grp:'i'});
+  add('mfu437',tr('sf_mfu437'),e=>e.use||'',{grp:'i'});add('mfz437',tr('sf_mfz437'),e=>e.z,{num:1,u:'mm',dec:0});
+  add('mfa437',tr('sf_mfa437'),e=>e.fa,{num:1,u:'m2',sum:1});add('mfp437',tr('sf_mfp437'),e=>e.fp,{num:1,u:'m',sum:1});
+  add('mfs437',tr('sf_mfs437'),e=>e.fs,{num:1,u:'m2',sum:1});add('mfv437',tr('sf_mfv437'),e=>e.fv,{num:1,u:'m3',sum:1});
+  return R}}
+/* a Mass Floor schedule lists the rows made from the masses */
+{const f0=sfTable;sfTable=(P0,o,tr,Q)=>{const v=o&&o.v||{};if(v.scat!=='mfloor'||v.mto)return f0(P0,o,tr,Q);const S=f0(Object.assign({},P0,{els:mflRows437(P0)}),o,tr,Q);for(const r of S.rows)r._mfl=1;return S}}
+/* the mass: Gross Surface Area in Properties; Mass Floors… lists its floors with their Usage */
+XP.push((c,els)=>{if(c!=='mass'||els.length!==1||els[0].id==null||els[0].void)return'';const m=els[0],F=massFloors(P,m);
+  return PR.grp('g_mfl437')+PR.ro('p_gsa437',fmtArea(mflGsa437(P,m))+' '+areaUnit())+`<div class="pa"><button class="btn" data-act="mfl437">${t('a_mfl437')}${F.length?' ('+F.length+')':''}</button></div>`});
+function dlgMFL437(id){const m=IDX.get(id!=null?id:[...ui.sel][0]);if(!m||m.cat!=='mass'||m.void)return;const R=mflRows437(Object.assign({},P,{els:[m]}));
+  const tot=k=>R.reduce((s,r)=>s+r[k],0),U=m.mfu437||{};
+  const rows=R.map(r=>`<tr><td>${esc((lvl(P,r.level)||{}).name||'')}</td><td style="text-align:right">${fmtArea(r.fa)}</td><td style="text-align:right">${(r.fp/1e3).toFixed(2)}</td><td style="text-align:right">${fmtArea(r.fs)}</td><td style="text-align:right">${fmtVol(r.fv)}</td><td><input type="text" data-mfu="${r.level}" value="${esc(U[r.level]||'')}" maxlength="40" style="width:150px"></td></tr>`).join('');
+  openDlg(t('a_mfl437'),`<p class="note">${esc(t('mfl437_note'))}</p><div class="tblw" style="overflow-x:auto"><table class="tbl" id="mfl437Tbl"><thead><tr><th>${esc(t('c_level'))}</th><th>${esc(t('sf_mfa437'))} (${esc(areaUnit())})</th><th>${esc(t('sf_mfp437'))} (${esc(t('u_m'))})</th><th>${esc(t('sf_mfs437'))} (${esc(areaUnit())})</th><th>${esc(t('sf_mfv437'))} (${esc(volUnit())})</th><th>${esc(t('sf_mfu437'))}</th></tr></thead><tbody>${rows||`<tr><td colspan="6">${esc(t('mass_none'))}</td></tr>`}</tbody>`
+    +(R.length?`<tfoot><tr><th>${esc(t('c_total'))}</th><th style="text-align:right">${fmtArea(tot('fa'))}</th><th></th><th style="text-align:right">${fmtArea(tot('fs'))}</th><th style="text-align:right">${fmtVol(tot('fv'))}</th><th></th></tr></tfoot>`:'')+`</table></div>`,
+    `<button class="btn" data-act="mflsched437">${esc(t('a_mflsched437'))}</button><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {mfl437:m.id,change(ev){const el=ev.target,lv=el.dataset.mfu;if(lv==null)return;const s=el.value.trim().slice(0,40);edit(()=>{const o=Object.assign({},m.mfu437||{});if(s)o[lv]=s;else delete o[lv];if(Object.keys(o).length)m.mfu437=o;else delete m.mfu437})}},'wide')}
+XA.mfl437=()=>dlgMFL437();
+/* a Mass Floor schedule made at once (or the one there is, opened) */
+XA.mflsched437=()=>{closeDlg();const v=P.views.find(x=>x.kind==='schedule'&&x.sched==='cat'&&x.scat==='mfloor'&&!x.mto);if(v){showView(v.id);return}nsMake({k:'c',cat:'mfloor'})};
+/* Usage: text by level, levels that are there */
+XC.push(()=>{const L=new Set(P.levels.map(l=>String(l.id)));for(const m of P.els){if(!('mfu437' in m))continue;const o=m.mfu437;if(m.cat!=='mass'||m.void||!o||typeof o!=='object'||Array.isArray(o)){delete m.mfu437;continue}
+  for(const k of Object.keys(o)){const s=typeof o[k]==='string'?o[k].trim().slice(0,40):'';if(!L.has(k)||!s)delete o[k];else o[k]=s}if(!Object.keys(o).length)delete m.mfu437}});
+Object.assign(STR,{cat_mfloor:['ชั้นของมวล (Mass Floors)','Mass Floors'],sf_gsa437:['พื้นที่ผิวรวม (Gross Surface Area)','Gross Surface Area'],p_gsa437:['พื้นที่ผิวรวม','Gross Surface Area'],
+  sf_mfm437:['มวล','Mass'],sf_mfmk437:['เครื่องหมายของมวล','Mass Mark'],sf_mfcm437:['หมายเหตุของมวล','Mass Comments'],sf_mfu437:['การใช้งาน (Usage)','Usage'],sf_mfz437:['ระดับความสูง','Elevation'],
+  sf_mfa437:['พื้นที่ชั้น (Floor Area)','Floor Area'],sf_mfp437:['เส้นรอบรูปชั้น (Floor Perimeter)','Floor Perimeter'],sf_mfs437:['พื้นที่ผิวภายนอก (Exterior Surface Area)','Exterior Surface Area'],sf_mfv437:['ปริมาตรชั้น (Floor Volume)','Floor Volume'],
+  g_mfl437:['ชั้นของมวล (Mass Floors)','Mass Floors'],a_mfl437:['ชั้นของมวล…','Mass Floors…'],a_mflsched437:['ตารางชั้นของมวล','Mass Floor Schedule'],
+  mfl437_note:['แต่ละชั้นนับจากระดับของชั้นนั้นขึ้นไปถึงชั้นถัดไปหรือยอดมวล พื้นที่ผิวภายนอกคือผิวด้านข้างในช่วงนั้น ใส่การใช้งานของแต่ละชั้นได้ จะแสดงในตารางชั้นของมวล','Each floor reaches from its level up to the next one or the top of the mass; its Exterior Surface Area is the sides over that height. Type the Usage of each floor: it shows in Mass Floor schedules']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -51312,6 +51370,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.434 · แบ่งเส้นเป็นจุดและวางซ้ำตามจุด (Divide Path และ Repeat แบบ Revit): เลือกเส้นโมเดลแล้วกดแบ่งเส้นเป็นจุด เส้นตรง เส้นโค้ง วงกลม หรือเส้นเอียงในแนวตั้งจะได้จุด (node) ตามจำนวนหรือระยะที่ตั้ง (จำนวนคงที่ ระยะคงที่ ระยะห่างอย่างน้อยหรือไม่เกิน) ตั้งระยะเว้นต้นและปลายเส้น กลับทิศ และแสดงเลขจุดได้ จุดเป็นจุดยึด (snap) วางชิ้นงานปรับตามจุดลงบนจุดแล้วชิ้นงานจะเกาะจุดไว้ แก้เส้นแล้วชิ้นงานตามไปด้วย กดวางซ้ำ ชิ้นงานจะเรียงต่อกันตลอดเส้น เช่น โครงถักระหว่างสองเส้น หรือแผงฟันปลาตามแนวโค้ง ความยาว พื้นที่ ตารางรายการ และ BOQ นับครบทุกชิ้น
 - V1.435 · ชิ้นงานปรับตามจุดใน 3 มิติ รูปด้าน รูปตัด และบนผิวที่แบ่ง (แบบ Revit): เครื่องมือชิ้นงานปรับตามจุดใช้ได้ในมุมมอง 3 มิติ รูปด้าน และรูปตัดด้วย คลิกจะจับจุดที่ใกล้เคอร์เซอร์ที่สุด ทั้งจุดของเส้นที่แบ่ง จุดตารางของผิวมวลที่แบ่งแล้ว (Divide Surface) และจุดของชิ้นงานอื่น ถ้าไม่มีจุดจะวางบนผิวของโมเดลตรงนั้น ชิ้นงานที่วางบนจุดตารางของผิวจะเกาะผิวไว้ แก้มวลหรือตารางแล้วตามไปด้วย กดวางซ้ำจะเรียงเต็มผิวทั้งสองทิศ เช่น ท่อโครงตาข่ายหรือแผงพับบนผนังมวล
 - V1.436 · มวลอาคารทรงสอบและทรงเอียง (แบบ Create Form จากสองโปรไฟล์ของ Revit): มวลมีผิวบนเป็นรูปของตัวเองได้ ตั้งระยะร่นด้านบนหรือมุมลาดของผนังข้าง เลื่อนยอดไปตามแกน X และ Y และแก้ระยะร่นรายด้านในหน้าต่างแก้รูปทรงมวล ขอบบนของทุกด้านขนานกับขอบล่าง ทุกด้านจึงเป็นผิวเรียบที่แบ่งผิว วางแผงตามลาย และวางชิ้นงานปรับตามจุดได้เหมือนเดิม แปลนแสดงผิวบนเป็นเส้นประ ชั้นของมวล พื้นที่พื้นรวม และปริมาตรคิดตามรูปทรงจริง พื้นและหลังคาจากผิวใช้รูปที่ระดับนั้น ส่วนผนังจากผิวใช้ได้กับด้านที่ตั้งตรง
+- V1.437 · ตารางชั้นของมวล (Mass Floor schedule แบบ Revit): สร้างตารางหมวดชั้นของมวลได้จากตารางใหม่ แต่ละแถวคือชั้นหนึ่งของมวล มีพื้นที่ชั้น เส้นรอบรูป พื้นที่ผิวภายนอก ปริมาตรชั้น และการใช้งาน คิดตามรูปทรงจริงของมวลทรงสอบด้วย มวลมีพื้นที่ผิวรวม (Gross Surface Area) ใน Properties และตาราง ปุ่มชั้นของมวลใน Properties เปิดตารางชั้นของมวลนั้นและใส่การใช้งานรายชั้นได้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -51893,6 +51952,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.434 · Divide Path and Repeat (as in Revit): select model lines and press Divide Path. A straight, arc, circle or sloping line gets nodes by Fixed Number, Fixed Distance, Minimum or Maximum Spacing, with Beginning and End Indents, Flip Direction and Show Node Numbers. The nodes are snap points; an adaptive component placed on them keeps to them and follows when the line changes. Repeat fills the paths with copies node by node, such as a truss between two lines or folded panels along an arc. Lengths, areas, schedules and the BOQ count every copy
 - V1.435 · Adaptive Components in 3D views, elevations and sections, and on divided surfaces (as in Revit): the Adaptive Component tool works in 3D views, elevations and sections too. A click takes the nearest node of a divided path, grid node of a divided mass surface or point of another adaptive component, else the model face under the pointer. A component on surface grid nodes keeps to them and follows the mass and its grid; Repeat fills the surface in both directions, such as a lattice of tubes or folded panels over a mass face
 - V1.436 · Tapered and leaning masses (as Revit's Create Form from two profiles): a mass can have a top outline of its own. Set its Top Inset or Taper Angle, shift the top by Top Shift X and Y, and give each side its own inset in Edit Form. Every top edge keeps parallel to its foot, so each side stays a flat face that can be divided, panelled and take adaptive components as before. Plans show the top dashed; mass floors, Gross Floor Area and Volume follow the real form; Floor and Roof by Face take the outline at their height, and Wall and Curtain System by Face take the upright sides
+- V1.437 · Mass Floor schedules (as in Revit): New Schedule offers Mass Floors; a row a mass floor with Floor Area, Floor Perimeter, Exterior Surface Area, Floor Volume and Usage, measured on the real form of tapered masses too. A mass shows its Gross Surface Area in Properties and schedules, and Mass Floors… in Properties lists its floors and takes the Usage of each
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -54145,6 +54205,19 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r437={
+  rows:()=>mflRows437(P).map(r=>({mass:r.mass,level:r.level,fa:Math.round(r.fa),fp:Math.round(r.fp),fs:Math.round(r.fs),fv:Math.round(r.fv/1e6)/1e3,use:r.use})),
+  gsa:id=>Math.round(mflGsa437(P,IDX.get(id))),
+  sched:(flds,o)=>{const v=Object.assign({id:-1,kind:'schedule',name:'mf',sched:'cat',scat:'mfloor',flds:flds||SF_DEF.mfloor.slice(),hidden:[],hiddenCats:[],sp:{}},o||{});const S=schedView(P,v,t);
+    return{cols:S.cols.map(c=>c.k),labels:S.cols.map(c=>colLabel(c)),rows:S.rows.map(r=>S.cols.map(c=>{const x=cellVal(c,r,P);return typeof x==='number'?Math.round(x*1000)/1000:x})),ids:S.rows.map(r=>r.id),foot:S.foot?S.cols.map(c=>{const x=S.foot[c.k];return typeof x==='number'?Math.round(cellVal(c,S.foot,P)*1000)/1000:x}):null}},
+  massSv:(id,k)=>{const F=sfAll(P,'mass',t).find(f=>f.k===k),X=sfCtx(P,t,quantities(P));return F?F.g(IDX.get(id),X):undefined},
+  cats:()=>SF_DISC.arch.slice(),
+  use:(id,o)=>{edit(()=>{const m=IDX.get(id);if(o===null)delete m.mfu437;else m.mfu437=JSON.parse(JSON.stringify(o))});const m=IDX.get(id)||P.els.find(x=>x.id===id);return m&&m.mfu437?JSON.parse(JSON.stringify(m.mfu437)):null},
+  el:id=>{const e=IDX.get(id)||P.els.find(x=>x.id===id);return e?JSON.parse(JSON.stringify(e)):null},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='mass').map(e=>({id:e.id,mfu437:e.mfu437||null}))},
+  views:()=>P.views.filter(v=>v.kind==='schedule').map(v=>({id:v.id,name:v.name,scat:v.scat,flds:v.flds})),
+  active:()=>{const v=activeView();return v?{kind:v.kind,scat:v.scat||null,id:v.id}:null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r436={
   mass:(lv,pts,h,o)=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'mass',level:lv,pts:pts.map(p=>[p[0],p[1]]),height:h||6000},o?JSON.parse(JSON.stringify(o)):{});P.els.push(e);id=e.id});return id},
   tp:(id,o)=>{edit(()=>{const m=IDX.get(id);if(o===null)delete m.tp436;else m.tp436=JSON.parse(JSON.stringify(o))});const m=IDX.get(id)||P.els.find(x=>x.id===id);return m&&m.tp436?JSON.parse(JSON.stringify(m.tp436)):null},
