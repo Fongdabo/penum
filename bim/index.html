@@ -14618,7 +14618,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=375,V1_NAME='V1.365';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=376,V1_NAME='V1.366';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -44504,6 +44504,77 @@ Object.assign(STR,{a_rtedit365:['แก้ข้อความ (Edit Text)','Ed
   rt_pick365:['เลือกข้อความหนึ่งชิ้นก่อน','Select a text note first'],
   rt_hint365:['ชนิดข้อความ: {0} · ตัวหนา ตัวเอียง ขีดเส้นใต้ ตัวยก ตัวห้อย และตัวพิมพ์ใหญ่ ใช้กับตัวอักษรที่เลือก รายการและย่อหน้าใช้กับบรรทัดที่เลือก · Tab เพิ่มย่อหน้า Shift+Tab ลด Ctrl+Enter ตกลง',
     'Text type: {0} · Bold, Italic, Underline, Superscript, Subscript and All Caps apply to the characters selected, lists and indents to the lines · Tab indents, Shift+Tab outdents, Ctrl+Enter is OK']});
+/* ===== V1.366 the width of a text note and word wrap (Revit): a text with a width (d.tw366, paper mm) wraps its lines to it, word by word (Thai words too);
+   the grips at its left and right set the width as they are dragged (the other edge stays); lists keep their hanging indent; Properties › Width; 0: no wrapping ===== */
+const TW_MAX366=1000,TW_SEG366=typeof Intl!=='undefined'&&Intl.Segmenter?new Intl.Segmenter('th',{granularity:'word'}):null,TW_GR366=typeof Intl!=='undefined'&&Intl.Segmenter?new Intl.Segmenter('th',{granularity:'grapheme'}):null;
+const twOn366=d=>!!d&&d.cat==='text'&&+d.tw366>0,twMin366=sz=>Math.max(2,1.5*sz),TW_TH366=/[฀-๿]/;
+/* the pieces a line may break between: words with what follows them stuck on (a comma, a full stop), the spaces apart; Thai by its words */
+function twToks366(s){const out=[];for(const ch of String(s).split(/(\s+)/)){if(!ch)continue;if(/^\s+$/.test(ch)||!TW_SEG366||!TW_TH366.test(ch)){out.push(ch);continue}
+    let cur='';for(const x of TW_SEG366.segment(ch)){if(x.isWordLike&&cur&&TW_TH366.test(x.segment[0]||'')){out.push(cur);cur=''}cur+=x.segment}if(cur)out.push(cur)}return out}
+const twChars366=s=>TW_GR366?[...TW_GR366.segment(s)].map(x=>x.segment):[...s];
+/* the rows of a text wrapped to tw paper mm: per row {pre (its first row only), x0, R runs placed along it, W its end}, all in paper mm.
+   A word wider than the box alone is broken between its letters; spaces where a row breaks are dropped */
+function twGeo366(L,T,sz,wf,tw){const P0=rtPre365(L),tab=RT_TAB365*sz,mw=(s,r)=>{TXM.font=rtFont365(T,10,r);return TXM.measureText(s).width/10},out=[],eps=1e-6;
+  L.forEach((l,i)=>{const rows=[];const x0=(l.ind||0)*tab,pre=P0[i],hx=pre?x0+Math.max(2*sz,mw(pre,null)*sz*wf+0.6*sz):x0;
+    const RR=(l.R||[]).map(r=>({r,s:r.c?String(r.s).toUpperCase():String(r.s),f:r.v?0.62*sz:sz}));const full=RR.map(q=>q.s).join(''),B=[];let o=0;RR.forEach((q,k)=>{B.push([o,o+q.s.length,k]);o+=q.s.length});
+    const pieces=(a,b)=>{const out=[];for(const [s0,s1,k] of B){const u=Math.max(a,s0),v=Math.min(b,s1);if(v>u)out.push({k,s:full.slice(u,v)})}return out},wOf=pc=>pc.reduce((t,p)=>t+mw(p.s,RR[p.k].r)*RR[p.k].f*wf,0);
+    let row={pre,P:[],x:hx,cont:false};const word=()=>row.P.some(q=>!q.sp),put=(pc,w,sp)=>{row.P.push({pc,w,sp});row.x+=w},next=()=>{rows.push(row);row={pre:'',P:[],x:hx,cont:true}};
+    let at=0;for(const s of twToks366(full)){const a=at;at+=s.length;const pc=pieces(a,at),w=wOf(pc),sp=/^\s+$/.test(s);
+      if(sp){if(!(row.cont&&!row.P.length))put(pc,w,true);continue}
+      if(row.x+w<=tw+eps||(!word()&&row.x+w<=tw+eps)){put(pc,w,false);continue}
+      if(word())next();if(row.x+w<=tw+eps){put(pc,w,false);continue}
+      for(const p of pc)for(const g of twChars366(p.s)){const gp=[{k:p.k,s:g}],gw=wOf(gp);if(word()&&row.x+gw>tw+eps)next();put(gp,gw,false)}}
+    rows.push(row);
+    for(const r of rows){while(r.P.length&&r.P[r.P.length-1].sp)r.P.pop();let x=hx;const R=[];
+      for(const q of r.P)for(const p of q.pc){const S=RR[p.k],w=mw(p.s,S.r)*S.f*wf,z=R[R.length-1];if(z&&z.k===p.k&&Math.abs(z.x+z.w-x)<1e-9){z.s+=p.s;z.w+=w}
+        else R.push({k:p.k,s:p.s,f:S.f,x,w,dv:S.r.v==='p'?-0.36*sz:S.r.v==='b'?0.24*sz:0,b:!!S.r.b,i:!!S.r.i,u:!!S.r.u});x+=w}
+      const W=R.length?R[R.length-1].x+R[R.length-1].w:(r.pre?hx:x0);out.push({pre:r.pre,x0,R:R.map(({k,...o})=>o),W})}});
+  return out}
+const TWC366=new WeakMap();
+/* laid out: the rows in place of the lines; the box spans the width (left from the anchor, about it when centred, to it when right) and every row */
+{const f0=txLay;txLay=(d,sc,lh)=>{const Y=f0(d,sc,lh);if(!twOn366(d))return Y;const T=Y.T,tw=clamp(+d.tw366,twMin366(Y.sz),TW_MAX366),R=rtOf365(d),L=R||textLines(d).map(s=>({li:'',ind:0,R:s?[{s}]:[]}));
+  const key=[tw,Y.sz,Y.wf,txN(T,'tfont'),txN(T,'tbold'),txN(T,'tit'),String(d.text==null?'':d.text)].join('|');let c=TWC366.get(d);
+  if(!c||c.k!==key||c.r!==d.rt365||c.L!==R){c={k:key,r:d.rt365,L:R,G:twGeo366(L,T,Y.sz,Y.wf,tw)};TWC366.set(d,c)}
+  const G=c.G.map(g=>({pre:g.pre,x0:g.x0,R:g.R,W:g.W*sc}));Y.G=G;Y.W=G.map(g=>g.W);Y.U=Y.W.map(w=>d.ha==='c'?-w/2:d.ha==='r'?-w:0);
+  const B=tw*sc,b0=d.ha==='c'?-B/2:d.ha==='r'?-B:0;let a0=b0,a1=b0+B;Y.W.forEach((w,i)=>{a0=Math.min(a0,Y.U[i]);a1=Math.max(a1,Y.U[i]+w)});
+  Y.a0=a0;Y.a1=a1;Y.L=G.map(g=>(g.pre?g.pre+' ':'')+g.R.map(r=>r.s).join(''));Y.v1=(Math.max(1,G.length)-1)*Y.st+0.7*Y.h;Y.tw=tw;return Y}}
+/* a text with a width: drawn, outlined and hit row by row (as a formatted one is) */
+{const f0=txDraw;txDraw=(g,d,col,hi,lh)=>twOn366(d)?rtDraw365(g,d,col,hi,lh):f0(g,d,col,hi,lh)}
+{const f0=drawText;drawText=(g,d,col,hi)=>twOn366(d)?rtDraw365(g,d,col,hi,TEXT_LH):f0(g,d,col,hi)}
+{const f0=textBox;textBox=(d,sc)=>{if(!twOn366(d))return f0(d,sc);const Y=txLay(d,sc,TEXT_LH);let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const p of txPoly(Y,sc,txBoxed(Y.T))){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}return[x0,y0,x1,y1]}}
+{const f0=textDist;textDist=(d,w,sc,tol)=>twOn366(d)?txDist(d,w,sc,tol,TEXT_LH):f0(d,w,sc,tol)}
+/* a file: a width kept to paper mm within reach; on texts only */
+XC.push(()=>{for(const d of P.ann||[]){if(d.tw366==null)continue;const n=+d.tw366;if(d.cat!=='text'||!isFinite(n)||n<=0){delete d.tw366;continue}d.tw366=Math.round(clamp(n,2,TW_MAX366)*2)/2}});
+/* ---- the grips: the middle of the left and the right edge of its box ---- */
+function twGrips366(d,sc){const Y=txLay(d,sc,TEXT_LH),bx=txBoxed(Y.T),p=bx?0.9*sc:0,v0=bx?-0.75*Y.h:Y.v0,v1=bx?(Y.L.length-1)*Y.st+0.75*Y.h:Y.v1,vm=(v0+v1)/2;return[Y.at(Y.a0-p,vm),Y.at(Y.a1+p,vm)]}
+/* a grip dragged to w (o: the text as the drag began): that edge goes with it along the lines, the other stays; the anchor keeps its place in the box by the alignment */
+function twDrag366(d,o,k,w,sc){const Y=txLay(o,sc,TEXT_LH),bx=txBoxed(Y.T),p=bx?0.9*sc:0,s=(w.x-o.x)*Y.ux+(w.y-o.y)*Y.uy,mn=twMin366(Y.sz);let e0=Y.a0,e1=Y.a1;
+  if(k)e1=s-p;else e0=s+p;const tw=clamp(Math.round(Math.max(mn*sc,e1-e0)/sc*2)/2,mn,TW_MAX366),W=tw*sc;if(k)e1=e0+W;else e0=e1-W;
+  const nu=o.ha==='c'?(e0+e1)/2:o.ha==='r'?e1:e0;d.tw366=tw;d.x=Math.round((o.x+Y.ux*nu)*10)/10;d.y=Math.round((o.y+Y.uy*nu)*10)/10;return tw}
+const twSel366=v=>{if(!v||v.kind!=='plan'||ui.tool!=='modify'||ui.sel.size!==1)return null;const d=IDX.get([...ui.sel][0]);return d&&d.cat==='text'&&d.view===avid(v)&&!d.pin&&!catHid(v,'text')&&!hidDatum(v,d)?d:null};
+{const f0=hitPlan;hitPlan=(v,p,UL)=>{const d=UL?null:twSel366(v);if(!d)return f0(v,p,UL);const h=f0(v,p,UL);if(h&&h.id===d.id&&(h.grip==='lead'||h.grip==='elb'))return h;          // the leader's own grips first
+  const nav=navOf(v),x=(p.x-nav.ox)/nav.s,y=(p.y-nav.oy)/nav.s,gt=8/nav.s,G=twGrips366(d,v.scale||100);for(const k of [1,0])if(Math.hypot(G[k][0]-x,G[k][1]-y)<gt)return{id:d.id,grip:k?'twr366':'twl366'};return h}}
+{const f0=moveElDrag;moveElDrag=(dr,v,p)=>{const d=dr.e,g=dr.h&&dr.h.grip;if(dr.kind!=='grip'||!d||(g!=='twl366'&&g!=='twr366'))return f0(dr,v,p);ui.dguide=null;ui.snap=null;
+  if(!dr.o366)dr.o366=JSON.parse(JSON.stringify(d));const nav=navOf(v);twDrag366(d,dr.o366,g==='twr366'?1:0,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},v.scale||100);touch()}}
+XCT.push((pn,ctx,v,nav,g)=>{const d=twSel366(v);if(!d)return;const sc=v.scale||100,Y=txLay(d,sc,TEXT_LH),Q=txPoly(Y,sc,true).map(q=>[g.X(q[0]),g.Y(q[1])]);
+  ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();Q.forEach((a,i)=>i?ctx.lineTo(a[0],a[1]):ctx.moveTo(a[0],a[1]));ctx.closePath();ctx.stroke();ctx.setLineDash([]);          // the box of the text
+  for(const q of twGrips366(d,sc)){ctx.fillStyle=C.raise;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(g.X(q[0]),g.Y(q[1]),4.5,0,7);ctx.fill();ctx.stroke()}ctx.restore()});
+/* on a sheet the same grips, with the text's others */
+{const f0=saGrips;saGrips=d=>{const o=f0(d);if(d&&d.cat==='text'){const G=twGrips366(d,1);o.push({k:'twl366',p:G[0],d},{k:'twr366',p:G[1],d})}return o}}
+{const f0=saGripDrag;saGripDrag=(v,A,dx,dy)=>{const G=A.grip;if(G.k!=='twl366'&&G.k!=='twr366')return f0(v,A,dx,dy);const d=IDX.get(G.d.id),o=A.o;if(!d)return;ui.snap=null;
+  twDrag366(d,o,G.k==='twr366'?1:0,{x:G.p[0]+dx,y:G.p[1]+dy},1)}}
+/* ---- Properties: the width; 0 or nothing, no wrapping ---- */
+XP.push((c,els)=>{if(c!=='text')return'';const a=els.map(d=>twOn366(d)?+d.tw366:0),v=a.every(x=>x===a[0])?a[0]:'';
+  return PR.num('tw366','p_tw366',v,t('u_mm'),'min="0" step="0.5"')+`<div class="pnote">${t('tw_note366')}</div>`});
+XF.push((c,o,key,raw)=>{if(key!=='tw366')return false;if(c!=='text')return true;const n=parseFloat(raw);if(!(n>0)){delete o.tw366;return true}
+  const T=txT(o),sz=clamp(+txN(T,'tsz')||2.5,0.8,50);o.tw366=Math.round(clamp(n,twMin366(sz),TW_MAX366)*2)/2;return true});
+/* Edit Text: the box as wide as the text's, so the words wrap there as they will on the drawing */
+{const f0=dlgRt365;dlgRt365=d=>{const r=f0(d),ed=$('#rtEd365');if(ed&&twOn366(d)){const T=txT(d),sz=clamp(+txN(T,'tsz')||2.5,0.8,50),wf=clamp(+txN(T,'twf')||1,0.3,3);
+    ed.style.width=`calc(${(+d.tw366/(sz*wf)).toFixed(3)}em + 26px)`;ed.style.maxWidth='100%';ed.style.boxSizing='border-box';ed.dataset.tw366=d.tw366}return r}}
+Object.assign(STR,{p_tw366:['ความกว้าง (ตัดบรรทัด)','Width (wraps)'],
+  tw_note366:['ลากจุดจับซ้ายหรือขวาของข้อความเพื่อตั้งความกว้าง ข้อความจะตัดบรรทัดตามคำให้พอดีกรอบ (ภาษาไทยตัดตามคำ) · 0 หรือเว้นว่าง: ไม่ตัดบรรทัด · ความกว้างเป็นมม. บนกระดาษ',
+    'Drag the grip at the left or the right of the text to set its width; the lines wrap word by word to fit · 0 or nothing: no wrapping · paper mm']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -46643,6 +46714,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.363 · เรนเดอร์แบบ Revit (แท็บมุมมอง › เรนเดอร์ หรือกด RR ในมุมมอง 3 มิติ): หน้าต่างเรนเดอร์เลือกคุณภาพตั้งแต่ร่างถึงดีที่สุด ขนาดภาพตามหน้าจอหรือเครื่องพิมพ์ 75 ถึง 600 DPI รูปแบบแสงหกแบบ (ภายนอกหรือภายใน กับดวงอาทิตย์ โคมไฟ หรือทั้งสอง) ฉากหลังท้องฟ้า สีเดียว หรือรูปของมุมมอง และปรับค่าแสง กดเรนเดอร์แล้วภาพแสดงบนมุมมองจนกว่าจะหมุนหรือเลื่อน สลับดูโมเดลได้ บันทึกลงโครงการใต้ภาพเรนเดอร์ หรือส่งออกเป็น PNG
 - V1.364 · แท็บมุมมองแบบ Revit: แท็บมุมมอง › หน้าต่าง › สลับหน้าต่าง (Switch Windows) แสดงรายการมุมมองที่เปิดอยู่พร้อมเครื่องหมายที่มุมมองปัจจุบัน คลิกเพื่อไป · Ctrl+Tab ไปมุมมองถัดไป Ctrl+Shift+Tab ย้อนกลับ · คลิกขวาที่แท็บ: ปิด ปิดมุมมองที่ไม่ได้ใช้ ปิดแท็บทางขวา แบบแท็บ และเรียงทุกมุมมอง · ลากแท็บไปซ้ายขวาเพื่อเรียงลำดับใหม่ ลำดับจำไว้กับมุมมองที่เปิด
 - V1.365 · จัดรูปแบบข้อความแบบ Revit: เลือกข้อความแล้วกดแก้ข้อความ (Edit Text) ใน Properties หรือดับเบิลคลิกข้อความที่จัดรูปแบบแล้ว ตัวอักษรที่เลือกทำเป็นตัวหนา ตัวเอียง ขีดเส้นใต้ ตัวยก ตัวห้อย หรือตัวพิมพ์ใหญ่ทั้งหมดได้ บรรทัดที่เลือกทำเป็นรายการจุด เลข ตัวอักษรเล็ก หรือตัวอักษรใหญ่ เพิ่มลดย่อหน้าด้วย Tab และตั้งเลขเริ่มของรายการได้ รายการย่อยนับแยกตามย่อหน้า แสดงในแปลน แผ่นงาน และ DXF
+- V1.366 · ความกว้างของข้อความและตัดบรรทัดแบบ Revit: เลือกข้อความแล้วลากจุดจับซ้ายหรือขวาของกรอบข้อความ ข้อความจะตัดบรรทัดตามคำให้พอดีความกว้าง (ภาษาไทยตัดตามคำ ไม่ตัดกลางคำ) ขอบอีกด้านอยู่ที่เดิม หรือพิมพ์ความกว้างใน Properties (มม. บนกระดาษ ใส่ 0 เพื่อไม่ตัด) รายการจุดและเลขที่ตัดบรรทัดยังเยื้องตรงกับข้อความ ข้อความชิดกลางหรือชิดขวาจัดในกรอบ ใช้ได้ทั้งในแปลน แผ่นงาน และ DXF และกล่องแก้ข้อความก็กว้างเท่ากรอบ
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -47148,6 +47220,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.363 · Render as in Revit (View tab › Render, or RR in a 3D view): the Rendering dialog picks the quality from Draft to Best, the size (the screen, or a printer at 75 to 600 DPI), one of six lighting schemes (exterior or interior, with the sun, the artificial lights or both), the background (sky, a colour or the image of the view) and the exposure; Render shows the picture over the view until it is turned or moved, Show the model switches back, and the rendering can be saved to the project under Renderings or exported as a PNG
 - V1.364 · View tabs as in Revit: View tab › Windows › Switch Windows lists the open views with a tick on the current one, and a click goes there · Ctrl+Tab goes to the next open view and Ctrl+Shift+Tab back · right-click a tab: Close, Close Inactive Views, Close Tabs to the Right, Tab Views and Tile Views · drag a tab sideways to reorder the tabs; the order is kept with the open views
 - V1.365 · Text formatting as in Revit: select a text note and press Edit Text in Properties (or double-click a formatted note): the characters selected can be Bold, Italic, Underlined, Superscript, Subscript or All Caps, the lines selected can be a bulleted, numbered, lowercase or uppercase letter list, Tab and Shift+Tab indent them, and a list can start at any number; nested lists count per indent, and the formatting shows in plans, on sheets and in DXF
+- V1.366 · Text width and word wrap as in Revit: select a text note and drag the grip at the left or the right of its box; the lines wrap word by word to the width (Thai by its words, never inside one) while the other edge stays, or type the Width in Properties (paper mm, 0: no wrapping); wrapped list items keep their hanging indent, centred and right-aligned texts sit in their box, in plans, on sheets and in DXF, and Edit Text shows the same width
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -49396,6 +49469,21 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r366={
+  tw:(id,w)=>{const d=P.ann.find(a=>a.id===id);edit(()=>{if(w>0)d.tw366=w;else delete d.tw366});return true},
+  lay:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),sc=vsc(v),Y=txLay(d,sc,TEXT_LH);return{L:Y.L,W:Y.W.map(w=>w/sc),U:Y.U.map(u=>u/sc),a0:Y.a0/sc,a1:Y.a1/sc,v1:Y.v1/sc,tw:Y.tw||0,
+    G:Y.G?Y.G.map(g=>({pre:g.pre,x0:g.x0,R:g.R.map(r=>({s:r.s,x:r.x,w:r.w,f:r.f,b:r.b,dv:r.dv}))})):null}},
+  toks:s=>twToks366(s),
+  grips:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view);return twGrips366(d,vsc(v))},
+  gripsScr:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),G=twGrips366(d,vsc(v)),i=PANES.findIndex(q=>q&&paneView(q.i)===v);return G.map(q=>{const s=window.PenumBIM.toScreen(i<0?0:i,q[0],q[1]);return[s.x,s.y]})},
+  scr:(id,s,t)=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),Y=txLay(d,vsc(v),TEXT_LH),q=Y.at(s*vsc(v),t*vsc(v)),i=PANES.findIndex(x=>x&&paneView(x.i)===v),r=window.PenumBIM.toScreen(i<0?0:i,q[0],q[1]);return[r.x,r.y]},
+  drag:(id,k,x,y)=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view),o=JSON.parse(JSON.stringify(d));let r;edit(()=>{r=twDrag366(d,o,k,{x,y},vsc(v))});return r},
+  hit:(id,x,y)=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view);return textDist(d,{x,y},vsc(v),50*vsc(v))},
+  box:id=>{const d=P.ann.find(a=>a.id===id),v=viewById(d.view);return textBox(d,vsc(v))},
+  draw:id=>window.PenumBIM.r365.draw(id),
+  fld:()=>{const x=$('#p_tw366');return x?{v:x.value,note:!!$('#props .pnote')}:null},
+  edw:()=>{const ed=$('#rtEd365');return ed?ed.style.width:null}
+};
 window.PenumBIM.r365={
   mk:(text,vid,x,y)=>{let id;edit(()=>{const T=(P.types.text||[])[0];id=P.seq++;const d={id,cat:'text',view:vid||221,x:x==null?2000:x,y:y==null?2000:y,text,size:T?T.tsz:2.5};if(T)d.type=T.id;P.ann.push(d)});return id},
   ann:id=>{const d=P.ann.find(a=>a.id===id);return d?JSON.parse(JSON.stringify(d)):null},
