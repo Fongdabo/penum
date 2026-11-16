@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=442,V1_NAME='V1.432';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=443,V1_NAME='V1.433';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -48540,6 +48540,154 @@ Object.assign(STR,{ls432_sch:['รูปแบบแสง (Scheme)','Scheme'],l
   ls432_int_a:['ภายใน: ไฟประดิษฐ์อย่างเดียว (กลางคืน)','Interior: Artificial only'],ls432_rel:['ตามมุมมอง (Relative to View)','Relative to View'],
   ls432_reln:['ดวงอาทิตย์หมุนตามมุมมอง ทิศวัดตามเข็มนาฬิกาจากทิศที่มุมมองหันไป (180° คืออยู่ข้างหลังผู้มอง) แสงบนโมเดลจึงเท่าเดิมขณะหมุนมุมมอง ไม่แสดงเส้นทางดวงอาทิตย์','The sun turns with the view: its azimuth is measured clockwise from the direction the view looks (180° is behind you), so the light on the model stays the same as you orbit; no sun path is drawn'],
   ls432_sp:['ดวงอาทิตย์ของมุมมองนี้ตั้งตามมุมมอง (Relative to View) จึงไม่มีเส้นทางดวงอาทิตย์ เอาติ๊กออกในตัวเลือกการแสดงผลก่อน','The sun of this view is Relative to View, so it has no sun path: clear it in Graphic Display Options first']});
+/* ===== V1.433 Adaptive Components (Revit: Generic Models Adaptive, placed with Architecture › Build › Component: a family whose shape follows the points it
+   is placed by).  Its family types are P.types.adapt: {id, name, form, dia, w, h, thickness, mat, color, glz, cost}; form 'tube' and 'bar' take 2 points (a round or a
+   rectangular member from the first to the second), 'tri' 3 and 'quad' 4 (a panel of that thickness through its points; a quad that is not flat is folded along
+   its 1–3 diagonal).  An instance: {cat:'adapt', type, level, pts:[[x,y]…], pz:[height above its level…]}: the points are placed one click at a time in a plan
+   at the height on the options bar; a click on a point of another adaptive component takes that point and its height, so members and panels meet as they do in
+   Revit.  Grips move the points in plans; Properties set each point's height. */
+const AD_SH433=['tube','bar','tri','quad'],AD_NP433={tube:2,bar:2,tri:3,quad:4},AD_C433='#0f766e',AD_DEF433={dia:50,w:100,h:200,thickness:30},AD_PR433={tube:450,bar:380,tri:1800,quad:1800,glz:2800};
+const adIs433=e=>!!e&&e.cat==='adapt';
+function adStock433(en){const n=(th,e)=>en?e:th;
+  return[{name:n('ท่อกลม 50 มม.','Tube 50 mm'),form:'tube',dia:50,mat:'metal',color:'#aeb4bb'},{name:n('คาน 100 × 200 มม.','Bar 100 × 200 mm'),form:'bar',w:100,h:200,mat:'wood',color:'#b08d6a'},
+    {name:n('แผงสามเหลี่ยม 30 มม.','Triangle Panel 30 mm'),form:'tri',thickness:30,mat:'metal',color:'#c4c9cf'},{name:n('แผงสี่เหลี่ยม 30 มม.','Quad Panel 30 mm'),form:'quad',thickness:30,mat:'conc',color:'#b9bdc3'},
+    {name:n('แผงกระจกสี่เหลี่ยม 12 มม.','Glass Quad Panel 12 mm'),form:'quad',thickness:12,glz:'yes',color:'#9fc4d8'}]}
+/* the stock types, given to a project the first time the tool is used */
+function adTypes433(){if(Array.isArray(P.types.adapt)&&P.types.adapt.length)return P.types.adapt;P.types.adapt=adStock433(ui.lang==='en').map(T=>Object.assign({id:P.seq++},T));return P.types.adapt}
+const adT433=(Q,e)=>{const a=(Q&&Q.types&&Q.types.adapt)||[];return a.find(x=>x.id===e.type)||a[0]||null};
+const adSh433=T=>AD_SH433.includes(T&&T.form)?T.form:'tube',adNp433=T=>AD_NP433[adSh433(T)];
+const adDim433=(T,k)=>{const x=+(T&&T[k]);return isFinite(x)&&x>=1?Math.min(x,5000):AD_DEF433[k]};
+/* the points of an instance in the model: [x, y, z] with z from the elevation of its level */
+function adPts433(Q,e){const L=lvl(Q,e.level),z0=L?+L.elev||0:0,pz=Array.isArray(e.pz)?e.pz:[];return(Array.isArray(e.pts)?e.pts:[]).map((p,i)=>[+p[0],+p[1],z0+(+pz[i]||0)])}
+/* ---- the shape: GL triangles and edges, and its length, area and volume (mm, m², m³) ---- */
+const AD_GC433=new WeakMap();
+function adGeo433(Q,e){const T=adT433(Q,e);if(!T)return null;const L=lvl(Q,e.level),key=JSON.stringify([e.pts,e.pz,e.type,L?L.elev:0,T]),c=AD_GC433.get(e);if(c&&c.k===key)return c.G;
+  const sh=adSh433(T),np=AD_NP433[sh],A=adPts433(Q,e).slice(0,np),G={T,sh,np,A,ok:false,len:0,area:0,vol:0,t:[],l:[],s:[],z0:Infinity,z1:-Infinity,fold:false};
+  const gl=p=>[p[0],p[2],p[1]],t=G.t,l=G.l,ln=(a,b)=>l.push(a[0],a[1],a[2],b[0],b[1],b[2]);
+  if(A.length===np){
+    if(sh==='tube'||sh==='bar'){const a=A[0],b=A[1],d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],Ln=Math.hypot(d[0],d[1],d[2]);
+      if(Ln>=1){const u=d.map(x=>x/Ln),hl=Math.hypot(u[0],u[1]),n=hl<1e-6?[1,0,0]:[-u[1]/hl,u[0]/hl,0],q=[u[1]*n[2]-u[2]*n[1],u[2]*n[0]-u[0]*n[2],u[0]*n[1]-u[1]*n[0]];
+        const r=adDim433(T,'dia')/2,w=adDim433(T,'w'),h=adDim433(T,'h'),ring=sh==='tube'?Array.from({length:16},(_,i)=>{const an=2*Math.PI*i/16;return[Math.cos(an)*r,Math.sin(an)*r]}):[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]];
+        const at=(o,s,v)=>[o[0]+n[0]*s+q[0]*v,o[1]+n[1]*s+q[1]*v,o[2]+n[2]*s+q[2]*v],L0=ring.map(([s,v])=>gl(at(a,s,v))),L1=ring.map(([s,v])=>gl(at(b,s,v)));extrude(L0,gl(d),t);
+        for(let i=0;i<ring.length;i++){const j=(i+1)%ring.length;ln(L0[i],L0[j]);ln(L1[i],L1[j]);
+          if(sh==='bar')ln(L0[i],L1[i]);else{const k=(i+ring.length-1)%ring.length,nm=(x,y)=>gl([n[0]*x+q[0]*y,n[1]*x+q[1]*y,n[2]*x+q[2]*y]);G.s.push({a:L0[i],b:L1[i],n1:nm((ring[i][0]+ring[k][0])/2,(ring[i][1]+ring[k][1])/2),n2:nm((ring[i][0]+ring[j][0])/2,(ring[i][1]+ring[j][1])/2)})}}
+        G.ok=true;G.len=Ln;G.vol=(sh==='tube'?Math.PI*r*r:w*h)*Ln/1e9;const ex=sh==='tube'?r:Math.hypot(w,h)/2;for(const p of A){G.z0=Math.min(G.z0,p[2]-ex);G.z1=Math.max(G.z1,p[2]+ex)}
+        G.hw=sh==='tube'?r:w/2}}
+    else{const th=adDim433(T,'thickness'),N=newell(A),nl=Math.hypot(N[0],N[1],N[2]);
+      if(nl>1){const nu=N.map(x=>x/nl),dev=Math.max(...A.map(p=>Math.abs((p[0]-A[0][0])*nu[0]+(p[1]-A[0][1])*nu[1]+(p[2]-A[0][2])*nu[2])));G.fold=np===4&&dev>1;
+        const faces=G.fold?[[A[0],A[1],A[2]],[A[0],A[2],A[3]]]:[A];
+        for(const F of faces){const M=newell(F),ml=Math.hypot(M[0],M[1],M[2]);if(ml<1)continue;const m=M.map(x=>x/ml),lo=F.map(p=>gl([p[0]-m[0]*th/2,p[1]-m[1]*th/2,p[2]-m[2]*th/2])),hi=F.map(p=>gl([p[0]+m[0]*th/2,p[1]+m[1]*th/2,p[2]+m[2]*th/2]));
+          extrude(lo,gl(m.map(x=>x*th)),t);G.area+=ml/2/1e6;for(let i=0;i<F.length;i++){const j=(i+1)%F.length;ln(lo[i],lo[j]);ln(hi[i],hi[j]);ln(lo[i],hi[i])}}
+        G.ok=t.length>0;G.vol=G.area*th/1000;for(const p of A){G.z0=Math.min(G.z0,p[2]-th/2);G.z1=Math.max(G.z1,p[2]+th/2)}}}}
+  AD_GC433.set(e,{k:key,G});return G}
+/* what a plan draws: the outline seen from above (a member: its two sides and ends; a panel: its edges, a folded one its fold) */
+function adSegs433(G){const S=[];if(!G||!G.ok)return S;const A=G.A.map(p=>[p[0],p[1]]);
+  if(G.sh==='tube'||G.sh==='bar'){const a=A[0],b=A[1],L=Math.hypot(b[0]-a[0],b[1]-a[1]),hw=G.hw;
+    if(L<1){const n=G.sh==='tube'?16:4,r=G.sh==='tube'?hw:Math.hypot(hw,adDim433(G.T,'h')/2);const pts=Array.from({length:n},(_,i)=>{const an=2*Math.PI*i/n+(G.sh==='tube'?0:Math.PI/4);return[a[0]+r*Math.cos(an),a[1]+r*Math.sin(an)]});
+      for(let i=0;i<n;i++)S.push([pts[i],pts[(i+1)%n]]);return S}
+    const nx=-(b[1]-a[1])/L*hw,ny=(b[0]-a[0])/L*hw,c=[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]];for(let i=0;i<4;i++)S.push([c[i],c[(i+1)%4]]);return S}
+  for(let i=0;i<A.length;i++)S.push([A[i],A[(i+1)%A.length]]);if(G.fold)S.push([A[0],A[2]]);return S}
+/* an adaptive point of the model near (x, y) (a plan click): its height above level lid, or null */
+function adNear433(x,y,lid,tol){const L=lvl(P,lid),z0=L?+L.elev||0:0;let best=null,bd=tol;
+  for(const e of P.els){if(e.cat!=='adapt')continue;const A=adPts433(P,e);for(const p of A){const d=Math.hypot(p[0]-x,p[1]-y);if(d<=bd){bd=d;best={x:p[0],y:p[1],z:Math.round(p[2]-z0)}}}}return best}
+/* ---- the meshes of the 3D views, elevations, sections and IFC ---- */
+{const f0=buildMeshes;buildMeshes=function(P0,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!P0||!P0.els)return R;
+  for(const e of P0.els){if(e.cat!=='adapt')continue;const G=adGeo433(P0,e);if(!G||!G.ok)continue;const T=G.T,gz=T.glz==='yes';
+    items.push({id:e.id,cat:'adapt',c:hex2rgb(T.color||(gz?'#9fc4d8':'#b9bdc3')),a:gz?0.35:1,t:G.t.slice(),l:G.l.slice(),s:G.s.slice(),mt:matOf('adapt',T)})}
+  return R}}
+/* ---- the tool: one click per adaptive point, the component made at the last one ---- */
+const adZ433=()=>{const x=parseFloat(ui.opt.adz433);return isFinite(x)?Math.round(clamp(x,-1e5,1e5)):0};
+XT.adapt={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){if(!(Array.isArray(P.types.adapt)&&P.types.adapt.length))edit(()=>{adTypes433()});ui.ad433=[];if(ui.opt.adz433==null)ui.opt.adz433='0';ui.sel.clear();ui.hov=null},
+  off(){ui.ad433=[]},
+  esc(){if(ui.ad433&&ui.ad433.length){ui.ad433=[];return true}return false},
+  hint:()=>{const T=adT433(P,defs('adapt')),n=adNp433(T);return t('h_adapt433',Math.min(n,(ui.ad433||[]).length+1),n,T?T.name:'')},
+  opt(who){const T=adT433(P,defs('adapt')),n=adNp433(T),k=(ui.ad433||[]).length;
+    return who+`<label>${esc(t('o_adz433'))} <input type="number" data-opt="adz433" id="opt_adz433" value="${adZ433()}" step="100" style="width:84px"> ${esc(t('u_mm'))}</label>`
+      +`<span class="note" id="opt_adn433">${esc(t('ad433_pts',k,n))}</span>`},
+  click(pn,v,p,w,pt){const T=adT433(P,defs('adapt'));if(!T){toast(t('ad433_none'));return}const n=adNp433(T),L=ui.ad433||(ui.ad433=[]);
+    const near=adNear433(pt.x,pt.y,v.level,1.2*(v.scale||100)/2),q=near?[Math.round(near.x),Math.round(near.y),near.z]:[Math.round(pt.x),Math.round(pt.y),adZ433()];
+    const last=L[L.length-1];if(last&&Math.hypot(last[0]-q[0],last[1]-q[1],last[2]-q[2])<1){toast(t('ad433_same'));return}
+    L.push(q);if(L.length<n){refresh();return}
+    let e;edit(()=>{e={id:P.seq++,cat:'adapt',type:T.id,level:v.level,pts:L.map(a=>[a[0],a[1]]),pz:L.map(a=>a[2])};P.els.push(e)});ui.ad433=[];
+    const G=adGeo433(P,e);if(G&&!G.ok)toast(t('ad433_flat'));else toast(t('ad433_on',T.name));refresh()},
+  draw(pn,ctx,v,nav,g){if(ui.curPane!==pn.i)return;const L=(ui.ad433||[]).map(a=>[a[0],a[1]]),s=ui.snap?[ui.snap.x,ui.snap.y]:null,sc=v.scale||100,T=adT433(P,defs('adapt')),n=adNp433(T);
+    ctx.save();ctx.strokeStyle=AD_C433;ctx.fillStyle=AD_C433;ctx.lineWidth=1.5;g.dash([2,1]);const lp=L[L.length-1],P2=s&&!(lp&&Math.hypot(lp[0]-s[0],lp[1]-s[1])<1)&&L.length<n?L.concat([s]):L;
+    for(let i=0;i+1<P2.length;i++)g.seg(P2[i],P2[i+1]);if(n>2&&P2.length===n)g.seg(P2[n-1],P2[0]);g.dash(null);
+    P2.forEach((p,i)=>{g.circle(p,0.9);ctx.globalAlpha=i<L.length?1:0.55;ctx.fill();ctx.globalAlpha=1;g.text(String(i+1),[p[0]+1.6*sc,p[1]-1.6*sc],2.2,{color:AD_C433,bold:true,halo:true})});ctx.restore()}};
+CREATE_TOOLS.add('adapt');
+/* ---- the plan ---- */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const L=of('adapt');if(!L.length)return;const z=vrZ(P,v),sc=v.scale||100;
+  for(const [e] of L){const G=adGeo433(P,e);if(!G)continue;g.el(e);const k=hl(e.id)||col.ink,cut=G.z0<=z.cut&&G.z1>=z.cut;ctx.save();g.dash(null);
+    if(G.ok&&(G.sh==='tri'||G.sh==='quad')){g.path(G.A.map(p=>[p[0],p[1]]));ctx.globalAlpha=G.T.glz==='yes'?0.16:0.1;ctx.fillStyle=o.screen?(G.T.glz==='yes'?'#3b82c4':AD_C433):col.ink;ctx.fill();ctx.globalAlpha=1}
+    ctx.strokeStyle=k;ctx.lineWidth=g.lw(cut?0.35:0.18);const S=adSegs433(G);
+    if(!G.ok){const A=(e.pts||[]).map(p=>[+p[0],+p[1]]);g.dash([1.5,1]);for(let i=0;i+1<A.length;i++)g.seg(A[i],A[i+1]);g.dash(null)}
+    for(const s of S){if(G.fold&&s===S[S.length-1]){g.dash([1.5,1]);g.seg(s[0],s[1]);g.dash(null)}else g.seg(s[0],s[1])}
+    if(o.screen&&ui.sel.has(e.id))(e.pts||[]).forEach((p,i)=>g.text(String(i+1),[+p[0]+1.8*sc,+p[1]-1.8*sc],2.2,{color:AD_C433,bold:true,halo:true}));
+    ctx.restore()}});
+XHIT.adapt=(v,e,w)=>{const G=adGeo433(P,e);if(!G)return Infinity;if(G.ok&&(G.sh==='tri'||G.sh==='quad')&&inPoly(w.x,w.y,G.A.map(p=>[p[0],p[1]])))return 0;
+  const S=G.ok?adSegs433(G):(e.pts||[]).slice(1).map((p,i)=>[e.pts[i],p]);let d=Infinity;for(const s of S)d=Math.min(d,segDist(w.x,w.y,s[0][0],s[0][1],s[1][0],s[1][1]));return d};
+/* shown in floor plans where its height meets the view range, and in ceiling plans above the cut plane */
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='adapt')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'adapt')||hidEl(v,e))return'';
+  const G=adGeo433(P,e);if(!G)return'';let z0=G.z0,z1=G.z1;if(!G.ok){const A=adPts433(P,e);if(!A.length)return'';z0=Math.min(...A.map(p=>p[2]));z1=Math.max(...A.map(p=>p[2]))}
+  const z=vrZ(P,v);if(v.rcp)return z1>=z.cut&&z0<=z.top?'on':'';return z0<=z.cut&&z1>=Math.min(z.bot,z.depth)?'on':''}}
+{const f0=elBox;elBox=(v,e)=>{if(!e||e.cat!=='adapt')return f0(v,e);const G=adGeo433(P,e),S=adSegs433(G);const pts=S.length?S.flat():(e.pts||[]).map(p=>[+p[0],+p[1]]);if(!pts.length)return[0,0,0,0];
+  return[Math.min(...pts.map(p=>p[0])),Math.min(...pts.map(p=>p[1])),Math.max(...pts.map(p=>p[0])),Math.max(...pts.map(p=>p[1]))]}}
+/* ---- Properties: the height of each point, what it measures ---- */
+const adM433=(x,d)=>(Math.round(x*10**d)/10**d).toFixed(d);
+XP.push((c,els)=>{if(c!=='adapt'||!els.length)return'';const T=adT433(P,els[0]),n=adNp433(T);
+  if(els.length===1&&els[0].id==null)return PR.grp('g_adapt433')+PR.ro('p_adnp433',String(n))+PR.ro('p_adsh433',t('ad433_'+adSh433(T)));          // the tool: the type's points
+  let h=PR.grp('g_adapt433');if(els.length===1){const e=els[0],G=adGeo433(P,e),pz=Array.isArray(e.pz)?e.pz:[];
+    (e.pts||[]).forEach((p,i)=>{h+=PR.num('adz433_'+i,'p_adz433_'+Math.min(i+1,4),Math.round(+pz[i]||0),t('u_mm'),'step="50"')});
+    h+=PR.ro('p_adnp433',String((e.pts||[]).length))+PR.ro('p_adsh433',t('ad433_'+adSh433(G&&G.T)));
+    if(G&&G.ok){if(G.sh==='tube'||G.sh==='bar')h+=PR.ro('p_adlen433',adM433(G.len/1000,3)+' m');else h+=PR.ro('p_adar433',adM433(G.area,3)+' m²');h+=PR.ro('p_advol433',adM433(G.vol,4)+' m³')}
+    else h+=`<div class="pnote">${esc(t('ad433_flat'))}</div>`}
+  else{let len=0,ar=0;for(const e of els){const G=adGeo433(P,e);if(G&&G.ok){len+=G.len;ar+=G.area}}if(len)h+=PR.ro('p_adlen433',adM433(len/1000,3)+' m');if(ar)h+=PR.ro('p_adar433',adM433(ar,3)+' m²')}
+  return h});
+XF.push((cat,o,key,raw)=>{if(cat!=='adapt'||!/^adz433_\d$/.test(key))return false;const i=+key.slice(7),x=parseFloat(raw);if(!isFinite(x)||!Array.isArray(o.pts)||i>=o.pts.length)return true;
+  const pz=Array.isArray(o.pz)?o.pz:[];while(pz.length<o.pts.length)pz.push(0);pz[i]=Math.round(clamp(x,-1e5,1e5));o.pz=pz;return true});
+/* ---- schedules and the BOQ ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='adapt')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),geo=e=>adGeo433(Q,e);
+  add('adsh433',tr('p_adsh433'),e=>tr('ad433_'+adSh433(adT433(Q,e))));add('adnp433',tr('p_adnp433'),e=>(e.pts||[]).length,{num:1});
+  add('adlen433',tr('c_adlen433'),e=>{const G=geo(e);return G&&G.ok?Math.round(G.len)/1000:0},{num:1,dec:3,sum:1});add('adar433',tr('c_adar433'),e=>{const G=geo(e);return G&&G.ok?Math.round(G.area*1000)/1000:0},{num:1,dec:3,sum:1});
+  add('advol433',tr('c_advol433'),e=>{const G=geo(e);return G&&G.ok?Math.round(G.vol*1e4)/1e4:0},{num:1,dec:4,sum:1});return F}}
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els)return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.cat!=='adapt'||e.gx)continue;const G=adGeo433(Q0,e);if(!G||!G.ok)continue;const T=G.T,lin=G.sh==='tube'||G.sh==='bar',pk='adapt433:'+T.id;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_adapt'),_c:6.6,tcat:'adapt',tid:T.id,pk,item:T.name,qty:0,unit:tr(lin?'u_m':'u_m2'),cost:PR0[pk]!=null?+PR0[pk]||0:+T.cost>0?+T.cost:AD_PR433[T.glz==='yes'?'glz':G.sh],amount:0});
+    r.qty+=lin?G.len/1000:G.area}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>(a._c||0)-(b._c||0)||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=ifcClass;ifcClass=(Q,e)=>e&&e.cat==='adapt'?['IFCBUILDINGELEMENTPROXY','.NOTDEFINED.','Pset_BuildingElementProxyCommon','']:f0(Q,e)}
+/* ---- what is kept ---- */
+XC.push(()=>{const has=P.els.some(e=>e.cat==='adapt');if(!has&&!(Array.isArray(P.types.adapt)&&P.types.adapt.length)){if(P.types.adapt)delete P.types.adapt;return}
+  if(!Array.isArray(P.types.adapt)||!P.types.adapt.length)adTypes433();const TL=P.types.adapt,num=x=>typeof x==='number'&&isFinite(x);
+  for(const T of TL){if(!AD_SH433.includes(T.form))T.form='tube';for(const k of ['dia','w','h','thickness']){if(T[k]==null)continue;const x=+T[k];if(isFinite(x)&&x>=1)T[k]=Math.min(5000,Math.round(x*10)/10);else delete T[k]}
+    if(T.glz!=null&&T.glz!=='yes'&&T.glz!=='no')delete T.glz}
+  P.els=P.els.filter(e=>{if(e.cat!=='adapt')return true;return Array.isArray(e.pts)&&e.pts.length>=2&&e.pts.length<=4&&e.pts.every(p=>Array.isArray(p)&&num(+p[0])&&num(+p[1]))&&P.levels.some(l=>l.id===e.level)});
+  for(const e of P.els){if(e.cat!=='adapt')continue;e.pts=e.pts.map(p=>[+p[0],+p[1]]);const pz=Array.isArray(e.pz)?e.pz:[];e.pz=e.pts.map((p,i)=>{const x=+pz[i];return isFinite(x)?Math.round(clamp(x,-1e5,1e5)):0});
+    if(!TL.some(T=>T.id===e.type))e.type=TL[0].id;for(const k of ['x','y','x1','y1','x2','y2','rot','h','w'])delete e[k]}});
+/* ---- the category and its family types ---- */
+GEOM.adapt='path';DISC.adapt='arch';{const i=VG_CATS.indexOf('mass');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'adapt')}DXF_LAYER.adapt=['A-GENM-ADPT',7];
+FLT_CATS.push('adapt');SF_CATS.push('adapt');SF_DEF.adapt=['type','adsh433','adnp433','adlen433','adar433','level','count'];
+{const f0=tdFields;tdFields=function(cat,T){const F=f0(cat,T);if(cat!=='adapt'||!F)return F;const keep={tube:['dia'],bar:['w','h'],tri:['thickness','glz'],quad:['thickness','glz']}[adSh433(T)];          // only the sizes its form uses
+  return F.filter(f=>!['dia','w','h','thickness','glz'].includes(f[0])||keep.includes(f[0]))}}
+TYPE_MATS.adapt=['auto','metal','conc','wood','paint','stone','gloss'];
+TYPE_FIELDS.adapt=[['form','sel',AD_SH433,'ad433_'],['dia','num'],['w','num'],['h','num'],['thickness','num'],['glz','sel',['no','yes']],['mat','sel',TYPE_MATS.adapt],['color','color']];
+{const ar=RIBBON.find(r=>r.id==='arch'),pb=ar&&ar.panels.find(p=>p.t==='p_build');if(pb&&!pb.b.includes('adapt')){const i=pb.b.indexOf('furn');pb.b.splice(i<0?pb.b.length:i+1,0,'adapt')}
+  const mp=ar&&ar.panels.find(p=>p.t==='p_mass');if(mp&&!mp.b.includes('adapt'))mp.b.push('adapt')}
+BTN.adapt=['adapt',''];
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const e=k=>`class="${k} i-e" stroke="#2a3550" stroke-width=".55" stroke-linejoin="round"`;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-adapt" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="8" ry="1.2"/><path ${e('i-Sa')} fill="#cfe6e2" d="M4 17 9 5l11 3-3 11z"/>`
+    +`<path class="i-e" fill="none" stroke="#2a3550" stroke-width=".55" d="M9 5 17 19"/><circle fill="#0f766e" cx="4" cy="17" r="1.8"/><circle fill="#0f766e" cx="9" cy="5" r="1.8"/><circle fill="#0f766e" cx="20" cy="8" r="1.8"/><circle fill="#0f766e" cx="17" cy="19" r="1.8"/></symbol>`)})();
+Object.assign(STR,{t_adapt:['ชิ้นงานปรับตามจุด','Adaptive Component'],cat_adapt:['ชิ้นงานปรับตามจุด (Adaptive)','Generic Models Adaptive'],costu_adapt:['บาท ต่อ ม. หรือ ตร.ม.','per m or m²'],
+  h_adapt433:['ชิ้นงานปรับตามจุด ({2}): คลิกจุดที่ {0} จาก {1} คลิกบนจุดของชิ้นงานอื่นเพื่อใช้จุดและความสูงเดียวกัน Esc เริ่มใหม่','Adaptive Component ({2}): click point {0} of {1}; click a point of another adaptive component to share it and its height; Esc starts again'],
+  o_adz433:['ความสูงจุดจากระดับ','Point height'],ad433_pts:['วางแล้ว {0} จาก {1} จุด','{0} of {1} points placed'],ad433_none:['ยังไม่มีแบบชิ้นงาน','No adaptive family type'],
+  ad433_same:['จุดนี้ซ้ำกับจุดก่อนหน้า','This point is the one before it'],ad433_on:['วาง {0} แล้ว','{0} placed'],ad433_flat:['จุดซ้อนกันหรืออยู่ในแนวเดียวกัน จึงยังไม่มีรูปทรง ย้ายจุดออก','Its points coincide or lie in a line, so it has no shape: move a point'],
+  ad433_tube:['ท่อกลม (2 จุด)','Tube (2 points)'],ad433_bar:['คานสี่เหลี่ยม (2 จุด)','Bar (2 points)'],ad433_tri:['แผงสามเหลี่ยม (3 จุด)','Triangular Panel (3 points)'],ad433_quad:['แผงสี่เหลี่ยม (4 จุด)','Quad Panel (4 points)'],
+  g_adapt433:['จุดปรับตาม (Adaptive Points)','Adaptive Points'],p_adz433_1:['จุด 1: ความสูง','Point 1 height'],p_adz433_2:['จุด 2: ความสูง','Point 2 height'],p_adz433_3:['จุด 3: ความสูง','Point 3 height'],p_adz433_4:['จุด 4: ความสูง','Point 4 height'],
+  p_adnp433:['จำนวนจุด','Adaptive points'],p_adsh433:['รูปทรง','Shape'],p_adlen433:['ความยาว','Length'],p_adar433:['พื้นที่','Area'],p_advol433:['ปริมาตร','Volume'],
+  c_adlen433:['ความยาว (ม.)','Length (m)'],c_adar433:['พื้นที่ (ตร.ม.)','Area (m²)'],c_advol433:['ปริมาตร (ลบ.ม.)','Volume (m³)'],
+  f_form:['รูปทรง (Adaptive)','Form'],f_dia:STR.f_dia||['เส้นผ่านศูนย์กลาง','Diameter'],f_glz:STR.f_glz||['กระจก (โปร่งแสง)','Glazed']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -50795,6 +50943,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.430 · สรุปโหลด หม้อแปลง และกระแสลัดวงจร คิดจากโหลดวิเคราะห์ได้ (แบบ Revit Electrical Analysis ที่ส่งโหลดตามพื้นที่และโหลดอุปกรณ์ผ่านตู้ไปถึงหม้อแปลง): เลือก โหลดของตู้จาก เป็นวงจรที่วาดไว้ โหลดวิเคราะห์ หรือค่าที่มากกว่าในแต่ละตู้ จึงประมาณขนาดหม้อแปลง เมนเบรกเกอร์ สายป้อน และกระแสลัดวงจรได้ตั้งแต่ยังไม่วาดวงจร ตู้ที่ใช้โหลดวิเคราะห์มีเครื่องหมาย A
 - V1.431 · รูปแบบการแสดงในแปลน (Visual Style แบบ Revit): แปลนพื้นและแปลนฝ้าเลือกได้ เส้นซ่อน แรเงา สีเรียบ หรือสมจริง ที่แถบควบคุมมุมมอง ใน Properties ใน View Template หรือพิมพ์ HL SD แรเงาคิดจากโมเดลจริงมองจากด้านบน (แปลนฝ้ามองจากด้านล่าง) ตัดที่ระดับตัดแปลนและลึกถึง View Depth (Plan Region ใช้ช่วงมองของตัวเอง) เส้น ลายตัด ป้าย และคำอธิบายของแปลนอยู่ด้านบน ตัวเลือกการแสดงผล (แสง เงา เส้นร่าง เงาแวดล้อม) ใช้กับแปลนได้ ปุ่มเงาและดวงอาทิตย์อยู่ในแถบด้วย แสดงบนแผ่นงานและภาพที่ส่งออก
 - V1.432 · รูปแบบแสงและดวงอาทิตย์ตามมุมมอง (Lighting Scheme และ Relative to View แบบ Revit): ในตัวเลือกการแสดงผล (Graphic Display Options) เลือกรูปแบบแสงได้ 6 แบบ ภายนอกหรือภายใน คู่กับดวงอาทิตย์อย่างเดียว ดวงอาทิตย์และไฟประดิษฐ์ หรือไฟประดิษฐ์อย่างเดียว แบบไฟประดิษฐ์อย่างเดียวดับดวงอาทิตย์ ไม่มีเงาจากดวงอาทิตย์ ท้องฟ้าเป็นกลางคืน เหลือแสงจากโคมไฟ แบบภายในลดแสงจากท้องฟ้าและเพิ่มแสงโคมไฟ ติ๊ก "ตามมุมมอง" ดวงอาทิตย์จะหมุนไปกับมุมมอง ทิศวัดจากทิศที่มุมมองหันไป แสงบนโมเดลจึงเท่าเดิมขณะหมุนดู ใช้ได้ในแม่แบบมุมมอง ทำงานในรูปแบบสมจริง (Realistic) เหมือน Revit
+- V1.433 · ชิ้นงานปรับตามจุด (Adaptive Component แบบ Revit): เครื่องมือใหม่ในแถบสถาปัตย์ คลิกวางจุดทีละจุดบนแปลน รูปทรงจะตามจุดที่วาง มีแบบให้ 5 แบบ ท่อกลมและคานสี่เหลี่ยม (2 จุด) แผงสามเหลี่ยม (3 จุด) แผงสี่เหลี่ยมและแผงกระจก (4 จุด) แต่ละจุดตั้งความสูงได้ คลิกบนจุดของชิ้นงานอื่นจะใช้จุดและความสูงเดียวกัน ต่อโครงหรือแผงได้ต่อเนื่อง แผงสี่จุดที่ไม่อยู่ในระนาบเดียวพับตามเส้นทแยง ลากจุดบนแปลนได้ ตั้งความสูงใน Properties เห็นใน 3 มิติ รูปด้าน รูปตัด ตารางรายการ BOQ DXF และ IFC สร้างแบบเพิ่มใน Type Properties ได้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -51372,6 +51521,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.430 · Electrical Service and Fault Current from the analytical loads (as Revit's Electrical Analysis carries the area based and equipment loads through the panels to the transformer): Loads from the circuits modelled, the analytical loads or the larger at each panel, so the transformer, main breaker, feeders and fault current can be sized before any circuit is drawn; panels on their analytical loads are marked A
 - V1.431 · Visual Style in plan views (as in Revit): floor and ceiling plans can be Hidden Line, Shaded, Consistent Colors or Realistic, from the View Control Bar, Properties, a View Template or by typing HL / SD; the shading is the model seen from straight above (from below in a ceiling plan), cut at the cut plane and as deep as the view depth (each Plan Region with its own range), under the plan's linework, cut patterns, tags and annotations; Graphic Display Options (light, shadows, sketchy lines, ambient shadows) and the Shadows and Sun buttons work in plans too, and so do sheets and exported images
 - V1.432 · Lighting Scheme and Relative to View (as in Revit): Graphic Display Options has a Scheme with six choices, Exterior or Interior with Sun only, Sun and Artificial or Artificial only. Artificial only puts the sun out: no sunlight, no sun shadows, a night sky, only the lamps. Interior takes some light from the sky and gives the lamps more. Relative to View turns the sun with the view, its azimuth measured from the direction the view looks, so the light on the model stays the same as you orbit. View templates carry the scheme; all of it acts in the Realistic style, as in Revit
+- V1.433 · Adaptive Components (as in Revit): a new tool on the Architecture tab places its points one click at a time on a plan and the shape follows them. Five family types come with it: a tube and a bar (2 points), a triangular panel (3), a quad panel and a glass quad panel (4). Each point has its own height; a click on a point of another adaptive component shares that point and its height, so members and panels join up. A quad whose points are not flat folds along its diagonal. Points drag on plans, heights are set in Properties, and the components show in 3D, elevations, sections, schedules, the BOQ, DXF and IFC. More types are made in Type Properties
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -53624,6 +53774,32 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r433={
+  types:()=>{if(!(Array.isArray(P.types.adapt)&&P.types.adapt.length))edit(()=>{adTypes433()});return P.types.adapt.map(T=>({id:T.id,name:T.name,form:T.form,glz:T.glz||null}))},
+  put:(lid,pts,ti)=>{let id;edit(()=>{const TL=adTypes433(),T=TL[ti||0];const e={id:P.seq++,cat:'adapt',type:T.id,level:lid,pts:pts.map(p=>[p[0],p[1]]),pz:pts.map(p=>p[2]||0)};P.els.push(e);id=e.id});return id},
+  el:id=>{const e=IDX.get(id)||P.els.find(x=>x.id===id);return e?JSON.parse(JSON.stringify(e)):null},
+  geo:id=>{const G=adGeo433(P,IDX.get(id)||P.els.find(x=>x.id===id));return G?{ok:G.ok,sh:G.sh,np:G.np,len:Math.round(G.len*1000)/1000,area:Math.round(G.area*1e6)/1e6,vol:Math.round(G.vol*1e6)/1e6,z0:Math.round(G.z0*100)/100,z1:Math.round(G.z1*100)/100,fold:G.fold,nt:G.t.length/9,nl:G.l.length/6,ns:G.s.length,A:G.A}:null},
+  segs:id=>adSegs433(adGeo433(P,IDX.get(id))).map(s=>s.map(p=>p.map(x=>Math.round(x*100)/100))),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  hit:(vid,id,x,y)=>{const d=XHIT.adapt(viewById(vid),IDX.get(id),{x,y});return isFinite(d)?Math.round(d*100)/100:null},
+  hitAt:(vid,x,y)=>{const h=hitPlan(viewById(vid),(()=>{const v=viewById(vid),n=navOf(v);return{x:x*n.s+n.ox,y:y*n.s+n.oy}})());return h?h.id||h:null},
+  mesh:id=>{const M=buildMeshes(P,FPm()),items=(Array.isArray(M)?M:M.items).filter(m=>m.id===id);return items.map(m=>({cat:m.cat,a:m.a,c:m.c.map(x=>Math.round(x*1000)/1000),nt:m.t.length/9,nl:m.l.length/6,mt:m.mt}))},
+  tset:(ti,o)=>{edit(()=>{const T=P.types.adapt[ti];for(const k in o){if(o[k]==null)delete T[k];else T[k]=o[k]}});return true},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]==null)delete e[k];else e[k]=JSON.parse(JSON.stringify(o[k]))}});return true},
+  field:(id,key,raw)=>{edit(()=>{applyField('adapt',IDX.get(id),key,raw)});return JSON.parse(JSON.stringify(IDX.get(id).pz))},
+  sf:()=>sfAll(P,'adapt',t).map(f=>f.k),
+  sv:(id,k)=>{const F=sfAll(P,'adapt',t).find(f=>f.k===k),X=sfCtx(P,t,null);return F?F.g(IDX.get(id),X):undefined},
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>r.tcat==='adapt').map(r=>({item:r.item,qty:r.qty,unit:r.unit,cost:r.cost,amount:r.amount,pk:r.pk})),
+  ifc:()=>{const s=ifcText().text;return{proxy:(s.match(/IFCBUILDINGELEMENTPROXY\(/g)||[]).length,len:s.length}},
+  ifcCls:id=>ifcClass(P,IDX.get(id)),
+  dxf:vid=>{const s=planDXF(viewById(vid),{});return{lay:s.includes('A-GENM-ADPT'),len:s.length}},
+  near:(x,y,lid)=>adNear433(x,y,lid,60),
+  pend:()=>JSON.parse(JSON.stringify(ui.ad433||[])),
+  raw:o=>{P.els.push(JSON.parse(JSON.stringify(o)));return true},
+  traw:o=>{P.types.adapt.push(JSON.parse(JSON.stringify(o)));return true},
+  tidy:()=>{for(const f of XC)f();return{els:P.els.filter(e=>e.cat==='adapt').map(e=>JSON.parse(JSON.stringify(e))),types:(P.types.adapt||[]).map(T=>JSON.parse(JSON.stringify(T)))}},
+  vg:()=>VG_CATS.includes('adapt'),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r432={
   set:(vid,o)=>{edit(()=>{const v=viewById(vid);for(const k in o){if(o[k]==null)delete v[k];else v[k]=JSON.parse(JSON.stringify(o[k]))}});return true},
   sch:(vid,val)=>{let r;edit(()=>{r=lschSet432(viewById(vid),val)});return r?lschVal432(viewById(vid)):false},
