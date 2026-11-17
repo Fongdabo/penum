@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=477,V1_NAME='V1.467';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=478,V1_NAME='V1.468';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -51674,6 +51674,85 @@ Object.assign(STR,{
   g_anl467:['แบบจำลองวิเคราะห์ในมุมมองนี้','Analytical Model in this view'],p_anl467:['แสดงแบบจำลองวิเคราะห์','Show Analytical Model'],
   anl467_tg:['ตามปุ่ม แบบจำลองวิเคราะห์','By the Analytical Model button'],anl467_1:['แสดงเสมอ','Always'],anl467_0:['ไม่แสดง','Never'],
   p_anl467p:['แผ่นวิเคราะห์ (Analytical Panels)','Analytical Panels'],p_anl467m:['ชิ้นส่วนวิเคราะห์ (คาน ค้ำยัน เสา)','Analytical Members'],p_anl467n:['จุดต่อวิเคราะห์ (Analytical Nodes)','Analytical Nodes']});
+/* ===== 75 Analytical Consistency Checks (V1.468; Revit: Analyze › Analytical Model Tools › Consistency Checks and Check Member Supports, with the
+   checks and tolerance of Structural Settings › Analytical Model Settings) =====
+   anl468Run(Q): what is wrong with the analytical model, each {k, id, lab, d}:
+   'sup'  a column or a beam end that nothing holds up (bcCheck217, Check Supports of V1.217);
+   'wsup' a wall panel whose foot stands on nothing: no floor panel there, no wall panel below, no wall footing, no boundary condition on the wall;
+   'fsup' a floor panel that nothing holds up: no wall panel meets it, no beam at it, no column under or through it, no boundary condition on the floor;
+   'dist' a wall panel Auto-detect moved farther from its wall than the analytical-to-physical distance (P.anl468.d, 150 mm): its ends past the wall's
+          ends, its foot below or its head above the wall;
+   'mat'  a panel whose material is not a structural one; 'ovl' two panels lying on each other (two walls on one line, two floors at one height);
+   'free' a panel that meets no other.
+   P.anl468 = {d, off: the checks turned off}, written only when it differs from the defaults. */
+const ANL468_K=['sup','wsup','fsup','dist','mat','ovl','free'],ANL468_SM=['conc','brick','block','wood','stone','metal'];
+function anl468Set(Q){const s=(Q||P).anl468||{},d=s.d==null?NaN:+s.d;return{d:isFinite(d)&&d>=0?Math.min(2000,Math.round(d)):150,off:Array.isArray(s.off)?ANL468_K.filter(k=>s.off.includes(k)):[]}}
+function anl468Run(Q){Q=Q||P;const S=anl468Set(Q),on=k=>!S.off.includes(k),R=anl466(Q),W=R.panels.filter(p=>p.kind==='wall'),F=R.panels.filter(p=>p.kind==='floor'),out=[];
+  const tol=anl466Set(Q).tol,mx=a=>Math.max(...a),mn=a=>Math.min(...a);
+  if(on('sup'))for(const r of bcCheck217(Q)){const e=Q.els.find(x=>x.id===r.id);if(e)out.push({k:'sup',id:r.id,cat:r.cat,lab:anl468Name(Q,e),d:r.cat==='beam'?(r.ends||[]).map(x=>x+1).join(', '):''})}
+  if(on('wsup'))for(const p of W){const zf=mn(p.zb),M=anl466Pt(p,(p.s0+p.s1)/2,zf);
+    const ok=F.some(f=>anl466Near(f,M[0],M[1],10)&&Math.abs(f.Z(M[0],M[1])-zf)<=10)
+      ||W.some(q=>{if(q===p)return false;const qz=mx(q.zt);if(Math.abs(qz-zf)>10)return false;const A=anl466Pt(q,q.s0,qz),B=anl466Pt(q,q.s1,qz);return segDist(M[0],M[1],A[0],A[1],B[0],B[1])<=tol})
+      ||Q.els.some(x=>(x.cat==='wfoot'||x.cat==='bcond')&&x.host===p.id);
+    if(!ok)out.push({k:'wsup',id:p.id,lab:p.lab,d:''})}
+  if(on('fsup'))for(const f of F){const ok=W.some(p=>p.con.includes(f.no))||Q.els.some(x=>x.cat==='bcond'&&x.host===f.id)
+      ||R.mem.some(m=>{if(m.kind==='brace')return false;if(m.kind==='col'){const x=m.b[0],y=m.b[1],z=f.Z(x,y);return anl466Near(f,x,y,10)&&m.a[2]<z-10&&m.b[2]>z-600}          // a column under the floor or through it, not one standing on it
+        const x=(m.a[0]+m.b[0])/2,y=(m.a[1]+m.b[1])/2,z=(m.a[2]+m.b[2])/2;return anl466Near(f,x,y,10)&&Math.abs(f.Z(x,y)-z)<=600});
+    if(!ok)out.push({k:'fsup',id:f.id,lab:f.lab,d:''})}
+  if(on('dist'))for(const p of W){const g=Math.max(0,-p.s0,p.s1-p.L,p.zr[0]-mn(p.zb),mx(p.zt)-p.zr[1]);if(g>S.d+0.5)out.push({k:'dist',id:p.id,lab:p.lab,d:Math.round(g)})}
+  if(on('mat'))for(const p of R.panels)if(!ANL468_SM.includes(p.mat))out.push({k:'mat',id:p.id,lab:p.lab,d:p.mat});
+  if(on('ovl')){const L=[];for(let i=0;i<W.length;i++)for(let j=i+1;j<W.length;j++){const p=W[i],q=W[j];if(Math.abs(p.d[0]*q.d[1]-p.d[1]*q.d[0])>0.01)continue;
+      const z0=Math.max(mn(p.zb),mn(q.zb)),z1=Math.min(mx(p.zt),mx(q.zt));if(z1-z0<=10)continue;const zm=(z0+z1)/2,A=anl466Pt(p,p.s0,zm),a=anl466Pt(q,q.s0,zm),b=anl466Pt(q,q.s1,zm);
+      const side=[a,b].map(c=>(c[0]-A[0])*p.n[0]+(c[1]-A[1])*p.n[1]);if(Math.max(Math.abs(side[0]),Math.abs(side[1]))>10)continue;
+      const t=[a,b].map(c=>(c[0]-A[0])*p.d[0]+(c[1]-A[1])*p.d[1]);if(Math.min(p.s1-p.s0,Math.max(...t))-Math.max(0,Math.min(...t))>10)L.push([p,q])}
+    for(let i=0;i<F.length;i++)for(let j=i+1;j<F.length;j++){const f=F[i],g=F[j],c=P0=>{let x=0,y=0;for(const q of P0){x+=q[0];y+=q[1]}return[x/P0.length,y/P0.length]},cf=c(f.pts),cg=c(g.pts);
+      if(Math.abs(f.Z(cf[0],cf[1])-g.Z(cf[0],cf[1]))>10)continue;const inn=(a,B)=>a.some(q=>inPoly(q[0],q[1],B.pts)&&polyEdgeDist(q[0],q[1],B.pts)>10);
+      if(inPoly(cf[0],cf[1],g.pts)||inPoly(cg[0],cg[1],f.pts)||inn(f.pts,g)||inn(g.pts,f))L.push([f,g])}
+    for(const [p,q] of L){out.push({k:'ovl',id:p.id,lab:p.lab,d:q.lab});out.push({k:'ovl',id:q.id,lab:q.lab,d:p.lab})}}
+  if(on('free'))for(const p of R.panels)if(!p.con.length)out.push({k:'free',id:p.id,lab:p.lab,d:''});
+  const no=new Map(R.panels.map(p=>[p.id,p.no]));return out.sort((a,b)=>ANL468_K.indexOf(a.k)-ANL468_K.indexOf(b.k)||(no.get(a.id)||1e9)-(no.get(b.id)||1e9)||a.id-b.id)}
+const anl468Name=(Q,e)=>{const T=typ(Q,e)||{};return t(e.cat==='beam'?(e.use==='brace'?'anl468_cr':'anl468_cb'):'anl468_cc')+': '+(T.name||'')+(e.mark?' ('+e.mark+')':'')};
+const anl468Host=x=>{const e=IDX.get(x.id);if(!e)return'';if(x.k==='sup')return x.lab;const T=typ(P,e)||{};return t(e.cat==='wall'?'anl466_kw':'anl466_kf')+': '+(T.name||'')+(e.mark?' ('+e.mark+')':'')};
+const anl468Msg=x=>x.k==='sup'?t(x.cat==='beam'?'anl468_supb':'anl468_supc',x.d):x.k==='mat'?t('anl468_mat',t('wlm_'+x.d)):t('anl468_'+x.k,typeof x.d==='number'?x.d.toLocaleString():x.d);
+const anl468Ap=x=>x.k==='sup'?'—':x.lab;
+function anl468Csv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"';return[['anl468_n','anl468_ck','anl468_ap','anl468_el','anl468_is'].map(k=>q(t(k))).join(',')]
+  .concat(anl468Run(P).map((x,i)=>[i+1,t('anl468_k_'+x.k),anl468Ap(x),anl468Host(x),anl468Msg(x)].map(q).join(','))).join('\r\n')}
+function anl468Dlg(){const S=anl468Set(P),R=anl468Run(P),ids=[...new Set(R.map(x=>x.id))];
+  const rows=R.map((x,i)=>`<tr data-ck="${x.id}" style="cursor:pointer"><td class="n">${i+1}</td><td>${esc(t('anl468_k_'+x.k))}</td><td>${esc(anl468Ap(x))}</td><td>${esc(anl468Host(x))}</td><td class="warn">${esc(anl468Msg(x))}</td></tr>`).join('');
+  const ck=ANL468_K.map(k=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 14px 2px 0;white-space:nowrap"><input type="checkbox" data-ckk="${k}"${S.off.includes(k)?'':' checked'}> ${esc(t('anl468_k_'+k))}</label>`).join('');
+  const body=`<p class="note">${t('anl468_note')}</p><div class="fr"><label for="anlD">${t('anl468_d')}</label><span class="un" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input id="anlD" style="max-width:110px" type="number" step="10" min="0" max="2000" value="${S.d}"> ${t('anl466_mm')}</span></div>`
+    +`<div id="anlCkK" style="margin:4px 0 8px">${ck}</div>`
+    +(R.length?`<div class="tblw"><table class="tbl" id="anlCk"><thead><tr>${['anl468_n','anl468_ck','anl468_ap','anl468_el','anl468_is'].map(k=>`<th>${t(k)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`
+      +`<p class="note warn" id="anlCkSum">${t('anl468_sum',R.length,ids.length)}</p>`:`<p class="note" id="anlCkOk">${t('anl468_ok')}</p>`);
+  openDlg(t('a_anlck'),body,`<button class="btn" data-anlcksel="1"${R.length?'':' disabled'}>${t('anl468_sel')}</button><button class="btn" data-anlckcsv="1"${R.length?'':' disabled'}>${t('anl466_csv')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,{
+    change(ev){const s=anl468Set(P),k=ev.target.dataset.ckk;if(ev.target.id==='anlD'){const x=+ev.target.value;if(ev.target.value===''||!isFinite(x)||x<0){anl468Dlg();return}s.d=Math.min(2000,Math.round(x))}
+      else if(k){const o=new Set(s.off);if(ev.target.checked)o.delete(k);else o.add(k);s.off=ANL468_K.filter(x=>o.has(x))}else return;
+      edit(()=>{if(s.d===150&&!s.off.length)delete P.anl468;else P.anl468=s.off.length?{d:s.d,off:s.off}:{d:s.d}});anl468Dlg()},
+    click(ev){if(ev.target.closest('[data-anlckcsv]')){saveFile(fname('','-analytical-checks.csv'),'﻿'+anl468Csv(),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))});return}
+      if(ev.target.closest('[data-anlcksel]')){const L=[...new Set(anl468Run(P).map(x=>x.id))].filter(id=>IDX.has(id));if(L.length)showEls(L);return}
+      const tr=ev.target.closest('tr[data-ck]');if(tr)showEls([+tr.dataset.ck])}},'wide')}
+XA.anlck=anl468Dlg;
+XC.push(()=>{if(P.anl468==null)return;const s=anl468Set(P);if(s.d===150&&!s.off.length)delete P.anl468;else P.anl468=s.off.length?{d:s.d,off:s.off}:{d:s.d}});
+/* Properties of a structural wall or floor: what the checks find on it */
+{const f0=strRows;strRows=els=>{let h=f0(els);if(els.length!==1)return h;const e=els[0];if(!anl466(P).panels.some(p=>p.id===e.id))return h;const L=anl468Run(P).filter(x=>x.id===e.id);
+  return h+PR.ro('p_anlck468',L.length?L.map(anl468Msg).join(' · '):t('anl468_none'))}}
+for(const A of RIBBON){if(A.id==='struct')for(const p of A.panels||[])if(p.t==='p_anl'&&!p.b.includes('@anlck')){const i=p.b.indexOf('@anlp');p.b.splice(i<0?p.b.length:i+1,0,'@anlck')}
+  if(A.id==='analyze')for(const p of A.panels||[])if(p.t==='p_anl'&&p.b&&p.b.includes('@anlp')&&!p.b.includes('@anlck'))p.b.push('@anlck')}
+Object.assign(BTN,{'@anlck':['bcchk','']});
+Object.assign(STR,{
+  a_anlck:['ตรวจความสอดคล้อง (Consistency Checks)','Consistency Checks'],
+  anl468_note:['ตรวจแบบจำลองวิเคราะห์แบบ Consistency Checks และ Check Member Supports ของ Revit: เสาและปลายคานที่ไม่มีที่รองรับ แผ่นผนังที่ฐานไม่วางบนอะไร แผ่นพื้นที่ไม่มีอะไรรับ แผ่นที่ยืดห่างจากชิ้นงานจริงเกินระยะ วัสดุที่ไม่ใช่วัสดุโครงสร้าง แผ่นที่ซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด คลิกแถวเพื่อเลือกชิ้นงาน','Checks the analytical model as Revit\'s Consistency Checks and Check Member Supports do: columns and beam ends with no support, wall panels whose foot stands on nothing, floor panels nothing holds up, panels moved farther from their element than the tolerance, materials that are not structural, panels lying on each other and panels that meet none. Click a row to select the element.'],
+  anl468_d:['ระยะห่างจากชิ้นงานจริงที่ยอมให้ (Analytical-to-Physical)','Analytical-to-physical distance tolerance'],
+  anl468_k_sup:['ที่รองรับของเสาและคาน','Member supports'],anl468_k_wsup:['ที่รองรับของแผ่นผนัง','Wall panel supports'],anl468_k_fsup:['ที่รองรับของแผ่นพื้น','Floor panel supports'],
+  anl468_k_dist:['ระยะห่างจากชิ้นงานจริง','Analytical-to-physical distance'],anl468_k_mat:['วัสดุโครงสร้าง','Structural material'],anl468_k_ovl:['แผ่นซ้อนกัน','Overlapping panels'],anl468_k_free:['แผ่นที่ไม่ต่อกับแผ่นใด','Unconnected panels'],
+  anl468_supc:['เสาไม่มีที่รองรับที่ฐาน','Column not supported at its base'],anl468_supb:['คานไม่มีที่รองรับที่ปลาย {0}','Beam not supported at end {0}'],
+  anl468_wsup:['ฐานของแผ่นผนังไม่วางบนแผ่นพื้น ผนังด้านล่าง ฐานรากผนัง หรือจุดรองรับ','The wall panel\'s foot stands on no floor panel, wall below, wall footing or boundary condition'],
+  anl468_fsup:['แผ่นพื้นไม่มีผนัง คาน เสา หรือจุดรองรับรับไว้','No wall, beam, column or boundary condition holds the floor panel'],
+  anl468_dist:['แผ่นห่างจากชิ้นงานจริง {0} มม. เกินระยะที่ยอมให้','The panel lies {0} mm from its element, beyond the tolerance'],
+  anl468_mat:['{0} ไม่ใช่วัสดุโครงสร้าง','{0} is not a structural material'],anl468_ovl:['ซ้อนกับแผ่น {0}','Lies on panel {0}'],anl468_free:['ไม่ต่อกับแผ่นใดเลย','Meets no other panel'],
+  anl468_cc:['เสา','Column'],anl468_cb:['คาน','Beam'],anl468_cr:['ค้ำยัน','Brace'],anl468_n:['ข้อ','No.'],anl468_ck:['การตรวจ','Check'],anl468_ap:['แผ่น','Panel'],anl468_el:['ชิ้นงาน','Element'],anl468_is:['ปัญหา','Issue'],
+  anl468_sum:['พบ {0} รายการ ใน {1} ชิ้นงาน','{0} issues on {1} elements'],anl468_ok:['ไม่พบปัญหาในการตรวจที่เลือก','No issues in the checks chosen'],anl468_sel:['เลือกชิ้นงานทั้งหมด','Select All'],
+  p_anlck468:['ผลตรวจความสอดคล้อง','Consistency Checks'],anl468_none:['ไม่พบปัญหา','No issues']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -53561,6 +53640,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[a_mtake]] — แท็บ [[tab_manage]]: ตารางพื้นที่ ปริมาตร น้ำหนัก แยกตามวัสดุและหมวด ผนังแยกตามชั้น ส่งออก CSV ได้
 [[a_anl]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): แสดงแผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา ในแปลน รูปด้าน รูปตัด และ 3 มิติ (ตัดตามระนาบตัด ระยะลึก ขอบเขตครอบตัด และกล่องตัด) · กดอีกครั้งเพื่อซ่อน · ในแผงคุณสมบัติของแต่ละมุมมอง [[p_anl467]] เลือกตามปุ่ม แสดงเสมอ หรือไม่แสดง และติ๊ก [[p_anl467p]] [[p_anl467m]] [[p_anl467n]]
 [[a_anlp]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตารางแผ่นวิเคราะห์ทุกแผ่น หนา วัสดุ พื้นที่สุทธิ ช่องเปิด และแผ่นที่ต่อกัน · ตั้ง [[anl466_tol]] และ [[anl466_sl]] · คลิกแถวเพื่อเลือกชิ้นงาน · [[anl466_csv]] · ในแผงคุณสมบัติของผนังหรือพื้นโครงสร้าง ล้าง [[p_anl466]] เพื่อไม่ให้มีแผ่น หรือเลือก [[p_apjw466]] / [[p_apjf466]]
+[[a_anlck]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตรวจแบบจำลองวิเคราะห์ เสาและปลายคานที่ไม่มีที่รองรับ แผ่นผนังที่ฐานไม่วางบนอะไร แผ่นพื้นที่ไม่มีอะไรรับ แผ่นที่ยืดห่างจากชิ้นงานจริงเกิน [[anl468_d]] วัสดุที่ไม่ใช่วัสดุโครงสร้าง แผ่นซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด · ติ๊กเลือกการตรวจ · คลิกแถวเพื่อเลือกชิ้นงาน หรือ [[anl468_sel]] · ผลของชิ้นงานที่เลือกอยู่ในแผงคุณสมบัติ ([[p_anlck468]])
 [[a_ldtake]] — แท็บ [[tab_struct]]: น้ำหนักลงเสาแต่ละต้นแบบพื้นที่รับน้ำหนัก (D, L, D+L, 1.4D+1.7L) และขนาดฐานรากจาก[[lt_q]] · คลิกแถวเพื่อเลือกเสา · ตั้ง[[p_ldD]]และ[[p_ldL]]ที่คุณสมบัติของพื้น
 [[t_sload]] — แท็บ [[tab_analyze]] (และแท็บ [[tab_struct]]): เลือก [[ld_p]] [[ld_l]] [[ld_a]] [[ld_lh]] หรือ [[ld_ah]] ในแถบตัวเลือก พร้อม[[o_ldcase]]และค่า Fz (ติดลบคือกดลง แบบ Revit) แล้วคลิกจุด แนว หรือมุมของพื้นที่ในแปลน หรือคลิกคาน ผนัง หรือพื้นที่รับน้ำหนัก · แบบที่ยึดกับคาน ผนัง หรือพื้นไปกับมันเมื่อย้าย หมุน กลับด้าน คัดลอก ลบ · คุณสมบัติมี Fx Fy Fz (แบบเส้นมีปลายสองค่าเมื่อเอาติ๊ก [[p_lduni]] ออก แบบจุดมี Mx My Mz) · แปลนแสดงสัญลักษณ์สีตามลักษณะของกรณีน้ำหนัก 3 มิติแสดงลูกศร · [[a_ldtake]] ส่งน้ำหนักเหล่านี้ลงเสาตามกรณีน้ำหนักและแสดงชุดที่วิกฤต · ตารางของหมวด [[cat_sload]]
 [[a_stset]] — แท็บ [[tab_manage]] (และแท็บ [[tab_struct]]): [[a_lcases]] (ชื่อ หมายเลข ลักษณะ ตั้งต้นแปดกรณีแบบ Revit) และ [[a_lcombs]] (สูตร เช่น 1.4 DL1 + 1.7 LL1 แบบกำลังประลัยหรือใช้งาน ตั้งต้นสี่ชุดตาม ACI 318-99 แบบที่ใช้ในไทย)
@@ -53965,6 +54045,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.465 · ประตูหน้าต่างในผนังเอียง (Orientation แบบ Revit): Properties ของประตูหรือหน้าต่างในผนังเอียงมีทิศของชิ้นงาน ตั้งตรง (แบบที่ Revit วางให้) ยืนตรงที่กลางความสูงของมันในผนัง (ประตูที่ฐาน) ช่องผนังทะลุแนวราบ หรือเอียงตามผนัง หมุนไปกับผนังรอบธรณีที่กลางผนัง ตั้งฉากกับผิว และธรณีกับทับหลังของช่องผนังเอียงตาม ในผนังสอบชิ้นงานยืนตรงเสมอ มีในฟิลด์ตารางด้วย
 - V1.466 · แผ่นวิเคราะห์โครงสร้าง (Analytical Panels แบบ Revit): ผนังและพื้นที่ติ๊ก เป็นโครงสร้าง มีแผ่นวิเคราะห์ของตัวเองโดยอัตโนมัติ แผ่นของผนังอยู่กลางชั้นโครงสร้าง (เลือกแนวกลางผนัง หรือผิวนอก/ผิวในของชั้นโครงสร้างได้) และเอียงตามผนังเอียงหรือผนังสอบ แผ่นของพื้นอยู่ที่ผิวบน (เลือกผิวบน กลาง หรือผิวล่างของชั้นโครงสร้างหรือของพื้นได้) และลาดตามพื้นลาด ปลายแผ่นผนังและขอบบนล่างที่ห่างกันไม่เกินระยะปรับอัตโนมัติ (300 มม.) ถูกยืดให้ชนแผ่นข้างเคียง ประตู หน้าต่าง ช่องเปิด ช่องบันได และช่องท่อเป็นช่องเปิดของแผ่น ปุ่ม แบบจำลองวิเคราะห์ แสดงแผ่น เส้นแกนคาน ค้ำยัน เสา และจุดต่อ ทั้งในแปลนและ 3 มิติ ปุ่ม แผ่นวิเคราะห์ (แท็บโครงสร้างและแท็บวิเคราะห์) เปิดตารางแผ่นทั้งหมด หนา วัสดุ พื้นที่สุทธิ ช่องเปิด แผ่นที่ต่อกัน เตือนแผ่นที่ไม่ต่อกับแผ่นใด และส่งออก CSV แผงคุณสมบัติมี สร้างแผ่นวิเคราะห์ และตำแหน่งแผ่น
 - V1.467 · แบบจำลองวิเคราะห์ในรูปด้าน รูปตัด และกล่องตัด: แผ่นวิเคราะห์ เส้นแกนคาน ค้ำยันและเสา และจุดต่อ แสดงในรูปด้านและรูปตัดด้วย ตัดตามระนาบตัด ระยะลึก (Far Clip) ขอบเขตครอบตัด และแต่ละช่วงของรูปตัดที่หักมุม แผ่นที่ผ่านระนาบตัดแสดงถึงระนาบตัด ใน 3 มิติตัดตามกล่องตัด แต่ละมุมมองตั้งในแผงคุณสมบัติได้ว่าแสดงแบบจำลองวิเคราะห์ตามปุ่ม แสดงเสมอ หรือไม่แสดง และเลือกแสดงแผ่น ชิ้นส่วน (คาน ค้ำยัน เสา) และจุดต่อแยกกัน แบบ Visibility/Graphics ของ Revit
+- V1.468 · ตรวจความสอดคล้องของแบบจำลองวิเคราะห์ (Consistency Checks แบบ Revit): ปุ่มใหม่ในแท็บโครงสร้างและแท็บวิเคราะห์ ตรวจเสาและปลายคานที่ไม่มีที่รองรับ (แบบ Check Supports) ฐานของแผ่นผนังที่ไม่วางบนแผ่นพื้น ผนังด้านล่าง ฐานรากผนัง หรือจุดรองรับ แผ่นพื้นที่ไม่มีผนัง คาน เสา หรือจุดรองรับรับไว้ แผ่นผนังที่ Auto-detect ยืดห่างจากผนังจริงเกินระยะที่ยอมให้ (ตั้งต้น 150 มม.) แผ่นที่วัสดุไม่ใช่วัสดุโครงสร้าง แผ่นที่ซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด ติ๊กเลือกการตรวจได้ คลิกแถวเลือกชิ้นงาน เลือกทั้งหมด ส่งออก CSV แผงคุณสมบัติของผนังและพื้นโครงสร้างแสดงผลตรวจของชิ้นนั้น
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -54174,6 +54255,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 [[a_mtake]] — on the [[tab_manage]] tab: area, volume and weight by material and category, walls by layer, out to CSV
 [[a_anl]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): shows the analytical panels of structural walls and floors, beam, brace and column axes, nodes and column loads, in plans, elevations, sections and 3D (cut at the cut plane, the far clip, the crop region and the section box) · press again to hide · in the Properties of each view, [[p_anl467]] follows the button, always shows or never shows it, and [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] pick the parts
 [[a_anlp]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): every analytical panel with its thickness, material, net area, openings and the panels it meets · set the [[anl466_tol]] and [[anl466_sl]] · click a row to select the element · [[anl466_csv]] · in the Properties of a structural wall or floor clear [[p_anl466]] to leave its panel out, or choose its [[p_apjw466]] / [[p_apjf466]]
+[[a_anlck]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): checks the analytical model: columns and beam ends with no support, wall panels whose foot stands on nothing, floor panels nothing holds up, panels moved farther from their element than the [[anl468_d]], materials that are not structural, panels lying on each other and panels that meet none · tick the checks to run · click a row to select the element, or [[anl468_sel]] · what is found on the selected element shows in Properties ([[p_anlck468]])
 [[a_ldtake]] — on the [[tab_struct]] tab: each column's load by tributary area (D, L, D+L, 1.4D+1.7L) and the footing size from the [[lt_q]] · click a row to select the column · set the [[p_ldD]] and [[p_ldL]] in a floor's properties
 [[t_sload]] — on the [[tab_analyze]] tab (and the [[tab_struct]] tab): choose [[ld_p]], [[ld_l]], [[ld_a]], [[ld_lh]] or [[ld_ah]] on the options bar with the [[o_ldcase]] and Fz (negative pushes down, as in Revit), then click the point, the line or the corners of the area in a plan, or click the beam, wall or slab that carries it · a hosted load goes with its beam, wall or slab when it is moved, rotated, mirrored, copied or deleted · Properties hold Fx Fy Fz (a line load takes two ends when [[p_lduni]] is cleared; a point load also Mx My Mz) · plans show the symbols in the colour of the case's nature, 3D views arrows · the [[a_ldtake]] carries these loads down the columns by load case and shows the governing combination · schedules of the [[cat_sload]] category
 [[a_stset]] — on the [[tab_manage]] tab (and the [[tab_struct]] tab): [[a_lcases]] (name, number, nature; Revit's eight to start with) and [[a_lcombs]] (formulas such as 1.4 DL1 + 1.7 LL1, Ultimate or Serviceability; four to start with, ACI 318-99 as used in Thailand)
@@ -54578,6 +54660,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.465 · Doors and windows in slanted walls (Orientation, as in Revit): a door's or window's Properties in a slanted wall have Orientation, Vertical (as Revit places them) standing upright where the wall is at its middle height (a door at its foot) with the opening going through level, or Slanted, turned with the wall about its sill on the wall's middle, square to the faces, with the sill and head of the opening turning too; in a tapered wall inserts stand upright; in schedule fields too
 - V1.466 · Analytical Panels (as in Revit): every wall and floor marked Structural carries its own analytical panel. A wall's panel lies at the centre of its core (or its centre line, or the exterior or interior face of its core) and leans with a slanted or tapered wall; a floor's lies at its top (or the top, centre or bottom of its core or of the slab) and follows its slope. Panel ends, feet and heads closer than the Auto-detect tolerance (300 mm) are moved to meet the panels next to them. Doors, windows, openings, stair wells and shafts become openings in the panels. The Analytical Model button shows the panels, beam, brace and column axes and the nodes in plans and in 3D; Analytical Panels (Structure and Analyze tabs) lists every panel with its thickness, material, net area, openings and the panels it meets, warns of panels that meet none and exports CSV. Properties have Enable Analytical Model and the projection
 - V1.467 · The analytical model in elevations, sections and section boxes: analytical panels, beam, brace and column axes and nodes show in elevations and sections too, cut at the cut plane, the far clip, the crop region and each piece of a broken section; a panel that crosses the cut shows up to it. In 3D they are cut by the section box. In the Properties of each view the analytical model follows the Analytical Model button, always shows or never shows, and panels, members (beams, braces, columns) and nodes can each be turned off, as in Revit's Visibility/Graphics.
+- V1.468 · Analytical Consistency Checks (as in Revit): a new button on the Structure and Analyze tabs checks columns and beam ends with no support (as Check Supports does), wall panels whose foot stands on no floor panel, wall below, wall footing or boundary condition, floor panels no wall, beam, column or boundary condition holds, wall panels Auto-detect moved farther from their wall than the analytical-to-physical tolerance (150 mm), panels whose material is not structural, panels lying on each other and panels that meet none. Each check can be turned off; a row selects its element, Select All selects them all, and the list exports to CSV. Properties of a structural wall or floor show what the checks find on it.
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -56972,6 +57055,17 @@ window.PenumBIM.r467={
   rows:()=>{const a=document.querySelector('#props [data-p="anl467"]');return{sel:a?a.value:null,opts:a?[...a.options].map(x=>x.value):null,chk:['p','m','n'].map(k=>{const c=document.querySelector('#props [data-p="anl467'+k+'"]');return c?c.checked:null})}},
   /* where a model point is on the screen in the active pane (3D, elevation, section) */
   scr:(x,y,z)=>{const i=ui.ap,pn=PANES[i],v=paneView(i),q=projGL(pn,v,[x,z,y]);if(!q)return null;const r=pn.cvw.getBoundingClientRect();return[r.left+q[0],r.top+q[1]]},
+  str:(k,...a)=>t(k,...a)};
+/* V1.468 test API: analytical consistency checks */
+window.PenumBIM.r468={
+  run:()=>anl468Run(P).map(x=>({k:x.k,id:x.id,lab:x.lab,d:x.d,msg:anl468Msg(x)})),
+  set:()=>P.anl468===undefined?null:JSON.parse(JSON.stringify(P.anl468)),
+  put:o=>{edit(()=>{if(o==null)delete P.anl468;else P.anl468=JSON.parse(JSON.stringify(o))})},
+  csv:()=>anl468Csv(),
+  bc:(host,bk,o)=>{let id;edit(()=>{const H=P.els.find(e=>e.id===host),pts=H.cat==='column'?[[H.x,H.y]]:H.cat==='floor'?H.pts.map(q=>q.slice()):[[H.x1,H.y1],[H.x2,H.y2]];
+    const e=Object.assign({id:P.seq++,cat:'bcond',bk,host,level:H.level,pts,st:'pinned'},o||{});P.els.push(e);id=e.id});return id},
+  wfoot:wid=>{let id;edit(()=>{const w=P.els.find(e=>e.id===wid),f=wfootUnder(w);P.els.push(f);id=f.id});return id},
+  row:()=>{const r=[...document.querySelectorAll('#props .pr')].find(x=>(x.querySelector('label')||{}).textContent===t('p_anlck468'));return r?r.querySelector('.ro').textContent:null},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
