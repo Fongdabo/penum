@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=475,V1_NAME='V1.465';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=476,V1_NAME='V1.466';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -51488,6 +51488,154 @@ XF.push((cat,o,key,raw)=>{if(key!=='or465'||(cat!=='door'&&cat!=='window'))retur
 XC.push(()=>{for(const e of P.els)if(e.or465!==undefined&&(e.or465!=='s'||(e.cat!=='door'&&e.cat!=='window')))delete e.or465});
 {const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat==='door'||cat==='window')F.push({k:'or465',l:tr('p_or465'),g:(e,X)=>X.tr(e.or465==='s'?'or465_s':'or465_v'),grp:'i'});return F}}
 Object.assign(STR,{p_or465:['ทิศของชิ้นงาน (Orientation)','Orientation'],or465_v:['ตั้งตรง (Vertical)','Vertical'],or465_s:['เอียงตามผนัง (Slanted)','Slanted']});
+/* ===== 466 analytical panels (V1.466; Revit 2023 on: Analyze > Structural Analytical Model > Panel, made from the physical model by Analytical Automation) =====
+   Every structural wall and floor (e.str) carries an analytical panel unless its Enable Analytical Model box is cleared (e.anl466 = 0).  A wall's panel stands
+   on its Horizontal Projection (e.apj466: Auto-detect = the centre of its core, w its centre line, e / i the exterior / interior face of its core) and leans with
+   a slanted or tapered wall; a floor's lies on its Vertical Projection (Auto-detect = its top, tc / cc / bc the top / centre / bottom of its core, c / b the
+   centre / bottom of the slab) and follows its slope.  Auto-detect (P.anl466.tol, 300 mm): a wall panel's foot and head go to a floor panel that near, and its
+   ends to the panel of a wall they come that close to, so that panels meet.  Doors, windows and wall openings make analytical openings in a wall panel, stair
+   wells, shafts and floor openings in a floor panel.  Thickness: of the structural layers (P.anl466.sl, as Revit's "use the structural layer thickness") or of
+   the whole element.  Arc and curtain walls carry none.  The Analytical Model button draws the panels in plans and in 3D with the members and their nodes;
+   Analytical Panels lists them (area net of openings, what each meets) and writes them to CSV. */
+const ANL466_C={wall:'#1f8fe0',floor:'#24a35a',mem:'#e0457b',node:'#6a3fd0'},ANL466_W=['a','w','e','i'],ANL466_F=['a','tc','cc','bc','c','b'];
+let ANL466M=null;const ANL466D={plan:null,d3:null};
+const anl466Set=Q=>{const s=Q&&Q.anl466&&typeof Q.anl466==='object'?Q.anl466:{},x=+s.tol;return{tol:s.tol!==''&&s.tol!=null&&isFinite(x)&&x>=0?Math.min(2000,Math.round(x)):300,sl:s.sl===0?0:1}};
+const anl466Ok=(Q,e)=>!!e&&!!e.str&&e.anl466!==0&&(e.cat==='floor'?Array.isArray(e.pts)&&e.pts.length>=3:e.cat==='wall'&&!e.arc&&isFinite(e.x1)&&(typ(Q,e)||{}).kind!=='curtain');
+/* the thickness and material of a panel: its structural layers (a type of layers that has any) or the whole */
+function anl466Th(e,T,sl){const L=wlOf(T),th=+(T&&T.thickness)||150;if(!L)return{th,mat:slMat0(e.cat,T)};const S=L.filter(l=>l.fn==='struct');
+  if(!sl||!S.length)return{th,mat:(S[0]||L[0]).mat};const tot=L.reduce((a,l)=>a+(+l.t||0),0)||th;return{th:Math.round(S.reduce((a,l)=>a+(+l.t||0),0)*th/tot),mat:S[0].mat}}
+/* a wall's panel: along d from its start (s), across n by U(z) from its base line; s0..s1 its ends, zb / zt its foot and head at those ends */
+function anl466Wall(Q,e,S){const T=typ(Q,e)||{thickness:150},G=typeof sw463G==='function'&&sw463K(e)?sw463G(Q,e):null,x1=G?G.x1:e.x1,y1=G?G.y1:e.y1,x2=G?G.x2:e.x2,y2=G?G.y2:e.y2,L=Math.hypot(x2-x1,y2-y1);if(L<1)return null;
+  const d=[(x2-x1)/L,(y2-y1)/L],n=[-d[1],d[0]],zr=zRange(Q,e),c=racCore243(T),pj=ANL466_W.includes(e.apj466)?e.apj466:'a',u0=pj==='w'?0:pj==='e'?c[0]:pj==='i'?c[1]:(c[0]+c[1])/2,
+    U=G?z=>sw463U(G,u0,z).u:()=>u0,m=anl466Th(e,T,S.sl);
+  if(G&&G.vi>=0){const Lw=wlOf(G.T);if(!S.sl||!Lw||!Lw.some(l=>l.fn==='struct')||(Lw[G.vi]&&Lw[G.vi].fn==='struct'))m.th=Math.round(m.th+G.w((zr[0]+zr[1])/2)-G.th)}          // a tapered wall: at its middle height
+  return{kind:'wall',e,id:e.id,lv:e.level,pj,th:m.th,mat:m.mat,x1,y1,L,d,n,U,s0:0,s1:L,zr,zb:[zr[0],zr[0]],zt:[zr[1],zr[1]],ops:[]}}
+const anl466Pt=(p,s,z)=>{const u=p.U(z);return[p.x1+p.d[0]*s+p.n[0]*u,p.y1+p.d[1]*s+p.n[1]*u,z]};
+/* a floor's panel: its outline at height Z(x, y), its holes */
+function anl466Floor(Q,e,S){const T=typ(Q,e)||{thickness:150},zr=zRange(Q,e),th0=+T.thickness||150,c=racCore243(T),pj=ANL466_F.includes(e.apj466)?e.apj466:'a',zc=zr[1]-th0/2,
+    z0=pj==='tc'?zc+c[0]:pj==='cc'?zc+(c[0]+c[1])/2:pj==='bc'?zc+c[1]:pj==='c'?zc:pj==='b'?zr[0]:zr[1],SL=slabSlope(e),m=anl466Th(e,T,S.sl),pts=e.pts.map(p=>[+p[0],+p[1]]),holes=[];
+  for(const h of slabHoles(Q,e)){if(!Array.isArray(h)||h.length<3)continue;let cx=0,cy=0;for(const p of h){cx+=p[0];cy+=p[1]}if(inPoly(cx/h.length,cy/h.length,pts))holes.push(h.map(p=>[+p[0],+p[1]]))}
+  return{kind:'floor',e,id:e.id,lv:e.level,pj,th:m.th,mat:m.mat,pts,holes,z0,Z:(x,y)=>z0+(SL?SL.dz(x,y):0),ops:holes.length}}
+/* the area of a flat loop of points [x, y, z] (Newell) */
+const anl466Ar=L=>{let a=0,b=0,c=0;for(let i=0;i<L.length;i++){const p=L[i],q=L[(i+1)%L.length];a+=(p[1]-q[1])*(p[2]+q[2]);b+=(p[2]-q[2])*(p[0]+q[0]);c+=(p[0]-q[0])*(p[1]+q[1])}return Math.hypot(a,b,c)/2};
+const anl466Near=(F,x,y,tl)=>{if(inPoly(x,y,F.pts))return true;for(let i=0;i<F.pts.length;i++){const a=F.pts[i],b=F.pts[(i+1)%F.pts.length];if(segDist(x,y,a[0],a[1],b[0],b[1])<=tl)return true}return false};
+function anl466Build(Q){const S=anl466Set(Q),tol=S.tol,W=[],F=[],mem=[];
+  for(const e of Q.els){if(!anl466Ok(Q,e))continue;const p=e.cat==='wall'?anl466Wall(Q,e,S):anl466Floor(Q,e,S);if(p)(p.kind==='wall'?W:F).push(p)}
+  /* Auto-detect, along: an end of a wall panel goes to the panel of a wall it comes within the tolerance of (at a corner or a T), measured on the lines at the
+     higher of the two feet; worked out from the walls as drawn, so the order does not matter */
+  const mv=W.map(()=>[0,0]);
+  if(tol>0)W.forEach((a,i)=>{for(const en of [0,1]){let best=null;
+    for(const b of W){if(b===a||Math.min(a.zr[1],b.zr[1])-Math.max(a.zr[0],b.zr[0])<10)continue;const cr=a.d[0]*b.d[1]-a.d[1]*b.d[0];if(Math.abs(cr)<0.17)continue;
+      const z=Math.max(a.zr[0],b.zr[0]),E=anl466Pt(a,en?a.L:0,z),B=anl466Pt(b,0,z),wx=B[0]-E[0],wy=B[1]-E[1],tt=(wx*b.d[1]-wy*b.d[0])/cr,uu=(wx*a.d[1]-wy*a.d[0])/cr;
+      if(Math.abs(tt)<=tol&&uu>=-tol&&uu<=b.L+tol&&(!best||Math.abs(tt)<Math.abs(best)))best=tt}
+    if(best!=null&&Math.abs(best)>0.05)mv[i][en]=best}});
+  W.forEach((a,i)=>{a.s0+=mv[i][0];a.s1+=mv[i][1]});
+  /* …and up: a wall panel's foot and head go to the floor panel nearest to them, within the tolerance, under or over the middle of the wall */
+  if(tol>0)for(const a of W)for(const k of ['zb','zt']){const z=k==='zb'?a.zr[0]:a.zr[1],M=anl466Pt(a,(a.s0+a.s1)/2,z);let best=null,bd=tol+1e-6;
+    for(const f of F){if(!anl466Near(f,M[0],M[1],tol))continue;const dz=Math.abs(f.Z(M[0],M[1])-z);if(dz<bd){bd=dz;best=f}}
+    if(best&&bd>0.05)a[k]=[a.s0,a.s1].map(s=>{const q=anl466Pt(a,s,z);return best.Z(q[0],q[1])})}
+  /* openings: doors, windows and wall openings, cut down to the panel */
+  const WI=new Map(W.map(a=>[a.id,a]));
+  for(const o of Q.els){if(o.host==null||(o.cat!=='door'&&o.cat!=='window'&&o.cat!=='opening'))continue;const a=WI.get(o.host);if(!a)continue;const OT=typ(Q,o)||{},
+      wd=o.cat==='opening'?(+o.w||1000):(+o.w||+OT.width||900),ht=o.cat==='opening'?(+o.h||2100):(+o.h||+OT.height||2000),s=elev(Q,a.e.level)+(+o.sill||0),
+      s0=Math.max((+o.pos||0)-wd/2,a.s0),s1=Math.min((+o.pos||0)+wd/2,a.s1),z0=Math.max(s,...a.zb),z1=Math.min(s+ht,...a.zt);
+    if(s1-s0>1&&z1-z0>1)a.ops.push({id:o.id,s0,s1,z0,z1})}
+  const P1=W.concat(F);
+  for(const p of P1){if(p.kind==='wall'){p.loop=[anl466Pt(p,p.s0,p.zb[0]),anl466Pt(p,p.s1,p.zb[1]),anl466Pt(p,p.s1,p.zt[1]),anl466Pt(p,p.s0,p.zt[0])];
+      p.holeLoops=p.ops.map(o=>[anl466Pt(p,o.s0,o.z0),anl466Pt(p,o.s1,o.z0),anl466Pt(p,o.s1,o.z1),anl466Pt(p,o.s0,o.z1)]);p.ops=p.ops.length}
+    else{p.loop=p.pts.map(q=>[q[0],q[1],p.Z(q[0],q[1])]);p.holeLoops=p.holes.map(h=>h.map(q=>[q[0],q[1],p.Z(q[0],q[1])]))}
+    p.gross=anl466Ar(p.loop)/1e6;p.area=Math.max(0,p.gross-p.holeLoops.reduce((s,h)=>s+anl466Ar(h),0)/1e6)}
+  /* numbers: level by level, walls then floors */
+  const lo=p=>{const l=lvl(Q,p.lv);return l?l.elev:0};P1.sort((p,q)=>lo(p)-lo(q)||(p.kind===q.kind?0:p.kind==='wall'?-1:1)||p.id-q.id);P1.forEach((p,i)=>{p.no=i+1;p.lab='AP'+(i+1);p.con=[]});
+  /* what each panel meets (within 10 mm): walls whose panels touch or cross, a wall and a floor whose panel lies across the wall's height over or under it */
+  const mid=a=>(a.s0+a.s1)/2,zm=(a,k)=>(a[k][0]+a[k][1])/2,link=(p,q)=>{p.con.push(q.no);q.con.push(p.no)};
+  for(let i=0;i<P1.length;i++)for(let j=i+1;j<P1.length;j++){const p=P1[i],q=P1[j];
+    if(p.kind==='wall'&&q.kind==='wall'){if(Math.min(zm(p,'zt'),zm(q,'zt'))-Math.max(zm(p,'zb'),zm(q,'zb'))<10)continue;const z=Math.max(p.zr[0],q.zr[0]),A=[anl466Pt(p,p.s0,z),anl466Pt(p,p.s1,z)],B=[anl466Pt(q,q.s0,z),anl466Pt(q,q.s1,z)];
+      const dd=Math.min(segDist(A[0][0],A[0][1],B[0][0],B[0][1],B[1][0],B[1][1]),segDist(A[1][0],A[1][1],B[0][0],B[0][1],B[1][0],B[1][1]),segDist(B[0][0],B[0][1],A[0][0],A[0][1],A[1][0],A[1][1]),segDist(B[1][0],B[1][1],A[0][0],A[0][1],A[1][0],A[1][1]));
+      if(dd<=10)link(p,q)}
+    else if(p.kind!==q.kind){const a=p.kind==='wall'?p:q,f=a===p?q:p,M=anl466Pt(a,mid(a),f.z0);if(!anl466Near(f,M[0],M[1],10))continue;const z=f.Z(M[0],M[1]);if(z>=zm(a,'zb')-10&&z<=zm(a,'zt')+10)link(p,q)}}
+  for(const p of P1)p.con.sort((a,b)=>a-b);
+  /* the members (beams at their top, braces on their axis, columns up their axis) and the nodes: their ends and the corners of the panels */
+  for(const e of Q.els){if(e.gx)continue;
+    if(e.cat==='beam'&&isFinite(e.x1)){const z=beamZ(Q,e);mem.push({id:e.id,kind:e.use==='brace'?'brace':'beam',a:[e.x1,e.y1,z[0]],b:[e.x2,e.y2,z[1]]})}
+    else if(e.cat==='bsys'){const z=zRange(Q,e)[1];for(const q of bsysBeams(Q,e))mem.push({id:e.id,kind:'beam',a:[q.x1,q.y1,z],b:[q.x2,q.y2,z]})}
+    else if(e.cat==='column'&&isFinite(e.x)){const z=zRange(Q,e),L=e.slm?slLean(e,z[1]-z[0]):[0,0];mem.push({id:e.id,kind:'col',a:[e.x,e.y,z[0]],b:[e.x+L[0],e.y+L[1],z[1]]})}}
+  const N=new Map(),nd=q=>{const k=q.map(x=>Math.round(x/10)).join();if(!N.has(k))N.set(k,q)};for(const m of mem){nd(m.a);nd(m.b)}for(const p of P1)for(const q of p.loop)nd(q);
+  return{panels:P1,mem,nodes:[...N.values()],set:S}}
+/* the analytical model of the project as it stands (every wall where it stands, inside a plan being drawn too), kept until the model changes */
+function anl466(Q){Q=Q||P;const go=()=>{if(ANL466M&&ANL466M.P===Q&&ANL466M.v===VER)return ANL466M.R;const R=anl466Build(Q);ANL466M={P:Q,v:VER,R};return R};return typeof sw463Raw==='function'&&Q===P?sw463Raw(go):go()}
+const anl466M2=x=>(Math.round(x*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const anl466Host=p=>{const T=typ(P,p.e)||{};return t(p.kind==='wall'?'anl466_kw':'anl466_kf')+': '+(T.name||'')+(p.e.mark?' ('+p.e.mark+')':'')};
+const anl466Pj=p=>t((p.kind==='wall'?'apw466_':'apf466_')+p.pj);
+/* in a plan, with the analytical model on: wall panels as a line where they stand at the cut, with their ends, floor panels as an outline over a light fill */
+XPL1.push((ctx,g,v,T,col,o,of)=>{if(!o.screen||!ui.anl||v.kind!=='plan'||v.draft)return;const R=anl466(P),sc=v.scale||100,ids=new Set();for(const c of ['wall','floor'])for(const [e] of of(c))ids.add(e.id);
+  const zc=elev(P,v.level)+(v.cut||1200);let nw=0,nf=0;ctx.save();
+  for(const p of R.panels){if(!ids.has(p.id)||p.lv!==v.level||p.kind!=='floor')continue;ctx.fillStyle='rgba(36,163,90,0.10)';ctx.strokeStyle=ANL466_C.floor;ctx.lineWidth=1.5;g.dash([3,1.5]);
+    ctx.beginPath();for(const L of [p.pts,...p.holes]){L.forEach((q,i)=>i?ctx.lineTo(g.X(q[0]),g.Y(q[1])):ctx.moveTo(g.X(q[0]),g.Y(q[1])));ctx.closePath()}ctx.fill('evenodd');ctx.stroke();g.dash(null);
+    let cx=0,cy=0;for(const q of p.pts){cx+=q[0];cy+=q[1]}g.text(p.lab,[cx/p.pts.length,cy/p.pts.length+3*sc],2.4,{color:ANL466_C.floor,halo:true,mono:true});nf++}
+  for(const p of R.panels){if(!ids.has(p.id)||p.lv!==v.level||p.kind!=='wall')continue;const z=clamp(zc,p.zr[0],p.zr[1]),A=anl466Pt(p,p.s0,z),B=anl466Pt(p,p.s1,z);
+    ctx.strokeStyle=ANL466_C.wall;ctx.lineWidth=2.4;g.dash(null);g.seg([A[0],A[1]],[B[0],B[1]]);ctx.fillStyle=ANL466_C.wall;for(const q of [A,B]){ctx.beginPath();ctx.arc(g.X(q[0]),g.Y(q[1]),3.2,0,7);ctx.fill()}
+    g.text(p.lab,[(A[0]+B[0])/2+p.n[0]*3*sc,(A[1]+B[1])/2+p.n[1]*3*sc],2.2,{color:ANL466_C.wall,halo:true,mono:true});nw++}
+  ctx.restore();ANL466D.plan={w:nw,f:nf}});
+/* in 3D, with the analytical model on: the panels (a light fill, their openings left out), the members and the nodes, over the model */
+function anl466Draw3(pn,ctx,v){const R=anl466(P),pr=q=>projGL(pn,v,[q[0],q[2],q[1]]);let np=0,nm=0,nn=0;
+  const hid=c=>{try{return catHid(v,c)}catch(x){return false}},loop=L=>{const S=L.map(pr);if(S.some(s=>!s))return false;ctx.moveTo(S[0][0],S[0][1]);for(let i=1;i<S.length;i++)ctx.lineTo(S[i][0],S[i][1]);ctx.closePath();return true};
+  for(const p of R.panels){if(hid(p.kind))continue;ctx.beginPath();if(!loop(p.loop))continue;for(const h of p.holeLoops)loop(h);const c=ANL466_C[p.kind];
+    ctx.globalAlpha=0.2;ctx.fillStyle=c;ctx.fill('evenodd');ctx.globalAlpha=1;ctx.strokeStyle=c;ctx.lineWidth=1.6;ctx.stroke();np++}
+  ctx.strokeStyle=ANL466_C.mem;ctx.lineWidth=2.2;for(const m of R.mem){const a=pr(m.a),b=pr(m.b);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();nm++}
+  ctx.fillStyle=ANL466_C.node;for(const q of R.nodes){const s=pr(q);if(!s)continue;ctx.beginPath();ctx.arc(s[0],s[1],2.8,0,7);ctx.fill();nn++}
+  ANL466D.d3={p:np,m:nm,n:nn}}
+{const f0=drawOverlay;drawOverlay=function(pn,ctx,v,nav){const r=f0.apply(this,arguments);if(v&&v.kind==='3d'&&ui.anl){ctx.save();try{anl466Draw3(pn,ctx,v)}finally{ctx.restore()}}return r}}
+/* Properties of structural walls and floors: Enable Analytical Model, the projection, and the panel */
+function anl466Rows(els){if(!els.length||!els.every(x=>x.str&&x.cat===els[0].cat&&(x.cat==='wall'||x.cat==='floor')))return'';if(els[0].cat==='wall'&&els.some(x=>x.arc||(typ(P,x)||{}).kind==='curtain'))return'';
+  const on=els.every(x=>x.anl466!==0),wl=els[0].cat==='wall',K=wl?ANL466_W:ANL466_F,v0=x=>K.includes(x.apj466)?x.apj466:'a',pv=els.every(x=>v0(x)===v0(els[0]))?v0(els[0]):'';
+  let h=PR.grp('g_anl466')+PR.chk('anl466','p_anl466',on);if(!on)return h;h+=PR.sel('apj466',wl?'p_apjw466':'p_apjf466',pv,K.map(k=>[k,t((wl?'apw466_':'apf466_')+k)]));
+  if(els.length===1){const p=anl466(P).panels.find(q=>q.id===els[0].id);if(p)h+=PR.ro('p_anlp466',t('anl466_pn',p.lab,p.th.toLocaleString(),anl466M2(p.area)))}return h}
+{const f0=strRows;strRows=els=>f0(els)+anl466Rows(els)}
+XF.push((cat,o,key,raw)=>{if((cat!=='wall'&&cat!=='floor')||(key!=='anl466'&&key!=='apj466'))return false;
+  if(key==='anl466'){if(raw&&raw!=='false'&&raw!=='0')delete o.anl466;else o.anl466=0;return true}
+  if((cat==='wall'?ANL466_W:ANL466_F).includes(raw)&&raw!=='a')o.apj466=raw;else delete o.apj466;return true});
+XC.push(()=>{for(const e of P.els){if(e.anl466!==undefined&&(e.anl466!==0||(e.cat!=='wall'&&e.cat!=='floor')))delete e.anl466;
+    if(e.apj466!==undefined&&(e.apj466==='a'||!(e.cat==='wall'?ANL466_W:e.cat==='floor'?ANL466_F:[]).includes(e.apj466)))delete e.apj466}
+  if(P.anl466!==undefined){const s=anl466Set(P);if(s.tol===300&&s.sl)delete P.anl466;else P.anl466={tol:s.tol,sl:s.sl}}});
+/* Analytical Panels: every panel, its host, projection, thickness, material, area net of its openings, and the panels it meets; the Auto-detect tolerance and
+   whether the thickness is that of the structural layers; CSV */
+function anl466Csv(){const R=anl466(P),q=v=>'"'+String(v).replace(/"/g,'""')+'"',by=new Map(R.panels.map(p=>[p.no,p]));
+  return[['anl466_no','anl466_host','lt_lv','anl466_pj','anl466_th','anl466_mat','anl466_area','anl466_gross','anl466_ops','anl466_con'].map(k=>q(t(k))).join(',')]
+    .concat(R.panels.map(p=>{const l=lvl(P,p.lv);return[p.lab,anl466Host(p),l?l.name:'',anl466Pj(p),p.th,t('wlm_'+p.mat),p.area.toFixed(3),p.gross.toFixed(3),p.ops,p.con.map(i=>by.get(i).lab).join(' ')].map(q).join(',')})).join('\r\n')}
+function anl466Dlg(){const R=anl466(P),S=anl466Set(P),by=new Map(R.panels.map(p=>[p.no,p])),free=R.panels.filter(p=>!p.con.length);
+  const rows=R.panels.map(p=>{const l=lvl(P,p.lv);return`<tr data-ap="${p.id}" style="cursor:pointer"><td>${p.lab}</td><td>${esc(anl466Host(p))}</td><td>${esc(l?l.name:'')}</td><td>${esc(anl466Pj(p))}</td><td class="n">${p.th.toLocaleString()}</td><td>${esc(t('wlm_'+p.mat))}</td><td class="n">${anl466M2(p.area)}</td><td class="n">${p.ops}</td><td>${p.con.length?p.con.map(i=>by.get(i).lab).join(', '):`<span class="warn">${t('anl466_free')}</span>`}</td></tr>`}).join('');
+  const body=`<p class="note">${t('anl466_note')}</p><div class="fr"><label for="anlTol">${t('anl466_tol')}</label><span class="un" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input id="anlTol" style="max-width:110px" type="number" step="50" min="0" max="2000" value="${S.tol}"> ${t('anl466_mm')}</span></div>`
+    +`<div class="fr"><label for="anlSl">${t('anl466_sl')}</label><span><input id="anlSl" type="checkbox"${S.sl?' checked':''}></span></div>`
+    +(R.panels.length?`<div class="tblw"><table class="tbl" id="anlTbl"><thead><tr>${['anl466_no','anl466_host','lt_lv','anl466_pj','anl466_th','anl466_mat','anl466_area','anl466_ops','anl466_con'].map(k=>`<th>${t(k)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`
+      +`<p class="note" id="anlSum">${t('anl466_sum',R.panels.length,R.panels.filter(p=>p.kind==='wall').length,R.panels.filter(p=>p.kind==='floor').length,R.mem.length,R.nodes.length,anl466M2(R.panels.reduce((s,p)=>s+p.area,0)))}</p>`
+      +(free.length?`<p class="note warn" id="anlWarn">${t('anl466_warn',free.map(p=>p.lab).join(', '))}</p>`:''):`<p class="note warn">${t('anl466_none')}</p>`);
+  openDlg(t('a_anlp'),body,`<button class="btn" data-anlcsv="1"${R.panels.length?'':' disabled'}>${t('anl466_csv')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,{
+    change(ev){const id=ev.target.id;if(id!=='anlTol'&&id!=='anlSl')return;const s=anl466Set(P);if(id==='anlTol'){const x=+ev.target.value;if(ev.target.value===''||!isFinite(x)||x<0){anl466Dlg();return}s.tol=Math.min(2000,Math.round(x))}else s.sl=ev.target.checked?1:0;
+      edit(()=>{P.anl466=s});redraw();anl466Dlg()},
+    click(ev){if(ev.target.closest('[data-anlcsv]')){saveFile(fname('','-analytical-panels.csv'),'﻿'+anl466Csv(),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))});return}const tr=ev.target.closest('tr[data-ap]');if(tr)showEls([+tr.dataset.ap])}},'wide')}
+XA.anlp=anl466Dlg;
+for(const A of RIBBON){if(A.id==='struct')for(const p of A.panels||[])if(p.t==='p_anl'&&!p.b.includes('@anlp')){const i=p.b.indexOf('@anl');p.b.splice(i<0?p.b.length:i+1,0,'@anlp')}
+  if(A.id==='analyze'&&A.panels&&!A.panels.some(p=>p.b&&p.b.includes('@anlp')))A.panels.push({t:'p_anl',b:['@anl','@anlp']})}          // at the end of the tab, so nothing before it moves
+Object.assign(BTN,{'@anlp':['floor','']});
+Object.assign(STR,{
+  a_anlp:['แผ่นวิเคราะห์ (Analytical Panels)','Analytical Panels'],
+  anl_on:['แสดงแบบจำลองวิเคราะห์: แผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา (แปลนและ 3 มิติ)','Analytical model shown: panels of structural walls and floors, beam, brace and column axes, nodes and column loads (plans and 3D)'],
+  g_anl466:['แบบจำลองวิเคราะห์ (Analytical Model)','Analytical Model'],p_anl466:['สร้างแผ่นวิเคราะห์ (Enable Analytical Model)','Enable Analytical Model'],
+  p_apjw466:['ตำแหน่งแผ่นตามแนวนอน (Horizontal Projection)','Horizontal Projection'],p_apjf466:['ตำแหน่งแผ่นตามแนวดิ่ง (Vertical Projection)','Vertical Projection'],p_anlp466:['แผ่นวิเคราะห์','Analytical Panel'],
+  apw466_a:['อัตโนมัติ (กลางชั้นโครงสร้าง)','Auto-detect (Center of Core)'],apw466_w:['แนวกลางผนัง','Wall Centerline'],apw466_e:['ผิวนอกของชั้นโครงสร้าง','Core Face: Exterior'],apw466_i:['ผิวในของชั้นโครงสร้าง','Core Face: Interior'],
+  apf466_a:['อัตโนมัติ (ผิวบนของพื้น)','Auto-detect (Top of Slab)'],apf466_tc:['ผิวบนของชั้นโครงสร้าง','Top of Core'],apf466_cc:['กลางชั้นโครงสร้าง','Center of Core'],apf466_bc:['ผิวล่างของชั้นโครงสร้าง','Bottom of Core'],
+  apf466_c:['กลางความหนาพื้น','Center of Slab'],apf466_b:['ผิวล่างของพื้น','Bottom of Slab'],
+  anl466_pn:['{0} · หนา {1} มม. · {2} ตร.ม.','{0} · {1} mm thick · {2} m²'],anl466_kw:['ผนัง','Wall'],anl466_kf:['พื้น','Floor'],anl466_mm:['มม.','mm'],
+  anl466_note:['ผนังและพื้นที่เป็นโครงสร้างแต่ละชิ้นมีแผ่นวิเคราะห์ของตัวเอง (ปิดได้ที่ สร้างแผ่นวิเคราะห์ ในแผงคุณสมบัติ) แผ่นของผนังอยู่กลางชั้นโครงสร้าง แผ่นของพื้นอยู่ที่ผิวบน ปลายและขอบของแผ่นที่ห่างกันไม่เกินระยะปรับอัตโนมัติจะถูกยืดให้ชนกัน ประตู หน้าต่าง ช่องเปิด ช่องบันได และช่องท่อเป็นช่องเปิดของแผ่น คลิกแถวเพื่อเลือกชิ้นงาน',
+    'Each structural wall and floor carries its own analytical panel (clear Enable Analytical Model in Properties to leave one out). A wall\'s panel lies at the centre of its core, a floor\'s at its top; ends and edges of panels closer than the Auto-detect tolerance are moved to meet. Doors, windows, openings, stair wells and shafts become openings in the panels. Click a row to select the element'],
+  anl466_tol:['ระยะปรับอัตโนมัติ (Auto-detect)','Auto-detect tolerance'],anl466_sl:['ใช้ความหนาเฉพาะชั้นโครงสร้าง','Use the structural layer thickness'],
+  anl466_no:['แผ่น','Panel'],anl466_host:['ชิ้นงาน','Element'],anl466_pj:['ตำแหน่ง','Projection'],anl466_th:['หนา (มม.)','Thickness (mm)'],anl466_mat:['วัสดุ','Material'],
+  anl466_area:['พื้นที่สุทธิ (ตร.ม.)','Net area (m²)'],anl466_gross:['พื้นที่รวม (ตร.ม.)','Gross area (m²)'],anl466_ops:['ช่องเปิด','Openings'],anl466_con:['ต่อกับ','Meets'],
+  anl466_free:['ไม่ต่อกับแผ่นใด','meets no panel'],anl466_csv:['ส่งออก CSV','Export CSV'],
+  anl466_sum:['แผ่นวิเคราะห์ {0} แผ่น (ผนัง {1} พื้น {2}) ชิ้นส่วนเส้น {3} ชิ้น จุดต่อ {4} จุด พื้นที่สุทธิรวม {5} ตร.ม.','{0} analytical panels ({1} walls, {2} floors), {3} members, {4} nodes, {5} m² net in all'],
+  anl466_warn:['แผ่นที่ไม่ต่อกับแผ่นใดเลย: {0} ตรวจตำแหน่งหรือเพิ่มระยะปรับอัตโนมัติ','Panels that meet no other panel: {0}. Check where they are or raise the Auto-detect tolerance'],
+  anl466_none:['ยังไม่มีผนังหรือพื้นที่เป็นโครงสร้าง (ติ๊ก เป็นโครงสร้าง ในแผงคุณสมบัติ หรือวาดจากแท็บโครงสร้าง)','No structural walls or floors yet (tick Structural in Properties, or draw them from the Structure tab)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -53373,7 +53521,8 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[a_materials]] — แท็บ [[tab_manage]]: สร้างวัสดุของโครงการเอง (ชื่อ ลักษณะผิว สี) คัดลอก หรือลบ · เลือกใช้ที่วัสดุผิวของชนิด หรือเลือกในเครื่องมือ Paint · แก้วัสดุแล้วทุกชนิดที่ใช้เปลี่ยนตาม · [[mt_sp]] วาดบนพื้นในแปลน (ระดับรายละเอียดกลางขึ้นไป) · [[mt_cp]] วาดในผนังที่ถูกตัด · [[mt_k]] และ [[mt_rho]] ใช้คิด [[p_uval]] ของผนังและน้ำหนักใน [[a_mtake]]
 [[a_mtake]] — แท็บ [[tab_manage]]: ตารางพื้นที่ ปริมาตร น้ำหนัก แยกตามวัสดุและหมวด ผนังแยกตามชั้น ส่งออก CSV ได้
-[[a_anl]] — แท็บ [[tab_struct]]: แสดงเส้นแกนคานและค้ำยัน จุดต่อเสา และน้ำหนักลงเสาบนแปลน · กดอีกครั้งเพื่อซ่อน
+[[a_anl]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): แสดงแผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา ทั้งในแปลนและ 3 มิติ · กดอีกครั้งเพื่อซ่อน
+[[a_anlp]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตารางแผ่นวิเคราะห์ทุกแผ่น หนา วัสดุ พื้นที่สุทธิ ช่องเปิด และแผ่นที่ต่อกัน · ตั้ง [[anl466_tol]] และ [[anl466_sl]] · คลิกแถวเพื่อเลือกชิ้นงาน · [[anl466_csv]] · ในแผงคุณสมบัติของผนังหรือพื้นโครงสร้าง ล้าง [[p_anl466]] เพื่อไม่ให้มีแผ่น หรือเลือก [[p_apjw466]] / [[p_apjf466]]
 [[a_ldtake]] — แท็บ [[tab_struct]]: น้ำหนักลงเสาแต่ละต้นแบบพื้นที่รับน้ำหนัก (D, L, D+L, 1.4D+1.7L) และขนาดฐานรากจาก[[lt_q]] · คลิกแถวเพื่อเลือกเสา · ตั้ง[[p_ldD]]และ[[p_ldL]]ที่คุณสมบัติของพื้น
 [[t_sload]] — แท็บ [[tab_analyze]] (และแท็บ [[tab_struct]]): เลือก [[ld_p]] [[ld_l]] [[ld_a]] [[ld_lh]] หรือ [[ld_ah]] ในแถบตัวเลือก พร้อม[[o_ldcase]]และค่า Fz (ติดลบคือกดลง แบบ Revit) แล้วคลิกจุด แนว หรือมุมของพื้นที่ในแปลน หรือคลิกคาน ผนัง หรือพื้นที่รับน้ำหนัก · แบบที่ยึดกับคาน ผนัง หรือพื้นไปกับมันเมื่อย้าย หมุน กลับด้าน คัดลอก ลบ · คุณสมบัติมี Fx Fy Fz (แบบเส้นมีปลายสองค่าเมื่อเอาติ๊ก [[p_lduni]] ออก แบบจุดมี Mx My Mz) · แปลนแสดงสัญลักษณ์สีตามลักษณะของกรณีน้ำหนัก 3 มิติแสดงลูกศร · [[a_ldtake]] ส่งน้ำหนักเหล่านี้ลงเสาตามกรณีน้ำหนักและแสดงชุดที่วิกฤต · ตารางของหมวด [[cat_sload]]
 [[a_stset]] — แท็บ [[tab_manage]] (และแท็บ [[tab_struct]]): [[a_lcases]] (ชื่อ หมายเลข ลักษณะ ตั้งต้นแปดกรณีแบบ Revit) และ [[a_lcombs]] (สูตร เช่น 1.4 DL1 + 1.7 LL1 แบบกำลังประลัยหรือใช้งาน ตั้งต้นสี่ชุดตาม ACI 318-99 แบบที่ใช้ในไทย)
@@ -53776,6 +53925,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.463 · ผนังเอียง (Slanted Walls แบบ Revit): Properties ของผนังมีหน้าตัดผนัง ตั้งตรงหรือเอียง และมุมจากแนวดิ่ง (บวกเอียงออกจากด้านนอก) ผนังหมุนรอบเส้นตำแหน่งที่ฐาน ฐานกับยอดยังได้ระดับ ความหนาวัดตั้งฉากกับผิว ประตู หน้าต่าง ช่องเปิด และของที่ติดผนังเอียงตาม แปลนตัดผนังที่ระนาบตัดพร้อมเส้นขอบฐานที่มองเห็นใต้ระนาบตัด ห้องคิดขอบเขตที่ความสูงคำนวณ พื้นที่และปริมาตรตามผิวเอียง เครื่องมือผนังวาดผนังเอียงได้เลย
 - V1.464 · ผนังสอบ (Tapered Walls แบบ Revit): หน้าตัดผนังมีแบบสอบเพิ่ม ผิวนอกและผิวในเอียงคนละมุม (มุมด้านนอก มุมด้านใน บวกเอียงยอดเข้าหากลางผนัง) ใน Edit Structure ติ๊กชั้นที่ปรับความหนา (Variable) ได้หนึ่งชั้น ชั้นนั้นรับความหนาที่เปลี่ยนไป ชั้นอื่นหนาเท่าเดิมและเอียงไปกับผิวของมัน ใต้ตารางชั้นตั้งวัดความหนาที่ล่างหรือบน และมุมตั้งต้นของชนิดได้ ผนังแต่ละผนังตั้งมุมของตัวเองทับได้ Properties บอกความหนาล่างและบน มุมที่ทำให้ชั้นปรับความหนาบางกว่าศูนย์จะไม่รับ ในแปลนตัดที่ระนาบตัดด้วยความหนาที่ระดับนั้น 3D รูปด้าน รูปตัด ห้อง (ที่ความสูงคำนวณ) และปริมาณ (พื้นที่เฉลี่ยของสองผิว ปริมาตรตามความหนาเฉลี่ย) ตามผนังสอบ
 - V1.465 · ประตูหน้าต่างในผนังเอียง (Orientation แบบ Revit): Properties ของประตูหรือหน้าต่างในผนังเอียงมีทิศของชิ้นงาน ตั้งตรง (แบบที่ Revit วางให้) ยืนตรงที่กลางความสูงของมันในผนัง (ประตูที่ฐาน) ช่องผนังทะลุแนวราบ หรือเอียงตามผนัง หมุนไปกับผนังรอบธรณีที่กลางผนัง ตั้งฉากกับผิว และธรณีกับทับหลังของช่องผนังเอียงตาม ในผนังสอบชิ้นงานยืนตรงเสมอ มีในฟิลด์ตารางด้วย
+- V1.466 · แผ่นวิเคราะห์โครงสร้าง (Analytical Panels แบบ Revit): ผนังและพื้นที่ติ๊ก เป็นโครงสร้าง มีแผ่นวิเคราะห์ของตัวเองโดยอัตโนมัติ แผ่นของผนังอยู่กลางชั้นโครงสร้าง (เลือกแนวกลางผนัง หรือผิวนอก/ผิวในของชั้นโครงสร้างได้) และเอียงตามผนังเอียงหรือผนังสอบ แผ่นของพื้นอยู่ที่ผิวบน (เลือกผิวบน กลาง หรือผิวล่างของชั้นโครงสร้างหรือของพื้นได้) และลาดตามพื้นลาด ปลายแผ่นผนังและขอบบนล่างที่ห่างกันไม่เกินระยะปรับอัตโนมัติ (300 มม.) ถูกยืดให้ชนแผ่นข้างเคียง ประตู หน้าต่าง ช่องเปิด ช่องบันได และช่องท่อเป็นช่องเปิดของแผ่น ปุ่ม แบบจำลองวิเคราะห์ แสดงแผ่น เส้นแกนคาน ค้ำยัน เสา และจุดต่อ ทั้งในแปลนและ 3 มิติ ปุ่ม แผ่นวิเคราะห์ (แท็บโครงสร้างและแท็บวิเคราะห์) เปิดตารางแผ่นทั้งหมด หนา วัสดุ พื้นที่สุทธิ ช่องเปิด แผ่นที่ต่อกัน เตือนแผ่นที่ไม่ต่อกับแผ่นใด และส่งออก CSV แผงคุณสมบัติมี สร้างแผ่นวิเคราะห์ และตำแหน่งแผ่น
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -53983,7 +54133,8 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 
 [[a_materials]] — on the [[tab_manage]] tab: make the project’s own materials (name, look, colour), duplicate or delete them · choose one as the material of a type, or in the Paint tool · change a material and every type that uses it follows · [[mt_sp]] is drawn on floors in plans (Medium detail and finer) · [[mt_cp]] in walls that are cut · [[mt_k]] and [[mt_rho]] give a wall's [[p_uval]] and the weights in [[a_mtake]]
 [[a_mtake]] — on the [[tab_manage]] tab: area, volume and weight by material and category, walls by layer, out to CSV
-[[a_anl]] — on the [[tab_struct]] tab: shows beam and brace axes, column nodes and column loads in plans · press again to hide
+[[a_anl]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): shows the analytical panels of structural walls and floors, beam, brace and column axes, nodes and column loads, in plans and in 3D · press again to hide
+[[a_anlp]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): every analytical panel with its thickness, material, net area, openings and the panels it meets · set the [[anl466_tol]] and [[anl466_sl]] · click a row to select the element · [[anl466_csv]] · in the Properties of a structural wall or floor clear [[p_anl466]] to leave its panel out, or choose its [[p_apjw466]] / [[p_apjf466]]
 [[a_ldtake]] — on the [[tab_struct]] tab: each column's load by tributary area (D, L, D+L, 1.4D+1.7L) and the footing size from the [[lt_q]] · click a row to select the column · set the [[p_ldD]] and [[p_ldL]] in a floor's properties
 [[t_sload]] — on the [[tab_analyze]] tab (and the [[tab_struct]] tab): choose [[ld_p]], [[ld_l]], [[ld_a]], [[ld_lh]] or [[ld_ah]] on the options bar with the [[o_ldcase]] and Fz (negative pushes down, as in Revit), then click the point, the line or the corners of the area in a plan, or click the beam, wall or slab that carries it · a hosted load goes with its beam, wall or slab when it is moved, rotated, mirrored, copied or deleted · Properties hold Fx Fy Fz (a line load takes two ends when [[p_lduni]] is cleared; a point load also Mx My Mz) · plans show the symbols in the colour of the case's nature, 3D views arrows · the [[a_ldtake]] carries these loads down the columns by load case and shows the governing combination · schedules of the [[cat_sload]] category
 [[a_stset]] — on the [[tab_manage]] tab (and the [[tab_struct]] tab): [[a_lcases]] (name, number, nature; Revit's eight to start with) and [[a_lcombs]] (formulas such as 1.4 DL1 + 1.7 LL1, Ultimate or Serviceability; four to start with, ACI 318-99 as used in Thailand)
@@ -54386,6 +54537,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.463 · Slanted Walls (as in Revit): a wall's Properties have Cross-Section, Vertical or Slanted, and Angle From Vertical (positive leans away from the exterior); the wall turns about its location line at the base, its base and top stay level and its thickness stays square to its faces; doors, windows, openings and what it hosts lean with it; plans cut it at the cut plane and show the edge of its base below in thin line; rooms are bounded at the computation height; area and volume follow the slanted faces; the Wall tool draws slanted walls too
 - V1.464 · Tapered Walls (as in Revit): Cross-Section has Tapered too, its exterior and interior faces leaning by their own Exterior Angle and Interior Angle (positive leans that face's top in towards the middle of the wall); Edit Structure ticks one layer Variable, which takes up the change of width while the other layers keep theirs and lean with their face; under the layers the type sets Width Measured At (Bottom or Top) and its default angles, and a wall may set its own; Properties show the width at the bottom and the top; angles that would make the variable layer thinner than nothing are refused; plans cut it at the cut plane at the width there; 3D, elevations, sections, rooms (at the computation height) and quantities (the mean of the two faces, the volume at the mean width) follow it
 - V1.465 · Doors and windows in slanted walls (Orientation, as in Revit): a door's or window's Properties in a slanted wall have Orientation, Vertical (as Revit places them) standing upright where the wall is at its middle height (a door at its foot) with the opening going through level, or Slanted, turned with the wall about its sill on the wall's middle, square to the faces, with the sill and head of the opening turning too; in a tapered wall inserts stand upright; in schedule fields too
+- V1.466 · Analytical Panels (as in Revit): every wall and floor marked Structural carries its own analytical panel. A wall's panel lies at the centre of its core (or its centre line, or the exterior or interior face of its core) and leans with a slanted or tapered wall; a floor's lies at its top (or the top, centre or bottom of its core or of the slab) and follows its slope. Panel ends, feet and heads closer than the Auto-detect tolerance (300 mm) are moved to meet the panels next to them. Doors, windows, openings, stair wells and shafts become openings in the panels. The Analytical Model button shows the panels, beam, brace and column axes and the nodes in plans and in 3D; Analytical Panels (Structure and Analyze tabs) lists every panel with its thickness, material, net area, openings and the panels it meets, warns of panels that meet none and exports CSV. Properties have Enable Analytical Model and the projection
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -56742,6 +56894,25 @@ window.PenumBIM.r465={
   raw:id=>{const e=IDX.get(id);return e?{or:e.or465,host:e.host,pos:e.pos,sill:e.sill}:null},
   win:(wid,pos,sill)=>{let id;edit(()=>{const d=defs('window'),o={id:P.seq++,cat:'window',type:d.type,host:wid,pos,sill:sill==null?900:sill,level:IDX.get(wid).level};P.els.push(o);id=o.id});return id},
   wt:id=>{const e=IDX.get(id),T=e&&typ(P,e);return T?{w:T.width,h:T.height}:null},
+  str:(k,...a)=>t(k,...a)};
+/* V1.466 test API: analytical panels */
+window.PenumBIM.r466={
+  panels:()=>{const r=x=>Math.round(x*10)/10;return anl466(P).panels.map(p=>({no:p.no,lab:p.lab,id:p.id,kind:p.kind,pj:p.pj,th:p.th,mat:p.mat,area:Math.round(p.area*1000)/1000,gross:Math.round(p.gross*1000)/1000,ops:p.ops,con:p.con.slice(),
+    loop:p.loop.map(q=>q.map(r)),holes:p.holeLoops.map(h=>h.map(q=>q.map(r))),s:p.kind==='wall'?[r(p.s0),r(p.s1)]:null,zb:p.kind==='wall'?p.zb.map(r):null,zt:p.kind==='wall'?p.zt.map(r):null,z0:p.kind==='floor'?r(p.z0):null}))},
+  counts:()=>{const R=anl466(P);return{p:R.panels.length,m:R.mem.length,n:R.nodes.length,mem:R.mem.map(m=>({id:m.id,kind:m.kind,a:m.a.map(Math.round),b:m.b.map(Math.round)}))}},
+  drawn:()=>JSON.parse(JSON.stringify(ANL466D)),
+  clear:()=>{ANL466D.plan=null;ANL466D.d3=null},
+  on:()=>!!ui.anl,
+  set:()=>P.anl466===undefined?null:JSON.parse(JSON.stringify(P.anl466)),
+  raw:id=>{const e=IDX.get(id);return e?{anl:e.anl466,pj:e.apj466,str:e.str}:null},
+  floor:(lid,pts,o)=>{let id;edit(()=>{const d=defs('floor'),e=Object.assign({id:P.seq++,cat:'floor',type:d.type,level:lid,pts:pts.map(p=>p.slice()),off:0},o||{});P.els.push(e);id=e.id});return id},
+  col:(lid,x,y,o)=>{let id;edit(()=>{const d=defs('column'),e=Object.assign({id:P.seq++,cat:'column',type:d.type,level:lid,x,y,height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});return id},
+  beam:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('beam'),e=Object.assign({id:P.seq++,cat:'beam',type:d.type,level:lid,x1,y1,x2,y2},o||{});P.els.push(e);id=e.id});return id},
+  rows:()=>{const a=document.querySelector('#props [data-p="anl466"]'),b=document.querySelector('#props [data-p="apj466"]'),r=[...document.querySelectorAll('#props .pr')].find(x=>(x.querySelector('label')||{}).textContent===t('p_anlp466'));
+    return{anl:a?a.checked:null,pj:b?b.value:null,opts:b?[...b.options].map(x=>x.value):null,ro:r?r.querySelector('.ro').textContent:null}},
+  csv:()=>anl466Csv(),
+  wtype:(lays,name)=>{let id;edit(()=>{const b=P.types.wall[0],T=JSON.parse(JSON.stringify(b));T.id=P.seq++;T.name=name||'Layered';T.lays=lays;T.thickness=lays.reduce((a,l)=>a+l.t,0);P.types.wall.push(T);id=T.id});return id},
+  ftype:(lays,name)=>{let id;edit(()=>{const b=P.types.floor[0],T=JSON.parse(JSON.stringify(b));T.id=P.seq++;T.name=name||'Layered slab';T.lays=lays;T.thickness=lays.reduce((a,l)=>a+l.t,0);P.types.floor.push(T);id=T.id});return id},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
