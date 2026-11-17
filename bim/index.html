@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=465,V1_NAME='V1.455';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=466,V1_NAME='V1.456';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -50657,6 +50657,271 @@ XC.push(()=>{if(P.ce455===undefined)return;const d=ce455(P);if(d)P.ce455=d;else 
     o['bpf448_f_shd'+q]=['กันแดดหน้าต่างทิศ'+th,'Window Shades – '+en];o['bpf448_f_gls'+q]=['ชนิดกระจกทิศ'+th,'Window Glass – '+en]}
   Object.assign(STR,o,{ce455_h:['ตามทิศ (Insight)','By orientation (Insight)'],ce455_dir:['ทิศ','Orientation'],ce455_g:['ชนิดกระจก','Glass'],ce455_gp:['กระจก %','Glazing %'],ce455_sd:['กันแดด มม.','Shade mm'],ce455_proj:['ตามโครงการ','As the project'],
     ce455_note:['ผนังนอกของมวลอยู่ในทิศที่หันออก (ทิศเหนือจริง ±45°) ช่องว่างใช้ค่าของโครงการ ค่าที่ตั้งเฉพาะผิวของมวลยังมาก่อน','An outside wall of a mass takes the quarter it faces (true north, ±45°); blank uses the project\'s value; a mass face\'s own settings still come first']})}
+/* ===== V1.456 Generative Design (Revit: Manage › Generative Design: Create Study, Explore Outcomes).  A study is a kind (Grid Layout here; other kinds
+   join GD456_K), its constant inputs, its variable inputs each with a range that may vary, its outputs with goals (Maximize, Minimize, Ignore) and a method:
+   Randomize (n solutions from a seed), Optimize (a genetic search, population × generations, the next population kept by non-dominated sorting and
+   crowding distance as NSGA-II does), Cross Product (every combination of steps) or Like This (near an outcome).  P.gd456 = {st:[{id, k, nm, src, cin,
+   vin:{key:{v,lo,hi,on}}, goal:{key:'max'|'min'|''}, m, ms:{n,seed,pop,gen,steps,spread}, base, out:[{i,o,g,pf}], ms0, at}]}: the studies stay in the
+   project with their outcomes (Revit keeps them in a folder beside the model); an outcome makes its elements in the model under one Ctrl+Z. ===== */
+const GD456_M=['rand','opt','cross','like'],GD456_MAX=600,GD456_MS={n:[1,300,50],seed:[0,99999,1],pop:[4,40,20],gen:[1,15,10],steps:[2,8,4],spread:[1,50,10]};
+/* a seeded random stream (mulberry32) with a normal draw */
+const gdRnd456=seed=>{let a=((Math.round(+seed||0)>>>0)^0x9e3779b9)>>>0;const r=()=>{a=(a+0x6D2B79F5)>>>0;let q=a;q=Math.imul(q^q>>>15,q|1);q^=q+Math.imul(q^q>>>7,q|61);return((q^q>>>14)>>>0)/4294967296};
+  r.n=()=>{let u=0;while(u===0)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*r())};return r};
+const gdSeg456=(x,y,a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let q=L?((x-a[0])*dx+(y-a[1])*dy)/L:0;q=q<0?0:q>1?1:q;return Math.hypot(x-a[0]-q*dx,y-a[1]-q*dy)};
+const gdEdge456=(x,y,loops)=>{let d=Infinity;for(const L of loops)for(let i=0,j=L.length-1;i<L.length;j=i++){const q=gdSeg456(x,y,L[j],L[i]);if(q<d)d=q}return d};
+const gdSnap456=(v,lo,hi,st)=>{v=+v;if(!isFinite(v))v=lo;v=Math.min(hi,Math.max(lo,v));if(st>0)v=Math.round(v/st)*st;v=Math.min(hi,Math.max(lo,v));return Math.round(v*1e6)/1e6};
+/* the floors a study can stand on: their outline and openings */
+const gdFloors456=P0=>P0.els.filter(e=>e.cat==='floor'&&Array.isArray(e.pts)&&e.pts.length>=3);
+function gdFloor456(P0,id){const e=P0.els.find(x=>x.id===id&&x.cat==='floor');if(!e||!Array.isArray(e.pts)||e.pts.length<3)return null;
+  const o=e.pts.map(p=>[+p[0],+p[1]]),H=(Array.isArray(e.holes)?e.holes:[]).filter(h=>Array.isArray(h)&&h.length>=3).map(h=>h.map(p=>[+p[0],+p[1]]));
+  return{e,o,H,A:Math.abs(area2(o))-H.reduce((a,h)=>a+Math.abs(area2(h)),0)}}
+const gdIn456=(F,x,y)=>inPoly(x,y,F.o)&&!F.H.some(h=>inPoly(x,y,h));
+const gdFlName456=e=>{const T=typ(P,e)||{},L=lvl(P,e.level),F=gdFloor456(P,e.id);return[T.name||t('t_floor'),L?L.name:'',F?(F.A/1e6).toFixed(1)+' '+t('u_m2'):''].filter(Boolean).join(' · ')};
+/* the floor a new study starts on: the one picked, else the largest on the view's level, else the largest */
+function gdPick456(){const fl=gdFloors456(P),s=[...ui.sel].map(id=>IDX.get(id)).find(e=>e&&e.cat==='floor'&&fl.includes(e));if(s)return s.id;const v=activeView(),A=e=>{const F=gdFloor456(P,e.id);return F?F.A:0};
+  const on=fl.filter(e=>v&&e.level===v.level),pool=on.length?on:fl;return pool.length?pool.reduce((a,b)=>A(b)>A(a)?b:a).id:0}
+/* ---- Grid Layout: grid lines a spacing apart in either direction, turned and shifted; a column where two cross inside the floor, an edge clearance in ---- */
+function gdGridGeo456(X,i){const F=X.F,a=(+i.ang||0)*Math.PI/180,ux=Math.cos(a),uy=Math.sin(a),sx=Math.max(1000,+i.sx||6000),sy=Math.max(1000,+i.sy||6000),E=X.edge;
+  let u0=Infinity,u1=-Infinity,v0=Infinity,v1=-Infinity;for(const p of F.o){const u=p[0]*ux+p[1]*uy,v=-p[0]*uy+p[1]*ux;if(u<u0)u0=u;if(u>u1)u1=u;if(v<v0)v0=v;if(v>v1)v1=v}
+  const ox=((+i.ox||0)%sx+sx)%sx,oy=((+i.oy||0)%sy+sy)%sy,us=[],vs=[];
+  for(let u=u0+E+ox;u<=u1-E+1e-6&&us.length<500;u+=sx)us.push(u);for(let v=v0+E+oy;v<=v1-E+1e-6&&vs.length<500;v+=sy)vs.push(v);
+  const W=(u,v)=>[u*ux-v*uy,u*uy+v*ux],C=new Map(),loops=[F.o,...F.H];
+  for(let p=0;p<us.length;p++)for(let q=0;q<vs.length;q++){const w=W(us[p],vs[q]);if(gdIn456(F,w[0],w[1])&&gdEdge456(w[0],w[1],loops)>=E-1)C.set(p*512+q,w)}
+  return{ux,uy,sx,sy,us,vs,C,W,u0,u1,v0,v1,ang:+i.ang||0}}
+function gdGridEv456(X,i){const G=gdGridGeo456(X,i),{ux,uy,sx,sy,us,vs,C}=G,K=(p,q)=>p*512+q,pts=[...C.values()],diag=Math.hypot(G.u1-G.u0,G.v1-G.v0);let far=0,reg=0;
+  const all=X.smp.concat(X.smp.bd||[]);
+  for(let z=0;z<all.length;z++){const s=all[z],u=s[0]*ux+s[1]*uy,v=-s[0]*uy+s[1]*ux;let best=diag;
+    if(C.size){const a=Math.floor((u-us[0])/sx),b=Math.floor((v-vs[0])/sy);
+      for(let p=a-2;p<=a+3;p++){if(p<0||p>=us.length)continue;for(let q=b-2;q<=b+3;q++){if(q<0||q>=vs.length||!C.has(K(p,q)))continue;const d=Math.hypot(u-us[p],v-vs[q]);if(d<best)best=d}}
+      if(best>2*Math.min(sx,sy))for(const w of pts){const d=Math.hypot(s[0]-w[0],s[1]-w[1]);if(d<best)best=d}          // nothing near: every column
+    }
+    if(best>far)far=best}
+  for(const k of C.keys())if(C.has(k+512)&&C.has(k+1)&&C.has(k+513))reg++;          // a full bay: a column at each of its four corners
+  return{cols:C.size,span:Math.round(Math.max(sx,sy)/10)/100,reach:Math.round(far/10)/100,reg:Math.round(Math.min(1000,1000*reg*sx*sy/Math.max(1,X.F.A)))/10}}
+/* the floor's points a little apart (about 1200 of them) and its edges' points (the corners among them), for the farthest point from a column */
+function gdSmp456(F){const h=Math.max(150,Math.sqrt(Math.max(1,F.A)/1200));let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const p of F.o){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1])}
+  const out=[];for(let x=x0+h/2;x<x1;x+=h)for(let y=y0+h/2;y<y1;y+=h)if(gdIn456(F,x,y))out.push([x,y]);
+  const bd=[];for(const L of [F.o,...F.H])for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/h));for(let k=0;k<n;k++)bd.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n])}
+  out.bd=bd;return out}          // and the edges (corners included) for the farthest point
+/* a small plan of an outcome: the floor, the grid lines that carry a column, the columns */
+function gdGridSvg456(X,i,w,h){if(!X)return`<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"></svg>`;const G=gdGridGeo456(X,i),F=X.F;
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const p of F.o){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1])}
+  const pad=0.06*Math.max(x1-x0,y1-y0),bw=x1-x0+2*pad,bh=y1-y0+2*pad,s=Math.min(w/bw,h/bh),dx=(w-bw*s)/2,dy=(h-bh*s)/2,M=(x,y)=>((x-x0+pad)*s+dx).toFixed(1)+' '+((y-y0+pad)*s+dy).toFixed(1);          // as the plans draw: y down the page
+  const loop=L=>'M'+L.map(p=>M(p[0],p[1])).join('L')+'Z',uP=new Set(),vP=new Set();for(const k of G.C.keys()){uP.add(Math.floor(k/512));vP.add(k%512)}const e=pad*0.6;
+  let ln='';for(const p of uP){const u=G.us[p],a=G.W(u,G.v0-e),b=G.W(u,G.v1+e);ln+='M'+M(a[0],a[1])+'L'+M(b[0],b[1])}for(const q of vP){const v=G.vs[q],a=G.W(G.u0-e,v),b=G.W(G.u1+e,v);ln+='M'+M(a[0],a[1])+'L'+M(b[0],b[1])}
+  const r=Math.max(1.4,Math.min(4,Math.min(G.sx,G.sy)*s*0.07));let cs='';for(const c of G.C.values()){const q=M(c[0],c[1]).split(' ');cs+=`M${(+q[0]-r).toFixed(1)} ${(+q[1]-r).toFixed(1)}h${(2*r).toFixed(1)}v${(2*r).toFixed(1)}h${(-2*r).toFixed(1)}Z`}
+  return`<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><path d="${[F.o,...F.H].map(loop).join('')}" fill="var(--accent)" fill-opacity=".09" fill-rule="evenodd" stroke="var(--muted)" stroke-width="1"/>`
+    +`<path d="${ln}" fill="none" stroke="#2f7fd6" stroke-width=".8" stroke-dasharray="5 2"/><path d="${cs}" fill="var(--ink)"/></svg>`}
+/* the names next free: numbers for the lines across the first direction, letters for the others (as the sample project: 1 2 3 left to right, A B C down the plan) */
+function gdNames456(n,alpha){const used=new Set(P.grids.map(g=>String(g.name))),out=[];
+  if(!alpha){let k=1;for(const g of P.grids){const m=String(g.name);if(/^\d+$/.test(m))k=Math.max(k,+m+1)}while(out.length<n){if(!used.has(String(k)))out.push(String(k));k++}return out}
+  const L=k=>{let s='';k++;while(k>0){const r=(k-1)%26;s=String.fromCharCode(65+r)+s;k=Math.floor((k-1)/26)}return s};let k=0;
+  for(const g of P.grids){const m=String(g.name);if(/^[A-Z]{1,3}$/.test(m)){let v=0;for(const ch of m)v=v*26+(ch.charCodeAt(0)-64);k=Math.max(k,v)}}
+  while(out.length<n){const s=L(k);if(!used.has(s))out.push(s);k++}return out}
+/* an outcome made: its grids (none where a grid lies already) and, if asked, its columns on the floor's level (none where one stands) */
+function gdGridMake456(X,i){const G=gdGridGeo456(X,i),ext=1500,lv=X.F.e.level,R=v=>Math.round(v*10)/10,ids=[];let ng=0,nc=0;
+  const uP=[...new Set([...G.C.keys()].map(k=>Math.floor(k/512)))].sort((a,b)=>a-b),vP=[...new Set([...G.C.keys()].map(k=>k%512))].sort((a,b)=>a-b);
+  const lies=(a,b)=>P.grids.some(g=>{if(gridBent(g))return false;const L=[[g.x1,g.y1],[g.x2,g.y2]],d=(p)=>{const dx=L[1][0]-L[0][0],dy=L[1][1]-L[0][1],n=Math.hypot(dx,dy)||1;return Math.abs((p[0]-L[0][0])*dy-(p[1]-L[0][1])*dx)/n};return d(a)<5&&d(b)<5});
+  const add=(a,b,nm)=>{if(lies(a,b))return;const g={id:P.seq++,cat:'grid',name:nm(),x1:R(a[0]),y1:R(a[1]),x2:R(b[0]),y2:R(b[1])};P.grids.push(g);ids.push(g.id);ng++};
+  const nn=gdNames456(uP.length,false),na=gdNames456(vP.length,true);let ki=0,kj=0;
+  for(const p of uP){const u=G.us[p];add(G.W(u,G.v1+ext),G.W(u,G.v0-ext),()=>nn[ki++])}          // the bubble at the second end: at the top of the plan
+  for(const q of vP){const v=G.vs[q];add(G.W(G.u1+ext,v),G.W(G.u0-ext,v),()=>na[kj++])}          // and on the left, as the sample project's
+  if(X.cols){const d=defs('column');for(const w of G.C.values()){const x=R(w[0]),y=R(w[1]),c=newPointEl('column',{level:lv},{x,y,rot:((+d.rot||0)+G.ang)%360}),z=zRange(P,c);
+    if(P.els.some(e=>{if(e.cat!=='column'||Math.hypot(e.x-x,e.y-y)>=5)return false;const r=zRange(P,e);return r[0]<z[1]-1&&r[1]>z[0]+1})){P.seq--;continue}P.els.push(c);ids.push(c.id);nc++}}
+  return{g:ng,c:nc,ids,msg:t('gd456_made_grid',ng,nc)}}
+/* the kinds: variable inputs {k, lo, hi, st, v (value), r (range), on (varies)}, constant inputs, outputs {k, g (goal), d (decimals), u} */
+const GD456_K={grid:{
+  vin:[{k:'sx',lo:3000,hi:15000,st:100,v:8000,r:[6000,12000],on:1,u:'mm'},{k:'sy',lo:3000,hi:15000,st:100,v:8000,r:[6000,12000],on:1,u:'mm'},{k:'ang',lo:0,hi:89,st:1,v:0,r:[0,45],on:0,u:'°'},
+    {k:'ox',lo:0,hi:6000,st:50,v:0,r:[0,3000],on:1,u:'mm'},{k:'oy',lo:0,hi:6000,st:50,v:0,r:[0,3000],on:1,u:'mm'}],
+  cin:[{k:'edge',ty:'n',lo:0,hi:3000,st:50,v:300,u:'mm'},{k:'cols',ty:'b',v:1}],
+  outs:[{k:'cols',g:'min',d:0,u:''},{k:'span',g:'min',d:2,u:'m'},{k:'reach',g:'min',d:2,u:'m'},{k:'reg',g:'max',d:1,u:'%'}],
+  ctx:(P0,S)=>{const F=gdFloor456(P0,S.src);if(!F||F.A<1e5)return null;if(!gdSmp456.c||gdSmp456.c.F!==JSON.stringify([F.o,F.H]))gdSmp456.c={F:JSON.stringify([F.o,F.H]),s:gdSmp456(F)};
+    return{F,smp:gdSmp456.c.s,edge:+S.cin.edge||0,cols:!!S.cin.cols}},
+  src:{list:gdFloors456,name:gdFlName456,pick:gdPick456,lab:'gd456_src',none:'gd456_nofl'},          // what a study stands on: the list, a name, the one to start with
+  ev:gdGridEv456,svg:gdGridSvg456,make:gdGridMake456}};
+/* a study's settings, whole and within their bounds (a new one's from its kind) */
+function gdDraft456(k){const K=GD456_K[k];if(!K)return null;const S={k,nm:'',src:0,cin:{},vin:{},goal:{},m:'opt',ms:{},base:null};
+  for(const d of K.vin)S.vin[d.k]={v:d.v,lo:d.r[0],hi:d.r[1],on:d.on};for(const c of K.cin)S.cin[c.k]=c.v;for(const o of K.outs)S.goal[o.k]=o.g;for(const m in GD456_MS)S.ms[m]=GD456_MS[m][2];
+  const n=((P.gd456&&Array.isArray(P.gd456.st)?P.gd456.st:[]).filter(s=>s&&s.k===k).length)+1;S.nm=t('gd456_k_'+k)+' '+n;S.src=K.src.pick();return S}
+function gdFix456(S){const K=GD456_K[S&&S.k];if(!K)return null;const D={vin:{},cin:{},goal:{},ms:{}};
+  for(const d of K.vin){const s=S.vin&&S.vin[d.k]||{};let lo=gdSnap456(s.lo!=null?s.lo:d.r[0],d.lo,d.hi,d.st),hi=gdSnap456(s.hi!=null?s.hi:d.r[1],d.lo,d.hi,d.st);if(lo>hi)[lo,hi]=[hi,lo];
+    D.vin[d.k]={v:gdSnap456(s.v!=null?s.v:d.v,d.lo,d.hi,d.st),lo,hi,on:s.on?1:0}}
+  for(const c of K.cin){const v=S.cin?S.cin[c.k]:undefined;D.cin[c.k]=c.ty==='b'?(v==null?c.v:v?1:0):c.ty==='t'?(Math.round(+v)||0):gdSnap456(v!=null&&v!==''?v:c.v,c.lo,c.hi,c.st)}          // 't': a type, its kind's own list
+  for(const o of K.outs){const g=S.goal?S.goal[o.k]:undefined;D.goal[o.k]=g==='max'||g==='min'||g===''?g:o.g}
+  for(const m in GD456_MS){const [lo,hi,dv]=GD456_MS[m],v=S.ms?+S.ms[m]:NaN;D.ms[m]=isFinite(v)?Math.min(hi,Math.max(lo,Math.round(v))):dv}
+  const base=S.base&&typeof S.base==='object'&&!Array.isArray(S.base)?S.base:null;if(base){const b={};for(const d of K.vin)b[d.k]=gdSnap456(base[d.k]!=null?base[d.k]:d.v,d.lo,d.hi,d.st);D.base=b}else D.base=null;
+  Object.assign(S,D);S.m=GD456_M.includes(S.m)&&(S.m!=='like'||S.base)?S.m:'opt';S.nm=String(S.nm==null?'':S.nm).slice(0,80);S.src=+S.src||0;return S}
+const gdNv456=S=>Object.values(S.vin).filter(s=>s.on).length;
+const gdCount456=S=>S.m==='rand'?S.ms.n:S.m==='opt'?S.ms.pop*S.ms.gen:S.m==='cross'?Math.pow(S.ms.steps,gdNv456(S)):S.ms.n;
+function gdErr456(P0,S){const K=GD456_K[S.k];if(!K)return'gd456_nok';if(!K.ctx(P0,S))return'gd456_nosrc';if(!gdNv456(S))return'gd456_novary';
+  if(S.m==='opt'&&!Object.values(S.goal).some(g=>g))return'gd456_nogoal';if(S.m==='cross'&&gdCount456(S)>GD456_MAX)return'gd456_many';return''}
+/* non-dominated sorting (rank rk, 0 = the front) and the crowding distance cd within each front, on objective vectors to be made small */
+function gdRank456(A,f){const F=A.map(f),n=A.length,S=A.map(()=>[]),nd=new Array(n).fill(0);let fr=[];
+  const dom=(a,b)=>{let lt=false;for(let j=0;j<a.length;j++){if(a[j]>b[j])return false;if(a[j]<b[j])lt=true}return lt};
+  for(let p=0;p<n;p++){for(let q=0;q<n;q++){if(p===q)continue;if(dom(F[p],F[q]))S[p].push(q);else if(dom(F[q],F[p]))nd[p]++}if(!nd[p]){A[p].rk=0;fr.push(p)}}
+  let r=0;while(fr.length){for(const p of fr)A[p].cd=0;const m=F[fr[0]].length;
+    for(let j=0;j<m;j++){const s=fr.slice().sort((a,b)=>F[a][j]-F[b][j]),lo=F[s[0]][j],hi=F[s[s.length-1]][j];A[s[0]].cd=A[s[s.length-1]].cd=Infinity;if(hi===lo)continue;
+      for(let k=1;k<s.length-1;k++)A[s[k]].cd+=(F[s[k+1]][j]-F[s[k-1]][j])/(hi-lo)}
+    const nx=[];for(const p of fr)for(const q of S[p])if(--nd[q]===0){A[q].rk=r+1;nx.push(q)}r++;fr=nx}}
+const gdObjF456=(K,S)=>{const gl=K.outs.filter(o=>S.goal[o.k]==='min'||S.goal[o.k]==='max');return e=>gl.map(o=>{const v=e.o[o.k]==null?NaN:+e.o[o.k];return!isFinite(v)?0:S.goal[o.k]==='max'?-v:v})};          // an output with no value (nothing to measure) counts the same for all
+/* a study run: its outcomes {i inputs, o outputs, g generation, pf on the front of the goals} */
+function gdRun456(P0,S0){const S=gdFix456(JSON.parse(JSON.stringify(S0)));if(!S)return{err:'gd456_nok'};const e=gdErr456(P0,S);if(e)return{err:e};
+  const K=GD456_K[S.k],X=K.ctx(P0,S),R=gdRnd456(S.ms.seed),t0=performance.now(),V=K.vin.filter(d=>S.vin[d.k].on);
+  const mk=f=>{const i={};for(const d of K.vin){const s=S.vin[d.k];i[d.k]=s.on?gdSnap456(f(d,s),s.lo,s.hi,d.st):s.v}return i};
+  const seen=new Map(),out=[],evl=(i,g)=>{const key=K.vin.map(d=>i[d.k]).join(',');let o=seen.get(key);if(!o){o={i,o:K.ev(X,i),g:g||0};seen.set(key,o);if(out.length<GD456_MAX)out.push(o)}return o};
+  const rnd=(d,s)=>s.lo+R()*(s.hi-s.lo);
+  if(S.m==='rand')for(let n=0;n<S.ms.n;n++)evl(mk(rnd));
+  else if(S.m==='cross'){const st=S.ms.steps,tot=gdCount456(S);for(let c=0;c<tot;c++){let r=c;const val={};for(const d of V){const j=r%st,s=S.vin[d.k];r=Math.floor(r/st);val[d.k]=s.lo+(s.hi-s.lo)*j/(st-1)}evl(mk(d=>val[d.k]))}}
+  else if(S.m==='like'){const b=S.base;evl(mk(d=>b[d.k]));for(let n=1;n<S.ms.n;n++)evl(mk((d,s)=>b[d.k]+R.n()*S.ms.spread/100*(s.hi-s.lo)))}
+  else{const f=gdObjF456(K,S);let pop=[];for(let n=0;n<S.ms.pop;n++)pop.push(evl(mk(rnd),0));
+    for(let g=1;g<S.ms.gen;g++){gdRank456(pop,f);const tour=()=>{const a=pop[Math.floor(R()*pop.length)],b=pop[Math.floor(R()*pop.length)];return a.rk<b.rk||(a.rk===b.rk&&a.cd>b.cd)?a:b};
+      const kids=[];for(let n=0;n<S.ms.pop;n++){const p1=tour(),p2=tour();kids.push(evl(mk((d,s)=>{let v=p1.i[d.k]+(p2.i[d.k]-p1.i[d.k])*(-0.25+1.5*R());if(R()<1/Math.max(1,V.length))v+=R.n()*0.1*(s.hi-s.lo);return v}),g))}
+      const U=[...new Set([...pop,...kids])];gdRank456(U,f);U.sort((a,b)=>a.rk-b.rk||b.cd-a.cd);pop=U.slice(0,S.ms.pop)}}
+  gdPf456(K,S,out);for(const o of out){delete o.rk;delete o.cd}return{S,out,ms:Math.round(performance.now()-t0)}}
+function gdPf456(K,S,out){const f=gdObjF456(K,S);for(const o of out)delete o.pf;if(!f(out[0]||{o:{}}).length||!out.length)return;const A=out.map(o=>({o:o.o}));gdRank456(A,f);A.forEach((a,j)=>{if(a.rk===0)out[j].pf=1})}
+/* a study added to the project (one Ctrl+Z) */
+function gdAdd456(D0){const R=gdRun456(P,D0);if(R.err)return R;const S=R.S;let id=0;
+  edit(()=>{const G=P.gd456&&typeof P.gd456==='object'&&Array.isArray(P.gd456.st)?P.gd456:{st:[]};id=1+G.st.reduce((a,s)=>Math.max(a,+s.id||0),0);
+    Object.assign(S,{id,out:R.out,ms0:R.ms,at:new Date().toISOString().slice(0,16).replace('T',' ')});G.st.push(S);if(G.st.length>30)G.st.splice(0,G.st.length-30);P.gd456=G;for(const f of XC)f()});
+  return{id,n:R.out.length,ms:R.ms}}
+function gdMake456(sid,j){const S=gdSt456(sid),K=S&&GD456_K[S.k],e=S&&S.out[j];if(!e)return null;const X=K.ctx(P,S);if(!X){toast(t('gd456_nosrc'));return null}let r=null;
+  edit(()=>{r=K.make(X,e.i)});ui.sel=new Set(r.ids);refresh();toast(r.msg);return r}
+const gdSt456=sid=>(P.gd456&&Array.isArray(P.gd456.st)?P.gd456.st:[]).find(s=>s.id===sid)||null;
+XC.push(()=>{const g=P.gd456;if(g===undefined)return;if(!g||typeof g!=='object'||Array.isArray(g)||!Array.isArray(g.st)){delete P.gd456;return}
+  g.st=g.st.filter(s=>s&&typeof s==='object'&&!Array.isArray(s)&&GD456_K[s.k]&&Array.isArray(s.out)).slice(-30);const ids=new Set();
+  for(const s of g.st){gdFix456(s);s.id=Math.max(1,Math.round(+s.id)||1);while(ids.has(s.id))s.id++;ids.add(s.id);
+    s.out=s.out.filter(o=>o&&typeof o==='object'&&o.i&&typeof o.i==='object'&&o.o&&typeof o.o==='object').slice(0,GD456_MAX)}
+  for(const k of Object.keys(g))if(k!=='st')delete g[k];if(!g.st.length)delete P.gd456});
+const gdFmt456=(K,k,v)=>{if(v==null||!isFinite(v))return'–';const [w,n]=k.split(':'),o=w==='o'?K.outs.find(x=>x.k===n):K.vin.find(x=>x.k===n),d=w==='o'?o.d:o.st<1?2:0;
+  return(+v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})+(o.u==='mm'?' mm':o.u==='°'?'°':o.u?' '+o.u:'')};
+function gdCsv456(S){const K=GD456_K[S.k],q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const L=[['#',...K.vin.map(d=>t('gd456_i_'+d.k)+(d.u?' ('+d.u+')':'')),...K.outs.map(o=>t('gd456_o_'+o.k)+(o.u?' ('+o.u+')':'')),t('gd456_gen'),t('gd456_pf')].map(q).join(',')];
+  S.out.forEach((e,j)=>L.push([j+1,...K.vin.map(d=>e.i[d.k]),...K.outs.map(o=>e.o[o.k]),e.g||0,e.pf?1:0].join(',')));return L.join('\r\n')}
+const GD456_CSS=`<style>.gd456 .gdk{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:6px}.gd456 .gdk button{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:inherit;cursor:pointer;font:inherit}
+  .gd456 .gdk button:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}.gd456 .gdk .ic{width:40px;height:40px;flex:none}.gd456 .gdk b{display:block;margin-bottom:2px}.gd456 .gdk small{color:var(--muted);line-height:1.4}
+  .gd456 h5{margin:10px 0 4px;font-size:13px}.gd456 table.tbl input[type=number]{width:100%;min-width:0;box-sizing:border-box}.gd456 table.tbl select{width:100%}.gd456 .gdrow{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}.gd456 .gdrow label{display:flex;gap:6px;align-items:center}.gd456 .gdrow input[type=number]{width:90px}
+  .gd456 .gdtop{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:6px}.gd456 .gdtop label{display:flex;gap:6px;align-items:center;font-size:13px}.gd456 .gdtop select{max-width:220px}
+  .gd456 .gdmain{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:12px;align-items:start}.gd456 .gdsc{border:1px solid var(--line);border-radius:8px;padding:4px}.gd456 .gdsc svg{display:block;width:100%;height:auto}
+  .gd456 .gdsc circle{cursor:pointer;stroke:var(--panel);stroke-width:.8}.gd456 .gdsc circle.pf{stroke:var(--ink);stroke-width:1.4}.gd456 .gdsc circle.on{stroke:#e8702a;stroke-width:3}
+  .gd456 .gdd{border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px}.gd456 .gdd svg{display:block;border-radius:6px;background:var(--panel)}.gd456 .gdd table{font-size:12px}.gd456 .gdd .gdb{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+  .gd456 .gdcs{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:6px;max-height:30vh;overflow:auto;margin-top:8px;padding:2px}.gd456 .gdc{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:11px}
+  .gd456 .gdc.on{border-color:#e8702a;box-shadow:0 0 0 2px #e8702a inset}.gd456 .gdc.pf span::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ink);margin-right:4px;vertical-align:1px}.gd456 .gdlg{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin:2px 6px}
+  .gd456 .gdlg i{display:inline-block;width:90px;height:8px;border-radius:4px;background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}@media (max-width:760px){.gd456 .gdmain{grid-template-columns:minmax(0,1fr)}.gd456 .gdd{grid-template-columns:minmax(0,1fr)}}</style>`;
+/* Create Study: the kinds, then the study's inputs, outputs and method */
+function dlgGD456(step){ui.helpAt='calc';const close=`<button class="btn" data-close="1">${t('cancel')}</button>`;
+  if(step==='kind'||!ui.gd456||!GD456_K[ui.gd456.k]){ui.gd456=null;
+    openDlg(t('a_gd456'),GD456_CSS+`<div class="gd456"><p class="note">${esc(t('gd456_note'))}</p><div class="gdk">${Object.keys(GD456_K).map(k=>`<button type="button" data-gk="${k}">${icon('gdk'+k+'456')}<span><b>${esc(t('gd456_k_'+k))}</b><small>${esc(t('gd456_kd_'+k))}</small></span></button>`).join('')}</div></div>`,
+      `<button class="btn" data-act="gdx456">${t('a_gdx456')}…</button><span style="flex:1"></span>${close}`,{click(e){const b=e.target.closest('[data-gk]');if(!b)return;ui.gd456=gdDraft456(b.dataset.gk);dlgGD456()}},'wide');return}
+  const S=gdFix456(ui.gd456),K=GD456_K[S.k],fl=K.src.list(P);if(!fl.some(e=>e.id===S.src))S.src=K.src.pick();
+  if(!fl.length){openDlg(t('a_gd456')+': '+t('gd456_k_'+S.k),`<p class="note warn">${esc(t(K.src.none))}</p>`,`<button class="btn" data-gd="back">${t('gd456_back')}</button><span style="flex:1"></span>${close}`,{click(e){if(e.target.closest('[data-gd="back"]'))dlgGD456('kind')}});return}
+  const num=(a,v,lo,hi,st,dis)=>`<input type="number" ${a} min="${lo}" max="${hi}" step="${st}" value="${v}"${dis?' disabled':''}>`;
+  const cin=K.cin.filter(c=>c.ty!=='t').map(c=>c.ty==='b'?`<label><input type="checkbox" data-gc="${c.k}"${S.cin[c.k]?' checked':''}> ${esc(t('gd456_c_'+c.k))}</label>`:`<label>${esc(t('gd456_c_'+c.k))} ${num('data-gc="'+c.k+'"',S.cin[c.k],c.lo,c.hi,c.st)} ${c.u}</label>`).join('');
+  const vin=`<table class="tbl" id="gd456Vin" style="table-layout:fixed;width:100%"><colgroup><col><col style="width:64px"><col style="width:17%"><col style="width:17%"><col style="width:17%"></colgroup><thead><tr><th>${t('gd456_in')}</th><th>${t('gd456_vary')}</th><th class="n">${t('gd456_val')}</th><th class="n">${t('gd456_min')}</th><th class="n">${t('gd456_max')}</th></tr></thead><tbody>`
+    +K.vin.map(d=>{const s=S.vin[d.k],u=d.u==='mm'?' (mm)':d.u==='°'?' (°)':'';return`<tr data-gv="${d.k}"><td>${esc(t('gd456_i_'+d.k))}${u}</td><td style="text-align:center"><input type="checkbox" data-gvf="on"${s.on?' checked':''} aria-label="${esc(t('gd456_vary')+' '+t('gd456_i_'+d.k))}"></td>`
+      +`<td class="n">${num('data-gvf="v" aria-label="'+esc(t('gd456_val'))+'"',s.v,d.lo,d.hi,d.st,s.on)}</td><td class="n">${num('data-gvf="lo" aria-label="'+esc(t('gd456_min'))+'"',s.lo,d.lo,d.hi,d.st,!s.on)}</td><td class="n">${num('data-gvf="hi" aria-label="'+esc(t('gd456_max'))+'"',s.hi,d.lo,d.hi,d.st,!s.on)}</td></tr>`}).join('')+'</tbody></table>';
+  const outs=`<table class="tbl" id="gd456Out" style="table-layout:fixed;width:100%"><colgroup><col><col style="width:34%"></colgroup><thead><tr><th>${t('gd456_out')}</th><th>${t('gd456_goal')}</th></tr></thead><tbody>`
+    +K.outs.map(o=>`<tr><td>${esc(t('gd456_o_'+o.k))}${o.u?' ('+o.u+')':''}</td><td><select data-go="${o.k}" aria-label="${esc(t('gd456_goal')+' '+t('gd456_o_'+o.k))}">${[['max','gd456_gmax'],['min','gd456_gmin'],['','gd456_gign']].map(([v,l])=>`<option value="${v}"${S.goal[o.k]===v?' selected':''}>${t(l)}</option>`).join('')}</select></td></tr>`).join('')+'</tbody></table>';
+  const msk={rand:['n','seed'],opt:['pop','gen','seed'],cross:['steps'],like:['n','spread','seed']}[S.m];
+  const meth=`<div class="gdrow"><label>${t('gd456_m')} <select data-gm="1">${GD456_M.filter(m=>m!=='like'||S.base).map(m=>`<option value="${m}"${S.m===m?' selected':''}>${t('gd456_m_'+m)}</option>`).join('')}</select></label>`
+    +msk.map(k=>`<label>${t('gd456_s_'+k)} ${num('data-gms="'+k+'"',S.ms[k],GD456_MS[k][0],GD456_MS[k][1],1)}</label>`).join('')+'</div>'
+    +(S.m==='like'&&S.base?`<p class="note">${esc(t('gd456_likeof',K.vin.map(d=>t('gd456_i_'+d.k)+' '+gdFmt456(K,'i:'+d.k,S.base[d.k])).join(' · ')))}</p>`:'');
+  const body=GD456_CSS+`<div class="gd456"><p class="note">${esc(t('gd456_kd_'+S.k))}</p><div class="fr"><label for="gd456nm">${t('gd456_nm')}</label><input id="gd456nm" data-gn="1" value="${esc(S.nm)}" maxlength="80"></div>`
+    +`<div class="fr"><label for="gd456src">${t(K.src.lab)}</label><select id="gd456src" data-gsrc="1">${fl.map(e=>`<option value="${e.id}"${e.id===S.src?' selected':''}>${esc(K.src.name(e))}</option>`).join('')}</select></div>`
+    +`<div class="gdrow" style="margin:4px 0">${cin}</div><h5>${t('gd456_vin')}</h5>${vin}<h5>${t('gd456_outs')}</h5>${outs}<h5>${t('gd456_m')}</h5>${meth}<p class="note" id="gd456n"></p></div>`;
+  openDlg(t('a_gd456')+': '+t('gd456_k_'+S.k),body,`<button class="btn" data-gd="back">${t('gd456_back')}</button><span style="flex:1"></span><button class="btn primary" data-gd="go">${t('gd456_go')}</button>${close}`,
+    {click(e){const b=e.target.closest('[data-gd]');if(!b)return;if(b.dataset.gd==='back'){dlgGD456('kind');return}
+       if(b.dataset.gd==='go'){gdRead456();const R=gdAdd456(ui.gd456);if(R.err){gdNote456();return}ui.gd456=null;ui.gdx456=Object.assign(ui.gdx456||{},{st:R.id,sel:null});dlgGDX456();toast(t('gd456_done',R.n,R.ms))}},
+     change(e){const el=e.target;gdRead456();if(el.dataset.gm||el.dataset.gvf==='on'){dlgGD456();return}gdNote456()},
+     input(e){if(e.target.dataset.gn)gdRead456()}},'wide');
+  gdNote456()}
+function gdRead456(){const D=$('#dlg'),S=ui.gd456;if(!D||!S)return;const q=s=>D.querySelector(s);
+  const nm=q('[data-gn]');if(nm)S.nm=nm.value.trim();const fs=q('[data-gsrc]');if(fs)S.src=+fs.value;
+  D.querySelectorAll('[data-gc]').forEach(el=>{S.cin[el.dataset.gc]=el.type==='checkbox'?(el.checked?1:0):el.value===''?S.cin[el.dataset.gc]:+el.value});
+  D.querySelectorAll('[data-gv]').forEach(tr=>{const s=S.vin[tr.dataset.gv];tr.querySelectorAll('[data-gvf]').forEach(el=>{const f=el.dataset.gvf;if(f==='on')s.on=el.checked?1:0;else if(el.value!==''&&isFinite(+el.value))s[f]=+el.value})});
+  D.querySelectorAll('[data-go]').forEach(el=>{S.goal[el.dataset.go]=el.value});const m=q('[data-gm]');if(m)S.m=m.value;
+  D.querySelectorAll('[data-gms]').forEach(el=>{if(el.value!==''&&isFinite(+el.value))S.ms[el.dataset.gms]=+el.value});if(!S.nm)S.nm=t('gd456_k_'+S.k);gdFix456(S)}
+function gdNote456(){const el=$('#gd456n'),S=ui.gd456,go=$('#dlg [data-gd="go"]');if(!el||!S)return;const e=gdErr456(P,S),n=gdCount456(S);
+  el.textContent=e?t(e,GD456_MAX):t(S.m==='opt'?'gd456_nopt':'gd456_n',n,S.ms.pop,S.ms.gen);el.className='note'+(e?' warn':'');if(go)go.disabled=!!e}
+/* Explore Outcomes: the study, a scatter of two values coloured by a third, the outcomes as small plans, and the one picked */
+const GD456_RAMP=['#440154','#3b528b','#21918c','#5ec962','#fde725'];
+const gdCol456=f=>{f=Math.min(1,Math.max(0,isFinite(f)?f:0))*(GD456_RAMP.length-1);const i=Math.min(GD456_RAMP.length-2,Math.floor(f)),u=f-i,h=s=>[1,3,5].map(k=>parseInt(s.slice(k,k+2),16)),a=h(GD456_RAMP[i]),b=h(GD456_RAMP[i+1]);
+  return'#'+a.map((v,k)=>Math.round(v+(b[k]-v)*u).toString(16).padStart(2,'0')).join('')};
+function gdView456(){const U=ui.gdx456||(ui.gdx456={}),G=P.gd456&&Array.isArray(P.gd456.st)?P.gd456.st:[];let S=G.find(s=>s.id===U.st)||G[G.length-1]||null;if(!S)return null;
+  if(U.st!==S.id){U.st=S.id;U.sel=null}const K=GD456_K[S.k],ax=[...K.outs.map(o=>'o:'+o.k),...K.vin.filter(d=>S.vin[d.k].on).map(d=>'i:'+d.k)],has=k=>ax.includes(k);
+  if(!has(U.x))U.x=ax[0];if(!has(U.y))U.y=has('o:reach')?'o:reach':ax[1]||ax[0];if(!has(U.c))U.c=has('o:reg')?'o:reg':ax[2]||ax[0];if(!has(U.so)){U.so=ax[0];U.sd=null}
+  const val=(e,k)=>{const [w,n]=k.split(':'),v=w==='o'?e.o[n]:e.i[n];return v==null?NaN:+v},g=k=>k[0]==='o'?S.goal[k.slice(2)]:'';if(U.sd==null)U.sd=g(U.so)==='max'?-1:1;
+  let L=S.out.map((e,j)=>j);if(U.pf)L=L.filter(j=>S.out[j].pf);L.sort((a,b)=>((val(S.out[a],U.so)-val(S.out[b],U.so))*U.sd)||a-b);
+  if(U.sel==null||!S.out[U.sel]||!L.includes(U.sel))U.sel=L.length?L[0]:null;return{S,K,ax,val,L,U}}
+function gdScatter456(V){const {S,K,val,L,U}=V,W=440,H=300,m={l:58,r:12,t:12,b:44},rg=k=>{const a=S.out.map(e=>val(e,k)).filter(isFinite);let lo=Math.min(...a),hi=Math.max(...a);if(!a.length){lo=0;hi=1}if(hi===lo){lo-=1;hi+=1}return[lo,hi]};
+  const [x0,x1]=rg(U.x),[y0,y1]=rg(U.y),[c0,c1]=rg(U.c),X=v=>m.l+(W-m.l-m.r)*(v-x0)/(x1-x0),Y=v=>H-m.b-(H-m.t-m.b)*(v-y0)/(y1-y0),f=(k,v)=>gdFmt456(K,k,v),nm=k=>t((k[0]==='o'?'gd456_o_':'gd456_i_')+k.slice(2));
+  const pts=L.slice().sort((a,b)=>(a===U.sel)-(b===U.sel)||(S.out[a].pf?1:0)-(S.out[b].pf?1:0)).map(j=>{const e=S.out[j],x=val(e,U.x),y=val(e,U.y);if(!isFinite(x)||!isFinite(y))return'';
+    return`<circle data-o="${j}" class="${e.pf?'pf':''}${j===U.sel?' on':''}" cx="${X(x).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="${j===U.sel?6:4}" fill="${gdCol456((val(e,U.c)-c0)/(c1-c0))}"><title>#${j+1} · ${esc(nm(U.x))} ${esc(f(U.x,x))} · ${esc(nm(U.y))} ${esc(f(U.y,y))}</title></circle>`}).join('');
+  const tx=`<g font-size="10" fill="var(--muted)"><text x="${m.l}" y="${H-m.b+14}">${esc(f(U.x,x0))}</text><text x="${W-m.r}" y="${H-m.b+14}" text-anchor="end">${esc(f(U.x,x1))}</text><text x="${m.l-4}" y="${H-m.b}" text-anchor="end">${esc(f(U.y,y0))}</text><text x="${m.l-4}" y="${m.t+8}" text-anchor="end">${esc(f(U.y,y1))}</text></g>`
+    +`<g font-size="11" fill="currentColor"><text x="${(m.l+W-m.r)/2}" y="${H-8}" text-anchor="middle">${esc(nm(U.x))}</text><text transform="translate(14 ${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">${esc(nm(U.y))}</text></g>`;
+  return`<div class="gdsc"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(nm(U.x)+' / '+nm(U.y))}"><path d="M${m.l} ${m.t}V${H-m.b}H${W-m.r}" fill="none" stroke="var(--line)" stroke-width="1"/>${tx}${pts}</svg>`
+    +`<div class="gdlg"><span>${esc(nm(U.c))}</span><span>${esc(f(U.c,c0))}</span><i></i><span>${esc(f(U.c,c1))}</span><span style="flex:1"></span><span><b style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.4px solid currentColor;vertical-align:-1px"></b> ${esc(t('gd456_pf'))}</span></div></div>`}
+function gdDetail456(V){const {S,K,U}=V,e=S.out[U.sel];if(!e)return`<div class="gdd" id="gd456d"><p class="note">${esc(t('gd456_nosel'))}</p></div>`;const X=K.ctx(P,S);
+  const rows=K.vin.map(d=>`<tr${S.vin[d.k].on?'':' style="color:var(--muted)"'}><td>${esc(t('gd456_i_'+d.k))}</td><td class="n">${esc(gdFmt456(K,'i:'+d.k,e.i[d.k]))}</td></tr>`).join('')
+    +K.outs.map(o=>`<tr><td><b>${esc(t('gd456_o_'+o.k))}</b>${S.goal[o.k]?' ('+t(S.goal[o.k]==='max'?'gd456_gmax':'gd456_gmin')+')':''}</td><td class="n"><b>${esc(gdFmt456(K,'o:'+o.k,e.o[o.k]))}</b></td></tr>`).join('');
+  return`<div class="gdd" id="gd456d">${K.svg(X,e.i,240,180)}<div><b>#${U.sel+1}</b>${e.pf?' · '+esc(t('gd456_pf')):''}${S.m==='opt'?' · '+esc(t('gd456_gen'))+' '+((e.g||0)+1):''}<table class="tbl"><tbody>${rows}</tbody></table></div>`
+    +`<div class="gdb"><button class="btn primary" data-gd="make"${X?'':' disabled'}>${t('gd456_make')}</button><button class="btn" data-gd="like">${t('gd456_like')}…</button></div>${X?'':`<p class="note warn" style="grid-column:1/-1">${esc(t('gd456_nosrc'))}</p>`}</div>`}
+function gdCards456(V){const {S,K,L,U,val}=V,X=K.ctx(P,S),n=U.more?L.length:Math.min(L.length,96);
+  return L.slice(0,n).map(j=>{const e=S.out[j];return`<button type="button" class="gdc${j===U.sel?' on':''}${e.pf?' pf':''}" data-o="${j}" title="#${j+1}">${K.svg(X,e.i,120,84)}<span>#${j+1} · ${esc(gdFmt456(K,U.so,val(e,U.so)))}</span></button>`}).join('')
+    +(n<L.length?`<button type="button" class="btn" data-gd="more" style="grid-column:1/-1">${t('gd456_more',L.length-n)}</button>`:'')}
+function dlgGDX456(){ui.helpAt='calc';const V=gdView456(),foot0=`<button class="btn" data-act="gd456">${t('a_gd456')}…</button>`;
+  if(!V){openDlg(t('a_gdx456'),`<p class="note">${esc(t('gd456_none'))}</p>`,`${foot0}<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`);return}
+  const {S,K,ax,U}=V,G=P.gd456.st,se=P.els.find(e=>e.id===S.src&&K.src.list(P).includes(e)),opt=(k,c)=>`<option value="${k}"${k===c?' selected':''}>${esc(t((k[0]==='o'?'gd456_o_':'gd456_i_')+k.slice(2)))}</option>`,sel=(a,c,l)=>`<label>${esc(t(l))} <select data-gx="${a}">${ax.map(k=>opt(k,c)).join('')}</select></label>`;
+  const npf=S.out.filter(e=>e.pf).length;
+  const top=`<div class="gdtop"><label>${t('gd456_st')} <select data-gx="st">${G.slice().reverse().map(s=>`<option value="${s.id}"${s.id===S.id?' selected':''}>${esc(s.nm||t('gd456_k_'+s.k))} · ${s.out.length}</option>`).join('')}</select></label>`
+    +`${sel('so',U.so,'gd456_sort')}<button class="btn" data-gd="sd" title="${esc(t(U.sd<0?'gd456_desc':'gd456_asc'))}" aria-label="${esc(t(U.sd<0?'gd456_desc':'gd456_asc'))}" style="min-width:0;padding:2px 8px">${U.sd<0?'9…1':'1…9'}</button>`
+    +`<label><input type="checkbox" data-gx="pf"${U.pf?' checked':''}${npf?'':' disabled'}> ${esc(t('gd456_pfo',npf))}</label></div>`
+    +`<div class="gdtop">${sel('x',U.x,'gd456_x')}${sel('y',U.y,'gd456_y')}${sel('c',U.c,'gd456_c')}</div>`;
+  const sum=t('gd456_sum',t('gd456_k_'+S.k),t('gd456_m_'+S.m),S.out.length,t(K.src.lab)+' '+(se?K.src.name(se):'–'),S.ms0||0,S.at||'');
+  openDlg(t('a_gdx456'),GD456_CSS+`<div class="gd456"><p class="note">${esc(sum)}</p>${top}<div class="gdmain">${gdScatter456(V)}${gdDetail456(V)}</div><div class="gdcs" id="gd456cs">${gdCards456(V)}</div></div>`,
+    `${foot0}<button class="btn" data-gd="csv">${t('cl440_csv')}</button><button class="btn" data-gd="del">${t('gd456_del')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {click(e){const o=e.target.closest('[data-o]');if(o){gdPickO456(+o.dataset.o);return}const b=e.target.closest('[data-gd]');if(!b||b.disabled)return;const k=b.dataset.gd;
+       if(k==='sd'){U.sd=-(U.sd||1);dlgGDX456()}else if(k==='more'){U.more=1;dlgGDX456()}
+       else if(k==='make'){const r=gdMake456(S.id,U.sel);if(r)closeDlg()}
+       else if(k==='like'){const D=gdFix456(JSON.parse(JSON.stringify(Object.assign({},S,{out:[]}))));delete D.id;delete D.out;delete D.ms0;delete D.at;D.base=Object.assign({},S.out[U.sel].i);D.m='like';D.nm=(S.nm||t('gd456_k_'+S.k))+' · '+t('gd456_m_like');ui.gd456=gdFix456(D);dlgGD456()}
+       else if(k==='del'){if(!confirm(t('gd456_delq',S.nm)))return;edit(()=>{P.gd456.st=P.gd456.st.filter(s=>s.id!==S.id);for(const f of XC)f()});U.st=null;dlgGDX456()}
+       else if(k==='csv')saveFile(fname('','-'+(S.nm||'study').replace(/\s+/g,'-')+'.csv'),'﻿'+gdCsv456(S),'text/csv').then(ok=>{if(!ok)toast(t('export_na'))})},
+     change(e){const el=e.target.closest('[data-gx]');if(!el)return;const k=el.dataset.gx;if(k==='st'){U.st=+el.value;U.sel=null;U.more=0}else if(k==='pf')U.pf=el.checked?1:0;else{U[k]=el.value;if(k==='so')U.sd=null}dlgGDX456()}},'wide')}
+/* picking an outcome changes the scatter's ring, the cards' mark and the detail, not the scroll of the list */
+function gdPickO456(j){const V0=gdView456();if(!V0||!V0.S.out[j])return;ui.gdx456.sel=j;const V=gdView456(),D=$('#dlg');if(!D)return;
+  D.querySelectorAll('.gdc').forEach(b=>b.classList.toggle('on',+b.dataset.o===j));const sc=D.querySelector('.gdsc');if(sc)sc.outerHTML=gdScatter456(V);const d=$('#gd456d');if(d)d.outerHTML=gdDetail456(V)}
+XA.gd456=()=>{ui.gd456=null;dlgGD456('kind')};XA.gdx456=()=>dlgGDX456();
+/* the way in: Manage › Generative Design */
+{const mg=RIBBON.find(r=>r.id==='manage');if(mg&&!mg.panels.some(p=>p.t==='p_gd456')){const i=mg.panels.findIndex(p=>p.t==='p_help');mg.panels.splice(i>=0?i:mg.panels.length,0,{t:'p_gd456',b:['@gd456','@gdx456']})}}
+Object.assign(BTN,{'@gd456':['gd456',''],'@gdx456':['gdx456','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const sh='<ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.8" rx="9" ry="1.3"/>';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-gd456" viewBox="0 0 24 24">${sh}<path fill="none" stroke="#2a3550" stroke-width=".9" d="M6.5 12H10M10 5.5V18.5M10 5.5H13M10 12H13M10 18.5H13"/>`
+    +`<circle cx="5" cy="12" r="2.6" fill="#e8702a" stroke="#7a3510" stroke-width=".6"/><rect class="i-e" x="13" y="3" width="8" height="5" rx="1.2" fill="#9cc3ea" stroke="#2a3550" stroke-width=".6"/><rect class="i-e" x="13" y="9.5" width="8" height="5" rx="1.2" fill="#3d9a55" stroke="#1e5c30" stroke-width=".6"/><rect class="i-e" x="13" y="16" width="8" height="5" rx="1.2" fill="#9cc3ea" stroke="#2a3550" stroke-width=".6"/></symbol>`
+    +`<symbol id="i-gdx456" viewBox="0 0 24 24">${sh}<rect class="i-e" x="2.5" y="3" width="8.5" height="7" rx="1.2" fill="#e3e8ef" stroke="#2a3550" stroke-width=".6"/><rect class="i-e" x="13" y="3" width="8.5" height="7" rx="1.2" fill="#e3e8ef" stroke="#e8702a" stroke-width="1.3"/>`
+    +`<rect class="i-e" x="2.5" y="12" width="8.5" height="7" rx="1.2" fill="#e3e8ef" stroke="#2a3550" stroke-width=".6"/><path fill="none" stroke="#2a3550" stroke-width=".7" d="M13 12V19H21.5"/><circle cx="15" cy="17" r="1" fill="#3b528b"/><circle cx="17" cy="14.5" r="1" fill="#21918c"/><circle cx="19.5" cy="13.5" r="1" fill="#5ec962"/><circle cx="18" cy="16.8" r="1" fill="#440154"/>`
+    +`<path fill="none" stroke="#2f7fd6" stroke-width=".6" stroke-dasharray="1.6 .8" d="M5.3 3.5V9.5M8.2 3.5V9.5M3 6.5H10.5M15.8 3.5V9.5M18.7 3.5V9.5M13.5 6.5H21"/></symbol>`
+    +`<symbol id="i-gdkgrid456" viewBox="0 0 24 24"><path class="i-e" d="M3 4H21V20H3Z" fill="#e1f4f5" stroke="#2a3550" stroke-width=".7"/><path fill="none" stroke="#2f7fd6" stroke-width=".7" stroke-dasharray="1.6 .9" d="M6 2V22M12 2V22M18 2V22M1 7.5H23M1 16H23"/>`
+    +`<path fill="#1d2733" d="M5.1 6.6h1.8v1.8H5.1ZM11.1 6.6h1.8v1.8h-1.8ZM17.1 6.6h1.8v1.8h-1.8ZM5.1 15.1h1.8v1.8H5.1ZM11.1 15.1h1.8v1.8h-1.8ZM17.1 15.1h1.8v1.8h-1.8Z"/></symbol>`)})();
+Object.assign(STR,{p_gd456:['สร้างทางเลือกการออกแบบ','Generative Design'],a_gd456:['สร้างการศึกษา','Create Study'],a_gdx456:['ดูผลลัพธ์','Explore Outcomes'],
+  gd456_note:['แบบ Generative Design ของ Revit: เลือกชนิดการศึกษา ตั้งค่าที่ให้แปรผันและเป้าหมาย แล้วให้โปรแกรมสร้างทางเลือกจำนวนมากมาเทียบกัน ผลลัพธ์เก็บในโครงการ เลือกทางเลือกแล้วสร้างเป็นชิ้นงานได้ (Ctrl+Z ย้อนได้)',
+    'As Revit\'s Generative Design: pick a kind of study, set the inputs that vary and the goals, and many outcomes are made to compare. The outcomes stay in the project; one of them makes its elements in the model (Ctrl+Z takes them back)'],
+  gd456_k_grid:['ผังกริดเสา','Grid Layout'],gd456_kd_grid:['ลองระยะกริด มุม และจุดเริ่มบนพื้นที่เลือก ได้จำนวนเสา ช่วงเสา ระยะไกลสุดจากเสา และพื้นที่ที่อยู่ในช่วงเสาเต็ม ทางเลือกที่เลือกสร้างกริดและเสาให้',
+    'Tries grid spacings, a rotation and a start on a floor: the column count, the span, the farthest point from a column and the floor in full bays; the outcome picked makes the grids and columns'],
+  gd456_i_sx:['ระยะกริดแนว X','Grid Spacing X'],gd456_i_sy:['ระยะกริดแนว Y','Grid Spacing Y'],gd456_i_ang:['มุมกริด','Grid Rotation'],gd456_i_ox:['ระยะเลื่อน X','Offset X'],gd456_i_oy:['ระยะเลื่อน Y','Offset Y'],
+  gd456_c_edge:['ระยะเสาจากขอบ','Edge Clearance'],gd456_c_cols:['วางเสาที่จุดตัดกริด','Place columns where grids cross'],
+  gd456_o_cols:['จำนวนเสา','Column Count'],gd456_o_span:['ช่วงเสายาวสุด','Largest Span'],gd456_o_reach:['ระยะไกลสุดจากเสา','Farthest Point from a Column'],gd456_o_reg:['พื้นที่ในช่วงเสาเต็ม','Floor in Full Bays'],
+  gd456_nm:['ชื่อการศึกษา','Study Name'],gd456_src:['พื้น','Floor'],gd456_vin:['ค่าที่ป้อน','Inputs'],gd456_in:['ค่า','Input'],gd456_vary:['แปรผัน','Vary'],gd456_val:['ค่า','Value'],gd456_min:['ต่ำสุด','Min'],gd456_max:['สูงสุด','Max'],
+  gd456_outs:['ผลลัพธ์และเป้าหมาย','Outputs and goals'],gd456_out:['ผลลัพธ์','Output'],gd456_goal:['เป้าหมาย','Goal'],gd456_gmax:['มากสุด','Maximize'],gd456_gmin:['น้อยสุด','Minimize'],gd456_gign:['ไม่ใช้','Ignore'],
+  gd456_m:['วิธีสร้าง','Method'],gd456_m_rand:['สุ่ม','Randomize'],gd456_m_opt:['หาค่าที่ดีที่สุด','Optimize'],gd456_m_cross:['ทุกคู่ผสม','Cross Product'],gd456_m_like:['ใกล้เคียงแบบนี้','Like This'],
+  gd456_s_n:['จำนวนทางเลือก','Number of Solutions'],gd456_s_seed:['ค่าเริ่มสุ่ม','Seed'],gd456_s_pop:['ขนาดประชากร','Population Size'],gd456_s_gen:['จำนวนรุ่น','Generations'],gd456_s_steps:['จำนวนขั้นต่อค่า','Steps per Input'],gd456_s_spread:['แปรผัน %','Variation %'],
+  gd456_likeof:['ใกล้กับ: {0}','Near: {0}'],gd456_back:['กลับ','Back'],gd456_go:['สร้างผลลัพธ์','Generate'],
+  gd456_n:['จะได้ทางเลือก {0} แบบ (ที่ซ้ำกันนับครั้งเดียว)','{0} outcomes will be made (repeats counted once)'],gd456_nopt:['{1} แบบต่อรุ่น {2} รุ่น: ลองได้ถึง {0} แบบ','{1} a generation for {2} generations: up to {0} outcomes'],
+  gd456_nok:['ไม่รู้จักชนิดการศึกษานี้','This kind of study is not known'],gd456_nosrc:['ไม่พบพื้นของการศึกษานี้ หรือพื้นเล็กเกินไป','The study\'s floor is gone or too small'],gd456_nofl:['ยังไม่มีพื้นในโครงการ: วาดพื้นก่อน','The project has no floor yet: draw one first'],
+  gd456_novary:['เลือกค่าที่แปรผันอย่างน้อยหนึ่งค่า','Let at least one input vary'],gd456_nogoal:['หาค่าที่ดีที่สุดต้องมีเป้าหมายอย่างน้อยหนึ่งผลลัพธ์','Optimize needs a goal on at least one output'],gd456_many:['ทุกคู่ผสมได้เกิน {0} แบบ: ลดจำนวนขั้นหรือค่าที่แปรผัน','Cross Product would make more than {0}: fewer steps or inputs'],
+  gd456_done:['ได้ {0} ทางเลือกใน {1} มิลลิวินาที','{0} outcomes in {1} ms'],gd456_none:['ยังไม่มีการศึกษา: สร้างการศึกษาก่อน','No studies yet: create a study first'],
+  gd456_sum:['{0} · {1} · {2} ทางเลือก · {3} · {4} มิลลิวินาที · {5}','{0} · {1} · {2} outcomes · {3} · {4} ms · {5}'],gd456_st:['การศึกษา','Study'],gd456_sort:['เรียงตาม','Sort by'],gd456_asc:['น้อยไปมาก','Ascending'],gd456_desc:['มากไปน้อย','Descending'],
+  gd456_pf:['ดีที่สุดแบบได้อย่างเสียอย่าง','Best trade-off'],gd456_pfo:['เฉพาะที่ดีที่สุดแบบได้อย่างเสียอย่าง ({0})','Best trade-offs only ({0})'],gd456_x:['แกน X','X Axis'],gd456_y:['แกน Y','Y Axis'],gd456_c:['สีตาม','Color by'],gd456_gen:['รุ่น','Generation'],
+  gd456_make:['สร้างชิ้นงาน','Create Elements'],gd456_like:['ใกล้เคียงแบบนี้','Like This'],gd456_del:['ลบการศึกษา','Delete Study'],gd456_delq:['ลบการศึกษา "{0}" และผลลัพธ์ทั้งหมด?','Delete the study "{0}" and all its outcomes?'],
+  gd456_nosel:['ไม่มีทางเลือกให้แสดง','No outcome to show'],gd456_more:['แสดงอีก {0} แบบ','Show {0} more'],gd456_made_grid:['สร้างกริด {0} เส้น เสา {1} ต้น','Made {0} grids and {1} columns']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -52935,6 +53200,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.453 · ควบคุมไฟแสงสว่างด้วยแสงธรรมชาติและเซนเซอร์ตรวจจับคน (Daylighting & Occupancy Controls แบบ Insight): ตั้งใน พลังงานรายปี (Systems Analysis) ไฟหรี่ตามแสงธรรมชาติทั้งปีที่ตกบนทุกจุดของระนาบทำงาน (จากการวิเคราะห์แสงธรรมชาติแบบทั้งปี มู่ลี่ตามที่ตั้ง) ถึงค่าความสว่างที่ตั้งหรือตามห้อง กำลังไฟต่ำสุดเมื่อหรี่สุด และเซนเซอร์ตรวจจับคนลดพลังงานไฟตามสัดส่วน ไฟที่ลดลงหักภาระความเย็นของห้องในชั่วโมงนั้นด้วย ผลมีไฟที่ลดได้แยกตามวิธี ทั้งอาคารลดลงเท่าไรรวมแอร์ และตารางรายห้อง (คลิกไปที่ห้อง)
 - V1.454 · ควบคุมไฟด้วยแสงธรรมชาติบนแบบจำลองจากมวล และปัจจัยของ Insight ที่ยังขาด: โซนของมวลประมาณแสงธรรมชาติจากค่าแสงธรรมชาติเฉลี่ยของกระจกและช่องแสงหลังคา (สูตร BRE) สี่แถบจากกระจกเข้าไป ฟ้าครึ้มและฟ้าใสทั้งปี แล้วหรี่ไฟแบบเดียวกับห้อง · ปัจจัยประสิทธิภาพอาคารเพิ่ม ควบคุมไฟด้วยแสงธรรมชาติและเซนเซอร์คน ประสิทธิภาพแผงโซลาร์ (16, 20.4, 25 %) และระยะคืนทุนของแผง (10, 20, 30 ปี ซึ่งกำหนดเกณฑ์แสงที่วางแผง) · ปัจจัยของแผงหลายตัวคูณกันเมื่อรวมค่าดีที่สุด
 - V1.455 · ค่าพลังงานของมวลตามทิศ และปัจจัย Insight รายทิศ: หน้าต่างแบบจำลองพลังงานจากมวลตั้งสัดส่วนกระจก กันแดด และชนิดกระจกของผนังทิศเหนือ ตะวันออก ใต้ ตะวันตก แยกกันได้ (ช่องว่างใช้ค่าของโครงการ ค่าเฉพาะผิวของมวลยังมาก่อน) ภาระ พลังงานรายปี และ gbXML ตามไปด้วย · ปัจจัยประสิทธิภาพอาคารเพิ่ม WWR กันแดด และกระจก ของแต่ละทิศ รวม 12 ปัจจัย
+- V1.456 · สร้างทางเลือกการออกแบบ (Generative Design): แท็บจัดการมีสร้างการศึกษาและดูผลลัพธ์ เลือกชนิดการศึกษา ตั้งค่าที่แปรผัน (ต่ำสุด สูงสุด) และเป้าหมายของผลลัพธ์ (มากสุด น้อยสุด ไม่ใช้) วิธีสร้าง สุ่ม หาค่าที่ดีที่สุด (อัลกอริทึมพันธุกรรมแบบหลายเป้าหมาย) ทุกคู่ผสม และใกล้เคียงแบบนี้ ดูผลลัพธ์เป็นกราฟกระจาย ผังย่อ เรียงและกรองทางเลือกที่ดีที่สุดแบบได้อย่างเสียอย่าง แล้วสร้างเป็นชิ้นงาน · การศึกษาแรก ผังกริดเสาบนพื้น: จำนวนเสา ช่วงเสา ระยะไกลสุดจากเสา พื้นที่ในช่วงเสาเต็ม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -53535,6 +53801,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.453 · Daylighting & Occupancy Controls (as Insight's factor): set in the annual energy (Systems Analysis); the lights dim with the year's daylight on every point of the work plane (from the annual Daylight Analysis, with its blinds) to a setpoint or each room's Required Lighting Level, down to a minimum power, and occupancy sensors take a share off the lighting energy; the light saved also comes off the room's cooling load in that hour; the results give the lighting saved by each control, what the whole building saves with the air conditioning, and a table by room (click to go to the room)
 - V1.454 · Daylighting controls on the energy model from masses, and the Insight factors that were missing: each zone of a mass gets its daylight from the average daylight factor of its glass and skylights (the BRE formula) in four bands in from the glass, under the year's overcast and clear skies, and its lights dim as a room's do · Building Performance Factors add Daylighting & Occupancy Controls, PV Panel Efficiency (16, 20.4, 25 %) and PV Payback Limit (10, 20, 30 years, which sets the sun a square needs to take panels) · the panel factors multiply together in the best of all
 - V1.455 · Mass energy settings by orientation, and Insight's factors for each: the Energy Model from Masses sets the glazing share, shades and glass of the northern, eastern, southern and western walls apart (blank uses the project's; a mass face's own settings still come first), and the loads, the annual energy and gbXML follow · Building Performance Factors add WWR, Window Shades and Window Glass for each orientation, 12 factors
+- V1.456 · Generative Design: Manage has Create Study and Explore Outcomes; a kind of study, the inputs that vary (min, max) and the outputs' goals (Maximize, Minimize, Ignore); the methods Randomize, Optimize (a multi-objective genetic search), Cross Product and Like This; the outcomes as a scatter and small plans, sorted, the best trade-offs filtered, and one made into elements · The first study, Grid Layout on a floor: column count, span, the farthest point from a column, the floor in full bays
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -55787,6 +56054,23 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r456={
+  kinds:()=>Object.keys(GD456_K),
+  draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
+  run:D=>{const R=gdRun456(P,D);return R.err?{err:R.err}:{n:R.out.length,ms:R.ms,out:R.out}},
+  err:D=>gdErr456(P,gdFix456(JSON.parse(JSON.stringify(D)))),
+  add:D=>gdAdd456(D),
+  st:()=>JSON.parse(JSON.stringify(P.gd456&&P.gd456.st||[])),
+  raw:()=>P.gd456===undefined?null:JSON.parse(JSON.stringify(P.gd456)),
+  ev:(src,i,cin)=>{const S=gdFix456({k:'grid',src,cin:cin||{}});const X=GD456_K.grid.ctx(P,S);if(!X)return null;const D=gdFix456({k:'grid',vin:{}});const ii=Object.assign({},...GD456_K.grid.vin.map(d=>({[d.k]:d.v})),i);return GD456_K.grid.ev(X,ii)},
+  geo:(src,i,cin)=>{const S=gdFix456({k:'grid',src,cin:cin||{}});const X=GD456_K.grid.ctx(P,S);if(!X)return null;const ii=Object.assign({},...GD456_K.grid.vin.map(d=>({[d.k]:d.v})),i);const G=gdGridGeo456(X,ii);return{cols:[...G.C.values()],nu:G.us.length,nv:G.vs.length,smp:X.smp.length}},
+  make:(sid,j)=>{const r=gdMake456(sid,j);return r?{g:r.g,c:r.c,ids:r.ids}:null},
+  names:(n,a)=>gdNames456(n,a),
+  csv:sid=>{const S=gdSt456(sid);return S?gdCsv456(S):null},
+  ui:()=>JSON.parse(JSON.stringify(ui.gdx456||null)),dr:()=>JSON.parse(JSON.stringify(ui.gd456||null)),
+  view:()=>{const V=gdView456();return V?{st:V.S.id,L:V.L,sel:V.U.sel,x:V.U.x,y:V.U.y,c:V.U.c,so:V.U.so,sd:V.U.sd}:null},
+  floor:(lid,pts,holes)=>{let id;edit(()=>{const d=defs('floor'),e={id:P.seq++,cat:'floor',type:d.type,level:lid,pts:pts.map(p=>p.slice()),off:0};if(holes)e.holes=holes;P.els.push(e);id=e.id});return id},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r455={
    get:()=>ce455(P),
    raw:()=>P.ce455===undefined?null:JSON.parse(JSON.stringify(P.ce455)),
