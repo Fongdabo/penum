@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=478,V1_NAME='V1.468';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=479,V1_NAME='V1.469';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -35907,6 +35907,11 @@ function saSolveSA(M){const mem=M.mem,hmax=M.hmax||250,JN=saJointsSA(mem);
     const s=c.sum/c.n,x=saAtSA(mem[c.m],c.s0===0?0:c.s1===1?1:s);c.s=c.s0===0?0:c.s1===1?1:s;c.node=n;const N=nodes[n];for(let k=0;k<3;k++)N.p[k]+=x[k];N.w++;N.mem.add(c.m);N.st.push({m:c.m,s:c.s})}
   for(const N of nodes)N.p=N.p.map(v=>v/N.w);
   const nodeOf=o=>{const c=cl.find(c=>c.id===o.id);return c.node};
+  /* member end releases (V1.469, M.mem[m].rl: [start, end] flags Fx Fy Fz Mx My Mz, '1' released, or null): RL the ends that have one; PJ a member passing
+     through a joint where an end is held to it (when only one passes, it carries the joint); NJ the joints an end is tied to in some turns only */
+  const RL=new Map(),PJ=new Set(),NJ=new Set();for(const c of cl){const r=mem[c.m].rl;if(!r||(c.s!==0&&c.s!==1))continue;const f=r[c.s];if(f)RL.set(c.node+':'+c.m,f)}
+  {const hn=new Set();for(const [k,f] of RL){const n=+k.split(':')[0],q=f.slice(3);if(q!=='111')hn.add(n);if(q!=='000'&&q!=='111')NJ.add(n)}
+    for(const n of hn){const ps=new Set(nodes[n].st.filter(x=>x.s>0&&x.s<1).map(x=>x.m));if(ps.size===1)PJ.add(n+':'+[...ps][0])}}
   /* the elements: each member from station to station, none longer than hmax */
   const els=[],ms=mem.map(()=>[]);
   for(let m=0;m<mem.length;m++){const C=cl.filter(c=>c.m===m).sort((p,q)=>p.s-q.s),L=saLenSA(mem[m]);ms[m]=C.map(c=>({s:c.s,node:c.node}));
@@ -35919,12 +35924,14 @@ function saSolveSA(M){const mem=M.mem,hmax=M.hmax||250,JN=saJointsSA(mem);
   const ord=[],seen=new Uint8Array(nodes.length);
   for(;;){let s=-1,best=1e9;for(let i=0;i<nodes.length;i++)if(!seen[i]&&adj[i].size<best){best=adj[i].size;s=i}if(s<0)break;
     const q=[s];seen[s]=1;while(q.length){const n=q.shift();ord.push(n);for(const x of [...adj[n]].sort((p,r)=>adj[p].size-adj[r].size))if(!seen[x]){seen[x]=1;q.push(x)}}}
-  const tdof=new Int32Array(nodes.length),rdof=new Map();let nd=0;const rk=(n,m)=>M.rig?n+':*':n+':'+m;
-  for(const n of ord){tdof[n]=nd;nd+=3;const ks=M.rig?[rk(n,0)]:[...nodes[n].mem].map(m=>rk(n,m));for(const k of ks){rdof.set(k,nd);nd+=3}}
+  const tdof=new Int32Array(nodes.length),rdof=new Map();let nd=0;const rk=(n,m)=>{const r=RL.get(n+':'+m);if(r!=null)return r.slice(3)==='000'?n+':*':n+':'+m;return M.rig||PJ.has(n+':'+m)?n+':*':n+':'+m};
+  for(const n of ord){tdof[n]=nd;nd+=3;const ks=[...new Set([...[...nodes[n].mem].map(m=>rk(n,m)),...(NJ.has(n)?[n+':*']:[])])];for(const k of ks){rdof.set(k,nd);nd+=3}}
   for(const e of els){const m=mem[e.m];e.R=saAxesSA(m);e.L=Math.hypot(...[0,1,2].map(k=>nodes[e.n2].p[k]-nodes[e.n1].p[k]));
     e.d=[tdof[e.n1],tdof[e.n1]+1,tdof[e.n1]+2,rdof.get(rk(e.n1,e.m)),rdof.get(rk(e.n1,e.m))+1,rdof.get(rk(e.n1,e.m))+2,tdof[e.n2],tdof[e.n2]+1,tdof[e.n2]+2,rdof.get(rk(e.n2,e.m)),rdof.get(rk(e.n2,e.m))+1,rdof.get(rk(e.n2,e.m))+2];
     e.k=saKlocSA(m.E,m.G,m.S,e.L)}
   const top=new Int32Array(nd);for(let i=0;i<nd;i++)top[i]=i;for(const e of els){const lo=Math.min(...e.d);for(const i of e.d)if(lo<top[i])top[i]=lo}
+  const CP=[];for(const [k,f] of RL){const q=f.slice(3);if(q==='000'||q==='111')continue;const [n,m]=k.split(':').map(Number),a=rdof.get(n+':'+m),b=rdof.get(n+':*'),D=[a,a+1,a+2,b,b+1,b+2],lo=Math.min(...D);
+    CP.push({m,q,D});for(const i of D)if(lo<top[i])top[i]=lo}          // an end tied to its joint in the turns it holds
   const K=saSkySA(nd,top);
   /* T k Tt in the global axes */
   const glob=e=>{const R=e.R,k=e.k,g=Array.from({length:12},()=>new Float64Array(12)),T=(i,j)=>(i>>2===j>>2||((i/3|0)===(j/3|0)))?R[i%3][j%3]:0;
@@ -35932,10 +35939,12 @@ function saSolveSA(M){const mem=M.mem,hmax=M.hmax||250,JN=saJointsSA(mem);
     for(let i=0;i<12;i++)for(let j=0;j<12;j++){let s=0;const b=i/3|0;for(let q=0;q<3;q++)s+=R[q][i%3]*kt[b*3+q][j];g[i][j]=s}return g};
   for(const e of els){const g=glob(e);for(let i=0;i<12;i++)for(let j=i;j<12;j++)K.add(e.d[i],e.d[j],g[i][j])}
   let mx=0;for(let i=0;i<nd;i++)mx=Math.max(mx,K.get(i,i));
+  for(const c of CP){const R=saAxesSA(mem[c.m]),h=[0,1,2].filter(j=>c.q[j]!=='1'),kc=mx*1e4;
+    for(let i=0;i<6;i++)for(let j=i;j<6;j++){let v=0;for(const x of h)v+=R[x][i%3]*R[x][j%3];v*=kc*((i<3)===(j<3)?1:-1);if(v)K.add(c.D[i],c.D[j],v)}}
   const kp=mx*1e7,sp=[];
   (M.sup||[]).forEach((s,i)=>{const n=nodeOf(so[i]),d=String(s.dof||'ffffff');const ds=[];
     for(let k=0;k<6;k++){const f=d[k];if(f==='r')continue;const kv=f==='s'?(+(s.k||[])[k]||0):kp;if(!(kv>0))continue;
-      const list=k<3?[tdof[n]+k]:(M.rig?[rdof.get(rk(n,0))+k-3]:[...nodes[n].mem].map(m=>rdof.get(rk(n,m))+k-3));for(const q of list){K.add(q,q,kv);ds.push([q,kv,k])}}
+      const list=k<3?[tdof[n]+k]:[...new Set([...[...nodes[n].mem].filter(m=>{const r=RL.get(n+':'+m);return r==null||r.slice(3)==='000'}).map(m=>rk(n,m)),...(rdof.has(n+':*')?[n+':*']:[])])].map(q=>rdof.get(q)+k-3);for(const q of list){K.add(q,q,kv);ds.push([q,kv,k])}}
     sp.push({sup:s,node:n,ds})});
   for(let i=0;i<nd;i++){const d=K.get(i,i);K.add(i,i,(d>0?d:mx)*1e-9)}
   K.factor();
@@ -36075,8 +36084,8 @@ function saAllowSA(m,S){const Fy=S.fy*SA_KSC,E=S.E*SA_KSC,r=Math.max(1,Math.min(
 let SA_C=null;
 function saRunSA(Q){Q=Q||P;if(SA_C&&SA_C.ver===VER&&SA_C.Q===Q&&SA_C.js===JSON.stringify(Q.sa||{}))return SA_C.r;const r=saRun0SA(Q);SA_C={ver:VER,Q,js:JSON.stringify(Q.sa||{}),r};return r}
 function saRun0SA(Q){const B=saBuildSA(Q),S=B.S,out={B,S,warn:B.warn.slice(),mem:B.mem};if(!B.mem.length){out.none=1;return out}
-  const M={mem:B.mem.map(m=>({a:m.a,b:m.b,ev:m.ev,S:m.S,E:B.E,G:B.G,sz:m.sz,kgm:m.kgm,ax:m.kind!=='beam'})),sup:B.sup,pl:B.pl,dl:B.dl,sw:B.sw,rig:!!S.rig,hmax:250};
-  const R=saSolveSA(M);out.R=R;
+  const M={mem:B.mem.map(m=>({a:m.a,b:m.b,ev:m.ev,S:m.S,E:B.E,G:B.G,sz:m.sz,kgm:m.kgm,ax:m.kind!=='beam',rl:rl469Sa(m)})),sup:B.sup,pl:B.pl,dl:B.dl,sw:B.sw,rig:!!S.rig,hmax:250};
+  const R=saSolveSA(M);out.R=R;{const L=rl469Tr(B.mem);if(L.length)out.warn.push(t('rl469_wtr',L.join(', ')))}
   /* the combinations checked: the serviceability ones (allowable stresses take loads as they are); without any, every case once */
   const LC=lcList216(Q),used=new Set(R.cases);let CB=lbList216(Q).filter(b=>b.st==='s'&&b.f.some(([c])=>used.has(c)));
   if(!CB.length)CB=[{id:0,name:LC.filter(c=>used.has(c.id)).map(c=>c.name).join(' + ')||'D',st:'s',f:[...used].map(c=>[c,1])}];
@@ -36193,7 +36202,7 @@ function dlgSaSA(tab){let o;try{o=saRunSA(P)}catch(e){console.error(e);toast(t('
   if(tab==='set'){const S=o.S,num=(k,lab,step,un)=>`<div class="fr"><label>${lab}</label><span class="un" style="display:flex;gap:6px;align-items:center"><input data-saset="${k}" type="number" step="${step}" value="${S[k]}" style="max-width:120px">${un||''}</span></div>`;
     h+=`<div class="fr"><label>${t('sa_units')}</label><select data-saset="u"><option value="kg"${S.u==='kg'?' selected':''}>${t('sa_ukg')}</option><option value="kn"${S.u==='kn'?' selected':''}>${t('sa_ukn')}</option></select></div>`
       +num('fy',t('sa_fy'),10,t('sa_ksc'))+num('fu',t('sa_fu'),10,t('sa_ksc'))+num('E',t('sa_E'),10000,t('sa_ksc'))+num('dl',t('sa_dl'),10,'(L/x)')
-      +`<div class="fr"><label>${t('sa_rig')}</label><select data-saset="rig"><option value="0"${S.rig?'':' selected'}>${t('sa_pin')}</option><option value="1"${S.rig?' selected':''}>${t('sa_rigid')}</option></select></div>`
+      +`<div class="fr"><label>${t('sa_rig')}</label><select data-saset="rig"><option value="0"${S.rig?'':' selected'}>${t('sa_pin')}</option><option value="1"${S.rig?' selected':''}>${t('sa_rigid')}</option></select></div>`+`<p class="note">${t('rl469_sanote')}</p>`
       +`<div class="fr"><label>${t('sa_autos')}</label><select data-saset="auto"><option value="1"${S.auto?' selected':''}>${t('sa_yes')}</option><option value="0"${S.auto?'':' selected'}>${t('sa_no')}</option></select></div>`
       +num('fexx',t('sa_fexx'),10,t('sa_ksc'))+num('wa',t('sa_wa'),1,t('sa_mm'))+num('bfv',t('sa_bfv'),10,t('sa_ksc'))+num('fc',t('sa_fc'),10,t('sa_ksc'))
       +`<div class="fr"><label>${t('sa_adef')}</label><span style="display:flex;gap:6px;align-items:center"><input data-saset="an" type="number" min="1" max="16" value="${S.an}" style="width:56px"> × <select data-saset="ad">${S.ac.map(a=>`<option value="${a[0]}"${+a[0]===+S.ad?' selected':''}>M${a[0]}</option>`).join('')}</select></span></div>`
@@ -36265,7 +36274,7 @@ function saBlocksSA(o,pg){const U=saUnitsSA(o.S),S=o.S,kg=S.u!=='kn',B=[],fs=2.9
   for(const w of o.warn)Pp('⚠ '+w,{c:'#b35c00'});
   /* 1 basis */
   H('1. '+t('sa_h1'));
-  for(const l of [t('sa_b1'),t('sa_b2'),t('sa_b3',S.rig?t('sa_rigid'):t('sa_pin')),t('sa_b4'),t('sa_b5',S.dl),t('sa_b6'),t('sa_b7')])Pp('• '+l,{ind:2});
+  for(const l of [t('sa_b1'),t('sa_b2'),t('sa_b3',(S.rig?t('sa_rigid'):t('sa_pin'))+rl469Rep(o)),t('sa_b4'),t('sa_b5',S.dl),t('sa_b6'),t('sa_b7')])Pp('• '+l,{ind:2});
   H('2. '+t('sa_h2'));const Fy=S.fy*SA_KSC;
   TB([{h:t('sa_item'),w:2.4},{h:t('sa_val'),w:1,al:'r'},{h:t('sa_unit'),w:0.8}],[[t('sa_fy'),stf(Fy),U.su],[t('sa_fu'),stf(S.fu*SA_KSC),U.su],[t('sa_E'),saN(U.S(S.E*SA_KSC),0),U.su],['Fb = 0.60 Fy',stf(0.6*Fy),U.su],[t('sa_fbw'),stf(0.75*Fy),U.su],['Fv = 0.40 Fy',stf(0.4*Fy),U.su],['Ft = 0.60 Fy',stf(0.6*Fy),U.su],
     [t('sa_fexx'),stf(S.fexx*SA_KSC),U.su],[t('sa_bfv'),stf(S.bfv*SA_KSC),U.su],[t('sa_fc'),stf(S.fc*SA_KSC),U.su],[t('sa_dl'),'L/'+S.dl,'']]);
@@ -51657,13 +51666,13 @@ Object.assign(STR,{
    Plans, elevations, sections and 3D views draw the analytical model where it shows (anl467Draw for elevations, sections and 3D).  v.anl467: 1 the view always
    shows it, 0 never; left out it follows the Analytical Model button (ui.anl).  v.anlh467: the parts it leaves out, 'p' panels, 'm' members (beam, brace and
    column axes; in plans also the column loads), 'n' nodes. */
-const ANL467_K=['p','m','n'];
+const ANL467_K=['p','m','n','r'];
 const anl467Ok=v=>!!v&&((v.kind==='plan'&&!v.draft)||v.kind==='elev'||v.kind==='section'||v.kind==='3d');
 function anl467On(v){return anl467Ok(v)&&(v.anl467!=null?!!v.anl467:!!ui.anl)}
 function anl467Pt(v,k){return!(v&&Array.isArray(v.anlh467)&&v.anlh467.includes(k))}
 XVR.push(v=>{if(!anl467Ok(v))return'';let h=PR.grp('g_anl467')+PR.sel('anl467','p_anl467',v.anl467==null?'~':String(v.anl467?1:0),[['~',t('anl467_tg')],['1',t('anl467_1')],['0',t('anl467_0')]]);
   for(const k of ANL467_K)h+=PR.chk('anl467'+k,'p_anl467'+k,anl467Pt(v,k));return h});
-XVF.push((v,key,raw)=>{if(key!=='anl467'&&!/^anl467[pmn]$/.test(key))return false;if(!anl467Ok(v))return true;
+XVF.push((v,key,raw)=>{if(key!=='anl467'&&!/^anl467[pmnr]$/.test(key))return false;if(!anl467Ok(v))return true;
   if(key==='anl467'){const n=raw==='1'||raw===1?1:raw==='0'||raw===0?0:null;if(n!==(v.anl467==null?null:v.anl467))edit(()=>{if(n==null)delete v.anl467;else v.anl467=n});return true}
   const k=key.slice(6),on=raw===true||raw===1||raw==='1'||raw==='true'||raw==='on',H=new Set(v.anlh467||[]);if(on)H.delete(k);else H.add(k);const L=ANL467_K.filter(x=>H.has(x));
   if(L.join()!==(v.anlh467||[]).join())edit(()=>{if(L.length)v.anlh467=L;else delete v.anlh467});return true});
@@ -51753,6 +51762,83 @@ Object.assign(STR,{
   anl468_cc:['เสา','Column'],anl468_cb:['คาน','Beam'],anl468_cr:['ค้ำยัน','Brace'],anl468_n:['ข้อ','No.'],anl468_ck:['การตรวจ','Check'],anl468_ap:['แผ่น','Panel'],anl468_el:['ชิ้นงาน','Element'],anl468_is:['ปัญหา','Issue'],
   anl468_sum:['พบ {0} รายการ ใน {1} ชิ้นงาน','{0} issues on {1} elements'],anl468_ok:['ไม่พบปัญหาในการตรวจที่เลือก','No issues in the checks chosen'],anl468_sel:['เลือกชิ้นงานทั้งหมด','Select All'],
   p_anlck468:['ผลตรวจความสอดคล้อง','Consistency Checks'],anl468_none:['ไม่พบปัญหา','No issues']});
+/* ===== 469 member end releases (V1.469; Revit: the Releases / Member Forces of an analytical member, Start Release and End Release (a column's Base and Top
+   Release): Fixed, Pinned, Bending Moment or User Defined, with Fx Fy Fz Mx My Mz) =====
+   e.rl469 = [start, end] (a column: [base, top]) on beams, braces and columns, each null (left to the joints setting of Steel Design: pinned, Revit's default,
+   unless that says rigid), 'F' Fixed (nothing released), 'P' Pinned (Mx, My and Mz released), 'B' Bending Moment (My and Mz released, torsion held) or six
+   characters, '0' held and '1' released, for Fx Fy Fz Mx My Mz in the member's own axes (x along it, y its weak axis, z its depth).  Steel Design uses them
+   (saSolveSA): an end that releases no turn is rigid with the joint, one that releases all three turns freely, one that releases some is tied to the joint in
+   the others; the joint is what a support holds, and a member passing through a joint where an end is held to it carries the joint.  Released translations
+   are named in a warning and taken as held.  With the analytical model on, plans, elevations, sections and 3D draw a symbol at each end that has its own
+   release (a filled square Fixed, a ring Pinned, a ring with a dot Bending Moment, a diamond User Defined); schedules of beams and columns have the two
+   releases as fields; Split keeps each release at its own end. */
+const RL469_K=['F','P','B'],RL469_FL={F:'000000',P:'000111',B:'000011'},RL469_DN=['Fx','Fy','Fz','Mx','My','Mz'],RL469_C='#c2255c';
+const ANL469D={plan:null,d3:null};
+const rl469Sp=x=>RL469_K.includes(x)?x:typeof x==='string'&&/^[01]{6}$/.test(x)?x:null;
+function rl469Of(e){if(!e||(e.cat!=='beam'&&e.cat!=='column')||!Array.isArray(e.rl469))return[null,null];return[rl469Sp(e.rl469[0]),rl469Sp(e.rl469[1])]}
+const rl469Fl=s=>s==null?null:RL469_FL[s]||s;
+const rl469Kind=s=>s==null?'~':RL469_K.includes(s)?s:'U';
+const rl469Dflt=()=>saSetSA(P).rig?'000000':'000111';
+function rl469Lab(s,tr){tr=tr||t;if(s==null)return tr('rl469_d0');if(RL469_K.includes(s))return tr('rl469_'+s);const r=RL469_DN.filter((d,i)=>s[i]==='1');return tr('rl469_U')+' ('+(r.length?r.join(' '):'–')+')'}
+const rl469End=(col,en)=>col?(en?'t':'b'):(en?'e':'s');
+/* Properties of beams, braces and columns */
+function rl469Rows(els){if(!els.length||!els.every(e=>e.id!=null&&!e.gx&&e.cat===els[0].cat&&(e.cat==='beam'||e.cat==='column')))return'';
+  const col=els[0].cat==='column',R=els.map(rl469Of),S=saSetSA(P),dl=t('rl469_def',S.rig?t('sa_rigid'):t('sa_pin'));let h=PR.grp('g_rl469'),usr=false;
+  for(const en of [0,1]){const k0=rl469Kind(R[0][en]),same=R.every(r=>rl469Kind(r[en])===k0),key='rl469'+(en?'e':'s'),lab='p_rl469'+rl469End(col,en);
+    h+=PR.sel(key,lab,same?k0:'',[['~',dl],...RL469_K.map(k=>[k,t('rl469_'+k)]),['U',t('rl469_U')]]);
+    if(same&&k0==='U'){usr=true;for(let i=0;i<6;i++)h+=PR.chk(key+i,lab+'_'+i,R.every(r=>r[en][i]==='1'))}}
+  if(usr)h+=PR.ro('p_rl469k',t('rl469_k'));return h}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);return isNew||(cat!=='beam'&&cat!=='column')?h:h+rl469Rows(els)}}
+XF.push((cat,o,key,raw)=>{if(!/^rl469[se][0-5]?$/.test(key))return false;if(cat!=='beam'&&cat!=='column')return true;const en=key[5]==='e'?1:0,a=rl469Of(o);
+  if(key.length===6)a[en]=RL469_K.includes(raw)?raw:raw==='U'?(a[en]&&!RL469_K.includes(a[en])?a[en]:rl469Fl(a[en])||rl469Dflt()):null;
+  else{const f=(rl469Fl(a[en])||rl469Dflt()).split('');f[+key[6]]=raw===true||raw==='true'||raw===1||raw==='1'||raw==='on'?'1':'0';a[en]=f.join('')}
+  if(a[0]==null&&a[1]==null)delete o.rl469;else o.rl469=a;return true});
+XC.push(()=>{for(const e of P.els){if(e.rl469===undefined)continue;if(e.cat!=='beam'&&e.cat!=='column'){delete e.rl469;continue}const a=rl469Of(e);if(a[0]==null&&a[1]==null)delete e.rl469;else e.rl469=a}});
+/* Split: the part that keeps an end keeps its release; the new ends are left to the joints setting */
+{const f0=splitLine;splitLine=(e,w,gap)=>{const n0=P.seq,r0=e&&e.cat==='beam'?rl469Of(e):null,r=f0(e,w,gap);if(!r0||(r0[0]==null&&r0[1]==null)||P.seq===n0)return r;
+  const c=P.els.find(x=>x.id===n0),put=(x,a)=>{if(a[0]==null&&a[1]==null)delete x.rl469;else x.rl469=a};put(e,[r0[0],null]);if(c&&c.cat==='beam')put(c,[null,r0[1]]);return r}}
+{const f0=spcDo255;spcDo255=(e,zs)=>{const r0=e&&e.cat==='column'?rl469Of(e):null,c=f0(e,zs);if(!c||!r0||(r0[0]==null&&r0[1]==null))return c;
+  const put=(x,a)=>{if(a[0]==null&&a[1]==null)delete x.rl469;else x.rl469=a};put(e,[r0[0],null]);put(c,[null,r0[1]]);return c}}          // e the lower part, c the upper
+/* Schedules of beams and columns */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam'&&cat!=='column')return F;const col=cat==='column';
+  for(const en of [0,1])F.push({k:'rl469'+(en?'e':'s'),l:tr('p_rl469'+rl469End(col,en)),g:e=>rl469Lab(rl469Of(e)[en],tr),grp:'i'});return F}}
+/* Steel Design: a member's releases as the solver takes them (flags, start first; a column's foot is its start), and the ends whose translations are released */
+const rl469Sa=m=>{const r=rl469Of(m&&m.e);return r[0]==null&&r[1]==null?null:r.map(rl469Fl)};
+const rl469EndLab=(m,en)=>m.lab+' '+t('rl469_t'+rl469End(m.kind==='col',en));
+function rl469Tr(mem){const out=[];for(const m of mem){const r=rl469Of(m.e);for(const en of [0,1]){const f=rl469Fl(r[en]);if(f&&f.slice(0,3)!=='000')out.push(rl469EndLab(m,en))}}return out}
+function rl469Rep(o){const L=[];for(const m of (o&&o.mem)||[]){const r=rl469Of(m.e);for(const en of [0,1])if(r[en]!=null)L.push(rl469EndLab(m,en)+' '+rl469Lab(r[en]))}
+  return L.length?t('rl469_rep',L.length,L.slice(0,12).join(', ')+(L.length>12?' …':'')):''}
+/* the symbol of a release at screen point (x, y), the member going on along (ux, uy) */
+function rl469Sym(ctx,x,y,ux,uy,s){const cx=x+ux*9,cy=y+uy*9,k=rl469Kind(s);ctx.save();ctx.lineWidth=1.6;ctx.strokeStyle=RL469_C;ctx.fillStyle='#fff';ctx.setLineDash([]);ctx.beginPath();
+  if(k==='F'){ctx.rect(cx-4,cy-4,8,8);ctx.fillStyle=RL469_C;ctx.fill();ctx.stroke()}
+  else if(k==='U'){ctx.moveTo(cx,cy-5.5);ctx.lineTo(cx+5.5,cy);ctx.lineTo(cx,cy+5.5);ctx.lineTo(cx-5.5,cy);ctx.closePath();ctx.fill();ctx.stroke()}
+  else{ctx.arc(cx,cy,4.4,0,7);ctx.fill();ctx.stroke();if(k==='B'){ctx.beginPath();ctx.fillStyle=RL469_C;ctx.arc(cx,cy,1.7,0,7);ctx.fill()}}ctx.restore()}
+/* in a plan with the analytical model and its members on: the beams and braces of the level, as their axes are drawn there */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||v.kind!=='plan'||v.draft||!anl467On(v)||!anl467Pt(v,'m')||!anl467Pt(v,'r'))return;const lv=elev(P,v.level);let n=0;
+  for(const e of P.els){if(e.cat!=='beam'||e.gx||!isFinite(e.x1))continue;const r=rl469Of(e);if(r[0]==null&&r[1]==null)continue;const z=beamZ(P,e);if(Math.max(z[0],z[1])<lv-100||Math.min(z[0],z[1])>lv+(v.cut||1200)+3000)continue;
+    const A=[g.X(e.x1),g.Y(e.y1)],B=[g.X(e.x2),g.Y(e.y2)],L=Math.hypot(B[0]-A[0],B[1]-A[1]);if(L<24)continue;const u=[(B[0]-A[0])/L,(B[1]-A[1])/L];
+    if(r[0]!=null){rl469Sym(ctx,A[0],A[1],u[0],u[1],r[0]);n++}if(r[1]!=null){rl469Sym(ctx,B[0],B[1],-u[0],-u[1],r[1]);n++}}
+  ANL469D.plan=n});
+/* …and in elevations, sections and 3D, at the ends the view shows */
+function rl469Draw(pn,ctx,v){const R=anl466(P),S=anl467Sides(v),pr=q=>projGL(pn,v,[q[0],q[2],q[1]]);let n=0;
+  for(const m of R.mem){const e=IDX.get(m.id);if(!e||(e.cat!=='beam'&&e.cat!=='column'))continue;const r=rl469Of(e);if(r[0]==null&&r[1]==null)continue;
+    for(const en of [0,1]){if(r[en]==null)continue;const p=en?m.b:m.a,q=en?m.a:m.b;if(!S.some(s=>s.F.every(f=>f(p)>=-0.5)))continue;const a=pr(p),b=pr([p[0]+(q[0]-p[0])*0.2,p[1]+(q[1]-p[1])*0.2,p[2]+(q[2]-p[2])*0.2]);if(!a||!b)continue;
+      const L=Math.hypot(b[0]-a[0],b[1]-a[1]);rl469Sym(ctx,a[0],a[1],L<0.5?0:(b[0]-a[0])/L,L<0.5?0:(b[1]-a[1])/L,r[en]);n++}}
+  ANL469D[v.kind==='3d'?'d3':v.kind]=n}
+{const f0=anl467Draw;anl467Draw=function(pn,ctx,v){const r=f0.apply(this,arguments);if(anl467Pt(v,'m')&&anl467Pt(v,'r'))rl469Draw(pn,ctx,v);return r}}
+Object.assign(STR,{
+  g_rl469:['การปลดแรงปลายชิ้นส่วน (Releases / Member Forces)','Releases / Member Forces'],
+  p_rl469s:['การปลดที่ต้น (Start Release)','Start Release'],p_rl469e:['การปลดที่ปลาย (End Release)','End Release'],
+  p_rl469b:['การปลดที่โคน (Base Release)','Base Release'],p_rl469t:['การปลดที่ยอด (Top Release)','Top Release'],
+  rl469_F:['ยึดแน่น (Fixed)','Fixed'],rl469_P:['จุดหมุน (Pinned)','Pinned'],rl469_B:['ปลดโมเมนต์ดัด (Bending Moment)','Bending Moment'],rl469_U:['กำหนดเอง (User Defined)','User Defined'],
+  rl469_def:['ตามค่าตั้งจุดต่อ: {0}','As the joints setting: {0}'],rl469_d0:['ตามค่าตั้งจุดต่อ','As the joints setting'],
+  p_rl469k:['ความหมาย','Key'],rl469_k:['ติ๊ก = ปลด · Fx แรงตามแกน · Fy Fz แรงเฉือน · Mx บิด · My ดัดรอบแกนหลัก · Mz ดัดรอบแกนรอง','ticked = released · Fx axial · Fy Fz shear · Mx torsion · My bending about the strong axis · Mz about the weak axis'],
+  rl469_ts:['ต้น','start'],rl469_te:['ปลาย','end'],rl469_tb:['โคน','base'],rl469_tt:['ยอด','top'],
+  rl469_wtr:['ปลดแรงเลื่อน (Fx Fy Fz) ที่ปลายชิ้นส่วนยังไม่ใช้ในการคำนวณ ถือว่ายึดไว้: {0}','Released translations (Fx Fy Fz) are not used by the analysis and are taken as held: {0}'],
+  rl469_sanote:['ปลายคาน ค้ำยัน หรือเสาที่ตั้งการปลดแรงปลายชิ้นส่วน (Releases) ในแผงคุณสมบัติใช้ค่านั้นแทน: ปลายที่ยึดแน่นต่อแน่นกับจุดต่อ ปลายที่เป็นจุดหมุนหมุนได้อิสระ','A beam, brace or column end whose Releases are set in Properties uses them instead: a Fixed end is held to the joint, a Pinned one turns freely'],
+  rl469_rep:[' · ปลายที่ตั้งการปลดแรงเอง {0} ปลาย: {1}',' · ends with releases of their own ({0}): {1}'],
+  p_anl467r:['สัญลักษณ์การปลดแรงปลายชิ้นส่วน','Member end releases']});
+for(const [k,th,en] of [['s','ต้น','Start'],['e','ปลาย','End'],['b','โคน','Base'],['t','ยอด','Top']])RL469_DN.forEach((d,i)=>{STR['p_rl469'+k+'_'+i]=['ปลด '+d+' ที่'+th,en+' '+d+' released']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -53638,7 +53724,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[a_materials]] — แท็บ [[tab_manage]]: สร้างวัสดุของโครงการเอง (ชื่อ ลักษณะผิว สี) คัดลอก หรือลบ · เลือกใช้ที่วัสดุผิวของชนิด หรือเลือกในเครื่องมือ Paint · แก้วัสดุแล้วทุกชนิดที่ใช้เปลี่ยนตาม · [[mt_sp]] วาดบนพื้นในแปลน (ระดับรายละเอียดกลางขึ้นไป) · [[mt_cp]] วาดในผนังที่ถูกตัด · [[mt_k]] และ [[mt_rho]] ใช้คิด [[p_uval]] ของผนังและน้ำหนักใน [[a_mtake]]
 [[a_mtake]] — แท็บ [[tab_manage]]: ตารางพื้นที่ ปริมาตร น้ำหนัก แยกตามวัสดุและหมวด ผนังแยกตามชั้น ส่งออก CSV ได้
-[[a_anl]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): แสดงแผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา ในแปลน รูปด้าน รูปตัด และ 3 มิติ (ตัดตามระนาบตัด ระยะลึก ขอบเขตครอบตัด และกล่องตัด) · กดอีกครั้งเพื่อซ่อน · ในแผงคุณสมบัติของแต่ละมุมมอง [[p_anl467]] เลือกตามปุ่ม แสดงเสมอ หรือไม่แสดง และติ๊ก [[p_anl467p]] [[p_anl467m]] [[p_anl467n]]
+[[a_anl]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): แสดงแผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา ในแปลน รูปด้าน รูปตัด และ 3 มิติ (ตัดตามระนาบตัด ระยะลึก ขอบเขตครอบตัด และกล่องตัด) · กดอีกครั้งเพื่อซ่อน · ในแผงคุณสมบัติของแต่ละมุมมอง [[p_anl467]] เลือกตามปุ่ม แสดงเสมอ หรือไม่แสดง และติ๊ก [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] [[p_anl467r]] · ปลายคาน ค้ำยัน หรือเสาที่ตั้ง [[g_rl469]] ในแผงคุณสมบัติ ([[rl469_F]] [[rl469_P]] [[rl469_B]] หรือ [[rl469_U]] ติ๊กปลด Fx Fy Fz Mx My Mz) มีสัญลักษณ์ที่ปลาย และการคำนวณโครงสร้างเหล็กใช้ค่านั้น
 [[a_anlp]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตารางแผ่นวิเคราะห์ทุกแผ่น หนา วัสดุ พื้นที่สุทธิ ช่องเปิด และแผ่นที่ต่อกัน · ตั้ง [[anl466_tol]] และ [[anl466_sl]] · คลิกแถวเพื่อเลือกชิ้นงาน · [[anl466_csv]] · ในแผงคุณสมบัติของผนังหรือพื้นโครงสร้าง ล้าง [[p_anl466]] เพื่อไม่ให้มีแผ่น หรือเลือก [[p_apjw466]] / [[p_apjf466]]
 [[a_anlck]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตรวจแบบจำลองวิเคราะห์ เสาและปลายคานที่ไม่มีที่รองรับ แผ่นผนังที่ฐานไม่วางบนอะไร แผ่นพื้นที่ไม่มีอะไรรับ แผ่นที่ยืดห่างจากชิ้นงานจริงเกิน [[anl468_d]] วัสดุที่ไม่ใช่วัสดุโครงสร้าง แผ่นซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด · ติ๊กเลือกการตรวจ · คลิกแถวเพื่อเลือกชิ้นงาน หรือ [[anl468_sel]] · ผลของชิ้นงานที่เลือกอยู่ในแผงคุณสมบัติ ([[p_anlck468]])
 [[a_ldtake]] — แท็บ [[tab_struct]]: น้ำหนักลงเสาแต่ละต้นแบบพื้นที่รับน้ำหนัก (D, L, D+L, 1.4D+1.7L) และขนาดฐานรากจาก[[lt_q]] · คลิกแถวเพื่อเลือกเสา · ตั้ง[[p_ldD]]และ[[p_ldL]]ที่คุณสมบัติของพื้น
@@ -54046,6 +54132,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.466 · แผ่นวิเคราะห์โครงสร้าง (Analytical Panels แบบ Revit): ผนังและพื้นที่ติ๊ก เป็นโครงสร้าง มีแผ่นวิเคราะห์ของตัวเองโดยอัตโนมัติ แผ่นของผนังอยู่กลางชั้นโครงสร้าง (เลือกแนวกลางผนัง หรือผิวนอก/ผิวในของชั้นโครงสร้างได้) และเอียงตามผนังเอียงหรือผนังสอบ แผ่นของพื้นอยู่ที่ผิวบน (เลือกผิวบน กลาง หรือผิวล่างของชั้นโครงสร้างหรือของพื้นได้) และลาดตามพื้นลาด ปลายแผ่นผนังและขอบบนล่างที่ห่างกันไม่เกินระยะปรับอัตโนมัติ (300 มม.) ถูกยืดให้ชนแผ่นข้างเคียง ประตู หน้าต่าง ช่องเปิด ช่องบันได และช่องท่อเป็นช่องเปิดของแผ่น ปุ่ม แบบจำลองวิเคราะห์ แสดงแผ่น เส้นแกนคาน ค้ำยัน เสา และจุดต่อ ทั้งในแปลนและ 3 มิติ ปุ่ม แผ่นวิเคราะห์ (แท็บโครงสร้างและแท็บวิเคราะห์) เปิดตารางแผ่นทั้งหมด หนา วัสดุ พื้นที่สุทธิ ช่องเปิด แผ่นที่ต่อกัน เตือนแผ่นที่ไม่ต่อกับแผ่นใด และส่งออก CSV แผงคุณสมบัติมี สร้างแผ่นวิเคราะห์ และตำแหน่งแผ่น
 - V1.467 · แบบจำลองวิเคราะห์ในรูปด้าน รูปตัด และกล่องตัด: แผ่นวิเคราะห์ เส้นแกนคาน ค้ำยันและเสา และจุดต่อ แสดงในรูปด้านและรูปตัดด้วย ตัดตามระนาบตัด ระยะลึก (Far Clip) ขอบเขตครอบตัด และแต่ละช่วงของรูปตัดที่หักมุม แผ่นที่ผ่านระนาบตัดแสดงถึงระนาบตัด ใน 3 มิติตัดตามกล่องตัด แต่ละมุมมองตั้งในแผงคุณสมบัติได้ว่าแสดงแบบจำลองวิเคราะห์ตามปุ่ม แสดงเสมอ หรือไม่แสดง และเลือกแสดงแผ่น ชิ้นส่วน (คาน ค้ำยัน เสา) และจุดต่อแยกกัน แบบ Visibility/Graphics ของ Revit
 - V1.468 · ตรวจความสอดคล้องของแบบจำลองวิเคราะห์ (Consistency Checks แบบ Revit): ปุ่มใหม่ในแท็บโครงสร้างและแท็บวิเคราะห์ ตรวจเสาและปลายคานที่ไม่มีที่รองรับ (แบบ Check Supports) ฐานของแผ่นผนังที่ไม่วางบนแผ่นพื้น ผนังด้านล่าง ฐานรากผนัง หรือจุดรองรับ แผ่นพื้นที่ไม่มีผนัง คาน เสา หรือจุดรองรับรับไว้ แผ่นผนังที่ Auto-detect ยืดห่างจากผนังจริงเกินระยะที่ยอมให้ (ตั้งต้น 150 มม.) แผ่นที่วัสดุไม่ใช่วัสดุโครงสร้าง แผ่นที่ซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด ติ๊กเลือกการตรวจได้ คลิกแถวเลือกชิ้นงาน เลือกทั้งหมด ส่งออก CSV แผงคุณสมบัติของผนังและพื้นโครงสร้างแสดงผลตรวจของชิ้นนั้น
+- V1.469 · การปลดแรงปลายชิ้นส่วน (Releases / Member Forces) แบบ Revit: แผงคุณสมบัติของคาน ค้ำยัน และเสา ตั้งการปลดที่ต้นและปลาย (เสาเป็นโคนและยอด) ได้ [[rl469_F]] [[rl469_P]] (ปลด Mx My Mz) [[rl469_B]] (ปลด My Mz คงแรงบิด) หรือ [[rl469_U]] ติ๊กปลด Fx Fy Fz Mx My Mz ทีละตัว ไม่ตั้งไว้ใช้ค่าจุดต่อของการคำนวณเหล็ก (จุดหมุน เหมือนค่าตั้งต้นของ Revit) · การคำนวณโครงสร้างเหล็กใช้ค่านี้: ปลายยึดแน่นต่อแน่นกับจุดต่อ ปลายจุดหมุนหมุนได้อิสระ ปลายที่ปลดบางทิศยึดกับจุดต่อในทิศที่เหลือ คานช่วงเดียวบนจุดรองรับยึดแน่นได้ wL²/12 เมื่อยึดแน่นและ wL²/8 เมื่อเป็นจุดหมุน · แบบจำลองวิเคราะห์ในแปลน รูปด้าน รูปตัด และ 3 มิติ มีสัญลักษณ์ที่ปลาย (สี่เหลี่ยมทึบ ยึดแน่น วงกลม จุดหมุน วงกลมมีจุด ปลดโมเมนต์ดัด ข้าวหลามตัด กำหนดเอง) ซ่อนได้ด้วย [[p_anl467r]] · ตารางรายการคานและเสามีช่องการปลดทั้งสองปลาย · Split แล้วแต่ละส่วนเก็บการปลดของปลายเดิมไว้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -54253,7 +54340,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 
 [[a_materials]] — on the [[tab_manage]] tab: make the project’s own materials (name, look, colour), duplicate or delete them · choose one as the material of a type, or in the Paint tool · change a material and every type that uses it follows · [[mt_sp]] is drawn on floors in plans (Medium detail and finer) · [[mt_cp]] in walls that are cut · [[mt_k]] and [[mt_rho]] give a wall's [[p_uval]] and the weights in [[a_mtake]]
 [[a_mtake]] — on the [[tab_manage]] tab: area, volume and weight by material and category, walls by layer, out to CSV
-[[a_anl]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): shows the analytical panels of structural walls and floors, beam, brace and column axes, nodes and column loads, in plans, elevations, sections and 3D (cut at the cut plane, the far clip, the crop region and the section box) · press again to hide · in the Properties of each view, [[p_anl467]] follows the button, always shows or never shows it, and [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] pick the parts
+[[a_anl]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): shows the analytical panels of structural walls and floors, beam, brace and column axes, nodes and column loads, in plans, elevations, sections and 3D (cut at the cut plane, the far clip, the crop region and the section box) · press again to hide · in the Properties of each view, [[p_anl467]] follows the button, always shows or never shows it, and [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] [[p_anl467r]] pick the parts · a beam, brace or column end whose [[g_rl469]] are set in Properties ([[rl469_F]], [[rl469_P]], [[rl469_B]] or [[rl469_U]] with Fx Fy Fz Mx My Mz to release) shows a symbol there, and Steel Design uses it
 [[a_anlp]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): every analytical panel with its thickness, material, net area, openings and the panels it meets · set the [[anl466_tol]] and [[anl466_sl]] · click a row to select the element · [[anl466_csv]] · in the Properties of a structural wall or floor clear [[p_anl466]] to leave its panel out, or choose its [[p_apjw466]] / [[p_apjf466]]
 [[a_anlck]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): checks the analytical model: columns and beam ends with no support, wall panels whose foot stands on nothing, floor panels nothing holds up, panels moved farther from their element than the [[anl468_d]], materials that are not structural, panels lying on each other and panels that meet none · tick the checks to run · click a row to select the element, or [[anl468_sel]] · what is found on the selected element shows in Properties ([[p_anlck468]])
 [[a_ldtake]] — on the [[tab_struct]] tab: each column's load by tributary area (D, L, D+L, 1.4D+1.7L) and the footing size from the [[lt_q]] · click a row to select the column · set the [[p_ldD]] and [[p_ldL]] in a floor's properties
@@ -54661,6 +54748,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.466 · Analytical Panels (as in Revit): every wall and floor marked Structural carries its own analytical panel. A wall's panel lies at the centre of its core (or its centre line, or the exterior or interior face of its core) and leans with a slanted or tapered wall; a floor's lies at its top (or the top, centre or bottom of its core or of the slab) and follows its slope. Panel ends, feet and heads closer than the Auto-detect tolerance (300 mm) are moved to meet the panels next to them. Doors, windows, openings, stair wells and shafts become openings in the panels. The Analytical Model button shows the panels, beam, brace and column axes and the nodes in plans and in 3D; Analytical Panels (Structure and Analyze tabs) lists every panel with its thickness, material, net area, openings and the panels it meets, warns of panels that meet none and exports CSV. Properties have Enable Analytical Model and the projection
 - V1.467 · The analytical model in elevations, sections and section boxes: analytical panels, beam, brace and column axes and nodes show in elevations and sections too, cut at the cut plane, the far clip, the crop region and each piece of a broken section; a panel that crosses the cut shows up to it. In 3D they are cut by the section box. In the Properties of each view the analytical model follows the Analytical Model button, always shows or never shows, and panels, members (beams, braces, columns) and nodes can each be turned off, as in Revit's Visibility/Graphics.
 - V1.468 · Analytical Consistency Checks (as in Revit): a new button on the Structure and Analyze tabs checks columns and beam ends with no support (as Check Supports does), wall panels whose foot stands on no floor panel, wall below, wall footing or boundary condition, floor panels no wall, beam, column or boundary condition holds, wall panels Auto-detect moved farther from their wall than the analytical-to-physical tolerance (150 mm), panels whose material is not structural, panels lying on each other and panels that meet none. Each check can be turned off; a row selects its element, Select All selects them all, and the list exports to CSV. Properties of a structural wall or floor show what the checks find on it.
+- V1.469 · Member end releases (Releases / Member Forces, as in Revit): Properties of a beam, brace or column set its Start and End Release (a column's Base and Top Release) to [[rl469_F]], [[rl469_P]] (Mx My Mz released), [[rl469_B]] (My Mz released, torsion held) or [[rl469_U]] with Fx Fy Fz Mx My Mz released one by one; left unset they follow the joints setting of Steel Design (pinned, Revit's default). Steel Design uses them: a Fixed end is held to its joint, a Pinned end turns freely, an end with some turns released is held in the others; a single span on fixed supports gives wL²/12 with fixed ends and wL²/8 with pinned ones. With the analytical model on, plans, elevations, sections and 3D draw a symbol at each end (a filled square Fixed, a ring Pinned, a ring with a dot Bending Moment, a diamond User Defined), hidden with [[p_anl467r]]. Beam and column schedules have both releases as fields, and Split keeps each release at its own end.
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -57066,6 +57154,28 @@ window.PenumBIM.r468={
     const e=Object.assign({id:P.seq++,cat:'bcond',bk,host,level:H.level,pts,st:'pinned'},o||{});P.els.push(e);id=e.id});return id},
   wfoot:wid=>{let id;edit(()=>{const w=P.els.find(e=>e.id===wid),f=wfootUnder(w);P.els.push(f);id=f.id});return id},
   row:()=>{const r=[...document.querySelectorAll('#props .pr')].find(x=>(x.querySelector('label')||{}).textContent===t('p_anlck468'));return r?r.querySelector('.ro').textContent:null},
+  str:(k,...a)=>t(k,...a)};
+/* V1.469 test API: member end releases */
+window.PenumBIM.r469={
+  get:id=>{const r=rl469Of(IDX.get(id));return r[0]==null&&r[1]==null?null:r},
+  raw:id=>{const e=IDX.get(id);return e&&e.rl469!==undefined?JSON.parse(JSON.stringify(e.rl469)):undefined},
+  set:(id,a)=>{edit(()=>{const e=IDX.get(id);if(a==null)delete e.rl469;else e.rl469=JSON.parse(JSON.stringify(a))})},
+  prop:(id,k,v)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,k,v)})},
+  lab:(s)=>rl469Lab(s),
+  fl:s=>rl469Fl(s),
+  sa:()=>{SA_C=null;const o=saRunSA(P);if(!o||!o.R)return null;const c=o.CB[0];return{M:c.MR.map(r=>r.M),Mw:c.MR.map(r=>r.Mw),T:c.MR.map(r=>r.T),ids:o.mem.map(m=>m.id),lab:o.mem.map(m=>m.lab),kgm:o.mem.map(m=>m.kgm),warn:o.warn.slice(),umax:o.umax,R:c.C.R.map(x=>x.slice()),sup:o.R.sp.map(s=>({node:s.node,m:s.sup.m,s:s.sup.s}))}},
+  rep:()=>rl469Rep(saRunSA(P)),
+  stype:()=>{let id='stl469';edit(()=>{if(!P.types.beam.some(x=>x.id===id))P.types.beam.push({id,name:'H-200x100x5.5x8',sec:'H',sd:200,sb:100,stw:5.5,stf:8,w:100,h:200});
+    if(!P.types.column.some(x=>x.id===id))P.types.column.push({id,name:'H-200x200x8x12',sec:'H',sd:200,sb:200,stw:8,stf:12,w:200,d:200})});return id},
+  drawn:()=>JSON.parse(JSON.stringify(ANL469D)),
+  clear:()=>{for(const k in ANL469D)ANL469D[k]=null},
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(r=>[(r.querySelector('label')||{}).textContent,(r.querySelector('select,input,.ro')||{}).id||''].join('|')),
+  sched:(cat)=>sfAll(P,cat,t).filter(f=>/^rl469/.test(f.k)).map(f=>({k:f.k,l:f.l,v:P.els.filter(e=>e.cat===cat).map(e=>f.g(e))})),
+  rig:v=>{edit(()=>{const s=Object.assign({},P.sa||{});if(v)s.rig=1;else delete s.rig;if(Object.keys(s).length)P.sa=s;else delete P.sa})},
+  bm:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'beam',type:defs('beam').type,level:lid,x1,y1,x2,y2,off:0},o||{});P.els.push(e);id=e.id});return id},
+  col:(lid,x,y,o)=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'column',type:defs('column').type,level:lid,x,y,rot:0,height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});return id},
+  split:(id,x,y)=>{const n0=P.seq;edit(()=>splitLine(IDX.get(id),{x,y}));return P.seq>n0?n0:null},
+  splitc:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
