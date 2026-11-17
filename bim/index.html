@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=457,V1_NAME='V1.447';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=458,V1_NAME='V1.448';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49814,6 +49814,106 @@ Object.assign(STR,{a_en447:['พลังงานรายปี (Systems Analy
   en447_net:['ไฟฟ้าสุทธิที่ซื้อ','Net electricity bought'],en447_nz:['ผลิตได้มากกว่าที่ใช้ (Net Zero)','makes more than it uses (net zero)'],en447_neui:['EUI สุทธิ','Net EUI'],en447_ncost:['ค่าไฟสุทธิ','Net energy cost'],
   p_en447:['พลังงานรายปี','Annual Energy'],p_en447e:['ดัชนีการใช้พลังงาน','Energy Use Intensity'],
   pv447_bld:['ไฟฟ้าทั้งปีของอาคาร (Systems Analysis)','Building electricity a year (Systems Analysis)'],pv447_cov:['แผงให้ไฟ','Panels cover'],pv447_neui:['EUI สุทธิหลังหักแผง','Net EUI after the panels']});
+/* ===== V1.448 Building Performance Factors (Revit: Insight's factors on the energy model — Building Orientation, Window-to-Wall Ratio, Window Shades,
+   Window Glass, Wall and Roof Construction, Skylights, Infiltration, Lighting Efficiency, Plug Load Efficiency, HVAC, Operating Schedule, PV Surface
+   Coverage).  With the energy model from masses each factor's options are worked out one at a time through the annual energy (V1.447), everything else as
+   it is; a factor shows the range of EUI its options give (net of the PV panels when they are taken off), the factors that can move the EUI most first, the
+   option set now marked and the best one; a click on an option sets it in the project (Ctrl+Z takes it back); the EUI with every factor at its best together,
+   and a target EUI (P.bpf448.tg) drawn on every range.  PV coverage scales the panels' first-year electricity (it is in proportion to the panel area). ===== */
+const BPF448_ORI=[0,45,90,135,180,225,270,315],BPF448_WWR=[15,30,40,50,65,80,95],BPF448_SD=[0,300,600,900,1200],BPF448_SK=[0,1,2,5],BPF448_INF=[0,0.17,0.4,1],
+  BPF448_LPD=[10.76,7.53,3.23],BPF448_EPD=[21.53,13.99,6.46],BPF448_SCH=[[12,5],[12,6],[24,7]],BPF448_COV=[10,25,50,80,100];
+const bpf448=P0=>{const g=P0&&P0.bpf448&&typeof P0.bpf448==='object'&&!Array.isArray(P0.bpf448)?P0.bpf448:{},v=+g.tg;return{tg:g.tg!=null&&g.tg!==''&&isFinite(v)&&v>0?Math.min(2000,v):null}};
+const bpfObj448=(o,k)=>o&&o[k]&&typeof o[k]==='object'&&!Array.isArray(o[k])?o[k]:{};
+const bpfCp448=(Q,k,o)=>{Q[k]=Object.assign({},bpfObj448(Q,k),o);for(const x in o)if(o[x]==null)delete Q[k][x]};
+const bpfNum448=v=>String(Math.round(v*100)/100);
+/* the space types' lighting (lp) or equipment (ep) power, the same for every type (null: each type its own) */
+function bpfLu448(P0,k){const L=bpfObj448(P0,'lu246'),vs=Object.keys(LOAD_USE).map(u=>{const o=L[u];return o&&o[k]!=null&&o[k]!==''&&isFinite(+o[k])?+o[k]:null});return vs.every(v=>v!=null&&Math.abs(v-vs[0])<1e-9)?vs[0]:null}
+function bpfLuSet448(T,k,v){const L0=bpfObj448(T,'lu246'),L={};for(const u of Object.keys(LOAD_USE)){const o=Object.assign({},L0[u]||{});if(v==null)delete o[k];else o[k]=v;if(Object.keys(o).length)L[u]=o}
+  for(const u of Object.keys(L0))if(!LOAD_USE[u])L[u]=L0[u];if(Object.keys(L).length)T.lu246=L;else delete T.lu246}
+const bpfEd448=f=>()=>{edit(()=>{f(P);for(const g of XC)g()})};
+/* the factors: {k, opts: [{lab, set(Q) on a copy, go() on the project, s: PV scale}], cur} */
+function bpfFactors448(P0){const C=ce438(P0),U=ceU439(P0,C),E=enSet(P0),S=loadSet(P0),F=[],tn0=P0.info&&isFinite(+P0.info.tn)?+P0.info.tn:0,nrm=a=>((a+180)%360+360)%360-180;
+  const fac=(k,opts,isCur,curLab)=>{let cur=opts.findIndex(isCur);if(cur<0){opts.unshift({lab:t('bpf448_cur',curLab),set:null,go:null});cur=0}F.push({k,opts,cur})};
+  const ce=o=>({set:Q=>bpfCp448(Q,'ce438',o),go:bpfEd448(T=>{T.ce438=Object.assign({},bpfObj448(T,'ce438'),o)})}),near=(a,b)=>Math.abs(a-b)<1e-6;
+  fac('ori',BPF448_ORI.map(a=>({lab:a?'+'+a+'°':'0°',set:Q=>bpfCp448(Q,'info',{tn:nrm(tn0+a)||null}),go:()=>rtnSet(nrm(tn0+a))})),o=>o.lab==='0°','');
+  fac('wwr',BPF448_WWR.map(v=>Object.assign({lab:v+' %'},ce({gp:v}))),(o,i)=>near(BPF448_WWR[i],C.gp),C.gp+' %');
+  fac('shade',BPF448_SD.map(d=>Object.assign({lab:d?d+' mm':t('bpf448_none')},ce(d?{gs:1,sd:d}:{gs:0}))),(o,i)=>BPF448_SD[i]===(C.gs?+C.sd||0:0),(C.gs?C.sd:0)+' mm');
+  fac('glass',CE439_P.ug.map(([n,u,h])=>Object.assign({lab:t('ce439_p_'+n)},ce({ug:u,gh:h}))),(o,i)=>near(CE439_P.ug[i][1],U.ug)&&near(CE439_P.ug[i][2],U.gh),'U '+bpfNum448(U.ug)+' · SHGC '+bpfNum448(U.gh));
+  fac('wall',CE439_P.uw.map(([n,u])=>Object.assign({lab:t('ce439_p_'+n)},ce({uw:u}))),(o,i)=>near(CE439_P.uw[i][1],U.uw),'U '+bpfNum448(U.uw));
+  fac('roof',CE439_P.ur.map(([n,u])=>Object.assign({lab:t('ce439_p_'+n)},ce({ur:u}))),(o,i)=>near(CE439_P.ur[i][1],U.ur),'U '+bpfNum448(U.ur));
+  fac('sky',BPF448_SK.map(v=>Object.assign({lab:v+' %'},ce({sk:v}))),(o,i)=>near(BPF448_SK[i],C.sk),C.sk+' %');
+  fac('inf',BPF448_INF.map(v=>({lab:v?v+' ACH':t('bpf448_inf0'),set:Q=>bpfCp448(Q,'load',{inf:v||null}),go:bpfEd448(T=>{T.load=Object.assign({},bpfObj448(T,'load'));if(v)T.load.inf=v;else delete T.load.inf})})),(o,i)=>near(BPF448_INF[i],S.inf),S.inf+' ACH');
+  for(const [k,L0] of [['lpd',BPF448_LPD],['epd',BPF448_EPD]]){const q=k==='lpd'?'lp':'ep',now=bpfLu448(P0,q);
+    fac(k,[null,...L0].map(v=>({lab:v==null?t('bpf448_types'):v+' W/m²',v,set:Q=>bpfLuSet448(Q,q,v),go:bpfEd448(T=>bpfLuSet448(T,q,v))})),o=>o.v==null?now==null:now!=null&&near(o.v,now),now+' W/m²')}
+  fac('hvac',EN_SYS.map(s=>({lab:t('en_s_'+s),set:Q=>bpfCp448(Q,'en',{sys:s,cop:s===E.sys?E.cop:null}),go:bpfEd448(T=>{const o=Object.assign({},bpfObj448(T,'en'));if(o.sys!==s)delete o.cop;o.sys=s;T.en=o})})),(o,i)=>EN_SYS[i]===E.sys,'');
+  {const hs=h=>Object.fromEntries(Object.keys(LH_HRS).map(k=>[k,h===24?[0,0]:[8,8+h]])),same=h=>Object.keys(LH_HRS).every(k=>{const a=S.hrs[k];return h===24?a[0]===a[1]:a[0]===8&&a[1]===8+h});
+    fac('sched',BPF448_SCH.map(([h,d])=>({lab:t('bpf448_s',h,d),set:Q=>{bpfCp448(Q,'load',{hrs:hs(h)});bpfCp448(Q,'en',{wk:d})},go:bpfEd448(T=>{T.load=Object.assign({},bpfObj448(T,'load'),{hrs:hs(h)});T.en=Object.assign({},bpfObj448(T,'en'),{wk:d})})})),
+      (o,i)=>same(BPF448_SCH[i][0])&&E.wk===BPF448_SCH[i][1],t('bpf448_as'))}
+  if(E.pv){const o=pv446(P0),R=pvRun446(P0);if(R.n>0&&o.cov>0)fac('pv',BPF448_COV.map(v=>({lab:v+' %',s:v/o.cov,set:null,go:bpfEd448(T=>{T.pv446=Object.assign({},bpfObj448(T,'pv446'),{cov:v})})})),(x,i)=>near(BPF448_COV[i],o.cov),o.cov+' %')}
+  return F}
+/* the run: each option's EUI (net of PV when it is taken off), each factor's range and best, all the bests together; kept until the model changes */
+let BPF448C=null;
+function bpfRun448(P0){if(BPF448C&&BPF448C.P===P0&&BPF448C.ver===VER&&BPF448C.lang===LANG)return BPF448C.R;const t0=performance.now();
+  const E=enSet(P0),Y0=enYear(P0),pvK=E.pv?pvRun446(P0).kwh:0,met=(Y,s)=>Y.area>0?(Y.tot-pvK*(s==null?1:s))/Y.area:0,F=bpfFactors448(P0);let runs=1;
+  for(const f of F){for(const [i,o] of f.opts.entries()){let Y=Y0;if(i!==f.cur&&o.set){const Q=Object.create(P0);o.set(Q);Y=enYear(Q);runs++}o.eui=met(Y,i===f.cur?1:o.s);o.tot=Y.tot}
+    const e=f.opts.map(o=>o.eui);f.lo=Math.min(...e);f.hi=Math.max(...e);f.best=e.indexOf(f.lo);f.name=t('bpf448_f_'+f.k)}
+  F.sort((a,b)=>(b.hi-b.lo)-(a.hi-a.lo));
+  const B=Object.create(P0);let bs=1;for(const f of F){const o=f.opts[f.best];if(o.set&&f.best!==f.cur)o.set(B);if(o.s!=null)bs=f.best===f.cur?1:o.s}
+  const Yb=enYear(B);runs++;const R={eui:met(Y0),tot:Y0.tot,area:Y0.area,n:Y0.n,pv:!!E.pv,best:met(Yb,bs),bestTot:Yb.tot-(E.pv?pvK*bs:0),F,runs,ms:performance.now()-t0,tg:bpf448(P0).tg};
+  BPF448C={P:P0,ver:VER,lang:LANG,R};return R}
+/* the dialog */
+function dlgBPF448(){ui.helpAt='calc';
+  if(!enMass447(P)){openDlg(t('a_bpf448'),`<p class="note warn">${esc(t('bpf448_mass'))}</p>`,`<button class="btn" data-act="ce438">${t('a_ce438')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`);return}
+  const R=bpfRun448(P);
+  if(!R.n){openDlg(t('a_bpf448'),`<p class="note warn">${esc(t('ce438_none'))}</p>`,`<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`);return}
+  const u='kWh/'+t('u_m2')+'·'+t('en_yr'),f0=v=>Math.round(v).toLocaleString('en-US'),tg=bpf448(P).tg,all=[R.eui,...R.F.flatMap(f=>[f.lo,f.hi])].concat(tg!=null?[tg]:[]),gl=Math.min(...all),gh=Math.max(...all),sp=gh-gl||1,x=v=>(12+576*(v-gl)/sp).toFixed(1);
+  const pct=R.eui>0?Math.round((R.best/R.eui-1)*100):0,tgS=tg==null?'':' · '+t('bpf448_tg')+' '+f0(tg)+': '+t(R.eui<=tg?'bpf448_tgok':R.best<=tg?'bpf448_tgb':'bpf448_tgn');
+  const px=v=>(100*(v-gl)/sp).toFixed(2)+'%',bar=f=>`<div class="bpf448b" aria-hidden="true"><i class="rg" style="left:${px(f.lo)};width:${(100*(f.hi-f.lo)/sp).toFixed(2)}%"></i>`
+    +(tg!=null?`<i class="tg" style="left:${px(tg)}"></i>`:'')+`<i class="nw" style="left:${px(R.eui)}"></i>`
+    +f.opts.map((o,i)=>`<i class="d${i===f.cur?' c':''}${i===f.best?' b':''}" style="left:${px(o.eui)}" title="${esc(o.lab)} · ${f0(o.eui)} ${u}"></i>`).join('')+'</div>';
+  const rows=R.F.map(f=>`<div class="bpf448f" data-f="${f.k}"><div class="bpf448h"><b>${esc(f.name)}</b><span>${f0(f.lo)}–${f0(f.hi)} ${u}</span></div>${bar(f)}<div class="bpf448o">`
+    +f.opts.map((o,i)=>`<button class="btn bpf448c${i===f.cur?' on':''}${i===f.best?' best':''}" data-f="${f.k}" data-i="${i}"${i===f.cur||!o.go?' disabled':''}>${esc(o.lab)} · <b>${f0(o.eui)}</b></button>`).join('')+'</div></div>').join('');
+  const css=`<style>.bpf448 .bpf448f{padding:6px 0;border-bottom:1px solid var(--line)}.bpf448 .bpf448h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.bpf448 .bpf448h span{color:var(--muted);font-family:var(--f-mono);font-size:12px}
+    .bpf448 .bpf448b{position:relative;height:22px;margin:4px 8px}.bpf448 .bpf448b::before{content:'';position:absolute;left:0;right:0;top:10px;height:2px;background:currentColor;opacity:.15}
+    .bpf448 .bpf448b i{position:absolute;display:block;box-sizing:border-box}.bpf448 .bpf448b .rg{top:5px;height:12px;border-radius:6px;background:#9cc3ea;min-width:3px}.bpf448 .bpf448b .nw{top:0;bottom:0;width:2px;margin-left:-1px;background:currentColor}
+    .bpf448 .bpf448b .tg{top:0;bottom:0;width:0;margin-left:-1px;border-left:2px dashed #e8702a}.bpf448 .bpf448b .d{top:6px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:#fff;border:1.5px solid #2f7fd6}
+    .bpf448 .bpf448b .d.b{border-color:#3d9a55;background:#3d9a55}.bpf448 .bpf448b .d.c{background:#2f7fd6;border-color:#2f7fd6;width:12px;height:12px;margin-left:-6px;top:5px}.bpf448 .bpf448o{display:flex;flex-wrap:wrap;gap:4px}.bpf448 .bpf448c{font-size:12px;padding:2px 8px;min-height:0}.bpf448 .bpf448c.on{background:#2f7fd6;color:#fff;border-color:#2f7fd6;opacity:1}
+    .bpf448 .bpf448c.best{border-color:#3d9a55;box-shadow:inset 0 0 0 1px #3d9a55}.bpf448 .bpf448k{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin:4px 0}.bpf448 .bpf448k i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+    .bpf448 .bpf448t{display:flex;align-items:center;gap:8px;margin:6px 0}.bpf448 .bpf448t input{width:90px}</style>`;
+  const head=`<p class="note">${esc(t('bpf448_note'))}</p><p class="bpf448s"><b>${esc(t('bpf448_sum',f0(R.eui),f0(R.best),(pct>0?'+':'')+pct))}</b>${R.pv?' · '+esc(t('bpf448_net')):''}${esc(tgS)}</p>`
+    +`<div class="bpf448t"><label for="bpf448_tg">${esc(t('bpf448_tg'))}</label><input type="number" id="bpf448_tg" data-bpf="tg" min="0" max="2000" step="1" value="${tg==null?'':tg}"><small>${u}</small></div>`
+    +`<div class="bpf448k"><span><i style="background:#2f7fd6"></i>${esc(t('bpf448_now'))}</span><span><i style="background:#3d9a55"></i>${esc(t('bpf448_best'))}</span>${tg!=null?`<span><i style="background:#e8702a;border-radius:0;width:3px"></i>${esc(t('bpf448_tg'))}</span>`:''}</div>`;
+  openDlg(t('a_bpf448'),css+`<div class="bpf448">${head}<div class="bpf448l" style="max-height:56vh;overflow:auto">${rows}</div></div>`,
+    `<button class="btn" data-act="energy">${t('a_en447')}</button><button class="btn" data-act="bpf448csv">${t('cl440_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {click(e){const b=e.target.closest('.bpf448c');if(!b||b.disabled)return;const f=R.F.find(x=>x.k===b.dataset.f),o=f&&f.opts[+b.dataset.i];if(!o||!o.go)return;o.go();dlgBPF448()},
+     change(e){const el=e.target.closest('[data-bpf]');if(!el)return;const v=parseFloat(el.value);edit(()=>{const g=Object.assign({},bpfObj448(P,'bpf448'));if(isFinite(v)&&v>0)g.tg=v;else delete g.tg;P.bpf448=g;for(const f of XC)f()});dlgBPF448()}},'wide')}
+XA.bpf448=()=>dlgBPF448();
+XA.bpf448csv=async()=>{if(!enMass447(P))return;const R=bpfRun448(P),q=v=>'"'+String(v).replace(/"/g,'""')+'"',n=v=>(Math.round(v*100)/100).toString();
+  const L=[[t('bpf448_f'),t('bpf448_opt'),'EUI kWh/m2/yr','kWh/yr',t('bpf448_now'),t('bpf448_best')].map(q).join(',')];
+  for(const f of R.F)f.opts.forEach((o,i)=>L.push([q(f.name),q(o.lab),n(o.eui),n(o.tot),i===f.cur?1:0,i===f.best?1:0].join(',')));
+  L.push([q(t('bpf448_all')),q(''),n(R.best),n(R.bestTot),0,1].join(','));
+  const ok=await saveFile(fname('','-performance-factors.csv'),'﻿'+L.join('\r\n'),'text/csv');if(!ok)toast(t('export_na'))};
+XC.push(()=>{const g=P.bpf448;if(g===undefined)return;const o=bpf448(P);if(o.tg!=null)P.bpf448={tg:o.tg};else delete P.bpf448});
+/* the way in: the Analyze ribbon after PV Analysis, and the annual energy from masses */
+{const an=RIBBON.find(r=>r.id==='analyze'),pl=an&&an.panels.find(p=>p.t==='p_loads');if(pl&&!pl.b.includes('@bpf448')){const i=pl.b.indexOf('@pv446');pl.b.splice(i>=0?i+1:pl.b.length,0,'@bpf448')}}
+Object.assign(BTN,{'@bpf448':['bpf448','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-bpf448" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.8" rx="9" ry="1.3"/>`
+    +`<path fill="none" stroke="#2a3550" stroke-width=".7" d="M3 3.5V19.5H21.5"/><rect class="i-e" x="5" y="5" width="13" height="3" rx="1.5" fill="#9cc3ea" stroke="#2a3550" stroke-width=".55"/><rect class="i-e" x="8" y="10" width="9" height="3" rx="1.5" fill="#9cc3ea" stroke="#2a3550" stroke-width=".55"/>`
+    +`<rect class="i-e" x="10" y="15" width="5" height="3" rx="1.5" fill="#9cc3ea" stroke="#2a3550" stroke-width=".55"/><path stroke="#1d2733" stroke-width="1.2" d="M13 3.5V19"/><circle cx="8" cy="11.5" r="1.9" fill="#3d9a55" stroke="#1e5c30" stroke-width=".5"/></symbol>`)})();
+{const f0=dlgEnergy;dlgEnergy=(...a)=>{const r=f0(...a),D=$('#dlg'),Y=ui.enY287;if(D&&D.open&&Y&&Y.src447==='mass'){const b=D.querySelector('[data-act="cl440"]');if(b&&!D.querySelector('[data-act="bpf448"]'))b.insertAdjacentHTML('afterend',`<button class="btn" data-act="bpf448">${t('a_bpf448')}…</button>`)}return r}}
+XA.energy=dlgEnergy;
+Object.assign(STR,{a_bpf448:['ปัจจัยประสิทธิภาพอาคาร (Insight)','Building Performance Factors'],
+  bpf448_note:['แบบ Insight ของ Revit: แต่ละปัจจัยลองทีละตัวเลือกผ่านพลังงานรายปีจากมวล ส่วนอื่นคงตามแบบ แถบคือช่วง EUI ที่ปัจจัยนั้นให้ได้ เรียงจากปัจจัยที่มีผลมากที่สุด เส้นเข้มคือ EUI ตอนนี้ คลิกตัวเลือกเพื่อใช้กับโครงการ (Ctrl+Z ย้อนได้) ค่ากระจกและกันแดดที่ตั้งเฉพาะผิวของมวลยังคงใช้ค่าของผิวนั้น',
+    'As Revit Insight: each factor\'s options are tried one at a time through the annual energy from masses, everything else as it is. A bar is the range of EUI a factor can give, the factors with the most effect first; the dark line is the EUI now. Click an option to set it in the project (Ctrl+Z takes it back). Glazing and shades set on a mass\'s own faces keep their own values'],
+  bpf448_mass:['ปัจจัยประสิทธิภาพอาคารใช้กับแบบจำลองพลังงานจากมวล: เปิดแบบจำลองพลังงานจากมวลก่อน','Building Performance Factors work on the energy model from masses: turn it on first'],
+  bpf448_sum:['EUI ตอนนี้ {0} · ทุกปัจจัยที่ดีที่สุดรวมกัน {1} kWh/ตร.ม.·ปี ({2} %)','EUI now {0} · every factor at its best {1} kWh/m²·yr ({2} %)'],bpf448_net:['สุทธิหลังหักไฟจากแผงโซลาร์','net of the PV panels'],
+  bpf448_tg:['เป้าหมาย EUI','Target EUI'],bpf448_tgok:['ถึงแล้ว','met now'],bpf448_tgb:['ถึงได้เมื่อปรับปัจจัย','can be met with the factors'],bpf448_tgn:['ยังไม่ถึงแม้ปรับทุกปัจจัย','not met even with every factor at its best'],
+  bpf448_f_ori:['ทิศของอาคาร','Building Orientation'],bpf448_f_wwr:['สัดส่วนกระจกต่อผนัง','Window-to-Wall Ratio'],bpf448_f_shade:['กันแดดเหนือหน้าต่าง','Window Shades'],bpf448_f_glass:['ชนิดกระจก','Window Glass'],
+  bpf448_f_wall:['ผนัง','Wall Construction'],bpf448_f_roof:['หลังคา','Roof Construction'],bpf448_f_sky:['ช่องแสงหลังคา','Skylights'],bpf448_f_inf:['อากาศรั่วซึม','Infiltration'],bpf448_f_lpd:['กำลังไฟแสงสว่าง','Lighting Efficiency'],
+  bpf448_f_epd:['กำลังไฟอุปกรณ์','Plug Load Efficiency'],bpf448_f_hvac:['ระบบปรับอากาศ','HVAC'],bpf448_f_sched:['ตารางเวลาใช้งาน','Operating Schedule'],bpf448_f_pv:['พื้นที่ติดแผงโซลาร์','PV Surface Coverage'],
+  bpf448_none:['ไม่มี','None'],bpf448_types:['ตามชนิดห้อง','As space types'],bpf448_as:['ตามที่ตั้งไว้','as set'],bpf448_cur:['ตอนนี้ {0}','Now {0}'],bpf448_inf0:['ไม่คิด','Not counted'],bpf448_s:['{0} ชม. {1} วัน','{0} h, {1} days'],
+  bpf448_f:['ปัจจัย','Factor'],bpf448_opt:['ตัวเลือก','Option'],bpf448_now:['ตอนนี้','Now'],bpf448_best:['ดีที่สุด','Best'],bpf448_all:['ทุกปัจจัยที่ดีที่สุดรวมกัน','Every factor at its best']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -52084,6 +52184,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.445 · วิเคราะห์แสงอาทิตย์ (Solar Analysis แบบ Revit): พลังงานแสงอาทิตย์ที่ตกบนหลังคาและผนังนอกของแบบจำลองพลังงาน (จากมวลหรือจากห้อง) ทั้งปีหรือรายเดือน เป็น kWh/ตร.ม. หักส่วนที่ถูกบังด้วยอาคารเอง มวลบริบท และกันแดด แสดงเป็นแผนที่สีในมุมมอง 3 มิติพร้อมแถบสี ตารางต่อผิว (ทิศ มุมเอียง พื้นที่ เฉลี่ย รวม) ส่งออก CSV ได้ ตั้งขนาดตาราง สัดส่วนฟ้าใส และการสะท้อนของพื้นได้ เปิดจากแท็บวิเคราะห์หรือหน้าต่างแบบจำลองพลังงาน
 - V1.446 · วิเคราะห์แผงโซลาร์ (PV) จากผลวิเคราะห์แสงอาทิตย์: ช่องที่ได้แสงไม่ต่ำกว่าเกณฑ์วางแผงตามสัดส่วนพื้นที่ติดตั้ง ได้พื้นที่แผง กำลังติดตั้ง kWp ไฟฟ้าต่อปี ผลผลิตจำเพาะ ค่าไฟที่ประหยัด ค่าติดตั้ง ระยะคืนทุน ไฟฟ้าตลอดอายุเมื่อแผงเสื่อม และ CO₂ ที่ลดได้ ตั้งประสิทธิภาพแผง ค่าสมรรถนะระบบ ค่าไฟ ค่าติดตั้งได้ ตารางต่อผิว ส่งออก CSV และแสดงช่องที่วางแผงในมุมมอง 3 มิติ (ช่องที่ต่ำกว่าเกณฑ์เป็นสีเทา)
 - V1.447 · พลังงานรายปีจากมวล (Systems Analysis แบบ Revit บนมวลแนวคิด): เมื่อแบบจำลองพลังงานมาจากมวล การวิเคราะห์พลังงานรายปีคิดทุกโซนของมวลรายชั่วโมงเหมือนห้อง ผนังและกระจกตามทิศด้วยวัสดุแบบแนวคิด กันแดด หลังคาและช่องแสงหลังคา (แดดผ่านช่องแสงหลังคาคิดในภาระรายชั่วโมงแล้ว) คน ไฟ อุปกรณ์ตามการใช้งานของชั้น ได้ไฟฟ้าทั้งปี EUI ค่าไฟ รายเดือน และเทียบระบบ หักไฟจากแผงโซลาร์ (PV Analysis) ได้ ไฟฟ้าสุทธิ EUI สุทธิ ค่าไฟสุทธิ สัดส่วนที่แผงให้ไฟ คุณสมบัติของมวลแสดงพลังงานรายปีและ EUI
+- V1.448 · ปัจจัยประสิทธิภาพอาคาร (แบบ Insight ของ Revit): ลองทีละปัจจัยผ่านพลังงานรายปีจากมวล ทิศของอาคาร สัดส่วนกระจก กันแดด ชนิดกระจก ผนัง หลังคา ช่องแสงหลังคา อากาศรั่วซึม กำลังไฟแสงสว่างและอุปกรณ์ ระบบปรับอากาศ ตารางเวลาใช้งาน และพื้นที่ติดแผงโซลาร์ แต่ละปัจจัยแสดงช่วง EUI เรียงจากที่มีผลมากที่สุด ตัวเลือกตอนนี้และที่ดีที่สุด คลิกตัวเลือกเพื่อใช้กับโครงการ (Ctrl+Z ย้อนได้) EUI เมื่อทุกปัจจัยดีที่สุดรวมกัน ตั้งเป้าหมาย EUI ได้ ส่งออก CSV
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -52676,6 +52777,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.445 · Solar Analysis (as Revit): the sun on the roofs and outside walls of the energy model (from masses or rooms) over a year or a month in kWh/m², with what the building, context masses and shades shade taken out; a colour map with a scale in 3D views, a table a surface (azimuth, tilt, area, mean, total), CSV; grid size, sky clearness and ground reflectance can be set; from the Analyze tab or the energy model dialog
 - V1.446 · PV Analysis from the Solar Analysis: squares that get at least the cutoff take panels over the coverage share; panel area, installed kWp, electricity a year, specific yield, money saved, installed cost, payback, electricity over the life as panels wear, CO₂ avoided; panel efficiency, performance ratio, tariff and cost can be set; a table a surface, CSV, and the panel squares in 3D views (the rest grey)
 - V1.447 · Annual energy from masses (Revit's Systems Analysis on conceptual masses): with the energy model from masses, the annual energy works out every zone of the masses hour by hour as it does a room (walls and glazing by orientation with the Conceptual Constructions, shades, roof and skylights with the sun through them now counted, people, lights and equipment of each floor's Usage): electricity a year, EUI, cost, months and the system comparison; the PV Analysis electricity can be taken off (net electricity, net EUI, net cost, the share covered); a mass's Properties show its annual energy and EUI
+- V1.448 · Building Performance Factors (as Revit Insight): orientation, window-to-wall ratio, shades, glass, walls, roof, skylights, infiltration, lighting and plug-load power, HVAC, operating schedule and PV coverage, each tried one at a time through the annual energy from masses; each factor's EUI range (biggest effect first), the option now and the best; a click sets an option in the project (Ctrl+Z takes it back); the EUI with every factor at its best; a target EUI; CSV
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -54928,6 +55030,17 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r448={
+  set:o=>{edit(()=>{if(o===null)delete P.bpf448;else P.bpf448=Object.assign({},P.bpf448||{},o);for(const f of XC)f()});return P.bpf448?JSON.parse(JSON.stringify(P.bpf448)):null},
+  raw:o=>{P.bpf448=o;for(const f of XC)f();return P.bpf448===undefined?null:JSON.parse(JSON.stringify(P.bpf448))},
+  run:()=>{const R=bpfRun448(P);return{eui:R.eui,tot:R.tot,area:R.area,n:R.n,pv:R.pv,best:R.best,bestTot:R.bestTot,runs:R.runs,ms:R.ms,tg:bpf448(P).tg,
+    F:R.F.map(f=>({k:f.k,name:f.name,cur:f.cur,best:f.best,lo:f.lo,hi:f.hi,opts:f.opts.map(o=>({lab:o.lab,eui:o.eui,tot:o.tot,s:o.s==null?null:o.s,go:!!o.go}))}))}},
+  apply:(k,i)=>{const R=bpfRun448(P),f=R.F.find(x=>x.k===k),o=f&&f.opts[i];if(!o||!o.go)return false;o.go();return true},
+  /* the year of the project with some settings changed by hand, to check the factors against */
+  one:o=>{const Q=Object.create(P);for(const k in o)Q[k]=Object.assign({},bpfObj448(P,k),o[k]);const Y=enYear(Q);return{tot:Y.tot,eui:Y.eui,area:Y.area}},
+  clear:()=>{BPF448C=null},
+  open:()=>dlgBPF448(),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r447={
   set:o=>{edit(()=>{if(o===null)delete P.en;else{P.en=Object.assign({},P.en||{},o);for(const k in o)if(o[k]===undefined)delete P.en[k]}for(const f of XC)f()});return P.en?JSON.parse(JSON.stringify(P.en)):null},
   raw:o=>{P.en=o;for(const f of XC)f();return P.en===undefined?null:JSON.parse(JSON.stringify(P.en))},
