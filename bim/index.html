@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=498,V1_NAME='V1.488';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=499,V1_NAME='V1.489';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -53778,6 +53778,182 @@ Object.assign(STR,{
   sb488_item_b:['สลักเกลียว M{0} เกรด {1} ยาว {2} มม. พร้อมแป้นเกลียวและแหวน','Bolt M{0} grade {1}, {2} mm, with nut and washers'],
   sb488_item_a:['สมอยึด M{0} เกรด {1} ยาว {2} มม. พร้อมแป้นเกลียวและแหวน','Anchor bolt M{0} grade {1}, {2} mm, with nuts and washer'],
   sb488_item_h:['เจาะรู Ø{0} มม. ในแผ่นหนา {1} มม.','Hole Ø{0} mm in a {1} mm plate'],u_sb488h:['รู','holes']});
+/* ===== 489 Welds (V1.489; Revit 2021.1 and later: Steel › Fabrication Elements › Welds, a weld along the edges of a plate where it meets what it lies on) =====
+   e = {cat:'sweld', host: the plate (V1.487) whose edges it runs along, level (its plate's), ed: the edges welded (edge i runs from corner i to corner i + 1 of
+   the plate's outline, short of its corner cuts); absent: all round the plate, its corner cuts too; k: 'f' fillet, 'b' complete penetration butt, 'p' partial
+   penetration butt; a: its size (the leg of a fillet, the depth of a partial butt weld; 6 mm); at: 'b' along the bottom of the edges (default), 't' along the top,
+   'bt' both; loc: 'f' when it is made on site (a field weld); il, ip: an intermittent weld, the length of each piece and their pitch (mm)}.
+   It has no place of its own: it is where its plate is, wherever the plate is moved, turned, mirrored, copied or pasted, and it goes when the plate is deleted.
+   Its size is checked against AISC 360 J2.2b and Table J2.4: a fillet at least 3, 5, 6 or 8 mm on a plate up to 6, 13, 19 or over 19 mm, and at most the plate
+   less 2 mm (under 6 mm: the plate); a partial penetration weld no deeper than the plate. */
+const SW489_K=['f','b','p'],SW489_AT=['b','t','bt'],SW489_A=6,SW489_COL=[0.78,0.5,0.24],SW489_HEX='#9c6430';
+const sw489K=e=>e&&SW489_K.includes(e.k)?e.k:'f';
+const sw489At=e=>e&&SW489_AT.includes(e.at)?e.at:'b';
+const sw489A=e=>{const n=+(e&&e.a);return n>0?Math.min(100,Math.round(n*10)/10):SW489_A};
+const sw489Loc=e=>e&&e.loc==='f'?'f':'s';
+const sw489Min=th=>th<=6?3:th<=13?5:th<=19?6:8;
+const sw489Max=th=>th<6?th:th-2;
+const sw489Host=(Q,e)=>{if(!e||e.host==null)return null;const h=(Q===P?IDX.get(e.host):null)||Q.els.find(x=>x.id===e.host);return h&&h.cat==='splate'&&sp487Ok(Q,h)?h:null};
+/* the length an edge loses to the corner cuts at its ends */
+const sw489Cut=(h,i)=>{const c=sp487Cc(h,i);return c&&sp487Convex(h,i)?Math.min(c[1],sp487Max(h,i)):0};
+/* edge i of a plate as it is after its corner cuts: [from, to] or null */
+function sw489Edge(h,i){const A=h.pts,n=A.length,p=A[i],q=A[(i+1)%n],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(!(L>=1))return null;const ux=(q[0]-p[0])/L,uy=(q[1]-p[1])/L,c0=sw489Cut(h,i),c1=sw489Cut(h,(i+1)%n);
+  return L-c0-c1>=1?[[p[0]+ux*c0,p[1]+uy*c0],[q[0]-ux*c1,q[1]-uy*c1]]:null}
+const sw489Eds=e=>Array.isArray(e.ed)?[...new Set(e.ed.map(Number))].filter(i=>Number.isInteger(i)&&i>=0).sort((x,y)=>x-y):null;
+/* the runs it lays: polylines along the true outline, the side away from the plate known by the way the outline goes round */
+function sw489Runs(Q,e){const h=sw489Host(Q,e),G=h&&sp487Geo0(Q,h);if(!G)return null;const s=area2(G.O)>0?1:-1,E=sw489Eds(e);
+  if(!E)return{h,G,s,runs:[G.O.concat([G.O[0]])]};const runs=[];for(const i of E){if(i>=h.pts.length)continue;const r=sw489Edge(h,i);if(r)runs.push(r)}return{h,G,s,runs}}
+/* the pieces of a run: the whole of it, or every ip mm a piece il long */
+function sw489Pieces(run,il,ip){if(!(il>0&&ip>il))return[run];const out=[],seg=[];let tot=0;for(let i=0;i+1<run.length;i++){const l=Math.hypot(run[i+1][0]-run[i][0],run[i+1][1]-run[i][1]);seg.push(l);tot+=l}
+  const at=d=>{let k=0;while(k<seg.length-1&&d>seg[k]){d-=seg[k];k++}const f=seg[k]?Math.min(1,d/seg[k]):0,a=run[k],b=run[k+1];return{k,p:[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]}};
+  const m=Math.max(1,Math.floor((tot-il)/ip)+1),gap=(tot-((m-1)*ip+il))/2;          // the pieces centred along the run
+  for(let j=0;j<m;j++){const d0=Math.max(0,gap+j*ip),d1=Math.min(tot,d0+il),A=at(d0),B=at(d1),pl=[A.p];for(let k=A.k+1;k<=B.k;k++)pl.push(run[k]);pl.push(B.p);out.push(pl)}return out}
+const sw489Len=pl=>{let L=0;for(let i=0;i+1<pl.length;i++)L+=Math.hypot(pl[i+1][0]-pl[i][0],pl[i+1][1]-pl[i][1]);return L};
+function sw489Geo(Q,e){if(!e||e.cat!=='sweld')return null;const R=sw489Runs(Q,e);if(!R||!R.runs.length)return null;const k=sw489K(e),a=sw489A(e),at=k==='b'?'b':sw489At(e),th=R.G.th,Z=R.G.z;
+  const il=+e.il>0?Math.round(+e.il):0,ip=+e.ip>0?Math.round(+e.ip):0,int=il>0&&ip>il,pcs=[];let L=0,Lw=0;
+  for(const r of R.runs){L+=sw489Len(r);for(const q of sw489Pieces(r,int?il:0,int?ip:0)){pcs.push(q);Lw+=sw489Len(q)}}
+  const sides=k!=='b'&&at==='bt'?2:1,dep=k==='b'?th:k==='p'?Math.min(a,th):a,sec=k==='f'?a*a/2:dep*dep/2+(k==='b'?th*2:0),kg=sec*Lw*sides*7.85e-6;          // the weld metal: a fillet's triangle, a 45° bevel (and the root gap of a full one)
+  const lo=k==='b'?0:sw489Min(th),hi=k==='f'?sw489Max(th):k==='p'?th:th,ok=k==='b'||(a>=lo-1e-9&&a<=hi+1e-9);
+  const z=k==='b'?[Z[0],Z[1]]:at==='b'?[Z[0],Z[0]+Math.min(a,th)]:at==='t'?[Z[1]-Math.min(a,th),Z[1]]:[Z[0],Z[1]];
+  return{e,h:R.h,s:R.s,k,a,at,loc:sw489Loc(e),th,Z,runs:R.runs,pcs,L,Lw,np:pcs.length,int,il,ip,sides,dep,kg,lo,hi,ok,z,all:!sw489Eds(e)}}
+{const f0=zRange;zRange=(Q,e)=>{if(!e||e.cat!=='sweld')return f0(Q,e);const G=sw489Geo(Q,e);return G?G.z.slice():f0(Q,e)}}
+GEOM.sweld='sweld';DISC.sweld='struct';CREATE_TOOLS.add('sweld');
+{const i=VG_CATS.indexOf('sbolt');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'sweld')}DXF_LAYER.sweld=['S-STEL-WELD',30];
+FLT_CATS.push('sweld');SF_CATS.push('sweld');SF_DEF.sweld=['mark','sw489pl','sw489k','sw489a','sw489ed','sw489lw','sw489kg','sw489ok'];
+/* ---- it goes with its plate: selected, copied and pasted with it; a plate moved to another level takes it along ---- */
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids);const H=new Set([...s].filter(id=>{const e=IDX.get(id);return e&&e.cat==='splate'}));if(H.size)for(const e of P.els)if(e.cat==='sweld'&&H.has(e.host))s.add(e.id);return s}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(c&&c.cat==='sweld'&&M.has(c.host))c.host=M.get(c.host)}return out}}
+{const f0=pasteObjs;pasteObjs=(objs,dx,dy,lv,view)=>{const src=new Map(objs.map(o=>[o.id,o])),O=objs.filter(o=>o.cat!=='sweld'||(src.has(o.host)&&src.get(o.host).cat==='splate')),ids=f0(O,dx,dy,lv,view);          // a weld needs its plate
+  const made=ids.map(id=>IDX.get(id)).filter(Boolean),pl=made.filter(e=>e.cat==='splate');
+  for(const c of made){if(c.cat!=='sweld')continue;const h=src.get(c.host);if(!h)continue;const m=pl.find(p=>p.pts.length===h.pts.length&&p.pts.every((q,i)=>Math.abs(q[0]-h.pts[i][0]-dx)<0.01&&Math.abs(q[1]-h.pts[i][1]-dy)<0.01));if(m){c.host=m.id;c.level=m.level}}
+  return ids}}
+{const f0=applyField;applyField=(cat,o,key,raw)=>{const r=f0(cat,o,key,raw);if(cat==='splate'&&key==='level'&&o&&o.id!=null&&P&&P.els)for(const w of P.els)if(w.cat==='sweld'&&w.host===o.id)w.level=o.level;return r}}
+/* ---- 3D, elevations, sections and IFC: a fillet its triangle along the edge, on what the plate lies on (or under what it hangs from); a butt weld a bead on the edge ---- */
+function sw489Mesh(G,items){const m={id:G.e.id,cat:'sweld',c:SW489_COL,a:1,t:[],l:[],s:[],mt:MAT.metal},gl=(p,z)=>[p[0],z,p[1]],Z=G.Z,a=G.a,d=Math.min(a,G.th);items.push(m);
+  for(const pl of G.pcs)for(let i=0;i+1<pl.length;i++){const p=pl[i],q=pl[i+1],L=Math.hypot(q[0]-p[0],q[1]-p[1]);if(L<0.5)continue;const n=[G.s*(q[1]-p[1])/L,-G.s*(q[0]-p[0])/L],o=(x,f)=>[x[0]+n[0]*f,x[1]+n[1]*f],v=[q[0]-p[0],0,q[1]-p[1]];
+    const prism=T=>{extrude(T,v,m.t);m.l.push(...T[0],...T[0].map((x,j)=>x+v[j]),...T[1],...T[1].map((x,j)=>x+v[j]))};
+    if(G.k==='b'){prism([gl(p,Z[0]),gl(o(p,1.5),Z[0]+G.th*0.2),gl(o(p,1.5),Z[1]-G.th*0.2),gl(p,Z[1])]);continue}
+    if(G.at!=='t')prism([gl(p,Z[0]),gl(o(p,a),Z[0]),gl(p,Z[0]+d)]);if(G.at!=='b')prism([gl(p,Z[1]),gl(o(p,a),Z[1]),gl(p,Z[1]-d)])}}
+{const f0=buildMeshes;buildMeshes=function(P0,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!P0||!P0.els)return R;
+  for(const e of P0.els){if(e.cat!=='sweld')continue;const G=sw489Geo(P0,e);if(G)sw489Mesh(G,items)}return R}}
+/* ---- the plan: a heavy line just outside the edge with short strokes on its outer side, as weld lines are drawn; a field weld dashed; selected, its size ---- */
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='sweld')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'sweld')||hidEl(v,e))return'';const G=sw489Geo(P,e);if(!G)return'';
+  const z=vrZ(P,v),Z=G.z;if(v.rcp)return Z[1]>=z.cut&&Z[0]<=z.top?'on':'';return Z[0]<=z.cut&&Z[1]>=Math.min(z.bot,z.depth)?'on':''}}
+const SW489D={plan:null};
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const L=of('sweld');SW489D.plan=L.length;if(!L.length)return;const sc=v.scale||100;
+  for(const [e] of L){const G=sw489Geo(P,e);if(!G)continue;g.el(e);const k=hl(e.id),c=k||(o.screen&&!G.ok?col.warn:SW489_HEX),off=Math.max(G.a/2,0.25*sc),tk=0.7*sc,step=1.2*sc;
+    ctx.save();ctx.strokeStyle=c;g.dash(G.loc==='f'?[1.2,0.6]:null);
+    for(const pl of G.pcs){const sh=[];for(let i=0;i+1<pl.length;i++){const p=pl[i],q=pl[i+1],l=Math.hypot(q[0]-p[0],q[1]-p[1]);if(l<0.5)continue;const n=[G.s*(q[1]-p[1])/l,-G.s*(q[0]-p[0])/l];
+        sh.push([[p[0]+n[0]*off,p[1]+n[1]*off],[q[0]+n[0]*off,q[1]+n[1]*off],n,l])}
+      ctx.lineWidth=g.lw(k?0.5:0.35);for(const s of sh){g.seg(s[0],s[1])}
+      ctx.lineWidth=g.lw(0.13);g.dash(null);let carry=0;for(const s of sh){const ux=(s[1][0]-s[0][0])/s[3],uy=(s[1][1]-s[0][1])/s[3];for(let d=carry;d<=s[3];d+=step){const x=s[0][0]+ux*d,y=s[0][1]+uy*d;g.seg([x,y],[x+s[2][0]*tk,y+s[2][1]*tk])}carry=(carry-s[3])%step;if(carry<0)carry+=step}
+      if(G.loc==='f')g.dash([1.2,0.6])}
+    g.dash(null);
+    if(o.screen&&ui.sel.has(e.id)){const B=elBox(v,e),px=T&&T.s>0?1/T.s:sc/4;g.text(sw489Lbl(G),[B[2]+6*px,B[3]+6*px],13*px/sc,{color:col.sel,bold:true,halo:true,mono:true})}          // on the screen only: 13 px at any zoom
+    ctx.restore()}});
+/* its label when selected: z and the leg of a fillet (ISO 2553), CJP or PJP and its depth, the pieces of an intermittent weld, a flag for a site weld */
+const sw489Lbl=G=>(G.k==='b'?'CJP':G.k==='p'?'PJP '+G.a:'z'+G.a)+(G.int?' '+G.il+'/'+G.ip:'')+(G.loc==='f'?' ⚑':'');
+XHIT.sweld=(v,e,w)=>{const G=sw489Geo(P,e);if(!G)return Infinity;const off=Math.max(G.a/2,0.25*(v.scale||100));let d=Infinity;
+  for(const pl of G.pcs)for(let i=0;i+1<pl.length;i++){const p=pl[i],q=pl[i+1],l=Math.hypot(q[0]-p[0],q[1]-p[1])||1,n=[G.s*(q[1]-p[1])/l,-G.s*(q[0]-p[0])/l];d=Math.min(d,segDist(w.x,w.y,p[0]+n[0]*off,p[1]+n[1]*off,q[0]+n[0]*off,q[1]+n[1]*off))}return d};XHIT.sweld.pr=3;
+{const f0=elBox;elBox=(v,e)=>{if(!e||e.cat!=='sweld')return f0(v,e);const G=sw489Geo(P,e);if(!G)return null;const A=G.pcs.flat(),r=G.a;
+  return[Math.min(...A.map(p=>p[0]))-r,Math.min(...A.map(p=>p[1]))-r,Math.max(...A.map(p=>p[0]))+r,Math.max(...A.map(p=>p[1]))+r]}}
+/* ---- Properties ---- */
+const sw489HostName=(Q,e)=>{const h=sw489Host(Q,e);return h?(h.mark||t('cat_splate')+' #'+h.id):'—'};
+const sw489EdTx=G=>G.all?t('sw489_all'):t(G.runs.length===1?'sw489_ed1':'sw489_eds',G.runs.length);
+function sw489Rows(els){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},U=t('u_mm'),GS=els.map(x=>sw489Geo(P,x)),k=V(sw489K);
+  let h=PR.grp('g_constraints')+PR.ro('p_sw489pl',V(x=>sw489HostName(P,x)))+PR.ro('p_level',V(x=>{const l=lvl(P,x.level);return l?l.name:''}));
+  h+=PR.grp('g_sw489')+PR.sel('sw489k','p_sw489k',k,SW489_K.map(x=>[x,t('sw489k_'+x)]));
+  if(k!=='b')h+=PR.num('sw489a','p_sw489a'+(k==='p'?'p':''),V(sw489A),U,'step="1" min="1"')+PR.sel('sw489at','p_sw489at',V(sw489At),SW489_AT.map(x=>[x,t('sw489at_'+x)]));
+  h+=PR.sel('sw489loc','p_sw489loc',V(sw489Loc),[['s',t('sw489loc_s')],['f',t('sw489loc_f')]])+PR.num('sw489il','p_sw489il',V(x=>+x.il>0?Math.round(+x.il):null),U,'step="10" min="0"')+PR.num('sw489ip','p_sw489ip',V(x=>+x.ip>0?Math.round(+x.ip):null),U,'step="10" min="0"');
+  let L=0,Lw=0,kg=0;for(const G of GS)if(G){L+=G.L*G.sides;Lw+=G.Lw*G.sides;kg+=G.kg}
+  h+=PR.grp('g_dims')+PR.ro('p_sw489ed',V(x=>{const G=sw489Geo(P,x);return G?sw489EdTx(G):''}))+PR.ro('p_sw489l',sp487F(L/1000,3)+' m')+PR.ro('p_sw489lw',sp487F(Lw/1000,3)+' m')+PR.ro('p_sw489kg',sp487F(kg,3)+' '+t('u_kg262'));
+  if(els.length===1&&GS[0]){const G=GS[0];if(G.int)h+=PR.ro('p_sw489np',String(G.np*G.sides));
+    if(G.k!=='b')h+=PR.ro('p_sw489rg',t('sw489_rg',sp487F(G.lo,0),sp487F(G.hi,0),sp487F(G.th,0)))+PR.ro('p_sw489ok',t(G.ok?'sb488ok_y':'sb488ok_n'));
+    h+=`<div class="pnote${G.ok?'':' warn'}">${esc(G.ok?t('n_sw489'):t(G.a<G.lo?'sw489w_lo':'sw489w_hi',sp487F(G.a,1),sp487F(G.a<G.lo?G.lo:G.hi,0)))}</div>`}
+  return h}
+{const f0=catRows;catRows=(cat,els,isNew)=>{if(cat==='sweld')return sw489Rows(els);const h=f0(cat,els,isNew);if(cat!=='splate'||isNew)return h;let n=0,L=0;
+  for(const x of els)for(const w of P.els){if(w.cat!=='sweld'||w.host!==x.id)continue;const G=sw489Geo(P,w);if(G){n++;L+=G.Lw*G.sides}}
+  return n?h+PR.grp('g_sw489p')+PR.ro('p_sw489pn',String(n))+PR.ro('p_sw489lw',sp487F(L/1000,3)+' m'):h}}
+XF.push((cat,o,key,raw)=>{if(!/^sw489/.test(key))return false;if(cat!=='sweld')return true;const n=parseFloat(raw);
+  if(key==='sw489k'){if(raw==='b'||raw==='p')o.k=raw;else delete o.k;return true}
+  if(key==='sw489a'){if(n>0&&Math.abs(n-SW489_A)>1e-9)o.a=Math.min(100,Math.round(n*10)/10);else if(n>0)delete o.a;return true}
+  if(key==='sw489at'){if(raw==='t'||raw==='bt')o.at=raw;else delete o.at;return true}
+  if(key==='sw489loc'){if(raw==='f')o.loc='f';else delete o.loc;return true}
+  if(key==='sw489il'||key==='sw489ip'){const q=key==='sw489il'?'il':'ip';if(n>0)o[q]=Math.min(100000,Math.round(n));else delete o[q];return true}
+  return true});
+/* ---- schedules, the BOQ (metres of weld by kind, size and where it is made; prices assumed) and IFC (IfcFastener .WELD.) ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='sweld')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),geo=e=>sw489Geo(Q,e),r=(x,d)=>Math.round(x*10**d)/10**d;
+  add('sw489pl',tr('p_sw489pl'),e=>{const h=sw489Host(Q,e);return h?(h.mark||'#'+h.id):''});add('sw489k',tr('p_sw489k'),e=>tr('sw489k_'+sw489K(e)));
+  add('sw489a',tr('p_sw489a')+' (mm)',e=>{const G=geo(e);return G?(G.k==='b'?G.th:G.a):0},{num:1,dec:1});add('sw489at',tr('p_sw489at'),e=>sw489K(e)==='b'?'':tr('sw489at_'+sw489At(e)));
+  add('sw489loc',tr('p_sw489loc'),e=>tr('sw489loc_'+sw489Loc(e)));add('sw489ed',tr('p_sw489ed'),e=>{const G=geo(e);return G?(G.all?tr('sw489_all'):tr(G.runs.length===1?'sw489_ed1':'sw489_eds',G.runs.length)):''});
+  add('sw489l',tr('p_sw489l')+' (m)',e=>{const G=geo(e);return G?r(G.L*G.sides/1000,3):0},{num:1,dec:3,sum:1});add('sw489lw',tr('p_sw489lw')+' (m)',e=>{const G=geo(e);return G?r(G.Lw*G.sides/1000,3):0},{num:1,dec:3,sum:1});
+  add('sw489kg',tr('p_sw489kg')+' (kg)',e=>{const G=geo(e);return G?r(G.kg,3):0},{num:1,dec:3,sum:1});add('sw489ok',tr('p_sw489ok'),e=>{const G=geo(e);return G?tr(G.ok?'sb488ok_y':'sb488ok_n'):''});return F}}
+const sw489Price=G=>Math.round((G.k==='f'?15*G.a:G.k==='p'?20*G.a:25*G.th)*(G.loc==='f'?1.5:1));          // assumed baht a metre: a site weld half as much again
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(e=>e.cat==='sweld'))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.cat!=='sweld'||e.gx)continue;const G=sw489Geo(Q0,e);if(!G)continue;const sz=G.k==='b'?G.th:G.a,pk='sw489|'+G.k+'|'+sz+'|'+G.loc;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_sweld'),_c:9.4,tcat:'sweld',pk,item:tr('sw489_item_'+G.k,sz,tr('sw489loc_'+G.loc)),qty:0,unit:tr('u_m'),cost:PR0[pk]!=null?+PR0[pk]||0:sw489Price(G),amount:0});r.qty+=G.Lw*G.sides/1000}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*1000)/1000;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>(a._c||0)-(b._c||0)||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=ifcClass;ifcClass=(Q,e)=>e&&e.cat==='sweld'?['IFCFASTENER','.WELD.','','']:f0(Q,e)}IFC23_8.add('IFCFASTENER');
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='sweld')return r;const G=sw489Geo(P0,e);if(!G)return r;
+  r.push(prop('WeldType',tr('sw489k_'+G.k)),prop('Size',fx2(G.k==='b'?G.th:G.a)+' mm'),prop('Length',fx2(G.Lw*G.sides/1000)+' m'),prop('Location',tr('sw489loc_'+G.loc)),prop('Weight',fx2(G.kg)+' kg'));
+  if(G.int)r.push(prop('Intermittent',G.il+' / '+G.ip+' mm'));return r}}
+/* ---- what is kept: a weld needs its plate and at least one of its edges; it takes its plate's level ---- */
+XC.push(()=>{const pl=new Map(P.els.filter(e=>e.cat==='splate'&&sp487Ok(P,e)).map(e=>[e.id,e]));
+  P.els=P.els.filter(e=>{if(e.cat!=='sweld')return true;const h=pl.get(e.host);if(!h)return false;if(e.ed==null)return true;if(!Array.isArray(e.ed))return false;return sw489Eds(e).some(i=>i<h.pts.length)});
+  for(const e of P.els){if(e.cat!=='sweld')continue;const h=pl.get(e.host);e.level=h.level;if(e.ed===null)delete e.ed;if(e.ed!==undefined)e.ed=sw489Eds(e).filter(i=>i<h.pts.length);
+    if(e.k!==undefined&&!(e.k==='b'||e.k==='p'))delete e.k;if(e.a!==undefined){const x=+e.a;if(x>0&&Math.abs(x-SW489_A)>1e-9)e.a=Math.min(100,Math.round(x*10)/10);else delete e.a}
+    if(e.at!==undefined&&!(e.at==='t'||e.at==='bt'))delete e.at;if(e.loc!==undefined&&e.loc!=='f')delete e.loc;
+    for(const q of ['il','ip'])if(e[q]!==undefined){const x=Math.round(+e[q]);if(x>0)e[q]=Math.min(100000,x);else delete e[q]}}});
+/* ---- the tool: a click near an edge of a plate welds it (again: takes it off); All Around welds the whole plate ---- */
+function sw489Pick(v,w){const tol=12/navOf(v).s;let best=null,bd=tol;
+  for(const e of P.els){if(e.cat!=='splate'||!sp487Ok(P,e)||!planShow(v,e))continue;for(let i=0;i<e.pts.length;i++){const r=sw489Edge(e,i);if(!r)continue;const d=segDist(w.x,w.y,r[0][0],r[0][1],r[1][0],r[1][1]);if(d<bd){bd=d;best={id:e.id,i}}}}
+  if(!best&&ui.opt.sw489all)for(const e of P.els){if(e.cat!=='splate'||!sp487Ok(P,e)||!planShow(v,e))continue;const G=sp487Geo0(P,e);if(G&&inPoly(w.x,w.y,G.O))return{id:e.id,i:0}}          // All Around: anywhere on the plate
+  return best}
+const sw489Opt=()=>{const o=ui.opt,a=+o.sw489a;return{k:SW489_K.includes(o.sw489k)?o.sw489k:'f',a:a>0?Math.min(100,Math.round(a*10)/10):SW489_A,all:!!o.sw489all}};
+function sw489Apply(k){if(!k){toast(t('sw489_none'));return null}const h=IDX.get(k.id);if(!sp487Ok(P,h))return null;const o=sw489Opt(),W=P.els.filter(x=>x.cat==='sweld'&&x.host===h.id);
+  if(o.all){const w0=W.find(x=>!Array.isArray(x.ed));if(w0){edit(()=>{P.els=P.els.filter(x=>x!==w0)});toast(t('sw489_alloff'));return'off'}}
+  else{const w0=W.find(x=>!Array.isArray(x.ed));if(w0){toast(t('sw489_isall'));return null}const w1=W.find(x=>(sw489Eds(x)||[]).includes(k.i));
+    if(w1){edit(()=>{const E=sw489Eds(w1).filter(i=>i!==k.i);if(E.length)w1.ed=E;else P.els=P.els.filter(x=>x!==w1)});toast(t('sw489_off',k.i+1));return'off'}}
+  const e={id:P.seq++,cat:'sweld',host:h.id,level:h.level};if(!o.all)e.ed=[k.i];if(o.k!=='f')e.k=o.k;if(o.k!=='b'&&o.a!==SW489_A)e.a=o.a;
+  edit(()=>{if(o.all)P.els=P.els.filter(x=>!(x.cat==='sweld'&&x.host===h.id));P.els.push(e)});const G=sw489Geo(P,e);toast((o.all?t('sw489_alldone'):t('sw489_done',k.i+1))+(G&&!G.ok?' · '+t('sw489_chk'):''));return'on'}
+XT.sweld={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){ui.sel.clear();ui.hov=null;ui.sw489H=null;if(!SW489_K.includes(ui.opt.sw489k))ui.opt.sw489k='f';if(ui.opt.sw489a==null)ui.opt.sw489a=SW489_A},
+  off(){ui.sw489H=null},esc(){return false},
+  hint:()=>t(ui.opt.sw489all?'h_sw489_all':'h_sw489'),
+  opt(who,chk,sel){const o=sw489Opt();return who+`<label>${esc(t('o_sw489k'))}</label>`+sel('sw489k',SW489_K.map(x=>[x,'sw489k_'+x]))
+    +`<label>${esc(t('o_sw489a'))} <input type="number" data-opt="sw489a" id="opt_sw489a" value="${o.a}" min="1" step="1" style="width:60px"> ${esc(t('u_mm'))}</label>`
+    +`<label><input type="checkbox" data-opt="sw489all" id="opt_sw489all"${o.all?' checked':''}> ${esc(t('o_sw489all'))}</label>`},
+  hov(pn,v,p){const nav=navOf(v),k=sw489Pick(v,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s});ui.sw489H=k?Object.assign(k,{pn:pn.i}):null;return k?k.id:null},
+  click(pn,v,p,w){sw489Apply(sw489Pick(v,w));ui.sw489H=null;refresh()},
+  draw(pn,ctx,v,nav,g){const H=ui.sw489H;if(!H||H.pn!==pn.i)return;const h=IDX.get(H.id);if(!sp487Ok(P,h))return;ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=4;ctx.globalAlpha=0.7;ctx.setLineDash([]);
+    if(ui.opt.sw489all){const G=sp487Geo0(P,h);if(G){g.path(G.O);ctx.stroke()}}else{const r=sw489Edge(h,H.i);if(r){ctx.beginPath();ctx.moveTo(g.X(r[0][0]),g.Y(r[0][1]));ctx.lineTo(g.X(r[1][0]),g.Y(r[1][1]));ctx.stroke()}}
+    ctx.restore()}};
+{const p=(RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_sfab488');if(p&&!p.b.includes('sweld'))p.b.push('sweld')}
+Object.assign(BTN,{sweld:['sweld','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-sweld" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#9fb0c3" ${E} d="M2.5 17H21.5V19.5H2.5Z"/><path fill="#7d8b99" ${E} d="M9 6H12V17H9Z"/><path fill="#c8803d" ${E} d="M12 13.5 15.5 17H12Z"/><path fill="#c8803d" ${E} d="M9 13.5 5.5 17H9Z"/>`
+    +`<path fill="none" stroke="#e8590c" stroke-width="1.1" stroke-linecap="round" d="M16 4.5 18.5 7M19.5 3.5 20 6M15 8 17.5 8.6"/></symbol>`)})();
+Object.assign(STR,{
+  t_sweld:['รอยเชื่อม (Welds)','Welds'],cat_sweld:['รอยเชื่อม (Welds)','Welds'],g_sw489:['รอยเชื่อม (Weld)','Weld'],
+  p_sw489pl:['แผ่นเหล็กที่เชื่อม','Host Plate'],p_sw489k:['ชนิด (Weld Type)','Weld Type'],sw489k_f:['เชื่อมฉาก (Fillet)','Fillet'],sw489k_b:['เชื่อมชนเต็มความหนา (CJP)','Butt, complete penetration'],sw489k_p:['เชื่อมชนบางส่วน (PJP)','Butt, partial penetration'],
+  p_sw489a:['ขนาดขาเชื่อม (Size)','Size'],p_sw489ap:['ความลึกการเชื่อม','Depth'],p_sw489at:['ตำแหน่งบนขอบ','Along'],sw489at_b:['ขอบล่างของแผ่น','The bottom of the edge'],sw489at_t:['ขอบบนของแผ่น','The top of the edge'],sw489at_bt:['ทั้งบนและล่าง','Top and bottom'],
+  p_sw489loc:['ที่เชื่อม (Location)','Location'],sw489loc_s:['ในโรงงาน (Shop)','Shop'],sw489loc_f:['หน้างาน (Site)','Site'],p_sw489il:['ยาวช่วงละ (เชื่อมเป็นช่วง)','Intermittent Length'],p_sw489ip:['ระยะห่างช่วง (Pitch)','Intermittent Pitch'],
+  p_sw489ed:['ขอบที่เชื่อม','Edges'],sw489_all:['รอบแผ่น (All Around)','All around'],sw489_eds:['{0} ขอบ','{0} edges'],sw489_ed1:['{0} ขอบ','{0} edge'],p_sw489l:['ความยาวขอบ','Edge Length'],p_sw489lw:['ความยาวที่เชื่อม','Weld Length'],
+  p_sw489kg:['น้ำหนักเนื้อเชื่อม','Weld Metal'],p_sw489np:['จำนวนช่วง','Pieces'],p_sw489rg:['ขนาดที่ใช้ได้ (AISC)','Allowed Size (AISC)'],sw489_rg:['{0}–{1} มม. บนแผ่น {2} มม.','{0}–{1} mm on a {2} mm plate'],p_sw489ok:['ตรวจขนาด','Size Check'],
+  sw489w_lo:['ขาเชื่อม {0} มม. เล็กกว่าขั้นต่ำ {1} มม. (AISC 360 ตาราง J2.4)','A {0} mm weld is under the least {1} mm (AISC 360 Table J2.4)'],
+  sw489w_hi:['ขาเชื่อม {0} มม. ใหญ่กว่าที่ขอบแผ่นรับได้ {1} มม. (AISC 360 J2.2b)','A {0} mm weld is over the {1} mm the plate edge allows (AISC 360 J2.2b)'],
+  n_sw489:['รอยเชื่อมอยู่ตามขอบของแผ่นที่เชื่อม ย้าย หมุน สะท้อน คัดลอก และลบไปพร้อมแผ่น ขนาดตรวจตาม AISC 360','The weld runs along its plate\'s edges and moves, turns, mirrors, copies and is deleted with it; its size is checked against AISC 360'],
+  g_sw489p:['รอยเชื่อม','Welds'],p_sw489pn:['จำนวนรอยเชื่อม','Welds'],
+  o_sw489k:['ชนิด','Type'],o_sw489a:['ขนาด','Size'],o_sw489all:['รอบแผ่น (All Around)','All Around'],
+  h_sw489:['คลิกใกล้ขอบของแผ่นเหล็กเพื่อเชื่อมขอบนั้น · คลิกขอบที่เชื่อมไว้อีกครั้งเพื่อเอาออก','Click near an edge of a plate to weld it · click a welded edge again to take the weld off'],
+  h_sw489_all:['คลิกแผ่นเหล็กเพื่อเชื่อมรอบแผ่น · คลิกอีกครั้งเพื่อเอาออก','Click a plate to weld it all round · click again to take the weld off'],
+  sw489_none:['คลิกใกล้ขอบของแผ่นเหล็ก','Click near an edge of a plate'],sw489_done:['เชื่อมขอบที่ {0} แล้ว','Edge {0} welded'],sw489_off:['เอารอยเชื่อมขอบที่ {0} ออกแล้ว','Weld taken off edge {0}'],
+  sw489_alldone:['เชื่อมรอบแผ่นแล้ว','Welded all round'],sw489_alloff:['เอารอยเชื่อมรอบแผ่นออกแล้ว','All-round weld taken off'],sw489_isall:['แผ่นนี้เชื่อมรอบแผ่นอยู่แล้ว','This plate is welded all round already'],
+  sw489_chk:['ขนาดไม่ผ่านตาม AISC ดูในแผงคุณสมบัติ','size not OK by AISC: see Properties'],
+  sw489_item_f:['งานเชื่อมฉาก (Fillet) ขา {0} มม. {1}','Fillet weld {0} mm, {1}'],sw489_item_b:['งานเชื่อมชนเต็มความหนา (CJP) แผ่น {0} มม. {1}','Complete penetration butt weld, {0} mm plate, {1}'],
+  sw489_item_p:['งานเชื่อมชนบางส่วน (PJP) ลึก {0} มม. {1}','Partial penetration butt weld {0} mm, {1}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -54468,7 +54644,7 @@ PENUM BIM is a BIM drafting program that runs in the browser. It works the way R
 - [[tab_file]] — เปิด บันทึก และส่งออก PDF PNG DXF CSV
 - [[tab_arch]] — ผนัง ประตู หน้าต่าง เสา หลังคา ฝ้า พื้น เฟอร์นิเจอร์ บันได ทางลาด ราวกันตก ห้อง ระดับชั้น กริด
 - [[tab_struct]] — คาน เสา ผนัง พื้น
-- [[tab_steel]] — แผ่นเหล็ก สลักเกลียว สมอยึด รูเจาะ ตัดมุม และจุดต่อเหล็ก
+- [[tab_steel]] — แผ่นเหล็ก สลักเกลียว สมอยึด รูเจาะ รอยเชื่อม ตัดมุม และจุดต่อเหล็ก
 - [[tab_sys]] — ท่อลม ท่อน้ำ สุขภัณฑ์ สปริงเกลอร์ ไฟฟ้า และการคำนวณ
 - [[tab_insert]] — นำเข้าแบบ DXF PDF และรูปภาพมารองวาด และสร้างโมเดลจากแบบนั้นอัตโนมัติ
 - [[tab_annot]] — ระยะ ข้อความ ป้ายกำกับ เส้นรายละเอียด
@@ -54509,7 +54685,7 @@ From left to right: [[a_save]] · [[a_undo]] · [[a_redo]] · [[a_v3d]] · [[t_s
 - [[tab_file]] — open, save and export PDF, PNG, DXF, CSV
 - [[tab_arch]] — walls, doors, windows, columns, roofs, ceilings, floors, components, stairs, ramps, railings, rooms, levels, grids
 - [[tab_struct]] — beams, columns, walls, floors
-- [[tab_steel]] — steel plates, bolts, anchors, holes, corner cuts and steel connections
+- [[tab_steel]] — steel plates, bolts, anchors, holes, welds, corner cuts and steel connections
 - [[tab_sys]] — ducts, pipes, plumbing fixtures, sprinklers, electrical, and the calculations
 - [[tab_insert]] — DXF drawings, PDFs and pictures to trace over, and the model made from such a drawing
 - [[tab_annot]] — dimensions, text, tags, detail lines
@@ -55689,6 +55865,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[t_splate]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] แบบ Revit (Steel › Fabrication Elements › Plate): วาดแผ่นเหล็กเป็นรูปปิดในแปลนทีละจุด หรือเลือกสี่เหลี่ยมแล้วคลิกสองมุม แผ่นวางราบที่ระดับชั้นบวก [[p_sp487o]] · [[p_sp487j]] บอกว่าแผ่นวางบนระนาบ (ผิวล่างอยู่ที่ระนาบ) ห้อยใต้ระนาบ หรือคร่อมกึ่งกลาง · ตั้ง [[p_sp487th]] [[p_sp487gr]] และ [[p_sp487co]] ได้ใน Properties ก่อนวางหรือหลังเลือก · Properties บอกระดับผิวบนและผิวล่าง พื้นที่ เส้นรอบรูป ปริมาตร น้ำหนัก (7,850 กก./ลบ.ม.) และพื้นที่ทาสี (สองหน้าบวกขอบ) · แปลนวาดขอบจริงหลังตัดมุม แผ่นที่ระนาบตัดผ่านระบายทึบ คลิกในแผ่นเพื่อเลือก (เสาที่ยืนบนแผ่นถูกเลือกก่อน) · มุมมอง 3 มิติ รูปด้าน รูปตัด และ IFC (IfcPlate) เห็นแผ่นตามสีของการเคลือบผิว · ตารางรายการหมวดแผ่นเหล็กมีความหนา เกรด การเคลือบ พื้นที่ น้ำหนัก พื้นที่ทาสี และจำนวนมุมที่ตัด · BOQ รวมน้ำหนักตามเกรดและความหนาเป็นกิโลกรัม (ราคาสมมติ 45 บาท/กก. แก้ได้)
 [[t_ccut487]] — แท็บ [[tab_steel]] แผง [[p_smod488]] แบบ Revit (Steel › Modifiers › Corner Cut): คลิกใกล้มุมของแผ่นเหล็กในแปลน มุมถูกตัดตามแบบและระยะในแถบตัวเลือก: [[cc487k_s]] ตัดเฉียง [[cc487k_x]] มุมมนที่สัมผัสทั้งสองขอบ หรือ [[cc487k_v]] เว้าเป็นวงกลมรอบมุม · ระยะยาวได้ไม่เกินครึ่งของขอบที่สั้นกว่าข้างมุม · มุมที่หักเข้าตัดไม่ได้ · คลิกมุมที่ตัดไว้แบบเดียวกันอีกครั้งเพื่อเอาออก หรือกด [[a_cc487clr]] ใน Properties · พื้นที่ น้ำหนัก และพื้นที่ทาสีคิดหลังตัดมุม
 [[t_sbolt]] · [[t_sanch488]] · [[t_shole488]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] ต่อจากแผ่นเหล็ก แบบ Revit (Steel › Fabrication Elements › Bolts, Anchors, Holes): คลิกมุมแรกบนแผ่นเหล็กในแปลน แล้วคลิกมุมตรงข้าม ได้กลุ่มสลัก สมอ หรือรูเรียงเป็นแถวตาม [[o_sb488nx]] และ [[o_sb488ny]] ในแถบตัวเลือก (คลิกจุดเดิมซ้ำ: วางรอบจุดนั้นห่างกันสามเท่าของขนาด) แถวขนานกับขอบยาวของแผ่น · สลักเกลียวมีหัว แหวน และแป้นเกลียว ยาวตาม [[p_sb488gl]] (ค่าเริ่มสองเท่าของแผ่น) ปัดขึ้นทีละ 5 มม. · สมอยึดลงไปใต้แผ่นตาม [[p_sb488al]] มีแหวนสี่เหลี่ยมและแป้นเกลียวบนแผ่น · รูถูกตัดออกจากแผ่นจริง แผ่นจึงมีพื้นที่ น้ำหนัก และพื้นที่ทาสีสุทธิ เห็นรูใน 3 มิติ รูปด้าน รูปตัด และ IFC · Properties ตั้งขนาด เกรด ระยะเผื่อรู จำนวน ระยะห่าง และมุมของแถว และบอก[[p_sb488ed]]กับ[[p_sb488ok]]ตาม EN 1993-1-8 (ระยะขอบอย่างน้อย 1.2 d₀ ระยะห่างอย่างน้อย 2.2 d₀) กลุ่มที่ไม่ผ่านแสดงสีเตือนบนจอ · กลุ่มย้าย หมุน สะท้อน คัดลอก และวางตามแผ่นของมัน และถูกลบไปพร้อมแผ่น · ตารางรายการหมวดใหม่ BOQ เป็นชุดตามขนาด เกรด และความยาว (ราคาสมมติตามน้ำหนัก) และ IFC เป็น IfcMechanicalFastener
+[[t_sweld]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] ต่อจากหมุดรับแรงเฉือน แบบ Revit (Steel › Fabrication Elements › Welds): คลิกใกล้ขอบของแผ่นเหล็กในแปลนเพื่อเชื่อมขอบนั้น คลิกขอบที่เชื่อมแล้วอีกครั้งเพื่อเอาออก หรือติ๊ก [[o_sw489all]] บนแถบตัวเลือกแล้วคลิกแผ่นเพื่อเชื่อมรอบแผ่น (แทนรอยเชื่อมทีละขอบของแผ่นนั้น) · เลือก [[o_sw489k]] ได้ [[sw489k_f]] [[sw489k_b]] หรือ [[sw489k_p]] และ [[o_sw489a]] · ในคุณสมบัติตั้ง [[p_sw489at]] (ขอบล่าง ขอบบน หรือทั้งสอง) [[p_sw489loc]] ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงด้วย [[p_sw489il]] กับ [[p_sw489ip]] · ขนาดตรวจตาม AISC 360: ขาเชื่อมฉากขั้นต่ำ 3 5 6 หรือ 8 มม. ตามความหนาแผ่น (ตาราง J2.4) และไม่เกินแผ่นลบ 2 มม. (J2.2b) ขนาดที่ไม่ผ่านขึ้นสีเตือนในแปลนและบอกเหตุในคุณสมบัติ · รอยเชื่อมเดินตามแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือวาง และถูกลบไปพร้อมแผ่น ขอบที่ถูกตัดมุมเชื่อมเท่าที่เหลือ · แปลนเป็นเส้นหนามีขีดด้านนอกแผ่น (หน้างานเป็นเส้นประ) 3 มิติ รูปด้าน และรูปตัดเห็นเนื้อเชื่อมรูปสามเหลี่ยมนอกขอบ · มีตารางของหมวด [[cat_sweld]] และ [[a_boq]] นับเป็นเมตรตามชนิด ขนาด และที่เชื่อม (ราคาสมมติ เชื่อมหน้างาน 1.5 เท่า) · IFC ส่งเป็น IfcFastener ชนิด WELD · ยังไม่มีรอยเชื่อมระหว่างชิ้นเหล็กอื่นที่ไม่ใช่แผ่น และไม่ได้คำนวณกำลังรับแรงของรอยเชื่อม
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -56110,6 +56287,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.486 · [[mf486_t]] แบบ Revit: ใส่แรงที่ปลายคาน ค้ำยัน เสา และชิ้นส่วนวิเคราะห์ได้ (Fx Fy Fz Mx My Mz) หรือดึงจากผลการคำนวณเหล็กทีเดียวทุกชิ้นที่เลือก ใช้ชุดค่าผสมที่หนักที่สุดของแต่ละปลาย เพิ่มในตารางรายการได้ และจุดต่อเหล็กแสดงแรงที่ปลายของมัน
 - V1.487 · [[t_splate]] และ [[t_ccut487]] แบบ Revit: วาดแผ่นเหล็กในแปลน ตั้งความหนา การวางบนระนาบ เกรด และการเคลือบผิว ได้พื้นที่ น้ำหนัก และพื้นที่ทาสี เห็นใน 3 มิติ รูปด้าน รูปตัด ตารางรายการ BOQ และ IFC (IfcPlate) · ตัดมุมแผ่นเป็นเฉียง โค้งนูน หรือโค้งเว้า
 - V1.488 · [[t_sbolt]] [[t_sanch488]] และ [[t_shole488]] แบบ Revit: วาดกลุ่มสลักเกลียว สมอยึด หรือรูเจาะบนแผ่นเหล็กด้วยสองมุม รูถูกตัดออกจากแผ่นจริง น้ำหนักแผ่นเป็นค่าสุทธิ ตรวจระยะขอบและระยะห่างตาม EN 1993-1-8 กลุ่มเดินตามแผ่นเมื่อย้าย หมุน สะท้อน หรือคัดลอก มีในตารางรายการ BOQ และ IFC · เครื่องมือเหล็กทั้งหมดย้ายมาอยู่แท็บใหม่ [[tab_steel]] ถัดจาก [[tab_struct]] เหมือน Revit
+- V1.489 · [[t_sweld]] แบบ Revit: เชื่อมขอบของแผ่นเหล็กทีละขอบหรือรอบแผ่น แบบเชื่อมฉาก เชื่อมชนเต็มความหนา หรือเชื่อมชนบางส่วน ขอบล่าง ขอบบน หรือทั้งสอง ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงได้ ตรวจขนาดตาม AISC 360 เห็นในแปลนและ 3 มิติ เดินตามแผ่น มีในตาราง BOQ (เมตร) และ IFC
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -56341,6 +56519,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 [[t_splate]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, as in Revit (Steel › Fabrication Elements › Plate): sketch a plate as a closed outline in a plan, point by point, or choose Rectangle and click two corners; it lies level at its level plus the [[p_sp487o]] · [[p_sp487j]] says whether it sits on that plane (its bottom face there), hangs under it or lies across it · set the [[p_sp487th]], the [[p_sp487gr]] and the [[p_sp487co]] in Properties before you draw or once it is selected · Properties give its top and bottom from the level, its area, perimeter, volume, weight (7,850 kg/m³) and paint area (both faces and the edges) · plans draw its true outline after the corner cuts, filled where the cut plane runs through it; click inside it to select it (a column standing on it is picked first) · 3D views, elevations, sections and IFC (IfcPlate) show it in the colour of its coating · schedules of Plates have its thickness, grade, coating, area, weight, paint area and the corners cut · the BOQ adds up the weight by grade and thickness in kg (an assumed 45 baht/kg you can change)
 [[t_ccut487]] — on the [[tab_steel]] tab, [[p_smod488]] panel, as in Revit (Steel › Modifiers › Corner Cut): click near a corner of a plate in a plan and the corner is cut as the options bar says: [[cc487k_s]] a straight chamfer, [[cc487k_x]] a round touching both edges, or [[cc487k_v]] a hollow round the corner · the distance is at most half the shorter edge beside it · a corner that turns inward cannot be cut · click a corner cut the same way again to take the cut off, or press [[a_cc487clr]] in Properties · the area, the weight and the paint area count the plate after its cuts
 [[t_sbolt]] · [[t_sanch488]] · [[t_shole488]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, after Plate, as in Revit (Steel › Fabrication Elements › Bolts, Anchors, Holes): click a first corner on a plate in a plan, then the opposite corner, for a pattern of bolts, anchors or holes in rows as [[o_sb488nx]] and [[o_sb488ny]] in the options bar say (the same point twice: a pattern round it, three diameters apart); the rows run along the plate's long edge · a bolt has its head, washers and nut, its length from the [[p_sb488gl]] (twice its plate unless set) rounded up to 5 mm · an anchor reaches the [[p_sb488al]] below the plate, with a square washer and a nut on it · their holes are cut out of the plate, so its area, weight and paint area are net and 3D views, elevations, sections and IFC show the holes · Properties set the size, grade, hole tolerance, counts, spacing and rotation, and give the [[p_sb488ed]] and the [[p_sb488ok]] against EN 1993-1-8 (edge at least 1.2 d₀, spacing at least 2.2 d₀); a pattern that fails is drawn in the warning colour on screen · a pattern moves, turns, mirrors, copies and pastes with its plate and is deleted with it · a new schedule category, the BOQ in sets by size, grade and length (prices assumed by weight), and IFC IfcMechanicalFastener
+[[t_sweld]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, after Shear Studs, as in Revit (Steel › Fabrication Elements › Welds): click near an edge of a plate in a plan to weld that edge, and click a welded edge again to take its weld off; or tick [[o_sw489all]] on the options bar and click a plate to weld it all round (in place of its edge welds). Choose the [[o_sw489k]], [[sw489k_f]], [[sw489k_b]] or [[sw489k_p]], and the [[o_sw489a]]. Properties set [[p_sw489at]] (the bottom of the edges, the top, or both), the [[p_sw489loc]] (shop or site) and an intermittent weld by its [[p_sw489il]] and [[p_sw489ip]]. The size is checked against AISC 360: a fillet at least 3, 5, 6 or 8 mm by the plate thickness (Table J2.4) and at most the plate less 2 mm (J2.2b); a weld out of range is drawn in the warning colour in plans and Properties say why. A weld follows its plate when it is moved, turned, mirrored, copied or pasted and goes when it is deleted; an edge with corner cuts is welded along what is left of it. Plans draw a heavy line with ticks outside the plate (dashed for a site weld); 3D views, elevations and sections show the weld metal as a triangle outside the edge. There is a schedule of the category [[cat_sweld]], and [[a_boq]] counts metres by type, size and where it is made (assumed prices, site welds 1.5 times). IFC writes them as IfcFastener of type WELD. Limits: welds on plates only, not between other steel members; the strength of a weld is not checked
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -56762,6 +56941,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.486 · [[mf486_t]] (as in Revit): the forces at the ends of beams, braces, columns and analytical members (Fx Fy Fz Mx My Mz), typed or taken from Steel Design for all selected members at once, from each end's governing combination; schedule fields; a steel connection shows the forces at its end
 - V1.487 · [[t_splate]] and [[t_ccut487]] (as in Revit): plates sketched in a plan with their thickness, justification, grade and coating, giving their area, weight and paint area, shown in 3D, elevations, sections, schedules, the BOQ and IFC (IfcPlate) · plate corners cut straight, convex or concave
 - V1.488 · [[t_sbolt]], [[t_sanch488]] and [[t_shole488]] (as in Revit): patterns of bolts, anchors or holes drawn by two corners on a plate, their holes cut out of it (net plate weight), edge distance and spacing checked against EN 1993-1-8, the pattern following its plate when moved, turned, mirrored or copied, in schedules, the BOQ and IFC; the steel fabrication tools now sit on a new [[tab_steel]] tab after [[tab_struct]], as in Revit
+- V1.489 · [[t_sweld]] (as in Revit): welds along the edges of a plate, one edge at a time or all round, fillet, complete or partial penetration butt, along the bottom, the top or both, shop or site, continuous or intermittent, the size checked against AISC 360, shown in plans and 3D, following the plate, in schedules, the BOQ (metres) and IFC
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -59623,6 +59803,47 @@ window.PenumBIM.r488={
   exp2:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
     try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='sbolt').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length;o.layer=d.includes('S-STEL-BOLT')}catch(e){o.dxf='ERR '+e}
     try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='sbolt').length}catch(e){o.json='ERR '+e}return o},
+  str:(k,...a)=>t(k,...a)};
+/* V1.489 test API: welds on plates */
+window.PenumBIM.r489={
+  plate:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'splate'},JSON.parse(JSON.stringify(o)));P.els.push(e);id=e.id});return id},
+  mk:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'sweld'},JSON.parse(JSON.stringify(o)));const h=IDX.get(e.host)||P.els.find(x=>x.id===e.host);if(h&&e.level==null)e.level=h.level;P.els.push(e);id=e.id});return id},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  put:(id,o)=>{edit(()=>{const e=IDX.get(id);Object.assign(e,JSON.parse(JSON.stringify(o)));for(const k in o)if(o[k]==null)delete e[k]})},
+  prop:(id,k,v)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,k,v)})},
+  geo:id=>{const G=sw489Geo(P,IDX.get(id)),r=x=>Math.round(x*1000)/1000;return G?{k:G.k,a:G.a,at:G.at,loc:G.loc,th:G.th,L:r(G.L),Lw:r(G.Lw),np:G.np,int:G.int,sides:G.sides,kg:r(G.kg),lo:G.lo,hi:G.hi,ok:G.ok,z:G.z.map(r),all:G.all,
+    runs:G.runs.map(q=>q.map(p=>p.map(x=>Math.round(x*10)/10))),pcs:G.pcs.map(q=>[q[0].map(x=>Math.round(x*10)/10),q[q.length-1].map(x=>Math.round(x*10)/10)]),host:G.h.id,s:G.s}:null},
+  edge:(h,i)=>sw489Edge(IDX.get(h),i),
+  pick:(vid,x,y)=>sw489Pick(viewById(vid),{x,y}),
+  apply:(o,k)=>{Object.assign(ui.opt,o||{});return sw489Apply(k)},
+  zr:id=>zRange(P,IDX.get(id)),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  drawn:()=>JSON.parse(JSON.stringify(SW489D)),clear:()=>{SW489D.plan=null},
+  hit:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),r=hitPlan(v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});return r?r.id:null},
+  box:(vid,id)=>elBox(viewById(vid),IDX.get(id)),
+  mesh:id=>{MSC=null;const R=buildMeshes(P,FPm(),FITm()),it=(Array.isArray(R)?R:R.items).filter(m=>m.id===id);return it.map(m=>({cat:m.cat,tri:m.t.length/9,c:m.c.map(x=>Math.round(x*255)),zmin:Math.min(...m.t.filter((x,i)=>i%3===1)),zmax:Math.max(...m.t.filter((x,i)=>i%3===1)),
+    xmin:Math.min(...m.t.filter((x,i)=>i%3===0)),xmax:Math.max(...m.t.filter((x,i)=>i%3===0)),ymin:Math.min(...m.t.filter((x,i)=>i%3===2)),ymax:Math.max(...m.t.filter((x,i)=>i%3===2))}))},
+  mv:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy))},
+  rt:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg))},
+  mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by))},
+  copy:(ids,dx,dy)=>{let out;edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});return out},
+  paste:(ids,dx,dy,lv)=>{let out;const objs=[...expandSel(ids)].map(id=>JSON.parse(JSON.stringify(IDX.get(id))));edit(()=>{out=pasteObjs(objs,dx,dy,lv||0,activeView())});return out},
+  del:ids=>{edit(()=>deleteIds(ids))},
+  exp:ids=>[...expandSel(ids)],
+  sf:k=>sfAll(P,k||'sweld',t).map(f=>f.k),
+  sv:(id,k)=>{const F=sfAll(P,'sweld',t).find(f=>f.k===k),X=sfCtx(P,t,null);return F?F.g(IDX.get(id),X):undefined},
+  cats:()=>({sf:SF_CATS.includes('sweld'),flt:FLT_CATS.includes('sweld'),vg:VG_CATS.indexOf('sweld')-VG_CATS.indexOf('sbolt'),geom:GEOM.sweld,disc:DISC.sweld,dxf:DXF_LAYER.sweld,tool:CREATE_TOOLS.has('sweld')&&!!XT.sweld}),
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>r.tcat==='sweld').map(r=>({item:r.item,qty:r.qty,unit:r.unit,cost:r.cost,amount:r.amount,pk:r.pk})),
+  ifc:x3=>{const s=x3?ifcText({schema:'IFC2X3'}).text:ifcText().text,m=s.match(/IFCFASTENER\([^;]*\);/g)||[];return{n:m.length,weld:m.every(x=>x.endsWith('.WELD.);')),x3:m.every(x=>!x.includes('.WELD.')),type:s.includes("'WeldType'")}},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='sweld').map(e=>JSON.parse(JSON.stringify(e)))},
+  ribbon:()=>((RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_sfab488')||{b:[]}).b.slice(),
+  ok:k=>{const r={};for(const vk of ['plan','3d','elev','section','sheet'])r[vk]=!!XT[k].ok(P.views.find(x=>x.kind===vk));return r},
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(x=>{const l=x.querySelector('label'),i=x.querySelector('select,input'),r=x.querySelector('.ro');return[l?l.textContent:'',i?(i.type==='checkbox'?i.checked:i.value):r?r.textContent:'',i&&i.tagName==='SELECT'?[...i.options].map(o=>o.value):null]}),
+  note:()=>{const n=document.querySelector('#props .pnote');return n?[n.className,n.textContent]:null},
+  hint:k=>XT[k].hint(activeView()),
+  exp2:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
+    try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='sweld').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length;o.layer=d.includes('S-STEL-WELD')}catch(e){o.dxf='ERR '+e}
+    try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='sweld').length}catch(e){o.json='ERR '+e}return o},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
