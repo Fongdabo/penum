@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=458,V1_NAME='V1.448';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=459,V1_NAME='V1.449';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -49914,6 +49914,238 @@ Object.assign(STR,{a_bpf448:['ปัจจัยประสิทธิภา�
   bpf448_f_epd:['กำลังไฟอุปกรณ์','Plug Load Efficiency'],bpf448_f_hvac:['ระบบปรับอากาศ','HVAC'],bpf448_f_sched:['ตารางเวลาใช้งาน','Operating Schedule'],bpf448_f_pv:['พื้นที่ติดแผงโซลาร์','PV Surface Coverage'],
   bpf448_none:['ไม่มี','None'],bpf448_types:['ตามชนิดห้อง','As space types'],bpf448_as:['ตามที่ตั้งไว้','as set'],bpf448_cur:['ตอนนี้ {0}','Now {0}'],bpf448_inf0:['ไม่คิด','Not counted'],bpf448_s:['{0} ชม. {1} วัน','{0} h, {1} days'],
   bpf448_f:['ปัจจัย','Factor'],bpf448_opt:['ตัวเลือก','Option'],bpf448_now:['ตอนนี้','Now'],bpf448_best:['ดีที่สุด','Best'],bpf448_all:['ทุกปัจจัยที่ดีที่สุดรวมกัน','Every factor at its best']});
+/* ===== V1.449 Daylight Analysis (Revit: Lighting Analysis with Insight, the daylight that reaches the workplane of every room on a grid of points, shown on
+   the plan: LEED v4 EQc7 Option 2, 300 to 3000 lux at 9:00 and at 15:00 of a clear-sky day of the equinox; the illuminance at a month and hour, clear or
+   overcast; the daylight factor under the CIE overcast sky).  Each point sees the sky through the windows and curtain walls in the outside walls of its room:
+   the luminance of the sky (the CIE clear sky over the sun and sky of the cooling loads, ASHRAE, or the CIE overcast sky) over each part of each opening, as far
+   as the reveal, the walls of the room and what stands outside let it through (walls, floors, roofs and context masses of the model, 324 ways out of each
+   opening), times the glass's visible transmittance and the share the frame leaves; the sun where its beam passes an opening and nothing outside is in the way;
+   and the light the room's surfaces reflect, by the split-flux method with the reflectances of Lighting Analysis.  Settings in P.dl449; a room leaves the
+   analysis with e.dlx449 = 1; a plan view shows the grid with v.dl449. ===== */
+const DL449_D={m:'leed',d:9,h:12,k:'clear',g:600,wp:760,lo:300,hi:3000,dt:2,vt:60,ff:80,rg:20},DL449_MAX=20000,DL449_KB=95,DL449_KD=120;
+const DL449_N={d:[1,12],h:[5,19],g:[300,3000],wp:[0,2000],lo:[0,10000],hi:[100,100000],dt:[0.5,10],vt:[5,95],ff:[30,100],rg:[0,80]};
+function dl449(P0){const o=Object.assign({},DL449_D),g=P0.dl449;if(!g||typeof g!=='object'||Array.isArray(g))return o;
+  if(['leed','time','df'].includes(g.m))o.m=g.m;if(g.k==='clear'||g.k==='over')o.k=g.k;
+  for(const k in DL449_N)if(g[k]!=null&&g[k]!==''&&typeof g[k]!=='boolean'&&isFinite(+g[k])){const [a,b]=DL449_N[k];o[k]=clamp(+g[k],a,b);if(k==='d'||k==='g'||k==='wp'||k==='lo'||k==='hi')o[k]=Math.round(o[k]);else if(k==='h')o[k]=Math.round(o[k]*4)/4;else o[k]=Math.round(o[k]*10)/10}
+  if(o.hi<=o.lo)o.hi=o.lo+100;return o}
+/* 324 ways out of an opening (9 bands up, 36 round), each with its solid angle; which of them a way d falls in */
+const DL449_DIR=(()=>{const o=[];for(let j=0;j<9;j++){const a0=j*Math.PI/18,a1=(j+1)*Math.PI/18,am=(a0+a1)/2;for(let i=0;i<36;i++){const z=(i+0.5)*Math.PI/18;
+  o.push({d:[Math.cos(am)*Math.sin(z),-Math.cos(am)*Math.cos(z),Math.sin(am)],w:Math.PI/18*(Math.sin(a1)-Math.sin(a0))})}}return o})();
+const dlIx449=d=>{const b=Math.min(8,Math.max(0,Math.floor(Math.asin(clamp(d[2],-1,1))/(Math.PI/18)))),a=((Math.atan2(d[0],-d[1])%(2*Math.PI))+2*Math.PI)%(2*Math.PI);return b*36+Math.min(35,Math.floor(a/(Math.PI/18)))};
+/* the sun at clock hour h of the 21st of month mo (0–11): its height and bearing (degrees, from true north), the way to it in the plan's axes, the beam (normal)
+   and the sky (on a level surface) in lux */
+function dlSun449(P0,mo,h){const pl=sunPlace(),L=pl.lat*Math.PI/180,dS=(pl.lon-15*pl.tz)/15,de=LH_DEC[mo]*Math.PI/180,H=(h-12+dS)*Math.PI/12,north=loadSet(P0).north||0;
+  const sb=Math.cos(L)*Math.cos(de)*Math.cos(H)+Math.sin(L)*Math.sin(de),sE=-Math.cos(de)*Math.sin(H),sN=Math.sin(de)*Math.cos(L)-Math.cos(de)*Math.cos(H)*Math.sin(L),hz=Math.hypot(sE,sN),az=Math.atan2(sE,sN);
+  const r={h,alt:Math.asin(clamp(sb,-1,1))*180/Math.PI,az:((az*180/Math.PI)%360+360)%360,sb:Math.max(0,sb),s:null,En:0,Ed:0};if(sb<=0.01)return r;
+  const a2=az-north*Math.PI/180,dn=LH_A[mo]*Math.exp(-LH_B[mo]/sb);return Object.assign(r,{s:solU445([hz*Math.sin(a2),-hz*Math.cos(a2),sb]),En:dn*DL449_KB,Ed:LH_C[mo]*dn*DL449_KD})}
+/* the sky: L(d) its luminance the way d (lux a steradian), Eh what an open level surface outside gets, sun: the sun when its beam counts.  CIE clear sky (its
+   share of each part of the sky, made to give the sky's Ed on a level surface), CIE overcast (300 + 21000 sin of the sun's height lux), or for the daylight
+   factor an overcast sky of 100 (so that the illuminance is the percentage) */
+const dlF449=c=>1+10*(Math.exp(-3*Math.acos(clamp(c,-1,1)))-Math.exp(-1.5*Math.PI))+0.45*c*c;
+const dlOv449=Eh=>({Eh,Ed:Eh,L:d=>d[2]>0?Eh*9/(7*Math.PI)*(1+2*d[2])/3:0,sun:null});
+function dlSky449(o,sun){if(o.m==='df')return Object.assign(dlOv449(100),{df:1});if(o.m==='time'&&o.k==='over')return dlOv449(300+21000*sun.sb);if(!sun.s)return{Eh:0,Ed:0,L:()=>0,sun:null};
+  const s=sun.s,rel=d=>d[2]>0.001?dlF449(d[0]*s[0]+d[1]*s[1]+d[2]*s[2])*(1-Math.exp(-0.32/d[2])):0;let q=0;
+  for(let j=0;j<30;j++){const a0=j*Math.PI/60,a1=(j+1)*Math.PI/60,am=(a0+a1)/2,w=Math.PI/36*(Math.sin(a1)-Math.sin(a0));for(let i=0;i<72;i++){const z=(i+0.5)*Math.PI/36,d=[Math.cos(am)*Math.sin(z),-Math.cos(am)*Math.cos(z),Math.sin(am)];q+=rel(d)*d[2]*w}}
+  const K=q>0?sun.Ed/q:0;return{Eh:sun.Ed+sun.En*sun.sb,Ed:sun.Ed,L:d=>K*rel(d),sun}}
+/* what can stand between an opening and the sky: walls, floors, roofs (their faces, heights as they stand) and context masses, as solShade445 takes them */
+function dlOcc449(P0){const O=[],add=L=>{if(L.length<3)return;let nx=0,ny=0,nz=0;for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length];nx+=(a[1]-b[1])*(a[2]+b[2]);ny+=(a[2]-b[2])*(a[0]+b[0]);nz+=(a[0]-b[0])*(a[1]+b[1])}
+    const l=Math.hypot(nx,ny,nz);if(l<1e-6)return;O.push({s:{loop:L},n:[nx/l,ny/l,nz/l],p:L[0]})};
+  for(const e of P0.els){
+    if(e.cat==='wall'){if(Math.hypot(e.x2-e.x1,e.y2-e.y1)<1)continue;const z=zRange(P0,e);add([[e.x1,e.y1,z[0]],[e.x2,e.y2,z[0]],[e.x2,e.y2,z[1]],[e.x1,e.y1,z[1]]])}
+    else if(e.cat==='floor'&&Array.isArray(e.pts)&&e.pts.length>2){const z=zRange(P0,e)[1];add(e.pts.map(p=>[p[0],p[1],z]))}
+    else if(e.cat==='roof'&&Array.isArray(e.pts)&&e.pts.length>2){let R=null;try{R=roofGeo(P0,e)}catch(x){R=null}
+      if(R&&Array.isArray(R.faces)&&R.faces.length){for(const f of R.faces)if(f&&Array.isArray(f.loop))add(f.loop.map(p=>[p[0],p[1],isFinite(+p[2])?+p[2]:R.z0]))}else{const z=zRange(P0,e)[0];add(e.pts.map(p=>[p[0],p[1],z]))}}
+    else if(e.cat==='mass'&&e.ctx&&!e.void&&Array.isArray(e.pts)&&e.pts.length>2){const zr=zRange(P0,e),A=mflAt437(P0,e,zr[0]),B=mflAt437(P0,e,zr[1]),n=A.length;
+      if(B.length===n)for(let k=0;k<n;k++){const a=A[k],b=A[(k+1)%n],c=B[(k+1)%n],d=B[k];add([[a[0],a[1],zr[0]],[b[0],b[1],zr[0]],[c[0],c[1],zr[1]],[d[0],d[1],zr[1]]])}add(B.map(p=>[p[0],p[1],zr[1]]))}}
+  return O}
+/* the openings to the outside of the rooms of a level, by region: windows in walls with a room on one side only, and the runs of curtain wall that have one; an
+   opening wider than 3 m is cut into equal pieces.  {host, el, cw, cx, cy (the middle, on the wall's line), ux, uy (along), nx, ny (out), w, z0, z1, th, tau} */
+function dlAps449(P0,o,lv,regs){const L=lvl(P0,lv),cut=L.elev+chCut244(L),up=sortedLevels(P0).find(l=>l.elev>L.elev+1),top=up?up.elev:Infinity,out=regs.map(()=>[]),byId=new Map(P0.els.map(e=>[e.id,e]));
+  const at=(x,y)=>{for(let i=0;i<regs.length;i++)if(inPoly(x,y,regs[i].net))return i;return-1},cutW=w=>{const z=zRange(P0,w);return z[0]<cut&&z[1]>=cut};
+  const put=(i,A)=>{const n=Math.max(1,Math.ceil(A.w/3000-1e-9)),w=A.w/n;for(let k=0;k<n;k++){const d=-A.w/2+w*(k+0.5);out[i].push(Object.assign({},A,{cx:A.cx+A.ux*d,cy:A.cy+A.uy*d,w}))}};
+  for(const w of P0.els){if(w.cat!=='wall'||!cutW(w))continue;const T=typ(P0,w)||{};if(T.kind!=='curtain')continue;const len=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(len<1)continue;
+    const ux=(w.x2-w.x1)/len,uy=(w.y2-w.y1)/len,nx=-uy,ny=ux,th=+T.thickness||100,off=th/2+150,z=zRange(P0,w),z0=Math.max(z[0],L.elev),z1=Math.min(z[1],top);if(z1-z0<100)continue;
+    const n=Math.max(1,Math.round(len/250)),st=len/n;let run=null;
+    const flush=()=>{if(!run)return;const c=(run.d0+run.d1)/2;put(run.i,{host:w.id,el:w.id,cw:1,cx:w.x1+ux*c,cy:w.y1+uy*c,ux,uy,nx:run.s*nx,ny:run.s*ny,w:run.d1-run.d0,z0,z1,th,tau:o.vt/100*o.ff/100});run=null};
+    for(let j=0;j<n;j++){const d=(j+0.5)*st,x=w.x1+ux*d,y=w.y1+uy*d,a=at(x+nx*off,y+ny*off),b=at(x-nx*off,y-ny*off);let i=-1,s=0;if(a>=0&&b<0){i=a;s=-1}else if(b>=0&&a<0){i=b;s=1}
+      if(run&&(run.i!==i||run.s!==s))flush();if(i>=0){if(!run)run={i,s,d0:j*st,d1:(j+1)*st};else run.d1=(j+1)*st}}flush()}
+  for(const e of P0.els){if(e.cat!=='window')continue;const w=byId.get(e.host);if(!w||w.cat!=='wall'||!cutW(w))continue;const WT=typ(P0,w)||{};if(WT.kind==='curtain')continue;
+    const T=typ(P0,e)||{};if(!(T.width>0&&T.height>0))continue;const z0=elev(P0,w.level)+(+e.sill||0),z1=Math.min(z0+T.height,top);if(z0<L.elev-1||z0>=top)continue;
+    const len=Math.hypot(w.x2-w.x1,w.y2-w.y1)||1,ux=(w.x2-w.x1)/len,uy=(w.y2-w.y1)/len,nx=-uy,ny=ux,th=+WT.thickness||150,off=th/2+150,x=w.x1+ux*e.pos,y=w.y1+uy*e.pos,a=at(x+nx*off,y+ny*off),b=at(x-nx*off,y-ny*off);
+    if((a>=0)===(b>=0))continue;const i=a>=0?a:b,s=a>=0?-1:1,vt=th248(T.vlt248);
+    put(i,{host:w.id,el:e.id,cx:x,cy:y,ux,uy,nx:s*nx,ny:s*ny,w:T.width,z0,z1,th,tau:(vt!=null?Math.min(1,vt):o.vt/100)*o.ff/100})}
+  return out}
+/* how much of the sky each opening sees, way by way: the share of 3 points just outside it (a quarter in from each side, at mid height) that nothing hides;
+   and of the sun of each time (A.sv) */
+function dlVis449(aps,O,suns){for(const A of aps){const f=A.th/2+60,z=(A.z0+A.z1)/2;A.q=[-0.25,0,0.25].map(k=>[A.cx+A.ux*A.w*k+A.nx*f,A.cy+A.uy*A.w*k+A.ny*f,z]);A.vis=new Float32Array(DL449_DIR.length);A.sv=suns.map(()=>0)}
+  const share=(sh,A)=>{let c=0;for(const q of A.q)if(!sh(q,null))c++;return c/A.q.length};
+  DL449_DIR.forEach((k,j)=>{const on=aps.filter(A=>k.d[0]*A.nx+k.d[1]*A.ny>0.005);if(!on.length)return;const sh=solShade445(O,k.d);for(const A of on)A.vis[j]=share(sh,A)});
+  suns.forEach((s,i)=>{if(!s.sh)return;const on=aps.filter(A=>s.s[0]*A.nx+s.s[1]*A.ny>0.005);for(const A of on)A.sv[i]=share(s.sh,A)})}
+/* does the line from p to (x, y) in the plan cross a wall of the level other than the one the opening is in */
+const dlX449=(p,x,y,w)=>{const r0=x-p[0],r1=y-p[1],s0=w.x2-w.x1,s1=w.y2-w.y1,den=r0*s1-r1*s0;if(Math.abs(den)<1e-9)return false;const t=((w.x1-p[0])*s1-(w.y1-p[1])*s0)/den,u=((w.x1-p[0])*r1-(w.y1-p[1])*r0)/den;return t>1e-6&&t<1-1e-6&&u>=0&&u<=1};
+const dlSeen449=(p,x,y,host,W)=>{for(const w of W)if(w.id!==host&&dlX449(p,x,y,w))return false;return true};
+/* the walls a plan of level L cuts, which can stand between a point and an opening of its room */
+const dlWalls449=(P0,L)=>{const cut=L.elev+chCut244(L);return P0.els.filter(w=>{if(w.cat!=='wall'||Math.hypot(w.x2-w.x1,w.y2-w.y1)<1)return false;const z=zRange(P0,w);return z[0]<cut&&z[1]>=cut})};
+/* the light at point p (x, y, z) from the openings of its room: {sky, sun} in lux (the sky part through each piece of each opening, the sun through one) */
+function dlAt449(p,aps,W,sky,sun,ti){let sk=0,sn=0;
+  for(const A of aps){let v=0;for(const f of [-0.25,0,0.25])if(dlSeen449(p,A.cx+A.ux*A.w*f,A.cy+A.uy*A.w*f,A.host,W))v++;if(!v)continue;
+    const ci0=A.cx-A.nx*A.th/2,ci1=A.cy-A.ny*A.th/2,D=(ci0-p[0])*A.nx+(ci1-p[1])*A.ny;if(!(D>1))continue;
+    const k=D/(D+A.th),up=(p[0]-A.cx)*A.ux+(p[1]-A.cy)*A.uy,h=A.w/2,u0=Math.max(-h,up+(-h-up)*k),u1=Math.min(h,up+(h-up)*k),z0=Math.max(A.z0,p[2]+(A.z0-p[2])*k,p[2]+1),z1=Math.min(A.z1,p[2]+(A.z1-p[2])*k);          // the reveal: what of the opening the point sees through both faces of the wall
+    if(!(u1-u0>1&&z1-z0>1))continue;const nu=clamp(Math.round((u1-u0)/250),2,8),nv=clamp(Math.round((z1-z0)/250),2,8),du=(u1-u0)/nu,dz=(z1-z0)/nv,dA=du*dz;let e=0;
+    for(let i=0;i<nu;i++){const a=u0+du*(i+0.5),qx=ci0+A.ux*a,qy=ci1+A.uy*a;for(let j=0;j<nv;j++){const qz=z0+dz*(j+0.5),vx=qx-p[0],vy=qy-p[1],vz=qz-p[2];
+      const r2=vx*vx+vy*vy+vz*vz,r=Math.sqrt(r2),d=[vx/r,vy/r,vz/r],cn=d[0]*A.nx+d[1]*A.ny;if(cn<=1e-4)continue;const m=A.vis[dlIx449(d)];if(m)e+=sky.L(d)*d[2]*cn*dA/r2*m}}
+    sk+=e*A.tau*v/3}
+  if(sky.sun&&sun&&sun.s&&sun.sh){const s=sun.s;for(const A of aps){const c=s[0]*A.nx+s[1]*A.ny;if(c<=0.005||!A.sv[ti])continue;
+    const ci0=A.cx-A.nx*A.th/2,ci1=A.cy-A.ny*A.th/2,t=((ci0-p[0])*A.nx+(ci1-p[1])*A.ny)/c;if(!(t>0))continue;
+    const hx=p[0]+s[0]*t,hy=p[1]+s[1]*t,hz=p[2]+s[2]*t,t2=t+A.th/c,gx=p[0]+s[0]*t2,gy=p[1]+s[1]*t2,gz=p[2]+s[2]*t2;
+    if(Math.abs((hx-A.cx)*A.ux+(hy-A.cy)*A.uy)>A.w/2||hz<A.z0||hz>A.z1||Math.abs((gx-A.cx)*A.ux+(gy-A.cy)*A.uy)>A.w/2||gz<A.z0||gz>A.z1)continue;          // through both faces of the wall
+    if(!dlSeen449(p,hx,hy,A.host,W))continue;const k=60/c;if(sun.sh([gx+s[0]*k,gy+s[1]*k,gz+s[2]*k],null))continue;sn=sun.En*s[2]*A.tau;break}}
+  return{sky:sk,sun:sn}}
+/* what the room's surfaces reflect, the same everywhere in it (the split-flux method): the light that comes down through the openings (sky and sun) onto the floor
+   and the lower walls, the light off the ground onto the ceiling and the upper walls.  Af m², per m, H m, zf the floor (mm), r {rc, rw, rf} 0–1 */
+function dlIrc449(aps,sky,sun,ti,o,Af,per,H,zf,r){let Fd=0,Fu=0,ha=0,hz=0;const Eg=o.rg/100*sky.Eh/2;
+  for(const A of aps){const Ag=A.w*(A.z1-A.z0)/1e6;let Ev=0;for(let j=0;j<DL449_DIR.length;j++){const m=A.vis[j];if(!m)continue;const k=DL449_DIR[j],c=k.d[0]*A.nx+k.d[1]*A.ny;if(c>0)Ev+=m*sky.L(k.d)*c*k.w}
+    if(sky.sun&&sun&&sun.s&&A.sv[ti]){const c=sun.s[0]*A.nx+sun.s[1]*A.ny;if(c>0)Ev+=A.sv[ti]*sun.En*c}
+    Fd+=A.tau*Ag*Ev;Fu+=A.tau*Ag*Eg;ha+=Ag;hz+=Ag*((A.z0+A.z1)/2-zf)/1000}
+  if(!(Af>0)||!(ha>0))return 0;const hm=clamp(hz/ha,0,H),lo=per*hm,hi=per*(H-hm),Rfw=(Af*r.rf+lo*r.rw)/(Af+lo),Rcw=(Af*r.rc+hi*r.rw)/(Af+hi||1),As=2*Af+per*H,R=(Af*(r.rf+r.rc)+per*H*r.rw)/As;
+  return(Fd*Rfw+Fu*Rcw)/(As*(1-R))}
+/* the analysis: every room with its points, means, the share that meets the criterion; the points of each level; the whole.  ids: only those rooms (the
+   Properties of one room).  Kept until the model or the settings change */
+let DL449C=null,DL449C1=null;
+function dlRun449(P0,ids){const o=dl449(P0),S=loadSet(P0),key=JSON.stringify([o,S.north||0,sunPlace(),ids?[...ids]:0]),C=ids?DL449C1:DL449C;
+  if(C&&C.P===P0&&C.ver===VER&&C.key===key)return C.R;
+  const t0=performance.now(),mo=o.d-1,hrs=o.m==='leed'?[9,15]:o.m==='time'?[o.h]:[12],suns=hrs.map(h=>dlSun449(P0,mo,h)),skies=suns.map(s=>dlSky449(o,s)),O=dlOcc449(P0);
+  suns.forEach((s,i)=>{if(s.s&&skies[i].sun)s.sh=solShade445(O,s.s)});
+  const LV=[],byLv=new Map();for(const r of P0.els)if(r.cat==='room'&&(!ids||ids.has(r.id)))(byLv.get(r.level)||byLv.set(r.level,[]).get(r.level)).push(r);
+  let Atot=0;for(const [lv,rooms] of byLv){const L=lvl(P0,lv);if(!L)continue;const regs=regions(P0,lv,true);LV.push({lv,L,rooms,regs});for(const r of rooms){const i=regionAt(regs,r.x,r.y);if(i>=0&&r.dlx449!==1)Atot+=regs[i].area}}
+  LV.sort((a,b)=>a.L.elev-b.L.elev);let g=o.g;if(Atot/(g*g)>DL449_MAX)g=Math.ceil(Math.sqrt(Atot/DL449_MAX)/50)*50;
+  const D=iluDef(P0),rows=[],pts=new Map(),lvs=new Map();let nAp=0,np=0;
+  for(const {lv,L,rooms,regs} of LV){const aps=dlAps449(P0,o,lv,regs),W=dlWalls449(P0,L);
+    const used=new Set(),zp=L.elev+o.wp,up=levelAbove(P0,lv),LP=[],need=new Set();
+    for(const r of rooms){const i=regionAt(regs,r.x,r.y);if(i>=0&&!used.has(i)&&r.dlx449!==1)need.add(i);if(i>=0)used.add(i)}used.clear();
+    dlVis449([].concat(...[...need].map(i=>aps[i])),O,suns);
+    for(const r of rooms){const i=regionAt(regs,r.x,r.y),row={id:r.id,number:r.number||'',name:r.name||'',level:lv,lvn:L.name,inc:r.dlx449!==1,open:i<0||used.has(i),area:0,n:0,ap:0,win:0};rows.push(row);if(row.open)continue;used.add(i);
+      const G=regs[i],A=aps[i];row.area=G.area/1e6;row.ap=A.length;row.win=new Set(A.map(a=>a.el)).size;row.net=G.net;if(!row.inc)continue;nAp+=A.length;
+      let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of G.net){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
+      const Wr=W.filter(w=>Math.max(w.x1,w.x2)>=x0-300&&Math.min(w.x1,w.x2)<=x1+300&&Math.max(w.y1,w.y2)>=y0-300&&Math.min(w.y1,w.y2)<=y1+300);          // only the walls about the room can stand inside it
+      const Q=[];for(let x=Math.floor(x0/g)*g+g/2;x<x1;x+=g)for(let y=Math.floor(y0/g)*g+g/2;y<y1;y+=g)if(inPoly(x,y,G.net))Q.push([x,y,zp]);
+      if(!Q.length)Q.push(inPoly(G.cx,G.cy,G.net)?[G.cx,G.cy,zp]:[r.x,r.y,zp]);
+      const ce=ceilingAt(P0,lv,r.x,r.y),H=(ce?ce.off:up?up.elev-L.elev:3000)/1000,rf={rc:(r.lrc!=null?+r.lrc:D.rc)/100,rw:(r.lrw!=null?+r.lrw:D.rw)/100,rf:(r.lrf!=null?+r.lrf:D.rf)/100};
+      row.irc=suns.map((s,ti)=>dlIrc449(A,skies[ti],s,ti,o,row.area,G.perim/1000,H,L.elev,rf));row.H=H;
+      const V=Q.map(p=>suns.map((s,ti)=>{const q=dlAt449(p,A,Wr,skies[ti],s,ti);return q.sky+q.sun+row.irc[ti]}));
+      const st=v=>o.m==='df'?(v[0]>=o.dt?'o':'l'):v.some(x=>x>o.hi)?'h':v.some(x=>x<o.lo)?'l':'o';
+      row.n=Q.length;row.avg=suns.map((s,ti)=>V.reduce((a,v)=>a+v[ti],0)/V.length);row.min=suns.map((s,ti)=>Math.min(...V.map(v=>v[ti])));row.max=suns.map((s,ti)=>Math.max(...V.map(v=>v[ti])));
+      const S0=V.map(st);row.pass=S0.filter(x=>x==='o').length/V.length;row.lo=S0.filter(x=>x==='l').length/V.length;row.hi=S0.filter(x=>x==='h').length/V.length;
+      row.ok=o.m==='df'?row.avg[0]>=o.dt:row.pass>=0.75-1e-9;np+=Q.length;
+      Q.forEach((p,k)=>LP.push({x:p[0],y:p[1],r:r.id,v:V[k],s:S0[k]}))}
+    if(LP.length)pts.set(lv,LP)}
+  const inc=rows.filter(r=>r.inc&&!r.open&&r.n),A=inc.reduce((a,r)=>a+r.area,0),pa=inc.reduce((a,r)=>a+r.area*r.pass,0),pct=A>0?pa/A*100:0;
+  const avg=hrs.map((h,ti)=>A>0?inc.reduce((a,r)=>a+r.area*r.avg[ti],0)/A:0);
+  for(const [lv,L] of pts){const R0=inc.filter(r=>r.level===lv),a=R0.reduce((s,r)=>s+r.area,0);lvs.set(lv,{area:a,pct:a>0?R0.reduce((s,r)=>s+r.area*r.pass,0)/a*100:0,avg:hrs.map((h,ti)=>a>0?R0.reduce((s,r)=>s+r.area*r.avg[ti],0)/a:0),n:L.length})}
+  const R={o,g,hrs,suns:suns.map(s=>({h:s.h,alt:s.alt,az:s.az,En:s.En,Ed:s.Ed})),skies:skies.map(k=>({Eh:k.Eh,Ed:k.Ed,sun:!!k.sun})),rows,pts,lvs,tot:{area:A,pass:pa,pct,lp:pct>=90-1e-9?2:pct>=75-1e-9?1:0,avg},n:np,nAp,nO:O.length,ms:performance.now()-t0};
+  const c={P:P0,ver:VER,key,R};if(ids)DL449C1=c;else DL449C=c;return R}
+/* the colours: the three results of a point (too dark, in range, too bright) or a scale of lux (10 to 10,000, by its log) or of daylight factor (0 to 2.5 × the target) */
+const DL449_ST={l:'#5a8fd8',o:'#43b36a',h:'#f0a63a'},DL449_RAMP=[[38,52,118],[44,123,182],[90,182,120],[250,232,110],[244,145,62],[214,40,40]];
+const dlRamp449=f=>{f=clamp(f,0,1)*(DL449_RAMP.length-1);const i=Math.min(DL449_RAMP.length-2,Math.floor(f)),r=f-i,a=DL449_RAMP[i],b=DL449_RAMP[i+1];return`rgb(${Math.round(a[0]+(b[0]-a[0])*r)},${Math.round(a[1]+(b[1]-a[1])*r)},${Math.round(a[2]+(b[2]-a[2])*r)})`};
+const dlF449v=(o,v)=>o.m==='df'?v/(2.5*o.dt):(Math.log10(Math.max(v,1))-1)/3;
+const dlCol449=(R,q)=>R.o.m==='leed'?DL449_ST[q.s]:dlRamp449(dlF449v(R.o,q.v[0]));
+/* the grid in a plan, under the model's lines, each room's squares inside its own outline (not in a DXF: its painter has no canvas) */
+XPL0.push((ctx,g,v)=>{if(v.kind!=='plan'||v.draft||!v.dl449||!ctx.canvas)return;const R=dlRun449(P),L=R.pts.get(v.level);if(!L||!L.length)return;const h=R.g/2,by=new Map();for(const q of L)(by.get(q.r)||by.set(q.r,[]).get(q.r)).push(q);
+  ctx.save();for(const [id,Q] of by){const row=R.rows.find(x=>x.id===id);if(!row||!row.net)continue;ctx.save();g.path(row.net);ctx.clip();ctx.globalAlpha=0.8;
+    for(const q of Q){ctx.fillStyle=dlCol449(R,q);g.path([[q.x-h,q.y-h],[q.x+h,q.y-h],[q.x+h,q.y+h],[q.x-h,q.y+h]]);ctx.fill()}ctx.restore()}ctx.restore()});
+/* its legend at the bottom right of the view */
+function dlLeg449(pn,ctx,v){const R=dlRun449(P),lv=R.lvs.get(v.level),o=R.o,dk=document.documentElement.getAttribute('data-ui')!=='light',x0=pn.w-214,bw=16,bh=110;
+  const rows=o.m==='leed'?[['h',t('dl449_sh',o.hi)],['o',t('dl449_so',o.lo,o.hi)],['l',t('dl449_sl',o.lo)]]:null,H0=rows?rows.length*22+58:bh+68,y0=pn.h-H0-58;
+  ctx.save();ctx.fillStyle=dk?'rgba(24,30,38,.88)':'rgba(255,255,255,.93)';ctx.strokeStyle=dk?'#4a5662':'#c9d1da';ctx.lineWidth=1;ctx.beginPath();ctx.rect(x0-10,y0,200,H0);ctx.fill();ctx.stroke();
+  const ink=dk?'#e6edf3':'#1d2733';ctx.fillStyle=ink;ctx.textBaseline='middle';ctx.font='600 12px sans-serif';ctx.fillText(t('dl449_lg'),x0,y0+14);ctx.font='11px sans-serif';ctx.fillText(t('dl449_lg_'+o.m,...R.hrs.map(dlHr449)),x0,y0+31);
+  if(rows)rows.forEach(([k,l],i)=>{const y=y0+48+i*22;ctx.fillStyle=DL449_ST[k];ctx.fillRect(x0,y,bw,14);ctx.strokeRect(x0,y,bw,14);ctx.fillStyle=ink;ctx.fillText(l,x0+bw+8,y+7)});
+  else{const y=y0+44,gr=ctx.createLinearGradient(0,y+bh,0,y);DL449_RAMP.forEach((c,i)=>gr.addColorStop(i/(DL449_RAMP.length-1),`rgb(${c[0]},${c[1]},${c[2]})`));ctx.fillStyle=gr;ctx.fillRect(x0,y,bw,bh);ctx.strokeRect(x0,y,bw,bh);ctx.fillStyle=ink;
+    const ticks=o.m==='df'?[[0,'0 %'],[0.4,o.dt+' %'],[1,'≥ '+(+(2.5*o.dt).toFixed(1))+' %']]:[[0,'10 lx'],[1/3,'100 lx'],[2/3,'1,000 lx'],[1,'10,000 lx']];for(const [f,l] of ticks)ctx.fillText(l,x0+bw+8,y+bh-f*bh)}
+  ctx.restore();ui.dl449L={v:v.id,m:o.m,n:lv?lv.n:0,pct:lv?lv.pct:0}}
+{const f0=drawOverlay;drawOverlay=function(pn,ctx,v){const r=f0.apply(this,arguments);if(v&&v.kind==='plan'&&!v.draft&&v.dl449)dlLeg449(pn,ctx,v);return r}}
+const dlHr449=h=>String(Math.floor(h)).padStart(2,'0')+':'+String(Math.round((h%1)*60)).padStart(2,'0');
+/* a value as the analysis shows it */
+const dlV449=(o,v)=>o.m==='df'?(+v).toFixed(1)+' %':money(Math.round(v))+' lx';
+/* the view's Properties: Show Daylight Analysis on a plan, and what its level gets */
+XVR.push(v=>{if(!v||v.kind!=='plan'||v.draft)return'';let h=PR.grp('g_dl449')+PR.chk('dl449','p_dl449',!!v.dl449);
+  if(v.dl449){const R=dlRun449(P),q=R.lvs.get(v.level);if(q)h+=PR.ro(R.o.m==='df'?'p_dl449df':'p_dl449m',R.hrs.length>1?q.avg.map(x=>dlV449(R.o,x)).join(' · '):dlV449(R.o,q.avg[0]))+PR.ro('p_dl449p',q.pct.toFixed(1)+' %')}
+  return h+`<div class="pa"><button class="btn" data-act="dl449">${t('a_dl449')}…</button></div>`});
+XVF.push((v,key,raw)=>{if(key!=='dl449')return false;if(!v||v.kind!=='plan'||v.draft)return true;const on=raw===true||raw===1||raw==='1'||raw==='true'||raw==='on';edit(()=>{if(on)v.dl449=1;else delete v.dl449});return true});
+/* a room's Properties: in the analysis or not, and what it gets */
+XP.push((cat,els)=>{if(cat!=='room')return'';const inc=els.every(e=>e.dlx449!==1);let h=PR.grp('g_dl449')+PR.chk('dli449','p_dli449',inc);
+  if(els.length===1&&inc&&els[0].id!=null&&IDX.get(els[0].id)===els[0]){const R=dlRun449(P,new Set([els[0].id])),r=R.rows[0];
+    if(r&&!r.open&&r.n){h+=PR.ro(R.o.m==='df'?'p_dl449df':'p_dl449m',r.avg.map(x=>dlV449(R.o,x)).join(' · '))+PR.ro(R.o.m==='df'?'p_dl449pd':'p_dl449p',(r.pass*100).toFixed(1)+' %')}
+    else if(r&&!r.open)h+=PR.ro('p_dl449m',t('dl449_nopt'))}
+  return h+`<div class="pa"><button class="btn" data-act="dl449">${t('a_dl449')}…</button></div>`});
+XF.push((cat,o,key,raw)=>{if(cat!=='room'||key!=='dli449')return false;const on=raw===true||raw===1||raw==='1'||raw==='true'||raw==='on';if(on)delete o.dlx449;else o.dlx449=1;return true});
+/* the dialog */
+function dlgDL449(){const R=dlRun449(P),o=R.o,MO=t('sol445_mo').split(','),lx=o.m!=='df',f1=x=>(+x).toFixed(1);
+  const sel=(id,k,opts,val)=>`<select id="${id}" data-dl="${k}">${opts.map(([v,l])=>`<option value="${v}"${String(v)===String(val)?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
+  const num=(id,k,val,mn,mx,st,un)=>`<span><input type="number" id="${id}" data-dl="${k}" value="${val}" min="${mn}" max="${mx}" step="${st}" style="width:84px"> ${esc(un)}</span>`;
+  const fr=(l,h)=>`<div class="fr"><label>${esc(t(l))}</label>${h}</div>`;
+  let set=fr('dl449_m',sel('dl449_m','m',[['leed',t('dl449_mleed')],['time',t('dl449_mtime')],['df',t('dl449_mdf')]],o.m));
+  if(o.m!=='df')set+=fr('dl449_d',sel('dl449_d','d',MO.map((x,i)=>[i+1,'21 '+x]),o.d));
+  if(o.m==='time')set+=fr('dl449_h',num('dl449_h','h',o.h,5,19,0.5,t('dl449_hr')))+fr('dl449_k',sel('dl449_k','k',[['clear',t('dl449_kc')],['over',t('dl449_ko')]],o.k));
+  set+=fr('dl449_g',num('dl449_g','g',o.g,300,3000,100,t('u_mm')))+fr('dl449_wp',num('dl449_wp','wp',o.wp,0,2000,10,t('u_mm')));
+  set+=lx?fr('dl449_lo',num('dl449_lo','lo',o.lo,0,10000,50,'lx'))+fr('dl449_hi',num('dl449_hi','hi',o.hi,100,100000,100,'lx')):fr('dl449_dt',num('dl449_dt','dt',o.dt,0.5,10,0.5,'%'));
+  set+=fr('dl449_vt',num('dl449_vt','vt',o.vt,5,95,1,'%'))+fr('dl449_ff',num('dl449_ff','ff',o.ff,30,100,1,'%'))+fr('dl449_rg',num('dl449_rg','rg',o.rg,0,80,1,'%'));
+  const T=R.tot,hs=R.hrs.map(dlHr449),sun=R.suns.map(s=>t('dl449_sun',dlHr449(s.h),f1(s.alt),Math.round(s.az))).join(' · ');
+  const sum=!R.rows.length?`<p class="note warn">${esc(t('dl449_none'))}</p>`:!(T.area>0)?`<p class="note warn">${esc(t('dl449_noin'))}</p>`
+    :`<p class="dl449s"><b>${esc(o.m==='leed'?t('dl449_sleed',f1(T.pct),f1(T.area),o.lo,o.hi,hs.join(t('dl449_and')),T.lp):o.m==='time'?t('dl449_stime',dlV449(o,T.avg[0]),f1(T.pct),o.lo,o.hi,f1(T.area)):t('dl449_sdf',f1(T.avg[0]),f1(T.pct),o.dt,f1(T.area)))}</b><br><small>${esc((o.m==='df'?'':sun+' · ')+t('dl449_pts',R.n,R.g,R.nAp))}</small></p>`;
+  const hd=(o.m==='leed'?hs.map(h=>`<th class="n">${esc(h)}</th>`).join(''):`<th class="n">${t(lx?'dl449_avg':'dl449_avgdf')}</th><th class="n">${t('dl449_min')}</th><th class="n">${t('dl449_max')}</th>`)+`<th class="n">${t(o.m==='df'?'dl449_passdf':'dl449_pass')}</th>`;
+  const body=R.rows.slice().sort((a,b)=>elev(P,a.level)-elev(P,b.level)||String(a.number).localeCompare(String(b.number),undefined,{numeric:true})||a.id-b.id).map(r=>{const c=r.inc&&!r.open&&r.n;
+    const vals=c?(o.m==='leed'?r.avg.map(x=>`<td class="n">${dlV449(o,x)}</td>`).join(''):`<td class="n">${dlV449(o,r.avg[0])}</td><td class="n">${dlV449(o,r.min[0])}</td><td class="n">${dlV449(o,r.max[0])}</td>`)+`<td class="n"><b${r.ok?'':' style="color:var(--warn)"'}>${f1(r.pass*100)} %</b></td>`
+      :`<td colspan="${o.m==='leed'?3:4}" class="n"><small>${esc(r.open?t('not_enclosed'):!r.inc?t('dl449_out'):t('dl449_nopt'))}</small></td>`;
+    return`<tr data-dlr="${r.id}"${c?'':' class="off"'}><td><input type="checkbox" data-dli="${r.id}"${r.inc?' checked':''}${r.open?' disabled':''} aria-label="${esc(t('p_dli449'))}"></td><td>${esc(r.lvn)}</td><td>${esc(r.number)}</td><td>${esc(r.name)}</td><td class="n">${r.open?'':f1(r.area)}</td><td class="n">${r.open?'':r.win}</td><td class="n">${c?r.n:''}</td>${vals}</tr>`}).join('');
+  openDlg(t('a_dl449'),`<p class="note">${esc(t('dl449_note'))}</p><div class="sol445f dl449f">${set}</div>${sum}${R.rows.length?`<div class="tblw" style="max-height:40vh;overflow:auto"><table class="tbl" id="dl449Tbl"><thead><tr><th></th><th>${t('c_level')}</th><th>${t('c_number')}</th><th>${t('c_name')}</th><th class="n">${t('c_area')} (${t('u_m2')})</th><th class="n">${t('dl449_win')}</th><th class="n">${t('dl449_np')}</th>${hd}</tr></thead><tbody>${body}</tbody></table></div>`:''}`,
+    `<button class="btn" data-act="dl449v"${R.n?'':' disabled'}>${t('a_dl449v')}</button><button class="btn" data-act="dl449csv"${R.n?'':' disabled'}>${t('sol445_csv')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(e){const el=e.target;if(el.dataset.dli){const r=IDX.get(+el.dataset.dli);if(r)edit(()=>{if(el.checked)delete r.dlx449;else r.dlx449=1});dlgDL449();return}
+        const q=el.closest('[data-dl]');if(!q)return;const k=q.dataset.dl;let val=q.value;if(k!=='m'&&k!=='k'){val=+val;if(!isFinite(val))return}
+        edit(()=>{P.dl449=Object.assign({},P.dl449&&typeof P.dl449==='object'&&!Array.isArray(P.dl449)?P.dl449:{},{[k]:val});for(const f of XC)f()});dlgDL449()},
+     click(e){if(e.target.closest('input,select,button'))return;const tr=e.target.closest('#dl449Tbl tr[data-dlr]');if(!tr)return;const r=IDX.get(+tr.dataset.dlr);if(!r)return;
+       closeDlg();const A=activeView(),ok=v=>!!v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.level===r.level&&v.area==null,pv=ok(A)?A:planOf(r.level)||P.views.find(ok);if(pv&&pv!==A)showView(pv.id);ui.sel=new Set([r.id]);setTool('modify');refresh()}},'wide')}
+XA.dl449=()=>dlgDL449();
+document.head.insertAdjacentHTML('beforeend',`<style>.dl449f{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));column-gap:28px;row-gap:6px;margin:8px 0}.dl449f .fr{grid-template-columns:200px minmax(0,1fr)}.dl449f .fr select{max-width:340px}p.dl449s{margin:12px 0 8px}</style>`);
+/* Show in Plan: the active plan, or the plan of the first level the analysis has points on, shows the grid */
+XA.dl449v=()=>{const R=dlRun449(P),A=activeView(),okv=v=>!!v&&v.kind==='plan'&&!v.draft&&!v.legend&&v.area==null&&R.pts.has(v.level);let v=okv(A)?A:null;
+  if(!v){const lv=[...R.pts.keys()][0];v=lv!=null?(P.views.find(x=>okv(x)&&x.level===lv&&x.dl449)||planOf(lv)||P.views.find(x=>okv(x)&&x.level===lv)):null}if(!v){toast(t('dl449_none'));return}
+  edit(()=>{v.dl449=1});closeDlg();showView(v.id);refresh()};
+/* CSV: a row a room */
+XA.dl449csv=async()=>{const R=dlRun449(P),o=R.o,q=v=>'"'+String(v).replace(/"/g,'""')+'"',n=v=>(Math.round(v*100)/100).toString(),u=o.m==='df'?'DF %':'lux',hs=R.hrs.map(dlHr449);
+  const H=[t('c_level'),t('c_number'),t('c_name'),t('c_area')+' m2',t('dl449_win'),t('dl449_np')].concat(o.m==='leed'?hs.map(h=>u+' '+h):[t('dl449_avg')+' '+u,t('dl449_min')+' '+u,t('dl449_max')+' '+u],[t(o.m==='df'?'dl449_passdf':'dl449_pass')+' %',t('dl449_inc')]);
+  const L=[H.map(q).join(',')];for(const r of R.rows){if(r.open)continue;const c=r.inc&&r.n;L.push([q(r.lvn),q(r.number),q(r.name),n(r.area),r.win,c?r.n:''].concat(c?(o.m==='leed'?r.avg.map(n):[n(r.avg[0]),n(r.min[0]),n(r.max[0])]):(o.m==='leed'?['','']:['','','']),[c?n(r.pass*100):'',r.inc?1:0]).join(','))}
+  L.push([q(t('c_total')),'','',n(R.tot.area),'',R.n].concat(o.m==='leed'?R.tot.avg.map(n):[n(R.tot.avg[0]),'',''],[n(R.tot.pct),'']).join(','));
+  const ok=await saveFile(fname('','-daylight-analysis.csv'),'﻿'+L.join('\r\n'),'text/csv');if(!ok)toast(t('export_na'))};
+/* the way in: Analyze › Lighting */
+{const an=RIBBON.find(r=>r.id==='analyze'),pl=an&&an.panels.find(p=>p.t==='p_ilu');if(pl&&!pl.b.includes('@dl449'))pl.b.push('@dl449')}
+Object.assign(BTN,{'@dl449':['dl449','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-dl449" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.8" rx="9" ry="1.3"/>`
+    +`<circle cx="6.5" cy="5.5" r="2.6" fill="#ffc94a" stroke="#b07a12" stroke-width=".6"/><path stroke="#e0a21c" stroke-width="1" stroke-linecap="round" d="M6.5 1.2v1M2.2 5.5h1M3.5 2.5l.7.7M9.5 2.5l-.7.7"/>`
+    +`<rect class="i-e" x="11" y="3" width="9.5" height="8" rx=".6" fill="#bfe0f7" stroke="#2a3550" stroke-width=".6"/><path stroke="#2a3550" stroke-width=".6" d="M15.75 3v8M11 7h9.5"/>`
+    +`<path fill="#45b36a" stroke="#1e5c30" stroke-width=".4" d="M3 14h6v3H3z"/><path fill="#f0a63a" stroke="#8a5a12" stroke-width=".4" d="M9 14h6v3H9z"/><path fill="#5a8fd8" stroke="#24467a" stroke-width=".4" d="M15 14h6v3h-6z"/>`
+    +`<path fill="#43b36a" stroke="#1e5c30" stroke-width=".4" d="M3 17h6v3H3z"/><path fill="#43b36a" stroke="#1e5c30" stroke-width=".4" d="M9 17h6v3H9z"/><path fill="#90b8e6" stroke="#24467a" stroke-width=".4" d="M15 17h6v3h-6z"/></symbol>`)})();
+/* the cleaner */
+XC.push(()=>{const g=P.dl449;if(g!==undefined){if(!g||typeof g!=='object'||Array.isArray(g))delete P.dl449;else{const o=dl449(P),r={};for(const k of Object.keys(DL449_D))if(o[k]!==DL449_D[k])r[k]=o[k];if(Object.keys(r).length)P.dl449=r;else delete P.dl449}}
+  for(const e of P.els)if(e.dlx449!==undefined&&(e.cat!=='room'||e.dlx449!==1))delete e.dlx449;
+  for(const v of P.views||[])if(v.dl449!=null){if(v.kind==='plan'&&!v.draft&&v.dl449)v.dl449=1;else delete v.dl449}});
+Object.assign(STR,{a_dl449:['วิเคราะห์แสงธรรมชาติ (Lighting Analysis)','Daylight Analysis'],a_dl449v:['แสดงบนแปลน','Show in Plan'],
+  dl449_note:['แสงธรรมชาติบนระนาบทำงานของทุกห้องเป็นตารางจุด (แบบ Lighting Analysis ของ Revit): แต่ละจุดเห็นท้องฟ้าผ่านหน้าต่างและผนังกระจกบนผนังด้านนอกของห้อง ตามความสว่างของท้องฟ้าแต่ละส่วน (ท้องฟ้าใส CIE จากแดดและฟ้าของภาระความเย็น หรือฟ้าครึ้ม CIE) เท่าที่ความลึกช่องผนัง ผนังในห้อง และสิ่งที่อยู่ด้านนอกยอมให้ผ่าน (ผนัง พื้น หลังคา และมวลบริบทของโมเดล) คูณการส่งผ่านแสงของกระจกและส่วนที่กรอบเหลือไว้ บวกแดดตรงเมื่อแนวแดดผ่านช่องเปิดได้ และแสงสะท้อนภายในห้องแบบ split-flux ตามค่าสะท้อนแสงของการวิเคราะห์แสงสว่าง ค่าเป็นการประมาณเพื่อออกแบบ',
+    'The daylight on the workplane of every room, on a grid of points (as Revit\'s Lighting Analysis): each point sees the sky through the windows and curtain walls in the room\'s outside walls, by the brightness of each part of the sky (the CIE clear sky over the sun and sky of the cooling loads, or the CIE overcast sky) as far as the reveal, the room\'s walls and what stands outside let it through (walls, floors, roofs and context masses of the model), times the glass\'s visible transmittance and the share the frame leaves; plus the sun where its beam passes an opening, and the light reflected inside the room by the split-flux method with the reflectances of Lighting Analysis. An estimate for design'],
+  dl449_m:['การวิเคราะห์','Analysis'],dl449_mleed:['LEED v4 EQc7 ทางเลือก 2 (9:00 และ 15:00)','LEED v4 EQc7 Option 2 (9:00 and 15:00)'],dl449_mtime:['ความสว่างตามเวลา (Illuminance)','Illuminance at a time'],dl449_mdf:['ค่าแสงธรรมชาติ (Daylight Factor)','Daylight Factor'],
+  dl449_d:['วันที่','Date'],dl449_h:['เวลา','Time'],dl449_hr:['นาฬิกา','h'],dl449_k:['ท้องฟ้า','Sky'],dl449_kc:['ฟ้าใส (CIE clear sky มีแดด)','Clear (CIE clear sky with sun)'],dl449_ko:['ฟ้าครึ้ม (CIE overcast)','Overcast (CIE overcast)'],
+  dl449_g:['ระยะตาราง (Grid)','Grid spacing'],dl449_wp:['ความสูงระนาบทำงาน','Workplane height'],dl449_lo:['ความสว่างต่ำสุด','Lower limit'],dl449_hi:['ความสว่างสูงสุด','Upper limit'],dl449_dt:['ค่าแสงธรรมชาติเป้าหมาย','Target daylight factor'],
+  dl449_vt:['การส่งผ่านแสงของกระจก (ถ้าชนิดไม่ได้ตั้ง)','Glass visible transmittance (when the type has none)'],dl449_ff:['สัดส่วนกระจกในช่อง (หักกรอบ)','Glass share of the opening (frame taken off)'],dl449_rg:['การสะท้อนแสงของพื้นดิน','Ground reflectance'],
+  dl449_sleed:['{0} % ของพื้นที่ที่วิเคราะห์ ({1} ตร.ม.) ได้แสง {2} ถึง {3} lux ทั้งเวลา {4} ได้ {5} คะแนน LEED (75 % ได้ 1 คะแนน 90 % ได้ 2 คะแนน)','{0} % of the area analysed ({1} m²) gets {2} to {3} lux at both {4}: {5} LEED points (75 % for 1, 90 % for 2)'],
+  dl449_stime:['เฉลี่ย {0} · {1} % ของพื้นที่ได้ {2} ถึง {3} lux ({4} ตร.ม.)','Mean {0} · {1} % of the area gets {2} to {3} lux ({4} m²)'],
+  dl449_sdf:['ค่าแสงธรรมชาติเฉลี่ย {0} % · {1} % ของพื้นที่ได้อย่างน้อย {2} % ({3} ตร.ม.)','Mean daylight factor {0} % · {1} % of the area gets at least {2} % ({3} m²)'],
+  dl449_sun:['{0} ดวงอาทิตย์สูง {1}° ทิศ {2}°','{0} sun {1}° high, bearing {2}°'],dl449_pts:['{0} จุด ตาราง {1} มม. · {2} ช่องเปิด','{0} points, grid {1} mm · {2} openings'],
+  dl449_none:['ยังไม่มีห้องให้วิเคราะห์','There are no rooms to analyse'],dl449_noin:['ไม่มีห้องที่ปิดล้อมและอยู่ในการวิเคราะห์','No enclosed room is in the analysis'],dl449_out:['ไม่รวมในการวิเคราะห์','Left out of the analysis'],dl449_nopt:['ไม่มีจุด','No points'],
+  dl449_win:['ช่องเปิด','Openings'],dl449_and:[' และ ',' and '],dl449_np:['จุด','Points'],dl449_avg:['เฉลี่ย','Mean'],dl449_avgdf:['DF เฉลี่ย','Mean DF'],dl449_min:['ต่ำสุด','Least'],dl449_max:['สูงสุด','Most'],dl449_pass:['ผ่าน','Passes'],dl449_passdf:['ถึงเป้า','At target'],dl449_inc:['รวมในการวิเคราะห์','In the analysis'],
+  dl449_lg:['แสงธรรมชาติ (Daylight)','Daylight'],dl449_lg_leed:['LEED v4 · {0} และ {1}','LEED v4 · {0} and {1}'],dl449_lg_time:['ความสว่าง lux · {0}','Illuminance, lux · {0}'],dl449_lg_df:['ค่าแสงธรรมชาติ (DF)','Daylight factor (DF)'],
+  dl449_sh:['เกิน {0} lux','Over {0} lux'],dl449_so:['{0}–{1} lux ผ่าน','{0}–{1} lux, passes'],dl449_sl:['ต่ำกว่า {0} lux','Under {0} lux'],
+  g_dl449:['วิเคราะห์แสงธรรมชาติ','Daylight Analysis'],p_dl449:['แสดงผลแสงธรรมชาติ','Show Daylight Analysis'],p_dli449:['รวมในการวิเคราะห์แสงธรรมชาติ','In the Daylight Analysis'],
+  p_dl449m:['ความสว่างเฉลี่ย','Mean illuminance'],p_dl449df:['ค่าแสงธรรมชาติเฉลี่ย','Mean daylight factor'],p_dl449p:['พื้นที่ที่ผ่าน','Area that passes'],p_dl449pd:['พื้นที่ที่ถึงเป้า','Area at target']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -52185,6 +52417,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.446 · วิเคราะห์แผงโซลาร์ (PV) จากผลวิเคราะห์แสงอาทิตย์: ช่องที่ได้แสงไม่ต่ำกว่าเกณฑ์วางแผงตามสัดส่วนพื้นที่ติดตั้ง ได้พื้นที่แผง กำลังติดตั้ง kWp ไฟฟ้าต่อปี ผลผลิตจำเพาะ ค่าไฟที่ประหยัด ค่าติดตั้ง ระยะคืนทุน ไฟฟ้าตลอดอายุเมื่อแผงเสื่อม และ CO₂ ที่ลดได้ ตั้งประสิทธิภาพแผง ค่าสมรรถนะระบบ ค่าไฟ ค่าติดตั้งได้ ตารางต่อผิว ส่งออก CSV และแสดงช่องที่วางแผงในมุมมอง 3 มิติ (ช่องที่ต่ำกว่าเกณฑ์เป็นสีเทา)
 - V1.447 · พลังงานรายปีจากมวล (Systems Analysis แบบ Revit บนมวลแนวคิด): เมื่อแบบจำลองพลังงานมาจากมวล การวิเคราะห์พลังงานรายปีคิดทุกโซนของมวลรายชั่วโมงเหมือนห้อง ผนังและกระจกตามทิศด้วยวัสดุแบบแนวคิด กันแดด หลังคาและช่องแสงหลังคา (แดดผ่านช่องแสงหลังคาคิดในภาระรายชั่วโมงแล้ว) คน ไฟ อุปกรณ์ตามการใช้งานของชั้น ได้ไฟฟ้าทั้งปี EUI ค่าไฟ รายเดือน และเทียบระบบ หักไฟจากแผงโซลาร์ (PV Analysis) ได้ ไฟฟ้าสุทธิ EUI สุทธิ ค่าไฟสุทธิ สัดส่วนที่แผงให้ไฟ คุณสมบัติของมวลแสดงพลังงานรายปีและ EUI
 - V1.448 · ปัจจัยประสิทธิภาพอาคาร (แบบ Insight ของ Revit): ลองทีละปัจจัยผ่านพลังงานรายปีจากมวล ทิศของอาคาร สัดส่วนกระจก กันแดด ชนิดกระจก ผนัง หลังคา ช่องแสงหลังคา อากาศรั่วซึม กำลังไฟแสงสว่างและอุปกรณ์ ระบบปรับอากาศ ตารางเวลาใช้งาน และพื้นที่ติดแผงโซลาร์ แต่ละปัจจัยแสดงช่วง EUI เรียงจากที่มีผลมากที่สุด ตัวเลือกตอนนี้และที่ดีที่สุด คลิกตัวเลือกเพื่อใช้กับโครงการ (Ctrl+Z ย้อนได้) EUI เมื่อทุกปัจจัยดีที่สุดรวมกัน ตั้งเป้าหมาย EUI ได้ ส่งออก CSV
+- V1.449 · วิเคราะห์แสงธรรมชาติ (Lighting Analysis แบบ Revit กับ Insight): แสงธรรมชาติบนระนาบทำงานของทุกห้องเป็นตารางจุด สามแบบ คือ LEED v4 EQc7 ทางเลือก 2 (300 ถึง 3,000 lux ทั้ง 9:00 และ 15:00 ของวันฟ้าใสช่วงวิษุวัต ได้ 1 หรือ 2 คะแนน) ความสว่างตามเดือนและเวลา (ฟ้าใสหรือฟ้าครึ้ม) และค่าแสงธรรมชาติ (Daylight Factor) แต่ละจุดเห็นท้องฟ้าผ่านหน้าต่างและผนังกระจก ผนัง พื้น หลังคา และมวลบริบทบังได้ รวมแดดตรงและแสงสะท้อนในห้อง ตารางรายห้อง เลือกห้องที่ไม่รวมได้ แสดงเป็นสีบนแปลนพร้อมคำอธิบายสี ส่งออก CSV
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -52778,6 +53011,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.446 · PV Analysis from the Solar Analysis: squares that get at least the cutoff take panels over the coverage share; panel area, installed kWp, electricity a year, specific yield, money saved, installed cost, payback, electricity over the life as panels wear, CO₂ avoided; panel efficiency, performance ratio, tariff and cost can be set; a table a surface, CSV, and the panel squares in 3D views (the rest grey)
 - V1.447 · Annual energy from masses (Revit's Systems Analysis on conceptual masses): with the energy model from masses, the annual energy works out every zone of the masses hour by hour as it does a room (walls and glazing by orientation with the Conceptual Constructions, shades, roof and skylights with the sun through them now counted, people, lights and equipment of each floor's Usage): electricity a year, EUI, cost, months and the system comparison; the PV Analysis electricity can be taken off (net electricity, net EUI, net cost, the share covered); a mass's Properties show its annual energy and EUI
 - V1.448 · Building Performance Factors (as Revit Insight): orientation, window-to-wall ratio, shades, glass, walls, roof, skylights, infiltration, lighting and plug-load power, HVAC, operating schedule and PV coverage, each tried one at a time through the annual energy from masses; each factor's EUI range (biggest effect first), the option now and the best; a click sets an option in the project (Ctrl+Z takes it back); the EUI with every factor at its best; a target EUI; CSV
+- V1.449 · Daylight Analysis (Revit's Lighting Analysis with Insight): the daylight on the workplane of every room on a grid of points, three ways: LEED v4 EQc7 Option 2 (300 to 3,000 lux at both 9:00 and 15:00 of a clear-sky equinox, 1 or 2 points), the illuminance at a month and hour (clear or overcast), and the daylight factor; each point sees the sky through windows and curtain walls, with walls, floors, roofs and context masses in the way, plus the sun and the light reflected in the room; a table by room, rooms can be left out; colours on the plan with a legend; CSV
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -55030,6 +55264,33 @@ window.PenumBIM.r209={nbo:()=>Object.assign({},NBO),set:o=>{Object.assign(NBO,o|
   bar:i=>{const pn=PANES[i==null?ui.ap:i],d=pn&&pn.nb;if(!d||d.hidden)return null;const R=pn.cvw.getBoundingClientRect(),b=d.getBoundingClientRect(),c=pn.cube&&!pn.cube.hidden?pn.cube.getBoundingClientRect():null;
     return{x:b.left,y:b.top,w:b.width,h:b.height,r:R.right-b.right,t:b.top-R.top,bt:R.bottom-b.bottom,l:b.left-R.left,cube:c?{x:c.left,y:c.top,w:c.width,h:c.height,b:c.bottom,r:c.right}:null,wheel:!d.querySelector('[data-g="wheel"]').hidden,zoom:!d.querySelector('[data-g="zoom"]').hidden}},
   cube:i=>{const pn=PANES[i==null?ui.ap:i];return!!pn&&!!pn.cube&&!pn.cube.hidden},key:c=>keyFor(c),short:k=>SHORT[k]||null};
+window.PenumBIM.r449={
+  set:o=>{edit(()=>{if(o===null)delete P.dl449;else P.dl449=Object.assign({},P.dl449||{},o);for(const f of XC)f()});return P.dl449?JSON.parse(JSON.stringify(P.dl449)):null},
+  raw:o=>{P.dl449=o;for(const f of XC)f();return P.dl449===undefined?null:JSON.parse(JSON.stringify(P.dl449))},
+  opts:()=>dl449(P),
+  run:ids=>{const R=dlRun449(P,ids?new Set(ids):undefined);return{g:R.g,hrs:R.hrs,suns:R.suns,skies:R.skies,tot:R.tot,n:R.n,nAp:R.nAp,nO:R.nO,ms:R.ms,o:R.o,
+    rows:R.rows.map(r=>{const q=Object.assign({},r);delete q.net;return q}),lvs:[...R.lvs].map(([k,v])=>Object.assign({lv:k},v))}},
+  pts:lv=>(dlRun449(P).pts.get(lv)||[]).map(q=>({x:q.x,y:q.y,r:q.r,v:q.v,s:q.s,c:dlCol449(dlRun449(P),q)})),
+  /* one room worked out by hand: its openings (with the sky they see, by way), and the light at a point of it */
+  ctx:rid=>{const r=IDX.get(rid),o=dl449(P),L=lvl(P,r.level),regs=regions(P,r.level,true),i=regionAt(regs,r.x,r.y),hrs=o.m==='leed'?[9,15]:o.m==='time'?[o.h]:[12],suns=hrs.map(h=>dlSun449(P,o.d-1,h)),skies=suns.map(s=>dlSky449(o,s)),O=dlOcc449(P);
+    suns.forEach((s,k)=>{if(s.s&&skies[k].sun)s.sh=solShade445(O,s.s)});const A=i>=0?dlAps449(P,o,r.level,regs)[i]:[];dlVis449(A,O,suns);return{r,o,L,A,suns,skies,W:dlWalls449(P,L),G:regs[i]}},
+  aps:rid=>{const C=window.PenumBIM.r449.ctx(rid);return C.A.map(a=>({host:a.host,el:a.el,cw:a.cw||0,cx:a.cx,cy:a.cy,ux:a.ux,uy:a.uy,nx:a.nx,ny:a.ny,w:a.w,z0:a.z0,z1:a.z1,th:a.th,tau:a.tau,sv:a.sv,
+    seen:DL449_DIR.reduce((s,k,j)=>s+a.vis[j]*k.w,0),open:DL449_DIR.reduce((s,k,j)=>s+(k.d[0]*a.nx+k.d[1]*a.ny>0.005?k.w:0),0),vis:Array.from(a.vis)}))},
+  at:(rid,x,y)=>{const C=window.PenumBIM.r449.ctx(rid);return C.suns.map((s,k)=>dlAt449([x,y,C.L.elev+C.o.wp],C.A,C.W,C.skies[k],s,k))},
+  dirs:()=>DL449_DIR.map(k=>({d:k.d,w:k.w})),ix:d=>dlIx449(d),
+  sun:(mo,h)=>{const s=dlSun449(P,mo,h);return{h:s.h,alt:s.alt,az:s.az,sb:s.sb,s:s.s,En:s.En,Ed:s.Ed}},
+  /* the sky of month mo, hour h: its luminance the ways asked, and what it gives an open level surface by a finer sum */
+  sky:(mo,h,ds,o)=>{const O=Object.assign({},dl449(P),o||{}),S=dlSky449(O,dlSun449(P,mo,h));let q=0;const N=90,M=180;for(let j=0;j<N;j++){const a0=j*Math.PI/2/N,a1=(j+1)*Math.PI/2/N,am=(a0+a1)/2,w=2*Math.PI/M*(Math.sin(a1)-Math.sin(a0));
+    for(let i=0;i<M;i++){const z=(i+0.5)*2*Math.PI/M,d=[Math.cos(am)*Math.sin(z),-Math.cos(am)*Math.cos(z),Math.sin(am)];q+=S.L(d)*d[2]*w}}return{Eh:S.Eh,Ed:S.Ed,sun:!!S.sun,int:q,L:(ds||[]).map(d=>S.L(d))}},
+  occ:()=>dlOcc449(P).map(o=>({n:o.n,k:o.s.loop.length,z:[Math.min(...o.s.loop.map(p=>p[2])),Math.max(...o.s.loop.map(p=>p[2]))]})),
+  leg:()=>ui.dl449L||null,
+  win:(host,pos,o)=>{let id;edit(()=>{const d=defs('window')||{},e=Object.assign({id:P.seq++,cat:'window',type:d.type,host,level:IDX.get(host).level,pos,sill:900},o||{});P.els.push(e);id=e.id});return id},
+  wtype:(o)=>{let id;edit(()=>{const T0=P.types.window[0],T=Object.assign({},T0,{id:P.seq++,name:'DL '+P.seq},o||{});P.types.window.push(T);id=T.id});return id},
+  wall:(lid,a,b,kind,o)=>{let id;edit(()=>{const T=(P.types.wall||[]).find(x=>kind==='curtain'?x.kind==='curtain':x.kind!=='curtain')||defs('wall'),e=Object.assign({id:P.seq++,cat:'wall',type:T.id,level:lid,x1:a[0],y1:a[1],x2:b[0],y2:b[1],height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});return id},
+  wt:id=>{const w=IDX.get(id),T=typ(P,w)||{};return{th:T.thickness,kind:T.kind||''}},
+  clear:()=>{DL449C=DL449C1=null},
+  open:()=>dlgDL449(),
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r448={
   set:o=>{edit(()=>{if(o===null)delete P.bpf448;else P.bpf448=Object.assign({},P.bpf448||{},o);for(const f of XC)f()});return P.bpf448?JSON.parse(JSON.stringify(P.bpf448)):null},
   raw:o=>{P.bpf448=o;for(const f of XC)f();return P.bpf448===undefined?null:JSON.parse(JSON.stringify(P.bpf448))},
