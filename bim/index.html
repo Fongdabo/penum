@@ -14620,7 +14620,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=479,V1_NAME='V1.469';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=480,V1_NAME='V1.470';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -51839,6 +51839,105 @@ Object.assign(STR,{
   rl469_rep:[' · ปลายที่ตั้งการปลดแรงเอง {0} ปลาย: {1}',' · ends with releases of their own ({0}): {1}'],
   p_anl467r:['สัญลักษณ์การปลดแรงปลายชิ้นส่วน','Member end releases']});
 for(const [k,th,en] of [['s','ต้น','Start'],['e','ปลาย','End'],['b','โคน','Base'],['t','ยอด','Top']])RL469_DN.forEach((d,i)=>{STR['p_rl469'+k+'_'+i]=['ปลด '+d+' ที่'+th,en+' '+d+' released']});
+/* ===== 470 analysis results in views (V1.470; Revit: Analyze > Results Explorer, the results of a structural analysis shown on the analytical members of a
+   view: force and moment diagrams, the deformed shape, reactions) =====
+   v.rx470 = {q, c, h, lab, rc} on a plan, elevation, section or 3D view: q the diagram drawn along every member of Steel Design ('my' bending about the
+   strong axis, 'mz' about the weak axis, 'vz' 'vy' shear, 'n' axial, 't' torsion, 'd' the deformed shape), c the load combination (its id; the first one
+   when it is gone), h the largest ordinate in mm of the model (0: a fifth of the longest member; the deformed shape its largest move at a twentieth),
+   lab the values at the ends and at the largest, rc the reactions at the supports.  A moment is drawn on the side it pulls (sagging under a beam), the
+   others along the member's depth (shear and axial up, compression +), each member cut to what the view shows like the analytical model; plans draw the
+   beams and braces of their level with their diagrams turned into the plan, and the supports up to the cut plane.  Not in a view activated on a sheet.  Results Explorer (Analyze tab, Steel Design
+   panel) sets it for the active view; View Properties has the diagram too. */
+const RX470_Q=['my','mz','vz','vy','n','t','d'],RX470_C={my:'#1971c2',mz:'#1971c2',vz:'#2f9e44',vy:'#2f9e44',n:'#e8590c',t:'#9c36b5',d:'#e03131'};
+const RX470D={plan:null,d3:null};
+const rx470Ok=v=>!!v&&((v.kind==='plan'&&!v.draft)||v.kind==='elev'||v.kind==='section'||v.kind==='3d');
+function rx470Of(v){const r=v&&v.rx470;if(!rx470Ok(v)||!r||typeof r!=='object'||!RX470_Q.includes(r.q))return null;const h=+r.h;
+  return{q:r.q,c:r.c==null?null:r.c,h:isFinite(h)&&h>0?Math.min(20000,Math.round(h)):0,lab:r.lab===0?0:1,rc:r.rc?1:0}}
+/* the run and the combination a view shows (null when there is no steel or it fails) */
+function rx470Run(v){const S=rx470Of(v);if(!S)return null;let o;try{o=saRunSA(P)}catch(e){console.error(e);return null}if(!o||!o.R||!o.CB||!o.CB.length)return null;
+  let ci=o.CB.findIndex(c=>String(c.b.id)===String(S.c));if(ci<0)ci=0;return{o,S,ci,C:o.CB[ci].C,U:saUnitsSA(o.S)}}
+/* the stations of every member: its point, the value and the direction it is drawn in (the deformed shape: the move) */
+function rx470Pts(X){const R=X.o.R,C=X.C,q=X.S.q,out=R.mem.map(()=>[]);
+  R.els.forEach((e,k)=>{const F=C.ef[k].f,qq=C.ef[k].q,m=R.mem[e.m];
+    for(let j=0;j<=4;j++){const x=e.L*j/4,s=e.s1+(e.s2-e.s1)*j/4,p=saAtSA(m,s);
+      if(q==='d'){const d=saDefElSA(e,C.ef[k].ul,qq,m.E,m.S,x);out[e.m].push({s,p,g:saRotTSA(e.R,[d.u,d.v,d.w])});continue}
+      const a=saAtElSA(F,qq,x),v=q==='my'?a.My:q==='mz'?a.Mz:q==='vz'?a.Vz:q==='vy'?a.Vy:q==='n'?a.N:a.T,ax=q==='mz'||q==='vy'?e.R[1]:e.R[2],sg=q==='my'||q==='mz'?-1:1;
+      out[e.m].push({s,p,v,dir:[ax[0]*sg,ax[1]*sg,ax[2]*sg]})}});
+  return out}
+/* the scale: mm of the model per N (N·mm, mm moved) */
+function rx470K(X,T){let mx=0,Lm=0;for(const L of T)for(const t of L)mx=Math.max(mx,X.S.q==='d'?Math.hypot(...t.g):Math.abs(t.v));for(const m of X.o.R.mem)Lm=Math.max(Lm,saLenSA(m));
+  if(!(mx>1e-12))return{k:0,mx:0};const h=X.S.h||(X.S.q==='d'?Lm/20:Lm/5);return{k:h/mx,mx}}
+const rx470Txt=(X,v)=>{const q=X.S.q,U=X.U;return q==='d'?saN(v,1)+' '+t('anl466_mm'):q==='my'||q==='mz'||q==='t'?saN(U.M(v),2)+' '+U.mu:saN(U.F(v),2)+' '+U.fu};
+/* the labels of a member: its largest and smallest values and its two ends, where they are not about nothing */
+function rx470Labs(L,K,val){if(!L.length)return[];let a=0,b=0;L.forEach((t,i)=>{if(val(t)>val(L[a]))a=i;if(val(t)<val(L[b]))b=i});
+  return[...new Set([a,b,0,L.length-1])].filter(i=>Math.abs(val(L[i]))>0.005*K.mx).map(i=>({i,v:val(L[i])}))}
+function rx470Lbl(ctx,x,y,s,col){ctx.save();ctx.font='600 11px system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=3.2;ctx.strokeStyle='rgba(255,255,255,.92)';ctx.strokeText(s,x,y);ctx.fillStyle=col;ctx.fillText(s,x,y);ctx.restore()}
+/* draws the diagrams of view v with pr(p) the screen point of a model point (or null), inn(p) whether the view shows p, PL in a plan the turn into it */
+function rx470Paint(ctx,v,X,pr,inn,PL){const T=rx470Pts(X),K=rx470K(X,T),col=RX470_C[X.S.q],R=X.o.R,q=X.S.q;let nm=0,nl=0,nr=0;
+  T.forEach((L,mi)=>{if(!L.length||!K.k)return;let D=L;
+    if(PL){const m=R.mem[mi],dx=m.b[0]-m.a[0],dy=m.b[1]-m.a[1],l2=Math.hypot(dx,dy);if(l2<0.3*saLenSA(m)||!PL.on(mi))return;const n=[-dy/l2,dx/l2];
+      D=L.map(t=>q==='d'?{s:t.s,p:t.p,v:-t.g[2],dir:[n[0],n[1],0]}:{s:t.s,p:t.p,v:t.v,dir:[n[0],n[1],0]})}
+    const off=t=>q==='d'&&!PL?[t.p[0]+t.g[0]*K.k,t.p[1]+t.g[1]*K.k,t.p[2]+t.g[2]*K.k]:[t.p[0]+t.dir[0]*t.v*K.k,t.p[1]+t.dir[1]*t.v*K.k,t.p[2]+t.dir[2]*t.v*K.k];
+    const runs=[];let cur=null;for(const t of D){if(inn(t.p)){if(!cur){cur=[];runs.push(cur)}cur.push(t)}else cur=null}
+    let any=false;ctx.save();ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([]);
+    for(const r of runs){if(r.length<2)continue;const A=r.map(t=>pr(t.p)),B=r.map(t=>pr(off(t)));if(A.some(x=>!x)||B.some(x=>!x))continue;any=true;
+      if(q==='d'&&!PL){ctx.beginPath();B.forEach((s,i)=>i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]));ctx.lineWidth=2;ctx.stroke();continue}
+      ctx.beginPath();A.forEach((s,i)=>i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]));for(let i=B.length-1;i>=0;i--)ctx.lineTo(B[i][0],B[i][1]);ctx.closePath();
+      ctx.globalAlpha=0.16;ctx.fillStyle=col;ctx.fill();ctx.globalAlpha=1;ctx.beginPath();B.forEach((s,i)=>i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]));ctx.stroke();
+      ctx.lineWidth=0.8;for(let i=0;i<A.length;i+=Math.max(1,Math.floor(A.length/12))){ctx.beginPath();ctx.moveTo(A[i][0],A[i][1]);ctx.lineTo(B[i][0],B[i][1]);ctx.stroke()}ctx.lineWidth=1.5}
+    ctx.restore();if(!any)return;nm++;
+    if(X.S.lab)for(const b of rx470Labs(D,K,q==='d'&&!PL?t=>Math.hypot(...t.g):t=>t.v)){const t=D[b.i];if(!inn(t.p))continue;const a=pr(t.p),s=pr(off(t));if(!a||!s)continue;
+      const dx=s[0]-a[0],dy=s[1]-a[1],l=Math.hypot(dx,dy)||1;rx470Lbl(ctx,s[0]+dx/l*12,s[1]+dy/l*12,rx470Txt(X,b.v),col);nl++}});
+  if(X.S.rc)R.sp.forEach((S,i)=>{const p=R.nodes[S.node].p;if(!inn(p)||(PL&&!PL.at(p)))return;const s=pr(p);if(!s)return;const r=X.C.R[i],U=X.U,L=[];
+    if(Math.abs(r[2])>0.5)L.push('Fz '+saN(U.F(r[2]),2)+' '+U.fu);const h=Math.hypot(r[0],r[1]);if(h>0.5)L.push('H '+saN(U.F(h),2)+' '+U.fu);const mm=Math.hypot(r[3],r[4],r[5]);if(mm>500)L.push('M '+saN(U.M(mm),2)+' '+U.mu);
+    if(!L.length)return;ctx.save();ctx.strokeStyle='#2b8a3e';ctx.fillStyle='#2b8a3e';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(s[0],s[1]+30);ctx.lineTo(s[0],s[1]+6);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(s[0],s[1]+4);ctx.lineTo(s[0]-4,s[1]+11);ctx.lineTo(s[0]+4,s[1]+11);ctx.closePath();ctx.fill();ctx.restore();
+    L.forEach((x,j)=>rx470Lbl(ctx,s[0],s[1]+40+j*13,x,'#2b8a3e'));nr++});
+  return{m:nm,l:nl,r:nr}}
+/* elevations, sections and 3D */
+{const f0=drawOverlay;drawOverlay=function(pn,ctx,v,nav){const r=f0.apply(this,arguments);if(ev3GL(v)&&!actOf(pn.i)&&rx470Of(v)){const X=rx470Run(v);if(X){const S=anl467Sides(v);ctx.save();
+      try{RX470D[v.kind==='3d'?'d3':v.kind]=rx470Paint(ctx,v,X,q=>projGL(pn,v,[q[0],q[2],q[1]]),p=>S.some(s=>s.F.every(f=>f(p)>=-0.5)),null)}finally{ctx.restore()}}}return r}}
+/* plans: the level's beams and braces as the analytical members are drawn there, the supports on the level */
+XPL1.push((ctx,g,v,T,col,o)=>{if(!o.screen||v.kind!=='plan'||v.draft||!rx470Of(v))return;const X=rx470Run(v);if(!X)return;const lv=elev(P,v.level),top=lv+(v.cut||1200),
+    on=i=>{const e=X.o.B.mem[i].e;return!!e&&e.level===v.level},at=p=>p[2]>=lv-100&&p[2]<=top;ctx.save();
+  try{RX470D.plan=rx470Paint(ctx,v,X,p=>[g.X(p[0]),g.Y(p[1])],()=>true,{on,at})}finally{ctx.restore()}});
+/* Results Explorer: the active view's diagram, combination, size, labels and reactions */
+function rx470Dlg(){const v=activeView();if(!rx470Ok(v)){toast(t('rx470_na'),4000);return}let o;try{o=saRunSA(P)}catch(e){console.error(e);toast(t('sa_err'),6000);return}
+  if(!o||o.none||!o.R){toast(t('sa_none'),5000);return}const S=rx470Of(v)||{q:'',c:null,h:0,lab:1,rc:0},ci=Math.max(0,o.CB.findIndex(c=>String(c.b.id)===String(S.c)));
+  const body=`<p class="note">${t('rx470_note',esc(v.name||''))}</p>`
+    +`<div class="fr"><label for="rxQ">${t('rx470_q')}</label><select id="rxQ"><option value=""${S.q?'':' selected'}>${t('rx470_none')}</option>${RX470_Q.map(k=>`<option value="${k}"${S.q===k?' selected':''}>${esc(t('rx470_'+k))}</option>`).join('')}</select></div>`
+    +`<div class="fr"><label for="rxC">${t('rx470_c')}</label><select id="rxC">${o.CB.map((c,i)=>`<option value="${esc(String(c.b.id))}"${i===ci?' selected':''}>${esc(c.b.name||'')}</option>`).join('')}</select></div>`
+    +`<div class="fr"><label for="rxH">${t('rx470_h')}</label><span class="un" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input id="rxH" style="max-width:110px" type="number" step="100" min="0" max="20000" value="${S.h}"> ${t('anl466_mm')}</span></div>`
+    +`<div class="fr"><label for="rxLab">${t('rx470_lab')}</label><span><input id="rxLab" type="checkbox"${S.lab?' checked':''}></span></div>`
+    +`<div class="fr"><label for="rxRc">${t('rx470_rc')}</label><span><input id="rxRc" type="checkbox"${S.rc?' checked':''}></span></div>`
+    +(S.q?`<p class="note" id="rxSum">${esc(rx470Sum(v))}</p>`:'');
+  openDlg(t('a_sarx'),body,`<span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,{
+    change(ev){const id=ev.target.id;if(!['rxQ','rxC','rxH','rxLab','rxRc'].includes(id))return;const d=$('#dlg'),q=d.querySelector('#rxQ').value,h=+d.querySelector('#rxH').value;
+      const n=q?{q,c:d.querySelector('#rxC').value,h:isFinite(h)&&h>0?Math.min(20000,Math.round(h)):0,lab:d.querySelector('#rxLab').checked?1:0,rc:d.querySelector('#rxRc').checked?1:0}:null;
+      const cb=o.CB.find(c=>String(c.b.id)===String(n&&n.c));if(n)n.c=cb?cb.b.id:o.CB[0].b.id;if(n&&n.h===0)delete n.h;if(n&&n.lab)delete n.lab;else if(n)n.lab=0;if(n&&!n.rc)delete n.rc;
+      if(J470(n)!==J470(v.rx470||null))edit(()=>{if(n)v.rx470=n;else delete v.rx470});redraw();rx470Dlg()}})}
+const J470=x=>JSON.stringify(x==null?null:x);
+/* a line under the box: the largest value of the diagram and the member it is on */
+function rx470Sum(v){const X=rx470Run(v);if(!X)return'';const T=rx470Pts(X),K=rx470K(X,T);let bi=-1,bv=0;T.forEach((L,i)=>{for(const t of L){const a=X.S.q==='d'?Math.hypot(...t.g):t.v;if(Math.abs(a)>Math.abs(bv)){bv=a;bi=i}}});
+  return bi<0?t('rx470_zero'):t('rx470_max',t('rx470_'+X.S.q),rx470Txt(X,bv),X.o.B.mem[bi].lab)}
+XA.sarx=rx470Dlg;
+/* View Properties: the diagram shown */
+XVR.push(v=>{if(!rx470Ok(v))return'';const S=rx470Of(v);return PR.grp('g_rx470')+PR.sel('rx470q','p_rx470q',S?S.q:'~',[['~',t('rx470_none')],...RX470_Q.map(k=>[k,t('rx470_'+k)])])});
+XVF.push((v,key,raw)=>{if(key!=='rx470q')return false;if(!rx470Ok(v))return true;const q=RX470_Q.includes(raw)?raw:null,S=rx470Of(v);if((S?S.q:null)===q)return true;
+  edit(()=>{if(!q)delete v.rx470;else v.rx470=Object.assign({},S||{},{q})});return true});
+XC.push(()=>{for(const v of P.views||[]){if(v.rx470===undefined)continue;const S=rx470Of(v);if(!S){delete v.rx470;continue}const n={q:S.q};if(S.c!=null)n.c=S.c;if(S.h)n.h=S.h;if(!S.lab)n.lab=0;if(S.rc)n.rc=1;v.rx470=n}});
+for(const A of RIBBON)if(A.id==='analyze')for(const p of A.panels||[])if(p.t==='p_stsa'&&!p.b.includes('@sarx')){const i=p.b.indexOf('@sashow');p.b.splice(i<0?p.b.length:i+1,0,'@sarx')}
+Object.assign(BTN,{'@sarx':['sarx','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;sp.insertAdjacentHTML('beforeend',`<symbol id="i-sarx" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/><path fill="#1971c2" fill-opacity=".25" stroke="#1971c2" stroke-width="1.3" stroke-linejoin="round" d="M3 7q9 13 18 0z"/><path stroke="#2a3550" stroke-width="1.8" stroke-linecap="round" d="M3 7h18"/><path stroke="#2a3550" stroke-width=".8" d="M7 7v3.6M12 7v5.4M17 7v3.6"/></symbol>`)})();
+Object.assign(STR,{
+  a_sarx:['แผนภาพผลวิเคราะห์ (Results Explorer)','Results Explorer'],g_rx470:['ผลวิเคราะห์ (Results Explorer)','Analysis Results'],p_rx470q:['แผนภาพที่แสดง','Diagram shown'],
+  rx470_none:['ไม่แสดง','None'],rx470_my:['โมเมนต์ดัด My (รอบแกนหลัก)','Bending moment My (strong axis)'],rx470_mz:['โมเมนต์ดัด Mz (รอบแกนรอง)','Bending moment Mz (weak axis)'],
+  rx470_vz:['แรงเฉือน Fz','Shear Fz'],rx470_vy:['แรงเฉือน Fy','Shear Fy'],rx470_n:['แรงตามแกน Fx (อัด +)','Axial force Fx (compression +)'],rx470_t:['แรงบิด Mx','Torsion Mx'],rx470_d:['การแอ่นตัว (รูปที่เสียรูป)','Deformation (deformed shape)'],
+  rx470_q:['แผนภาพ','Diagram'],rx470_c:['ชุดค่าผสม','Combination'],rx470_h:['ความสูงแผนภาพที่ค่ามากสุด (0 = อัตโนมัติ)','Largest ordinate (0 = automatic)'],
+  rx470_lab:['แสดงค่าที่ปลายและค่ามากสุด','Values at the ends and the largest'],rx470_rc:['แรงปฏิกิริยาที่จุดรองรับ','Reactions at the supports'],
+  rx470_note:['แสดงผลการวิเคราะห์โครงสร้างเหล็กบนชิ้นส่วนในมุมมอง {0} (แปลน รูปด้าน รูปตัด หรือ 3 มิติ) โมเมนต์วาดด้านที่รับแรงดึง ค่าตั้งเก็บในมุมมองนี้','Shows the steel analysis on the members of the view {0} (a plan, elevation, section or 3D view); moments are drawn on the side they pull; the settings are kept in this view'],
+  rx470_na:['เปิดแปลน รูปด้าน รูปตัด หรือมุมมอง 3 มิติก่อน','Open a plan, elevation, section or 3D view first'],
+  rx470_max:['{0} มากสุด {1} ที่ {2}','{0}: largest {1}, on {2}'],rx470_zero:['ค่าเป็นศูนย์ทั้งหมด','All values are zero']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -53727,6 +53826,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[a_anl]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): แสดงแผ่นวิเคราะห์ของผนังและพื้นโครงสร้าง เส้นแกนคาน ค้ำยันและเสา จุดต่อ และน้ำหนักลงเสา ในแปลน รูปด้าน รูปตัด และ 3 มิติ (ตัดตามระนาบตัด ระยะลึก ขอบเขตครอบตัด และกล่องตัด) · กดอีกครั้งเพื่อซ่อน · ในแผงคุณสมบัติของแต่ละมุมมอง [[p_anl467]] เลือกตามปุ่ม แสดงเสมอ หรือไม่แสดง และติ๊ก [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] [[p_anl467r]] · ปลายคาน ค้ำยัน หรือเสาที่ตั้ง [[g_rl469]] ในแผงคุณสมบัติ ([[rl469_F]] [[rl469_P]] [[rl469_B]] หรือ [[rl469_U]] ติ๊กปลด Fx Fy Fz Mx My Mz) มีสัญลักษณ์ที่ปลาย และการคำนวณโครงสร้างเหล็กใช้ค่านั้น
 [[a_anlp]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตารางแผ่นวิเคราะห์ทุกแผ่น หนา วัสดุ พื้นที่สุทธิ ช่องเปิด และแผ่นที่ต่อกัน · ตั้ง [[anl466_tol]] และ [[anl466_sl]] · คลิกแถวเพื่อเลือกชิ้นงาน · [[anl466_csv]] · ในแผงคุณสมบัติของผนังหรือพื้นโครงสร้าง ล้าง [[p_anl466]] เพื่อไม่ให้มีแผ่น หรือเลือก [[p_apjw466]] / [[p_apjf466]]
 [[a_anlck]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]): ตรวจแบบจำลองวิเคราะห์ เสาและปลายคานที่ไม่มีที่รองรับ แผ่นผนังที่ฐานไม่วางบนอะไร แผ่นพื้นที่ไม่มีอะไรรับ แผ่นที่ยืดห่างจากชิ้นงานจริงเกิน [[anl468_d]] วัสดุที่ไม่ใช่วัสดุโครงสร้าง แผ่นซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด · ติ๊กเลือกการตรวจ · คลิกแถวเพื่อเลือกชิ้นงาน หรือ [[anl468_sel]] · ผลของชิ้นงานที่เลือกอยู่ในแผงคุณสมบัติ ([[p_anlck468]])
+[[a_sarx]] — แท็บ [[tab_analyze]] กลุ่ม [[p_stsa]]: แสดงผลการวิเคราะห์โครงสร้างเหล็กบนชิ้นส่วนในมุมมองที่เปิดอยู่ เลือก [[rx470_q]] ([[rx470_my]] [[rx470_vz]] [[rx470_n]] [[rx470_d]] ฯลฯ) [[rx470_c]] [[rx470_h]] ติ๊ก [[rx470_lab]] และ [[rx470_rc]] · ค่าตั้งเก็บในมุมมอง เลือกแผนภาพได้ในคุณสมบัติของมุมมองด้วย ([[p_rx470q]])
 [[a_ldtake]] — แท็บ [[tab_struct]]: น้ำหนักลงเสาแต่ละต้นแบบพื้นที่รับน้ำหนัก (D, L, D+L, 1.4D+1.7L) และขนาดฐานรากจาก[[lt_q]] · คลิกแถวเพื่อเลือกเสา · ตั้ง[[p_ldD]]และ[[p_ldL]]ที่คุณสมบัติของพื้น
 [[t_sload]] — แท็บ [[tab_analyze]] (และแท็บ [[tab_struct]]): เลือก [[ld_p]] [[ld_l]] [[ld_a]] [[ld_lh]] หรือ [[ld_ah]] ในแถบตัวเลือก พร้อม[[o_ldcase]]และค่า Fz (ติดลบคือกดลง แบบ Revit) แล้วคลิกจุด แนว หรือมุมของพื้นที่ในแปลน หรือคลิกคาน ผนัง หรือพื้นที่รับน้ำหนัก · แบบที่ยึดกับคาน ผนัง หรือพื้นไปกับมันเมื่อย้าย หมุน กลับด้าน คัดลอก ลบ · คุณสมบัติมี Fx Fy Fz (แบบเส้นมีปลายสองค่าเมื่อเอาติ๊ก [[p_lduni]] ออก แบบจุดมี Mx My Mz) · แปลนแสดงสัญลักษณ์สีตามลักษณะของกรณีน้ำหนัก 3 มิติแสดงลูกศร · [[a_ldtake]] ส่งน้ำหนักเหล่านี้ลงเสาตามกรณีน้ำหนักและแสดงชุดที่วิกฤต · ตารางของหมวด [[cat_sload]]
 [[a_stset]] — แท็บ [[tab_manage]] (และแท็บ [[tab_struct]]): [[a_lcases]] (ชื่อ หมายเลข ลักษณะ ตั้งต้นแปดกรณีแบบ Revit) และ [[a_lcombs]] (สูตร เช่น 1.4 DL1 + 1.7 LL1 แบบกำลังประลัยหรือใช้งาน ตั้งต้นสี่ชุดตาม ACI 318-99 แบบที่ใช้ในไทย)
@@ -54133,6 +54233,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.467 · แบบจำลองวิเคราะห์ในรูปด้าน รูปตัด และกล่องตัด: แผ่นวิเคราะห์ เส้นแกนคาน ค้ำยันและเสา และจุดต่อ แสดงในรูปด้านและรูปตัดด้วย ตัดตามระนาบตัด ระยะลึก (Far Clip) ขอบเขตครอบตัด และแต่ละช่วงของรูปตัดที่หักมุม แผ่นที่ผ่านระนาบตัดแสดงถึงระนาบตัด ใน 3 มิติตัดตามกล่องตัด แต่ละมุมมองตั้งในแผงคุณสมบัติได้ว่าแสดงแบบจำลองวิเคราะห์ตามปุ่ม แสดงเสมอ หรือไม่แสดง และเลือกแสดงแผ่น ชิ้นส่วน (คาน ค้ำยัน เสา) และจุดต่อแยกกัน แบบ Visibility/Graphics ของ Revit
 - V1.468 · ตรวจความสอดคล้องของแบบจำลองวิเคราะห์ (Consistency Checks แบบ Revit): ปุ่มใหม่ในแท็บโครงสร้างและแท็บวิเคราะห์ ตรวจเสาและปลายคานที่ไม่มีที่รองรับ (แบบ Check Supports) ฐานของแผ่นผนังที่ไม่วางบนแผ่นพื้น ผนังด้านล่าง ฐานรากผนัง หรือจุดรองรับ แผ่นพื้นที่ไม่มีผนัง คาน เสา หรือจุดรองรับรับไว้ แผ่นผนังที่ Auto-detect ยืดห่างจากผนังจริงเกินระยะที่ยอมให้ (ตั้งต้น 150 มม.) แผ่นที่วัสดุไม่ใช่วัสดุโครงสร้าง แผ่นที่ซ้อนกัน และแผ่นที่ไม่ต่อกับแผ่นใด ติ๊กเลือกการตรวจได้ คลิกแถวเลือกชิ้นงาน เลือกทั้งหมด ส่งออก CSV แผงคุณสมบัติของผนังและพื้นโครงสร้างแสดงผลตรวจของชิ้นนั้น
 - V1.469 · การปลดแรงปลายชิ้นส่วน (Releases / Member Forces) แบบ Revit: แผงคุณสมบัติของคาน ค้ำยัน และเสา ตั้งการปลดที่ต้นและปลาย (เสาเป็นโคนและยอด) ได้ [[rl469_F]] [[rl469_P]] (ปลด Mx My Mz) [[rl469_B]] (ปลด My Mz คงแรงบิด) หรือ [[rl469_U]] ติ๊กปลด Fx Fy Fz Mx My Mz ทีละตัว ไม่ตั้งไว้ใช้ค่าจุดต่อของการคำนวณเหล็ก (จุดหมุน เหมือนค่าตั้งต้นของ Revit) · การคำนวณโครงสร้างเหล็กใช้ค่านี้: ปลายยึดแน่นต่อแน่นกับจุดต่อ ปลายจุดหมุนหมุนได้อิสระ ปลายที่ปลดบางทิศยึดกับจุดต่อในทิศที่เหลือ คานช่วงเดียวบนจุดรองรับยึดแน่นได้ wL²/12 เมื่อยึดแน่นและ wL²/8 เมื่อเป็นจุดหมุน · แบบจำลองวิเคราะห์ในแปลน รูปด้าน รูปตัด และ 3 มิติ มีสัญลักษณ์ที่ปลาย (สี่เหลี่ยมทึบ ยึดแน่น วงกลม จุดหมุน วงกลมมีจุด ปลดโมเมนต์ดัด ข้าวหลามตัด กำหนดเอง) ซ่อนได้ด้วย [[p_anl467r]] · ตารางรายการคานและเสามีช่องการปลดทั้งสองปลาย · Split แล้วแต่ละส่วนเก็บการปลดของปลายเดิมไว้
+- V1.470 · [[a_sarx]] แบบ Revit: ปุ่มใหม่ในแท็บวิเคราะห์ กลุ่มออกแบบโครงสร้างเหล็ก แสดงผลการวิเคราะห์บนชิ้นส่วนในมุมมองที่เปิด (แปลน รูปด้าน รูปตัด 3 มิติ) เป็นแผนภาพโมเมนต์ดัด My Mz แรงเฉือน Fz Fy แรงตามแกน แรงบิด หรือรูปที่แอ่นตัว เลือกชุดค่าผสมและความสูงแผนภาพ แสดงค่าที่ปลายและค่ามากสุดตามหน่วยของการออกแบบเหล็ก และแรงปฏิกิริยาที่จุดรองรับ โมเมนต์วาดด้านที่รับแรงดึง ตัดตามสิ่งที่มุมมองแสดง ค่าตั้งเก็บแยกรายมุมมองและเลือกได้ในคุณสมบัติของมุมมอง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -54343,6 +54444,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 [[a_anl]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): shows the analytical panels of structural walls and floors, beam, brace and column axes, nodes and column loads, in plans, elevations, sections and 3D (cut at the cut plane, the far clip, the crop region and the section box) · press again to hide · in the Properties of each view, [[p_anl467]] follows the button, always shows or never shows it, and [[p_anl467p]] [[p_anl467m]] [[p_anl467n]] [[p_anl467r]] pick the parts · a beam, brace or column end whose [[g_rl469]] are set in Properties ([[rl469_F]], [[rl469_P]], [[rl469_B]] or [[rl469_U]] with Fx Fy Fz Mx My Mz to release) shows a symbol there, and Steel Design uses it
 [[a_anlp]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): every analytical panel with its thickness, material, net area, openings and the panels it meets · set the [[anl466_tol]] and [[anl466_sl]] · click a row to select the element · [[anl466_csv]] · in the Properties of a structural wall or floor clear [[p_anl466]] to leave its panel out, or choose its [[p_apjw466]] / [[p_apjf466]]
 [[a_anlck]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab): checks the analytical model: columns and beam ends with no support, wall panels whose foot stands on nothing, floor panels nothing holds up, panels moved farther from their element than the [[anl468_d]], materials that are not structural, panels lying on each other and panels that meet none · tick the checks to run · click a row to select the element, or [[anl468_sel]] · what is found on the selected element shows in Properties ([[p_anlck468]])
+[[a_sarx]] — on the [[tab_analyze]] tab, [[p_stsa]] panel: shows the steel analysis on the members of the active view · choose the [[rx470_q]] ([[rx470_my]], [[rx470_vz]], [[rx470_n]], [[rx470_d]] and more), the [[rx470_c]] and the [[rx470_h]], tick [[rx470_lab]] and [[rx470_rc]] · the settings stay with the view, whose Properties also pick the diagram ([[p_rx470q]])
 [[a_ldtake]] — on the [[tab_struct]] tab: each column's load by tributary area (D, L, D+L, 1.4D+1.7L) and the footing size from the [[lt_q]] · click a row to select the column · set the [[p_ldD]] and [[p_ldL]] in a floor's properties
 [[t_sload]] — on the [[tab_analyze]] tab (and the [[tab_struct]] tab): choose [[ld_p]], [[ld_l]], [[ld_a]], [[ld_lh]] or [[ld_ah]] on the options bar with the [[o_ldcase]] and Fz (negative pushes down, as in Revit), then click the point, the line or the corners of the area in a plan, or click the beam, wall or slab that carries it · a hosted load goes with its beam, wall or slab when it is moved, rotated, mirrored, copied or deleted · Properties hold Fx Fy Fz (a line load takes two ends when [[p_lduni]] is cleared; a point load also Mx My Mz) · plans show the symbols in the colour of the case's nature, 3D views arrows · the [[a_ldtake]] carries these loads down the columns by load case and shows the governing combination · schedules of the [[cat_sload]] category
 [[a_stset]] — on the [[tab_manage]] tab (and the [[tab_struct]] tab): [[a_lcases]] (name, number, nature; Revit's eight to start with) and [[a_lcombs]] (formulas such as 1.4 DL1 + 1.7 LL1, Ultimate or Serviceability; four to start with, ACI 318-99 as used in Thailand)
@@ -54749,6 +54851,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 - V1.467 · The analytical model in elevations, sections and section boxes: analytical panels, beam, brace and column axes and nodes show in elevations and sections too, cut at the cut plane, the far clip, the crop region and each piece of a broken section; a panel that crosses the cut shows up to it. In 3D they are cut by the section box. In the Properties of each view the analytical model follows the Analytical Model button, always shows or never shows, and panels, members (beams, braces, columns) and nodes can each be turned off, as in Revit's Visibility/Graphics.
 - V1.468 · Analytical Consistency Checks (as in Revit): a new button on the Structure and Analyze tabs checks columns and beam ends with no support (as Check Supports does), wall panels whose foot stands on no floor panel, wall below, wall footing or boundary condition, floor panels no wall, beam, column or boundary condition holds, wall panels Auto-detect moved farther from their wall than the analytical-to-physical tolerance (150 mm), panels whose material is not structural, panels lying on each other and panels that meet none. Each check can be turned off; a row selects its element, Select All selects them all, and the list exports to CSV. Properties of a structural wall or floor show what the checks find on it.
 - V1.469 · Member end releases (Releases / Member Forces, as in Revit): Properties of a beam, brace or column set its Start and End Release (a column's Base and Top Release) to [[rl469_F]], [[rl469_P]] (Mx My Mz released), [[rl469_B]] (My Mz released, torsion held) or [[rl469_U]] with Fx Fy Fz Mx My Mz released one by one; left unset they follow the joints setting of Steel Design (pinned, Revit's default). Steel Design uses them: a Fixed end is held to its joint, a Pinned end turns freely, an end with some turns released is held in the others; a single span on fixed supports gives wL²/12 with fixed ends and wL²/8 with pinned ones. With the analytical model on, plans, elevations, sections and 3D draw a symbol at each end (a filled square Fixed, a ring Pinned, a ring with a dot Bending Moment, a diamond User Defined), hidden with [[p_anl467r]]. Beam and column schedules have both releases as fields, and Split keeps each release at its own end.
+- V1.470 · [[a_sarx]] (as in Revit): a new button on the Analyze tab, Steel Design panel, shows the steel analysis on the members of the active view (a plan, elevation, section or 3D view) as diagrams of bending moment My or Mz, shear Fz or Fy, axial force, torsion or the deformed shape, for the combination chosen and at the size chosen, with the values at the ends and the largest in the Steel Design units, and the reactions at the supports. Moments are drawn on the side they pull, cut to what the view shows; each view keeps its own settings, and its Properties pick the diagram too.
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -57176,6 +57279,20 @@ window.PenumBIM.r469={
   col:(lid,x,y,o)=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'column',type:defs('column').type,level:lid,x,y,rot:0,height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});return id},
   split:(id,x,y)=>{const n0=P.seq;edit(()=>splitLine(IDX.get(id),{x,y}));return P.seq>n0?n0:null},
   splitc:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},
+  str:(k,...a)=>t(k,...a)};
+/* V1.470 test API: Results Explorer */
+window.PenumBIM.r470={
+  get:vid=>{const v=viewById(vid);return v&&v.rx470!==undefined?JSON.parse(JSON.stringify(v.rx470)):undefined},
+  put:(vid,o)=>{edit(()=>{const v=viewById(vid);if(o==null)delete v.rx470;else v.rx470=JSON.parse(JSON.stringify(o))})},
+  of:vid=>rx470Of(viewById(vid)),
+  vals:vid=>{SA_C=null;const v=viewById(vid),X=rx470Run(v);if(!X)return null;const T=rx470Pts(X),K=rx470K(X,T),val=X.S.q==='d'?t=>Math.hypot(...t.g):t=>t.v;
+    return{ci:X.ci,mx:K.mx,k:K.k,m:T.map((L,i)=>({lab:X.o.B.mem[i].lab,id:X.o.B.mem[i].id,a:L.length?val(L[0]):0,b:L.length?val(L[L.length-1]):0,max:Math.max(...L.map(val)),min:Math.min(...L.map(val)),labs:rx470Labs(L,K,val).map(x=>rx470Txt(X,x.v))})),
+      R:X.C.R.map(r=>r.slice())}},
+  txt:(vid,x)=>{const X=rx470Run(viewById(vid));return X?rx470Txt(X,x):null},
+  sum:vid=>rx470Sum(viewById(vid)),
+  cbs:()=>{const o=saRunSA(P);return o&&o.CB?o.CB.map(c=>({id:c.b.id,name:c.b.name})):[]},
+  drawn:()=>JSON.parse(JSON.stringify(RX470D)),
+  clear:()=>{for(const k of Object.keys(RX470D))RX470D[k]=null},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
