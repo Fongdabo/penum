@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=501,V1_NAME='V1.491';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=502,V1_NAME='V1.492';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -54250,6 +54250,107 @@ Object.assign(STR,{
   sth491_dup:['ชิ้นนี้ตัดแผ่นนี้อยู่แล้ว','That element already cuts this plate'],sth491_miss:['ชิ้นนี้ไม่ได้ผ่านกลางความหนาของแผ่น','That element does not pass through the middle of the plate'],
   sth491_noplate:['คลิกบนแผ่นเหล็กที่จะตัด','Click on the steel plate to cut'],sth491_nocut:['คลิกเสาหรือคานที่ผ่านแผ่นนี้','Click a column or beam that passes through this plate'],
   h_sth491_1:['คลิกแผ่นเหล็กที่จะตัด','Click the steel plate to cut'],h_sth491_2:['คลิกเสาหรือคานที่ตัดทะลุแผ่นนี้ · Esc เลือกแผ่นใหม่','Click the column or beam that cuts through it · Esc picks another plate']});
+/* ===== 492 Connection design check (V1.492; Revit 2022 and later: a steel connection's Design check, run on the forces at its member's end, Pass or Fail
+   with each check's utilisation). Allowable stresses (ASD) as Steel Design's settings (P.sa: Fy, Fu, bolt shear, weld metal, f'c, the anchor table), so the
+   numbers are those of its calculation report; the forces are the member's end forces (V1.486 e.mf486), typed or taken from Steel Design. Shear plates, clip
+   angles and end plates are pinned: shear and axial force; a base plate: concrete bearing, plate thickness, anchors, the weld of the column. Splices are not
+   checked. Nothing is stored: worked out when asked. ===== */
+const STC492_FT=44/21;          // a bolt's allowable tension to its allowable shear (A325: 44 and 21 ksi)
+const STC492_K=['bs','bs2','ss','bb','py','w','bt','bi','fp','tp','at','av','ai','cw'];
+function stc492S(){const S=saSetSA(P),k=SA_KSC;return{S,Fy:S.fy*k,Fu:S.fu*k,Fv:S.bfv*k,Ft:S.bfv*k*STC492_FT,Fw:S.fexx*k,fc:S.fc*k}}          // N/mm²
+/* the anchor of the table for a bolt of d: that size, else the next smaller, else the smallest */
+function stc492Anc(S,d){const A=S.ac.slice().sort((a,b)=>+a[0]-+b[0]);return A.find(a=>+a[0]===d)||A.filter(a=>+a[0]<=d).pop()||A[0]}
+/* {st: ok | fail | none (no forces at that end) | na (not checked: why), r, gov, rows [{k, d, c, u, r}], v, mom} */
+function stc492Chk(e){if(!e||e.cat!=='sconn')return null;const G=stcGeo(e);if(!G)return{st:'na',why:'geo',rows:[]};
+  if(G.ck==='splice'||(G.T&&G.T.ck==='splice'))return{st:'na',why:'splice',rows:[]};
+  if(G.free&&G.ck!=='base')return{st:'na',why:'free',rows:[]};
+  const c=mf486Conn(e),v=c&&c.v;if(!v)return{st:'none',rows:[]};
+  const M=stc492S(),p=G.p,d=+p.bd||20,Ab=Math.PI*d*d/4,kN=x=>x/1000,rows=[],add=(k,dm,cp,u)=>rows.push({k,d:dm,c:cp,u:u==null?'kN':u,r:cp>0?dm/cp:Infinity});
+  const [Fx,Fy,Fz,,My,Mz]=v,V=Math.hypot(Fy,Fz),N=Fx,R=Math.hypot(V,N),mom=Math.hypot(My,Mz),T0=typ(P,G.h)||{},W=stcWeb(T0),tw=W?W.t:+p.pt,hp=(G.n-1)*p.bp+2*p.be;
+  if(G.ck==='shear'){const nb=Math.max(1,G.nb);add('bs',R/nb,kN(M.Fv*Ab));add('bb',R/nb,kN(1.2*M.Fu*d*Math.min(p.pt,tw)));add('py',V,kN(0.4*M.Fy*hp*p.pt));
+    if(p.wl>0)add('w',R,kN(2*0.707*p.wl*hp*0.3*M.Fw))}
+  else if(G.ck==='clip'){const nq=clamp(Math.round(p.bq)||1,1,4),nw=Math.max(1,G.n*nq),ns=G.nb-nw;          // through the web, in double shear; through the legs on the support
+    add('bs2',R/nw,kN(2*M.Fv*Ab));add('bb',R/nw,kN(1.2*M.Fu*d*Math.min(tw,2*p.pt)));if(ns>0)add('ss',R/ns,kN(M.Fv*Ab));add('py',V,kN(0.4*M.Fy*2*hp*p.pt))}
+  else if(G.ck==='endp'){const nb=Math.max(1,G.nb),T=Math.max(0,N),fv=V/nb,ft=T/nb,Fv=kN(M.Fv*Ab),Ft=kN(M.Ft*Ab);
+    add('bs',fv,Fv);if(T>0){add('bt',ft,Ft);add('bi',Math.hypot(fv/Fv,ft/Ft),1,'')}add('bb',fv,kN(1.2*M.Fu*d*p.pt));
+    if(p.wl>0)add('w',R,kN(2*0.707*p.wl*(W?W.h:hp)*0.3*M.Fw))}
+  else if(G.ck==='base'){const b=G.B[0],pw=b[3]-b[0],pd=b[4]-b[1],dd=+T0.sd||+T0.d||+T0.w||200,bf=+T0.sb||+T0.w||dd,C=Math.max(0,-N),T=Math.max(0,N),nb=Math.max(1,G.nb);
+    const fp=C*1000/(pw*pd),m=Math.max((pd-0.95*dd)/2,(pw-0.8*bf)/2,10);add('fp',fp,0.35*M.fc,'MPa');add('tp',2*m*Math.sqrt(fp/M.Fy),+p.pt,'mm');
+    const A=stc492Anc(M.S,d),Ta=+A[1]*SA_G/1000,Va=+A[2]*SA_G/1000;if(T>0)add('at',T/nb,Ta);if(V>0)add('av',V/nb,Va);if(T>0&&V>0)add('ai',T/nb/Ta+V/nb/Va,1,'');
+    if(p.wl>0)add('cw',R,kN(0.707*p.wl*saWeldSA(T0,M.S).L*0.3*M.Fw))}
+  else return{st:'na',why:'geo',rows:[]};
+  let g=null;for(const x of rows)if(!g||x.r>g.r)g=x;const r=g?g.r:0;
+  return{st:r<=1.0001?'ok':'fail',r,gov:g?g.k:null,rows,v,mom,c}}
+const stc492St=(C,tr)=>{tr=tr||t;return!C?'':C.st==='na'?tr('stc492_na_'+C.why):tr('stc492_'+C.st)};
+const stc492RTx=(x,sep)=>{const f=x.u==='mm'?1:2;return saN(x.r,2)+(sep||' · ')+saN(x.d,f)+' / '+saN(x.c,f)+(x.u?' '+x.u.replace('MPa','N/mm²'):'')};          // the ratio, then demand / capacity
+/* ---- Properties of a connection: the check ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(isNew||cat!=='sconn'||!els.length)return h;
+  if(els.length>1){const n={ok:0,fail:0,none:0,na:0};let r=0;for(const e of els){const C=stc492Chk(e);if(!C)continue;n[C.st]++;if(C.r>r)r=C.r}
+    return h+PR.grp('g_stc492')+PR.ro('p_stc492st',t('stc492_cnt',n.ok,n.fail,n.none+n.na))+(r>0?PR.ro('p_stc492r',saN(r,2)):'')+`<div class="pa"><button class="btn" data-act="stc492">${esc(t('a_stc492'))}</button></div>`}
+  const C=stc492Chk(els[0]);if(!C)return h;let s=PR.grp('g_stc492')+PR.ro('p_stc492st',stc492St(C));
+  if(C.rows.length){s+=mf486Ro('p_stc492r',saN(C.r,2)+'\n'+t('stc492k_'+C.gov));for(const x of C.rows)s+=mf486Ro('stc492k_'+x.k,stc492RTx(x,'\n'))}
+  if(C.st==='fail')s+=`<div class="pnote warn">${esc(t('stc492_failnote',t('stc492k_'+C.gov),saN(C.r,2)))}</div>`;
+  if(C.st==='none')s+=`<div class="pnote warn">${esc(t('stc492_nonote'))}</div>`;
+  if(C.rows.length&&C.mom>0.5)s+=`<div class="pnote warn">${esc(t(stcK(els[0])===2?'stc492_momb':'stc492_mom',saN(C.mom,2)))}</div>`;
+  return h+s+`<div class="pnote">${esc(t('n_stc492'))}</div><div class="pa"><button class="btn" data-act="stc492">${esc(t('a_stc492'))}</button></div>`}}
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='sconn'||Q!==P)return F;const on=f=>e=>{const C=stc492Chk(e);return C?f(C):''};
+  F.push({k:'stc492s',l:tr('p_stc492st'),g:on(C=>stc492St(C,tr)),grp:'i'},{k:'stc492r',l:tr('p_stc492r'),g:on(C=>C.rows.length?Math.round(C.r*100)/100:''),grp:'q',num:1,dec:2},
+    {k:'stc492g',l:tr('c_stc492g'),g:on(C=>C.gov?tr('stc492k_'+C.gov):''),grp:'i'});return F}}
+/* ---- Review Warnings: a connection that fails ---- */
+{const f0=warnings;warnings=(Q,r)=>{const out=f0(Q,r);if(Q!==P)return out;for(const e of Q.els){if(e.cat!=='sconn')continue;const C=stc492Chk(e);if(C&&C.st==='fail')out.push({k:'stc492',ids:[e.id],a:saN(C.r,2)})}return out}}
+/* ---- Check Connections: every connection in the project, worst first ---- */
+function stc492List(){const L=[];for(const e of P.els){if(e.cat!=='sconn')continue;const C=stc492Chk(e);if(C)L.push({e,C})}
+  const o={fail:0,ok:1,none:2,na:3};return L.sort((a,b)=>o[a.C.st]-o[b.C.st]||(b.C.r||0)-(a.C.r||0)||a.e.id-b.e.id)}
+function dlgStc492(){const L=stc492List(),n={ok:0,fail:0,none:0,na:0};for(const x of L)n[x.C.st]++;const M=stc492S();
+  const col={ok:'#2f9e44',fail:'#e03131',none:'#8f99a6',na:'#8f99a6'};
+  const row=({e,C})=>{const G=stcGeo(e),h=G&&G.h,v=C.v;return`<tr data-stc492="${e.id}" style="cursor:pointer"><td>${esc(G?(G.T.mark||G.T.name||''):'')}</td><td>${esc(h?stcName(P,h,t):'')}</td><td>${esc(G?t('stc_at'+G.k):'')}</td><td>${esc(G?t('stck_'+G.ck):'')}</td>`
+    +`<td style="text-align:right">${v?saN(Math.hypot(v[1],v[2]),2):''}</td><td style="text-align:right">${v?saN(v[0],2):''}</td><td style="text-align:right;font-weight:600">${C.rows.length?saN(C.r,2):''}</td><td>${C.gov?esc(t('stc492k_'+C.gov)):''}</td>`
+    +`<td style="color:${col[C.st]};font-weight:600">${esc(stc492St(C))}</td></tr>`};
+  const body=`<style>#dlg.stc492{width:min(1040px,calc(100% - 32px))}#stc492tb th,#stc492tb td{white-space:nowrap}#stc492tb tbody tr:hover{background:var(--hover,#eef3f8)}</style>`
+    +`<p class="note" id="stc492sum">${esc(t('stc492_sum',L.length,n.ok,n.fail,n.none,n.na))}</p>`
+    +(L.length?`<div style="max-height:56vh;overflow:auto"><table class="tbl" id="stc492tb"><thead><tr><th>${t('c_stc492c')}</th><th>${t('c_stchost')}</th><th>${t('c_stcat')}</th><th>${t('f_ck')}</th><th>V (kN)</th><th>N (kN)</th><th>${t('p_stc492r')}</th><th>${t('c_stc492g')}</th><th>${t('p_stc492st')}</th></tr></thead><tbody>${L.map(row).join('')}</tbody></table></div>`:`<p>${esc(t('stc492_empty'))}</p>`)
+    +`<p class="note">${esc(t('stc492_set',saN(M.Fy,1),saN(M.Fu,1),saN(M.Fv,1),saN(M.Ft,1),saN(M.Fw,1),saN(M.fc,1)))}</p><p class="note">${esc(t('n_stc492'))}</p>`;
+  const foot=`<button class="btn" data-stc492b="sa">${t('a_stc492sa')}</button><button class="btn" data-stc492b="set">${t('a_stc492set')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`;
+  openDlg(t('a_stc492'),body,foot,{click(ev){const b=ev.target.closest('[data-stc492b]');
+      if(b){if(b.dataset.stc492b==='set'){closeDlg();dlgSaSA('set');return}if(b.dataset.stc492b==='sa'){const k=stc492Sa();if(k<0){toast(t('mf486_nosa'),5000);return}toast(t('stc492_saok',k),4000);dlgStc492()}return}
+      const r=ev.target.closest('[data-stc492]');if(!r)return;const id=+r.dataset.stc492;closeDlg();ui.sel=new Set([id]);refresh();redraw()},change(){}},'stc492')}
+XA.stc492=()=>dlgStc492();
+/* the end forces of the members that carry a connection but have none at that end, from Steel Design (an end typed in is kept); how many members, or -1 */
+function stc492Sa(){const want=new Map();for(const e of P.els){if(e.cat!=='sconn')continue;const c=mf486Conn(e);if(!c||c.v)continue;(want.get(c.h.id)||want.set(c.h.id,new Set()).get(c.h.id)).add(c.en)}
+  if(!want.size)return 0;SA_C=null;const got=[];for(const [id,ens] of want){const h=IDX.get(id),r=h&&mf486Sa(h);if(!r)continue;got.push([id,ens,r])}if(!got.length)return-1;
+  edit(()=>{for(const [id,ens,r] of got){const h=IDX.get(id);if(!h)continue;const cur=mf486Of(h),src=Array.isArray(h.mf486sa)?h.mf486sa.slice():[null,null],v=[cur[0],cur[1]];
+    for(const en of ens)if(!cur[en]&&r.v[en]){v[en]=mf486Six(r.v[en]);src[en]=r.src[en]}mf486Put(h,v,src)}});refresh();return got.length}
+/* ---- the ribbon: Steel › Connection, after the connection tools ---- */
+{const p=(RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('@stc492'))p.b.push('@stc492')}
+Object.assign(BTN,{'@stc492':['stc492','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-stc492" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#7d8b99" ${E} d="M3 3H8V20H3Z"/><path fill="#9fb0c3" ${E} d="M8 6H19V9H8Z"/><path fill="#cfd8e3" ${E} d="M8 9H12V15H8Z"/>`
+    +`<circle fill="#2a3550" cx="10" cy="10.6" r=".8"/><circle fill="#2a3550" cx="10" cy="13.4" r=".8"/>`
+    +`<circle fill="#2f9e44" ${E} cx="17" cy="16" r="4.5"/><path fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M14.9 16.1 16.4 17.6 19.2 14.6"/></symbol>`)})();
+Object.assign(STR,{
+  a_stc492:['ตรวจกำลังจุดต่อ (Connection Design Check)','Connection Design Check'],a_stc492sa:['ดึงแรงจากการคำนวณเหล็ก','Forces from Steel Design'],a_stc492set:['ค่ากำลังวัสดุ (ตั้งค่าการคำนวณเหล็ก)','Material Strengths (Steel Design Settings)'],
+  g_stc492:['ตรวจกำลังจุดต่อ (Design Check)','Design Check'],p_stc492st:['ผลตรวจ','Check Status'],p_stc492r:['อัตราส่วนใช้กำลังสูงสุด','Utilization'],c_stc492g:['รายการที่วิกฤต','Governing Check'],c_stc492c:['จุดต่อ','Connection'],
+  stc492_ok:['ผ่าน','Pass'],stc492_fail:['ไม่ผ่าน','Fail'],stc492_none:['ไม่มีแรงที่ปลายชิ้นส่วน','No member end forces'],
+  stc492_na_splice:['ไม่ตรวจ (แผ่นต่อ)','Not checked (splice)'],stc492_na_free:['ไม่ตรวจ (ปลายลอย)','Not checked (free end)'],stc492_na_geo:['ไม่ตรวจ','Not checked'],
+  stc492_failnote:['ไม่ผ่าน: {0} รับแรง {1} เท่าของที่ยอมให้ เพิ่มสลักเกลียว ความหนา หรือขนาดรอยเชื่อมในชนิดของจุดต่อ','Fails: {0} at {1} times what is allowed; add bolts, thickness or weld size in the connection type'],
+  stc492_rx:['{0} / {1} {2} · {3}','{0} / {1} {2} · {3}'],stc492_cnt:['ผ่าน {0} · ไม่ผ่าน {1} · ไม่ได้ตรวจ {2}','{0} pass · {1} fail · {2} not checked'],
+  stc492k_bs:['สลักเกลียวรับแรงเฉือน','Bolt Shear'],stc492k_bs2:['สลักเกลียวรับแรงเฉือนสองระนาบ','Bolt Shear (Double)'],stc492k_ss:['สลักเกลียวยึดฝั่งรองรับ','Bolts to the Support'],
+  stc492k_bb:['แรงแบกทานของรูสลัก','Bolt Bearing'],stc492k_py:['แผ่นครากจากแรงเฉือน','Plate Shear Yielding'],stc492k_w:['รอยเชื่อม','Weld'],
+  stc492k_bt:['สลักเกลียวรับแรงดึง','Bolt Tension'],stc492k_bi:['สลักเกลียวเฉือนร่วมดึง','Bolt Shear and Tension'],
+  stc492k_fp:['แรงกดบนคอนกรีต','Concrete Bearing'],stc492k_tp:['ความหนาแผ่นฐานที่ต้องการ','Base Plate Thickness'],stc492k_at:['พุกรับแรงดึง','Anchor Tension'],
+  stc492k_av:['พุกรับแรงเฉือน','Anchor Shear'],stc492k_ai:['พุกดึงร่วมเฉือน','Anchor Tension and Shear'],stc492k_cw:['รอยเชื่อมเสากับแผ่นฐาน','Column Weld'],
+  stc492_nonote:['ใส่แรงที่ปลายชิ้นส่วนก่อน (Properties ของคานหรือเสา › แก้ไขแรงปลายชิ้นส่วน หรือดึงจากการคำนวณเหล็ก) แล้วจุดต่อจะถูกตรวจ','Give the member its end forces first (the beam or column\'s Properties › Edit Member Forces, or From Steel Design) and the connection is checked'],
+  stc492_mom:['ปลายชิ้นส่วนมีโมเมนต์ {0} kN·m แต่จุดต่อนี้เป็นแบบยึดหมุน รับแค่แรงเฉือนและแรงตามแกน','The member end has a moment of {0} kN·m, but this connection is pinned: it carries only shear and axial force'],
+  stc492_momb:['โคนเสามีโมเมนต์ {0} kN·m แต่แผ่นฐานตรวจแบบยึดหมุน','The column base has a moment of {0} kN·m, but the base plate is checked as pinned'],
+  n_stc492:['ตรวจแบบหน่วยแรงที่ยอมให้ (ASD) ด้วยค่ากำลังวัสดุในตั้งค่าการคำนวณเหล็ก แรงจากแรงที่ปลายชิ้นส่วน แผ่นรับแรงเฉือน เหล็กฉากคู่ และแผ่นปลายคานเป็นจุดต่อยึดหมุน แผ่นต่อไม่ได้ตรวจ',
+    'Checked by allowable stress (ASD) with the material strengths of the Steel Design settings, on the member end forces; shear plates, clip angles and end plates are pinned; splices are not checked'],
+  stc492_sum:['จุดต่อ {0} จุด · ผ่าน {1} · ไม่ผ่าน {2} · ไม่มีแรง {3} · ไม่ได้ตรวจ {4}','{0} connections · {1} pass · {2} fail · {3} without forces · {4} not checked'],
+  stc492_empty:['ยังไม่มีจุดต่อเหล็กในโครงการ','There are no steel connections in the project yet'],
+  stc492_set:['Fy {0} · Fu {1} · สลักเกลียวรับแรงเฉือน {2} · รับแรงดึง {3} · ลวดเชื่อม {4} · f\'c {5} N/mm²','Fy {0} · Fu {1} · bolt shear {2} · bolt tension {3} · weld metal {4} · f\'c {5} N/mm²'],
+  stc492_saok:['ใส่แรงจากการคำนวณเหล็กให้ {0} ชิ้นส่วน','End forces from Steel Design given to {0} members'],
+  wn_stc492:['จุดต่อเหล็กรับแรงไม่ผ่าน (อัตราส่วน {0})','A steel connection fails its design check (utilization {0})']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56164,6 +56265,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[t_sweld]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] ต่อจากหมุดรับแรงเฉือน แบบ Revit (Steel › Fabrication Elements › Welds): คลิกใกล้ขอบของแผ่นเหล็กในแปลนเพื่อเชื่อมขอบนั้น คลิกขอบที่เชื่อมแล้วอีกครั้งเพื่อเอาออก หรือติ๊ก [[o_sw489all]] บนแถบตัวเลือกแล้วคลิกแผ่นเพื่อเชื่อมรอบแผ่น (แทนรอยเชื่อมทีละขอบของแผ่นนั้น) · เลือก [[o_sw489k]] ได้ [[sw489k_f]] [[sw489k_b]] หรือ [[sw489k_p]] และ [[o_sw489a]] · ในคุณสมบัติตั้ง [[p_sw489at]] (ขอบล่าง ขอบบน หรือทั้งสอง) [[p_sw489loc]] ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงด้วย [[p_sw489il]] กับ [[p_sw489ip]] · ขนาดตรวจตาม AISC 360: ขาเชื่อมฉากขั้นต่ำ 3 5 6 หรือ 8 มม. ตามความหนาแผ่น (ตาราง J2.4) และไม่เกินแผ่นลบ 2 มม. (J2.2b) ขนาดที่ไม่ผ่านขึ้นสีเตือนในแปลนและบอกเหตุในคุณสมบัติ · รอยเชื่อมเดินตามแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือวาง และถูกลบไปพร้อมแผ่น ขอบที่ถูกตัดมุมเชื่อมเท่าที่เหลือ · แปลนเป็นเส้นหนามีขีดด้านนอกแผ่น (หน้างานเป็นเส้นประ) 3 มิติ รูปด้าน และรูปตัดเห็นเนื้อเชื่อมรูปสามเหลี่ยมนอกขอบ · มีตารางของหมวด [[cat_sweld]] และ [[a_boq]] นับเป็นเมตรตามชนิด ขนาด และที่เชื่อม (ราคาสมมติ เชื่อมหน้างาน 1.5 เท่า) · IFC ส่งเป็น IfcFastener ชนิด WELD · ยังไม่มีรอยเชื่อมระหว่างชิ้นเหล็กอื่นที่ไม่ใช่แผ่น และไม่ได้คำนวณกำลังรับแรงของรอยเชื่อม
 [[t_scut]] — แท็บ [[tab_steel]] แผง [[p_smod488]] ต่อจากตัดมุม แบบ Revit (Steel › Modifiers › Contour Cut): วาดรูปทับแผ่นเหล็กในแปลนทีละจุด แล้วกด Enter หรือคลิกจุดแรกเพื่อปิดรูป หรือเลือก [[a_rect]] บนแถบตัวเลือกแล้วคลิกสองมุม แผ่นที่อยู่สูงสุดใต้รูปเป็นแผ่นที่ถูกตัด · รูปที่อยู่ในแผ่นเป็นช่อง รูปที่เลยขอบเป็นรอยบาก รูปที่พาดผ่านทั้งแผ่นแบ่งแผ่นเป็นหลายชิ้นแต่ยังนับเป็นแผ่นเดียว รูปที่จะตัดแผ่นออกหมดใช้ไม่ได้ · แผ่นที่ถูกตัดได้พื้นที่ น้ำหนัก และพื้นที่ทาสีตามที่เหลือ เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลน · สลักเกลียวที่อยู่ในรูปที่ตัดหลุดจากแผ่น ส่วนที่ใกล้ขอบรอยตัดเกินไปขึ้นเตือนระยะขอบ · คลิกในช่องที่ตัดหรือที่เส้นประของรูปเพื่อเลือก คุณสมบัติบอกผลการตัด พื้นที่ น้ำหนักที่ตัดออก และความยาวที่ตัด ลบรูปแล้วแผ่นกลับเป็นเหมือนเดิม รูปเดินตามแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือวาง · มีตารางของหมวด [[cat_scut]] และ [[a_boq]] นับงานตัดเป็นเมตรตามความหนาแผ่น (ราคาสมมติ) · IFC ส่งแผ่นตามรูปที่เหลือพร้อมจำนวนรูปที่ตัด · รอยเชื่อมบนขอบที่ถูกตัดออกยังไม่สั้นลงตาม และยังตัดได้เฉพาะแผ่นเหล็ก ยังไม่ตัดคานหรือเสาเหล็ก
 [[t_sthru]] — แท็บ [[tab_steel]] แผง [[p_smod488]] ต่อจากตัดตามรูป แบบ Revit (Steel › Modifiers › Cut Through): คลิกแผ่นเหล็กที่จะตัดในแปลน แล้วคลิกเสาหรือคานที่ผ่านแผ่นนั้น หน้าตัดของชิ้นนั้นตรงกลางความหนาของแผ่นถูกตัดออกจากแผ่น ตั้ง [[p_sth491cl]] บนแถบตัวเลือกหรือใน Properties เพื่อเผื่อช่องรอบชิ้น · เสาตั้งได้รูปหน้าตัดของเสา เสาเอียง คานลาด และค้ำยันได้หน้าตัดที่ตัดเฉียง คานราบที่แผ่นอยู่ในความลึกของคานได้แถบตามความกว้างของหน้าตัดที่ระดับนั้นตลอดความยาวคาน · รูปที่ตัดเดินตามเมื่อเสาหรือคานย้ายหรือเปลี่ยนขนาด ลบเสาหรือคานแล้วแผ่นกลับเป็นเหมือนเดิม รูปอยู่กับแผ่นเมื่อย้าย คัดลอก วาง หรือลบแผ่น · พื้นที่ น้ำหนัก พื้นที่ทาสี 3 มิติ แปลน และ IFC ของแผ่นคิดตามที่เหลือเหมือน [[t_scut]] สลักในรูปหลุดจากแผ่น · Properties ของแผ่นบอกจำนวนชิ้นที่ตัดทะลุพร้อมปุ่ม [[a_sth491clr]] เลือกรูปได้ด้วยการคลิกที่ขอบรูปหลังเสาและแผ่น (กด Tab สลับ) หรือจากตารางของหมวด [[cat_sthru]] · [[a_boq]] รวมเมตรที่ตัดกับตัดตามรูป · ยังตัดได้เฉพาะแผ่นเหล็กด้วยเสาหรือคาน ยังไม่ใช้ท่อ ท่อลม หรือแผ่นอื่นเป็นชิ้นตัด
+[[a_stc492]] — แท็บ [[tab_steel]] แผง [[p_sconn]] แบบ Revit (Steel connection › Design check): ตรวจกำลังจุดต่อเหล็กทุกจุดจากแรงที่ปลายชิ้นส่วน (Properties ของคานหรือเสา › แก้ไขแรงปลายชิ้นส่วน หรือปุ่มดึงแรงจากการคำนวณเหล็กในหน้าต่างนี้ ซึ่งเติมเฉพาะปลายที่ยังไม่มีแรง) ด้วยหน่วยแรงที่ยอมให้ (ASD) ตามค่ากำลังวัสดุในตั้งค่าการคำนวณเหล็ก แผ่นรับแรงเฉือน: สลักเกลียวรับแรงเฉือน แรงแบกทานของรูสลัก แผ่นครากจากแรงเฉือน รอยเชื่อม เหล็กฉากคู่: สลักเกลียวรับแรงเฉือนสองระนาบ สลักเกลียวยึดฝั่งรองรับ แผ่นปลายคาน: สลักเกลียวรับแรงเฉือนร่วมดึง แผ่นฐานเสา: แรงกดบนคอนกรีต (0.35 f'c) ความหนาแผ่นที่ต้องการ พุกจากตารางพุก รอยเชื่อมเสา ผลอยู่ใน Properties ของจุดต่อ ตารางรายการ และคำเตือนเมื่อไม่ผ่าน คลิกแถวในหน้าต่างเพื่อเลือกจุดต่อนั้น แผ่นต่อยังไม่ได้ตรวจ
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -56588,6 +56690,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.489 · [[t_sweld]] แบบ Revit: เชื่อมขอบของแผ่นเหล็กทีละขอบหรือรอบแผ่น แบบเชื่อมฉาก เชื่อมชนเต็มความหนา หรือเชื่อมชนบางส่วน ขอบล่าง ขอบบน หรือทั้งสอง ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงได้ ตรวจขนาดตาม AISC 360 เห็นในแปลนและ 3 มิติ เดินตามแผ่น มีในตาราง BOQ (เมตร) และ IFC
 - V1.490 · [[t_scut]] แบบ Revit: วาดรูปทับแผ่นเหล็กเพื่อตัดเป็นช่อง บากขอบ หรือแบ่งแผ่น ได้พื้นที่และน้ำหนักตามที่เหลือ เห็นใน 3 มิติและแปลน สลักเกลียวในรูปหลุดจากแผ่น รูปเดินตามแผ่น มีในตาราง BOQ (เมตรที่ตัด) และ IFC
 - V1.491 · [[t_sthru]] แบบ Revit: คลิกแผ่นเหล็กแล้วคลิกเสาหรือคานที่ผ่าน หน้าตัดของชิ้นนั้นถูกตัดออกจากแผ่น เผื่อช่องรอบได้ เดินตามเมื่อชิ้นนั้นย้ายหรือเปลี่ยนขนาด มีในตาราง BOQ และ IFC
+- V1.492 · [[a_stc492]] แบบ Revit: ตรวจกำลังจุดต่อเหล็กจากแรงที่ปลายชิ้นส่วน ผ่านหรือไม่ผ่านพร้อมอัตราส่วนของแต่ละรายการ ใน Properties ตารางรายการ และคำเตือน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -56822,6 +56925,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 [[t_sweld]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, after Shear Studs, as in Revit (Steel › Fabrication Elements › Welds): click near an edge of a plate in a plan to weld that edge, and click a welded edge again to take its weld off; or tick [[o_sw489all]] on the options bar and click a plate to weld it all round (in place of its edge welds). Choose the [[o_sw489k]], [[sw489k_f]], [[sw489k_b]] or [[sw489k_p]], and the [[o_sw489a]]. Properties set [[p_sw489at]] (the bottom of the edges, the top, or both), the [[p_sw489loc]] (shop or site) and an intermittent weld by its [[p_sw489il]] and [[p_sw489ip]]. The size is checked against AISC 360: a fillet at least 3, 5, 6 or 8 mm by the plate thickness (Table J2.4) and at most the plate less 2 mm (J2.2b); a weld out of range is drawn in the warning colour in plans and Properties say why. A weld follows its plate when it is moved, turned, mirrored, copied or pasted and goes when it is deleted; an edge with corner cuts is welded along what is left of it. Plans draw a heavy line with ticks outside the plate (dashed for a site weld); 3D views, elevations and sections show the weld metal as a triangle outside the edge. There is a schedule of the category [[cat_sweld]], and [[a_boq]] counts metres by type, size and where it is made (assumed prices, site welds 1.5 times). IFC writes them as IfcFastener of type WELD. Limits: welds on plates only, not between other steel members; the strength of a weld is not checked
 [[t_scut]] — on the [[tab_steel]] tab, [[p_smod488]] panel, after Corner Cut, as in Revit (Steel › Modifiers › Contour Cut): sketch a shape over a steel plate in a plan, point by point, closing it with Enter or a click on its first point, or choose [[a_rect]] on the options bar and click two corners; the highest plate under the shape is the one cut. A shape inside the plate makes an opening, one past its edge a notch, one right across it leaves pieces that still count as one plate; a shape that would cut the whole plate away is refused. The plate's area, weight and paint area are what is left, and 3D views, elevations, sections and plans show it. Bolts in a cut are out of the plate, and those too near the edge of a cut are flagged for their edge distance. Click inside a cut or on its dashed outline to select it: Properties give the result, the area and weight taken out and the length cut; delete it and the plate is whole again. A cut follows its plate when it is moved, turned, mirrored, copied or pasted. There is a schedule of the category [[cat_scut]], and [[a_boq]] counts the cutting in metres by plate thickness (assumed prices). IFC writes the plate as it is left, with its number of cuts. Limits: a weld on an edge that is cut away is not shortened, and only plates are cut, not steel beams or columns
 [[t_sthru]] — on the [[tab_steel]] tab, [[p_smod488]] panel, after Contour Cut, as in Revit (Steel › Modifiers › Cut Through): click the steel plate to cut in a plan, then a column or beam that passes through it; that element's section at the middle of the plate's thickness is cut out of the plate. Set a [[p_sth491cl]] on the options bar or in Properties for a gap round it. A vertical column cuts its outline; a slanted column, a sloping beam or a brace their section met aslant; a level beam with the plate inside its depth the strips of its section at that height along its length. The cut keeps up when the column or beam moves or changes size, goes when it is deleted (the plate whole again), and stays with the plate when the plate is moved, copied, pasted or deleted. The plate's area, weight, paint area, 3D shape, plan and IFC are what is left, as with [[t_scut]], and bolts in the cut are out of the plate. A plate's Properties count its cutting elements and offer [[a_sth491clr]]; a cut is picked on its outline after the column and the plate (Tab cycles), or from a schedule of [[cat_sthru]]. [[a_boq]] adds its metres to the contour cutting. Limits: plates only, cut by columns and beams (not pipes, ducts or other plates)
+[[a_stc492]] — on the [[tab_steel]] tab, [[p_sconn]] panel, as in Revit (a steel connection's Design check): checks every steel connection on its member's end forces (the beam or column's Properties › Edit Member Forces, or Forces from Steel Design in this window, which fills only ends that have none) by allowable stress (ASD) with the material strengths of the Steel Design settings. Shear plates: bolt shear, bolt bearing, plate shear yielding, the weld; clip angles: bolts in double shear, bolts to the support; end plates: bolt shear with tension; base plates: concrete bearing (0.35 f'c), the plate thickness needed, anchors from the anchor table, the column weld. The results are in the connection's Properties, schedules, and the warnings when one fails; click a row to select that connection. Splices are not checked yet.
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -57246,6 +57350,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.489 · [[t_sweld]] (as in Revit): welds along the edges of a plate, one edge at a time or all round, fillet, complete or partial penetration butt, along the bottom, the top or both, shop or site, continuous or intermittent, the size checked against AISC 360, shown in plans and 3D, following the plate, in schedules, the BOQ (metres) and IFC
 - V1.490 · [[t_scut]] (as in Revit): shapes sketched over a plate cut an opening, a notch or the plate in pieces, the plate's area and weight are what is left, shown in 3D and plans, bolts in a cut are out of the plate, the cut follows its plate, in schedules, the BOQ (metres cut) and IFC
 - V1.491 · [[t_sthru]] (as in Revit): click a plate, then a column or beam through it, and its section is cut out of the plate with an optional clearance, keeping up when it moves or changes size, in schedules, the BOQ and IFC
+- V1.492 · [[a_stc492]] (as in Revit): steel connections checked on their member end forces, Pass or Fail with each check's utilization, in Properties, schedules and warnings
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -60241,6 +60346,28 @@ window.PenumBIM.r491={
   exp2:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
     try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='sthru').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length}catch(e){o.dxf='ERR '+e}
     try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='sthru').length}catch(e){o.json='ERR '+e}return o},
+  str:(k,...a)=>t(k,...a)};
+/* V1.492 test API: connection design check */
+window.PenumBIM.r492={
+  chk:id=>{const C=stc492Chk(IDX.get(id));if(!C)return null;const r=x=>Math.round(x*1e4)/1e4;return{st:C.st,why:C.why||null,r:C.rows.length?r(C.r):null,gov:C.gov||null,rows:C.rows.map(x=>[x.k,r(x.d),r(x.c),x.u]),mom:C.mom!=null?r(C.mom):null}},
+  S:()=>{const M=stc492S(),r=x=>Math.round(x*1e4)/1e4;return{Fy:r(M.Fy),Fu:r(M.Fu),Fv:r(M.Fv),Ft:r(M.Ft),Fw:r(M.Fw),fc:r(M.fc)}},
+  anc:d=>stc492Anc(saSetSA(P),d),
+  geo:id=>{const G=stcGeo(IDX.get(id));return G?{ck:G.ck,n:G.n,nb:G.nb,free:G.free,p:Object.assign({},G.p),B:G.B.map(b=>b.slice()),h:G.h.id,k:G.k}:null},
+  mf:(id,a,src)=>{edit(()=>{const e=IDX.get(id);mf486Put(e,a.map(x=>x?mf486Six(x):null),src||[null,null])})},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  put:(id,o)=>{edit(()=>{const e=IDX.get(id);Object.assign(e,JSON.parse(JSON.stringify(o)));for(const k in o)if(o[k]==null)delete e[k]})},
+  ptype:(id,o)=>{edit(()=>{const T=(P.types.sconn||[]).find(x=>x.id===id);Object.assign(T,o)})},
+  types:()=>(P.types.sconn||[]).map(x=>({id:x.id,ck:x.ck,mark:x.mark})),
+  conns:()=>P.els.filter(e=>e.cat==='sconn').map(e=>({id:e.id,host:e.host,k:stcK(e),type:e.type})),
+  place:(ids)=>{ui.sel=new Set(ids);XA.stcplace();return P.els.filter(e=>e.cat==='sconn').map(e=>e.id)},
+  list:()=>stc492List().map(x=>[x.e.id,x.C.st,x.C.rows.length?Math.round(x.C.r*1e4)/1e4:null]),
+  warn:()=>warnings(P).filter(w=>w.k==='stc492').map(w=>[w.ids[0],w.a]),
+  sf:()=>sfAll(P,'sconn',t).filter(f=>/^stc492/.test(f.k)).map(f=>f.k),
+  sv:(id,k)=>{const F=sfAll(P,'sconn',t).find(f=>f.k===k),X=sfCtx(P,t,null);return F?F.g(IDX.get(id),X):undefined},
+  sa:()=>stc492Sa(),
+  ribbon:()=>{const s=RIBBON.find(x=>x.id==='steel');return s?s.panels.map(p=>[p.t,p.b.slice()]):null},
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(x=>{const l=x.querySelector('label'),i=x.querySelector('select,input'),r=x.querySelector('.ro');return[l?l.textContent:'',i?i.value:r?r.textContent:'']}),
+  note:()=>[...document.querySelectorAll('#props .pnote')].map(n=>[n.className,n.textContent]),
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
