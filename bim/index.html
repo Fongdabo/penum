@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=499,V1_NAME='V1.489';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=500,V1_NAME='V1.490';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -53954,6 +53954,170 @@ Object.assign(STR,{
   sw489_chk:['ขนาดไม่ผ่านตาม AISC ดูในแผงคุณสมบัติ','size not OK by AISC: see Properties'],
   sw489_item_f:['งานเชื่อมฉาก (Fillet) ขา {0} มม. {1}','Fillet weld {0} mm, {1}'],sw489_item_b:['งานเชื่อมชนเต็มความหนา (CJP) แผ่น {0} มม. {1}','Complete penetration butt weld, {0} mm plate, {1}'],
   sw489_item_p:['งานเชื่อมชนบางส่วน (PJP) ลึก {0} มม. {1}','Partial penetration butt weld {0} mm, {1}']});
+/* ===== 490 Contour Cut (V1.490; Revit 2021.1 and later: Steel › Modifiers › Contour Cut, a shape sketched on a plate and cut out of it) =====
+   e = {cat:'scut', host: the plate (V1.487) it cuts, level (its plate's), pts: the outline cut out, in plan}.
+   Inside the plate it leaves an opening of its shape, across an edge a notch, across the whole plate two pieces that stay one plate.  What is left of the plate
+   (sp487Geo wrapped once more) gives its area, weight, paint area, 3D shape, plan outline and IFC; bolts in a cut are out of the plate.
+   It goes with its plate wherever the plate is moved, turned, mirrored, copied or pasted, and when the plate is deleted. */
+const sc490Ok=e=>!!e&&e.cat==='scut'&&Array.isArray(e.pts)&&e.pts.length>=3&&e.pts.every(p=>Array.isArray(p)&&isFinite(+p[0])&&isFinite(+p[1]));
+const sc490Host=(Q,e)=>{if(!e||e.host==null)return null;const h=(Q===P?IDX.get(e.host):null)||Q.els.find(x=>x.id===e.host);return h&&h.cat==='splate'&&sp487Ok(Q,h)?h:null};
+const SC490_IX=new WeakMap();
+function sc490Of(Q,hid){let c=SC490_IX.get(Q.els);if(!c||c.v!==VER||c.n!==Q.els.length){const m=new Map();for(const e of Q.els)if(e.cat==='scut')(m.get(e.host)||m.set(e.host,[]).get(e.host)).push(e);c={v:VER,n:Q.els.length,m};SC490_IX.set(Q.els,c)}return c.m.get(hid)||[]}
+const sc490Pts=e=>e.pts.map(p=>[+p[0],+p[1]]);
+function sc490Polys(Q,h){return sc490Of(Q,h.id).filter(c=>c.host===h.id&&sc490Ok(c)).map(sc490Pts)}          // every shape cut out of the plate h
+/* where segment a–b meets segment c–d: its parameters along a–b (two where they overlap in a line) */
+function sc490Xs(a,b,c,d){const r=[b[0]-a[0],b[1]-a[1]],s=[d[0]-c[0],d[1]-c[1]],q=[c[0]-a[0],c[1]-a[1]],den=r[0]*s[1]-r[1]*s[0],rr=r[0]*r[0]+r[1]*r[1]||1;
+  if(Math.abs(den)<1e-9*Math.sqrt(rr*(s[0]*s[0]+s[1]*s[1])||1)){if(Math.abs(q[0]*r[1]-q[1]*r[0])>1e-6*Math.sqrt(rr))return[];          // parallel apart
+    return[c,d].map(p=>((p[0]-a[0])*r[0]+(p[1]-a[1])*r[1])/rr)}
+  const t=(q[0]*s[1]-q[1]*s[0])/den,u=(q[0]*r[1]-q[1]*r[0])/den;return u>-1e-9&&u<1+1e-9?[t]:[]}
+/* what is left of the polygon O when the polygons K are cut out of it: closed loops with the plate on their left (pieces anticlockwise, openings clockwise) */
+function sc490Diff(O,K){const ccw=L=>area2(L)>0?L:L.slice().reverse(),A=ccw(O),Ks=K.map(ccw),all=[A,...Ks],E=0.05;
+  const mat=p=>inPoly(p[0],p[1],A)&&!Ks.some(k=>inPoly(p[0],p[1],k)),segs=[];
+  for(const L of all)for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<1e-6)continue;const ts=[0,1];
+    for(const M of all){if(M===L)continue;for(let j=0;j<M.length;j++)for(const x of sc490Xs(a,b,M[j],M[(j+1)%M.length]))if(x>1e-9&&x<1-1e-9)ts.push(x)}
+    ts.sort((x,y)=>x-y);const nx=-dy/len,ny=dx/len;
+    for(let k=0;k+1<ts.length;k++){const t0=ts[k],t1=ts[k+1];if((t1-t0)*len<1e-4)continue;const m=[a[0]+dx*(t0+t1)/2,a[1]+dy*(t0+t1)/2],
+        l=mat([m[0]+nx*E,m[1]+ny*E]),r=mat([m[0]-nx*E,m[1]-ny*E]);if(l===r)continue;          // a piece of the outline only where the plate is on one side of it
+      const p0=[a[0]+dx*t0,a[1]+dy*t0],p1=[a[0]+dx*t1,a[1]+dy*t1];segs.push(l?[p0,p1]:[p1,p0])}}
+  const near=(p,q)=>Math.abs(p[0]-q[0])<0.01&&Math.abs(p[1]-q[1])<0.01,S=[];
+  for(const s of segs)if(!S.some(o=>near(o[0],s[0])&&near(o[1],s[1])))S.push(s);          // a cut edge along an edge of the plate gives the same piece twice
+  const used=new Array(S.length).fill(false),loops=[];
+  for(let i=0;i<S.length;i++){if(used[i])continue;used[i]=true;const L=[S[i][0]];let end=S[i][1],guard=0;
+    while(!near(end,L[0])&&guard++<S.length){const j=S.findIndex((s,k)=>!used[k]&&near(s[0],end));if(j<0)break;used[j]=true;L.push(S[j][0]);end=S[j][1]}
+    if(!near(end,L[0])||L.length<3)continue;
+    const C=[];for(let k=0;k<L.length;k++){const p=L[(k+L.length-1)%L.length],q=L[k],r=L[(k+1)%L.length],cr=(q[0]-p[0])*(r[1]-q[1])-(q[1]-p[1])*(r[0]-q[0]);
+      if(Math.abs(cr)>1e-6*Math.hypot(q[0]-p[0],q[1]-p[1])*Math.hypot(r[0]-q[0],r[1]-q[1]))C.push(q)}          // points in a straight run go
+    if(C.length>=3&&Math.abs(area2(C))>0.01)loops.push(C)}
+  return loops}
+/* a plate with its contour cuts: G from the plate (its bolt holes in G.hc) → the same with what is left */
+function sc490Cut(G,K){const loops=sc490Diff(G.O,K),th=G.th,z0=G.z[0],z1=G.z[1],inMat=p=>{let n=0;for(const L of loops)if(inPoly(p[0],p[1],L))n++;return n%2===1};
+  const C=(G.hc||[]).filter(c=>{const m=c.reduce((s,p)=>[s[0]+p[0]/c.length,s[1]+p[1]/c.length],[0,0]);return inMat(m)&&c.every(p=>inMat(p))});          // the bolt holes still in the plate
+  const lp=L=>L.reduce((s,p,i)=>{const q=L[(i+1)%L.length];return s+Math.hypot(q[0]-p[0],q[1]-p[1])},0);
+  let a=0,per=0;for(const L of loops){a+=area2(L);per+=lp(L)}const ha=C.reduce((s,c)=>s+Math.abs(area2(c)),0),hw=C.reduce((s,c)=>s+lp(c),0);
+  const area=Math.max(0,(a-ha)/1e6),vol=area*th/1000,outer=loops.filter(L=>area2(L)>0).sort((x,y)=>area2(y)-area2(x));
+  const G2=Object.assign({},G,{O:outer[0]||G.O,sm:(outer[0]||G.O).map(()=>false),loops,pieces:outer.length,area,per,vol,kg:vol*SP487_RHO,paint:2*area+per/1000*th/1000+hw*th/1e6,
+    gross:G.gross!=null?G.gross:G.area,cuts:K.length,cutA:Math.max(0,(G.gross!=null?G.gross:G.area)-area-ha/1e6),hc:C,holes:C.length,t:[],l:[]});
+  const T=G2.t,put=(a,b,c,n)=>{const ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]],x=[ab[1]*ac[2]-ab[2]*ac[1],ab[2]*ac[0]-ab[0]*ac[2],ab[0]*ac[1]-ab[1]*ac[0]];
+    if(x[0]*n[0]+x[1]*n[1]+x[2]*n[2]<0){const q=b;b=c;c=q}T.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2])};
+  if(!loops.length)return G2;
+  const f=slabTris([...loops,...C]);for(let i=0;i+5<f.length;i+=6){const p=[[f[i],f[i+1]],[f[i+2],f[i+3]],[f[i+4],f[i+5]]];put(...p.map(q=>[q[0],z1,q[1]]),[0,1,0]);put(...p.map(q=>[q[0],z0,q[1]]),[0,-1,0])}
+  for(const L of loops)for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],o=L[(i+L.length-1)%L.length],dx=b[0]-a[0],dy=b[1]-a[1],n=[dy,0,-dx];          // the plate on the left: out is to the right
+    const A0=[a[0],z0,a[1]],B0=[b[0],z0,b[1]],A1=[a[0],z1,a[1]],B1=[b[0],z1,b[1]];put(A0,B0,B1,n);put(A0,B1,A1,n);G2.l.push(...A0,...B0,...A1,...B1);
+    const u1=[a[0]-o[0],a[1]-o[1]],u2=[dx,dy],cs=(u1[0]*u2[0]+u1[1]*u2[1])/((Math.hypot(...u1)*Math.hypot(...u2))||1);if(cs<0.97)G2.l.push(...A0,...A1)}          // an edge where it turns
+  C.forEach(c=>{const m=c.reduce((s,p)=>[s[0]+p[0]/c.length,s[1]+p[1]/c.length],[0,0]);for(let j=0;j<c.length;j++){const a=c[j],b=c[(j+1)%c.length],n=[m[0]-(a[0]+b[0])/2,0,m[1]-(a[1]+b[1])/2];
+    const A0=[a[0],z0,a[1]],B0=[b[0],z0,b[1]],A1=[a[0],z1,a[1]],B1=[b[0],z1,b[1]];put(A0,B0,B1,n);put(A0,B1,A1,n);G2.l.push(...A0,...B0,...A1,...B1)}});
+  return G2}
+const SC490_GC=new WeakMap();
+{const f0=sp487Geo;sp487Geo=(Q,e)=>{const G=f0(Q,e);if(!G)return G;const K=sc490Polys(Q,e);if(!K.length)return G;const key=JSON.stringify(K),c=SC490_GC.get(G);
+  if(c&&c.k===key)return c.G;const G2=sc490Cut(G,K);SC490_GC.set(G,{k:key,G:G2});return G2}}
+/* a cut's own figures: the plate without it and with it */
+function sc490Geo(Q,e){if(!sc490Ok(e))return null;const h=sc490Host(Q,e);if(!h)return null;const G0=sp487Geo0(Q,h);if(!G0)return null;const K=sc490Pts(e),L=sc490Diff(G0.O,[K]);
+  const left=L.reduce((s,x)=>s+area2(x),0)/1e6,cut=Math.max(0,G0.area-left),O=G0.O;let ln=0;          // the length cut: the parts of its outline that run through the plate
+  for(let i=0;i<K.length;i++){const a=K[i],b=K[(i+1)%K.length],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<1e-6)continue;const ts=[0,1];
+    for(let j=0;j<O.length;j++)for(const x of sc490Xs(a,b,O[j],O[(j+1)%O.length]))if(x>1e-9&&x<1-1e-9)ts.push(x);ts.sort((x,y)=>x-y);
+    for(let k=0;k+1<ts.length;k++){const m=(ts[k]+ts[k+1])/2,q=[a[0]+dx*m,a[1]+dy*m];if(inPoly(q[0],q[1],O)&&polyEdgeDist(q[0],q[1],O)>0.01)ln+=(ts[k+1]-ts[k])*len}}
+  const k=!(cut>1e-6)?'none':L.length===1&&area2(L[0])>0&&Math.abs(area2(L[0]))<Math.abs(area2(G0.O))-1e-3&&!K.every(p=>inPoly(p[0],p[1],G0.O))?'notch':L.some(x=>area2(x)<0)?'open':L.filter(x=>area2(x)>0).length>1?'part':'notch';
+  return{e,h,G0,K,cut,cutKg:cut*G0.th/1000*SP487_RHO,ln,th:G0.th,k,all:left<1e-6,z:G0.z}}
+{const f0=zRange;zRange=(Q,e)=>{if(!e||e.cat!=='scut')return f0(Q,e);const h=sc490Host(Q,e);return h?sp487Z(Q,h):f0(Q,e)}}
+GEOM.scut='poly';DISC.scut='struct';CREATE_TOOLS.add('scut');
+{const i=VG_CATS.indexOf('sweld');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'scut')}DXF_LAYER.scut=['S-STEL-CUT',8];
+FLT_CATS.push('scut');SF_CATS.push('scut');SF_DEF.scut=['sc490pl','sc490k','sc490a','sc490kg','sc490ln'];
+/* bolts in a cut are out of the plate */
+{const f0=sb488Geo;sb488Geo=(Q,e)=>{const G=f0(Q,e);if(!G||!G.h)return G;const K=sc490Polys(Q,G.h);if(!K.length)return G;let out=0,ed=G.ed;          // and one too near a cut's edge is too near the plate's edge
+  const ins=G.ins.map((x,i)=>{if(!x)return false;const p=G.pos[i],dk=Math.min(...K.map(k=>polyEdgeDist(p[0],p[1],k)));if(K.some(k=>inPoly(p[0],p[1],k))||dk<G.hd/2+0.05){out++;return false}ed=Math.min(ed,dk);return true});
+  if(!out&&ed===G.ed)return G;const okE=!(G.out+out)&&(!isFinite(ed)||ed>=1.2*G.hd-0.05);return Object.assign(G,{ins,out:G.out+out,ed,okE,ok:okE&&G.okS})}}
+/* ---- it goes with its plate ---- */
+function sc490Exp(ids){const s=new Set(ids),add=[];for(const id of s){const e=IDX.get(id);if(e&&e.cat==='splate')for(const c of sc490Of(P,id))if(!s.has(c.id)&&c.host===id)add.push(c.id)}return add.length?[...s,...add]:ids}
+{const f0=translateIds;translateIds=(ids,dx,dy)=>f0(sc490Exp(ids),dx,dy)}
+{const f0=rotateIds;rotateIds=(ids,cx,cy,deg)=>f0(sc490Exp(ids),cx,cy,deg)}
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids);for(const id of [...s]){const e=IDX.get(id);if(e&&e.cat==='splate')for(const c of sc490Of(P,id))if(c.host===id)s.add(c.id)}return s}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(c&&c.cat==='scut'&&M.has(c.host))c.host=M.get(c.host)}return out}}
+{const f0=pasteObjs;pasteObjs=(objs,dx,dy,lv,view)=>{const src=new Map(objs.map(o=>[o.id,o])),O=objs.filter(o=>o.cat!=='scut'||(src.has(o.host)&&src.get(o.host).cat==='splate')),ids=f0(O,dx,dy,lv,view);          // a cut needs its plate
+  const made=ids.map(id=>IDX.get(id)).filter(Boolean),pl=made.filter(e=>e.cat==='splate');
+  for(const c of made){if(c.cat!=='scut')continue;const h=src.get(c.host);if(!h)continue;const m=pl.find(p=>p.pts.length===h.pts.length&&p.pts.every((q,i)=>Math.abs(q[0]-h.pts[i][0]-dx)<0.01&&Math.abs(q[1]-h.pts[i][1]-dy)<0.01));if(m){c.host=m.id;c.level=m.level}}
+  return ids}}
+{const f0=applyField;applyField=(cat,o,key,raw)=>{const r=f0(cat,o,key,raw);if(cat==='splate'&&key==='level'&&o&&o.id!=null&&P&&P.els)for(const c of P.els)if(c.cat==='scut'&&c.host===o.id)c.level=o.level;return r}}
+/* ---- plans: what is left of the plate; the cut itself a thin dashed outline on the screen, to pick it ---- */
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='scut')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'scut')||hidEl(v,e))return'';const h=sc490Host(P,e);return h?planShow(v,h):''}}
+const SC490D={plan:null};
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const z=vrZ(P,v);
+  for(const [e] of of('splate')){const G=sp487Geo(P,e);if(!G||!G.loops)continue;const k=hl(e.id),cut=!v.rcp&&G.z[0]<=z.cut&&G.z[1]>=z.cut;g.el(e);ctx.save();g.dash(null);
+    for(const L of G.loops){if(L===G.O)continue;g.path(L);if(area2(L)>0){ctx.globalAlpha=cut?0.85:0.12;ctx.fillStyle=cut?col.ink:o.screen?SP487_C:col.ink;ctx.fill();ctx.globalAlpha=1}
+      else{ctx.fillStyle=col.paper;ctx.fill()}ctx.strokeStyle=k||col.ink;ctx.lineWidth=g.lw(cut?0.35:0.18);ctx.stroke()}
+    ctx.restore()}
+  const L=of('scut');SC490D.plan=L.length;if(!o.screen)return;
+  for(const [e] of L){if(!sc490Ok(e))continue;g.el(e);const k=hl(e.id);ctx.save();ctx.strokeStyle=k||col.ink;ctx.globalAlpha=k?1:0.55;ctx.lineWidth=k?1.6:1;g.dash([1.2,0.8]);g.path(sc490Pts(e));ctx.stroke();g.dash(null);ctx.restore()}});
+XHIT.scut=(v,e,w)=>{if(!sc490Ok(e))return Infinity;const K=sc490Pts(e),d=polyEdgeDist(w.x,w.y,K);if(d<=0.3*(v.scale||100))return d;if(!inPoly(w.x,w.y,K))return Infinity;
+  const h=sc490Host(P,e),G=h&&sp487Geo(P,h);if(G&&G.loops){let n=0;for(const L of G.loops)if(inPoly(w.x,w.y,L))n++;if(n%2)return Infinity}return 0};XHIT.scut.pr=4;          // its outline, or anywhere in the hole it makes
+{const f0=XHIT.splate,pr=f0.pr;XHIT.splate=(v,e,w)=>{const G=sp487Geo(P,e);if(!G||!G.loops)return f0(v,e,w);let n=0;for(const L of G.loops)if(inPoly(w.x,w.y,L))n++;if(n%2)return 0;
+  return G.loops.length?Math.min(...G.loops.map(L=>polyEdgeDist(w.x,w.y,L))):Infinity};XHIT.splate.pr=pr}
+{const f0=elBox;elBox=(v,e)=>{if(e&&e.cat==='splate'){const G=sp487Geo(P,e);if(G&&G.loops&&G.pieces>1){const A=G.loops.flat();return[Math.min(...A.map(p=>p[0])),Math.min(...A.map(p=>p[1])),Math.max(...A.map(p=>p[0])),Math.max(...A.map(p=>p[1]))]}}          // a plate in pieces: all of them
+  if(!e||e.cat!=='scut')return f0(v,e);if(!sc490Ok(e))return null;const K=sc490Pts(e);return[Math.min(...K.map(p=>p[0])),Math.min(...K.map(p=>p[1])),Math.max(...K.map(p=>p[0])),Math.max(...K.map(p=>p[1]))]}}
+/* ---- Properties ---- */
+const sc490HostName=(Q,e)=>{const h=sc490Host(Q,e);return h?(h.mark||t('cat_splate')+' #'+h.id):'—'};
+function sc490Rows(els){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},GS=els.map(x=>sc490Geo(P,x));
+  let h=PR.grp('g_constraints')+PR.ro('p_sc490pl',V(x=>sc490HostName(P,x)))+PR.ro('p_level',V(x=>{const l=lvl(P,x.level);return l?l.name:''}));
+  h+=PR.grp('g_dims');if(els.length===1&&GS[0]){const G=GS[0];h+=PR.ro('p_sc490k',t('sc490k_'+G.k))+PR.ro('p_sc490a',sp487F(G.cut,4)+' m²')+PR.ro('p_sc490kg',sp487F(G.cutKg,2)+' '+t('u_kg262'))+PR.ro('p_sc490ln',sp487F(G.ln/1000,3)+' m');
+    if(G.k==='none')h+=`<div class="pnote warn">${esc(t('sc490_nonote'))}</div>`}
+  else{const s=GS.reduce((a,G)=>a+(G?G.cut:0),0);h+=PR.ro('p_sc490a',sp487F(s,4)+' m²')}
+  return h+`<div class="pnote">${esc(t('n_sc490'))}</div>`}
+{const f0=catRows;catRows=(cat,els,isNew)=>{if(cat==='scut')return sc490Rows(els);const h=f0(cat,els,isNew);if(cat!=='splate'||isNew)return h;let n=0,a=0;
+  for(const x of els){const G=sp487Geo(P,x);if(G&&G.cuts){n+=G.cuts;a+=G.cutA}}if(!n)return h;return h+PR.grp('g_sc490p')+PR.ro('p_sc490n',String(n))+PR.ro('p_sc490a',sp487F(a,4)+' m²')}}
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='splate'&&cat!=='scut')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),r=(x,d)=>Math.round(x*10**d)/10**d;
+  if(cat==='splate'){add('sc490n',tr('p_sc490n'),e=>{const G=sp487Geo(Q,e);return G&&G.cuts||0},{num:1,dec:0,sum:1});return F}
+  add('sc490pl',tr('p_sc490pl'),e=>{const h=sc490Host(Q,e);return h?(h.mark||'#'+h.id):''});add('sc490k',tr('p_sc490k'),e=>{const G=sc490Geo(Q,e);return G?tr('sc490k_'+G.k):''});
+  add('sc490a',tr('p_sc490a')+' (m²)',e=>{const G=sc490Geo(Q,e);return G?r(G.cut,4):0},{num:1,dec:4,sum:1});add('sc490kg',tr('p_sc490kg')+' (kg)',e=>{const G=sc490Geo(Q,e);return G?r(G.cutKg,2):0},{num:1,dec:2,sum:1});
+  add('sc490ln',tr('p_sc490ln')+' (m)',e=>{const G=sc490Geo(Q,e);return G?r(G.ln/1000,3):0},{num:1,dec:3,sum:1});return F}}
+/* ---- the BOQ: metres of cutting by the plate's thickness (assumed prices), after the welds; IFC: the plate says how many cuts it has ---- */
+const sc490Price=th=>th<=12?60:th<=25?90:140;
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(e=>e.cat==='scut'))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.cat!=='scut'||e.gx)continue;const G=sc490Geo(Q0,e);if(!G||!(G.ln>0))continue;const pk='sc490|'+G.th;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_scut'),_c:9.45,tcat:'scut',pk,item:tr('sc490_item',G.th),qty:0,unit:tr('u_m'),cost:PR0[pk]!=null?+PR0[pk]||0:sc490Price(G.th),amount:0});r.qty+=G.ln/1000}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*1000)/1000;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>(a._c||0)-(b._c||0)||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='splate')return r;const G=sp487Geo(P0,e);if(G&&G.cuts)r.push(prop('ContourCuts',G.cuts,'IFCINTEGER'));return r}}
+/* ---- what is kept: a cut needs its plate (another plate of its level it lies on takes it) and three points ---- */
+XC.push(()=>{const pl=new Map(P.els.filter(e=>e.cat==='splate'&&sp487Ok(P,e)).map(e=>[e.id,e]));
+  P.els=P.els.filter(e=>e.cat!=='scut'||(pl.has(e.host)&&sc490Ok(e)));
+  for(const e of P.els){if(e.cat!=='scut')continue;e.pts=e.pts.map(p=>[Math.round(+p[0]*100)/100,Math.round(+p[1]*100)/100]);let h=pl.get(e.host);
+    const on=q=>{if(q.level!==e.level)return false;const G=sp487Geo0(P,q);return!!G&&polyHit(e.pts,G.O)};
+    if(!on(h)){const o=[...pl.values()].find(q=>q!==h&&on(q));if(o){e.host=o.id;h=o}}e.level=h.level}});
+/* ---- the tool: a shape sketched in a plan, point by point or a rectangle, over the plate it cuts ---- */
+function sc490Put(v,pts){if(pts.length<3||Math.abs(area2(pts))<25){toast(t('sk_small'));return null}
+  const L=P.els.filter(e=>e.cat==='splate'&&sp487Ok(P,e)&&planShow(v,e)).map(e=>({e,G:sp487Geo0(P,e)})).filter(x=>x.G&&polyHit(pts,x.G.O));
+  if(!L.length){toast(t('sc490_none'));return null}L.sort((a,b)=>b.G.z[1]-a.G.z[1]);const h=L[0].e,G0=L[0].G;
+  if(!sc490Diff(G0.O,[...sc490Polys(P,h),pts]).length){toast(t('sc490_all'));return null}
+  const e={id:P.seq++,cat:'scut',host:h.id,level:h.level,pts:pts.map(p=>[Math.round(p[0]),Math.round(p[1])])};setTool('modify');edit(()=>{P.els.push(e)});ui.sel=new Set([e.id]);refresh();
+  const G=sc490Geo(P,e);if(G)toast(t('sc490_made',h.mark||'#'+h.id,sp487F(G.cut,4),sp487F(G.cutKg,2)));return e.id}
+{const f0=skDone;skDone=(tool,v,pts)=>{if(tool!=='scut')return f0(tool,v,pts);if(sc490Put(v,pts)==null&&ui.sk){ui.sk.pts=[];refresh()}}}          // refused: start the shape again
+XT.scut={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){ui.sk={pts:[]};ui.sel.clear();ui.hov=null;if(ui.opt.siteMode!=='rect')ui.opt.siteMode='poly'},
+  off(){ui.sk=null},
+  click(pn,v,p,w,pt){skClick('scut',pn,v,p,w,pt)},
+  draw(pn,ctx,v,nav,g){skDraw(pn,ctx,v,nav,g)},
+  hint(){const n=ui.sk?ui.sk.pts.length:0;return t(sp487Md()==='rect'?(n?'h_sk_r2':'h_sc490_r1'):n>=3?'h_sk_p3':n?'h_sk_p2':'h_sc490_p1')},
+  opt(who,chk,sel){return who+`<label>${t('o_sfmode')}</label>`+sel('siteMode',[['poly','sf_poly'],['rect','a_rect']])},
+  esc(){const S=ui.sk;if(S&&S.pts.length){S.pts.pop();return true}return false},
+  fin(){const S=ui.sk,v=activeView();if(S&&sp487Md()==='poly'&&S.pts.length>=3&&v)skDone('scut',v,S.pts.slice());else toast(t('sk_need3'))}};
+{const p=(RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_smod488');if(p&&!p.b.includes('scut'))p.b.push('scut')}
+Object.assign(BTN,{scut:['scut','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-scut" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#9fb0c3" ${E} d="M3 5H21V19H3Z"/><path fill="#fff" ${E} d="M11 5H17V9.5L14 12.5H11Z"/>`
+    +`<path fill="none" stroke="#e8590c" stroke-width="1.2" stroke-dasharray="1.6 1.1" d="M10.2 3.6H17.8V9.8L14.3 13.3H10.2Z"/></symbol>`)})();
+Object.assign(STR,{
+  t_scut:['ตัดตามรูป (Contour Cut)','Contour Cut'],cat_scut:['ตัดตามรูป (Contour Cuts)','Contour Cuts'],
+  p_sc490pl:['แผ่นเหล็กที่ตัด','Host Plate'],p_sc490k:['ผลการตัด','Result'],sc490k_open:['เป็นช่องในแผ่น','An opening'],sc490k_notch:['บากขอบแผ่น','A notch'],
+  sc490k_part:['แบ่งแผ่นเป็นหลายชิ้น','Parts the plate'],sc490k_none:['ไม่โดนแผ่น','Misses the plate'],
+  p_sc490a:['พื้นที่ที่ตัดออก','Area Cut'],p_sc490kg:['น้ำหนักที่ตัดออก','Weight Cut'],p_sc490ln:['ความยาวที่ตัด','Cut Length'],sc490_item:['ตัดแผ่นเหล็กตามรูป หนา {0} มม.','Contour cutting, plate {0} mm'],
+  g_sc490p:['ตัดตามรูป','Contour Cuts'],p_sc490n:['จำนวนรูปที่ตัด','Contour Cuts'],
+  n_sc490:['รูปที่ตัดอยู่กับแผ่น ย้าย หมุน สะท้อน คัดลอก และลบไปพร้อมแผ่น ลบรูปนี้แล้วแผ่นกลับเป็นเหมือนเดิม','The cut stays with its plate when it is moved, turned, mirrored, copied or deleted; delete the cut and the plate is whole again'],
+  sc490_nonote:['รูปนี้ไม่ทับแผ่นแล้ว จึงไม่ได้ตัดอะไร','This shape no longer lies on its plate, so it cuts nothing'],
+  sc490_none:['วาดรูปให้ทับแผ่นเหล็กในแปลนนี้','Sketch the shape over a steel plate in this plan'],sc490_all:['รูปนี้ตัดแผ่นออกทั้งแผ่น ถ้าจะเอาแผ่นออกให้ลบแผ่น','This shape cuts away the whole plate: delete the plate instead'],
+  sc490_made:['ตัดแผ่น {0} แล้ว ออก {1} ตร.ม. ({2} กก.)','Plate {0} cut: {1} m² ({2} kg) taken out'],
+  h_sc490_p1:['คลิกจุดแรกของรูปที่จะตัดบนแผ่นเหล็ก · ลากเลยขอบแผ่นได้เพื่อบากขอบ','Click the first point of the shape to cut on a plate · go past its edge for a notch'],
+  h_sc490_r1:['คลิกมุมแรกของสี่เหลี่ยมที่จะตัดบนแผ่นเหล็ก','Click the first corner of the rectangle to cut on a plate']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -54644,7 +54808,7 @@ PENUM BIM is a BIM drafting program that runs in the browser. It works the way R
 - [[tab_file]] — เปิด บันทึก และส่งออก PDF PNG DXF CSV
 - [[tab_arch]] — ผนัง ประตู หน้าต่าง เสา หลังคา ฝ้า พื้น เฟอร์นิเจอร์ บันได ทางลาด ราวกันตก ห้อง ระดับชั้น กริด
 - [[tab_struct]] — คาน เสา ผนัง พื้น
-- [[tab_steel]] — แผ่นเหล็ก สลักเกลียว สมอยึด รูเจาะ รอยเชื่อม ตัดมุม และจุดต่อเหล็ก
+- [[tab_steel]] — แผ่นเหล็ก สลักเกลียว สมอยึด รูเจาะ รอยเชื่อม ตัดมุม ตัดตามรูป และจุดต่อเหล็ก
 - [[tab_sys]] — ท่อลม ท่อน้ำ สุขภัณฑ์ สปริงเกลอร์ ไฟฟ้า และการคำนวณ
 - [[tab_insert]] — นำเข้าแบบ DXF PDF และรูปภาพมารองวาด และสร้างโมเดลจากแบบนั้นอัตโนมัติ
 - [[tab_annot]] — ระยะ ข้อความ ป้ายกำกับ เส้นรายละเอียด
@@ -54685,7 +54849,7 @@ From left to right: [[a_save]] · [[a_undo]] · [[a_redo]] · [[a_v3d]] · [[t_s
 - [[tab_file]] — open, save and export PDF, PNG, DXF, CSV
 - [[tab_arch]] — walls, doors, windows, columns, roofs, ceilings, floors, components, stairs, ramps, railings, rooms, levels, grids
 - [[tab_struct]] — beams, columns, walls, floors
-- [[tab_steel]] — steel plates, bolts, anchors, holes, welds, corner cuts and steel connections
+- [[tab_steel]] — steel plates, bolts, anchors, holes, welds, corner cuts, contour cuts and steel connections
 - [[tab_sys]] — ducts, pipes, plumbing fixtures, sprinklers, electrical, and the calculations
 - [[tab_insert]] — DXF drawings, PDFs and pictures to trace over, and the model made from such a drawing
 - [[tab_annot]] — dimensions, text, tags, detail lines
@@ -55866,6 +56030,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 [[t_ccut487]] — แท็บ [[tab_steel]] แผง [[p_smod488]] แบบ Revit (Steel › Modifiers › Corner Cut): คลิกใกล้มุมของแผ่นเหล็กในแปลน มุมถูกตัดตามแบบและระยะในแถบตัวเลือก: [[cc487k_s]] ตัดเฉียง [[cc487k_x]] มุมมนที่สัมผัสทั้งสองขอบ หรือ [[cc487k_v]] เว้าเป็นวงกลมรอบมุม · ระยะยาวได้ไม่เกินครึ่งของขอบที่สั้นกว่าข้างมุม · มุมที่หักเข้าตัดไม่ได้ · คลิกมุมที่ตัดไว้แบบเดียวกันอีกครั้งเพื่อเอาออก หรือกด [[a_cc487clr]] ใน Properties · พื้นที่ น้ำหนัก และพื้นที่ทาสีคิดหลังตัดมุม
 [[t_sbolt]] · [[t_sanch488]] · [[t_shole488]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] ต่อจากแผ่นเหล็ก แบบ Revit (Steel › Fabrication Elements › Bolts, Anchors, Holes): คลิกมุมแรกบนแผ่นเหล็กในแปลน แล้วคลิกมุมตรงข้าม ได้กลุ่มสลัก สมอ หรือรูเรียงเป็นแถวตาม [[o_sb488nx]] และ [[o_sb488ny]] ในแถบตัวเลือก (คลิกจุดเดิมซ้ำ: วางรอบจุดนั้นห่างกันสามเท่าของขนาด) แถวขนานกับขอบยาวของแผ่น · สลักเกลียวมีหัว แหวน และแป้นเกลียว ยาวตาม [[p_sb488gl]] (ค่าเริ่มสองเท่าของแผ่น) ปัดขึ้นทีละ 5 มม. · สมอยึดลงไปใต้แผ่นตาม [[p_sb488al]] มีแหวนสี่เหลี่ยมและแป้นเกลียวบนแผ่น · รูถูกตัดออกจากแผ่นจริง แผ่นจึงมีพื้นที่ น้ำหนัก และพื้นที่ทาสีสุทธิ เห็นรูใน 3 มิติ รูปด้าน รูปตัด และ IFC · Properties ตั้งขนาด เกรด ระยะเผื่อรู จำนวน ระยะห่าง และมุมของแถว และบอก[[p_sb488ed]]กับ[[p_sb488ok]]ตาม EN 1993-1-8 (ระยะขอบอย่างน้อย 1.2 d₀ ระยะห่างอย่างน้อย 2.2 d₀) กลุ่มที่ไม่ผ่านแสดงสีเตือนบนจอ · กลุ่มย้าย หมุน สะท้อน คัดลอก และวางตามแผ่นของมัน และถูกลบไปพร้อมแผ่น · ตารางรายการหมวดใหม่ BOQ เป็นชุดตามขนาด เกรด และความยาว (ราคาสมมติตามน้ำหนัก) และ IFC เป็น IfcMechanicalFastener
 [[t_sweld]] — แท็บ [[tab_steel]] แผง [[p_sfab488]] ต่อจากหมุดรับแรงเฉือน แบบ Revit (Steel › Fabrication Elements › Welds): คลิกใกล้ขอบของแผ่นเหล็กในแปลนเพื่อเชื่อมขอบนั้น คลิกขอบที่เชื่อมแล้วอีกครั้งเพื่อเอาออก หรือติ๊ก [[o_sw489all]] บนแถบตัวเลือกแล้วคลิกแผ่นเพื่อเชื่อมรอบแผ่น (แทนรอยเชื่อมทีละขอบของแผ่นนั้น) · เลือก [[o_sw489k]] ได้ [[sw489k_f]] [[sw489k_b]] หรือ [[sw489k_p]] และ [[o_sw489a]] · ในคุณสมบัติตั้ง [[p_sw489at]] (ขอบล่าง ขอบบน หรือทั้งสอง) [[p_sw489loc]] ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงด้วย [[p_sw489il]] กับ [[p_sw489ip]] · ขนาดตรวจตาม AISC 360: ขาเชื่อมฉากขั้นต่ำ 3 5 6 หรือ 8 มม. ตามความหนาแผ่น (ตาราง J2.4) และไม่เกินแผ่นลบ 2 มม. (J2.2b) ขนาดที่ไม่ผ่านขึ้นสีเตือนในแปลนและบอกเหตุในคุณสมบัติ · รอยเชื่อมเดินตามแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือวาง และถูกลบไปพร้อมแผ่น ขอบที่ถูกตัดมุมเชื่อมเท่าที่เหลือ · แปลนเป็นเส้นหนามีขีดด้านนอกแผ่น (หน้างานเป็นเส้นประ) 3 มิติ รูปด้าน และรูปตัดเห็นเนื้อเชื่อมรูปสามเหลี่ยมนอกขอบ · มีตารางของหมวด [[cat_sweld]] และ [[a_boq]] นับเป็นเมตรตามชนิด ขนาด และที่เชื่อม (ราคาสมมติ เชื่อมหน้างาน 1.5 เท่า) · IFC ส่งเป็น IfcFastener ชนิด WELD · ยังไม่มีรอยเชื่อมระหว่างชิ้นเหล็กอื่นที่ไม่ใช่แผ่น และไม่ได้คำนวณกำลังรับแรงของรอยเชื่อม
+[[t_scut]] — แท็บ [[tab_steel]] แผง [[p_smod488]] ต่อจากตัดมุม แบบ Revit (Steel › Modifiers › Contour Cut): วาดรูปทับแผ่นเหล็กในแปลนทีละจุด แล้วกด Enter หรือคลิกจุดแรกเพื่อปิดรูป หรือเลือก [[a_rect]] บนแถบตัวเลือกแล้วคลิกสองมุม แผ่นที่อยู่สูงสุดใต้รูปเป็นแผ่นที่ถูกตัด · รูปที่อยู่ในแผ่นเป็นช่อง รูปที่เลยขอบเป็นรอยบาก รูปที่พาดผ่านทั้งแผ่นแบ่งแผ่นเป็นหลายชิ้นแต่ยังนับเป็นแผ่นเดียว รูปที่จะตัดแผ่นออกหมดใช้ไม่ได้ · แผ่นที่ถูกตัดได้พื้นที่ น้ำหนัก และพื้นที่ทาสีตามที่เหลือ เห็นใน 3 มิติ รูปด้าน รูปตัด และแปลน · สลักเกลียวที่อยู่ในรูปที่ตัดหลุดจากแผ่น ส่วนที่ใกล้ขอบรอยตัดเกินไปขึ้นเตือนระยะขอบ · คลิกในช่องที่ตัดหรือที่เส้นประของรูปเพื่อเลือก คุณสมบัติบอกผลการตัด พื้นที่ น้ำหนักที่ตัดออก และความยาวที่ตัด ลบรูปแล้วแผ่นกลับเป็นเหมือนเดิม รูปเดินตามแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือวาง · มีตารางของหมวด [[cat_scut]] และ [[a_boq]] นับงานตัดเป็นเมตรตามความหนาแผ่น (ราคาสมมติ) · IFC ส่งแผ่นตามรูปที่เหลือพร้อมจำนวนรูปที่ตัด · รอยเชื่อมบนขอบที่ถูกตัดออกยังไม่สั้นลงตาม และยังตัดได้เฉพาะแผ่นเหล็ก ยังไม่ตัดคานหรือเสาเหล็ก
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -56288,6 +56453,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.487 · [[t_splate]] และ [[t_ccut487]] แบบ Revit: วาดแผ่นเหล็กในแปลน ตั้งความหนา การวางบนระนาบ เกรด และการเคลือบผิว ได้พื้นที่ น้ำหนัก และพื้นที่ทาสี เห็นใน 3 มิติ รูปด้าน รูปตัด ตารางรายการ BOQ และ IFC (IfcPlate) · ตัดมุมแผ่นเป็นเฉียง โค้งนูน หรือโค้งเว้า
 - V1.488 · [[t_sbolt]] [[t_sanch488]] และ [[t_shole488]] แบบ Revit: วาดกลุ่มสลักเกลียว สมอยึด หรือรูเจาะบนแผ่นเหล็กด้วยสองมุม รูถูกตัดออกจากแผ่นจริง น้ำหนักแผ่นเป็นค่าสุทธิ ตรวจระยะขอบและระยะห่างตาม EN 1993-1-8 กลุ่มเดินตามแผ่นเมื่อย้าย หมุน สะท้อน หรือคัดลอก มีในตารางรายการ BOQ และ IFC · เครื่องมือเหล็กทั้งหมดย้ายมาอยู่แท็บใหม่ [[tab_steel]] ถัดจาก [[tab_struct]] เหมือน Revit
 - V1.489 · [[t_sweld]] แบบ Revit: เชื่อมขอบของแผ่นเหล็กทีละขอบหรือรอบแผ่น แบบเชื่อมฉาก เชื่อมชนเต็มความหนา หรือเชื่อมชนบางส่วน ขอบล่าง ขอบบน หรือทั้งสอง ในโรงงานหรือหน้างาน และเชื่อมเป็นช่วงได้ ตรวจขนาดตาม AISC 360 เห็นในแปลนและ 3 มิติ เดินตามแผ่น มีในตาราง BOQ (เมตร) และ IFC
+- V1.490 · [[t_scut]] แบบ Revit: วาดรูปทับแผ่นเหล็กเพื่อตัดเป็นช่อง บากขอบ หรือแบ่งแผ่น ได้พื้นที่และน้ำหนักตามที่เหลือ เห็นใน 3 มิติและแปลน สลักเกลียวในรูปหลุดจากแผ่น รูปเดินตามแผ่น มีในตาราง BOQ (เมตรที่ตัด) และ IFC
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -56520,6 +56686,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 [[t_ccut487]] — on the [[tab_steel]] tab, [[p_smod488]] panel, as in Revit (Steel › Modifiers › Corner Cut): click near a corner of a plate in a plan and the corner is cut as the options bar says: [[cc487k_s]] a straight chamfer, [[cc487k_x]] a round touching both edges, or [[cc487k_v]] a hollow round the corner · the distance is at most half the shorter edge beside it · a corner that turns inward cannot be cut · click a corner cut the same way again to take the cut off, or press [[a_cc487clr]] in Properties · the area, the weight and the paint area count the plate after its cuts
 [[t_sbolt]] · [[t_sanch488]] · [[t_shole488]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, after Plate, as in Revit (Steel › Fabrication Elements › Bolts, Anchors, Holes): click a first corner on a plate in a plan, then the opposite corner, for a pattern of bolts, anchors or holes in rows as [[o_sb488nx]] and [[o_sb488ny]] in the options bar say (the same point twice: a pattern round it, three diameters apart); the rows run along the plate's long edge · a bolt has its head, washers and nut, its length from the [[p_sb488gl]] (twice its plate unless set) rounded up to 5 mm · an anchor reaches the [[p_sb488al]] below the plate, with a square washer and a nut on it · their holes are cut out of the plate, so its area, weight and paint area are net and 3D views, elevations, sections and IFC show the holes · Properties set the size, grade, hole tolerance, counts, spacing and rotation, and give the [[p_sb488ed]] and the [[p_sb488ok]] against EN 1993-1-8 (edge at least 1.2 d₀, spacing at least 2.2 d₀); a pattern that fails is drawn in the warning colour on screen · a pattern moves, turns, mirrors, copies and pastes with its plate and is deleted with it · a new schedule category, the BOQ in sets by size, grade and length (prices assumed by weight), and IFC IfcMechanicalFastener
 [[t_sweld]] — on the [[tab_steel]] tab, [[p_sfab488]] panel, after Shear Studs, as in Revit (Steel › Fabrication Elements › Welds): click near an edge of a plate in a plan to weld that edge, and click a welded edge again to take its weld off; or tick [[o_sw489all]] on the options bar and click a plate to weld it all round (in place of its edge welds). Choose the [[o_sw489k]], [[sw489k_f]], [[sw489k_b]] or [[sw489k_p]], and the [[o_sw489a]]. Properties set [[p_sw489at]] (the bottom of the edges, the top, or both), the [[p_sw489loc]] (shop or site) and an intermittent weld by its [[p_sw489il]] and [[p_sw489ip]]. The size is checked against AISC 360: a fillet at least 3, 5, 6 or 8 mm by the plate thickness (Table J2.4) and at most the plate less 2 mm (J2.2b); a weld out of range is drawn in the warning colour in plans and Properties say why. A weld follows its plate when it is moved, turned, mirrored, copied or pasted and goes when it is deleted; an edge with corner cuts is welded along what is left of it. Plans draw a heavy line with ticks outside the plate (dashed for a site weld); 3D views, elevations and sections show the weld metal as a triangle outside the edge. There is a schedule of the category [[cat_sweld]], and [[a_boq]] counts metres by type, size and where it is made (assumed prices, site welds 1.5 times). IFC writes them as IfcFastener of type WELD. Limits: welds on plates only, not between other steel members; the strength of a weld is not checked
+[[t_scut]] — on the [[tab_steel]] tab, [[p_smod488]] panel, after Corner Cut, as in Revit (Steel › Modifiers › Contour Cut): sketch a shape over a steel plate in a plan, point by point, closing it with Enter or a click on its first point, or choose [[a_rect]] on the options bar and click two corners; the highest plate under the shape is the one cut. A shape inside the plate makes an opening, one past its edge a notch, one right across it leaves pieces that still count as one plate; a shape that would cut the whole plate away is refused. The plate's area, weight and paint area are what is left, and 3D views, elevations, sections and plans show it. Bolts in a cut are out of the plate, and those too near the edge of a cut are flagged for their edge distance. Click inside a cut or on its dashed outline to select it: Properties give the result, the area and weight taken out and the length cut; delete it and the plate is whole again. A cut follows its plate when it is moved, turned, mirrored, copied or pasted. There is a schedule of the category [[cat_scut]], and [[a_boq]] counts the cutting in metres by plate thickness (assumed prices). IFC writes the plate as it is left, with its number of cuts. Limits: a weld on an edge that is cut away is not shortened, and only plates are cut, not steel beams or columns
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -56942,6 +57109,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.487 · [[t_splate]] and [[t_ccut487]] (as in Revit): plates sketched in a plan with their thickness, justification, grade and coating, giving their area, weight and paint area, shown in 3D, elevations, sections, schedules, the BOQ and IFC (IfcPlate) · plate corners cut straight, convex or concave
 - V1.488 · [[t_sbolt]], [[t_sanch488]] and [[t_shole488]] (as in Revit): patterns of bolts, anchors or holes drawn by two corners on a plate, their holes cut out of it (net plate weight), edge distance and spacing checked against EN 1993-1-8, the pattern following its plate when moved, turned, mirrored or copied, in schedules, the BOQ and IFC; the steel fabrication tools now sit on a new [[tab_steel]] tab after [[tab_struct]], as in Revit
 - V1.489 · [[t_sweld]] (as in Revit): welds along the edges of a plate, one edge at a time or all round, fillet, complete or partial penetration butt, along the bottom, the top or both, shop or site, continuous or intermittent, the size checked against AISC 360, shown in plans and 3D, following the plate, in schedules, the BOQ (metres) and IFC
+- V1.490 · [[t_scut]] (as in Revit): shapes sketched over a plate cut an opening, a notch or the plate in pieces, the plate's area and weight are what is left, shown in 3D and plans, bolts in a cut are out of the plate, the cut follows its plate, in schedules, the BOQ (metres cut) and IFC
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -59844,6 +60012,54 @@ window.PenumBIM.r489={
   exp2:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
     try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='sweld').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length;o.layer=d.includes('S-STEL-WELD')}catch(e){o.dxf='ERR '+e}
     try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='sweld').length}catch(e){o.json='ERR '+e}return o},
+  str:(k,...a)=>t(k,...a)};
+/* V1.490 test API: contour cuts on plates */
+window.PenumBIM.r490={
+  plate:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'splate'},JSON.parse(JSON.stringify(o)));P.els.push(e);id=e.id});return id},
+  bolt:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'sbolt',rot:0},JSON.parse(JSON.stringify(o)));const h=IDX.get(e.host);if(h&&e.level==null)e.level=h.level;P.els.push(e);id=e.id});return id},
+  mk:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'scut'},JSON.parse(JSON.stringify(o)));const h=IDX.get(e.host)||P.els.find(x=>x.id===e.host);if(h&&e.level==null)e.level=h.level;P.els.push(e);id=e.id});return id},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  put:(id,o)=>{edit(()=>{const e=IDX.get(id);Object.assign(e,JSON.parse(JSON.stringify(o)));for(const k in o)if(o[k]==null)delete e[k]})},
+  prop:(id,k,v)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,k,v)})},
+  geo:id=>{const G=sc490Geo(P,IDX.get(id)),r=x=>Math.round(x*1e4)/1e4;return G?{k:G.k,cut:r(G.cut),cutKg:r(G.cutKg),ln:r(G.ln),th:G.th,all:G.all,host:G.h.id,z:G.z}:null},
+  pgeo:id=>{const G=sp487Geo(P,IDX.get(id)),r=x=>Math.round(x*1e4)/1e4;return G?{area:r(G.area),gross:r(G.gross!=null?G.gross:G.area),kg:r(G.kg),paint:r(G.paint),per:r(G.per),holes:G.holes||0,cuts:G.cuts||0,cutA:r(G.cutA||0),pieces:G.pieces||1,
+    loops:(G.loops||[G.O]).map(L=>[L.length,Math.round(area2(L))]),O:G.O.length,tri:G.t.length/9}:null},
+  diff:(O,K)=>sc490Diff(O,K).map(L=>L.map(p=>p.map(x=>Math.round(x*100)/100))),
+  closed:id=>{MSC=null;const R=buildMeshes(P,FPm(),FITm()),m=(Array.isArray(R)?R:R.items).find(x=>x.id===id&&x.cat==='splate');if(!m)return null;let top=0,bot=0,y1=-Infinity,y0=Infinity;
+    for(let i=1;i<m.t.length;i+=3){y1=Math.max(y1,m.t[i]);y0=Math.min(y0,m.t[i])}
+    for(let i=0;i<m.t.length;i+=9){const q=m.t.slice(i,i+9);if(q[1]!==q[4]||q[4]!==q[7])continue;const ar=Math.abs((q[3]-q[0])*(q[8]-q[2])-(q[6]-q[0])*(q[5]-q[2]))/2,
+      n=(q[5]-q[2])*(q[6]-q[0])-(q[3]-q[0])*(q[8]-q[2]);if(q[1]===y1&&n>0)top+=ar;else if(q[1]===y0&&n<0)bot+=ar}
+    let vol=0;for(let i=0;i<m.t.length;i+=9){const q=m.t.slice(i,i+9);vol+=(q[0]*(q[4]*q[8]-q[5]*q[7])-q[1]*(q[3]*q[8]-q[5]*q[6])+q[2]*(q[3]*q[7]-q[4]*q[6]))/6}          // a closed solid facing out: its volume
+    return{tri:m.t.length/9,top:Math.round(top),bot:Math.round(bot),vol:Math.round(Math.abs(vol))}},
+  bgeo:id=>{const G=sb488Geo(P,IDX.get(id));return G?{ins:G.ins,out:G.out,okE:G.okE,ok:G.ok,ed:isFinite(G.ed)?Math.round(G.ed*100)/100:null}:null},
+  zr:id=>zRange(P,IDX.get(id)),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  drawn:()=>JSON.parse(JSON.stringify(SC490D)),clear:()=>{SC490D.plan=null},
+  hit:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),r=hitPlan(v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});return r?r.id:null},
+  box:(vid,id)=>elBox(viewById(vid),IDX.get(id)),
+  mesh:id=>{MSC=null;const R=buildMeshes(P,FPm(),FITm()),it=(Array.isArray(R)?R:R.items).filter(m=>m.id===id);return it.map(m=>({cat:m.cat,tri:m.t.length/9}))},
+  mv:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy))},
+  rt:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg))},
+  mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by))},
+  copy:(ids,dx,dy)=>{let out;edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});return out},
+  paste:(ids,dx,dy,lv)=>{let out;const objs=[...expandSel(ids)].map(id=>JSON.parse(JSON.stringify(IDX.get(id))));edit(()=>{out=pasteObjs(objs,dx,dy,lv||0,activeView())});return out},
+  del:ids=>{edit(()=>deleteIds(ids))},
+  exp:ids=>[...expandSel(ids)],
+  sf:k=>sfAll(P,k||'scut',t).map(f=>f.k),
+  sv:(id,k,cat)=>{const F=sfAll(P,cat||'scut',t).find(f=>f.k===k),X=sfCtx(P,t,null);return F?F.g(IDX.get(id),X):undefined},
+  cats:()=>({sf:SF_CATS.includes('scut'),flt:FLT_CATS.includes('scut'),vg:VG_CATS.indexOf('scut')-VG_CATS.indexOf('sweld'),geom:GEOM.scut,disc:DISC.scut,dxf:DXF_LAYER.scut,tool:CREATE_TOOLS.has('scut')&&!!XT.scut,def:SF_DEF.scut.slice()}),
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>r.tcat==='scut'||r.tcat==='splate').map(r=>({t:r.tcat,item:r.item,qty:r.qty,unit:r.unit,cost:r.cost,amount:r.amount,pk:r.pk})),
+  ifc:()=>{const s=ifcText().text;return{plate:(s.match(/IFCPLATE\(/g)||[]).length,cuts:s.includes("'ContourCuts'"),scut:/IFCBUILDINGELEMENTPROXY\([^;]*Contour/i.test(s)}},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='scut').map(e=>JSON.parse(JSON.stringify(e)))},
+  ribbon:()=>{const s=RIBBON.find(x=>x.id==='steel');return s?s.panels.map(p=>[p.t,p.b.slice()]):null},
+  ok:k=>{const r={};for(const vk of ['plan','3d','elev','section','sheet'])r[vk]=!!XT[k].ok(P.views.find(x=>x.kind===vk));return r},
+  sk:(vid,pts)=>sc490Put(viewById(vid),pts),
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(x=>{const l=x.querySelector('label'),i=x.querySelector('select,input'),r=x.querySelector('.ro');return[l?l.textContent:'',i?(i.type==='checkbox'?i.checked:i.value):r?r.textContent:'',i&&i.tagName==='SELECT'?[...i.options].map(o=>o.value):null]}),
+  note:()=>[...document.querySelectorAll('#props .pnote')].map(n=>[n.className,n.textContent]),
+  hint:k=>XT[k].hint(activeView()),
+  exp2:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
+    try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='scut').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length}catch(e){o.dxf='ERR '+e}
+    try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='scut').length}catch(e){o.json='ERR '+e}return o},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
