@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=495,V1_NAME='V1.485';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=496,V1_NAME='V1.486';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -53265,6 +53265,104 @@ Object.assign(STR,{
   al485_same:['จุดเดียวกับจุดแรก เลือกจุดอื่น','The same node as the first: pick another'],
   al485_made:['สร้างลิงก์วิเคราะห์ ยาว {0}','Analytical link made, {0} long'],
   al485_note:['ลิงก์วิเคราะห์ {0} เชื่อมจุดต่อแบบแข็ง ไม่อยู่ในตารางนี้ (ไม่ตรวจหน้าตัด)','Analytical links {0} tie their nodes rigidly and are not in this table (no section check)']});
+/* ===== 486 Member Forces (V1.486; Revit: the Releases / Member Forces of an analytical member, its Member Forces at the start and at the end: Fx Fy Fz
+   Mx My Mz, the forces a connection at that end is designed for).
+   e.mf486 = [start, end] (a column: [base, top]) on steel beams, braces and columns and on analytical members (not links), each null or six numbers:
+   Fx Fy Fz in kN and Mx My Mz in kN·m, in the member's own axes as Steel Design takes them (x along it from its start, Fx a pull; y its weak axis, z its
+   depth: Fz the shear and My the bending of a beam).  e.mf486sa = [start, end] the combination a value was taken from, when Steel Design gave it.
+   Entered in the Edit Member Forces dialog (Properties, Releases / Member Forces), or taken from Steel Design at once for every selected member: the end
+   forces of the combination that governs the end (a beam: the largest shear; a brace or a column: the largest axial force).  Schedules of beams and columns
+   have the twelve values as fields; Split keeps each end's forces at its own end; a member drawn the other way round than the one Steel Design analysed
+   for it has its ends swapped.  Steel connections (V1.200) show the forces at the end they are on. ===== */
+const MF486_U=['kN','kN','kN','kN·m','kN·m','kN·m'];
+const mf486Six=a=>Array.isArray(a)&&a.length===6&&a.every(x=>typeof x==='number'&&isFinite(x))?a.map(x=>Math.round(x*100)/100):null;
+const mf486Ok=e=>!!e&&(e.cat==='beam'||e.cat==='column'||e.cat==='amem')&&!al485K(e)&&!e.gx;
+function mf486Of(e){if(!mf486Ok(e)||!Array.isArray(e.mf486))return[null,null];return[0,1].map(i=>{const v=mf486Six(e.mf486[i]);return v&&v.some(x=>x)?v:null})}
+const mf486Has=e=>{const a=mf486Of(e);return!!(a[0]||a[1])};
+function mf486Put(e,a,src){if(!a[0]&&!a[1]){delete e.mf486;delete e.mf486sa;return}e.mf486=[a[0]||null,a[1]||null];
+  if(src&&(src[0]||src[1]))e.mf486sa=[a[0]&&src[0]||null,a[1]&&src[1]||null];else delete e.mf486sa;if(e.mf486sa&&!e.mf486sa[0]&&!e.mf486sa[1])delete e.mf486sa}
+/* in words: the values that are not zero */
+function mf486Txt(v,tr,sep){tr=tr||t;if(!v)return tr('mf486_none');const s=v.map((x,i)=>x?RL469_DN[i]+' '+saN(x,2)+' '+MF486_U[i]:null).filter(Boolean);return s.length?s.join(sep||' · '):tr('mf486_none')}
+/* a Properties row of several lines: one value a line */
+const mf486Ro=(l,v)=>`<div class="pr"><label>${t(l)}</label><div><span class="ro" style="white-space:pre-line;text-overflow:clip;line-height:1.35">${esc(v)}</span></div></div>`;
+const mf486End=(e,en)=>'p_mf486'+rl469End(e.cat==='column',en);
+/* ---- from Steel Design: the end forces of a member, the combination that governs each end ---- */
+/* the analysed member that stands for an element: its own, the analytical member standing for a beam or column, the beam or column an analytical member is drawn on */
+function mf486SaMem(o,e){const B=o.B.mem;let i=B.findIndex(m=>m.id===e.id);
+  if(i<0&&(e.cat==='beam'||e.cat==='column')){const v=am471Rep(P).get(e.id),id=v&&typeof v==='object'?v.id:v;if(id!=null)i=B.findIndex(m=>m.id===id)}
+  return i}
+/* the internal forces at an end (en 0 the start, 1 the end) of member i in a combination c: [N pull +, Vy, Vz, T, My, Mz] in kN and kN·m */
+function mf486At(o,c,i,en){let k0=-1,best=en?-Infinity:Infinity;o.R.els.forEach((el,k)=>{if(el.m!==i)return;const s=en?el.s2:el.s1;if(en?s>best:s<best){best=s;k0=k}});if(k0<0)return null;
+  const el=o.R.els[k0],F=c.C.ef[k0].f,q=c.C.ef[k0].q,a=saAtElSA(F,q,en?el.L:0);return[-a.N/1000,a.Vy/1000,a.Vz/1000,a.T/1e6,a.My/1e6,a.Mz/1e6]}
+/* the forces of each end of element e: {v: [start, end], src: [combination names], m: the analysed member} or null when Steel Design does not analyse it */
+function mf486Sa(e){const o=saRunSA(P);if(!o||!o.R||!o.CB||!o.CB.length)return null;const i=mf486SaMem(o,e);if(i<0)return null;const m=o.B.mem[i];
+  /* the ends as the element has them: an analytical member drawn the other way round than its beam, or the other way */
+  let sw=false;if(m.id!==e.id){const S=e.cat==='column'?[e.x,e.y]:[e.x1,e.y1],d=p=>Math.hypot(p[0]-S[0],p[1]-S[1]);sw=e.cat==='column'?m.a[2]>m.b[2]:d(m.b)+1<d(m.a)}
+  const sc=m.kind==='beam'?v=>Math.hypot(v[1],v[2]):v=>Math.abs(v[0]),out=[null,null],src=[null,null];
+  for(const en of [0,1]){let bv=null,bs=-1,bn=null;for(const c of o.CB){const v=mf486At(o,c,i,en);if(!v)continue;const s=sc(v);if(s>bs+1e-9){bs=s;bv=v;bn=c.b.name}}
+    if(bv){const f=sw?[1,-1,-1,-1,1,1]:[1,1,1,1,1,1];out[sw?1-en:en]=mf486Six(bv.map((x,j)=>x*f[j]+0));src[sw?1-en:en]=bn}}
+  return{v:out.map(v=>v&&v.some(x=>x)?v:null),src,m}}
+/* take them for elements (ids): how many were set */
+function mf486FromSa(ids){const L=ids.map(id=>IDX.get(id)).filter(mf486Ok);let n=0,skip=0;SA_C=null;const R=L.map(e=>[e,mf486Sa(e)]);
+  edit(()=>{for(const [e,r] of R){if(!r){skip++;continue}const x=IDX.get(e.id)||e;mf486Put(x,r.v,r.src);n++}});
+  toast(n?t('mf486_took',n)+(skip?' · '+t('mf486_skip',skip):''):t('mf486_nosa'),5000);return n}
+XA.mf486sa=()=>{mf486FromSa([...ui.sel]);refresh()};
+XA.mf486clr=()=>{const L=[...ui.sel].map(id=>IDX.get(id)).filter(e=>mf486Ok(e)&&mf486Has(e));if(!L.length)return;edit(()=>{for(const e of L){const x=IDX.get(e.id)||e;delete x.mf486;delete x.mf486sa}});refresh()};
+/* ---- Properties: under Releases / Member Forces ---- */
+function mf486Rows(els){if(!els.length||!els.every(mf486Ok))return'';const col=els[0].cat==='column'&&els.every(e=>e.cat==='column');let h='';
+  for(const en of [0,1]){const V=els.map(e=>mf486Of(e)[en]),s=JSON.stringify(V[0]),same=V.every(v=>JSON.stringify(v)===s);
+    h+=mf486Ro('p_mf486'+rl469End(col,en),same?mf486Txt(V[0],null,'\n'):t('varies'))}
+  const any=els.some(mf486Has);
+  return h+`<div class="pa">${els.length===1?`<button class="btn" data-act="mf486ed">${t('a_mf486ed')}…</button>`:''}<button class="btn" data-act="mf486sa">${t('a_mf486sa')}</button>${any?`<button class="btn" data-act="mf486clr">${t('a_mf486clr')}</button>`:''}</div>`}
+{const f0=rl469Rows;rl469Rows=els=>{const h=f0(els);return h&&els.every(mf486Ok)?h+mf486Rows(els):h}}
+/* the Edit Member Forces dialog of one member */
+function dlgMf486(id){const e=IDX.get(id!=null?+id:[...ui.sel][0]);if(!mf486Ok(e))return;const col=e.cat==='column',A=mf486Of(e),src=Array.isArray(e.mf486sa)?e.mf486sa.slice():[null,null];
+  const cell=(en,i)=>`<td><input type="number" step="0.01" id="mf486_${en}${i}" data-mf486="${en}${i}" value="${A[en]?A[en][i]:0}" style="width:86px;text-align:right"></td>`;
+  const row=en=>`<tr><th style="text-align:left">${t('mf486f'+rl469End(col,en))}</th>${[0,1,2,3,4,5].map(i=>cell(en,i)).join('')}</tr>`;
+  const srcTxt=()=>src[0]||src[1]?t('mf486_from',[src[0]?t('mf486f'+rl469End(col,0))+' '+src[0]:'',src[1]?t('mf486f'+rl469End(col,1))+' '+src[1]:''].filter(Boolean).join(' · ')):'';
+  const body=`<style>#dlg.mf486{width:min(860px,calc(100% - 32px))}#mf486tb th,#mf486tb td{white-space:nowrap}</style><p class="note">${t('mf486_dnote')}</p><table class="tbl" id="mf486tb"><thead><tr><th></th>${RL469_DN.map((d,i)=>`<th>${d} (${MF486_U[i]})</th>`).join('')}</tr></thead><tbody>${row(0)}${row(1)}</tbody></table>
+    <p class="note" id="mf486src">${esc(srcTxt())}</p>`;
+  const foot=`<button class="btn" data-mf486b="sa">${t('a_mf486sa')}</button><button class="btn" data-mf486b="clr">${t('a_mf486clr')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('cancel')}</button><button class="btn primary" data-mf486b="ok">${t('ok')}</button>`;
+  const rd=()=>[0,1].map(en=>[0,1,2,3,4,5].map(i=>{const x=parseFloat(($('#mf486_'+en+i)||{}).value);return isFinite(x)?x:0}));
+  const put=a=>{for(const en of [0,1])for(let i=0;i<6;i++){const el=$('#mf486_'+en+i);if(el)el.value=a[en]?a[en][i]:0}};
+  let base=null;
+  openDlg(t('mf486_t')+' · '+t('cat_'+e.cat)+' (ID '+e.id+')',body,foot,{
+    click(ev){const b=ev.target.closest('[data-mf486b]');if(!b)return;const k=b.dataset.mf486b;
+      if(k==='sa'){SA_C=null;const r=mf486Sa(IDX.get(e.id));if(!r){toast(t('mf486_nosa'),5000);return}put(r.v);src[0]=r.src[0];src[1]=r.src[1];$('#mf486src').textContent=srcTxt();base=rd()}
+      else if(k==='clr'){put([null,null]);src[0]=src[1]=null;$('#mf486src').textContent=''}
+      else if(k==='ok'){const now=rd(),v=now.map(a=>mf486Six(a)),x=IDX.get(e.id);if(!x){closeDlg();return}
+        /* an end typed over is no longer what Steel Design gave */
+        const s2=[0,1].map(en=>JSON.stringify(now[en])===JSON.stringify(base[en])?src[en]:null);edit(()=>mf486Put(x,v.map(a=>a&&a.some(z=>z)?a:null),s2));closeDlg();refresh()}},
+    change(){}},'mf486');
+  base=rd()}
+XA.mf486ed=()=>dlgMf486();
+/* tidy: six numbers an end, not on what cannot carry them, nothing when all are zero */
+XC.push(()=>{for(const e of P.els){if(e.mf486===undefined&&e.mf486sa===undefined)continue;if(!mf486Ok(e)){delete e.mf486;delete e.mf486sa;continue}
+  const a=mf486Of(e),s=Array.isArray(e.mf486sa)?e.mf486sa.map(x=>typeof x==='string'&&x?x.slice(0,80):null):null;mf486Put(e,a,s)}});
+/* Split: the part that keeps an end keeps its forces */
+{const f0=splitLine;splitLine=(e,w,gap)=>{const n0=P.seq,a=e&&e.cat==='beam'?mf486Of(e):null,s=e&&Array.isArray(e.mf486sa)?e.mf486sa.slice():[null,null],r=f0(e,w,gap);
+  if(!a||(!a[0]&&!a[1])||P.seq===n0)return r;const c=P.els.find(x=>x.id===n0);mf486Put(e,[a[0],null],[s[0],null]);if(c&&c.cat==='beam')mf486Put(c,[null,a[1]],[null,s[1]]);return r}}
+{const f0=spcDo255;spcDo255=(e,zs)=>{const a=e&&e.cat==='column'?mf486Of(e):null,s=e&&Array.isArray(e.mf486sa)?e.mf486sa.slice():[null,null],c=f0(e,zs);
+  if(!c||!a||(!a[0]&&!a[1]))return c;mf486Put(e,[a[0],null],[s[0],null]);mf486Put(c,[null,a[1]],[null,s[1]]);return c}}
+/* Schedules of beams and columns: the twelve values */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam'&&cat!=='column')return F;const col=cat==='column';
+  for(const en of [0,1])for(let i=0;i<6;i++)F.push({k:'mf486'+(en?'e':'s')+i,l:tr('mf486f'+rl469End(col,en))+' '+RL469_DN[i]+' ('+MF486_U[i]+')',g:e=>{const v=mf486Of(e)[en];return v?v[i]:''},grp:'q',num:1,dec:2});
+  return F}}
+/* a steel connection: the forces of its member at the end it is on */
+function mf486Conn(e){if(!e||e.cat!=='sconn')return null;const h=IDX.get(e.host);if(!mf486Ok(h))return null;const k=stcK(e),en=k===2?0:k;return{h,en,v:mf486Of(h)[en]}}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(isNew||cat!=='sconn'||els.length!==1)return h;const c=mf486Conn(els[0]);if(!c)return h;
+  return h+PR.grp('g_mf486c')+mf486Ro(mf486End(c.h,c.en),mf486Txt(c.v,null,'\n'))}}
+Object.assign(STR,{
+  p_mf486s:['แรงที่ปลายต้น','Forces at Start'],p_mf486e:['แรงที่ปลายท้าย','Forces at End'],p_mf486b:['แรงที่โคนเสา','Forces at Base'],p_mf486t:['แรงที่ยอดเสา','Forces at Top'],
+  mf486fs:['ต้น','Start'],mf486fe:['ปลาย','End'],mf486fb:['โคน','Base'],mf486ft:['ยอด','Top'],mf486_none:['ไม่มี','None'],
+  a_mf486ed:['แก้ไขแรงปลายชิ้นส่วน','Edit Member Forces'],a_mf486sa:['ดึงจากการคำนวณเหล็ก','From Steel Design'],a_mf486clr:['ล้างแรงปลายชิ้นส่วน','Clear Member Forces'],
+  mf486_t:['แรงปลายชิ้นส่วน (Member Forces)','Member Forces'],g_mf486c:['แรงปลายชิ้นส่วนที่จุดต่อนี้ (Member Forces)','Member Forces at this connection'],
+  mf486_dnote:['แรงที่ปลายชิ้นส่วนสำหรับออกแบบจุดต่อ ตามแกนของชิ้นส่วนเอง: x ตามแนวชิ้นส่วนจากปลายต้น (Fx บวกคือแรงดึง) y แกนอ่อน z ตามความลึก (คานมี Fz เป็นแรงเฉือนและ My เป็นโมเมนต์ดัด) หน่วย kN และ kN·m',
+    'The forces at the member\'s ends that its connections are designed for, in its own axes: x along it from its start (a positive Fx pulls), y its weak axis, z its depth (a beam\'s shear is Fz and its bending My); kN and kN·m.'],
+  mf486_from:['จากการคำนวณเหล็ก: {0}','From Steel Design: {0}'],
+  mf486_took:['ดึงแรงปลายชิ้นส่วนจากการคำนวณเหล็กแล้ว {0} ชิ้น','Member Forces taken from Steel Design for {0} members'],
+  mf486_skip:['{0} ชิ้นไม่อยู่ในการคำนวณเหล็ก','{0} not in Steel Design'],
+  mf486_nosa:['การคำนวณเหล็กไม่ได้วิเคราะห์ชิ้นนี้ (ต้องเป็นชิ้นส่วนเหล็กในโครงที่มีจุดรองรับ)','Steel Design does not analyse this member (it takes steel members of a frame with supports)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -55170,6 +55268,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 จุดรองรับและน้ำหนักที่มุมและขอบพื้น — แบบ Revit: ใน [[t_bcond]] เลือก [[bc_p]] แล้วคลิกมุมของพื้นหรือแผ่นพื้นวิเคราะห์ ได้จุดรองรับที่จุดต่อของแผ่นวิเคราะห์ (ระดับตามระนาบวิเคราะห์ของพื้น) · [[bc_l]] คลิกขอบพื้นที่ไม่มีคานหรือผนังอยู่ ได้จุดรองรับตามขอบนั้น · ใน [[t_sload]] [[ld_ph]] วางที่มุมพื้น และ [[ld_lh]] วางตามขอบพื้นได้เช่นกัน · ถ้ามีเสา ปลายคาน หรือปลายผนังอยู่ตรงมุมเดียวกัน โปรแกรมเลือกเสาหรือคานก่อน · Properties บอกว่าเป็นมุมหรือขอบที่เท่าไร · [[a_anlck]] เตือนแผ่นพื้นที่มีแค่จุดรองรับแบบจุดน้อยกว่าสามจุดหรือเรียงแนวเดียวกันและไม่มีอะไรอื่นรับ
 น้ำหนักแบบพื้นที่ที่ไม่เท่ากันทั้งแผ่น — แบบ Revit: เลือกน้ำหนักแบบพื้นที่ (บนพื้น แผ่นพื้น ผนังโครงสร้าง แผ่นตั้ง หรือที่วาดเอง) แล้วเอาติ๊ก [[p_lduni]] ออกใน Properties จะมีค่า Fx Fy Fz ที่จุดอ้างอิง 2 และ 3 เพิ่มจากค่าที่จุด 1 และเลือกได้ว่าแต่ละจุดอยู่มุมไหน (บนผนังจุด 1 คือฐานต้นแนว จุด 2 ฐานปลายแนว จุด 3 หัวต้นแนว จึงใส่ Fz 3 เป็น 0 ได้แรงดันดินหรือน้ำที่เพิ่มตามความลึก) ระหว่างจุดน้ำหนักเปลี่ยนเป็นเส้นตรง แรงรวม ตารางน้ำหนักลงเสา และการวิเคราะห์โครงเหล็กใช้ค่าตามตำแหน่ง แปลนบอกสามค่าและเลขจุด 3 มิติลูกศรยาวตามค่า
 [[t_alink]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]) แบบ Revit: ลิงก์วิเคราะห์ (Analytical Link) เชื่อมจุดต่อสองจุดของแบบจำลองวิเคราะห์แบบแข็ง เช่นปลายคานที่เยื้องจากแกนเสา คลิกสองครั้งในแปลน รูปด้าน รูปตัด หรือ 3 มิติ แต่ละครั้งที่ปลายชิ้นส่วน มุมแผ่น หรือบนเส้นชิ้นส่วน (สี่เหลี่ยมคือจุดต่อ วงกลมคือบนเส้น) ลิงก์ยึดแน่นทั้งสองปลายเมื่อวาด ปรับได้ที่ [[g_rl469]] ใน Properties ซึ่งบอกด้วยว่าแต่ละปลายต่อกับอะไร การคำนวณเหล็กคิดลิงก์เป็นชิ้นที่แข็งมาก ไม่มีน้ำหนักตัว ไม่รับน้ำหนักหรือจุดรองรับเอง ไม่ตรวจหน้าตัด ไม่อยู่ในตารางชิ้นส่วน รายการคำนวณ และผลวิเคราะห์ (บอกชื่อ K1 K2 ใต้ตาราง) วาดเป็นเส้นประสีเขียวน้ำทะเล
+[[mf486_t]] — แผงคุณสมบัติของคาน ค้ำยัน เสาเหล็ก และชิ้นส่วนวิเคราะห์ กลุ่ม [[g_rl469]] แบบ Revit: บอกแรงที่ปลายต้นและปลายท้าย (เสาเป็นโคนและยอด) Fx Fy Fz (kN) Mx My Mz (kN·m) ตามแกนของชิ้นส่วนเอง สำหรับออกแบบจุดต่อ · ปุ่ม [[a_mf486ed]] เปิดตารางใส่ค่าเอง · ปุ่ม [[a_mf486sa]] ดึงแรงจากผลการคำนวณเหล็กให้ทุกชิ้นที่เลือกในครั้งเดียว ใช้ชุดค่าผสมที่หนักที่สุดของแต่ละปลาย (คานดูแรงเฉือน ค้ำยันและเสาดูแรงตามแนวแกน) และจำชื่อชุดค่าผสมไว้ · ตารางรายการคานและเสาเพิ่มช่องได้ 12 ช่อง · ตัดชิ้นส่วน (Split) แล้วแต่ละส่วนเก็บแรงของปลายเดิมของตัวเอง · จุดต่อเหล็กแสดงแรงที่ปลายที่มันอยู่
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -55588,6 +55687,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.483 · [[t_bcond]] และ [[t_sload]] ที่มุมและขอบของพื้นแบบ Revit: จุดรองรับแบบจุดที่มุมพื้นและมุมแผ่นพื้นวิเคราะห์ แบบเส้นตามขอบพื้น น้ำหนักแบบจุดที่มุมพื้นและแบบเส้นตามขอบพื้น และ [[a_anlck]] ตรวจแผ่นที่ยึดด้วยจุดน้อยกว่าสามจุด
 - V1.484 · น้ำหนักแบบพื้นที่ไม่สม่ำเสมอแบบ Revit: เอาติ๊ก [[p_lduni]] ออกแล้วใส่ค่าที่จุดอ้างอิง 3 จุด เช่นแรงดันดินที่เพิ่มตามความลึกบนผนัง ใช้ค่าตามตำแหน่งในแรงรวม ตารางน้ำหนักลงเสา และการวิเคราะห์โครงเหล็ก
 - V1.485 · [[t_alink]] แบบ Revit: เชื่อมจุดต่อสองจุดของแบบจำลองวิเคราะห์แบบแข็ง วาดในแปลน รูปด้าน รูปตัด หรือ 3 มิติ การคำนวณเหล็กใช้ทันที ตั้งการยึดที่ปลายได้
+- V1.486 · [[mf486_t]] แบบ Revit: ใส่แรงที่ปลายคาน ค้ำยัน เสา และชิ้นส่วนวิเคราะห์ได้ (Fx Fy Fz Mx My Mz) หรือดึงจากผลการคำนวณเหล็กทีเดียวทุกชิ้นที่เลือก ใช้ชุดค่าผสมที่หนักที่สุดของแต่ละปลาย เพิ่มในตารางรายการได้ และจุดต่อเหล็กแสดงแรงที่ปลายของมัน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -55815,6 +55915,7 @@ Dimensions and spot elevations that hold on in elevations and sections — [[t_d
 Supports and loads at a floor's corners and edges — as in Revit: in [[t_bcond]] pick [[bc_p]] and click a corner of a floor or an analytical floor panel for a support at that node of its analytical panel (at the floor's analytical plane) · [[bc_l]] on a floor edge with no beam or wall on it gives a support along that edge · in [[t_sload]], [[ld_ph]] takes a floor's corner and [[ld_lh]] its edge too · where a column or a beam or wall end is at the same corner, it is taken first · Properties tell which corner or edge · [[a_anlck]] flags a floor panel held only by point supports at fewer than three corners, or on one line, with nothing else under it
 Area loads that vary across the area — as in Revit: select an area load (on a floor, a floor panel, a structural wall, an upright panel or sketched) and clear [[p_lduni]] in Properties for Fx, Fy and Fz at Reference Points 2 and 3 beside point 1, and pick the corner each point is at (on a wall point 1 is the foot at its start, 2 the foot at its end, 3 the head at its start, so Fz 3 of 0 gives soil or water pressure growing with depth); between them the load runs straight; the total, the load takedown and the steel analysis take the value where each part is; plans show the three values and number the points, 3D draws arrows as long as the load
 [[t_alink]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab), as in Revit: an Analytical Link ties two nodes of the analytical model rigidly, such as a beam end set off a column's axis. Click twice in a plan, an elevation, a section or 3D, each time on a member end, a panel corner or on a member (a square shows a node, a ring a point on a member); a link is Fixed at both ends when drawn, which [[g_rl469]] in Properties changes, and Properties say what each end joins. Steel Design takes it as a very stiff member with no weight, no load or support of its own and no section check; it is left out of the members' table, the report's member pages and the results (named K1, K2 under the table) and drawn dashed in teal
+[[mf486_t]] — in the [[g_rl469]] group of a steel beam, brace or column or an analytical member, as in Revit: the forces at its start and end (a column's base and top), Fx Fy Fz (kN) and Mx My Mz (kN·m) in its own axes, for designing its connections · [[a_mf486ed]] opens a table to type them · [[a_mf486sa]] takes them from Steel Design for every selected member at once, from the combination that governs each end (a beam's shear, a brace's or column's axial force), and keeps its name · schedules of beams and columns can show the twelve values · Split keeps each end's forces on the part that keeps that end · a steel connection shows the forces at the end it is on
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -56233,6 +56334,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.483 · [[t_bcond]] and [[t_sload]] at the corners and edges of floors (as in Revit): point supports at a floor's or an analytical floor panel's corner, line supports along a floor's edge, hosted point loads at its corners and line loads along its edges; [[a_anlck]] flags panels held at fewer than three points
 - V1.484 · Non-uniform area loads (as in Revit): clear [[p_lduni]] for values at three Reference Points, such as soil pressure growing with depth on a wall; the total, the takedown and the steel analysis take the value where each part is
 - V1.485 · [[t_alink]] (as in Revit): ties two nodes of the analytical model rigidly; drawn in plans, elevations, sections and 3D; Steel Design takes it at once; the fixity at its ends can be set
+- V1.486 · [[mf486_t]] (as in Revit): the forces at the ends of beams, braces, columns and analytical members (Fx Fy Fz Mx My Mz), typed or taken from Steel Design for all selected members at once, from each end's governing combination; schedule fields; a steel connection shows the forces at its end
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -58992,6 +59094,28 @@ window.PenumBIM.r485={
   exp:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
     try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(al485K).level);o.dxf=window.PenumBIM.r195.dxf(v.id).length}catch(e){o.dxf='ERR '+e}
     try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(al485K).length}catch(e){o.json='ERR '+e}return o},
+  str:(k,...a)=>t(k,...a)};
+/* V1.486 test API: Member Forces */
+window.PenumBIM.r486={
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  put:(id,o)=>{edit(()=>{const e=IDX.get(id);Object.assign(e,JSON.parse(JSON.stringify(o)));for(const k in o)if(o[k]==null)delete e[k]})},
+  of:id=>mf486Of(IDX.get(id)),
+  sa:id=>{SA_C=null;const r=mf486Sa(IDX.get(id));return r?{v:r.v,src:r.src,lab:r.m.lab,kind:r.m.kind}:null},
+  from:ids=>mf486FromSa(ids),
+  raw:id=>{SA_C=null;const o=saRunSA(P),i=mf486SaMem(o,IDX.get(id));if(i<0)return null;return o.CB.map(c=>({name:c.b.name,s:mf486At(o,c,i,0),e:mf486At(o,c,i,1)}))},
+  sel:ids=>{ui.sel=new Set(ids);refresh()},
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(r=>[(r.querySelector('label')||{}).textContent,(r.querySelector('select,input,.ro')||{}).id||'',((r.querySelector('.ro')||{}).textContent||'').replace(/\n/g,' · ')].join('|')),
+  btns:()=>[...document.querySelectorAll('#props [data-act^="mf486"]')].map(b=>b.dataset.act),
+  dlg:id=>{dlgMf486(id);return!!document.getElementById('mf486tb')},
+  dv:()=>[0,1].map(en=>[0,1,2,3,4,5].map(i=>{const x=document.getElementById('mf486_'+en+i);return x?+x.value:null})),
+  dset:(en,i,v)=>{const x=document.getElementById('mf486_'+en+i);x.value=v},
+  dsrc:()=>(document.getElementById('mf486src')||{}).textContent||'',
+  fields:cat=>sfAll(P,cat,t).filter(f=>/^mf486/.test(f.k)).map(f=>({k:f.k,l:f.l})),
+  fv:(cat,id,k)=>{const f=sfAll(P,cat,t).find(f=>f.k===k);return f?f.g(IDX.get(id)):undefined},
+  split:(id,x,y)=>{const n0=P.seq;edit(()=>splitLine(IDX.get(id),{x,y}));return P.seq>n0?n0:null},
+  splitc:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},
+  conn:id=>{const c=mf486Conn(IDX.get(id));return c?{h:c.h.id,en:c.en,v:c.v}:null},
+  txt:v=>mf486Txt(v),
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
