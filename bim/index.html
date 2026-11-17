@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=496,V1_NAME='V1.486';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=497,V1_NAME='V1.487';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -53363,6 +53363,180 @@ Object.assign(STR,{
   mf486_took:['ดึงแรงปลายชิ้นส่วนจากการคำนวณเหล็กแล้ว {0} ชิ้น','Member Forces taken from Steel Design for {0} members'],
   mf486_skip:['{0} ชิ้นไม่อยู่ในการคำนวณเหล็ก','{0} not in Steel Design'],
   mf486_nosa:['การคำนวณเหล็กไม่ได้วิเคราะห์ชิ้นนี้ (ต้องเป็นชิ้นส่วนเหล็กในโครงที่มีจุดรองรับ)','Steel Design does not analyse this member (it takes steel members of a frame with supports)']});
+/* ===== 487 Steel Plates and Corner Cut (V1.487; Revit 2021.1 and later: Steel › Fabrication Elements › Plate, a plate sketched on a work plane, and
+   Steel › Modifiers › Corner Cut, a corner of a plate cut straight, round or hollowed) =====
+   e = {cat:'splate', level, pts: its outline in plan, off: the height of its work plane above its level, th: its thickness (10 mm), jus: how it lies on that
+   plane ('b' on it, its bottom face there; 'c' across it; 't' under it, its top face there), gr: its steel grade (SS400), coat: its coating (none),
+   cc: one entry per corner, null or [kind, distance mm]: 's' straight (a chamfer), 'x' convex (rounded, the arc touching both edges), 'v' concave (a quarter
+   hollow round the corner)}.  Sketched in a plan as other outlines are (points, or Rectangle: two corners); it lies level.  Its true outline (after the corner
+   cuts) is what the plan draws, what 3D views, elevations, sections and IFC show, and what its area, volume, weight (7,850 kg/m³) and paint area count.
+   Corner Cut is a tool of its own: click near a corner of a plate in a plan, as the options bar says; a click on a corner cut the same way takes the cut off. */
+const SP487_C='#3b5b7a',SP487_TH=10,SP487_GR=['SS400','SM400','SM490','SM520','A36','A572-50','S275','S355'],SP487_CO=['none','prim','paint','galv','fire'],SP487_RHO=7850,SP487_PR=45;
+const SP487_COL={none:'#8a96a3',prim:'#a65a3c',paint:'#6f7f91',galv:'#b9c1c9',fire:'#d8d2c2'},SP487_CK=['s','x','v'];
+const SP487D={plan:null};
+const sp487Ok=(Q,e)=>!!e&&e.cat==='splate'&&Array.isArray(e.pts)&&e.pts.length>=3&&!!lvl(Q,e.level);
+const sp487Th=e=>{const x=+(e&&e.th);return x>0?Math.min(300,Math.round(x*10)/10):SP487_TH};
+const sp487Jus=e=>e&&(e.jus==='t'||e.jus==='c')?e.jus:'b';
+const sp487Gr=e=>e&&SP487_GR.includes(e.gr)?e.gr:'SS400';
+const sp487Co=e=>e&&SP487_CO.includes(e.coat)?e.coat:'none';
+/* its bottom and top (mm, from the elevation of the project's zero) */
+function sp487Z(Q,e){const z=elev(Q,e.level)+(+e.off||0),t=sp487Th(e),j=sp487Jus(e);return j==='b'?[z,z+t]:j==='t'?[z-t,z]:[z-t/2,z+t/2]}
+/* the cut of corner i: [kind, distance] or null */
+function sp487Cc(e,i){const c=Array.isArray(e.cc)?e.cc[i]:null;return Array.isArray(c)&&SP487_CK.includes(c[0])&&+c[1]>0?[c[0],+c[1]]:null}
+const sp487Ncc=e=>Array.isArray(e.pts)?e.pts.reduce((n,p,i)=>n+(sp487Cc(e,i)?1:0),0):0;
+/* a corner that turns outward (only those can be cut) */
+function sp487Convex(e,i){const A=e.pts,n=A.length;if(n<3)return false;const a=A[(i+n-1)%n],p=A[i],b=A[(i+1)%n],cr=(p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0]);return Math.abs(cr)>1e-6&&(cr>0)===(area2(A)>0)}
+/* the longest cut a corner takes: just under half the shorter edge beside it, so that the cuts at both ends of an edge never meet */
+function sp487Max(e,i){const A=e.pts,n=A.length,a=A[(i+n-1)%n],p=A[i],b=A[(i+1)%n];return 0.499*Math.min(Math.hypot(a[0]-p[0],a[1]-p[1]),Math.hypot(b[0]-p[0],b[1]-p[1]))}
+/* ---- the shape: the outline after the cuts, its sizes, and the GL triangles and edges ---- */
+const SP487_GC=new WeakMap();
+function sp487Geo(Q,e){if(!sp487Ok(Q,e))return null;const z=sp487Z(Q,e),key=JSON.stringify([e.pts,e.cc,z]),c=SP487_GC.get(e);if(c&&c.k===key)return c.G;
+  const A=e.pts.map(p=>[+p[0],+p[1]]),n=A.length,O=[],sm=[],arc=(C,r,a1,a2)=>{let da=a2-a1;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+    for(let k=0;k<=8;k++){const an=a1+da*k/8;O.push([C[0]+Math.cos(an)*r,C[1]+Math.sin(an)*r]);sm.push(k>0&&k<8)}};
+  for(let i=0;i<n;i++){const p=A[i],cut=sp487Cc(e,i);if(!cut||!sp487Convex(e,i)){O.push(p);sm.push(false);continue}
+    const a=A[(i+n-1)%n],b=A[(i+1)%n],la=Math.hypot(a[0]-p[0],a[1]-p[1]),lb=Math.hypot(b[0]-p[0],b[1]-p[1]),d=Math.min(cut[1],sp487Max(e,i));
+    if(!(d>=0.5)){O.push(p);sm.push(false);continue}
+    const ua=[(a[0]-p[0])/la,(a[1]-p[1])/la],ub=[(b[0]-p[0])/lb,(b[1]-p[1])/lb],P1=[p[0]+ua[0]*d,p[1]+ua[1]*d],P2=[p[0]+ub[0]*d,p[1]+ub[1]*d];
+    if(cut[0]==='s'){O.push(P1,P2);sm.push(false,false);continue}
+    if(cut[0]==='v'){arc(p,d,Math.atan2(ua[1],ua[0]),Math.atan2(ub[1],ub[0]));continue}          // concave: a quarter hollow, the corner its middle
+    const th=Math.acos(clamp(ua[0]*ub[0]+ua[1]*ub[1],-1,1)),bx=ua[0]+ub[0],by=ua[1]+ub[1],bl=Math.hypot(bx,by);          // convex: the round touching both edges
+    if(bl<1e-9||th<1e-3){O.push(P1,P2);sm.push(false,false);continue}const h=d/Math.cos(th/2),C=[p[0]+bx/bl*h,p[1]+by/bl*h];
+    arc(C,Math.hypot(P1[0]-C[0],P1[1]-C[1]),Math.atan2(P1[1]-C[1],P1[0]-C[0]),Math.atan2(P2[1]-C[1],P2[0]-C[0]))}
+  const t=sp487Th(e),area=Math.abs(area2(O))/1e6;let per=0;for(let i=0;i<O.length;i++){const a=O[i],b=O[(i+1)%O.length];per+=Math.hypot(b[0]-a[0],b[1]-a[1])}
+  const vol=area*t/1000,G={O,sm,z,th:t,area,per,vol,kg:vol*SP487_RHO,paint:2*area+per/1000*t/1000,t:[],l:[]};
+  const gl=(p,zz)=>[p[0],zz,p[1]],L0=O.map(p=>gl(p,z[0])),L1=O.map(p=>gl(p,z[1]));extrude(L0,[0,z[1]-z[0],0],G.t);
+  for(let i=0;i<O.length;i++){const j=(i+1)%O.length;G.l.push(...L0[i],...L0[j],...L1[i],...L1[j]);if(!sm[i])G.l.push(...L0[i],...L1[i])}
+  SP487_GC.set(e,{k:key,G});return G}
+const sp487F=(x,d)=>(Math.round(x*10**d)/10**d).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+{const f0=zRange;zRange=(Q,e)=>e&&e.cat==='splate'&&sp487Ok(Q,e)?sp487Z(Q,e):f0(Q,e)}
+GEOM.splate='poly';DISC.splate='struct';CREATE_TOOLS.add('splate');NEW_PROPS.push('splate');
+{const i=VG_CATS.indexOf('sconn');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'splate')}DXF_LAYER.splate=['S-STEL-PLAT',4];
+FLT_CATS.push('splate');SF_CATS.push('splate');SF_DEF.splate=['mark','sp487th','sp487gr','sp487ar','sp487kg','level','count'];
+/* ---- the meshes of 3D views, elevations, sections and IFC, coloured by the coating ---- */
+{const f0=buildMeshes;buildMeshes=function(P0,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!P0||!P0.els)return R;
+  for(const e of P0.els){if(e.cat!=='splate')continue;const G=sp487Geo(P0,e);if(!G||!G.t.length)continue;
+    items.push({id:e.id,cat:'splate',c:hex2rgb(SP487_COL[sp487Co(e)]),a:1,t:G.t.slice(),l:G.l.slice(),s:[],mt:MAT.metal})}
+  return R}}
+/* ---- the plan: shown where its thickness meets the view range (ceiling plans: above the cut plane); a plate the cut plane runs through is filled ---- */
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='splate')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'splate')||hidEl(v,e)||!sp487Ok(P,e))return'';
+  const z=vrZ(P,v),Z=sp487Z(P,e);if(v.rcp)return Z[1]>=z.cut&&Z[0]<=z.top?'on':'';return Z[0]<=z.cut&&Z[1]>=Math.min(z.bot,z.depth)?'on':''}}
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const L=of('splate');SP487D.plan=L.length;if(!L.length)return;const z=vrZ(P,v),sc=v.scale||100;
+  for(const [e] of L){const G=sp487Geo(P,e);if(!G)continue;g.el(e);const k=hl(e.id),cut=!v.rcp&&G.z[0]<=z.cut&&G.z[1]>=z.cut;ctx.save();g.dash(null);g.path(G.O);
+    ctx.globalAlpha=cut?0.85:0.12;ctx.fillStyle=cut?col.ink:o.screen?SP487_C:col.ink;ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=k||col.ink;ctx.lineWidth=g.lw(cut?0.35:0.18);ctx.stroke();
+    if(o.screen&&ui.sel.has(e.id)){const B=elBox(v,e),fs=Math.min(2.2,Math.min(B[2]-B[0],B[3]-B[1])/sc/3);          // its thickness, as small as the plate needs
+      if(fs>=0.8){const c=arMid214({pts:G.O});g.text('PL'+sp487Th(e),[c[0],c[1]],fs,{color:col.sel,bold:true,halo:true,mono:true})}
+      if(sp487Ncc(e)){g.path(e.pts);ctx.strokeStyle=col.sel;ctx.lineWidth=1;g.dash([1,1]);ctx.stroke();g.dash(null)}}          // the outline before its corners were cut
+    ctx.restore()}});
+XHIT.splate=(v,e,w)=>{const G=sp487Geo(P,e);if(!G)return Infinity;return inPoly(w.x,w.y,G.O)?0:polyEdgeDist(w.x,w.y,G.O)};XHIT.splate.pr=5;          // inside it: picked after a column standing on it
+{const f0=elBox;elBox=(v,e)=>{if(!e||e.cat!=='splate')return f0(v,e);const G=sp487Geo(P,e),A=G?G.O:(e.pts||[]);if(!A.length)return[0,0,0,0];
+  return[Math.min(...A.map(p=>p[0])),Math.min(...A.map(p=>p[1])),Math.max(...A.map(p=>p[0])),Math.max(...A.map(p=>p[1]))]}}
+/* ---- Properties ---- */
+function sp487Rows(els,isNew){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},U=t('u_mm'),J=['b','c','t'].map(k=>[k,t('sp487j_'+k)]),GR=SP487_GR.map(k=>[k,k]),CO=SP487_CO.map(k=>[k,t('sp487co_'+k)]);
+  if(isNew)return PR.grp('g_constraints')+PR.num('sp487o','p_sp487o',+e.off||0,U,'step="10"')+PR.sel('sp487j','p_sp487j',sp487Jus(e),J)
+    +PR.grp('g_sp487')+PR.num('sp487th','p_sp487th',sp487Th(e),U,'step="1" min="1"')+PR.sel('sp487gr','p_sp487gr',sp487Gr(e),GR)+PR.sel('sp487co','p_sp487co',sp487Co(e),CO)+`<div class="pnote">${t('n_sp487')}</div>`;
+  let h=PR.grp('g_constraints')+PR.sel('level','p_level',V(x=>x.level),lvOpts())+PR.num('sp487o','p_sp487o',V(x=>+x.off||0),U,'step="10"')+PR.sel('sp487j','p_sp487j',V(sp487Jus),J)
+    +PR.grp('g_sp487')+PR.num('sp487th','p_sp487th',V(sp487Th),U,'step="1" min="1"')+PR.sel('sp487gr','p_sp487gr',V(sp487Gr),GR)+PR.sel('sp487co','p_sp487co',V(sp487Co),CO);
+  let ar=0,per=0,vol=0,kg=0,pa=0,ncc=0;for(const x of els){const G=sp487Geo(P,x);if(!G)continue;ar+=G.area;per+=G.per;vol+=G.vol;kg+=G.kg;pa+=G.paint;ncc+=sp487Ncc(x)}
+  h+=PR.grp('g_sp487cc')+PR.ro('p_sp487cc',els.length===1?t('sp487_ccof',ncc,e.pts.length):String(ncc));if(ncc)h+=`<div class="pa"><button class="btn" data-act="cc487clr">${esc(t('a_cc487clr'))}</button></div>`;
+  if(els.length===1){const G=sp487Geo(P,e),z0=elev(P,e.level);if(G)h+=PR.grp('g_dims')+PR.ro('p_sp487tb',Math.round(G.z[1]-z0)+' / '+Math.round(G.z[0]-z0)+' '+U)}else h+=PR.grp('g_dims');
+  return h+PR.ro('p_sp487ar',sp487F(ar,4)+' m²')+PR.ro('p_sp487pe',sp487F(per/1000,3)+' m')+PR.ro('p_sp487vo',sp487F(vol,6)+' m³')+PR.ro('p_sp487kg',sp487F(kg,2)+' '+t('u_kg262'))+PR.ro('p_sp487pa',sp487F(pa,4)+' m²')}
+{const f0=catRows;catRows=(cat,els,isNew)=>cat==='splate'?sp487Rows(els,isNew):f0(cat,els,isNew)}
+XF.push((cat,o,key,raw)=>{if(!/^sp487/.test(key))return false;if(cat!=='splate')return true;const n=parseFloat(raw);
+  if(key==='sp487th'){if(n>0)o.th=Math.min(300,Math.round(n*10)/10);return true}
+  if(key==='sp487o'){if(isFinite(n)){const x=Math.round(n);if(x)o.off=x;else delete o.off}return true}
+  if(key==='sp487j'){if(raw==='t'||raw==='c')o.jus=raw;else delete o.jus;return true}
+  if(key==='sp487gr'){if(SP487_GR.includes(raw)&&raw!=='SS400')o.gr=raw;else delete o.gr;return true}
+  if(key==='sp487co'){if(SP487_CO.includes(raw)&&raw!=='none')o.coat=raw;else delete o.coat;return true}
+  return true});
+XA.cc487clr=()=>{const S=[...ui.sel].map(id=>IDX.get(id)).filter(e=>sp487Ok(P,e)&&sp487Ncc(e));if(!S.length)return;edit(()=>{for(const e of S)delete e.cc});toast(t('cc487_clr',S.length))};
+/* ---- schedules, the BOQ (kg by grade and thickness, after the stiffeners) and IFC (IfcPlate) ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='splate')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),geo=e=>sp487Geo(Q,e),r=(x,d)=>Math.round(x*10**d)/10**d;
+  add('sp487th',tr('p_sp487th')+' (mm)',e=>sp487Th(e),{num:1,dec:1});add('sp487gr',tr('p_sp487gr'),e=>sp487Gr(e));add('sp487co',tr('p_sp487co'),e=>tr('sp487co_'+sp487Co(e)));
+  add('sp487j',tr('p_sp487j'),e=>tr('sp487j_'+sp487Jus(e)));add('off',tr('p_sp487o'),e=>+e.off||0,{num:1,u:'mm',dec:0,ed:'mm',p:'off'});
+  add('sp487ar',tr('p_sp487ar')+' (m²)',e=>{const G=geo(e);return G?r(G.area,4):0},{num:1,dec:4,sum:1});add('sp487pe',tr('p_sp487pe')+' (m)',e=>{const G=geo(e);return G?r(G.per/1000,3):0},{num:1,dec:3,sum:1});
+  add('sp487vo',tr('p_sp487vo')+' (m³)',e=>{const G=geo(e);return G?r(G.vol,6):0},{num:1,dec:6,sum:1});add('sp487kg',tr('p_sp487kg')+' (kg)',e=>{const G=geo(e);return G?r(G.kg,2):0},{num:1,dec:2,sum:1});
+  add('sp487pa',tr('p_sp487pa')+' (m²)',e=>{const G=geo(e);return G?r(G.paint,4):0},{num:1,dec:4,sum:1});add('sp487cc',tr('p_sp487cc'),e=>sp487Ncc(e),{num:1,dec:0,sum:1});return F}}
+{const f0=scheduleTable;scheduleTable=(Q0,kind,tr,o)=>{const S=f0(Q0,kind,tr,o);if(kind!=='boq'||!S||!Array.isArray(S.rows)||!Q0||!Q0.els||!Q0.els.some(e=>e.cat==='splate'))return S;const PR0=Q0.prices||{},by=new Map();
+  for(const e of Q0.els){if(e.cat!=='splate'||e.gx)continue;const G=sp487Geo(Q0,e);if(!G)continue;const gr=sp487Gr(e),pk='sp487|'+gr+'|'+G.th;let r=by.get(pk);
+    if(!r)by.set(pk,r={cat:tr('cat_splate'),_c:9.38,tcat:'splate',pk,item:tr('sp487_item',gr,G.th),qty:0,unit:tr('u_kg262'),cost:PR0[pk]!=null?+PR0[pk]||0:SP487_PR,amount:0});r.qty+=G.kg}
+  if(!by.size)return S;for(const r of by.values()){r.qty=Math.round(r.qty*100)/100;r.amount=Math.round(r.qty*r.cost*100)/100;S.rows.push(r)}
+  S.rows.sort((a,b)=>(a._c||0)-(b._c||0)||String(a.item).localeCompare(String(b.item)));if(S.foot)S.foot.amount=S.rows.reduce((s,r)=>s+(+r.amount||0),0);return S}}
+{const f0=ifcClass;ifcClass=(Q,e)=>e&&e.cat==='splate'?['IFCPLATE','.SHEET.','Pset_PlateCommon','Qto_PlateBaseQuantities']:f0(Q,e)}
+{const f0=ifcXPr;ifcXPr=(P0,e,id,T,pr,prop,tr)=>{const r=f0(P0,e,id,T,pr,prop,tr);if(id!==e.id||e.cat!=='splate')return r;const G=sp487Geo(P0,e);if(!G)return r;
+  r.push(prop('Thickness',fx2(G.th)+' mm'),prop('SteelGrade',sp487Gr(e)),prop('Coating',tr('sp487co_'+sp487Co(e))),prop('Area',fx2(G.area)+' m²'),prop('Weight',fx2(G.kg)+' kg'),prop('PaintArea',fx2(G.paint)+' m²'));
+  if(sp487Ncc(e))r.push(prop('CornerCuts',sp487Ncc(e),'IFCINTEGER'));return r}}
+/* ---- what is kept ---- */
+XC.push(()=>{const num=x=>typeof x==='number'&&isFinite(x);
+  P.els=P.els.filter(e=>e.cat!=='splate'||(Array.isArray(e.pts)&&e.pts.length>=3&&e.pts.every(p=>Array.isArray(p)&&num(+p[0])&&num(+p[1]))&&P.levels.some(l=>l.id===e.level)));
+  for(const e of P.els){if(e.cat!=='splate')continue;if(e.off!==undefined){const x=Math.round(+e.off);if(isFinite(x)&&x)e.off=x;else delete e.off}
+    if(e.th!==undefined){if(+e.th>0)e.th=sp487Th(e);else delete e.th}if(e.jus!==undefined&&e.jus!=='t'&&e.jus!=='c')delete e.jus;
+    if(e.gr!==undefined&&(!SP487_GR.includes(e.gr)||e.gr==='SS400'))delete e.gr;if(e.coat!==undefined&&(!SP487_CO.includes(e.coat)||e.coat==='none'))delete e.coat;
+    if(e.cc!==undefined){const c=Array.isArray(e.cc)?e.pts.map((p,i)=>{const x=sp487Cc(e,i);return x?[x[0],Math.round(x[1]*10)/10]:null}):[];while(c.length&&!c[c.length-1])c.pop();if(c.length)e.cc=c;else delete e.cc}}});
+/* ---- the Plate tool: sketched as other outlines are ---- */
+function sp487New(level,pts,o){const d=Object.assign({},defs('splate'),o||{}),e={id:P.seq++,cat:'splate',level,pts:pts.map(p=>[Math.round(p[0]),Math.round(p[1])])};
+  const off=Math.round(+d.off||0);if(off)e.off=off;if(+d.th>0&&sp487Th(d)!==SP487_TH)e.th=sp487Th(d);if(d.jus==='t'||d.jus==='c')e.jus=d.jus;if(SP487_GR.includes(d.gr)&&d.gr!=='SS400')e.gr=d.gr;
+  if(SP487_CO.includes(d.coat)&&d.coat!=='none')e.coat=d.coat;return e}
+function sp487Put(e){setTool('modify');edit(()=>{P.els.push(e)});ui.sel=new Set([e.id]);refresh();const G=sp487Geo(P,e);if(G)toast(t('sp487_made',G.th,sp487F(G.area,3),sp487F(G.kg,1)))}
+{const f0=skDone;skDone=(tool,v,pts)=>{if(tool!=='splate')return f0(tool,v,pts);if(pts.length<3||Math.abs(area2(pts))<100){toast(t('sk_small'));return}sp487Put(sp487New(v.level,pts))}}
+const sp487Md=()=>ui.opt.siteMode==='rect'?'rect':'poly';
+XT.splate={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){ui.sk={pts:[]};ui.sel.clear();ui.hov=null;if(ui.opt.siteMode!=='rect')ui.opt.siteMode='poly'},
+  off(){ui.sk=null},
+  click(pn,v,p,w,pt){skClick('splate',pn,v,p,w,pt)},
+  draw(pn,ctx,v,nav,g){skDraw(pn,ctx,v,nav,g)},
+  hint(){const n=ui.sk?ui.sk.pts.length:0;return t(sp487Md()==='rect'?(n?'h_sk_r2':'h_sk_r1'):n>=3?'h_sk_p3':n?'h_sk_p2':'h_sk_p1')},
+  opt(who,chk,sel){return who+`<label>${t('o_sfmode')}</label>`+sel('siteMode',[['poly','sf_poly'],['rect','a_rect']])},
+  esc(){const S=ui.sk;if(S&&S.pts.length){S.pts.pop();return true}return false},
+  fin(){const S=ui.sk,v=activeView();if(S&&sp487Md()==='poly'&&S.pts.length>=3&&v)skDone('splate',v,S.pts.slice());else toast(t('sk_need3'))}};
+/* ---- the Corner Cut tool: a click near a corner of a plate in a plan ---- */
+const cc487K=()=>SP487_CK.includes(ui.opt.cc487k)?ui.opt.cc487k:'s';
+const cc487D=()=>{const x=parseFloat(ui.opt.cc487d);return isFinite(x)&&x>=1?Math.min(2000,Math.round(x*10)/10):25};
+function cc487Pick(v,w){const nav=navOf(v),tol=12/nav.s;let best=null,bd=tol;
+  for(const e of P.els){if(e.cat!=='splate'||!sp487Ok(P,e)||!planShow(v,e))continue;e.pts.forEach((q,i)=>{const d=Math.hypot(q[0]-w.x,q[1]-w.y);if(d<bd){bd=d;best={id:e.id,i}}})}return best}
+function cc487Apply(k){if(!k){toast(t('cc487_none'));return null}const e=IDX.get(k.id);if(!sp487Ok(P,e))return null;const i=k.i;if(!sp487Convex(e,i)){toast(t('cc487_in'));return null}
+  const cur=sp487Cc(e,i),kk=cc487K(),d=cc487D();
+  if(cur&&cur[0]===kk&&Math.abs(cur[1]-Math.min(d,sp487Max(e,i)))<0.6){edit(()=>{const c=e.cc.slice();c[i]=null;e.cc=c});toast(t('cc487_off',i+1));return'off'}
+  const dd=Math.min(d,Math.floor(sp487Max(e,i)*10)/10);if(!(dd>=1)){toast(t('cc487_small'));return null}
+  edit(()=>{const c=Array.isArray(e.cc)?e.cc.slice():[];while(c.length<e.pts.length)c.push(null);c[i]=[kk,dd];e.cc=c});toast(dd<d?t('cc487_big',dd):t('cc487_done',i+1));return'on'}
+XT.ccut487={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){ui.sel.clear();ui.hov=null;ui.cc487H=null;if(!SP487_CK.includes(ui.opt.cc487k))ui.opt.cc487k='s';if(ui.opt.cc487d==null)ui.opt.cc487d='25'},
+  off(){ui.cc487H=null},esc(){return false},
+  hint:()=>t('h_cc487'),
+  opt(who,chk,sel){return who+`<label>${esc(t('o_cc487k'))}</label>`+sel('cc487k',[['s','cc487k_s'],['x','cc487k_x'],['v','cc487k_v']])
+    +`<label>${esc(t('o_cc487d'))} <input type="number" data-opt="cc487d" id="opt_cc487d" value="${cc487D()}" min="1" step="5" style="width:72px"> ${esc(t('u_mm'))}</label>`},
+  hov(pn,v,p){const nav=navOf(v),k=cc487Pick(v,{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s});ui.cc487H=k?Object.assign(k,{pn:pn.i}):null;return k?k.id:null},
+  click(pn,v,p,w){cc487Apply(cc487Pick(v,w));ui.cc487H=null;refresh()},
+  draw(pn,ctx,v,nav,g){const H=ui.cc487H;if(!H||H.pn!==pn.i)return;const e=IDX.get(H.id);if(!sp487Ok(P,e))return;const q=e.pts[H.i],sc=v.scale||100,ok=sp487Convex(e,H.i);
+    ctx.save();ctx.strokeStyle=ok?C.sel:'#c0392b';ctx.lineWidth=2;g.dash(null);ctx.beginPath();ctx.arc(g.X(q[0]),g.Y(q[1]),8,0,7);ctx.stroke();          // a ring of the same size at every zoom
+    if(ok){const x=JSON.parse(JSON.stringify(e)),c=Array.isArray(x.cc)?x.cc:[];while(c.length<x.pts.length)c.push(null);c[H.i]=[cc487K(),Math.min(cc487D(),sp487Max(x,H.i))];x.cc=c;
+      const G=sp487Geo(P,x);if(G){ctx.lineWidth=1.6;g.dash([0.8,0.5]);g.path(G.O);ctx.stroke();g.dash(null)}}
+    g.text(String(H.i+1),[q[0]+2*sc,q[1]-2*sc],2.2,{color:ok?C.sel:'#c0392b',bold:true,halo:true});ctx.restore()}};
+CREATE_TOOLS.add('ccut487');
+/* the tools on the Structure tab, in the panel of the steel connections */
+{const p=(RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('splate'))p.b.push('splate','ccut487')}
+Object.assign(BTN,{splate:['splate',''],ccut487:['ccut487','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-splate" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#9fb0c3" ${E} d="M2.5 13.5 9 8.5H21.5L15 13.5Z"/><path fill="#6f8399" ${E} d="M2.5 13.5H15V15.6H2.5Z"/><path fill="#56697f" ${E} d="M15 13.5 21.5 8.5V10.6L15 15.6Z"/>`
+    +`<circle cx="7.6" cy="11.4" r=".9" fill="#2a3550"/><circle cx="16.4" cy="10.4" r=".9" fill="#2a3550"/></symbol>`
+    +`<symbol id="i-ccut487" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#9fb0c3" ${E} d="M3 19V5H13A6 6 0 0 0 19 11V19Z"/><path fill="none" stroke="#e8590c" stroke-width="1.4" stroke-dasharray="2 1.4" d="M13 5H19V11"/></symbol>`)})();
+Object.assign(STR,{
+  t_splate:['แผ่นเหล็ก (Plate)','Plate'],cat_splate:['แผ่นเหล็ก (Plates)','Plates'],t_ccut487:['ตัดมุม (Corner Cut)','Corner Cut'],
+  g_sp487:['แผ่นเหล็ก (Plate)','Plate'],p_sp487th:['ความหนา (Thickness)','Thickness'],p_sp487o:['ระยะสูงของระนาบจากระดับชั้น','Height Offset From Level'],
+  p_sp487j:['การวางบนระนาบ (Justification)','Justification'],sp487j_b:['ผิวล่างอยู่ที่ระนาบ (Bottom)','Bottom (on the plane)'],sp487j_c:['กึ่งกลางอยู่ที่ระนาบ (Center)','Center'],sp487j_t:['ผิวบนอยู่ที่ระนาบ (Top)','Top (under the plane)'],
+  p_sp487gr:['เกรดเหล็ก','Steel Grade'],p_sp487co:['การเคลือบผิว (Coating)','Coating'],sp487co_none:['ไม่มี','None'],sp487co_prim:['สีรองพื้นกันสนิม','Primer'],sp487co_paint:['สีกันสนิมและสีทับหน้า','Painted'],
+  sp487co_galv:['ชุบสังกะสี (Galvanized)','Galvanized'],sp487co_fire:['สีกันไฟ','Fire Protection'],
+  g_sp487cc:['ตัดมุม (Corner Cut)','Corner Cuts'],p_sp487cc:['มุมที่ตัด','Corners Cut'],sp487_ccof:['{0} จาก {1} มุม','{0} of {1} corners'],a_cc487clr:['เอาการตัดมุมออก','Remove Corner Cuts'],
+  p_sp487tb:['ผิวบน / ผิวล่าง จากระดับชั้น','Top / Bottom From Level'],p_sp487ar:['พื้นที่ (Area)','Area'],p_sp487pe:['เส้นรอบรูป','Perimeter'],p_sp487vo:['ปริมาตร (Volume)','Volume'],
+  p_sp487kg:['น้ำหนัก (Weight)','Weight'],p_sp487pa:['พื้นที่ทาสี (Paint Area)','Paint Area'],
+  n_sp487:['แผ่นเหล็กวาดเป็นรูปปิดในแปลน วางราบที่ระดับชั้นบวกระยะสูง หนาตามที่ตั้ง น้ำหนักคิดจากพื้นที่จริงหลังตัดมุม (7,850 กก./ลบ.ม.)','A plate is sketched as a closed outline in a plan and lies level at its level plus the offset, as thick as set; its weight counts its true area after the corner cuts (7,850 kg/m³)'],
+  sp487_made:['วาดแผ่นเหล็กหนา {0} มม. แล้ว พื้นที่ {1} m² น้ำหนัก {2} กก.','Plate {0} mm drawn: {1} m², {2} kg'],sp487_item:['แผ่นเหล็ก {0} หนา {1} มม.','Steel plate {0}, {1} mm'],
+  h_cc487:['คลิกใกล้มุมของแผ่นเหล็กเพื่อตัดมุมตามแบบและระยะในแถบตัวเลือก · คลิกมุมที่ตัดไว้แบบเดียวกันเพื่อเอาออก','Click near a corner of a plate to cut it as the options bar says · click a corner cut the same way to take the cut off'],
+  o_cc487k:['แบบ','Type'],cc487k_s:['ตัดตรง (Straight)','Straight'],cc487k_x:['โค้งนูน (Convex)','Convex'],cc487k_v:['โค้งเว้า (Concave)','Concave'],o_cc487d:['ระยะ','Distance'],
+  cc487_none:['คลิกใกล้มุมของแผ่นเหล็ก','Click near a corner of a plate'],cc487_in:['มุมนี้หักเข้า ตัดมุมไม่ได้','This corner turns inward: it cannot be cut'],
+  cc487_done:['ตัดมุมที่ {0} แล้ว','Corner {0} cut'],cc487_off:['เอาการตัดมุมที่ {0} ออกแล้ว','Corner cut {0} taken off'],cc487_big:['ระยะยาวเกินครึ่งของขอบข้างมุม ใช้ {0} มม.','Longer than half the edge beside it: {0} mm used'],
+  cc487_small:['ขอบข้างมุมสั้นเกินไป','The edges beside this corner are too short'],cc487_clr:['เอาการตัดมุมออกจากแผ่นเหล็ก {0} แผ่น','Corner cuts taken off {0} plates']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -55269,6 +55443,8 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 น้ำหนักแบบพื้นที่ที่ไม่เท่ากันทั้งแผ่น — แบบ Revit: เลือกน้ำหนักแบบพื้นที่ (บนพื้น แผ่นพื้น ผนังโครงสร้าง แผ่นตั้ง หรือที่วาดเอง) แล้วเอาติ๊ก [[p_lduni]] ออกใน Properties จะมีค่า Fx Fy Fz ที่จุดอ้างอิง 2 และ 3 เพิ่มจากค่าที่จุด 1 และเลือกได้ว่าแต่ละจุดอยู่มุมไหน (บนผนังจุด 1 คือฐานต้นแนว จุด 2 ฐานปลายแนว จุด 3 หัวต้นแนว จึงใส่ Fz 3 เป็น 0 ได้แรงดันดินหรือน้ำที่เพิ่มตามความลึก) ระหว่างจุดน้ำหนักเปลี่ยนเป็นเส้นตรง แรงรวม ตารางน้ำหนักลงเสา และการวิเคราะห์โครงเหล็กใช้ค่าตามตำแหน่ง แปลนบอกสามค่าและเลขจุด 3 มิติลูกศรยาวตามค่า
 [[t_alink]] — แท็บ [[tab_struct]] (และแท็บ [[tab_analyze]]) แบบ Revit: ลิงก์วิเคราะห์ (Analytical Link) เชื่อมจุดต่อสองจุดของแบบจำลองวิเคราะห์แบบแข็ง เช่นปลายคานที่เยื้องจากแกนเสา คลิกสองครั้งในแปลน รูปด้าน รูปตัด หรือ 3 มิติ แต่ละครั้งที่ปลายชิ้นส่วน มุมแผ่น หรือบนเส้นชิ้นส่วน (สี่เหลี่ยมคือจุดต่อ วงกลมคือบนเส้น) ลิงก์ยึดแน่นทั้งสองปลายเมื่อวาด ปรับได้ที่ [[g_rl469]] ใน Properties ซึ่งบอกด้วยว่าแต่ละปลายต่อกับอะไร การคำนวณเหล็กคิดลิงก์เป็นชิ้นที่แข็งมาก ไม่มีน้ำหนักตัว ไม่รับน้ำหนักหรือจุดรองรับเอง ไม่ตรวจหน้าตัด ไม่อยู่ในตารางชิ้นส่วน รายการคำนวณ และผลวิเคราะห์ (บอกชื่อ K1 K2 ใต้ตาราง) วาดเป็นเส้นประสีเขียวน้ำทะเล
 [[mf486_t]] — แผงคุณสมบัติของคาน ค้ำยัน เสาเหล็ก และชิ้นส่วนวิเคราะห์ กลุ่ม [[g_rl469]] แบบ Revit: บอกแรงที่ปลายต้นและปลายท้าย (เสาเป็นโคนและยอด) Fx Fy Fz (kN) Mx My Mz (kN·m) ตามแกนของชิ้นส่วนเอง สำหรับออกแบบจุดต่อ · ปุ่ม [[a_mf486ed]] เปิดตารางใส่ค่าเอง · ปุ่ม [[a_mf486sa]] ดึงแรงจากผลการคำนวณเหล็กให้ทุกชิ้นที่เลือกในครั้งเดียว ใช้ชุดค่าผสมที่หนักที่สุดของแต่ละปลาย (คานดูแรงเฉือน ค้ำยันและเสาดูแรงตามแนวแกน) และจำชื่อชุดค่าผสมไว้ · ตารางรายการคานและเสาเพิ่มช่องได้ 12 ช่อง · ตัดชิ้นส่วน (Split) แล้วแต่ละส่วนเก็บแรงของปลายเดิมของตัวเอง · จุดต่อเหล็กแสดงแรงที่ปลายที่มันอยู่
+[[t_splate]] — แท็บ [[tab_struct]] กลุ่มจุดต่อเหล็ก แบบ Revit (Steel › Plate): วาดแผ่นเหล็กเป็นรูปปิดในแปลนทีละจุด หรือเลือกสี่เหลี่ยมแล้วคลิกสองมุม แผ่นวางราบที่ระดับชั้นบวก [[p_sp487o]] · [[p_sp487j]] บอกว่าแผ่นวางบนระนาบ (ผิวล่างอยู่ที่ระนาบ) ห้อยใต้ระนาบ หรือคร่อมกึ่งกลาง · ตั้ง [[p_sp487th]] [[p_sp487gr]] และ [[p_sp487co]] ได้ใน Properties ก่อนวางหรือหลังเลือก · Properties บอกระดับผิวบนและผิวล่าง พื้นที่ เส้นรอบรูป ปริมาตร น้ำหนัก (7,850 กก./ลบ.ม.) และพื้นที่ทาสี (สองหน้าบวกขอบ) · แปลนวาดขอบจริงหลังตัดมุม แผ่นที่ระนาบตัดผ่านระบายทึบ คลิกในแผ่นเพื่อเลือก (เสาที่ยืนบนแผ่นถูกเลือกก่อน) · มุมมอง 3 มิติ รูปด้าน รูปตัด และ IFC (IfcPlate) เห็นแผ่นตามสีของการเคลือบผิว · ตารางรายการหมวดแผ่นเหล็กมีความหนา เกรด การเคลือบ พื้นที่ น้ำหนัก พื้นที่ทาสี และจำนวนมุมที่ตัด · BOQ รวมน้ำหนักตามเกรดและความหนาเป็นกิโลกรัม (ราคาสมมติ 45 บาท/กก. แก้ได้)
+[[t_ccut487]] — แท็บ [[tab_struct]] ต่อจากแผ่นเหล็ก แบบ Revit (Steel › Modifiers › Corner Cut): คลิกใกล้มุมของแผ่นเหล็กในแปลน มุมถูกตัดตามแบบและระยะในแถบตัวเลือก: [[cc487k_s]] ตัดเฉียง [[cc487k_x]] มุมมนที่สัมผัสทั้งสองขอบ หรือ [[cc487k_v]] เว้าเป็นวงกลมรอบมุม · ระยะยาวได้ไม่เกินครึ่งของขอบที่สั้นกว่าข้างมุม · มุมที่หักเข้าตัดไม่ได้ · คลิกมุมที่ตัดไว้แบบเดียวกันอีกครั้งเพื่อเอาออก หรือกด [[a_cc487clr]] ใน Properties · พื้นที่ น้ำหนัก และพื้นที่ทาสีคิดหลังตัดมุม
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -55688,6 +55864,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.484 · น้ำหนักแบบพื้นที่ไม่สม่ำเสมอแบบ Revit: เอาติ๊ก [[p_lduni]] ออกแล้วใส่ค่าที่จุดอ้างอิง 3 จุด เช่นแรงดันดินที่เพิ่มตามความลึกบนผนัง ใช้ค่าตามตำแหน่งในแรงรวม ตารางน้ำหนักลงเสา และการวิเคราะห์โครงเหล็ก
 - V1.485 · [[t_alink]] แบบ Revit: เชื่อมจุดต่อสองจุดของแบบจำลองวิเคราะห์แบบแข็ง วาดในแปลน รูปด้าน รูปตัด หรือ 3 มิติ การคำนวณเหล็กใช้ทันที ตั้งการยึดที่ปลายได้
 - V1.486 · [[mf486_t]] แบบ Revit: ใส่แรงที่ปลายคาน ค้ำยัน เสา และชิ้นส่วนวิเคราะห์ได้ (Fx Fy Fz Mx My Mz) หรือดึงจากผลการคำนวณเหล็กทีเดียวทุกชิ้นที่เลือก ใช้ชุดค่าผสมที่หนักที่สุดของแต่ละปลาย เพิ่มในตารางรายการได้ และจุดต่อเหล็กแสดงแรงที่ปลายของมัน
+- V1.487 · [[t_splate]] และ [[t_ccut487]] แบบ Revit: วาดแผ่นเหล็กในแปลน ตั้งความหนา การวางบนระนาบ เกรด และการเคลือบผิว ได้พื้นที่ น้ำหนัก และพื้นที่ทาสี เห็นใน 3 มิติ รูปด้าน รูปตัด ตารางรายการ BOQ และ IFC (IfcPlate) · ตัดมุมแผ่นเป็นเฉียง โค้งนูน หรือโค้งเว้า
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -55916,6 +56093,8 @@ Supports and loads at a floor's corners and edges — as in Revit: in [[t_bcond]
 Area loads that vary across the area — as in Revit: select an area load (on a floor, a floor panel, a structural wall, an upright panel or sketched) and clear [[p_lduni]] in Properties for Fx, Fy and Fz at Reference Points 2 and 3 beside point 1, and pick the corner each point is at (on a wall point 1 is the foot at its start, 2 the foot at its end, 3 the head at its start, so Fz 3 of 0 gives soil or water pressure growing with depth); between them the load runs straight; the total, the load takedown and the steel analysis take the value where each part is; plans show the three values and number the points, 3D draws arrows as long as the load
 [[t_alink]] — on the [[tab_struct]] tab (and the [[tab_analyze]] tab), as in Revit: an Analytical Link ties two nodes of the analytical model rigidly, such as a beam end set off a column's axis. Click twice in a plan, an elevation, a section or 3D, each time on a member end, a panel corner or on a member (a square shows a node, a ring a point on a member); a link is Fixed at both ends when drawn, which [[g_rl469]] in Properties changes, and Properties say what each end joins. Steel Design takes it as a very stiff member with no weight, no load or support of its own and no section check; it is left out of the members' table, the report's member pages and the results (named K1, K2 under the table) and drawn dashed in teal
 [[mf486_t]] — in the [[g_rl469]] group of a steel beam, brace or column or an analytical member, as in Revit: the forces at its start and end (a column's base and top), Fx Fy Fz (kN) and Mx My Mz (kN·m) in its own axes, for designing its connections · [[a_mf486ed]] opens a table to type them · [[a_mf486sa]] takes them from Steel Design for every selected member at once, from the combination that governs each end (a beam's shear, a brace's or column's axial force), and keeps its name · schedules of beams and columns can show the twelve values · Split keeps each end's forces on the part that keeps that end · a steel connection shows the forces at the end it is on
+[[t_splate]] — on the [[tab_struct]] tab, in the steel connections panel, as in Revit (Steel › Plate): sketch a plate as a closed outline in a plan, point by point, or choose Rectangle and click two corners; it lies level at its level plus the [[p_sp487o]] · [[p_sp487j]] says whether it sits on that plane (its bottom face there), hangs under it or lies across it · set the [[p_sp487th]], the [[p_sp487gr]] and the [[p_sp487co]] in Properties before you draw or once it is selected · Properties give its top and bottom from the level, its area, perimeter, volume, weight (7,850 kg/m³) and paint area (both faces and the edges) · plans draw its true outline after the corner cuts, filled where the cut plane runs through it; click inside it to select it (a column standing on it is picked first) · 3D views, elevations, sections and IFC (IfcPlate) show it in the colour of its coating · schedules of Plates have its thickness, grade, coating, area, weight, paint area and the corners cut · the BOQ adds up the weight by grade and thickness in kg (an assumed 45 baht/kg you can change)
+[[t_ccut487]] — on the [[tab_struct]] tab after Plate, as in Revit (Steel › Modifiers › Corner Cut): click near a corner of a plate in a plan and the corner is cut as the options bar says: [[cc487k_s]] a straight chamfer, [[cc487k_x]] a round touching both edges, or [[cc487k_v]] a hollow round the corner · the distance is at most half the shorter edge beside it · a corner that turns inward cannot be cut · click a corner cut the same way again to take the cut off, or press [[a_cc487clr]] in Properties · the area, the weight and the paint area count the plate after its cuts
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -56335,6 +56514,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.484 · Non-uniform area loads (as in Revit): clear [[p_lduni]] for values at three Reference Points, such as soil pressure growing with depth on a wall; the total, the takedown and the steel analysis take the value where each part is
 - V1.485 · [[t_alink]] (as in Revit): ties two nodes of the analytical model rigidly; drawn in plans, elevations, sections and 3D; Steel Design takes it at once; the fixity at its ends can be set
 - V1.486 · [[mf486_t]] (as in Revit): the forces at the ends of beams, braces, columns and analytical members (Fx Fy Fz Mx My Mz), typed or taken from Steel Design for all selected members at once, from each end's governing combination; schedule fields; a steel connection shows the forces at its end
+- V1.487 · [[t_splate]] and [[t_ccut487]] (as in Revit): plates sketched in a plan with their thickness, justification, grade and coating, giving their area, weight and paint area, shown in 3D, elevations, sections, schedules, the BOQ and IFC (IfcPlate) · plate corners cut straight, convex or concave
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -59116,6 +59296,42 @@ window.PenumBIM.r486={
   splitc:(id,zs)=>{let c=null;edit(()=>{c=spcDo255(IDX.get(id),zs)});return c?c.id:null},
   conn:id=>{const c=mf486Conn(IDX.get(id));return c?{h:c.h.id,en:c.en,v:c.v}:null},
   txt:v=>mf486Txt(v),
+  str:(k,...a)=>t(k,...a)};
+/* V1.487 test API: steel plates and corner cuts */
+window.PenumBIM.r487={
+  mk:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++,cat:'splate'},JSON.parse(JSON.stringify(o)));P.els.push(e);id=e.id});return id},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  put:(id,o)=>{edit(()=>{const e=IDX.get(id);Object.assign(e,JSON.parse(JSON.stringify(o)));for(const k in o)if(o[k]==null)delete e[k]})},
+  prop:(id,k,v)=>{edit(()=>{const e=IDX.get(id);applyField(e.cat,e,k,v)})},
+  dprop:(k,v)=>{applyField('splate',defs('splate'),k,v);return JSON.parse(JSON.stringify(defs('splate')))},
+  defs:o=>{const d=defs('splate');for(const k of ['th','off','jus','gr','coat'])delete d[k];Object.assign(d,o||{});return JSON.parse(JSON.stringify(d))},
+  geo:id=>{const G=sp487Geo(P,IDX.get(id));return G?{n:G.O.length,O:G.O.map(p=>p.map(x=>Math.round(x*10)/10)),area:G.area,per:G.per,vol:G.vol,kg:G.kg,paint:G.paint,z:G.z,th:G.th,tri:G.t.length/9,edges:G.l.length/6}:null},
+  zr:id=>zRange(P,IDX.get(id)),
+  conv:(id,i)=>sp487Convex(IDX.get(id),i),
+  cc:(id,i,k,d)=>{ui.opt.cc487k=k;ui.opt.cc487d=String(d);const r=cc487Apply({id,i});return r},
+  pick:(vid,x,y)=>cc487Pick(viewById(vid),{x,y}),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  drawn:()=>JSON.parse(JSON.stringify(SP487D)),clear:()=>{SP487D.plan=null},
+  hit:(vid,x,y)=>{const v=viewById(vid),nav=navOf(v),r=hitPlan(v,{x:x*nav.s+nav.ox,y:y*nav.s+nav.oy});return r?r.id:null},
+  mesh:id=>{MSC=null;const R=buildMeshes(P,FPm(),FITm()),it=(Array.isArray(R)?R:R.items).filter(m=>m.id===id);return it.map(m=>({cat:m.cat,tri:m.t.length/9,c:m.c.map(x=>Math.round(x*255)),zmin:Math.min(...m.t.filter((x,i)=>i%3===1)),zmax:Math.max(...m.t.filter((x,i)=>i%3===1))}))},
+  mv:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy))},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg))},
+  mir:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by))},
+  sf:()=>sfAll(P,'splate',t).map(f=>f.k),
+  sv:(id,k)=>{const F=sfAll(P,'splate',t).find(f=>f.k===k),X=sfCtx(P,t,null);return F?F.g(IDX.get(id),X):undefined},
+  sfl:k=>{const F=sfAll(P,'splate',t).find(f=>f.k===k);return F?F.l:null},
+  sdef:()=>SF_DEF.splate.slice(),cats:()=>({sf:SF_CATS.includes('splate'),flt:FLT_CATS.includes('splate'),vg:VG_CATS.includes('splate'),geom:GEOM.splate,disc:DISC.splate,dxf:DXF_LAYER.splate}),
+  boq:()=>scheduleTable(P,'boq',t).rows.filter(r=>r.tcat==='splate').map(r=>({item:r.item,qty:r.qty,unit:r.unit,cost:r.cost,amount:r.amount,pk:r.pk})),
+  ifc:()=>{const s=ifcText().text;return{plate:(s.match(/IFCPLATE\(/g)||[]).length,sheet:/IFCPLATE\([^;]*\.SHEET\./.test(s),pset:s.includes('Pset_PlateCommon'),paint:s.includes("'PaintArea'"),grade:s.includes("'SteelGrade'"),cc:s.includes("'CornerCuts'")}},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='splate').map(e=>JSON.parse(JSON.stringify(e)))},
+  ribbon:()=>((RIBBON.find(x=>x.id==='struct')||{panels:[]}).panels.find(x=>x.t==='p_sconn')||{b:[]}).b.slice(),
+  ok:k=>{const r={};for(const vk of ['plan','3d','elev','section','sheet'])r[vk]=!!XT[k].ok(P.views.find(x=>x.kind===vk));return r},
+  rows:()=>[...document.querySelectorAll('#props .pr')].map(x=>{const l=x.querySelector('label'),i=x.querySelector('select,input'),r=x.querySelector('.ro');return[l?l.textContent:'',i?(i.type==='checkbox'?i.checked:i.value):r?r.textContent:'',i&&i.tagName==='SELECT'?[...i.options].map(o=>o.value):null]}),
+  btns:()=>[...document.querySelectorAll('#props [data-act]')].map(b=>b.dataset.act),
+  hint:k=>XT[k].hint(activeView()),
+  exp:()=>{const o={};try{o.ifc=ifcText().text.length}catch(e){o.ifc='ERR '+e}try{o.boq=scheduleTable(P,'boq',t).rows.length}catch(e){o.boq='ERR '+e}
+    try{const v=P.views.find(x=>x.kind==='plan'&&x.level===P.els.find(e=>e.cat==='splate').level);const d=window.PenumBIM.r195.dxf(v.id);o.dxf=d.length;o.layer=d.includes('S-STEL-PLAT')}catch(e){o.dxf='ERR '+e}
+    try{o.qty=QTY().size}catch(e){o.qty='ERR '+e}try{const s=JSON.parse(JSON.stringify(P));o.json=s.els.filter(e=>e.cat==='splate').length}catch(e){o.json='ERR '+e}return o},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
