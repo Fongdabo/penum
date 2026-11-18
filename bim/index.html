@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=550,V1_NAME='V1.540';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=551,V1_NAME='V1.541';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57091,6 +57091,56 @@ Object.assign(STR,{
   ps540_1w:['ประตูหน้าต่างมาจากหลายผนัง คัดลอกทีละผนัง หรือคัดลอกพร้อมผนัง','The doors and windows come from several walls: copy those of one wall at a time, or copy them with their walls'],
   ps540_fit:['ผนังตรงนี้ใส่ไม่พอ','They do not fit in this wall'],
   clip_host:['ประตูและหน้าต่างวางลงผนังที่คลิก (คัดลอกใหม่อีกครั้งถ้าผนังเดิมถูกลบไปก่อนคัดลอก) หรือใช้ สร้างแบบเดียวกัน ({k:@similar})','Doors and windows go into the wall clicked (copy them again if their wall was gone when copied); or use Create Similar ({k:@similar})']});
+/* ===== 541 Measure in elevations, sections and 3D views, and Chain in every view (V1.541; Revit: Modify | Measure › Measure Between Two References works in
+   any view; Chain adds the lengths up and the options bar shows Total Length).  ui.ms541 = {v, pts, done}: the points clicked, {h, z} in an elevation or a
+   section (snapped as the other tools there: levels, grids, the edges of what is under the pointer; Shift straight across or up), {x, y, z} in a 3D view (on
+   the model under the pointer, catching the corners of its faces; Shift along x, y or z); in a plan {v, plan: 1, segs} keeps the chain of the plan's own Measure */
+function ms541Vx(pn,v,p,id){const pj=ev3Proj(pn,v);let best=null,bd=10;for(const it of MSm().items){if(it.id!==id||!it.t)continue;const q=it.t;
+    for(let i=0;i<q.length;i+=3){const s=pj([q[i],q[i+2],q[i+1]]);if(!s)continue;const d=Math.hypot(s[0]-p.x,s[1]-p.y);if(d<bd){bd=d;best={x:Math.round(q[i]),y:Math.round(q[i+2]),z:Math.round(q[i+1])}}}}return best}
+function ms541Pt(pn,v,p,a){if(v.kind!=='3d'){const w=ev3Pt(pn,v,p),o={h:w.h,z:w.z};if(a&&ui.shift){if(Math.abs(o.h-a.h)>=Math.abs(o.z-a.z))o.z=a.z;else o.h=a.h}return o}
+  let o=null;const pk=pickAt3(pn,v,p);if(pk&&pk.p){o=ms541Vx(pn,v,p,pk.id);if(o)o.k='end';else o={x:Math.round(pk.p[0]),y:Math.round(pk.p[2]),z:Math.round(pk.p[1]),k:'on'}}
+  else for(const d of [[-6,0],[6,0],[0,-6],[0,6],[-6,-6],[6,6],[-6,6],[6,-6]]){const q=pickAt(pn,v,{x:p.x+d[0],y:p.y+d[1]});if(!q||q.id==null)continue;o=ms541Vx(pn,v,p,q.id);if(o){o.k='end';break}}          // just off the model: its corners still catch
+  if(!o){const z=a?a.z:elev(P,ui.level),w=ev3Ray(pn,v,p,z);if(w)o={x:Math.round(w[0]),y:Math.round(w[1]),z,k:'pt'}}
+  if(o&&a&&ui.shift){const d=[o.x-a.x,o.y-a.y,o.z-a.z].map(Math.abs),m=d.indexOf(Math.max(...d));o={x:m===0?o.x:a.x,y:m===1?o.y:a.y,z:m===2?o.z:a.z,k:'pt'}}return o}
+const ms541D=(v,a,b)=>v.kind==='3d'?[b.x-a.x,b.y-a.y,b.z-a.z]:[b.h-a.h,b.z-a.z],ms541L=(v,a,b)=>Math.hypot(...ms541D(v,a,b));
+function ms541Total(){const M=ui.ms541,v=M&&viewById(M.v);if(!M||!v)return 0;if(M.plan)return M.segs.reduce((s,q)=>s+Math.hypot(q.b.x-q.a.x,q.b.y-q.a.y),0);let s=0;for(let i=1;i<M.pts.length;i++)s+=ms541L(v,M.pts[i-1],M.pts[i]);return s}
+/* the parts of a length: across and up in an elevation or a section, x, y and z in a 3D view */
+function ms541Parts(v,a,b){const d=ms541D(v,a,b).map(q=>fmtLen(Math.abs(q)));return v.kind==='3d'?t('ms541_xyz',d[0],d[1],d[2]):t('ms541_hz',d[0],d[1])}
+XT3.measure={ok:v=>ev3GL(v),
+  click(pn,v,p){const M=ui.ms541&&ui.ms541.v===v.id&&!ui.ms541.plan?ui.ms541:null,last=M&&!M.done?M.pts[M.pts.length-1]:null,w=ms541Pt(pn,v,p,last);if(!w){toast(t('ev3_look'));return}
+    if(!last){ui.ms541={v:v.id,pts:[w],done:false};renderOptbar();refresh();return}if(ms541L(v,last,w)<1)return;M.pts.push(w);if(!ui.opt.mchain)M.done=true;renderOptbar();refresh()},
+  draw(pn,ctx,v,nav){const M=ui.ms541&&ui.ms541.v===v.id&&!ui.ms541.plan?ui.ms541:null,is3=v.kind==='3d',sp=is3?ev3Proj(pn,v):q=>[q.h*nav.s+nav.ox,-q.z*nav.s+nav.oy],S=q=>is3?sp([q.x,q.y,q.z]):sp(q),
+      cur=ui.curPane===pn.i&&ui.cur?ms541Pt(pn,v,ui.cur,M&&!M.done?M.pts[M.pts.length-1]:null):null;ctx.strokeStyle=C.hot;ctx.lineWidth=1.6;ctx.setLineDash([]);
+    if(M){const Q=M.pts.map(S);for(let i=1;i<Q.length;i++){const A=Q[i-1],B=Q[i];if(!A||!B)continue;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+        const L=ms541L(v,M.pts[i-1],M.pts[i]);ev3Lbl(ctx,(A[0]+B[0])/2,(A[1]+B[1])/2,fmtLen(L)+' '+unitName()+(M.pts.length===2?'   '+ms541Parts(v,M.pts[0],M.pts[1]):''))}
+      for(const q of Q)if(q)ev3Mark(ctx,q[0],q[1],'end')}
+    if(!cur)return;const C1=S(cur);if(!C1)return;ev3Mark(ctx,C1[0],C1[1],cur.k||'pt');if(!M||M.done)return;const a=M.pts[M.pts.length-1],A=S(a);if(!A)return;
+    ctx.save();ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(C1[0],C1[1]);ctx.stroke();ctx.restore();
+    ev3Lbl(ctx,C1[0],C1[1],fmtLen(ms541L(v,a,cur))+' '+unitName()+'   '+ms541Parts(v,a,cur))},
+  hint:v=>{const M=ui.ms541&&ui.ms541.v===v.id&&!ui.ms541.plan?ui.ms541:null;return t(!M||M.done?(v.kind==='3d'?'ms541_h13':'ms541_h1'):ui.opt.mchain?'ms541_hc':'ms541_h2')}};
+/* Chain in a plan: each measurement goes on from where the last ended */
+{const f0=toolClick;toolClick=function(pn,v,p,ev){const ch=ui.tool==='measure'&&!!v&&v.kind==='plan'&&!!ui.opt.mchain,m0=ui.meas,r=f0.apply(this,arguments);
+  if(ch){if(ui.meas&&ui.meas!==m0){let M=ui.ms541&&ui.ms541.plan&&ui.ms541.v===v.id?ui.ms541:null;if(!M)M=ui.ms541={v:v.id,plan:1,segs:[]};M.segs.push({a:ui.meas.a,b:ui.meas.b});ui.pts=[ui.meas.b];renderOptbar();refresh()}
+    else if(!ui.meas&&ui.pts.length===1&&ui.ms541){ui.ms541=null;renderOptbar()}}return r}}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);const M=ui.ms541;if(!M||!M.plan||!v||M.v!==v.id||ui.tool!=='measure')return;const X=q=>[q.x*nav.s+nav.ox,q.y*nav.s+nav.oy];
+  ctx.save();ctx.strokeStyle=C.hot;ctx.lineWidth=1.5;for(const s of M.segs.slice(0,-1)){const A=X(s.a),B=X(s.b);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+    ev3Lbl(ctx,(A[0]+B[0])/2,(A[1]+B[1])/2,fmtLen(Math.hypot(s.b.x-s.a.x,s.b.y-s.a.y))+' '+unitName())}ctx.restore()}}
+/* the options bar: Chain, and the Total Length */
+{const f0=renderOptbar;renderOptbar=()=>{f0();if(ui.tool!=='measure')return;const o=$('#optbar');if(!o||$('#opt_mchain'))return;const tot=ms541Total();
+  o.insertAdjacentHTML('beforeend',`<label><input type="checkbox" id="opt_mchain" data-opt="mchain"${ui.opt.mchain?' checked':''}>${t('o_chain')}</label><span class="who" id="ms541T">${tot>0?esc(t('ms541_tot',fmtLen(tot),unitName())):''}</span>`)}}
+/* Esc: a chain ends with its total kept, a measurement is cleared, then the tool ends */
+{const f0=cancelTool;cancelTool=function(hard){const M=ui.ms541;if(!hard&&M&&ui.tool==='measure'){if(!M.plan&&!M.done&&M.pts.length>1){M.done=true;renderOptbar();refresh();return}
+    if(M.plan&&ui.pts.length){ui.pts=[];ui.meas=null;renderOptbar();refresh();return}ui.ms541=null;ui.pts=[];ui.meas=null;renderOptbar();refresh();return}return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(){ui.ms541=null;return f0.apply(this,arguments)}}
+{const f0=hint;hint=msg=>{const v=activeView();if(!msg&&!ui.zoomr&&ui.tool==='measure'&&v&&v.kind==='plan'&&ui.opt.mchain&&ui.pts.length){$('#prompt').textContent=t('ms541_hc');return}f0(msg)}}
+Object.assign(STR,{
+  ms541_h1:['คลิกจุดแรกที่จะวัด (จับเส้นระดับชั้น กริด และขอบชิ้นงาน)','Click the first point to measure (it catches levels, grids and the edges of what is under the pointer)'],
+  ms541_h13:['คลิกจุดแรกบนชิ้นงาน (จับมุมของผิว)','Click the first point on the model (it catches the corners of faces)'],
+  ms541_h2:['คลิกจุดที่สอง · Shift ไปทางข้างหรือขึ้นลงอย่างเดียว · Esc ล้าง','Click the second point · Shift: straight across or up · Esc clears'],
+  ms541_hc:['คลิกจุดถัดไป ความยาวรวมอยู่บนแถบตัวเลือก · Esc จบ','Click the next point; the Total Length is on the options bar · Esc to finish'],
+  ms541_hz:['แนวนอน {0} · แนวตั้ง {1}','Across {0} · Up {1}'],
+  ms541_xyz:['X {0} · Y {1} · Z {2}','X {0} · Y {1} · Z {2}'],
+  ms541_tot:['ความยาวรวม {0} {1}','Total Length {0} {1}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59543,6 +59593,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.538 · ระบายสีห้องในรูปตัด แบบ Revit: รูปตัดเลือกแบบสีของห้องได้ใน Properties (ชื่อห้อง การใช้งาน ปรับอากาศหรือไม่ พื้นที่ โซน) ห้องที่รูปตัดตัดผ่านระบายสีเต็มช่วงที่ตัด ตั้งแต่ฐานห้องถึงขอบบนของห้อง · ตำแหน่งสีห้อง (Color Scheme Location): ด้านหลัง ชิ้นงานและลายตัดยังเห็นชัดอยู่บนสี หรือด้านหน้า สีทับชิ้นงาน ใช้ได้ทั้งรูปตัดและแปลน · วางตารางคำอธิบายสีในรูปตัดได้ แสดงค่าของห้องที่รูปตัดตัดผ่าน ลาก คัดลอก ลบ ได้เหมือนคำอธิบายอื่น และแก้สีได้ที่ แบบสีของห้อง จากรูปตัด
 - V1.539 · ทำซ้ำเป็นแถว (Array) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: เลือกชิ้นงานแล้วคลิกจุดเริ่มและจุดของชุดที่ 2 หรือชุดสุดท้าย ไปทางข้างหรือขึ้นลงได้ (Shift ล็อกแนว) หรือพิมพ์ระยะ จำนวน ระยะถึงชุดที่ 2 หรือชุดสุดท้าย และจัดเป็นกลุ่มแก้จำนวนได้ ใช้ตัวเลือกเดียวกับในแปลน หน้าต่างที่ทำซ้ำขึ้นไปยกระดับขอบล่างตาม แถวที่ขึ้นลงจำระยะขึ้นลงไว้ แก้จำนวนในแปลนแล้วชุดใหม่ขึ้นไปตาม · ใน 3 มิติสำเนาเรียงบนระนาบของจุดที่คลิก
 - V1.540 · วาง (Ctrl+V) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: สิ่งที่คัดลอกมาตามเมาส์ คลิกวาง ในรูปด้านและรูปตัดไปทางข้างและขึ้นลงได้ ความลึกเท่าเดิม (Shift ไปทางข้างหรือขึ้นลงจากที่เดิมอย่างเดียว) ใน 3 มิติวางบนระนาบระดับ เมนูคลิกขวามี วาง · ประตู หน้าต่าง และช่องเปิดที่คัดลอกหรือตัดมาโดยไม่มีผนัง วางลงผนังที่คลิกได้ทั้งในแปลน รูปด้าน รูปตัด และ 3 มิติ ระยะห่างเท่าเดิม ธรณีจับความสูงเดิมเหนือแต่ละชั้น ทับของเดิมเห็นสีแดงและไม่ให้วาง
+- V1.541 · วัดระยะ (Measure) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: คลิกสองจุดได้ความยาวพร้อมระยะแนวนอนกับแนวตั้ง (3 มิติบอก X Y Z) จับเส้นระดับชั้น กริด ขอบชิ้นงาน และมุมของผิวใน 3 มิติ Shift ไปทางเดียว · วัดต่อเนื่อง (Chain) ทุกมุมมองรวมแปลน ความยาวรวม (Total Length) บนแถบตัวเลือก Esc จบโดยยังเห็นผล
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60255,6 +60306,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.538 · Color fill in sections, as in Revit: a section takes a Color Scheme in its Properties (by name, use, cooled or not, area or zone) and every room it cuts is filled over the spans of the cut, from the room's base to its upper limit · Color Scheme Location: Background keeps the model's lines and cut patterns on top of the fill, Foreground puts the fill over the model, in sections and in plans · a Color Fill Legend placed in a section lists the values of the rooms it cuts, is moved, copied and deleted as any annotation, and Edit Scheme opens from the section
 - V1.539 · Array in elevations, sections and 3D views, as in Revit: select, click a start point and where the 2nd or the last member goes, across or up and down (Shift keeps to one) or type the distance; Number, Move To and Group and Associate as in a plan; windows arrayed upwards get higher sills, and an array that steps up keeps its step, so a new number at its × count in a plan puts the new members up too · in a 3D view the copies go along the level plane of the point clicked
 - V1.540 · Paste (Ctrl+V) in elevations, sections and 3D views, as in Revit: what was copied follows the pointer and a click places it; in elevations and sections across and up or down at the same depth (Shift: straight across or straight up from where it was), in 3D views on its level plane; Paste on the right-click menu · doors, windows and openings copied or cut without their wall go into the wall clicked, in plans, elevations, sections and 3D views: their spacing kept, the sill catching the same height above each level; red and refused where another insert is in the way
+- V1.541 · Measure in elevations, sections and 3D views, as in Revit: two clicks give the length with its across and up parts (X, Y, Z in 3D), catching levels, grids, the edges of what is under the pointer and the corners of faces in 3D; Shift keeps to one way · Chain in every view, plans too, with the Total Length on the options bar; Esc ends it with the result kept
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63818,6 +63870,27 @@ window.PenumBIM.r540={
   scr3:(x,y,z)=>{const pj=ev3Proj(PANES[ui.ap],activeView());return pj([x,y,z])},
   lv:id=>elev(P,id),
   toast:()=>{const e=document.querySelector('#toast');return e?e.textContent:''},
+  str:k=>t(k)};
+window.PenumBIM.r541={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:()=>toolAllowed('measure',activeView()),
+  opt:o=>{Object.assign(ui.opt,o);renderOptbar();refresh();return!!ui.opt.mchain},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v);return{x:h*n.s+n.ox,y:-z*n.s+n.oy}},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];XT3.measure.click(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy});return ui.ms541?JSON.parse(JSON.stringify(ui.ms541)):null},
+  click3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]);XT3.measure.click(pn,v,{x:s[0],y:s[1]});return ui.ms541?JSON.parse(JSON.stringify(ui.ms541)):null},
+  pt3:(x,y,z,dx,dy)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]);return ms541Pt(pn,v,{x:s[0]+(dx||0),y:s[1]+(dy||0)},null)},
+  scr3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap];return ev3Proj(pn,v)([x,y,z])},
+  page3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]),r=pn.cv.getBoundingClientRect();return s?{x:r.left+s[0],y:r.top+s[1]}:null},
+  plan:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];toolClick(pn,v,{x:x*n.s+n.ox,y:y*n.s+n.oy},{});return{ms:ui.ms541?JSON.parse(JSON.stringify(ui.ms541)):null,meas:ui.meas,pts:ui.pts.length}},
+  ms:()=>ui.ms541?JSON.parse(JSON.stringify(ui.ms541)):null,
+  total:()=>Math.round(ms541Total()),
+  parts:(a,b)=>ms541Parts(activeView(),a,b),
+  esc:()=>{cancelTool();return{tool:ui.tool,ms:ui.ms541?JSON.parse(JSON.stringify(ui.ms541)):null}},
+  hint:()=>{hint();return $('#prompt').textContent},
+  bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
+  fmt:mm=>fmtLen(mm),
+  shift:b=>{ui.shift=!!b;return ui.shift},
+  lv:id=>elev(P,id),
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
