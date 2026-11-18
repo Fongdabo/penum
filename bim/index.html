@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=546,V1_NAME='V1.536';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=547,V1_NAME='V1.537';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -56847,6 +56847,53 @@ function etg536All(v){const by=etg536Lacking(v);if(!by.size){toast(t('tagall_non
        const n=etg536Put(v,by,use,pick.lead);closeDlg();refresh();toast(t('tagall_done',n))}})}
 {const f0=dlgTagAll;dlgTagAll=function(){const v=activeView();if(ev3EV(v))return etg536All(v);return f0.apply(this,arguments)}}
 Object.assign(STR,{etg536_note:['ติดป้ายให้ทุกชิ้นที่รูปด้านหรือรูปตัดนี้แสดงอยู่ (ในกรอบตัด เลยแนวตัด และไม่เลยระยะมองไกล) และยังไม่มีป้ายในมุมมองนี้ ป้ายวางกลางชิ้น หรือมีเส้นชี้ เลือกหมวดที่ต้องการ','Tags everything this elevation or section shows (inside its crop region, past its cut and short of its far clip) that has no tag in this view yet. The tag goes at the middle of each, or out on a leader. Choose the categories.']});
+/* ===== 537 Room tags in sections (V1.537; Revit: Room Tag in a section view: a room the section cuts takes a tag where it is clicked, the room's name and
+   number (or its area or volume as the tag type says), with or without a leader; Tag All in the section offers Rooms too)
+   A room is cut by the section where its plan region (at the faces its area is measured at) crosses the cut (piece by piece in a section with jogs): those spans along the section, from the room's
+   base (its level and Base Offset) to its upper limit (Upper Limit and Limit Offset, V1.240).  The Room Tag tool works in a section: the pointer over a room
+   shows the rooms the section cuts and lights up the one under it, a click tags it there (Leader and the tag's kind from the options bar, as in a plan).  The
+   tag is an elevation tag (etag) of the room: it keeps its place as the room changes, is selected, dragged, copied and deleted as any; its leader runs to the
+   middle of the room's widest span.  Elevations do not show rooms, as in Revit. */
+/* the spans of a room along the section at its cut, its base and its top: {I: [[h0, h1]...], b, t}; null where the section does not cut it */
+function rst537Cut(v,e){if(!v||v.kind!=='section'||!e||e.cat!=='room'||!P.els.includes(e))return null;let r=null;try{r=spaceReg(e)}catch(err){r=null}const P0=r&&Array.isArray(r.net)&&r.net.length>=3?r.net:r&&r.poly;if(!Array.isArray(P0)||P0.length<3)return null;
+  const s=sectionOf(v);if(!s)return null;const Q=secCut(s,viewDir(v)),S=Q.strips||[{clip:Q.clip,h0:-Infinity,h1:Infinity}],rings=[P0,...(r.holes||[])],I=[];
+  for(const st of S){const d=-st.clip[3],hs=[];
+    for(const ring of rings)for(let i=0;i<ring.length;i++){const a=ring[i],b=ring[(i+1)%ring.length],da=ev3Dq(v,a)-d,db=ev3Dq(v,b)-d;if((da<0)!==(db<0)){const k=da/(da-db);hs.push(ev3Hq(v,[a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k]))}}
+    hs.sort((x,y)=>x-y);for(let i=0;i+1<hs.length;i+=2){const a=Math.max(hs[i],st.h0),b=Math.min(hs[i+1],st.h1);if(b-a>1)I.push([a,b])}}
+  if(!I.length)return null;I.sort((x,y)=>x[0]-y[0]);const L=rmLim240(P,e);if(!(L.t>L.b))return null;return{I,b:L.b,t:L.t}}
+const rst537Shown=(v,e)=>!!e&&etgShown(v,null,e)&&!phHid(v,e.id);
+/* the middle of its widest span: where a leader runs to and what the tag keeps its place from */
+{const f0=etgAnchor;etgAnchor=(v,e)=>{if(!e||e.cat!=='room')return f0(v,e);const C=rst537Cut(v,e);if(!C)return null;let w=C.I[0];for(const q of C.I)if(q[1]-q[0]>w[1]-w[0])w=q;return[(w[0]+w[1])/2,-(C.b+C.t)/2]}}
+/* the box of its words round the place it stands at, as a plan's room tag */
+function rst537TB(d,v,e){const sc=(v&&v.scale)||100,L=rtagLines(d,e),one=!L[1],w=Math.max(twmm(L[0],true)*3/2.2,one?0:twmm(L[1]))/2+1,x=d.x,y=d.y;
+  return one?[x-w*sc,y-2.3*sc,x+w*sc,y+2.3*sc]:[x-w*sc,y-4.7*sc,x+w*sc,y+3.9*sc]}
+/* where a leader leaves the box of the words on its way from their middle p to A */
+function rst537Ex(b,p,A){const dx=A[0]-p[0],dy=A[1]-p[1];let k=1;if(dx>0)k=Math.min(k,(b[2]-p[0])/dx);else if(dx<0)k=Math.min(k,(b[0]-p[0])/dx);if(dy>0)k=Math.min(k,(b[3]-p[1])/dy);else if(dy<0)k=Math.min(k,(b[1]-p[1])/dy);k=Math.max(0,k);return[p[0]+dx*k,p[1]+dy*k]}
+{const f0=etgDraw;etgDraw=(g,d,col,hi,v)=>{const e=IDX.get(d.el);if(!e||e.cat!=='room')return f0(g,d,col,hi,v);if(!rst537Shown(v,e))return;const A=etgAnchor(v,e);if(!A)return;
+  const ctx=g.ctx,sc=g.scale,ink=hi||col.ink,L=rtagLines(d,e),p=[d.x,d.y];
+  if(d.lead){const b=rst537TB(d,v,e);if(!(A[0]>=b[0]&&A[0]<=b[2]&&A[1]>=b[1]&&A[1]<=b[3])){const q=rst537Ex(b,p,A);ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.lineWidth=hi?1.4:g.lw(0.13);g.seg(q,A);arrowHead(g,q,A,1.8)}}
+  if(!L[1]){g.text(L[0],p,3,{bold:true,color:ink,halo:true});return}
+  g.text(L[0],[p[0],p[1]-2.4*sc],3,{bold:true,color:ink,halo:true});g.text(L[1],[p[0],p[1]+2.2*sc],2.2,{color:hi||(L[2]?col.warn:col.muted),halo:true,mono:!L[2]})}}
+{const f0=etgHit;etgHit=(d,v,p,nav)=>{const e=IDX.get(d.el);if(!e||e.cat!=='room')return f0(d,v,p,nav);if(!rst537Shown(v,e)||!rst537Cut(v,e))return false;const w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},b=rst537TB(d,v,e);
+  if(w.x>=b[0]&&w.x<=b[2]&&w.y>=b[1]&&w.y<=b[3])return true;if(d.lead){const A=etgAnchor(v,e);if(A&&segDist(w.x,w.y,d.x,d.y,A[0],A[1])<4/nav.s)return true}return false}}
+/* the rooms the section cuts, and the one at a point of it (h along, z height) */
+function rst537List(v){const out=[];if(!v||v.kind!=='section')return out;for(const e of P.els){if(e.cat!=='room'||!rst537Shown(v,e))continue;const C=rst537Cut(v,e);if(C)out.push({e,C})}return out}
+function rst537At(v,h,z){let best=null,bA=Infinity;for(const o of rst537List(v)){if(z<o.C.b-1||z>o.C.t+1)continue;const q=o.C.I.find(q=>h>=q[0]-1&&h<=q[1]+1);if(!q)continue;const a=(q[1]-q[0])*(o.C.t-o.C.b);if(a<bA){bA=a;best=o.e}}return best}
+const rst537W=(v,p)=>{const n=navOf(v);return{h:(p.x-n.ox)/n.s,z:-(p.y-n.oy)/n.s}};
+/* the Room Tag tool in a section */
+XT3.rtag={ok:v=>!!v&&v.kind==='section',
+  click(pn,v,p){const w=rst537W(v,p),e=rst537At(v,w.h,w.z);if(!e){toast(t('rst537_pick'));return}const sc=v.scale||100,lead=!!ui.opt.tagLead,k=ui.opt.rtKind;let x=w.h,y=-w.z;if(lead){x+=7*sc;y-=7*sc}
+    edit(()=>{const o={id:P.seq++,cat:'etag',view:avid(v),el:e.id,x:Math.round(x),y:Math.round(y)};if(k==='nn'||k==='name'||k==='vol')o.k=k;if(lead)o.lead=true;P.ann.push(o)})},
+  hov(pn,v,p){const w=rst537W(v,p),e=rst537At(v,w.h,w.z);return e?e.id:null},
+  draw(pn,ctx,v,nav){const X=h=>h*nav.s+nav.ox,Y=z=>-z*nav.s+nav.oy;ctx.lineWidth=1;
+    for(const o of rst537List(v)){const hv=ui.hov===o.e.id;ctx.strokeStyle=hv?C.sel:C.muted||'#7a8794';ctx.setLineDash(hv?[]:[6,4]);ctx.lineWidth=hv?2:1;
+      for(const q of o.C.I){const x0=X(q[0]),x1=X(q[1]),y0=Y(o.C.t),y1=Y(o.C.b);if(hv){ctx.save();ctx.globalAlpha=0.08;ctx.fillStyle=C.sel;ctx.fillRect(x0,y0,x1-x0,y1-y0);ctx.restore()}ctx.strokeRect(x0+1,y0+1,x1-x0-2,y1-y0-2)}}ctx.setLineDash([])},
+  hint:()=>t('rst537_h')};
+/* Tag All in a section offers Rooms too, first */
+{const f0=etg536Lacking;etg536Lacking=v=>{const by=f0(v);if(v&&v.kind==='section'){const id=avid(v),has=new Set(P.ann.filter(a=>a.cat==='etag'&&a.view===id).map(a=>a.el)),R=rst537List(v).map(o=>o.e).filter(e=>!has.has(e.id));if(R.length)by.set('room',R)}return by}}
+{const f0=etg536Cats;etg536Cats=by=>[...(by.has('room')?['room']:[]),...f0(by)]}
+Object.assign(STR,{rst537_h:['คลิกห้องที่รูปตัดตัดผ่านเพื่อติดป้ายห้อง (กรอบประคือห้องที่รูปตัดนี้ตัด) · ติ๊กเส้นชี้หรือเลือกชนิดป้ายที่แถบตัวเลือก','Click a room the section cuts to tag it (the dashed frames are the rooms this section cuts) · Leader and the kind of tag on the options bar'],
+  rst537_pick:['ตรงนั้นไม่มีห้องที่รูปตัดนี้ตัดผ่าน','No room this section cuts there']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59295,6 +59342,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.534 · ถอดระบบพื้นที่ของตะแกรงเหล็ก แบบ Revit: เลือก Fabric Area (บนพื้นหรือในผนัง) แล้วกด ถอดระบบพื้นที่ (Remove Area System) ทุกแผ่นกลายเป็นแผ่นตะแกรงเดี่ยวอยู่ที่เดิม แผ่นตัดยังตัดตามเดิม ย้าย คัดลอก หมุน สะท้อน ลบ หรือเปลี่ยนชนิดทีละแผ่นได้ ในรูปด้านลากแผ่นในผนังได้ ตาราง BOQ IFC และ 3 มิติเท่าเดิม
 - V1.535 · ป้ายของเหล็กเสริมแบบพื้นที่ ตามแนว และตะแกรงเหล็ก แบบ Revit: เครื่องมือป้าย (Tag) ใช้กับสามหมวดนี้ได้แล้ว ในแปลน (บนพื้น) และในรูปด้านหรือรูปตัดที่มองผนัง (ในผนัง) ป้ายบอกเหล็กและระยะห่างทุกชั้น เหล็กตามแนวบอกเหล็ก ระยะห่าง และความยาว ตะแกรงบอกชนิดและจำนวนแผ่น แผ่นเดี่ยวบอกหมายเลขตะแกรง ป้ายทุกอันที่ยังไม่มีก็ใส่ให้ได้
 - V1.536 · ติดป้ายทั้งหมด (Tag All) ในรูปด้านและรูปตัด แบบ Revit: ปุ่มติดป้ายทั้งหมดใช้ได้ในรูปด้านและรูปตัดแล้ว นับทุกชิ้นที่มุมมองแสดงอยู่ (ในกรอบตัด เลยแนวตัด ไม่เลยระยะมองไกล) และยังไม่มีป้าย แยกตามหมวด เลือกหมวดและเส้นชี้ได้ ป้ายวางกลางแต่ละชิ้น Ctrl+Z เอาออกทีเดียว
+- V1.537 · ป้ายห้อง (Room Tag) ในรูปตัด แบบ Revit: เครื่องมือป้ายห้องใช้ในรูปตัดได้ ชี้แล้วเห็นกรอบห้องที่รูปตัดตัดผ่าน (ช่วงที่ตัดจากพื้นห้องถึงขอบบนของห้อง) คลิกติดป้ายชื่อและเลขห้องตรงนั้น มีเส้นชี้และชนิดป้ายเหมือนในแปลน ป้ายตามห้องเมื่อห้องเปลี่ยน ติดป้ายทั้งหมดในรูปตัดมีหมวดห้องด้วย
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60003,6 +60051,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.534 · Remove Area System on fabric, as in Revit: select a Fabric Area (in a slab or a wall) and press Remove Area System: every sheet becomes a Fabric Sheet of its own where it was, a cut sheet still cut; move, copy, turn, mirror, delete or retype them one by one, drag a wall's sheets in an elevation; schedules, the BOQ, IFC and 3D stay the same
 - V1.535 · tags on Area and Path Reinforcement and on fabric, as in Revit: the Tag tool takes these three categories, in plans (in slabs) and in elevations or sections facing the wall (in walls); the tag gives each layer's bar and spacing, the path's bar, spacing and lengths, the fabric's type and sheets, a single sheet's Fabric Number; Tag All Not Tagged includes them
 - V1.536 · Tag All in elevations and sections, as in Revit: the Tag All button works in elevations and sections; it counts, by category, everything the view shows (inside the crop region, past the cut, short of the far clip) that has no tag there yet; pick the categories and Leader; each tag goes at the middle of its element; Ctrl+Z takes them all off
+- V1.537 · Room Tags in sections, as in Revit: the Room Tag tool works in a section; the pointer shows the rooms the section cuts (each span of the cut, from the room's base to its upper limit) and a click tags one there with its name and number, Leader and the kind of tag as in a plan; the tag follows the room; Tag All in a section offers Rooms too
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63491,6 +63540,18 @@ window.PenumBIM.r536={
   view:(vid,o)=>{const v=viewById(vid);edit(()=>{for(const k in o){if(o[k]===null)delete v[k];else v[k]=JSON.parse(JSON.stringify(o[k]))}});refresh()},
   anns:()=>P.ann.filter(a=>a.cat==='etag').map(a=>JSON.parse(JSON.stringify(a))),
   anchor:id=>{const A=etgAnchor(activeView(),IDX.get(id));return A?A.map(x=>Math.round(x)):null},
+  str:k=>t(k)};
+/* V1.537 test API: room tags in sections */
+window.PenumBIM.r537={
+  cut:id=>{const C=rst537Cut(activeView(),IDX.get(id));return C?{I:C.I.map(q=>q.map(x=>Math.round(x))),b:Math.round(C.b),t:Math.round(C.t)}:null},
+  at:(h,z)=>{const e=rst537At(activeView(),h,z);return e?e.id:null},list:()=>rst537List(activeView()).map(o=>o.e.id),
+  tag:(h,z,o)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],n0=P.ann.length,t0=ui.tool,op=Object.assign({},ui.opt);ui.tool='rtag';Object.assign(ui.opt,o||{});
+    try{XT3.rtag.click(pn,v,{x:n.ox+h*n.s,y:n.oy-z*n.s})}finally{ui.tool=t0;ui.opt.tagLead=op.tagLead;ui.opt.rtKind=op.rtKind}const d=P.ann.length>n0?P.ann[P.ann.length-1]:null;return d?JSON.parse(JSON.stringify(d)):null},
+  anchor:id=>{const A=etgAnchor(activeView(),IDX.get(id));return A?A.map(x=>Math.round(x)):null},
+  hit:(aid,h,z)=>{const v=activeView(),n=navOf(v),d=P.ann.find(a=>a.id===aid);return d?etgHit(d,v,{x:n.ox+h*n.s,y:n.oy-z*n.s},n):null},
+  lines:aid=>{const d=P.ann.find(a=>a.id===aid);return d?rtagLines(d,IDX.get(d.el)):null},
+  ok:k=>!!(XT3[k]&&XT3[k].ok(activeView())),
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=JSON.parse(JSON.stringify(o[k]))}});refresh();return JSON.parse(JSON.stringify(IDX.get(id)))},
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
