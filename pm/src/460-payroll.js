@@ -28,7 +28,8 @@ const pvdCoPct=s=>n(s.pf)?Math.min(n(s.pf),tierOf(benCfg().pvdCo,yrsOf(s)||0)):0
 // Thai personal income tax, progressive rates
 const TAXB=[[150000,0],[300000,.05],[500000,.10],[750000,.15],[1000000,.20],[2000000,.25],[5000000,.30],[Infinity,.35]];
 function pitYear(net){let t=0,lo=0;for(const [hi,r] of TAXB){if(net>lo)t+=(Math.min(net,hi)-lo)*r;lo=hi}return t}
-function runFor(m){benCfg();let r=CO().payrun.find(x=>x.m===m);if(!r){r={id:uid(),m,status:'draft',ov:{},rows:null};CO().payrun.push(r)}r.ov=r.ov||{};
+// 4.99.39: the month's draft has one id, so two devices that open this page make the same draft, not two
+function runFor(m){benCfg();let r=CO().payrun.find(x=>x.m===m);if(!r){r={id:'pr-'+m,m,status:'draft',ov:{},rows:null};CO().payrun.push(r)}r.ov=r.ov||{};
   CO().staff.forEach(s=>{if(!r.ov[s.id])r.ov[s.id]={pd:'',oth:'',adv:'',lwop:''}});return r}
 // approved claims handed in by the cutoff day are paid with that month's salary, later ones roll to the next month
 const claimDue=(c,m)=>(c.sub||c.date||'')<=`${m}-${pad(n(benCfg().cutoff)||31,2)}`;
