@@ -7,6 +7,9 @@
    เรียน (user: "ชื่อตามลูกค้า ดีไหม"): choosing the customer writes its ผู้ติดต่อ into Q.attn (first name when the cell lists several,
    split on , / ; or newline); the box offers every contact of that customer plus the names earlier quotes to it were addressed to.
    A draft with an empty เรียน gets the contact when opened. A เรียน typed by hand is kept when the customer changes. */
+// 4.99.38 ("ชื่อผู้ลงนาม กับชื่อผู้เสนอราคาเป็นแบบพิมอีกแล้ว"): with no quote picked the page shows the newest quote (200), e.g. one that
+// just came in by รับงานสด, so the staff picker and ผู้เสนอราคา must work on that same quote, not only on a picked one
+const qsgSel=C=>C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0]||null;
 const qsgStaff=()=>(CO().staff||[]).filter(s=>s.active!==false&&String(s.name||'').trim());
 const qsgCur=Q=>{const nm=String(Q.signName||'').trim(),ps=String(Q.signPos||'').trim(),L=qsgStaff().filter(s=>s.name.trim()===nm);
   return nm?L.find(s=>String(s.role||'').trim()===ps)||(!ps&&L[0])||null:null};
@@ -15,7 +18,7 @@ const qsgMe=()=>{const u=typeof me==='function'&&me();return u&&u.name||''};
 function qsgFields(Q){const b=`co.quotes.${Q.id}`,cur=qsgCur(Q),man=qsgMan(Q),L=qsgStaff();
   const sel=`<label>ตำแหน่งผู้ลงนาม<select class="qsgPos" data-id="${Q.id}" title="เลือกตำแหน่ง ชื่อผู้ลงนามขึ้นเอง รายชื่อมาจาก ทีมงาน"><option value=""${!cur&&!man?' selected':''}>– เลือกตำแหน่ง –</option>${L.map(s=>`<option value="${s.id}"${cur&&!man&&cur.id===s.id?' selected':''}>${esc(s.role||'(ไม่ระบุตำแหน่ง)')} · ${esc(s.name)}</option>`).join('')}<option value="_m"${man?' selected':''}>พิมพ์ตำแหน่งเอง…</option></select></label>`;
   return `<label>ผู้ลงนาม<input data-p="${b}.signName" list="qsgNames" value="${esc(Q.signName||'')}" placeholder="เลือกตำแหน่ง หรือพิมพ์ชื่อ"></label>${sel}${man?`<label>ตำแหน่ง (พิมพ์เอง)<input data-p="${b}.signPos" value="${esc(Q.signPos||'')}" placeholder="เช่น กรรมการผู้จัดการ"></label>`:''}<datalist id="qsgNames">${L.map(s=>`<option value="${esc(s.name)}">${esc(s.role||'')}</option>`).join('')}</datalist>`}
-{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote);if(!Q)return h;
+{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=qsgSel(C);if(!Q)return h;
   const by=qsgMe();if(by&&!String(Q.by||'').trim()&&(Q.status||'draft')==='draft'){Q.by=by;save()}
   h=h.replace(new RegExp(`<label>ผู้ลงนาม<input data-p="co\\.quotes\\.${Q.id}\\.signName"[^>]*></label><label>ตำแหน่งผู้ลงนาม<input data-p="co\\.quotes\\.${Q.id}\\.signPos"[^>]*></label>`),()=>qsgFields(Q));
   const ct=qsgContacts(Q.cust);if(ct.length&&!String(Q.attn||'').trim()&&(Q.status||'draft')==='draft'){Q.attn=ct[0];save()}
