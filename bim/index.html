@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=552,V1_NAME='V1.542';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=553,V1_NAME='V1.543';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57221,6 +57221,40 @@ Object.assign(STR,{
   ev542_none:['ไม่มีอะไรวางได้ในมุมมองนี้ (ป้ายและระยะที่อ้างชิ้นงานวางได้เฉพาะมุมมองที่คัดลอกมา)','Nothing to paste here (tags and dimensions that name an element go back only into the view they came from)'],
   ev542_skip:[' (ข้าม {0} ชิ้น: ป้ายและระยะที่อ้างชิ้นงานวางได้เฉพาะมุมมองที่คัดลอกมา)',' ({0} left out: tags and dimensions that name an element go back only into their own view)'],
   ev542_note:['วางคำอธิบาย {0} ชิ้นลงตำแหน่งเดิมในรูปด้านและรูปตัดที่ติ๊ก (ที่มองไปทางเดียวกัน) ป้ายและระยะที่อ้างชิ้นงานไม่ถูกวาง','Paste {0} annotations at the same place in each elevation and section you tick (those that look the same way); tags and dimensions that name an element are left out']});
+/* ===== 543 Trim/Extend and Offset on the detail lines of elevations and sections (V1.543; Revit: Modify › Trim/Extend to Corner, Trim/Extend
+   Single Element, Trim/Extend Multiple Elements and Offset work on the detail lines of any view, and a level can be the boundary; Split Element
+   has split them there since V1.255).
+   The code of the plans does the work: in an elevation or a section the lines it may pick are the detail lines of that view, kept in its own coordinates
+   (x along it, y = −height); a level line is a boundary of Trim/Extend Single and Multiple. */
+const DL543=v=>catHid(v,'dline')?[]:P.ann.filter(d=>d.cat==='dline'&&d.view===avid(v)&&!hidDatum(v,d));
+{const f0=hitLine;hitLine=(v,w)=>{if(!ev3EV(v))return f0(v,w);const tol=8/navOf(v).s;let best=null,bd=Infinity;for(const d of DL543(v)){const q=bowDist(w.x,w.y,d);if(q<tol&&q<bd){bd=q;best=d}}return best}}
+{const f0=pickLine;pickLine=(v,w,tolPx,skipId)=>{if(!ev3EV(v))return f0(v,w,tolPx,skipId);const tol=(tolPx||10)/navOf(v).s;let best=null,bd=tol;
+  for(const d of DL543(v)){if(d.id===skipId||d.bow||lcCurve(d))continue;const lx=d.x2-d.x1,ly=d.y2-d.y1,L=Math.hypot(lx,ly)||1,ux=lx/L,uy=ly/L,dd=Math.abs((w.x-d.x1)*-uy+(w.y-d.y1)*ux),tt=(w.x-d.x1)*ux+(w.y-d.y1)*uy;
+    if(dd<bd&&tt>=-tol&&tt<=L+tol){bd=dd;best={x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2,ux,uy,id:d.id}}}return best}}
+/* the level line under the pointer, within 9 px, when no detail line is nearer */
+function lv543(v,w){if(catHid(v,'level'))return null;const n=navOf(v);let b=null,bd=9/n.s;for(const l of P.levels){const d=Math.abs(w.y+l.elev);if(d<bd){bd=d;b=l}}return b}
+const tb543=l=>({id:l.id,x1:-1e7,y1:-l.elev,x2:1e7,y2:-l.elev,lv543:1});
+/* the boundary of Trim/Extend Single and Multiple: a detail line or a level */
+{const f0=revitClick;revitClick=function(pn,v,p,w,s,pt,typed){const tl=ui.tool;if(!ev3EV(v)||(tl!=='trim1'&&tl!=='trimn')||ui.tb)return f0.apply(this,arguments);
+  const ln=pickLine(v,w,12),e=ln&&IDX.get(ln.id);if(e){ui.tb={id:e.id,x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2};refresh();return true}
+  const l=lv543(v,w);if(l){ui.tb=tb543(l);refresh();return true}toast(t('tl543_none'));return true}}
+const w543=(v,p)=>{const n=navOf(v);return{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s}};
+/* what the tools show under the pointer */
+function tl543Draw(pn,ctx,v,nav){const tl=ui.tool,X=x=>x*nav.s+nav.ox,Y=y=>y*nav.s+nav.oy,seg=(a,b,c,d)=>{ctx.beginPath();ctx.moveTo(X(a),Y(b));ctx.lineTo(X(c),Y(d));ctx.stroke()};
+  ctx.setLineDash([]);if((tl==='trim1'||tl==='trimn')&&ui.tb){const B=ui.tb;ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;ctx.setLineDash([8,4]);if(B.lv543)seg(-(nav.ox+10)/nav.s,B.y1,(pn.w-nav.ox+10)/nav.s,B.y1);else{const L=Math.hypot(B.x2-B.x1,B.y2-B.y1)||1,ux=(B.x2-B.x1)/L,uy=(B.y2-B.y1)/L,E=4e5;seg(B.x1-ux*E,B.y1-uy*E,B.x2+ux*E,B.y2+uy*E)}ctx.setLineDash([])}
+  if(tl==='trim'&&ui.pts.length){const a=IDX.get(ui.pts[0].id);if(a){ctx.strokeStyle=C.sel;ctx.lineWidth=2.4;seg(a.x1,a.y1,a.x2,a.y2)}}
+  if(ui.curPane!==pn.i||!ui.cur)return;const w=w543(v,ui.cur);ctx.strokeStyle=C.hot;ctx.lineWidth=2.4;
+  if((tl==='trim1'||tl==='trimn')&&!ui.tb){const ln=pickLine(v,w,12);if(ln){seg(ln.x1,ln.y1,ln.x2,ln.y2);return}const l=lv543(v,w);if(l){ctx.lineWidth=2;seg(-(nav.ox)/nav.s,-l.elev,(pn.w-nav.ox)/nav.s,-l.elev)}return}
+  const h=tl==='offset'&&ui.pts.length?IDX.get(ui.pts[0].id):hitLine(v,w);if(!h)return;seg(h.x1,h.y1,h.x2,h.y2);
+  if(tl==='offset'){const q=offGeo(v,h,w),D=ui.opt.offMode==='graph'?q.D:(ui.opt.dist||1000);ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;ctx.setLineDash([4,3]);seg(h.x1+q.nx*q.sd*D,h.y1+q.ny*q.sd*D,h.x2+q.nx*q.sd*D,h.y2+q.ny*q.sd*D);ctx.setLineDash([]);
+    if(ui.opt.offMode==='graph')ev3Lbl(ctx,ui.cur.x+12,ui.cur.y-12,fmtLen(D)+' '+unitName())}}
+const tl543Hint=v=>{const tl=ui.tool;if(tl==='trim')return t(ui.pts.length?'h_trim2':'h_trim');if(tl==='offset')return t('h_offset');return t(ui.tb?(tl==='trimn'?'tl543_hn':'tl543_h1'):'tl543_b')};
+for(const k of ['trim','trim1','trimn','offset'])if(!XT3[k])XT3[k]={ok:v=>ev3EV(v),click(pn,v,p,e){toolClick(pn,v,p,e||{})},draw:tl543Draw,hint:tl543Hint};
+Object.assign(STR,{
+  tl543_b:['ชี้เส้นรายละเอียดหรือเส้นระดับชั้นที่จะใช้เป็นขอบเขต','Point at a detail line or a level to use as the boundary'],
+  tl543_h1:['คลิกเส้นรายละเอียดที่จะตัดหรือต่อถึงขอบเขต ตรงส่วนที่จะเก็บไว้','Click the detail line to trim or extend to the boundary, on the part to keep'],
+  tl543_hn:['คลิกเส้นรายละเอียดที่จะตัดหรือต่อถึงขอบเขตทีละเส้น ตรงส่วนที่จะเก็บไว้ · Esc จบ','Click each detail line to trim or extend to the boundary, on the part to keep · Esc to finish'],
+  tl543_none:['ไม่มีเส้นรายละเอียดหรือเส้นระดับชั้นตรงนี้','No detail line or level here']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59675,6 +59709,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.540 · วาง (Ctrl+V) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: สิ่งที่คัดลอกมาตามเมาส์ คลิกวาง ในรูปด้านและรูปตัดไปทางข้างและขึ้นลงได้ ความลึกเท่าเดิม (Shift ไปทางข้างหรือขึ้นลงจากที่เดิมอย่างเดียว) ใน 3 มิติวางบนระนาบระดับ เมนูคลิกขวามี วาง · ประตู หน้าต่าง และช่องเปิดที่คัดลอกหรือตัดมาโดยไม่มีผนัง วางลงผนังที่คลิกได้ทั้งในแปลน รูปด้าน รูปตัด และ 3 มิติ ระยะห่างเท่าเดิม ธรณีจับความสูงเดิมเหนือแต่ละชั้น ทับของเดิมเห็นสีแดงและไม่ให้วาง
 - V1.541 · วัดระยะ (Measure) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: คลิกสองจุดได้ความยาวพร้อมระยะแนวนอนกับแนวตั้ง (3 มิติบอก X Y Z) จับเส้นระดับชั้น กริด ขอบชิ้นงาน และมุมของผิวใน 3 มิติ Shift ไปทางเดียว · วัดต่อเนื่อง (Chain) ทุกมุมมองรวมแปลน ความยาวรวม (Total Length) บนแถบตัวเลือก Esc จบโดยยังเห็นผล
 - V1.542 · คัดลอกและวางคำอธิบายในรูปด้านและรูปตัด แบบ Revit: Ctrl+C / Ctrl+X เส้นรายละเอียด พื้นที่แรเงา เมฆแก้ไข ชิ้นรายละเอียด ข้อความ ระยะ และระดับ Ctrl+V วางตามเมาส์ในมุมมองเดิมหรือรูปด้าน/รูปตัดอื่นที่มองทางเดียวกัน (วางพร้อมชิ้นงานได้) · วางลงมุมมองปัจจุบัน วางลงมุมมองที่เลือก และวางที่ตำแหน่งเดิมรับคำอธิบายของรูปด้านและรูปตัด
+- V1.543 · ตัด/ต่อ (Trim/Extend) และขนาน (Offset) เส้นรายละเอียดในรูปด้านและรูปตัด แบบ Revit: ตัด/ต่อมุม ทีละเส้น และหลายเส้น (เส้นระดับชั้นหรือเส้นรายละเอียดเป็นขอบเขตได้) ขนานตามระยะหรือตามเมาส์ แบ่งเส้นรายละเอียดได้เหมือนเดิม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60389,6 +60424,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.540 · Paste (Ctrl+V) in elevations, sections and 3D views, as in Revit: what was copied follows the pointer and a click places it; in elevations and sections across and up or down at the same depth (Shift: straight across or straight up from where it was), in 3D views on its level plane; Paste on the right-click menu · doors, windows and openings copied or cut without their wall go into the wall clicked, in plans, elevations, sections and 3D views: their spacing kept, the sill catching the same height above each level; red and refused where another insert is in the way
 - V1.541 · Measure in elevations, sections and 3D views, as in Revit: two clicks give the length with its across and up parts (X, Y, Z in 3D), catching levels, grids, the edges of what is under the pointer and the corners of faces in 3D; Shift keeps to one way · Chain in every view, plans too, with the Total Length on the options bar; Esc ends it with the result kept
 - V1.542 · Copy and paste the annotations of elevations and sections, as in Revit: Ctrl+C / Ctrl+X takes detail lines, filled regions, revision clouds, detail components, text, dimensions and spot elevations; Ctrl+V places them on the pointer in that view or in another elevation or section looking the same way (with model elements too) · Paste Aligned to Current View, to Selected Views and to Same Place take them
+- V1.543 · Trim/Extend and Offset on the detail lines of elevations and sections, as in Revit: to Corner, Single and Multiple (a level or a detail line can be the boundary), Offset by a distance or graphically; Split works on them as before
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63995,6 +64031,20 @@ window.PenumBIM.r542={
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   shift:b=>{ui.shift=!!b;return ui.shift},
   dir:vid=>viewDir(viewById(vid)),
+  str:k=>t(k)};
+window.PenumBIM.r543={
+  dl:(x1,y1,x2,y2,vid)=>{let id=0;edit(()=>{const v=activeView(),d={id:P.seq++,cat:'dline',view:vid||avid(v),x1,y1,x2,y2};P.ann.push(d);id=d.id});refresh();return id},
+  ln:id=>{const d=P.ann.find(x=>x.id===id);return d?{x1:Math.round(d.x1),y1:Math.round(d.y1),x2:Math.round(d.x2),y2:Math.round(d.y2)}:null},
+  lns:vid=>P.ann.filter(d=>d.cat==='dline'&&(vid==null||d.view===vid)).map(d=>({id:d.id,x1:Math.round(d.x1),y1:Math.round(d.y1),x2:Math.round(d.x2),y2:Math.round(d.y2)})),
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl,activeView()),
+  click:(h,z,sh)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};XT3[ui.tool].click(pn,v,p,{shiftKey:!!sh});return{tool:ui.tool,tb:ui.tb?Object.assign({},ui.tb):null,pts:ui.pts.length}},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  opt:o=>{Object.assign(ui.opt,o);renderOptbar();refresh();return true},
+  hint:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  esc:()=>{cancelTool();return{tool:ui.tool,tb:ui.tb||null,pts:ui.pts.length}},
+  els:cat=>P.els.filter(e=>e.cat===cat).map(e=>({id:e.id,x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,h:e.height})),
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
