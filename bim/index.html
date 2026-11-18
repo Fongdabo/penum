@@ -6116,18 +6116,26 @@ function dxfWrite(ents,layers,o){o=o||{};const sc=o.scale||100,out=[],w=(c,v)=>{
   w(0,'ENDSEC');w(0,'EOF');
   let s='';for(let i=0;i<out.length;i+=2)s+=out[i]+'\r\n'+out[i+1]+'\r\n';return s}
 
-/* ---- a zip file with the files stored as they are (no compression): the way to hand over files whose type a host does not let through ---- */
+/* ---- a zip file with the files stored as they are (no compression): the way to hand over files whose type a host does not let through.
+   A file that comes with f.z (its bytes deflated, as zipDeflate below makes them) goes in deflated (method 8) ---- */
 let CRCT=null;
 function crc32(u8){if(!CRCT){CRCT=new Uint32Array(256);for(let i=0;i<256;i++){let c=i;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;CRCT[i]=c>>>0}}
   let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=CRCT[(c^u8[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0}
 function zipStore(files,when){const enc=new TextEncoder(),d=when||new Date(),time=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1),date=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
   const parts=[],cen=[];let off=0;const u16=v=>[v&255,(v>>>8)&255],u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
-  for(const f of files){const name=enc.encode(f.name),data=typeof f.data==='string'?enc.encode(f.data):f.data,crc=crc32(data),
-      common=[...u16(20),...u16(0x0800),...u16(0),...u16(time),...u16(date),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0)];
-    const lh=new Uint8Array([0x50,0x4b,3,4,...common]);parts.push(lh,name,data);
-    cen.push(new Uint8Array([0x50,0x4b,1,2,...u16(20),...common,...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),name);off+=lh.length+name.length+data.length}
+  for(const f of files){const name=enc.encode(f.name),data=typeof f.data==='string'?enc.encode(f.data):f.data,crc=crc32(data),body=f.z||data,
+      common=[...u16(20),...u16(0x0800),...u16(f.z?8:0),...u16(time),...u16(date),...u32(crc),...u32(body.length),...u32(data.length),...u16(name.length),...u16(0)];
+    const lh=new Uint8Array([0x50,0x4b,3,4,...common]);parts.push(lh,name,body);
+    cen.push(new Uint8Array([0x50,0x4b,1,2,...u16(20),...common,...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),name);off+=lh.length+name.length+body.length}
   let cl=0;for(const c of cen)cl+=c.length;const end=new Uint8Array([0x50,0x4b,5,6,0,0,0,0,...u16(files.length),...u16(files.length),...u32(cl),...u32(off),0,0]);
   const all=[...parts,...cen,end];let n=0;for(const p of all)n+=p.length;const out=new Uint8Array(n);let o=0;for(const p of all){out.set(p,o);o+=p.length}return out}
+/* V1.512 the same zip with each file deflated (audit 11 พ.ย.: every plan and sheet as DXF made a 16 MB zip that deflates to about 1.6 MB):
+   the browser's own CompressionStream 'deflate-raw'; a file stays stored where the browser has none or it would not get smaller */
+async function zipDeflate(files,when){const enc=new TextEncoder(),L=[];
+  for(const f of files){const data=typeof f.data==='string'?enc.encode(f.data):f.data;let z=null;
+    try{if(typeof CompressionStream==='function'&&data.length>256){z=new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());if(z.length>=data.length)z=null}}catch(e){z=null}
+    L.push({name:f.name,data,z})}
+  return zipStore(L,when)}
 
 /* ================= reading ================= */
 /* the text of a DXF file: UTF-8 where it is valid UTF-8 (AutoCAD 2007 and later), else the code page the file names (Thai: ANSI_874) */
@@ -14621,7 +14629,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=521,V1_NAME='V1.511';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=522,V1_NAME='V1.512';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57804,6 +57812,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.509 · [[t_rbsk501]]: วาดเหล็กเสริมในแปลนแบบ Revit: เครื่องมือเหล็กเสริมวาดเองใช้ในแปลนได้ คลิกเสา ฐานราก ผนัง คาน หรือพื้นคอนกรีต แล้วคลิกจุดของเหล็ก (ยึดเส้นระยะหุ้มตามแนวของชิ้นส่วน เสาที่หมุนก็ยึดตามด้านของเสา) เหล็กอยู่ในแนวนอนที่ระยะหุ้มบนหรือล่าง (ระนาบ ในแถบตัวเลือก) ชุดวางเรียงขึ้นตามความสูงของชิ้นส่วน เช่นปลอกเสาหรือเหล็กรูปตัวยูที่ปลายผนัง ขอเหล็กหันในระนาบของเหล็ก แปลนแสดงเป็นเส้นเดียว รูปตัด รูปด้าน และ 3 มิติเห็นทุกเส้น
 - V1.510 · [[a_rbs504edit]]: ชุดเหล็กที่วาดในแปลนแก้ในแปลนแบบ Revit: แก้ไขภาพร่างเปิดแปลนที่แสดงชุดนั้น (แปลนที่เปิดอยู่ หรือแปลนของชั้นที่ชิ้นส่วนอยู่) พร้อมจุดเดิมบนเส้นระยะหุ้ม คลิกต่อจุด เอาจุดออก แทรกจุด วงปิด จบ ยกเลิก ได้เหมือนในรูปตัด ระนาบ ขนาด การวางเรียง และขอคงเดิม เลือกชุดในแปลนมีจุดจับกลมที่จุดและสี่เหลี่ยมกลางช่วง ลากแล้วยึดเส้นระยะหุ้มตามด้านของชิ้นส่วน (Shift ลากตามด้านเดียว) และในแปลนคลิกตรงเส้นเหล็ก (ไม่เกิน 3 จุดภาพ) ได้เหล็กก่อนเสา ผนัง คาน หรือพื้นที่เหล็กอยู่ข้างใน Tab ยังไปต่อที่ชิ้นส่วนได้
 - V1.511 · [[t_rbsk501]]: การวางเรียงแบบ Revit เพิ่มสองแบบ: จำนวนพร้อมระยะห่าง (Number with Spacing) วางตามจำนวนที่ระยะห่างที่กำหนดจากต้นแนววาง เส้นที่เลยระยะหุ้มปลายแนววางไม่วางและ Properties บอกว่าวางได้กี่เส้น และช่องว่างไม่น้อยกว่า (Minimum Clear Spacing) วางเท่ากันจากปลายถึงปลายให้ช่องว่างระหว่างผิวเหล็กไม่น้อยกว่าค่าที่กำหนด มีในแถบตัวเลือกและ Properties จำนวน ความยาว ตาราง 3 มิติ การแสดงชุด และใส่เส้นแรกหรือสุดท้ายตามไปด้วย
+- V1.512 · ตาราง BOQ: แถวที่ยังไม่มีราคาเป็นสีส้ม แถบเหนือตารางบอกว่ายังไม่มีราคากี่รายการ และปุ่มพาไปแถวถัดไปที่ยังไม่มีราคา (บนจอเท่านั้น แผ่นงาน PDF CSV และ Excel เหมือนเดิม) ส่งออก DXF ทุกแปลนและทุกแผ่นเป็นไฟล์ zip ที่บีบอัดแล้ว เล็กลงราว 10 เท่า ไฟล์ข้างในเหมือนเดิม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58487,6 +58496,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.509 · [[t_rbsk501]]: Sketch Rebar in plans as in Revit: the tool works in floor plans; click a concrete column, footing, wall, beam or slab, then the points of the bar (they snap to its cover lines along the host's own sides, a turned column's too); the bar lies flat at the top or bottom cover (Plane in the options bar) and the set is laid out up the host, as column ties or U bars at a wall end; hooks turn in the bar's plane; plans draw it as one bar, sections, elevations and 3D views show every bar
 - V1.510 · [[a_rbs504edit]]: sets sketched in plans are edited in plans as in Revit: Edit Sketch opens a plan that shows the set (the active one, or a plan of its host's level) with its points on the cover lines; add, take out and put in points, Closed, Finish and Cancel work as in a section, and the plane, bar size, layout and hooks are kept. Selected in a plan such a set shows round grips at its points and square ones in the middle of its segments; they snap to the cover lines along the host's sides (Shift: along one side). In a plan a click on a bar line (within 3 pixels) picks the bar before the column, wall, beam or slab it is in; Tab still goes on to them
 - V1.511 · [[t_rbsk501]]: two more Layout Rules as in Revit: Number with Spacing lays the Quantity of bars at the Spacing from the start of the layout (bars past the far end cover are left out, and Properties says how many fit), and Minimum Clear Spacing lays bars evenly from end to end with the clear gap between them no less than the Spacing; in the options bar and Properties, and the count, lengths, schedules, 3D, Presentation and Include First / Last Bar follow
+- V1.512 · BOQ schedule: rows that still have no price are orange, a bar above the table says how many and its button goes to the next one (on screen only; sheets, PDF, CSV and Excel are unchanged). "Every plan and sheet as DXF" writes a deflated zip, about ten times smaller, with the same files.
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -59830,6 +59840,22 @@ if(PL_ON){penumPrices.on(why=>{if(why==='state')return;PANES.forEach(pn=>{if(pn.
   {const b=document.createElement('button');b.type='button';b.id='menuPrices';const fb=$('#menuFb');fb.parentNode.insertBefore(b,fb.previousElementSibling&&fb.previousElementSibling.tagName==='HR'?fb.previousElementSibling:fb);
     const lab=()=>{b.textContent=tmL('คลังราคากลาง','Price library')};lab();$('#appMenu').addEventListener('toggle',lab)}
   const st=document.createElement('style');st.textContent='.pl-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:rgba(127,140,160,.12);font-size:13px}.pl-bar small{opacity:.75;flex-basis:100%}@media print{.pl-bar{display:none}}';document.head.appendChild(st)}
+/* ---- V1.512 BOQ rows with no price yet (audit 11 พ.ย.: 38 of the 166 rows of a real model stood at 0 baht and nothing said so, so the total
+   looked complete). On the screen only (sheets, PDF, CSV and Excel stay as they were): the price box of such a row is orange, a bar above the
+   table and the total row say how many, and the bar's button goes to the next one (the rows are the BOQ's price boxes, data-tc on every one) ---- */
+{const key=i=>i.dataset.pk||i.dataset.tc+'|'+i.dataset.tid,none=i=>!(+i.value>0);
+  const f=renderSchedule;renderSchedule=function(pn,v){const r=f.apply(this,arguments);if(!v||v.sched!=='boq'||!pn||!pn.sched)return r;
+    const A=[...pn.sched.querySelectorAll('input[data-tc]')],L=A.filter(none),tb=pn.sched.querySelector('table');if(!L.length||!tb)return r;
+    L.forEach(i=>{i.classList.add('nop512');i.title=tmL('ยังไม่มีราคา','No price yet');const tr=i.closest('tr');if(tr)tr.classList.add('nop512')});
+    const ft=[...tb.querySelectorAll('tr.ft')].pop(),td=ft&&ft.cells[L[0].closest('td').cellIndex];
+    if(td&&!td.textContent.trim())td.innerHTML=`<small class="nop512">${tmL('ยังไม่มีราคา '+L.length+' รายการ','No price: '+L.length+' rows')}</small>`;
+    const bar=document.createElement('div');bar.className='nop512-bar';
+    bar.innerHTML=`<b>${tmL('ยังไม่มีราคา '+L.length+' จาก '+A.length+' รายการ','No price yet on '+L.length+' of '+A.length+' rows')}</b><span>${tmL('ยอดรวมยังไม่รวมรายการเหล่านี้ ใส่ราคาในช่องสีส้ม','The total leaves these rows out: type their prices in the orange boxes')}</span><button type="button" class="btn">${tmL('ไปรายการถัดไปที่ยังไม่มีราคา','Next row with no price')}</button>`;
+    bar.querySelector('button').onclick=()=>{const B=[...pn.sched.querySelectorAll('input[data-tc]')],p=B.findIndex(i=>key(i)===pn.sched._nop512);let n=null;
+      for(let s=1;s<=B.length;s++){const i=B[(p+s+B.length)%B.length];if(none(i)){n=i;break}}
+      if(!n)return;pn.sched._nop512=key(n);n.scrollIntoView({block:'center'});n.focus({preventScroll:true});try{n.select()}catch(e){}};
+    tb.before(bar);return r};
+  const st=document.createElement('style');st.textContent='.sched input.nop512{background:color-mix(in srgb,var(--hot) 16%,var(--paper));border-color:var(--hot)}.sched tr.nop512>td:first-child{box-shadow:inset 3px 0 0 var(--hot)}.sched small.nop512{color:var(--hot);font-weight:600;white-space:nowrap}.nop512-bar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--hot) 14%,transparent);font-size:13px}.nop512-bar span{flex:1 1 220px;opacity:.85}@media print{.nop512-bar{display:none}}';document.head.appendChild(st)}
 async function saveProject(){const txt=projectJSON();
   if(BF&&BF.ok){const r=await BF.save({name:P.info.name||'penum',ext:'.penbim',text:txt,isMine:bfMine(P.guid)});
     if(r.file){toast(t('bf_saved',r.dir+' › '+r.file),5000);return true}if(r.err==='cancel')return false;if(r.err==='denied'){toast(t('bf_denied'),6000);return false}}
@@ -59892,7 +59918,7 @@ async function exportDXF(all,O){const av=activeView(),DXK=['plan','sheet','elev'
   toast(t('dxf_working'));await new Promise(r=>setTimeout(r,40));
   try{const used=new Set(),files=list.map(v=>{let n=fname('-'+v.name,'');while(used.has(n))n+='_';used.add(n);return{name:n+'.dxf',data:v.kind==='sheet'?sheetDXF(v):v.kind==='plan'?planDXF(v,O):evDXF(v)}});if(list.some(v=>v.kind==='sheet'&&(v.vps||[]).some(q=>{const V=viewById(q.view);return V&&V.kind==='3d'})))setTimeout(()=>toast(t('dxf_sheet_gl'),9000),1500);let ok;
     if(files.length===1&&!hosted())ok=await saveFile(files[0].name,files[0].data,'application/dxf');
-    else{ok=await saveFile(fname(all?'-DXF':'-'+list[0].name+'-DXF','.zip'),zipStore(files),'application/zip');if(ok&&hosted())setTimeout(()=>toast(t('dxf_zip'),7000),900)}
+    else{ok=await saveFile(fname(all?'-DXF':'-'+list[0].name+'-DXF','.zip'),await zipDeflate(files),'application/zip');if(ok&&hosted())setTimeout(()=>toast(t('dxf_zip'),7000),900)}
     if(!ok)toast(t('export_na'))}catch(e){toast(t('export_na'))}}
 
 /* ---- linked drawings ---- */
@@ -60044,7 +60070,7 @@ function projStr(){const s=JSON.stringify(P,(k,v)=>k==='_v'?undefined:v),c=cadJS
 const ifcText=O=>ifcWrite(P,ifcItems(O),{tr:t,app:String((window.PenumBIM||{}).version||''),name:fname('',''),schema:O&&O.schema,open:!!(O&&O.open),geo:O&&O.geo,crs:O&&O.geo?(P.info||{}).crs:''});
 /* the whole model as one .ifc.  A host that does not let .ifc files through gets it in a .zip, as with DXF */
 async function exportIFC(O){toast(t('ifc_working'));await new Promise(r=>setTimeout(r,40));
-  try{const R=ifcText(O),name=fname('','.ifc');let ok;if(!hosted())ok=await saveFile(name,R.text,'application/x-step');else ok=await saveFile(fname('-IFC','.zip'),zipStore([{name,data:R.text}]),'application/zip');
+  try{const R=ifcText(O),name=fname('','.ifc');let ok;if(!hosted())ok=await saveFile(name,R.text,'application/x-step');else ok=await saveFile(fname('-IFC','.zip'),await zipDeflate([{name,data:R.text}]),'application/zip');
     if(!ok)toast(t('export_na'));else setTimeout(()=>toast(t(hosted()?'ifc_zip':'ifc_done',R.n.products,R.n.spaces,R.n.storeys),7000),900)}catch(e){toast(t('export_na'))}}
 
 /* ===== 82 Link IFC (Revit: Insert > Link IFC, Manage Links) =====

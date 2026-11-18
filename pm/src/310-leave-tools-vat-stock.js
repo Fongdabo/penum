@@ -85,8 +85,8 @@ function acctVat(){const m=S.sel.vatm||ym(today());
 ACT.vatM=b=>{const m=pd((S.sel.vatm||ym(today()))+'-01');m.setMonth(m.getMonth()+n(b.dataset.d));S.sel.vatm=ym(iso(m));render()};
 ACT.vatPrint=()=>{const m=S.sel.vatm||ym(today()),mo=pd(m+'-01').toLocaleDateString('th-TH',{month:'long',year:'numeric'}),h=t=>{const T=TABLES[t];const R=T.rows();return `<table><thead><tr>${T.cols.map(c=>`<th>${c.h}</th>`).join('')}</tr></thead><tbody>${R.map(r=>`<tr>${T.cols.map(c=>`<td${c.r?' style="text-align:right"':''}>${c.r?esc(fmt(c.tv(r),2)):esc(c.tv(r))}</td>`).join('')}</tr>`).join('')}<tr><td colspan="${T.cols.length-2}"><b>รวม</b></td><td style="text-align:right"><b>${fmt(sum(R,r=>r.base),2)}</b></td><td style="text-align:right"><b>${fmt(sum(R,r=>r.vat),2)}</b></td></tr></tbody></table>`};
   $('#print').innerHTML=cphead(`รายงานภาษีขาย และ รายงานภาษีซื้อ`,`เดือนภาษี ${mo}`)+`<h2 style="font-size:14px;margin:10px 0 4px">รายงานภาษีขาย</h2>${h('vatOut')}<h2 style="font-size:14px;margin:14px 0 4px">รายงานภาษีซื้อ</h2>${h('vatIn')}`;setTimeout(()=>print(),300)};
-// the purchase-tax inputs edit a PO in another project: point P at it for the edit
-document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.pj||!t.dataset.p)return;const p=DB.projects[t.dataset.pj];if(!p)return;e.stopImmediatePropagation();withP(p,()=>setPath(t.dataset.p,t.value));save();render()},true);
+// the purchase-tax inputs edit a PO in another project: point P at it for the edit (4.99.38 rerender: a click right after typing works, 100-core.js)
+document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.pj||!t.dataset.p)return;const p=DB.projects[t.dataset.pj];if(!p)return;e.stopImmediatePropagation();withP(p,()=>setPath(t.dataset.p,t.value));save();rerender()},true);
 
 CVIEWS.acct=()=>{const {cur,html}=subTabs('acct',[['ar','ลูกหนี้ (เงินรับ)'],['ap','เจ้าหนี้ (เงินจ่าย)'],['cf','กระแสเงินสด'],['vat','ภาษีซื้อ-ภาษีขาย'],['wht','ภาษีหัก ณ ที่จ่าย']]);
   if(cur!=='ar')return html+({ap:acctAP,cf:acctCF,vat:acctVat,wht:acctWht}[cur])();
