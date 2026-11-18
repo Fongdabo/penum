@@ -18,10 +18,11 @@ function bahtText(v){v=r2(v);const neg=v<0;v=Math.abs(v);const D=['','หนึ�
   const b=Math.floor(v),st=Math.round((v-b)*100);if(!b&&!st)return 'ศูนย์บาทถ้วน';
   return (neg?'ลบ':'')+(b?big(String(b))+'บาท':'')+(st?rd(String(st).padStart(2,'0'))+'สตางค์':'ถ้วน')}
 // numbers printed in the ลำดับ column: section 1, heading 1.1, item 1.1.1 (or 1.1 when the section has no headings);
-// a heading that already starts with its own number (an imported BOQ) keeps it
+// a heading that already starts with its own number (an imported BOQ) keeps it while it belongs to its section: the section's
+// counter, or the customer's own number at the start of the section name ("1.3 กั้นห้อง" keeps "1.3.1"); otherwise it is numbered here
 function number(items){let gi=0,hi=0,li=0,lg=null,lh=null,hn='';return items.map(i=>{const r={};
   if(i.g!==lg){lg=i.g;gi++;hi=0;li=0;lh=null;hn='';r.sec=String(gi)}
-  if((i.head||'')!==lh){lh=i.head||'';li=0;if(lh){hi++;const m=lh.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);hn=m?m[1]:gi+'.'+hi;r.head=hn;r.headTxt=m?m[2]:lh}else hn=''}
+  if((i.head||'')!==lh){lh=i.head||'';li=0;if(lh){hi++;let m=lh.match(/^(\d+(?:\.\d+)*)\s+(.*)$/);const gno=(String(i.gname||'').match(/^(\d+(?:\.\d+)+)\.?\s+/)||[])[1];if(m&&m[1].includes('.')&&m[1].split('.')[0]!==String(gi)&&!(gno&&m[1].startsWith(gno+'.')))m=[m[0],gi+'.'+hi,m[2]];hn=m?m[1]:gi+'.'+hi;r.head=hn;r.headTxt=m?m[2]:lh}else hn=''}
   li++;const own=String(i.desc||'').match(/^(\d+(?:\.\d+)+)\s+(.*)$/);r.no=own?own[1]:hn?hn+'.'+li:gi+'.'+(hi+li);r.desc=own?own[2]:i.desc;if(!hn&&!own)hi++,li--;return r})}
 function build(X,doc,internal){
   const wb=X.utils.book_new(),M=doc.meta||{},co=doc.co||{},its=doc.items||[],N=number(its),vat=M.vat==null?7:+M.vat;
