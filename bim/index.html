@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=540,V1_NAME='V1.530';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=541,V1_NAME='V1.531';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -56457,6 +56457,55 @@ XC.push(()=>{for(const e of P.els){if(e.cat!=='rebar'||!e.rb||e.rb.at530===undef
   for(const k of Object.keys(a))if(k!=='p'&&k!=='k')delete a[k]}});
 Object.assign(STR,{p_ar530:['เหล็กเสริม','Reinforcement'],a_ar530ra:['ถอดระบบพื้นที่ (Remove Area System)','Remove Area System'],a_ar530rp:['ถอดระบบตามแนว (Remove Path System)','Remove Path System'],
   ar530_done:['แยกเป็นชุดเหล็ก {0} ชุด {1} เส้น อยู่ที่เดิม','Removed: {0} rebar sets, {1} bars, where they were'],ar530_none:['เลือกเหล็กเสริมแบบพื้นที่หรือตามแนวก่อน','Select Area or Path Reinforcement first']});
+/* ===== 531 shape handles on area and path reinforcement in walls (V1.531; Revit: Edit Boundary of area reinforcement and Edit Path of path reinforcement in
+   a wall, the sketch changed where it lies on the wall's face) =====
+   Selected in an elevation or a section that faces its wall, wall area reinforcement (V1.528) shows a round grip at each corner of its boundary and a square
+   one at the middle of each side; path reinforcement (V1.529) the same on its path.  A corner or a point is dragged anywhere on the face (Shift: across or
+   up and down only), a side moved square to itself; they snap to the wall's ends, top and foot, to the lines of the other points, and else to 5 mm, and
+   stay on the wall.  A point is not let onto its neighbour, a boundary not folded flat, a path not made shorter than 300.  A Whole Wall boundary that is
+   dragged lets Whole Wall go.  The bars, the plan footprint, quantities and 3D follow; Ctrl+Z undoes a drag. */
+const AR531_MAX=8,AR531_R=7;
+const ar531W=e=>ar528W(e)||ar529W(e),ar531K=e=>e.cat==='areinf'?'wb528':'wp529';
+/* the selected ones view v faces: [{e, h, F, cl}] */
+function ar531Sel(v){if(!lxV383(v)||ui.tool!=='modify')return[];const out=[];
+  for(const id of ui.sel){const e=IDX.get(id);if(!e||!ar531W(e)||isPinned(id)||hidEl(v,e))continue;const h=IDX.get(e.host);if(!ar528Ok(h))continue;
+    if(e.cat==='areinf'?!ar528Vis(v,e,h):!ar529Vis(v,e,h))continue;const F=rbs501Fr(P,h);if(!F||!Array.isArray(e[ar531K(e)]))continue;out.push({e,h,F,cl:e.cat==='areinf'});if(out.length>=AR531_MAX)break}
+  return out}
+/* its points in the view, [h, z] */
+const ar531Pts=(v,S)=>S.e[ar531K(S.e)].map(p=>{const q=ar528VP(v,S.F,p);return[q[0],-q[1]]});
+const ar531Segs=S=>{const n=S.e[ar531K(S.e)].length,o=[];for(let i=0;i<n-1;i++)o.push([i,i+1]);if(S.cl&&n>=3)o.push([n-1,0]);return o};
+/* the grip under p: a point {ar531, id, i} before a side {ar531, id, i, j, seg} */
+function ar531GripAt(pn,v,p){if(!lxV383(v)||(pn&&pn.i!==ui.ap))return null;const n=navOf(v),L=ar531Sel(v),near=q=>Math.hypot(n.ox+q[0]*n.s-p.x,n.oy-q[1]*n.s-p.y)<=AR531_R,Q=L.map(S=>ar531Pts(v,S));
+  for(let k=0;k<L.length;k++)for(let i=0;i<Q[k].length;i++)if(near(Q[k][i]))return{ar531:1,id:L[k].e.id,i};
+  for(let k=0;k<L.length;k++)for(const [i,j] of ar531Segs(L[k]))if(near(rbs503Mid(Q[k][i],Q[k][j])))return{ar531:1,id:L[k].e.id,i,j,seg:1};return null}
+{const f0=lxGripAt383;lxGripAt383=function(pn,v,p){return ar531GripAt(pn,v,p)||f0(pn,v,p)}}
+{const f0=hoverPane;hoverPane=function(pn,v,p){f0(pn,v,p);if(ui.tool!=='modify'||!lxV383(v))return;const g=ar531GripAt(pn,v,p);if(!g)return;pn.cv.style.cursor='move';if(ui.hov!==g.id){ui.hov=g.id;redraw()}}}
+/* where grip G puts the points for a pointer moved by (dh, dz): [[h, z] …], or null (the points as they were when the drag began) */
+function ar531Move(v,G,dh,dz,tol,shift){const Q=G.q.map(q=>q.slice()),B=G.B,H=[B.h0,B.h1],Z=[B.z0,B.z1],oth=k=>Q.filter((_,m)=>!G.mv.includes(m)).map(q=>q[k]);
+  const inH=x=>Math.min(B.h1,Math.max(B.h0,x)),inZ=z=>Math.min(B.z1,Math.max(B.z0,z));
+  if(!G.seg){const i=G.i;if(shift){if(Math.abs(dh)>=Math.abs(dz))dz=0;else dh=0}
+    const h=dh?inH(rbs503Snap(Q[i][0]+dh,H.concat(oth(0)),tol)[0]):Q[i][0],z=dz?inZ(rbs503Snap(Q[i][1]+dz,Z.concat(oth(1)),tol)[0]):Q[i][1];Q[i]=[h,z]}
+  else{const a=Q[G.i],b=Q[G.j],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-6)return null;const nr=[-(b[1]-a[1])/L,(b[0]-a[0])/L];let off=dh*nr[0]+dz*nr[1];
+    if(Math.abs(nr[1])>0.999){const z=inZ(rbs503Snap(a[1]+off*nr[1],Z.concat(oth(1)),tol)[0]);off=(z-a[1])*nr[1]}
+    else if(Math.abs(nr[0])>0.999){const h=inH(rbs503Snap(a[0]+off*nr[0],H.concat(oth(0)),tol)[0]);off=(h-a[0])*nr[0]}else off=Math.round(off/5)*5;
+    for(const m of [G.i,G.j])Q[m]=[inH(Q[m][0]+nr[0]*off),inZ(Q[m][1]+nr[1]*off)];G.off=off}
+  const n=Q.length;for(let m=0;m<n;m++){const k=m+1<n?m+1:G.cl?0:-1;if(k>=0&&k!==m&&Math.hypot(Q[k][0]-Q[m][0],Q[k][1]-Q[m][1])<1)return null}          // no point onto its neighbour
+  if(G.cl){if(Math.abs(area2(Q))<2e4)return null}else{let l=0;for(let m=1;m<n;m++)l+=Math.hypot(Q[m][0]-Q[m-1][0],Q[m][1]-Q[m-1][1]);if(l<300)return null}          // not flat, not too short
+  return Q}
+/* the drag: the points in the view and the wall's box are taken at the first move */
+function ar531Drag(v,d,p){const G=d.g,e=IDX.get(G.id),h=e&&IDX.get(e.host),F=ar528Ok(h)&&rbs501Fr(P,h);if(!F||!ar531W(e))return;const n=navOf(v),K=ar531K(e);
+  if(!G.q){G.q=e[K].map(q=>{const s=ar528VP(v,F,q);return[s[0],-s[1]]});G.B=ar528Box(v,h);G.cl=e.cat==='areinf';G.mv=G.seg?[G.i,G.j]:[G.i]}
+  const Q=ar531Move(v,G,(p.x-d.sx)/n.s,-(p.y-d.sy)/n.s,8/n.s,ui.shift);if(!Q)return;const W=ar528Uz(v,h,Q);if(!W)return;
+  e[K]=W;if(e.wh528)delete e.wh528;touch();
+  const U=t('u_mm'),q=Q[G.i],q0=G.q[G.i],r=x=>String(Math.round(x*10)/10);hint(G.seg?t('h_ar531seg',r(G.off||0),U):t('h_ar531pt',G.i+1,r(q[0]-q0[0]),r(q[1]-q0[1]),U));redraw()}
+{const f0=cropDrag;cropDrag=function(v,d,p){if(d&&d.g&&d.g.ar531)return ar531Drag(v,d,p);return f0.apply(this,arguments)}}
+/* the grips of the selected ones */
+function ar531Ctrls(pn,ctx,v,nav){const L=ar531Sel(v);if(!L.length)return;const X=h=>nav.ox+h*nav.s,Y=z=>nav.oy-z*nav.s;ctx.save();ctx.fillStyle=C.paper;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;
+  for(const S of L){const Q=ar531Pts(v,S);for(const [i,j] of ar531Segs(S)){const m=rbs503Mid(Q[i],Q[j]);ctx.beginPath();ctx.rect(X(m[0])-3.5,Y(m[1])-3.5,7,7);ctx.fill();ctx.stroke()}
+    for(const q of Q){ctx.beginPath();ctx.arc(X(q[0]),Y(q[1]),4.5,0,7);ctx.fill();ctx.stroke()}}ctx.restore()}
+{const f0=lxCtrls383;lxCtrls383=function(pn,ctx,v,nav,g){f0.apply(this,arguments);ar531Ctrls(pn,ctx,v,nav)}}
+Object.assign(STR,{h_ar531pt:['ลากจุดที่ {0}: แนวนอน {1} แนวดิ่ง {2} {3}','Dragging point {0}: {1} across, {2} up ({3})'],
+  h_ar531seg:['ลากด้านตั้งฉากกับตัวเอง {0} {1}','Dragging a side square to itself: {0} {1}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -57600,6 +57649,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_pinf]]: คลิกพื้นแล้วคลิกจุดของแนว (ขอบพื้นหรือแนวคาน) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กตั้งฉากกับแนว ยาว [[p_arL]] ยื่นเข้าไปในพื้น ([[p_arflip]] สลับข้าง) ที่ผิวบนหรือล่าง [[p_arL2]] ทำให้เหล็กทุกเส้นที่สองยาวอีกค่า · เหล็กของทั้งสองแบบหยุดที่ระยะหุ้มจากขอบเขต ขอบพื้น และช่องเปิด และเข้า [[a_rbsched]] ปริมาณ และ BOQ
 - [[t_pinf]] ในผนัง: เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้วคลิกจุดของแนวบนผนัง คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ · [[p_arface]] [[p_ar529e]] หรือ [[p_ar529i]] · [[p_arflip]] สลับข้าง · คลิกแนวหรือแถบเหล็กในรูปด้านเพื่อเลือก
 - เลือกเหล็กเสริมแบบพื้นที่หรือตามแนวแล้วกด [[a_ar530ra]] หรือ [[a_ar530rp]] (แท็บแก้ไข) ระบบหายไป เหล็กอยู่ที่เดิมเป็นชุดเหล็กแยกกัน แก้ทีละชุดได้
+- เหล็กเสริมแบบพื้นที่หรือตามแนวในผนังที่เลือกในรูปด้านหรือรูปตัดมีจุดกลมที่มุมและจุดสี่เหลี่ยมกลางด้าน ลากเพื่อแก้ขอบเขตหรือแนว (Shift ลากตรง) จุดยึดขอบผนังและแนวของจุดอื่น
 - [[t_rbsh522]]: เลือกรูปทรงในแถบตัวเลือก (ปลอกปิด 51 รูปตัว U 21 รูปตัว L 11 เส้นตรง 00) แล้วคลิกในชิ้นส่วนคอนกรีตในรูปตัด รูปด้าน หรือแปลน รูปทรงวางพอดีระยะหุ้ม ชิดด้านหรือมุมที่ใกล้เมาส์ ได้ชุดเหล็กวาดเองที่แก้ต่อได้
 - [[t_rbsh522]] รูปทรงเส้นตรงตั้งฉากกับมุมมอง (00 ⊥): คลิกในรูปตัดคานได้เหล็กยาวตลอดคานบนระยะหุ้มด้านที่ใกล้เมาส์ เรียงตามด้านนั้น (เช่นเหล็กล่าง 3 เส้นในคลิกเดียว) คลิกในแปลนได้เหล็กยืนของเสาหรือผนังเรียงตามผิว แปลนแสดงเหล็กที่มองเห็นปลายเป็นจุด
 - [[t_rbsh522]] ในแปลน การวาง: ขนานระนาบทำงาน (รูปทรงนอน วางเรียงขึ้น) หรือขนานระยะหุ้ม (รูปทรงตั้งในระนาบของด้านที่ใกล้เมาส์ ที่ระยะหุ้มบนหรือล่าง วางเรียงขวางชิ้นส่วน เช่นเหล็กล่างของพื้นทีละทิศในคลิกเดียว)
@@ -57865,6 +57915,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_pinf]]: click a slab, then the points of the path (a slab edge, or over a beam); click the last point again or press Enter to finish. The bars run across the path, [[p_arL]] long, into the slab ([[p_arflip]] swaps the side), at the top or the bottom face; [[p_arL2]] makes every other bar another length · the bars of both stop at the cover from the boundary, the slab edge and openings, and go into the [[a_rbsched]], the quantities and the BOQ
 - [[t_pinf]] in walls: in an elevation or a section parallel to the wall, the tool, a click on the wall, then the points of the path on it; the last point again or Enter finishes · [[p_arface]] [[p_ar529e]] or [[p_ar529i]] · [[p_arflip]] swaps the side · click the path or the band in an elevation to select it
 - With Area or Path Reinforcement selected, [[a_ar530ra]] or [[a_ar530rp]] takes the system apart: its bars stay where they are as separate rebar sets you can edit one by one
+- Wall area or path reinforcement selected in an elevation or a section shows round grips at its corners and square ones at the middle of its sides; drag them to change the boundary or the path (Shift: straight); they snap to the wall's edges and the lines of the other points
 - [[t_rbsh522]]: pick a shape in the options bar (Stirrup / Tie 51, U-bar 21, L-bar 11, Straight 00) and click inside a concrete host in a section, an elevation or a plan: the shape fits its cover, against the side or corner nearest the pointer, and is a sketched set from then on
 - [[t_rbsh522]] with Straight, perpendicular to the view (00 ⊥): a click in a beam's section makes bars running the beam's length on the cover of the side nearest the pointer, laid out along that side (3 bottom bars in one click); a click in a plan makes the vertical bars of a column or wall face; plans draw bars seen end on as dots
 - [[t_rbsh522]] in a plan, Orientation: Parallel to Work Plane (the shape lies flat, laid out up) or Parallel to Cover (the shape stands in the plane of the side nearest the pointer, at the top or bottom cover, laid out across the host: a slab's bottom bars one way in one click)
@@ -58897,6 +58948,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.528 · [[t_areinf]]: เหล็กเสริมแบบพื้นที่ในผนัง แบบ Revit: ใส่บนผนังคอนกรีตได้แล้ว เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้ววาดขอบเขตบนผนัง (จุดหรือกรอบสี่เหลี่ยม ด้านแรกเป็นทิศหลัก) หรือกดเต็มผนัง ในแปลนเลือกผนังก่อนแล้วกดเครื่องมือได้เต็มผนังทันที มีสี่ชั้นแบบ Revit ด้านนอกทิศหลักและทิศรอง ด้านในทิศหลักและทิศรอง ชั้นทิศหลักอยู่นอกสุด อยู่ในชั้นโครงสร้างของผนังห่างระยะหุ้มด้านนอกและด้านใน เหล็กหยุดห่างขอบเขต ปลายผนัง และประตู หน้าต่าง ช่องเปิดเท่าระยะหุ้ม งอ 90° เข้าในผนัง รูปด้านและรูปตัดแสดงขอบเขตเส้นประกับสัญลักษณ์ทิศหลักทิศรอง คลิกเพื่อเลือก เข้าตารางตัดเหล็ก ปริมาณ BOQ IFC และ 3D ย้าย หมุน กลับด้าน คัดลอก ลบไปพร้อมผนัง เต็มผนังยืดตามเมื่อผนังเปลี่ยนขนาด
 - V1.529 · [[t_pinf]]: เหล็กเสริมแบบแนวในผนัง แบบ Revit: ใส่บนผนังคอนกรีตได้แล้ว เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้วคลิกจุดของแนวบนผนัง (ขอบบน ข้างช่องเปิด ฯลฯ) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กยาวตามความยาวเหล็กหลักขวางแนวเข้าไปในผนัง ทุกเส้นที่สองยาวตามเหล็กสลับได้ อยู่ผิวด้านนอกหรือด้านในห่างระยะหุ้ม หยุดห่างขอบผนังและช่องเปิด งอ 90° ที่แนวเข้าในผนัง รูปด้านแสดงแนว แถบเหล็ก เหล็กหนึ่งเส้น และป้าย คลิกเพื่อเลือก ไปพร้อมผนังเหมือนเหล็กเสริมแบบพื้นที่
 - V1.530 · [[a_ar530ra]] / [[a_ar530rp]] แบบ Revit: เลือกเหล็กเสริมแบบพื้นที่หรือตามแนว (ในพื้นหรือผนัง) แล้วกดปุ่มในแผงเหล็กเสริม ระบบหายไป เหล็กทุกเส้นอยู่ที่เดิมเป็นชุดเหล็กวาดเอง ชุดละรูปทรงและความยาวเดียววางเรียงทางเดียว (แถวเหนือประตู ท่อนข้างช่องเปิด เหล็กยาวสลับสั้น) เส้นที่อยู่เดี่ยวเป็นแบบเดี่ยว ตารางเหล็ก ปริมาณ BOQ และน้ำหนักเท่าเดิม แก้ระยะ จำนวน หรือกฎการวางของชุดใดแล้วชุดนั้นวางใหม่ตามกฎ Undo ได้ระบบคืน
+- V1.531 · จุดลากบนเหล็กเสริมแบบพื้นที่และตามแนวในผนัง แบบแก้ขอบเขต / แก้แนวของ Revit: เลือกในรูปด้านหรือรูปตัดที่มองผนัง มีจุดกลมที่มุมของขอบเขตหรือจุดของแนว และจุดสี่เหลี่ยมกลางแต่ละด้าน ลากจุดไปที่ใดก็ได้บนผนัง (Shift ลากตรงแนวนอนหรือแนวดิ่ง) ลากด้านเลื่อนตั้งฉากกับตัวเอง จุดยึดปลาย ขอบบน และฐานผนัง แนวของจุดอื่น หรือทีละ 5 มม. ขอบเขตที่เต็มผนังเลิกเต็มผนังเมื่อถูกลาก เหล็ก รอยในแปลน ปริมาณ และ 3 มิติตาม Ctrl+Z ย้อนการลาก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -59599,6 +59651,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.528 · [[t_areinf]]: Area Reinforcement in walls as in Revit: it goes on concrete walls now; in an elevation or a section parallel to the wall, the tool, a click on the wall, then the boundary on it (points or a rectangle, the first side being the major direction) or Whole Wall; in a plan, a wall selected first gets it over the whole wall at once; four layers as in Revit, Exterior Major and Minor, Interior Major and Minor, the major layer outermost, in the wall's core at its exterior and interior covers; bars stop the cover from the boundary, the wall's ends and its doors, windows and openings, 90° hooks turn into the wall; elevations and sections draw the boundary dashed and the major and minor symbol, a click selects it; bar schedule, quantities, BOQ, IFC and 3D; it moves, turns, mirrors, copies and is deleted with its wall, and Whole Wall follows the wall when it changes size
 - V1.529 · [[t_pinf]]: Path Reinforcement in walls as in Revit: it goes on concrete walls now; in an elevation or a section parallel to the wall, the tool, a click on the wall, then the points of the path on it (its top, the side of an opening …); the last point again or Enter finishes; bars of the Primary Bar Length run across the path into the wall, every other one the Alternating Bar Length if set, on the exterior or interior face at its cover, stopping the cover from the wall's edges and openings, a 90° hook at the path turning into the wall; elevations show the path, the band of its bars, one bar and its label, a click selects it; it goes with its wall as Area Reinforcement does
 - V1.530 · [[a_ar530ra]] / [[a_ar530rp]] as in Revit: with Area or Path Reinforcement selected (in a floor or a wall), the button in the Reinforcement panel takes the system apart; every bar stays where it is, as sketched rebar sets, each the bars of one shape and length laid in one direction (the rows above a door, the pieces beside an opening, the long and the short bars of a path), a bar on its own a Single; schedules, quantities, the BOQ and the weight stay the same; a change of spacing, number or layout rule lays that set out again by its rule; Undo brings the system back
+- V1.531 · grips on area and path reinforcement in walls, as Revit's Edit Boundary / Edit Path: selected in an elevation or a section that faces the wall, round grips at the corners of the boundary or the points of the path and square ones at the middle of each side; drag a point anywhere on the wall (Shift: straight across or up), a side square to itself; they snap to the wall's ends, top and foot, the lines of the other points or 5 mm; a Whole Wall boundary that is dragged is no longer Whole Wall; the bars, the plan footprint, quantities and 3D follow; Ctrl+Z undoes a drag
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63000,6 +63053,13 @@ window.PenumBIM.r530={
   sch:ids=>{const S=new Set(ids);return rbSched(P).filter(r=>r.hosts&&[...r.hosts].some(h=>S.has(h))).reduce((a,r)=>a+r.n,0)},
   btn:()=>{const o=[];for(const f of XR){try{const r=f('modify',activeView());if(Array.isArray(r))for(const p of r)o.push(...(p.b||[]))}catch(e){}}return o.filter(b=>/ar530/.test(b))},
   ext:id=>{const X=rbs512Ext(IDX.get(id));return X?[X.a,X.b,X.a2,X.b2].map(x=>Math.round(x*10)/10):null},
+  str:(k,...a)=>t(k,...a)};
+/* V1.531 test API: shape handles on wall area and path reinforcement */
+window.PenumBIM.r531={
+  grips:vid=>{const v=viewById(vid);return ar531Sel(v).map(S=>({id:S.e.id,pts:ar531Pts(v,S).map(q=>q.map(x=>Math.round(x*10)/10)),segs:ar531Segs(S)}))},
+  at:(vid,h,z)=>{const v=viewById(vid),n=navOf(v);return ar531GripAt(PANES[ui.ap],v,{x:n.ox+h*n.s,y:n.oy-z*n.s})},
+  drag:(vid,id,i,j,dh,dz,sh)=>{const v=viewById(vid),n=navOf(v),g={ar531:1,id,i};if(j!=null){g.j=j;g.seg=1}const d={g,sx:0,sy:0};ui.shift=!!sh;
+    try{edit(()=>ar531Drag(v,d,{x:dh*n.s,y:-dz*n.s}))}finally{ui.shift=false}const e=P.els.find(x=>x.id===id);return e?JSON.parse(JSON.stringify(e)):null},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
