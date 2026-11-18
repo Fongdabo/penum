@@ -135,7 +135,8 @@ function subTabs(tab,list){tab=curTab();const cur=S.sub[tab]&&list.some(x=>x[0]=
 
 function resolve(path){let o=P,seg=path.split('.');if(seg[0]==='co'){o=DB.co;seg=seg.slice(1)}for(const s of seg){if(o==null)return null;o=Array.isArray(o)&&!/^\d+$/.test(s)?o.find(x=>x.id===s):o[s]}return o}
 
-function render(){
+let RN=0;// how many times the page was drawn (rerender below skips a draw that a click already made)
+function render(){RN++;
   const ae=document.activeElement,fp=ae&&ae.dataset&&ae.dataset.p,ss=ae&&ae.selectionStart;
   $('#projSel').innerHTML=Object.values(DB.projects).sort((a,b)=>a.name.localeCompare(b.name,'th')).map(p=>`<option value="${p.id}"${p.id===P.id?' selected':''}>${esc(p.name)}</option>`).join('');
   const co=S.mode==='co',T=co?COTABS:TABS,cur=co?S.ctab:S.tab;
@@ -148,7 +149,17 @@ function render(){
   if(fp){const el=$(`[data-p="${CSS.escape(fp)}"]`);if(el){el.focus();try{if(ss!=null&&el.setSelectionRange)el.setSelectionRange(ss,ss)}catch(e){}}}
   saveUI();
 }
-let rT;const rerender=()=>{clearTimeout(rT);rT=setTimeout(render,0)};
+/* 4.99.38 the first click after typing works (audit 11 พ.ย.: lost 10 times out of 10). Pressing a button takes the focus
+   from the box on mouse-DOWN; the box's change redrew the page before mouse-UP, so the button under the mouse was a new
+   one and no click came. A redraw asked for while the mouse button is held now waits until just after the click, and is
+   skipped when the click already drew the page. Touch is not affected (a tap's mouse events come after the finger lifts),
+   nor is a drop-down list (its own list opens on mouse-down). */
+const PTR={down:0,wait:0,rn:0,t:0};
+let rT;const rerender=()=>{clearTimeout(rT);if(PTR.down){if(!PTR.wait){PTR.wait=1;PTR.rn=RN}return}rT=setTimeout(render,0)};
+{const up=()=>{if(!PTR.down)return;PTR.down=0;clearTimeout(PTR.t);if(!PTR.wait)return;PTR.wait=0;const rn=PTR.rn;clearTimeout(rT);rT=setTimeout(()=>{if(RN===rn)render()},0)};
+  addEventListener('pointerdown',e=>{if(e.pointerType==='touch'||e.button!==0||(e.target.closest&&e.target.closest('select')))return;
+    PTR.down=1;clearTimeout(PTR.t);PTR.t=setTimeout(up,2500)},true);
+  addEventListener('pointerup',up,true);addEventListener('pointercancel',up,true);addEventListener('blur',up)}
 
 /* ---------- events ---------- */
 const HOOK=[];// fns (path,value,obj) run after a field changes

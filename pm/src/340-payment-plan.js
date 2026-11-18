@@ -36,7 +36,8 @@ ACT.qpayStd=b=>{const Q=qEnsure(CO().quotes.find(q=>q.id===b.dataset.id)||{});if
     ${gtable(`${b}.sow`,rows,[{k:'sys',h:'ระบบ',t:'sel',o:SOWSYS,w:190},{k:'kind',h:'ประเภท',t:'sel',o:SOWK,w:120},{k:'text',h:'รายละเอียด',t:'area',w:420}],{empty:'ยังไม่มีขอบเขตงาน กด “เติมขอบเขตงานมาตรฐาน” แล้วแก้ตามงานจริง',rowCls:r=>r.kind==='exc'?'sow-exc':''})}
     <div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="sowStd" data-id="${sel.id}">เติมขอบเขตงานมาตรฐานตามหมวดในใบเสนอราคา</button><select id="sowSys" aria-label="ระบบ">${SOWSYS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select><button type="button" class="btn sm" data-a="sowSys" data-id="${sel.id}">เพิ่มระบบนี้</button><button type="button" class="btn sm" data-a="add" data-c="${b}.sow">+ เพิ่มข้อ</button></div></section>`;
   return h+pay+sow}}
-document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.qamt)return;e.stopImmediatePropagation();const base=n(t.dataset.base);setPath(t.dataset.qamt+'.pct',base?Math.round(n(t.value)*1e6/base)/1e4:0);save();render()},true);
+// 4.99.38 the amount boxes redraw through rerender, so a click right after typing an amount works (100-core.js)
+document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.qamt)return;e.stopImmediatePropagation();const base=n(t.dataset.base);setPath(t.dataset.qamt+'.pct',base?Math.round(n(t.value)*1e6/base)/1e4:0);save();rerender()},true);
 function sowPrint(Q){const rows=qEnsure(Q).sow.filter(x=>String(x.text||'').trim());if(!rows.length)return '';
   const by=SOWSYS.filter(([k])=>rows.some(x=>x.sys===k)),li=(s,k)=>rows.filter(x=>x.sys===s&&x.kind===k).map(x=>`<li>${esc(x.text)}</li>`).join('');
   return `<div style="page-break-before:always"></div><div class="sow-h"><small>SCOPE OF WORK</small><b>ขอบเขตงาน</b> แนบท้ายใบเสนอราคาเลขที่ ${esc(Q.no)}</div>
@@ -85,6 +86,9 @@ function payChart(R,A){const td=today(),bl=billsSorted().filter(b=>(b.kind||'pro
 function costPlan(){P.inst=P.inst||[];const R=instPlan(),A=instActual(R),C=contract(),td=today(),tp=sum(P.inst,x=>x.pct),s=sched();
   const late=R.filter((r,i)=>!A[i]&&r.d&&r.d<td),next=R.find((r,i)=>!A[i]&&r.d&&r.d>=td);
   const billed=sum(billsSorted().filter(b=>(b.kind||'prog')==='prog'&&b.status!=='draft'),b=>billCalc(b).amt),planNow=sum(R.filter(r=>r.d&&r.d<=td),r=>r.amt);
+  // 4.99.38 received / still owed = every claim sent, each counted once, advance payment included, as on สรุปงบประมาณ and ลูกหนี้
+  // (it added up the claim matched to each instalment: one claim covering two instalments counted twice, the advance never)
+  const rcv=(L=>({r:sum(L,b=>billRecv(b)),o:sum(L,b=>Math.max(0,billCalc(b).net-billRecv(b)))}))(P.bills.filter(b=>b.status!=='draft'));
   const ms=()=>[['','–'],...P.tasks.filter(t=>durOf(t)===0||t.ms).map(t=>[t.id,t.name])];
   const cols=[{k:'no',h:'งวด',w:46},{k:'desc',h:'เงื่อนไข / งานที่ต้องเสร็จ',t:'area',w:280},{k:'pct',h:'%',t:'num',w:64,sum:x=>x.pct},
     {h:'จำนวนเงิน',t:'calc',r:1,f:x=>`<input class="r" inputmode="decimal" data-iamt="inst.${x.id}" data-base="${C.total}" value="${fmt(C.total*n(x.pct)/100,2)}" aria-label="จำนวนเงิน" style="min-width:110px">`,tv:x=>fmt(C.total*n(x.pct)/100,2)},
@@ -99,14 +103,14 @@ function costPlan(){P.inst=P.inst||[];const R=instPlan(),A=instActual(R),C=contr
   return `<dl class="stats"><div><dt>มูลค่าสัญญา</dt><dd>${fmt(C.total)}</dd><small class="muted">แผนรวม ${fmt(tp,1)}% ${Math.abs(tp-100)>0.01&&P.inst.length?'<span class="pill warn">ยังไม่ครบ 100%</span>':''}</small></div>
     <div><dt>ควรเบิกถึงวันนี้ตามแผน</dt><dd>${fmt(planNow)}</dd></div><div><dt>เบิกจริงแล้ว</dt><dd style="color:${billed+0.5<planNow?'var(--danger)':'inherit'}">${fmt(billed)}</dd><small class="muted">${billed+0.5<planNow?'ช้ากว่าแผน '+fmt(planNow-billed):'ตามแผนหรือเร็วกว่า'}</small></div>
     <div><dt>งวดถัดไป</dt><dd style="font-size:17px">${next?`งวด ${esc(next.x.no)} · ${thD(next.d)}`:'–'}</dd>${next?`<small class="muted">${fmt(next.amt)} บาท</small>`:''}</div>
-    <div><dt>รับเงินแล้ว</dt><dd style="color:var(--good)">${fmt(sum(A.filter(Boolean),a=>a.rc))}</dd>${(o=>o>0.005?`<small style="color:var(--danger)">ค้างรับ ${fmt(o)}</small>`:'')(sum(A.filter(Boolean),a=>a.net-a.rc))}</div>
+    <div><dt>รับเงินแล้ว</dt><dd style="color:var(--good)">${fmt(rcv.r)}</dd>${rcv.o>0.005?`<small style="color:var(--danger)">ค้างรับ ${fmt(rcv.o)}</small>`:''}</div>
     <div><dt>งวดที่เลยกำหนดยังไม่เบิก</dt><dd style="color:${late.length?'var(--danger)':'inherit'}">${late.length}</dd></div></dl>
   <section class="card"><h2><span>แผนงวดงาน งวดเงิน</span><small>กำหนดงวดเป็น % หรือพิมพ์จำนวนเงิน ผูกกับหมุดหมายในแผนงานหรือใส่วันเอง แล้วเทียบกับที่เบิกจริง ยอดที่ยังไม่เบิกไปลงกระแสเงินสดตามวันในแผนนี้ · ตอนนี้เบิกแบบ${P.info.billMode==='pct'?'เปอร์เซ็นต์ตามงวด (ใบเบิกผูกกับงวด)':'ตามปริมาณงาน (เทียบกับยอดเบิกสะสม)'}</small><span class="sp"></span>${copyBtn('inst')}</h2>
     ${gtable('inst',P.inst,cols,{empty:'ยังไม่มีแผนงวดเงิน',rowCls:x=>{const i=R.findIndex(y=>y.x===x);return !A[i]&&R[i].d&&R[i].d<td?'late':''}})}
     <div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="add" data-c="inst">+ เพิ่มงวด</button><button type="button" class="btn sm" data-a="instGen">ตั้งงวดตัวอย่าง 5 งวด</button>${P.tasks.length?'<button type="button" class="btn sm" data-a="instDates">ตั้งวันที่ว่างตามแผนงาน (S-curve)</button>':''}<button type="button" class="btn sm" data-a="go" data-m="pj" data-k="cost" data-s="bill">ไปหน้าเบิกงวด</button></div></section>
   ${R.some(r=>r.d)?`<section class="card"><h2><span>แผนเงินเทียบเบิกจริง</span><small>เส้นประ = ยอดสะสมตามแผนงวดเงิน</small></h2>${payChart(R,A)}</section>`:''}
   ${(P.sow||[]).length?`<section class="card"><h2><span>ขอบเขตงานตามใบเสนอราคา</span><small>${P.sow.length} ข้อ</small></h2>${SOWSYS.filter(([k])=>P.sow.some(x=>x.sys===k)).map(([k,l])=>`<h3 class="fm-g">${l}</h3><ul class="sow-l">${sowSort(P.sow.filter(x=>x.sys===k)).map(x=>`<li class="${x.kind}">${x.kind==='exc'?'<span class="pill">ไม่รวม</span> ':x.kind==='note'?'<span class="pill info">หมายเหตุ</span> ':''}${esc(x.text)}</li>`).join('')}</ul>`).join('')}</section>`:''}`}
-document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.iamt)return;e.stopImmediatePropagation();const base=n(t.dataset.base);setPath(t.dataset.iamt+'.pct',base?Math.round(n(t.value)*1e6/base)/1e4:0);save();render()},true);
+document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.iamt)return;e.stopImmediatePropagation();const base=n(t.dataset.base);setPath(t.dataset.iamt+'.pct',base?Math.round(n(t.value)*1e6/base)/1e4:0);save();rerender()},true);
 VIEWS.cost=()=>{const {cur,html}=subTabs('cost',[['sum','สรุปงบประมาณ'],['plan','แผนงวดเงิน'],['bill','เบิกงวด'],['sub','ผู้รับเหมาช่วง'],['exp','ค่าใช้จ่ายอื่น']]);return html+({sum:costSum,plan:costPlan,bill:costBill,sub:costSub,exp:costExp}[cur])()};
 
 /* --- cash flow: unbilled money arrives on the payment plan's dates when the project has one --- */

@@ -47,8 +47,15 @@ function wizFolderView(){return `<section class="card"><h2><span>ขั้นส
   ${fsOK()?'':'<p class="hint">เบราว์เซอร์นี้เลือกโฟลเดอร์ไม่ได้ ใช้ Edge หรือ Chrome บนคอมพิวเตอร์ หรือกดข้ามแล้วสำรองข้อมูลจากเมนูเป็นระยะ</p>'}</section>`}
 ACT.wizFSkip=()=>{S.wizF=false;render()};
 
-{const r=render;render=function(){const x=r.apply(this,arguments);try{if(typeof DB==='undefined'||!DB||(typeof pinOn==='function'&&pinOn()&&!authOK()))return x;const v=$('#view');if(!v)return x;
-  if(S.wiz)v.innerHTML=wizView();else if(welcomeOn())v.innerHTML=welcomeView();else if(S.wizF&&folderOn())S.wizF=false;else if(S.wizF)v.insertAdjacentHTML('afterbegin',wizFolderView())}catch(e){console.error(e)}return x}}
+{const r=render;render=function(){
+  // 4.99.38 a redraw of the setup form keeps the two PIN boxes (they are not saved fields) and the box being typed in: the
+  // PIN boxes came back empty, and a click into one right after typing in another box lost the cursor (audit 11 พ.ย.)
+  const ae=document.activeElement,wz=S.wiz&&$('#wzPin')?{a:$('#wzPin').value,b:($('#wzPin2')||{}).value||'',s:ae&&ae.selectionStart,
+    f:ae&&ae.closest&&ae.closest('#view')?(ae.dataset&&ae.dataset.p?`[data-p="${CSS.escape(ae.dataset.p)}"]`:ae.id?'#'+CSS.escape(ae.id):''):''}:null;
+  const x=r.apply(this,arguments);try{if(typeof DB==='undefined'||!DB||(typeof pinOn==='function'&&pinOn()&&!authOK()))return x;const v=$('#view');if(!v)return x;
+  if(S.wiz){v.innerHTML=wizView();if(wz){const a=$('#wzPin'),b=$('#wzPin2'),el=wz.f&&v.querySelector(wz.f);if(a)a.value=wz.a;if(b)b.value=wz.b;
+    if(el){el.focus({preventScroll:true});try{if(wz.s!=null&&el.setSelectionRange)el.setSelectionRange(wz.s,wz.s)}catch(e){}}}}
+  else if(welcomeOn())v.innerHTML=welcomeView();else if(S.wizF&&folderOn())S.wizF=false;else if(S.wizF)v.insertAdjacentHTML('afterbegin',wizFolderView())}catch(e){console.error(e)}return x}}
 
 /* --- "เริ่มบริษัทใหม่": back up, unlink this computer from the old company's folder, start empty --- */
 ACT.coNew=()=>dialog('เริ่มบริษัทใหม่',`<p>ข้อมูลทั้งหมดในเครื่องนี้ (โครงการ ลูกค้า พนักงาน เอกสาร) จะถูกล้าง แล้วเริ่มตั้งค่าบริษัทใหม่</p>
