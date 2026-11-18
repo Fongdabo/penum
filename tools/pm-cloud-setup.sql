@@ -89,3 +89,56 @@ drop policy if exists pm_obj_upd on storage.objects;
 create policy pm_obj_upd on storage.objects for update to authenticated using (bucket_id='pm' and public.pm_path_ok(name));
 drop policy if exists pm_obj_del on storage.objects;
 create policy pm_obj_del on storage.objects for delete to authenticated using (bucket_id='pm' and public.pm_path_ok(name));
+
+-- 4.99.39: penum-pm.json is saved by one device at a time, and only on top of the newest copy, so two devices saving at the same
+-- moment never lose each other's work. A device reads the copy's number (pm_rev) before the file, takes a 60-second lock with the
+-- number it read (pm_lock: "stale" = someone saved since, read again; "busy" = another device is writing, wait) and gives it
+-- back with the number + 1 (pm_unlock). Programs older than PENUM PM 4.99.39 do not use these and keep working.
+create table if not exists public.pm_revs(
+  company_id uuid not null references public.pm_companies(id) on delete cascade,
+  path text not null,
+  rev bigint not null default 0,
+  saved_at timestamptz,
+  saved_by uuid,
+  lk text,
+  lk_until timestamptz,
+  primary key(company_id,path));
+-- no policy: only the functions below read or write it
+alter table public.pm_revs enable row level security;
+create or replace function public.pm_rev(p_company uuid, p_path text) returns json language plpgsql security definer set search_path=public as $$
+declare r pm_revs;
+begin
+  if not pm_is_member(p_company) or split_part(p_path,'/',1)<>p_company::text then raise exception 'not a member'; end if;
+  select * into r from pm_revs where company_id=p_company and path=p_path;
+  return json_build_object('rev',coalesce(r.rev,0),'at',r.saved_at);
+end $$;
+create or replace function public.pm_lock(p_company uuid, p_path text, p_base bigint, p_dev text) returns json language plpgsql security definer set search_path=public as $$
+declare r pm_revs;
+begin
+  if not pm_is_member(p_company) or split_part(p_path,'/',1)<>p_company::text then raise exception 'not a member'; end if;
+  insert into pm_revs(company_id,path) values(p_company,p_path) on conflict do nothing;
+  select * into r from pm_revs where company_id=p_company and path=p_path for update;
+  if r.lk is not null and r.lk<>p_dev and r.lk_until>now() then
+    return json_build_object('busy',true,'rev',r.rev,'wait',ceil(extract(epoch from r.lk_until-now())));
+  end if;
+  if r.rev<>coalesce(p_base,-1) then return json_build_object('stale',true,'rev',r.rev); end if;
+  update pm_revs set lk=p_dev, lk_until=now()+interval '60 seconds' where company_id=p_company and path=p_path;
+  return json_build_object('ok',true,'rev',r.rev);
+end $$;
+create or replace function public.pm_unlock(p_company uuid, p_path text, p_dev text, p_saved boolean default true) returns json language plpgsql security definer set search_path=public as $$
+declare r pm_revs; n bigint;
+begin
+  if not pm_is_member(p_company) or split_part(p_path,'/',1)<>p_company::text then raise exception 'not a member'; end if;
+  select * into r from pm_revs where company_id=p_company and path=p_path for update;
+  if not found then return json_build_object('lost',true,'rev',0); end if;
+  n:=r.rev;
+  if p_saved then update pm_revs set rev=rev+1, saved_at=now(), saved_by=auth.uid() where company_id=p_company and path=p_path returning rev into n; end if;
+  -- the lock ran out during this device's upload and another device took it: the saved copy still counts, the other lock stays
+  if r.lk is distinct from p_dev then return json_build_object('lost',true,'rev',n); end if;
+  update pm_revs set lk=null, lk_until=null where company_id=p_company and path=p_path;
+  return json_build_object('ok',true,'rev',n);
+end $$;
+revoke all on function public.pm_rev(uuid,text) from public, anon;
+revoke all on function public.pm_lock(uuid,text,bigint,text) from public, anon;
+revoke all on function public.pm_unlock(uuid,text,text,boolean) from public, anon;
+grant execute on function public.pm_rev(uuid,text), public.pm_lock(uuid,text,bigint,text), public.pm_unlock(uuid,text,text,boolean) to authenticated;
