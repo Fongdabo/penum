@@ -15,6 +15,7 @@ if(window.penumLive){
     apply:(id,data,extra,nm,first)=>{if(liveWhy()||!data||!data.info)return false;
       const p=migrate(JSON.parse(JSON.stringify(data)));p.id=id;
       for(const [k,v] of Object.entries((extra&&extra.photos)||{}))IDB.put(k,v).catch(()=>{});
+      if(DB.projects[id]&&DB.projects[id].jn&&!p.jn)p.jn=DB.projects[id].jn;// 4.99.39: keep the job's งานที่ N (989-job-numbers)
       DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);
       if(first){DB.cur=id;P=p;S.mode='pj';S.tab='dash';S.sel={}}          // just accepted: open it, so the customer watches it fill
       save(true);render();return true}});
