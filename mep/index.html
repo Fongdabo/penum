@@ -6713,7 +6713,7 @@ function renderBackup(){
   $('results').hidden=true;
 }
 /* Check for Updates: the newest build published is written beside the page (its database, meta/release); a newer one there means this window runs an older page */
-const MEP_BUILD=149,MEP_NAME='v151';window.PENUM_VER=MEP_NAME;// the feedback box sends it
+const MEP_BUILD=149,MEP_NAME='v152';window.PENUM_VER=MEP_NAME;// the feedback box sends it
 async function mepUpdCheck(){const m=$('updMsg'),g=$('updGo'),nw=$('updNew');if(!m)return;m.textContent='กำลังตรวจหารุ่นใหม่…';nw.textContent='';g.hidden=true;let db=null;
   try{db=window.claude&&window.claude.use?await Promise.race([window.claude.use('db'),new Promise(r=>setTimeout(()=>r(null),8000))]):null}catch(e){db=null}
   if(!db){m.textContent='ตรวจไม่ได้ในตอนนี้ ปิดแล้วเปิดหน้านี้ใหม่จะได้รุ่นล่าสุดเสมอ';return}
@@ -7997,6 +7997,24 @@ const lsXlpe=(cab,ty)=>/\bCV\b|XLPE|NYY|"CV"/i.test(String(cab||'')+' '+String(t
 function lsAmp(cab,ty,p,gf,own){if(n(own)>0)return {A:n(own),own:1};const c=lsCab(cab);if(!c)return null;const k=MM.indexOf(c.mm);if(k<0)return {A:0,bad:1,c};
   const t=lsXlpe(cab,ty)?(p===1?LS_X2:LS_X3):(p===1?AMP1:AMP3);return {A:t[k]*c.sets*(n(gf)>0?n(gf):1),c,x:lsXlpe(cab,ty)}}
 const lsGnd=(at,mm)=>{const g=GND.find(x=>at<=x[0]);return Math.min(g?g[1]:185,mm||1e9)};
+/* v151.1 (user: "ควรเพิ่มขนาดแนะนำดีไหม"): every warning carries the size to use, and a button applies it.
+   lsCabSet rewrites a cable text in the user's own style: the phase/neutral size (after x, 1C-, /N, -) and the G size; sets as N(...) */
+function lsCabSet(s,c,mm,sets,g){let o=String(s);const re=new RegExp('([x×\\-/N]\\s*)'+String(c.mm).replace('.','\\.')+'(?![\\d.])','g');o=o.replace(re,(m,a)=>a+mm);
+  if(g!=null){if(/G\s*[-–]?\s*\d/i.test(o))o=o.replace(/(G\s*[-–]?\s*)(\d+(?:\.\d+)?)/i,(m,a)=>a+g);else o=o.replace(/(\d+(?:\.\d+)?)(?=\s*(?:Sq|mm|$))/i,(m,a)=>a+'/G'+g)}
+  if(sets!==c.sets){if(/^\s*\d+\s*[(\[]/.test(o))o=o.replace(/^\s*\d+/,String(sets));else o=sets+'('+o.trim()+')'}return o}
+/* the smallest cable of the same kind (insulation, sets first, then more sets) that carries needA after grouping; with its ground for the CB */
+function lsUp(cab,ty,p,gf,needA,at){const c=lsCab(cab);if(!c)return null;const t=lsXlpe(cab,ty)?(p===1?LS_X2:LS_X3):(p===1?AMP1:AMP3),f=n(gf)>0?n(gf):1;let sets=c.sets,k=t.findIndex(a=>a*sets*f>=needA);
+  while(k<0&&sets<8){sets++;k=t.findIndex(a=>a*sets*f>=needA)}if(k<0)return null;const mm=Math.max(MM[k],k===MM.indexOf(c.mm)?c.mm:0),g=Math.max(lsGnd(at,mm*sets),c.g||0);return {mm,sets,g,A:t[MM.indexOf(mm)]*sets*f,txt:lsCabSet(cab,c,mm,sets,g)}}
+/* what to change on a circuit or a main: {at, cab, txt[], alt} — alt = the smaller CB the present cable allows, when that still carries 1.25 × I */
+function lsFixOf(cab,ty,p,gf,own,I,at,need){const fx={txt:[]},am=cab?lsAmp(cab,ty,p,gf,own):null,c=lsCab(cab);if(!(I>0))return fx;
+  const nAT=at&&at<need-1e-9?(CB.find(v=>v>=need)||at):0,AT=nAT||at;if(nAT){fx.at=nAT;fx.txt.push(`CB ${nAT} AT`)}
+  if(am&&!am.own&&!am.bad&&c&&AT){const ok=am.A>=AT-1e-9&&am.A>=I-1e-9;
+    if(!ok){const u=lsUp(cab,ty,p,gf,Math.max(AT,I),AT);if(u){fx.cab=u.txt;fx.txt.push(`สาย ${u.sets>1?u.sets+'×':''}${u.mm} mm² (${fmt(u.A)} A) G ${u.g}`)}
+      const alt=CB.find(v=>v>=need);if(!nAT&&alt&&alt<AT&&alt<=am.A&&am.A>=I){fx.alt=alt}}
+    else if(c.g!=null){const g=lsGnd(AT,c.mm*c.sets);if(c.g<g){fx.cab=lsCabSet(cab,c,c.mm,c.sets,g);fx.txt.push(`สายดิน G ${g} mm²`)}}}
+  else if(am&&am.own&&AT&&am.A<AT-1e-9){const alt=CB.find(v=>v>=need);if(alt&&alt<=am.A&&alt<AT)fx.alt=alt}
+  return fx}
+function lsFixRow(P0,r,fx){if(fx.at){r.at=fx.at;const af=AF.find(a=>a>=fx.at);if(n(r.af)&&n(r.af)<fx.at&&af)r.af=af}if(fx.cab)r.cab=fx.cab}
 /* one panel: rows with their VA per phase, current and checks; totals, demand, amps; panel checks. memo per call of lsAll() */
 function lsCalc(pid,memo,stack){memo=memo||{};stack=stack||[];if(memo[pid])return memo[pid];const L=lsData(),S=L.set,P0=lsPan(pid);if(!P0)return null;
   const V=n(S.v)||230,df=P0.df===null||P0.df===''||P0.df===undefined?n(S.df):n(P0.df),gf=n(P0.gf)>0?n(P0.gf):1,R=[],ck=[];
@@ -8014,7 +8032,8 @@ function lsCalc(pid,memo,stack){memo=memo||{};stack=stack||[];if(memo[pid])retur
     else if(am&&used){if(am.A<I-1e-9)c.push(['r',`สายรับ ${fmt(am.A)} A < กระแส ${fmt(I,1)} A${am.own?'':' (ตารางในท่อ)'}`]);else if(at&&am.A<at-1e-9)c.push(['o',`สายรับ ${fmt(am.A)} A < CB ${at} AT${am.own?'':' (ตารางในท่อ)'}`])}
     if(am&&am.c&&am.c.g&&at){const g=lsGnd(at,am.c.mm);if(am.c.g<g)c.push(['r',`สายดิน G ${am.c.g} < วสท. ${g} mm²`])}
     if(sub&&at){const sm=n(lsPan(r.sub).mat);if(sm&&at<sm)c.push(['o',`CB ${at} AT < เมนตู้ ${lsPan(r.sub).name} ${sm} AT`])}
-    R.push({r,i,va,p,I,am,c,sub,kw:n(r.kw)>0?n(r.kw):(va[0]+va[1]+va[2])*(n(S.pf)||0.85)/1000})});
+    const fx=sub?{txt:[]}:lsFixOf(r.cab,r.ty,p,gf,r.amp,I,at,need);
+    R.push({fx,r,i,va,p,I,am,c,sub,kw:n(r.kw)>0?n(r.kw):(va[0]+va[1]+va[2])*(n(S.pf)||0.85)/1000})});
   const Sm=[0,1,2].map(k=>R.reduce((a,x)=>a+x.va[k],0)),tot=Sm[0]+Sm[1]+Sm[2],D=Sm.map(v=>v*df),Dt=D[0]+D[1]+D[2],A=D.map(v=>v/V),Imax=Math.max(...A),avg=tot/3,
     unb=avg>0?(Math.max(...Sm)-Math.min(...Sm))/avg*100:0,mat=n(P0.mat),bigB=Math.max(0,...R.map(x=>n(x.r.at))),bigI=Math.max(0,...R.map(x=>x.I)),need=Imax+0.25*bigI,sugAT=CB.find(c=>c>=need)||CB[CB.length-1];          // feeder: demand current + 25% of the largest circuit (EIT, motor feeders)
   if(R.length>n(P0.cap)&&n(P0.cap)>0)ck.push(['r',`ใช้ ${R.length} วงจร เกินขนาดตู้ ${n(P0.cap)} วงจร`]);
@@ -8026,9 +8045,10 @@ function lsCalc(pid,memo,stack){memo=memo||{};stack=stack||[];if(memo[pid])retur
       if(ma.c&&ma.c.g&&mat){const g=lsGnd(mat,ma.c.mm*ma.c.sets);if(ma.c.g<g)ck.push(['r',`สายดินเมน G ${ma.c.g} < วสท. ${g} mm²`])}}
     if(unb>20)ck.push(['r',`ไม่สมดุลเฟส ${fmt(unb,1)}% (ควรไม่เกิน 10%)`]);else if(unb>10)ck.push(['o',`ไม่สมดุลเฟส ${fmt(unb,1)}% (ควรไม่เกิน 10%)`]);
     if(df<1)ck.push(['i',`ใช้ demand factor ${df} กับโหลดแอร์/มอเตอร์ที่เดินพร้อมกันได้ทั้งหมด ฝั่งปลอดภัยใช้ 1.0`])}
+  const mfx=tot>0?lsFixOf(P0.mcab,P0.mty,+P0.mp||3,1,P0.mamp,Imax,n(P0.mat),need):{txt:[]};if(mfx.at&&mfx.at<sugAT)mfx.at=sugAT;
   const names={};P0.rows.forEach((r,i)=>{const k=String(r.sub?lsPan(r.sub)&&lsPan(r.sub).name:r.d||'').trim().toLowerCase();if(!k)return;(names[k]=names[k]||[]).push(i+1)});
   Object.keys(names).forEach(k=>{if(names[k].length>1)ck.push(['o',`ชื่อซ้ำ "${k}" ที่วงจร ${names[k].join(', ')}`])});
-  return memo[pid]={need,P:P0,R,S:Sm,tot,df,D,Dt,A,Imax,unb,ck,V,gf,sugAT,nRed:R.reduce((a,x)=>a+x.c.filter(c=>c[0]==='r').length,0)+ck.filter(c=>c[0]==='r').length}}
+  return memo[pid]={mfx,need,P:P0,R,S:Sm,tot,df,D,Dt,A,Imax,unb,ck,V,gf,sugAT,nRed:R.reduce((a,x)=>a+x.c.filter(c=>c[0]==='r').length,0)+ck.filter(c=>c[0]==='r').length}}
 function lsAll(){const memo={};lsData().panels.forEach(p=>lsCalc(p.id,memo));return memo}
 /* kW → VA on the row's phases (pf from the settings), or the nameplate FLA (A per phase × phase voltage) when given, which wins: inverter units draw far more than kW ÷ PF suggests; 1P goes to the lightest phase */
 function lsKwVA(P0,r){const k=n(r.kw),fa=n(r.fla);if(!(k>0)&&!(fa>0))return;const S=lsData().set,p=+r.p||1,va=fa>0?fa*(n(S.v)||230)*(p===2?2:p===3?3:1):k*1000/(n(S.pf)||0.85);
@@ -8056,6 +8076,7 @@ function lsFromAC(){const pl=plan(),L=lsData(),S=L.set;if(!pl.loads.length)retur
 /* ---------- page ---------- */
 const lsEsc=v=>esc(v===null||v===undefined?'':v);
 const lsI=(path,v,o={})=>`<input ${o.num?'type="number" step="any"':'type="text"'} data-ls="${path}" id="ls-${path.replace(/\./g,'-')}" value="${lsEsc(v)}"${o.ph?` placeholder="${lsEsc(o.ph)}"`:''}${o.w?` style="width:${o.w}"`:''}${o.ro?' readonly tabindex="-1" class="ro"':''}>`;
+const lsFxH=(fx,act,i)=>fx&&(fx.txt.length||fx.alt)?`<div class="lsfx">${fx.txt.length?`<span>แนะนำ: ${esc(fx.txt.join(' · '))}</span> <button type="button" class="btn sm" data-lsact="${act}" data-i="${i}">ใช้ค่าแนะนำ</button>`:''}${fx.alt?` <button type="button" class="btn sm ghost" data-lsact="${act}cb" data-i="${i}" data-v="${fx.alt}">หรือลด CB เป็น ${fx.alt} AT</button>`:''}</div>`:'';
 const lsCk=c=>c.length?c.map(x=>`<div class="lsc ${x[0]}">${x[0]==='r'?'✕':x[0]==='o'?'!':'i'} ${esc(x[1])}</div>`).join(''):'<span class="lsc ok">✓</span>';
 function lsTree(L,M){const kids=id=>L.panels.filter(p=>{const q=lsParent(p.id);return q&&q.p.id===id}),roots=L.panels.filter(p=>{const q=lsParent(p.id);return !q||q.p.id===p.id});
   const item=(p,d,seen)=>{if(seen.includes(p.id))return '';const c=M[p.id];return `<button type="button" class="lsp${p.id===L.cur?' on':''}" data-lsact="pick" data-id="${p.id}">${d?'<i class="lsdn">'+'└'.padStart(d,' ')+'</i>':''}<b>${esc(p.name||'–')}</b><span>${c&&c.nRed?`<i class="lsbad">${c.nRed}</i>`:''}${p.rows.length}/${n(p.cap)||'–'}</span></button>`+kids(p.id).map(k=>item(k,d+1,seen.concat(p.id))).join('')};
@@ -8067,7 +8088,7 @@ function lsTable(C,edit){const P0=C.P,L=lsData(),f0=v=>v?fmt(v):'',f1=v=>fmt(v,1
       <td>${x.sub?'':lsI(b+'.kw',r.kw,{num:1,w:'50px'})}</td><td>${x.sub?'':lsI(b+'.fla',r.fla,{num:1,w:'46px'})}</td>${['a','b','c'].map((k,j)=>`<td class="r">${x.sub?f0(x.va[j]):lsI(b+'.'+k,r[k],{num:1,w:'74px'})}</td>`).join('')}
       <td><select data-ls="${b}.p" id="ls-${b.replace(/\./g,'-')}-p">${[1,2,3].map(v=>`<option value="${v}"${+r.p===v?' selected':''}>${v}</option>`).join('')}</select></td><td>${lsI(b+'.at',r.at,{num:1,w:'56px'})}</td><td>${lsI(b+'.af',r.af,{num:1,w:'56px'})}</td>
       <td>${lsI(b+'.cab',r.cab,{w:'150px'})}</td><td>${lsI(b+'.ty',r.ty,{w:'62px'})}</td><td>${lsI(b+'.cd',r.cd,{w:'84px'})}</td><td>${lsI(b+'.amp',r.amp,{num:1,w:'52px',ph:x.am&&!x.am.own&&x.am.A?fmt(x.am.A):''})}</td>
-      <td class="r">${x.va.some(v=>v>0)?f1(x.I):''}</td><td class="l ck">${lsCk(x.c)}</td><td><button type="button" class="x" data-lsact="delRow" data-i="${i}" aria-label="ลบ">×</button></td></tr>`}).join('');
+      <td class="r">${x.va.some(v=>v>0)?f1(x.I):''}</td><td class="ck">${x.c.some(c=>c[0]==='r')?'<span class="lsc r">✕</span>':x.c.length?'<span class="lsc o">!</span>':'<span class="lsc ok">✓</span>'}</td><td><button type="button" class="x" data-lsact="delRow" data-i="${i}" aria-label="ลบ">×</button></td></tr>${x.c.length||x.fx.txt.length||x.fx.alt?`<tr class="lsrx"><td></td><td colspan="16" class="l">${x.c.map(c=>`<span class="lsc ${c[0]}">${c[0]==='r'?'✕':c[0]==='o'?'!':'i'} ${esc(c[1])}</span>`).join(' ')}${lsFxH(x.fx,'fix',i)}</td></tr>`:''}`}).join('');
   const sp=edit?'<td></td><td></td>':'',mc=P0.mcab;
   const head=`<div class="lsttl">PANEL BOARD LOAD SCHEDULE</div><table class="lsh"><tr><td>PANEL NO. : ${edit?lsI('p.name',P0.name,{w:'140px'}):`<b>${esc(P0.name)}</b>`}</td><td>LOCATION : ${edit?lsI('p.loc',P0.loc,{w:'220px'}):`<b>${esc(P0.loc)}</b>`}</td></tr>
     <tr><td>CONNECTED TO : ${par?`<b>${esc(par.p.name)}</b> (${tl('วงจร','circuit')} ${par.i+1})`:edit?lsI('p.src',P0.src,{w:'140px'}):`<b>${esc(P0.src)}</b>`}</td><td>CAPACITY : ${edit?lsI('p.cap',P0.cap,{num:1,w:'60px'}):`<b>${lsEsc(P0.cap)}</b>`} cct · ${C.R.length} ${tl('วงจรใช้งาน','in use')} · 3${tl('เฟส 4 สาย','P 4W')} ${Math.round(C.V*Math.sqrt(3)/10)*10}/${C.V} V</td></tr></table>`;
@@ -8111,10 +8132,10 @@ function lsRender(){$('results').hidden=true;const L=lsData(),S=L.set,M=lsAll(),
     <p class="hint" style="margin:8px 0 0">${tl('ไฟบ้านเราเป็น 230/400 V (ไฟล์เก่ามักหาร 220) · CB ต้องไม่ต่ำกว่า 1.25 เท่าของกระแส · สายต้องรับได้ไม่ต่ำกว่า AT · สายดินตามตาราง วสท.','230/400 V supply · CB ≥ 1.25 × current · cable ≥ CB AT · ground conductor per EIT table')}</p></details></section>
   ${P0?`<section class="panel card"><div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">
       <button type="button" class="btn sm primary" data-lsact="xlsx">${tl('ส่งออก Excel (ตู้ละ 1 ชีต)','Export Excel (a sheet per panel)')}</button><button type="button" class="btn sm" data-lsact="print">${tl('พิมพ์ / PDF','Print / PDF')}</button>
-      <button type="button" class="btn sm" data-lsact="bal">${tl('จัดเฟสให้สมดุล','Balance phases')}</button><button type="button" class="btn sm" data-lsact="fill">${tl('เติม CB และสายที่ว่าง','Fill empty CB and cables')}</button><button type="button" class="btn sm" data-lsact="main">${tl('คำนวณ MAIN CB และสายเมน','Size main CB and cable')}</button>
+      <button type="button" class="btn sm" data-lsact="bal">${tl('จัดเฟสให้สมดุล','Balance phases')}</button>${C.R.some(x=>x.fx.txt.length)||C.mfx.txt.length?`<button type="button" class="btn sm primary" data-lsact="fixall">${tl('แก้ตามค่าแนะนำทั้งตู้','Apply all suggestions')} (${C.R.filter(x=>x.fx.txt.length).length+(C.mfx.txt.length?1:0)})</button>`:''}<button type="button" class="btn sm" data-lsact="fill">${tl('เติม CB และสายที่ว่าง','Fill empty CB and cables')}</button><button type="button" class="btn sm" data-lsact="main">${tl('คำนวณ MAIN CB และสายเมน','Size main CB and cable')}</button>
       <span class="hint" id="lsMsg" style="align-self:center"></span></div>
     ${lsTable(C,1)}<div class="row" style="margin-top:8px"><button type="button" class="btn sm addrow" data-lsact="addRow">+ ${tl('เพิ่มวงจร','Add circuit')}</button></div>
-    ${C.ck.length?`<div class="lsck"><b>${tl('ผลตรวจตู้นี้','Panel checks')}</b>${lsCk(C.ck)}</div>`:''}
+    ${C.ck.length?`<div class="lsck"><b>${tl('ผลตรวจตู้นี้','Panel checks')}</b>${lsCk(C.ck)}${lsFxH(C.mfx,'fixm',0)}</div>`:''}
     <p class="hint">${tl('กระแสวงจร = VA ของเฟสที่มากที่สุด ÷ แรงดันเฟส · ใส่ kW แล้วโปรแกรมแบ่ง VA ลงเฟสให้ (PF ตามที่ตั้ง) หรือใส่ FLA จากสเปคเครื่อง (แม่นกว่า เครื่องอินเวอร์เตอร์กินกระแสมากกว่า kW ÷ PF) · ช่อง "ตู้ย่อย" ต่อวงจรนี้ไปอีกตู้ ยอด VA ของตู้นั้นมาเองและวาดเป็นตู้ลูก · "A สาย" ว่างไว้ = ใช้ตารางสายในท่อก่อนคูณลด (THW/IEC01 ตาราง วสท. ที่ MEP ใช้, CV ตาราง XLPE IEC 60364-5-52) ถ้าเดินบนรางเคเบิลหรือในอากาศ ใส่ค่าจากตารางที่ใช้จริง','Circuit current = largest phase VA ÷ phase voltage. Enter kW and the VA is spread over the phases. "Sub panel" links this circuit to another panel. Blank cable A = conduit table before grouping.')}</p></section>
     <section class="panel card"><h2><span>Single Line Diagram ${esc(P0.name)}</span></h2><div style="overflow-x:auto" data-noxl>${lsSld(C)}</div></section>`
     :`<section class="panel card"><h2><span>${tl('ตารางโหลด','Load schedule')}</span></h2><p class="hint">${tl('กด "ทำจากงานแอร์" เพื่อสร้างตู้ DB-AC จากเครื่องปรับอากาศในโครงการ หรือ "+ ตู้ใหม่" เพื่อกรอกเองตามแบบฟอร์ม PANEL BOARD LOAD SCHEDULE','Press "From the AC design" or "+ New panel".')}</p></section>`}
@@ -8136,6 +8157,10 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   else if(a==='del'){if(!confirm(tl(`ลบตู้ ${P0.name} และวงจรทั้งหมดในตู้?`,`Delete panel ${P0.name}?`)))return;L.panels.forEach(p=>p.rows.forEach(r=>{if(r.sub===P0.id){r.sub='';r.d=P0.name+' ('+tl('ตู้ถูกลบ','deleted')+')'}}));L.panels.splice(L.panels.indexOf(P0),1);L.cur=L.panels[0]?L.panels[0].id:null}
   else if(a==='addRow'){P0.rows.push(lsNewRow())}
   else if(a==='delRow'){P0.rows.splice(+b.dataset.i,1)}
+  else if(a==='fix'||a==='fixcb'){const x=lsCalc(P0.id).R[+b.dataset.i];if(!x)return;if(a==='fixcb')x.r.at=+b.dataset.v;else lsFixRow(P0,x.r,x.fx)}
+  else if(a==='fixm'||a==='fixmcb'){const C=lsCalc(P0.id);if(a==='fixmcb')P0.mat=+b.dataset.v;else{const f=C.mfx;if(f.at){P0.mat=f.at;const af=AF.find(v=>v>=f.at);if(af&&n(P0.maf)<f.at)P0.maf=af}if(f.cab)P0.mcab=f.cab}}
+  else if(a==='fixall'){let C=lsCalc(P0.id);C.R.forEach(x=>{if(x.fx.txt.length)lsFixRow(P0,x.r,x.fx)});C=lsCalc(P0.id);const f=C.mfx;if(f.at){P0.mat=f.at;const af=AF.find(v=>v>=f.at);if(af&&n(P0.maf)<f.at)P0.maf=af}
+    if(f.cab)P0.mcab=f.cab;C=lsCalc(P0.id);if(C.mfx.cab)P0.mcab=C.mfx.cab}
   else if(a==='bal'){lsBalance(P0)}
   else if(a==='fill'){lsFill(P0)}
   else if(a==='main'){lsMain(P0)}
@@ -8240,16 +8265,17 @@ table.lsT{border-collapse:collapse;width:100%;min-width:980px;font-size:12px}tab
 table.lsT th{background:var(--sunk,#e9efee);font-weight:600}table.lsT td.l{text-align:left}table.lsT td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 table.lsT input{border:0;background:var(--warn-soft,#fffbe6);font:inherit;padding:2px 3px;border-radius:3px;color:var(--ink);max-width:100%}table.lsT input[type=number]{text-align:right}
 table.lsT select{min-width:46px;width:46px;font:inherit;padding:1px 2px;color:var(--ink);background:var(--surface)}table.lsT select.lssub{width:auto;min-width:90px}table.lsT .lssub{display:block;margin-top:2px;font-size:11px;max-width:150px;opacity:.85}
-table.lsT td.ck{min-width:150px;max-width:240px}.lsc{font-size:11px;line-height:1.35;text-align:left}.lsc.r{color:var(--danger,#c62828);font-weight:600}.lsc.o{color:#b26a00}.lsc.i{color:var(--muted)}.lsc.ok{color:var(--good,#0a7a3b);font-weight:700}
+table.lsT td.ck{min-width:150px;max-width:240px}table.lsT.ed td.ck{min-width:0;text-align:center}table.lsT tr.lsrx td{border-top:0;background:var(--warn-soft,#fff8e6);padding:2px 6px}table.lsT tr.lsrx .lsc{display:inline;margin-right:10px}table.lsT tr.lsrx .lsfx{display:inline-flex;margin:0 0 0 6px}.lsc{font-size:11px;line-height:1.35;text-align:left}.lsc.r{color:var(--danger,#c62828);font-weight:600}.lsc.o{color:#b26a00}.lsc.i{color:var(--muted)}.lsc.ok{color:var(--good,#0a7a3b);font-weight:700}
+.lsfx{margin-top:3px;font-size:11px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;color:var(--ink)}.lsfx span{background:var(--good-soft,#e6f4ea);border-radius:6px;padding:1px 6px}.lsfx .btn.sm{padding:1px 8px;font-size:11px}
 .lsred{color:var(--danger,#c62828)}.lsor{color:#b26a00}.lsok{color:var(--good,#0a7a3b)}
 .lsck{margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:3px}.lsck .lsc{font-size:12px}
 svg.lssld{width:100%;height:auto;color:var(--ink)}svg.lssld .ln{stroke:currentColor;stroke-width:1;fill:none}svg.lssld text{fill:currentColor}
 #lsPrint{display:none}
-@media print{html.pr-ls body>:not(#lsPrint){display:none!important}html.pr-ls #lsPrint{display:block!important;color:#000}
+@media print{.lsfx .btn{display:none}html.pr-ls body>:not(#lsPrint){display:none!important}html.pr-ls #lsPrint{display:block!important;color:#000}
   html.pr-ls .lspg{break-after:page;padding:6mm}html.pr-ls table.lsT{min-width:0;font-size:9.5px}html.pr-ls svg.lssld{min-width:0!important;width:100%}.lspj{font-size:9px;margin-top:6px;color:#555}
   @page{size:A4 landscape;margin:8mm}}
 </style>`);
-window.__mep=Object.assign(window.__mep||{},{lsData,lsCalc,lsAll,lsCab,lsAmp,lsBook,lsFromAC,lsBalance,lsFill,lsMain,lsNewPanel,lsNewRow,lsGo:()=>{save();view='elload';renderAll()}});
+window.__mep=Object.assign(window.__mep||{},{lsData,lsCalc,lsAll,lsCab,lsAmp,lsBook,lsFromAC,lsBalance,lsFill,lsMain,lsNewPanel,lsNewRow,lsFixOf,lsCabSet,lsGo:()=>{save();view='elload';renderAll()}});
 if(location.hash.indexOf('#v3d=')===0)v3dOpen(location.hash.slice(5));
 })();
 </script>
