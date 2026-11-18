@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=553,V1_NAME='V1.543';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=554,V1_NAME='V1.544';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57255,6 +57255,96 @@ Object.assign(STR,{
   tl543_h1:['คลิกเส้นรายละเอียดที่จะตัดหรือต่อถึงขอบเขต ตรงส่วนที่จะเก็บไว้','Click the detail line to trim or extend to the boundary, on the part to keep'],
   tl543_hn:['คลิกเส้นรายละเอียดที่จะตัดหรือต่อถึงขอบเขตทีละเส้น ตรงส่วนที่จะเก็บไว้ · Esc จบ','Click each detail line to trim or extend to the boundary, on the part to keep · Esc to finish'],
   tl543_none:['ไม่มีเส้นรายละเอียดหรือเส้นระดับชั้นตรงนี้','No detail line or level here']});
+/* ===== 544 Angular Dimension in elevations and sections (V1.544; Revit: Annotate › Dimension › Angular works in an elevation or a section too, between two
+   lines of the view: detail lines, levels, grids and the edges of the model; click the first, the second, then where the arc goes).
+   eadim {x, y: a point the arc passes through (it picks the sector and the radius, as dragging the arc does), la, lb: the two lines}.  A line is
+   {k:'dl', id} a detail line of the view; {k:'lv', id} a level; {k:'gh', id} a grid seen across; {k:'eg', id, l:[x1,y1,x2,y2]} an edge of an element, its ends
+   from the corner (h0, −z0) of the element's box in the view, so it goes where the element goes and follows its nearest edge when it is reshaped;
+   {k:'fx', l} a line kept as it is (a copy, which no longer names what it measured).  All in the coordinates of the view: x along it, y = −height. */
+EA_CAT.eadim='adim';
+const ED544=new Map();
+/* the edges of element id seen in view v, as segments of the view */
+function ead544Edges(v,id){const k=VER+'|'+v.id+'|'+id;let r=ED544.get(k);if(r)return r;if(ED544.size>300)ED544.clear();r=[];
+  for(const it of MSm().items){if(it.id!==id||!it.l)continue;const L=it.l;for(let i=0;i+5<L.length;i+=6){const a=[ev3Hq(v,[L[i],L[i+2]]),-L[i+1]],b=[ev3Hq(v,[L[i+3],L[i+5]]),-L[i+4]];
+    if(Math.hypot(b[0]-a[0],b[1]-a[1])>=1)r.push([a[0],a[1],b[0],b[1]])}}ED544.set(k,r);return r}
+/* where grid g crosses view v, along it; none when the grid runs along the view */
+function ead544GridH(v,g){if(!g||g.bow)return null;const gp=gridPath(g),f=viewDir(v);for(let i=1;i<gp.length;i++){const dx=gp[i][0]-gp[i-1][0],dy=gp[i][1]-gp[i-1][1],L=Math.hypot(dx,dy)||1;if(Math.abs(dx*f[0]+dy*f[1])/L>=0.94)return ev3Hq(v,gp[i-1])}return null}
+const ead544DL=d=>!!d&&d.cat==='dline'&&!d.bow&&!lcCurve(d);
+/* the line r names now, [x1, y1, x2, y2] in the view, or null */
+function ead544Line(v,r,d){if(!r||typeof r!=='object')return null;
+  if(r.k==='fx')return Array.isArray(r.l)&&r.l.length===4?r.l:null;
+  if(r.k==='dl'){const e=IDX.get(r.id);return ead544DL(e)&&e.view===d.view?[e.x1,e.y1,e.x2,e.y2]:null}
+  if(r.k==='lv'){const l=P.levels.find(x=>x.id===r.id);return l?[d.x-1000,-l.elev,d.x+1000,-l.elev]:null}
+  if(r.k==='gh'){const h=ead544GridH(v,P.grids.find(x=>x.id===r.id));return h!=null?[h,d.y-1000,h,d.y+1000]:null}
+  if(r.k==='eg'){const e=IDX.get(r.id),B=e&&ev3Box(v,e);if(!B||!Array.isArray(r.l))return null;const L=[B[0]+r.l[0],r.l[1]-B[2],B[0]+r.l[2],r.l[3]-B[2]];
+    const ux=L[2]-L[0],uy=L[3]-L[1],Lu=Math.hypot(ux,uy)||1,mx=(L[0]+L[2])/2,my=(L[1]+L[3])/2;let best=null,bs=Infinity;
+    for(const s of ead544Edges(v,r.id)){const sx=s[2]-s[0],sy=s[3]-s[1],Ls=Math.hypot(sx,sy),sn=Math.abs(ux*sy-uy*sx)/(Lu*Ls),dd=Math.abs((mx-s[0])*sy-(my-s[1])*sx)/Ls,sc=dd+sn*2000;
+      if(sn<0.17&&dd<500&&sc<bs){bs=sc;best=s}}return best||L}
+  return null}
+/* the arc: vertex, radius, the sector the point (x, y) lies in; the same shape as a plan's angular dimension (adimGeo), so drawADim draws it */
+function ead544Geo(v,d){const A=ead544Line(v,d.la,d),B=ead544Line(v,d.lb,d);if(!A||!B||!isFinite(d.x)||!isFinite(d.y))return null;
+  const rx=A[2]-A[0],ry=A[3]-A[1],sx=B[2]-B[0],sy=B[3]-B[1],la=Math.hypot(rx,ry),lb=Math.hypot(sx,sy),den=rx*sy-ry*sx;if(la<1e-6||lb<1e-6||Math.abs(den)<1e-4*la*lb)return null;
+  const tt=((B[0]-A[0])*sy-(B[1]-A[1])*sx)/den,V=[A[0]+rx*tt,A[1]+ry*tt],r=Math.hypot(d.x-V[0],d.y-V[1]);if(r<1)return null;
+  const T=2*Math.PI,nm=x=>((x%T)+T)%T,aa=Math.atan2(ry,rx),ab=Math.atan2(sy,sx),R=[nm(aa),nm(aa+Math.PI),nm(ab),nm(ab+Math.PI)].sort((p,q)=>p-q),th=nm(Math.atan2(d.y-V[1],d.x-V[0]));
+  let k=3;for(let i=0;i<3;i++)if(th>=R[i]&&th<R[i+1]){k=i;break}const a0=R[k],da=(k<3?R[k+1]:R[0]+T)-a0;
+  return{v:V,r,a0,da,val:da*180/Math.PI,p1:[V[0]+Math.cos(a0)*r,V[1]+Math.sin(a0)*r],p2:[V[0]+Math.cos(a0+da)*r,V[1]+Math.sin(a0+da)*r],m:[V[0]+Math.cos(a0+da/2)*r,V[1]+Math.sin(a0+da/2)*r]}}
+/* how far w is from the arc or its value (in the view's mm); Infinity off it */
+function ead544Dist(v,d,w){const G=ead544Geo(v,d);if(!G)return Infinity;const sc=v.scale||100,am=G.a0+G.da/2,tp=[G.v[0]+Math.cos(am)*(G.r+3*sc),G.v[1]+Math.sin(am)*(G.r+3*sc)];
+  if(Math.hypot(w.x-tp[0],w.y-tp[1])<3*sc)return 0;const T=2*Math.PI;let t=Math.atan2(w.y-G.v[1],w.x-G.v[0])-G.a0;t=((t%T)+T)%T;if(t>G.da+0.04&&t<T-0.04)return Infinity;return Math.abs(Math.hypot(w.x-G.v[0],w.y-G.v[1])-G.r)}
+/* the line under the pointer: a detail line, an edge of what is under the pointer (within 8 px), a level or a grid; {ref, l, d: px} */
+function ead544Pick(pn,v,p){const n=navOf(v),w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s};let best=null;const put=(ref,l,dp)=>{if(dp<8&&(!best||dp<best.d))best={ref,l,d:dp}};
+  for(const d of DL543(v))if(ead544DL(d))put({k:'dl',id:d.id},[d.x1,d.y1,d.x2,d.y2],segDist(w.x,w.y,d.x1,d.y1,d.x2,d.y2)*n.s-0.3);
+  const ids=new Set();for(const o of [[0,0],[-6,0],[6,0],[0,-6],[0,6]]){const q=pickAt(pn,v,{x:p.x+o[0],y:p.y+o[1]});if(q&&q.id!=null)ids.add(q.id)}
+  for(const id of ids){const e=IDX.get(id),B=e&&ev3Box(v,e);if(!B)continue;for(const s of ead544Edges(v,id))put({k:'eg',id,l:[s[0]-B[0],s[1]+B[2],s[2]-B[0],s[3]+B[2]].map(edR)},s,segDist(w.x,w.y,s[0],s[1],s[2],s[3])*n.s)}
+  if(!catHid(v,'level'))for(const l of P.levels)if(!hidDatum(v,l))put({k:'lv',id:l.id},[w.x-1000,-l.elev,w.x+1000,-l.elev],Math.abs(w.y+l.elev)*n.s+0.5);
+  if(!catHid(v,'grid'))for(const g of P.grids){if(hidDatum(v,g))continue;const h=ead544GridH(v,g);if(h!=null)put({k:'gh',id:g.id},[h,w.y-1000,h,w.y+1000],Math.abs(w.x-h)*n.s+0.5)}
+  return best}
+const ead544Par=(a,b)=>{const rx=a[2]-a[0],ry=a[3]-a[1],sx=b[2]-b[0],sy=b[3]-b[1];return Math.abs(rx*sy-ry*sx)<0.0017*Math.hypot(rx,ry)*Math.hypot(sx,sy)};          // within 0.1°
+const ead544Same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+XT3.adim={ok:v=>ev3EV(v),
+  click(pn,v,p){const A=ui.ad544&&ui.ad544.v===v.id?ui.ad544:null,n=navOf(v),w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s};
+    if(!A||!A.b){const q=ead544Pick(pn,v,p);if(!q){toast(t('ad544_none'));return}
+      if(!A){ui.ad544={v:v.id,a:q};hint();refresh();return}
+      if(ead544Same(q.ref,A.a.ref))return;const la=ead544Line(v,A.a.ref,Object.assign({view:avid(v)},w)),lb=ead544Line(v,q.ref,Object.assign({view:avid(v)},w));
+      if(!la||!lb||ead544Par(la,lb)){toast(t('ad544_par'));return}A.b=q;hint();refresh();return}
+    const d={id:0,cat:'eadim',view:avid(v),x:edR(w.x),y:edR(w.y),la:A.a.ref,lb:A.b.ref};if(!ead544Geo(v,d))return;ui.ad544=null;
+    edit(()=>{d.id=P.seq++;P.ann.push(d)});hint()},
+  draw(pn,ctx,v,nav){const A=ui.ad544&&ui.ad544.v===v.id?ui.ad544:null,p=ui.curPane===pn.i?ui.cur:null,X=x=>x*nav.s+nav.ox,Y=y=>y*nav.s+nav.oy;
+    const show=(q,col,wd)=>{const l=q.l,k=q.ref.k;ctx.save();ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.beginPath();
+      if(k==='lv'){ctx.moveTo(0,Y(l[1]));ctx.lineTo(pn.w,Y(l[1]))}else if(k==='gh'){ctx.moveTo(X(l[0]),0);ctx.lineTo(X(l[0]),pn.h)}else{ctx.moveTo(X(l[0]),Y(l[1]));ctx.lineTo(X(l[2]),Y(l[3]))}ctx.stroke();ctx.restore()};
+    if(A){show(A.a,C.sel,2.4);if(A.b)show(A.b,C.sel,2.4)}
+    if(!p)return;const n=navOf(v),w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s};
+    if(!A||!A.b){const q=ead544Pick(pn,v,p);if(q&&!(A&&ead544Same(q.ref,A.a.ref)))show(q,C.hot,2.2);return}
+    const G=ead544Geo(v,{view:avid(v),x:w.x,y:w.y,la:A.a.ref,lb:A.b.ref});if(!G)return;ctx.save();try{drawADim(painter(ctx,nav,v.scale||100,C,false),G,C.sel)}finally{ctx.restore()}},
+  hint:v=>{const A=ui.ad544&&ui.ad544.v===v.id?ui.ad544:null;return t(!A?'ad544_h1':!A.b?'h_adim2':'h_adim3')}};
+XS.push(()=>{ui.ad544=null});
+{const f0=cancelTool;cancelTool=function(hard){if(!hard&&ui.tool==='adim'&&ui.ad544){ui.ad544=null;hint();refresh();return}return f0.apply(this,arguments)}}
+/* drawn with the other annotations of the view: on screen, on sheets, in PDF and DXF */
+{const f0=eaDraw;eaDraw=function(ctx,g,v,col,hl,o){f0.apply(this,arguments);for(const d of eaList(v)){if(d.cat!=='eadim')continue;const G=ead544Geo(v,d);if(G)drawADim(g,G,hl(d.id)||col.dim||col.ink)}}}
+{const f0=eaHit;eaHit=(v,p,nav)=>{const h=f0(v,p,nav);if(h||ui.tool!=='modify')return h;const w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};let best=null,bd=6/nav.s;
+  for(const d of eaList(v)){if(d.cat!=='eadim')continue;const m=ead544Dist(v,d,w);if(m<bd){bd=m;best={id:d.id,part:'ann'}}}return best}}
+/* its box: the arc and its value */
+function ead544Pts(v,d){const G=ead544Geo(v,d);if(!G)return[[d.x,d.y]];const sc=v.scale||100,out=[G.v],am=G.a0+G.da/2;for(let i=0;i<=8;i++){const a=G.a0+G.da*i/8;out.push([G.v[0]+Math.cos(a)*G.r,G.v[1]+Math.sin(a)*G.r])}
+  out.push([G.v[0]+Math.cos(am)*(G.r+5*sc),G.v[1]+Math.sin(am)*(G.r+5*sc)]);return out}
+{const f0=ev542Box;ev542Box=(v,d)=>{if(!d||d.cat!=='eadim')return f0(v,d);const Q=ead544Pts(v,d);return[Math.min(...Q.map(q=>q[0])),Math.max(...Q.map(q=>q[0])),-Math.max(...Q.map(q=>q[1])),-Math.min(...Q.map(q=>q[1]))]}}
+/* a copy (Copy, Array, the clipboard) keeps the lines where they are, by themselves */
+const ead544Fix=(v,d)=>{for(const k of ['la','lb']){const l=ead544Line(v,d[k],d);if(l)d[k]={k:'fx',l:l.map(edR)}}};
+{const f0=ev3Clone;ev3Clone=ids=>{const out=f0(ids);for(const id of out){const d=IDX.get(id);if(d&&d.cat==='eadim'){const v=viewById(d.view);if(v)ead544Fix(v,d)}}return out}}
+{const f0=clipCopy;clipCopy=cut=>{const v=activeView(),F=new Map();if(ev3EV(v))for(const id of ui.sel){const d=IDX.get(id);if(d&&d.cat==='eadim'){const c={x:d.x,y:d.y,view:d.view,la:d.la,lb:d.lb};ead544Fix(v,c);F.set(id,c)}}
+  const r=f0(cut),c=ui.clip;if(F.size&&c&&Array.isArray(c.objs))for(const o of c.objs){const q=o.cat==='eadim'&&F.get(o.id);if(q){o.la=q.la;o.lb=q.lb}}return r}}
+/* moved with what it is selected with: a line kept by itself goes along */
+{const f0=ev3Shift;ev3Shift=function(v,ids,dh,dz){const r=f0.apply(this,arguments),av=avid(v);for(const id of ids){const d=IDX.get(id);if(!d||d.cat!=='eadim'||d.view!==av)continue;
+    for(const k of ['la','lb']){const q=d[k];if(q&&q.k==='fx'&&Array.isArray(q.l))q.l=[q.l[0]+dh,q.l[1]-dz,q.l[2]+dh,q.l[3]-dz]}}return r}}
+/* gone with what it measures, as in Revit */
+function ead544Ok(r,d){if(!r||typeof r!=='object')return false;const n4=l=>Array.isArray(l)&&l.length===4&&l.every(x=>x!==null&&x!==''&&isFinite(+x));
+  if(r.k==='fx')return n4(r.l);if(r.k==='dl')return P.ann.some(x=>x.id===r.id&&x.cat==='dline'&&x.view===d.view);if(r.k==='lv')return P.levels.some(x=>x.id===r.id);
+  if(r.k==='gh')return P.grids.some(x=>x.id===r.id);if(r.k==='eg')return n4(r.l)&&P.els.some(x=>x.id===r.id);return false}
+XC.push(()=>{P.ann=P.ann.filter(d=>d.cat!=='eadim'||(isFinite(d.x)&&isFinite(d.y)&&ead544Ok(d.la,d)&&ead544Ok(d.lb,d)&&!ead544Same(d.la,d.lb)))});
+Object.assign(STR,{
+  ad544_h1:['คลิกเส้นแรก (เส้นรายละเอียด เส้นระดับชั้น กริด หรือขอบของชิ้นงาน)','Click the first line (a detail line, a level, a grid or an edge of the model)'],
+  ad544_none:['ไม่มีเส้นตรงนี้ ชี้เส้นรายละเอียด เส้นระดับชั้น กริด หรือขอบของชิ้นงาน','No line here: point at a detail line, a level, a grid or an edge of the model'],
+  ad544_par:['สองเส้นนี้ขนานกัน วัดมุมไม่ได้ เลือกเส้นที่สองใหม่','These two lines are parallel, so there is no angle: pick another second line'],
+  cat_eadim:['ระยะมุม','Angular Dimension']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59710,6 +59800,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.541 · วัดระยะ (Measure) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: คลิกสองจุดได้ความยาวพร้อมระยะแนวนอนกับแนวตั้ง (3 มิติบอก X Y Z) จับเส้นระดับชั้น กริด ขอบชิ้นงาน และมุมของผิวใน 3 มิติ Shift ไปทางเดียว · วัดต่อเนื่อง (Chain) ทุกมุมมองรวมแปลน ความยาวรวม (Total Length) บนแถบตัวเลือก Esc จบโดยยังเห็นผล
 - V1.542 · คัดลอกและวางคำอธิบายในรูปด้านและรูปตัด แบบ Revit: Ctrl+C / Ctrl+X เส้นรายละเอียด พื้นที่แรเงา เมฆแก้ไข ชิ้นรายละเอียด ข้อความ ระยะ และระดับ Ctrl+V วางตามเมาส์ในมุมมองเดิมหรือรูปด้าน/รูปตัดอื่นที่มองทางเดียวกัน (วางพร้อมชิ้นงานได้) · วางลงมุมมองปัจจุบัน วางลงมุมมองที่เลือก และวางที่ตำแหน่งเดิมรับคำอธิบายของรูปด้านและรูปตัด
 - V1.543 · ตัด/ต่อ (Trim/Extend) และขนาน (Offset) เส้นรายละเอียดในรูปด้านและรูปตัด แบบ Revit: ตัด/ต่อมุม ทีละเส้น และหลายเส้น (เส้นระดับชั้นหรือเส้นรายละเอียดเป็นขอบเขตได้) ขนานตามระยะหรือตามเมาส์ แบ่งเส้นรายละเอียดได้เหมือนเดิม
+- V1.544 · ระยะมุม (Angular Dimension) ในรูปด้านและรูปตัด แบบ Revit: คลิกเส้นแรก เส้นที่สอง แล้วที่วางส่วนโค้ง วัดได้ระหว่างเส้นรายละเอียด เส้นระดับชั้น กริด และขอบของชิ้นงาน ระยะมุมตามเส้นเหล่านั้นเมื่อย้ายหรือแก้ ลากส่วนโค้งเลือกมุมและรัศมีใหม่
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60425,6 +60516,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.541 · Measure in elevations, sections and 3D views, as in Revit: two clicks give the length with its across and up parts (X, Y, Z in 3D), catching levels, grids, the edges of what is under the pointer and the corners of faces in 3D; Shift keeps to one way · Chain in every view, plans too, with the Total Length on the options bar; Esc ends it with the result kept
 - V1.542 · Copy and paste the annotations of elevations and sections, as in Revit: Ctrl+C / Ctrl+X takes detail lines, filled regions, revision clouds, detail components, text, dimensions and spot elevations; Ctrl+V places them on the pointer in that view or in another elevation or section looking the same way (with model elements too) · Paste Aligned to Current View, to Selected Views and to Same Place take them
 - V1.543 · Trim/Extend and Offset on the detail lines of elevations and sections, as in Revit: to Corner, Single and Multiple (a level or a detail line can be the boundary), Offset by a distance or graphically; Split works on them as before
+- V1.544 · Angular dimensions in elevations and sections, as in Revit: click the first line, the second, then where the arc goes, between detail lines, levels, grids and the edges of the model; they follow those lines when they move or change, and dragging the arc picks another angle and radius
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -64045,6 +64137,35 @@ window.PenumBIM.r543={
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   esc:()=>{cancelTool();return{tool:ui.tool,tb:ui.tb||null,pts:ui.pts.length}},
   els:cat=>P.els.filter(e=>e.cat===cat).map(e=>({id:e.id,x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,h:e.height})),
+  str:k=>t(k)};
+window.PenumBIM.r544={
+  dl:(x1,y1,x2,y2,vid)=>{let id=0;edit(()=>{const v=activeView(),d={id:P.seq++,cat:'dline',view:vid||avid(v),x1,y1,x2,y2};P.ann.push(d);id=d.id});refresh();return id},
+  add:o=>{let id=0;edit(()=>{const d=Object.assign({id:P.seq++,view:avid(activeView())},JSON.parse(JSON.stringify(o)));P.ann.push(d);id=d.id});refresh();return id},
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl,activeView()),
+  pick:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],q=ead544Pick(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy});return q?{ref:q.ref,l:q.l.map(x=>Math.round(x))}:null},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];XT3[ui.tool].click(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy},{});const A=ui.ad544;return{tool:ui.tool,a:A&&A.a?A.a.ref:null,b:A&&A.b?A.b.ref:null,n:P.ann.filter(d=>d.cat==='eadim').length}},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  anns:vid=>P.ann.filter(d=>d.cat==='eadim'&&(vid==null||d.view===vid)).map(d=>JSON.parse(JSON.stringify(d))),
+  geo:id=>{const d=P.ann.find(x=>x.id===id),v=d&&viewById(d.view),G=v&&ead544Geo(v,d);return G?{val:Math.round(G.val*100)/100,r:Math.round(G.r),v:G.v.map(x=>Math.round(x)),txt:fmtAng(G.val)}:null},
+  hit:(h,z)=>{const v=activeView(),n=navOf(v);setTool('modify');const r=eaHit(v,{x:n.ox+h*n.s,y:n.oy-z*n.s},n);return r?r.id:0},
+  box:id=>{const d=P.ann.find(x=>x.id===id),v=d&&viewById(d.view);return v?ev542Box(v,d).map(x=>Math.round(x)):null},
+  shift:(ids,dh,dz)=>{const v=activeView();edit(()=>{ev3Shift(v,ids,dh,dz)});refresh();return true},
+  clone:ids=>{const v=activeView();let out=[];edit(()=>{out=ev3Clone(ids);ev3Shift(v,out,1000,0)});refresh();return out},
+  sel:ids=>{ui.sel=new Set(ids);refresh();return true},
+  lv:(id,el)=>{edit(()=>{const l=P.levels.find(x=>x.id===id);l.elev=el});refresh();return true},
+  del:ids=>{ui.sel=new Set(ids);act('delete');return P.ann.filter(d=>d.cat==='eadim').length},
+  edges:id=>{const v=activeView();return ead544Edges(v,id).map(s=>s.map(x=>Math.round(x)))},
+  texts:id=>{const d=P.ann.find(x=>x.id===id);if(!d)return null;const v=viewById(d.view),out=[],no=()=>{},ctx={save:no,restore:no,beginPath:no,moveTo:no,lineTo:no,arc:no,closePath:no,fill:no,stroke:no,setLineDash:no,rect:no,fillText:s=>out.push(String(s)),measureText:s=>({width:String(s).length*6})},
+    g={ctx,X:x=>x,Y:y=>y,scale:v&&v.scale||100,pm:1,lw:()=>1,circle:no,seg:no,path:no,dash:no,text:s=>out.push(String(s))};eaDraw(ctx,g,v,C,()=>null,{screen:false});return out},
+  set:(id,k,val)=>{edit(()=>{const e=P.els.find(x=>x.id===id);e[k]=val});refresh();return true},
+  rm:id=>{edit(()=>{P.ann=P.ann.filter(d=>d.id!==id)});refresh();return P.ann.filter(d=>d.cat==='eadim').length},
+  grid:(x1,y1,x2,y2)=>{let id=0;edit(()=>{const g={id:P.seq++,cat:'grid',name:'G'+P.grids.length,x1,y1,x2,y2};P.grids.push(g);id=g.id});refresh();return id},
+  clipK:()=>ui.clip&&ui.clip.objs?ui.clip.objs.filter(o=>o.cat==='eadim').map(o=>[o.la.k,o.lb.k]):null,
+  arcs:vid=>{const s=evDXF(viewById(vid));return[(s.match(/\n1\r?\n[^\r\n]*%%d\r?\n/g)||[]).length,(s.match(/\n42\r?\n-?[0-9.]*[1-9][0-9.]*\r?\n/g)||[]).length]},
+  hint:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  esc:()=>{cancelTool();const A=ui.ad544;return{tool:ui.tool,a:!!(A&&A.a)}},
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
