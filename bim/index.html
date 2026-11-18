@@ -14629,7 +14629,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=524,V1_NAME='V1.514';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=525,V1_NAME='V1.515';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -55523,6 +55523,37 @@ XC.push(()=>{if(!P.els.some(e=>e.cat==='rebar'))return;const H=new Map(P.els.fil
 XF.push((cat,o,key,raw)=>{if(key!=='rbs513fx')return false;if(cat!=='rebar'||!o.rb)return true;const on=raw===true||raw==='1'||raw==='true'||raw===1||raw==='on';
   if(on){delete o.rb.fx513;const h=rbs501Host(P,o),B=h&&rbs513Box(P,h);if(B)o.rb.hb513=B}else o.rb.fx513=1;return true});          // on again: it follows from where it is now
 Object.assign(STR,{p_rbs513fx:['ยึดกับระยะหุ้มของชิ้นส่วน (Constrained to Cover)','Constrained to Cover']});
+/* ===== 514 Picking on a section's cut (V1.515; Revit: in a section, a click on the cut face of a beam, a column, a wall or a slab picks that element, not
+   what is seen beyond it) =====
+   A section's model is clipped open at the cut plane, so a ray through a cut beam ran on through its hollow and took the first face it met beyond the
+   plane: the far end of the beam, or (at the same distance) the face of a column standing right behind it, so the click picked the column.  Now, where
+   the pointer is over the cut of an element (the ray meets that element's faces an odd number of times in front of the plane and an odd number of
+   times beyond it: it passes through the solid, and the plane lies inside), that element is taken at the plane, before anything beyond.  Hover, a
+   click, a box start and Tab (front to back) all go through it.  Elements the cut shows whole (furniture, fixtures …), hidden or ghosted ones, plans,
+   elevations and 3D section boxes are as before; a jogged section takes the strip under the pointer as before. */
+/* an item's box in the scene's own axes (x, up, y) */
+function bb514(Pp,it){const b=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];for(let i=it.t0*3,e=(it.t0+it.tn)*3;i<e;i+=3)for(let k=0;k<3;k++){const v=Pp[i+k];if(v<b[k])b[k]=v;if(v>b[k+3])b[k+3]=v}return b}
+const vol514=b=>(b[3]-b[0])*(b[4]-b[1])*(b[5]-b[2]);
+function cutPick514(o,nx,ny){if(o.strips&&o.strips.length){const h=o.cam.cR+nx*o.cam.hw,s=o.strips.find(s=>h>=s.h0&&h<s.h1)||o.strips[0];o=Object.assign({},o,{clip:s.clip,far:s.far,strips:null})}
+  const sc=GLR.scene,clip=o.clip;if(!sc||!clip||o.box)return null;const ray=camRay(o.cam,sc.bb,nx,ny),O=ray.o,D=ray.d,Pp=sc.pos,dn=D[0]*clip[0]+D[1]*clip[1]+D[2]*clip[2];
+  if(Math.abs(dn)<1e-9)return null;const t0=-(O[0]*clip[0]+O[1]*clip[1]+O[2]*clip[2]+clip[3])/dn;if(!(t0>0))return null;const far=o.far>0?o.far:0;
+  {const dd=t=>O[0]*clip[0]+O[1]*clip[1]+O[2]*clip[2]+clip[3]+t*dn;if(far&&dd(t0+1e-6)>far)return null}
+  let best=null,bB=null;
+  for(const it of sc.items){if(!it.tn||(o.hide&&o.hide(it))||(o.ghost&&o.ghost(it)&&!(o.sel&&o.sel.has(it.id))))continue;if(cutThrough(it,clip))continue;          // shown whole: not cut
+    const b=it._bb514||(it._bb514=bb514(Pp,it));let mn=Infinity,mx=-Infinity;for(let i=0;i<8;i++){const d=clip[0]*b[i&1?3:0]+clip[1]*b[i&2?4:1]+clip[2]*b[i&4?5:2]+clip[3];if(d<mn)mn=d;if(d>mx)mx=d}if(!(mn<0&&mx>0))continue;
+    const x=O[0]+D[0]*t0,y=O[1]+D[1]*t0,z=O[2]+D[2]*t0;if(x<b[0]-1||x>b[3]+1||y<b[1]-1||y>b[4]+1||z<b[2]-1||z>b[5]+1)continue;          // the point on the plane is outside its box
+    let nf=0,nb=0;const T=[];
+    for(let i=it.t0*3,e=(it.t0+it.tn)*3;i<e;i+=9){
+      const e1x=Pp[i+3]-Pp[i],e1y=Pp[i+4]-Pp[i+1],e1z=Pp[i+5]-Pp[i+2],e2x=Pp[i+6]-Pp[i],e2y=Pp[i+7]-Pp[i+1],e2z=Pp[i+8]-Pp[i+2];
+      const px=D[1]*e2z-D[2]*e2y,py=D[2]*e2x-D[0]*e2z,pz=D[0]*e2y-D[1]*e2x,det=e1x*px+e1y*py+e1z*pz;if(det>-1e-9&&det<1e-9)continue;
+      const inv=1/det,tx=O[0]-Pp[i],ty=O[1]-Pp[i+1],tz=O[2]-Pp[i+2],uu=(tx*px+ty*py+tz*pz)*inv;if(uu<0||uu>1)continue;
+      const qx=ty*e1z-tz*e1y,qy=tz*e1x-tx*e1z,qz=tx*e1y-ty*e1x,vv=(D[0]*qx+D[1]*qy+D[2]*qz)*inv;if(vv<0||uu+vv>1)continue;
+      const t=(e2x*qx+e2y*qy+e2z*qz)*inv;if(t<=0)continue;if(T.some(s=>Math.abs(s-t)<1e-6))continue;T.push(t);          // a hit on a shared edge counts once
+      if(t<t0)nf++;else nb++}
+    if(nf%2===1&&nb%2===1&&(!best||vol514(b)<vol514(bB)))best=it,bB=b}          // two cut where they meet: the smaller one
+  if(!best)return null;const n=dn>0?[-clip[0],-clip[1],-clip[2]]:[clip[0],clip[1],clip[2]];
+  return{id:best.id,cat:best.cat,p:[O[0]+D[0]*t0,O[1]+D[1]*t0,O[2]+D[2]*t0],n,it:best,cut514:1}}
+{const f0=glPick;glPick=function(o,nx,ny){if(o&&(o.clip||(o.strips&&o.strips.length))&&!o.box){const c=cutPick514(o,nx,ny);if(c)return c}return f0.apply(this,arguments)}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56362,6 +56393,7 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - คลิกที่ชิ้นงาน = เลือกชิ้นนั้น · ((Ctrl))+คลิก = เลือกเพิ่มหรือเอาออก · ((Shift))+คลิก = เอาออกจากที่เลือก
 - ลากกรอบจากซ้ายไปขวา = เลือกเฉพาะชิ้นที่อยู่ในกรอบทั้งชิ้น · ลากจากขวาไปซ้าย = เลือกทุกชิ้นที่กรอบแตะ
 - ((Tab)) ขณะชี้: สลับชิ้นที่ซ้อนกัน · ชี้ที่ผนังแล้วกด Tab = ได้ผนังที่ต่อเนื่องกันทั้งแนว · ชี้ที่สมาชิกของกลุ่มแล้วกด Tab = ได้เฉพาะชิ้นนั้น
+- ในรูปตัด: คลิกที่หน้าตัดของชิ้นที่ถูกตัด (คาน เสา ผนัง พื้น) ได้ชิ้นนั้นก่อนชิ้นที่มองเห็นอยู่ข้างหลัง · กด ((Tab)) ต่อเพื่อไปยังชิ้นข้างหลัง
 - ((Ctrl+A)) เลือกทุกชิ้นที่แปลนนี้แสดง · [[a_selsame]] ((SA)) เลือกทุกชิ้นที่เป็นชนิดเดียวกัน · [[a_selprev]] ((Ctrl+←)) เรียกชุดที่เลือกก่อนหน้า
 - เลือกมาหลายหมวดปนกัน: คลิกจำนวนที่เลือกบนแถบสถานะ หรือกด [[a_filter]] เพื่อคัดเฉพาะหมวดที่ต้องการ
 - [[a_selsave]]: เก็บชิ้นที่เลือกอยู่เป็นชุดที่มีชื่อ · [[a_selload]] เรียกชุดนั้นกลับมาเลือกอีกครั้ง · [[a_seledit]] เพิ่มหรือเอาชิ้นออกจากชุด (แท็บ [[tab_manage]] กลุ่ม [[p_selection]]) · ชุดที่บันทึกไว้ใช้เป็นตัวกรองของมุมมองได้ด้วย
@@ -56471,6 +56503,7 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - Click an element to select it · ((Ctrl)) + click adds or removes · ((Shift)) + click removes
 - Drag a box from left to right for the elements wholly inside it · from right to left for everything it touches
 - ((Tab)) while pointing cycles through overlapping elements · over a wall it takes the whole chain of joined walls · over a member of a group it takes that member alone
+- In a section a click on the cut face of an element (a beam, a column, a wall, a floor) picks it before what is seen beyond it · ((Tab)) goes on to what is behind
 - ((Ctrl+A)) selects everything this plan shows · [[a_selsame]] ((SA)) everything of the same type · [[a_selprev]] ((Ctrl+←)) brings the previous selection back
 - With several categories selected, click the count in the status bar, or [[a_filter]], to keep only the categories you want
 - [[a_selsave]]: keeps what is selected as a named set · [[a_selload]] selects that set again · [[a_seledit]] adds elements to a set or takes them out (the [[tab_manage]] tab, [[p_selection]]) · a saved set can also be the filter of a view
@@ -57915,6 +57948,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.512 · ตาราง BOQ: แถวที่ยังไม่มีราคาเป็นสีส้ม แถบเหนือตารางบอกว่ายังไม่มีราคากี่รายการ และปุ่มพาไปแถวถัดไปที่ยังไม่มีราคา (บนจอเท่านั้น แผ่นงาน PDF CSV และ Excel เหมือนเดิม) ส่งออก DXF ทุกแปลนและทุกแผ่นเป็นไฟล์ zip ที่บีบอัดแล้ว เล็กลงราว 10 เท่า ไฟล์ข้างในเหมือนเดิม
 - V1.513 · [[t_rbsk501]]: ความยาวแนววาง (Array Length) แบบ Revit และลูกศรลากที่ปลายสองข้างของชุดเหล็กที่เลือก ให้วางเรียงเฉพาะช่วงที่ต้องการได้ เช่น ปลอกถี่ที่ปลายคาน หรือเหล็กปลอกเสาเฉพาะช่วงล่าง ลากได้ในแปลน รูปตัด และรูปด้าน ทีละ 5 มม. ปลายอีกข้างอยู่ที่เดิม ย้อนกลับได้ในขั้นเดียว และ Properties มีความยาวแนววางกับระยะเลื่อนต้นแนววาง
 - V1.514 · [[t_rbsk501]]: เหล็กเสริมวาดเองยึดกับระยะหุ้มของชิ้นส่วนแบบ Revit: เปลี่ยนคานให้ลึกขึ้น กว้างขึ้น ยาวขึ้น เสาสูงขึ้น หรือระยะหุ้มเปลี่ยน เหล็กที่อยู่บนระยะหุ้มยังอยู่บนระยะหุ้ม จุดของเหล็กเลื่อนตามระยะหุ้มด้านที่ใกล้กว่า อยู่ในขั้นย้อนกลับเดียวกับการแก้ชิ้นส่วน ปิด [[p_rbs513fx]] ใน Properties แล้วชุดนั้นอยู่ที่เดิม
+- V1.515 · รูปตัด: คลิกที่หน้าตัดของคาน เสา ผนัง หรือพื้นที่รูปตัดตัดผ่าน ได้ชิ้นนั้นแบบ Revit ไม่ใช่ชิ้นที่มองเห็นอยู่ข้างหลัง (เดิมคลิกคานที่ถูกตัดแล้วได้เสาที่อยู่หลังคาน) ใช้กับการชี้ การคลิก และ Tab ไล่จากหน้าไปหลัง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58601,6 +58635,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.512 · BOQ schedule: rows that still have no price are orange, a bar above the table says how many and its button goes to the next one (on screen only; sheets, PDF, CSV and Excel are unchanged). "Every plan and sheet as DXF" writes a deflated zip, about ten times smaller, with the same files.
 - V1.513 · [[t_rbsk501]]: Array Length as in Revit, and drag arrows at the two ends of a selected set, so the bars can cover only part of the host, such as closer stirrups at a beam end or column ties at the foot only; dragged in a plan, a section or an elevation in 5 mm steps, the other end stays, one Undo step; Array Length and Offset at Start in Properties
 - V1.514 · [[t_rbsk501]]: sketched rebar is constrained to its host's cover as in Revit: make a beam deeper, wider or longer, a column taller, or change the cover, and bars on the cover stay on it; each point keeps its distance to the nearer cover line, in the same Undo step as the host's change; turn [[p_rbs513fx]] off in Properties to keep a set where it is
+- V1.515 · Sections: a click on the cut face of a beam, a column, a wall or a slab picks that element as in Revit, not what is seen beyond it (a click on a cut beam used to pick the column behind it); hover, clicks and Tab front to back follow
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -61856,6 +61891,13 @@ window.PenumBIM.r513={
   tset:(cat,tid,o)=>{edit(()=>{const T=(P.types[cat]||[]).find(x=>x.id===tid);Object.assign(T,o)});return true},
   type:id=>{const e=IDX.get(id),T=e&&typ(P,e);return T?JSON.parse(JSON.stringify(T)):null},
   pids:()=>[...document.querySelectorAll('#props [data-p]')].map(x=>x.dataset.p),str:(k,...a)=>t(k,...a)};
+/* V1.515 test API: picking on a section's cut */
+window.PenumBIM.r514={
+  /* what the pointer at page pixel (x, y) of the active pane picks (as a click in Modify) */
+  pick:(x,y)=>{const pn=PANES[ui.ap],v=activeView(),r=pn.cv.getBoundingClientRect(),k=pickAt3(pn,v,{x:x-r.left,y:y-r.top});return k?{id:k.id,cut:!!k.cut514}:null},
+  all:(x,y)=>{const pn=PANES[ui.ap],v=activeView(),r=pn.cv.getBoundingClientRect();return pickAll(pn,v,{x:x-r.left,y:y-r.top}).map(k=>k.id)},
+  scr:(x,y,z)=>{const pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect(),s=rbs512Scr(activeView(),[x,y,z||0]);return{x:r.left+s[0],y:r.top+s[1]}},
+  hide:(vid,ids)=>{const v=viewById(vid);if(ids&&ids.length)ui.temp[v.id]={mode:'hide',ids:new Set(ids)};else delete ui.temp[v.id];touch();redraw();return true}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
