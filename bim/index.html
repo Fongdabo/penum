@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=532,V1_NAME='V1.522';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=533,V1_NAME='V1.523';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -55850,6 +55850,77 @@ Object.assign(STR,{
   t_rbsh522:['เหล็กเสริมตามรูปทรง (Rebar Shape)','Rebar by Shape'],o_rbs522sh:['รูปทรง','Shape'],
   rbs522sh_st:['ปลอกปิด (Stirrup/Tie, 51)','Stirrup / Tie (51)'],rbs522sh_u:['รูปตัว U (21)','U-bar (21)'],rbs522sh_l:['รูปตัว L (11)','L-bar (11)'],rbs522sh_s:['เส้นตรง (00)','Straight (00)'],
   h_rbsh522:['คลิกในเสา คาน พื้น ฐานราก หรือผนังคอนกรีต รูปทรงวางพอดีระยะหุ้ม ชิดด้านหรือมุมที่ใกล้เมาส์ (รูปตัด รูปด้าน หรือแปลน)','Click inside a concrete column, beam, slab, footing or wall: the shape fits its cover, against the side or corner nearest the pointer (section, elevation or plan)']});
+/* ===== 523 Straight bars perpendicular to the view in Rebar by Shape (V1.523; Revit: Rebar Placement Orientation › Perpendicular to Cover: the bar runs along
+   the view's direction, as the longitudinal bars of a beam placed in its section, or the vertical bars of a column or a wall placed in a plan).  A fifth shape
+   for Rebar by Shape (V1.522), Straight, perpendicular to the view (00 ⊥): over a concrete host the bar's place is shown as a dot on the cover line nearest the
+   pointer (a corner or the middle of that side within 8 px takes it there), with the other bars of the layout; a click makes a straight bar running through
+   the host along the view between its two end covers, laid out along that side by the options bar (across the host at its top or bottom in a section, up it
+   at a side; along the side in a plan), first and last bar on the cover corners; inside the stirrups or ties already in the host (as Revit places a bar in
+   a stirrup's corner): the bar's cover is then the host's cover and the largest such tie.  So 3 DB16 at the bottom of a beam are one click in its section, and the
+   vertical bars of a column face one click in a plan.  Plans draw a bar seen end on as a dot, every bar of the set, and pick it there. ===== */
+RBS522_SH.push('p');
+/* bars standing up: a sketch of two points one above the other (seen end on in a plan) */
+const rbs523Up=e=>{const r=e&&e.cat==='rebar'&&e.rb,s=r&&r.sk;return!!(Array.isArray(s)&&s.length===2&&Math.abs(s[0][0]-s[1][0])<0.5&&Math.abs(s[0][1]-s[1][1])<0.5&&Math.abs(s[0][2]-s[1][2])>1)};
+/* the bar's place in the box [a0, a1] × [b0, b1] (cover lines to the bars' middles): on the side nearest m, at m along it, or at its ends or middle within tol */
+function rbs523Pt(a0,a1,b0,b1,m,tol){const ds=[['l',Math.abs(m[0]-a0)/(a1-a0||1)],['r',Math.abs(a1-m[0])/(a1-a0||1)],['b',Math.abs(m[1]-b0)/(b1-b0||1)],['t',Math.abs(b1-m[1])/(b1-b0||1)]].sort((x,y)=>x[1]-y[1]),side=ds[0][0];
+  let a=clamp(m[0],a0,a1),b=clamp(m[1],b0,b1);const sn=(x,lo,hi)=>{let r=x,bd=tol;for(const y of [lo,hi,(lo+hi)/2])if(Math.abs(x-y)<bd){bd=Math.abs(x-y);r=y}return r};
+  if(side==='l'||side==='r'){a=side==='l'?a0:a1;b=sn(b,b0,b1)}else{b=side==='b'?b0:b1;a=sn(a,a0,a1)}return{q:[a,b].map(x=>Math.round(x*10)/10),side}}
+/* the largest bar of the closed sets (stirrups, ties) already in host h whose layout runs along dw (the new bar's direction): the bar goes inside them */
+function rbs523Ds(h,dw){const F=rbs501Fr(P,h);if(!F)return 0;let m=0;for(const e of P.els){if(e.cat!=='rebar'||e.host!==h.id||!e.rb||!e.rb.cl||!Array.isArray(e.rb.nm))continue;
+  const n=rbs502N(F,e.rb.nm);if(Math.abs(n[0]*dw[0]+n[1]*dw[1]+n[2]*dw[2])>=0.99)m=Math.max(m,rbs501D(e.rb))}return m}
+/* the host under p and the bar's place: {v, h, B, q, side, ds (inside ties of that size), p523} (q: [h, z] in a section or an elevation, [u, v] of the host's frame in a plan) */
+function rbs523At(pn,v,p){const n=navOf(v),tol=8/n.s;let e,B;
+  if(v.kind==='plan'){const w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s};e=rbs509PickAt(v,w);B=e&&rbs509Box(e);if(!B)return null;const ds=rbs523Ds(e,[0,0,1]),cc=rbs501Cc(B)+ds;
+    if(!(B.u1-B.u0>2*cc+1&&B.v1-B.v0>2*cc+1))return null;if(!(B.H>2*B.cv+1))return{v:v.id,h:e.id,B,thin:1,p523:1};
+    const l=rbs501L(B.F,[w.x,w.y,0]),S=rbs523Pt(B.u0+cc,B.u1-cc,B.v0+cc,B.v1-cc,[l[0],l[1]],tol);return{v:v.id,h:e.id,B,q:S.q,side:S.side,ds,p523:1}}
+  e=rbs501PickAt(pn,v,p);B=e&&rbs501Box(v,e);if(!B)return null;const f=viewDir(v),ds=rbs523Ds(e,[f[0],f[1],0]),cc=rbs501Cc(B)+ds;if(!(B.h1-B.h0>2*cc+1&&B.z1-B.z0>2*cc+1))return null;
+  if(!(B.d1-B.d0>2*B.cv+1))return{v:v.id,h:e.id,B,thin:1,p523:1};
+  const S=rbs523Pt(B.h0+cc,B.h1-cc,B.z0+cc,B.z1-cc,[(p.x-n.ox)/n.s,-(p.y-n.oy)/n.s],tol);return{v:v.id,h:e.id,B,q:S.q,side:S.side,ds,p523:1}}
+/* the set it makes: rb (the bar along the view between the end covers, laid out along the side, the layout's covers at the bars' middles) */
+function rbs523Rb(v,A){const h=IDX.get(A.h),F=h&&rbs501Fr(P,h);if(!F||!A.q)return null;const o=rbs501Opt(),B=A.B,cv=B.cv,r1=x=>Math.round(x*10)/10,lr=A.side==='l'||A.side==='r';let sk,nm;
+  if(B.plan){sk=[[A.q[0],A.q[1],cv],[A.q[0],A.q[1],B.H-cv]];nm=lr?[0,1]:[1,0]}
+  else{const w0=ev3At(v,A.q[0],B.d0+cv),w1=ev3At(v,A.q[0],B.d1-cv);sk=[rbs501L(F,[w0[0],w0[1],A.q[1]]),rbs501L(F,[w1[0],w1[1],A.q[1]])];
+    if(lr)nm=[0,0,1];else{const f=viewDir(v),a=-f[1],b=f[0];nm=[a*F.c+b*F.s,-a*F.s+b*F.c].map(x=>Math.round(x*1e6)/1e6)}}
+  const rb={sk:sk.map(q=>q.map(r1)),nm,d:o.d,lr:o.lr,c:r1(rbs501Cc(B)+(A.ds||0))};if(o.lr==='n'||o.lr==='ns')rb.n=o.n;if(o.lr==='m'||o.lr==='ns'||o.lr==='mc')rb.s=o.s;
+  {const a=rbs502A(ui.opt.rbs502hs),b=rbs502A(ui.opt.rbs502he);if(a)rb.hs=a;if(b)rb.he=b}return rb}
+/* where the bars of the set would be, in the view's own coordinates: [[x, y]] (a plan) or [[h, z]] */
+function rbs523Bars(v,A){const h=IDX.get(A.h),rb=h&&rbs523Rb(v,A),F=h&&rbs501Fr(P,h);if(!rb||!F)return null;const e={id:-523,cat:'rebar',host:h.id,level:h.level,rb},q=rb.sk[0];
+  return rbs501Pos(P,e,h,F).slice(0,RBS501_MAX).map(tt=>{const w=rbs501W(F,[q[0]+rb.nm[0]*tt,q[1]+rb.nm[1]*tt,q[2]+(rb.nm[2]||0)*tt]);return v.kind==='plan'?[w[0],w[1]]:[ev3Hq(v,w),w[2]]})}
+/* the bars of a standing set, where they stand in plan: [[x, y]] */
+function rbs523Ax(e){const h=rbs501Host(P,e),F=h&&rbs501Fr(P,h),r=e.rb;if(!F)return[];const q=r.sk[0];
+  return rbs501Pos(P,e,h,F).slice(0,RBS501_MAX).map(tt=>{const w=rbs501W(F,[q[0]+r.nm[0]*tt,q[1]+r.nm[1]*tt,q[2]+(r.nm[2]||0)*tt]);return[w[0],w[1]]})}
+function rbs523Place(pn,v,p){const A=rbs523At(pn,v,p);if(!A){toast(t('rbs501_pick'));return null}if(A.thin){toast(t(A.B&&A.B.plan?'rbs509_thin':'rbs523_short'));return null}
+  const h=IDX.get(A.h),rb=rbs523Rb(v,A);if(!h||!rb){toast(t('rbs501_bad'));return null}const e={id:P.seq++,cat:'rebar',host:h.id,level:h.level,rb};edit(()=>{P.els.push(e)});
+  const G=rbs501Geo(P,e);ui.sel=new Set([e.id]);toast(t('rbs501_done',G?G.n:0,G?G.kg.toFixed(2):'0',rbName(G?G.d:12)));refresh();return e}
+{const f0=rbs522At;rbs522At=(pn,v,p)=>rbs522Sh()==='p'?rbs523At(pn,v,p):f0(pn,v,p)}
+{const f0=rbs522Bar;rbs522Bar=(v,A)=>A&&A.p523?rbs523Bars(v,A):f0(v,A)}
+{const f0=rbs522Place;rbs522Place=(pn,v,p)=>rbs522Sh()==='p'?rbs523Place(pn,v,p):f0(pn,v,p)}
+/* the preview: the cover lines, a dot for each bar of the layout, a ring round the one under the pointer */
+{const f0=rbs522Draw;rbs522Draw=(pn,ctx,v,X,Y)=>{const A=ui.rbs522;if(!A||!A.p523)return f0(pn,ctx,v,X,Y);if(A.v!==v.id||A.pn!==pn.i||A.thin)return;const B=A.B,cc=rbs501Cc(B)+(A.ds||0),n=navOf(v);
+  ctx.save();ctx.strokeStyle='#e8590c';ctx.lineWidth=1.2;ctx.setLineDash([5,4]);
+  const R=B.plan?[[B.u0+cc,B.v0+cc],[B.u1-cc,B.v0+cc],[B.u1-cc,B.v1-cc],[B.u0+cc,B.v1-cc]].map(q=>rbs509W(B,q)):[[B.h0+cc,B.z0+cc],[B.h1-cc,B.z0+cc],[B.h1-cc,B.z1-cc],[B.h0+cc,B.z1-cc]];
+  ctx.beginPath();R.forEach((q,i)=>i?ctx.lineTo(X(q[0]),Y(q[1])):ctx.moveTo(X(q[0]),Y(q[1])));ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+  const L=rbs523Bars(v,A)||[],r=Math.max(3,rbs501Opt().d/2*n.s);ctx.fillStyle=RBS501_SK;ctx.globalAlpha=0.85;for(const q of L){ctx.beginPath();ctx.arc(X(q[0]),Y(q[1]),r,0,7);ctx.fill()}
+  const c=B.plan?rbs509W(B,A.q):A.q;ctx.globalAlpha=1;ctx.strokeStyle=RBS501_SK;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(X(c[0]),Y(c[1]),r+3,0,7);ctx.stroke();ctx.restore()}}
+{const X=XT.rbsh522,h0=X.hint,o0=X.opt;X.hint=()=>rbs522Sh()==='p'?t('h_rbs523'):h0();
+  X.opt=function(who,chk,sel){let h=o0.apply(this,arguments);if(rbs522Sh()!=='p')return h;const i=h.indexOf('<select data-opt="rbs509z"');if(i<0)return h;          // no Plane: the bar stands through the host
+    const L=`<label>${esc(t('o_rbs509z'))}</label>`,j=h.indexOf('</select>',i),s=h.slice(0,i).endsWith(L)?i-L.length:i;return j<0?h:h.slice(0,s)+h.slice(j+9)}}
+/* ---- plans: a standing set as dots, every bar (Presentation leaves them all: the set is seen end on) ---- */
+{const i=XPL1.findIndex(f=>{const s=String(f);return s.includes("of('rebar')")&&s.includes('rbs501Show')});
+  if(i>=0){const f0=XPL1[i];XPL1[i]=(ctx,g,v,T,col,o,of,hl)=>{f0(ctx,g,v,T,col,o,k=>k==='rebar'?of(k).filter(x=>!rbs523Up(x[0])):of(k),hl);if(v.kind!=='plan'||v.draft)return;
+    const U=of('rebar').filter(x=>rbs523Up(x[0]));for(const [e] of U){const G=rbs501Geo(P,e);if(!G||!rbs501Show(G,v,e).length)continue;g.el(e);const k=hl(e.id);
+      ctx.save();ctx.fillStyle=k||RBS501_HEX;ctx.strokeStyle=k||RBS501_HEX;g.dash(null);ctx.lineWidth=g.lw(k?0.5:0.25);
+      for(const b of G.bars)if(b.p.length>2){ctx.beginPath();b.p.forEach((q,j)=>j?ctx.lineTo(g.X(q[0]),g.Y(q[1])):ctx.moveTo(g.X(q[0]),g.Y(q[1])));ctx.stroke()}          // hooks seen from above
+      for(const q of rbs523Ax(e)){const x=g.X(q[0]),y=g.Y(q[1]),r=Math.max(Math.abs(g.X(q[0]+G.d/2)-x),g.lw(0.5),1.5);ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();RBS523N.dots++}
+      ctx.restore()}}}}
+const RBS523N={dots:0};
+{const f0=XHIT.rebar;XHIT.rebar=(v,e,w,tol)=>{if(!(v&&v.kind==='plan'&&rbs523Up(e)))return f0(v,e,w,tol);const G=rbs501Geo(P,e);if(!G||!rbs501Show(G,v,e).length)return Infinity;let d=Infinity;
+  for(const q of rbs523Ax(e))d=Math.min(d,Math.max(0,Math.hypot(w.x-q[0],w.y-q[1])-G.d/2));return isFinite(d)&&d*navOf(v).s<=RBS510_PX?0:d};XHIT.rebar.pr=f0.pr;XHIT.rebar.prd=f0.prd}
+Object.assign(STR,{
+  rbs522sh_p:['เส้นตรงตั้งฉากกับมุมมอง (00 ⊥)','Straight, perpendicular to the view (00 ⊥)'],
+  rbs523_short:['ชิ้นส่วนนี้สั้นกว่าระยะหุ้มสองปลายตามแนวที่มอง','This host is shorter than its two end covers along the view'],
+  h_rbs523:['คลิกในชิ้นส่วนคอนกรีต: เหล็กเส้นตรงวิ่งตามแนวที่มองทะลุชิ้นส่วน วางบนระยะหุ้มด้านที่ใกล้เมาส์ (มุมหรือกึ่งกลางด้านในระยะ 8 พิกเซลชิดตรงนั้น) อยู่ด้านในปลอกที่มีแล้ว เรียงตามด้านนั้นตามแถบตัวเลือก',
+    'Click inside a concrete host: a straight bar runs along the view through it, on the cover of the side nearest the pointer (a corner or the middle of that side within 8 px takes it there), inside the stirrups or ties already there, laid out along that side by the options bar']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56991,6 +57062,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_pinf]]: คลิกพื้นแล้วคลิกจุดของแนว (ขอบพื้นหรือแนวคาน) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กตั้งฉากกับแนว ยาว [[p_arL]] ยื่นเข้าไปในพื้น ([[p_arflip]] สลับข้าง) ที่ผิวบนหรือล่าง [[p_arL2]] ทำให้เหล็กทุกเส้นที่สองยาวอีกค่า · เหล็กของทั้งสองแบบหยุดที่ระยะหุ้มจากขอบเขต ขอบพื้น และช่องเปิด และเข้า [[a_rbsched]] ปริมาณ และ BOQ
 - [[t_rbsh522]]: เลือกรูปทรงในแถบตัวเลือก (ปลอกปิด 51 รูปตัว U 21 รูปตัว L 11 เส้นตรง 00) แล้วคลิกในชิ้นส่วนคอนกรีตในรูปตัด รูปด้าน หรือแปลน รูปทรงวางพอดีระยะหุ้ม ชิดด้านหรือมุมที่ใกล้เมาส์ ได้ชุดเหล็กวาดเองที่แก้ต่อได้
+- [[t_rbsh522]] รูปทรงเส้นตรงตั้งฉากกับมุมมอง (00 ⊥): คลิกในรูปตัดคานได้เหล็กยาวตลอดคานบนระยะหุ้มด้านที่ใกล้เมาส์ เรียงตามด้านนั้น (เช่นเหล็กล่าง 3 เส้นในคลิกเดียว) คลิกในแปลนได้เหล็กยืนของเสาหรือผนังเรียงตามผิว แปลนแสดงเหล็กที่มองเห็นปลายเป็นจุด
 - [[t_rbsk501]]: ในรูปตัดหรือรูปด้าน คลิกชิ้นส่วนคอนกรีต แล้วคลิกจุดของเหล็ก (ยึดเส้นระยะหุ้ม) Enter หรือคลิกจุดสุดท้ายซ้ำเพื่อจบ คลิกจุดแรกเพื่อปิดเป็นวง เหล็กวางเรียงตั้งฉากกับระนาบที่วาด ตาม [[p_rbs501lr]] (เส้นเดียว จำนวนคงที่ ระยะห่างไม่เกิน) และหยุดที่ระยะหุ้มจากขอบชิ้นส่วน
 - [[p_rbs502hs]] / [[p_rbs502he]]: ขอ 90° 135° หรือ 180° ที่ต้นหรือปลายเหล็กที่วาดเอง เลือกในแถบตัวเลือกก่อนวาดหรือใน Properties [[p_rbs502hos]] เลือกให้ขอหันซ้ายหรือขวา (ค่าเริ่มหันเข้าในรูป) วงปิดมีขอที่จุดแรกทั้งสองข้าง ความยาวขอตาม [[a_rhk301]]
 - [[p_rbs520hrs]] / [[p_rbs520hre]]: หมุนขอรอบแกนของเหล็กเป็นองศา ทวนเข็มเมื่อมองที่ปลายนั้นจากด้านนอก (−180 ถึง 180) ขอออกจากระนาบที่วาด ความยาวตัดเท่าเดิม แสดงเมื่อปลายนั้นมีขอ
@@ -57248,6 +57320,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_pinf]]: click a slab, then the points of the path (a slab edge, or over a beam); click the last point again or press Enter to finish. The bars run across the path, [[p_arL]] long, into the slab ([[p_arflip]] swaps the side), at the top or the bottom face; [[p_arL2]] makes every other bar another length · the bars of both stop at the cover from the boundary, the slab edge and openings, and go into the [[a_rbsched]], the quantities and the BOQ
 - [[t_rbsh522]]: pick a shape in the options bar (Stirrup / Tie 51, U-bar 21, L-bar 11, Straight 00) and click inside a concrete host in a section, an elevation or a plan: the shape fits its cover, against the side or corner nearest the pointer, and is a sketched set from then on
+- [[t_rbsh522]] with Straight, perpendicular to the view (00 ⊥): a click in a beam's section makes bars running the beam's length on the cover of the side nearest the pointer, laid out along that side (3 bottom bars in one click); a click in a plan makes the vertical bars of a column or wall face; plans draw bars seen end on as dots
 - [[t_rbsk501]]: in a section or an elevation, click a concrete host, then the points of the bar (they snap to the cover lines); Enter or the last point again finishes, the first point closes a loop. The bars are laid out across the plane they were sketched in by the [[p_rbs501lr]] (Single, Fixed Number, Maximum Spacing) and stop at the cover from the host's ends
 - [[p_rbs502hs]] / [[p_rbs502he]]: a 90°, 135° or 180° hook at a sketched bar's start or end, picked in the options bar before sketching or in Properties; [[p_rbs502hos]] turns it left or right (it turns into the shape until set); a closed loop has both at its first point; their lengths are the [[a_rhk301]]
 - [[p_rbs520hrs]] / [[p_rbs520hre]]: turns that hook about the bar's axis, in degrees counterclockwise looking at that end from outside (−180 to 180), out of the plane it was sketched in; the cut length stays the same; shown when that end has a hook
@@ -58266,6 +58339,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.520 · [[t_rbsk501]]: หมุนขอเหล็กรอบแกนเหล็กได้แบบ Revit: [[p_rbs520hrs]] และ [[p_rbs520hre]] (องศา ทวนเข็มเมื่อมองที่ปลายนั้นจากด้านนอก) หมุนขอออกจากระนาบที่วาด เช่น ขอ 135° ของปลอกหันเข้าแกน ความยาวตัดและน้ำหนักเท่าเดิม รูป 3 มิติ รูปตัด รูปด้าน และแปลนวาดขอที่หมุนแล้ว หมุน 180° ได้ขอเดียวกับทิศขอฝั่งตรงข้าม
 - V1.521 · [[t_rbsk501]]: ลูกศรลากปลายแนววางและปุ่มกลับทิศของชุดเหล็กใน 3 มิติแบบ Revit: เลือกชุดเหล็กที่วางเรียงหลายเส้นในมุมมอง 3 มิติแล้วมีลูกศรนอกเส้นแรกและเส้นสุดท้ายชี้ตามแนววางที่เห็น ลากแล้วปลายนั้นเลื่อนทีละ 5 มม. ปลายอีกข้างอยู่ที่เดิม และปุ่มลูกศรสองทางข้างลูกศรต้นกลับทิศแนววาง ย้อนกลับได้ในขั้นเดียว
 - V1.522 · [[t_rbsh522]]: วางเหล็กเสริมตามรูปทรงแบบ Revit (Rebar Shape): เลือกรูปทรงในแถบตัวเลือก ปลอกปิด (51) รูปตัว U (21) รูปตัว L (11) หรือเส้นตรง (00) แล้วคลิกในชิ้นส่วนคอนกรีตในรูปตัด รูปด้าน หรือแปลน รูปทรงวางพอดีระยะหุ้มทันที ชิดด้านหรือมุมที่ใกล้เมาส์ (เห็นก่อนคลิก) ปลอกได้ขอ 135° ตั้งต้น ขนาด การวางเรียง และขอตามแถบตัวเลือก ได้ชุดเหล็กวาดเองที่แก้ต่อได้ทุกอย่าง เครื่องมืออยู่ต่อสำหรับชิ้นถัดไป
+- V1.523 · [[t_rbsh522]]: รูปทรงใหม่ เส้นตรงตั้งฉากกับมุมมอง (00 ⊥) แบบ Perpendicular to Cover ของ Revit: ในรูปตัดคาน คลิกใกล้ด้านล่างได้เหล็กล่างยาวตลอดคานตามจำนวนหรือระยะในแถบตัวเลือก เรียงขวางคานจากมุมถึงมุม คลิกใกล้ด้านข้างได้เหล็กข้างเรียงขึ้น ในแปลน คลิกใกล้ผิวเสาหรือผนังได้เหล็กยืนเรียงตามผิวนั้น เห็นตำแหน่งเป็นจุดก่อนคลิก มุมหรือกึ่งกลางด้านในระยะ 8 พิกเซลดูดเข้าที่ แปลนแสดงเหล็กยืนเป็นจุดทุกเส้นและคลิกเลือกได้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58960,6 +59034,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.520 · [[t_rbsk501]]: hooks turn about the bar as in Revit: [[p_rbs520hrs]] and [[p_rbs520hre]] (degrees, counterclockwise looking at that end from outside) turn a hook out of the plane it was sketched in, e.g. a tie's 135° hooks turned toward the core; the cut length and weight stay the same; 3D views, sections, elevations and plans draw the hook turned; 180° gives the hook the other orientation gives
 - V1.521 · [[t_rbsk501]]: a rebar set's end arrows and flip control in 3D views, as in Revit: select a set laid out in several bars in a 3D view and arrows stand just outside its first and last bars, pointing along the layout as the camera sees it; dragging one moves that end in 5 mm steps, the other end stays; the double arrow beside the start arrow flips the layout; one Undo step each
 - V1.522 · [[t_rbsh522]]: rebar placed by shape as in Revit (Rebar Shape): pick a shape in the options bar, Stirrup / Tie (51), U-bar (21), L-bar (11) or Straight (00), and click inside a concrete host in a section, an elevation or a plan: the shape fits its cover at once, against the side or corner nearest the pointer (shown before the click); a stirrup gets 135° hooks to start with; bar size, layout and hooks from the options bar; the result is a sketched set that can be edited like any other; the tool stays for the next one
+- V1.523 · [[t_rbsh522]]: a new shape, Straight, perpendicular to the view (00 ⊥), as Revit's Perpendicular to Cover: in a beam's section a click near the bottom makes bottom bars running the beam's length, by the number or spacing in the options bar, laid out across from corner to corner; near a side, side bars laid out up it; in a plan a click near a column or wall face makes vertical bars along that face; the places show as dots before the click, a corner or the middle of a side within 8 px takes the bar there; plans draw standing bars as dots, every bar, and pick them there
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -62281,6 +62356,16 @@ window.PenumBIM.r522={
   place:(x,y)=>{const pn=PANES[ui.ap],v=paneView(pn.i),r=pn.cv.getBoundingClientRect(),e=rbs522Place(pn,v,{x:x-r.left,y:y-r.top});return e?e.id:null},
   pre:()=>{const A=ui.rbs522;if(!A)return null;const v=viewById(A.v),L=rbs522Bar(v,A);return{h:A.h,pts:A.pts,cl:A.cl,bar:L}},
   sk:()=>RBS501_SK,str:(k,...a)=>t(k,...a)};
+/* V1.523 test API: Straight, perpendicular to the view */
+window.PenumBIM.r523={
+  at:(x,y)=>{const pn=PANES[ui.ap],v=paneView(pn.i),r=pn.cv.getBoundingClientRect(),A=rbs523At(pn,v,{x:x-r.left,y:y-r.top});return A?{h:A.h,q:A.q,side:A.side,thin:!!A.thin}:null},
+  place:(x,y)=>{const pn=PANES[ui.ap],v=paneView(pn.i),r=pn.cv.getBoundingClientRect(),e=rbs522Place(pn,v,{x:x-r.left,y:y-r.top});return e?e.id:null},
+  pre:()=>{const A=ui.rbs522;if(!A||!A.p523)return null;const v=viewById(A.v);return{h:A.h,q:A.q,side:A.side,bars:(rbs522Bar(v,A)||[]).map(q=>q.map(x=>Math.round(x*10)/10))}},
+  pt:(a0,a1,b0,b1,m,tol)=>rbs523Pt(a0,a1,b0,b1,m,tol),
+  up:id=>rbs523Up(IDX.get(id)),ax:id=>{const e=IDX.get(id);return e?rbs523Ax(e).map(q=>q.map(x=>Math.round(x*10)/10)):null},
+  dots:()=>{RBS523N.dots=0;drawPane(PANES[ui.ap]);return RBS523N.dots},
+  hit:(id,x,y)=>{const v=activeView(),e=IDX.get(id);return e?XHIT.rebar(v,e,{x,y}):null},
+  str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
