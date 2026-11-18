@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=510,V1_NAME='V1.500';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=511,V1_NAME='V1.501';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -54750,6 +54750,178 @@ function stc500Rows(e,C){const G=stcGeo(e);if(!G||!C||!C.v||!C.rows||!C.rows.len
 {const f0=stc494F;stc494F=(ck,k,inn)=>{if(ck==='endp'){const m={sb:'V/n ≤ 1.2·Fu·d·ts',py:'V ≤ 0.4·Fy·2·h·t',pr:'V ≤ 0.3·Fu·2·(h − n·dh)·t',bk:'V ≤ 2·(0.3·Fu·Anv + 0.5·Fu·Ant)',bwy:'V ≤ 0.4·Fy·tw·L'}[k];if(m)return m}
   if(ck==='clip'&&k==='sb')return'R/n ≤ 1.2·Fu·d·min(t, ts)';return f0(ck,k,inn)}}
 Object.assign(STR,{stc492k_sb:['แรงแบกทานฝั่งรองรับ','Bolt Bearing on the Support'],stc492k_bwy:['เอวคานครากตามแนวเชื่อม','Beam Web Yielding at the Weld']});
+/* ===== 501 Sketch Rebar (V1.501; Revit: Structure › Reinforcement › Rebar › Sketch Rebar, a bar of any shape sketched in a section or an elevation on its
+   concrete host, laid out along the host by its Layout Rule: Single, Fixed Number or Maximum Spacing) =====
+   e = {cat:'rebar', host: the column, beam, floor, footing, wall footing or wall it is in, level (its host's), rb: {sk: [[u, v, z] …] the bar as sketched, in its
+   host's own frame (rbs501Fr: u along a beam, wall or wall footing from its start, or along a column, footing or slab turned with it; z up from the host's
+   underside), nm: [a, b] the way the set is laid out (the normal of the plane it was sketched in, in that frame), cl: 1 a closed loop, d: its size, lr: 's' Single
+   | 'n' Fixed Number | 'm' Maximum Spacing, n: the number, s: the spacing, c: the cover at both ends of the layout (50)}}.
+   It is a bar set of the rebar machinery (RB_HOST, rbOf, rbSet), so the bar schedule with its marks and partitions, the rebar in the quantities and the BOQ,
+   3D views, sections and rebar tags take it as they take the bars set by rule.  It moves and turns with its host and goes when the host is deleted. */
+const RBS501_H=['column','beam','floor','footing','wfoot','wall'],RBS501_LR=['s','n','m'],RBS501_C=50,RBS501_MAX=2000,RBS501_HEX='#b0362c',RBS501_SK='#d6336c';          // the bars in plan; the sketch (magenta as Revit's sketch lines)
+RB_HOST.push('rebar');GEOM.rebar='rebar';DISC.rebar='struct';CREATE_TOOLS.add('rbsk501');if(!DXF_LAYER.rebar)DXF_LAYER.rebar=['S-REIN',1];
+const rbs501Ok=h=>{if(!h||!RBS501_H.includes(h.cat))return false;const T=typ(P,h)||{};if(h.cat==='wall'&&T.kind==='curtain')return false;return!((h.cat==='beam'||h.cat==='column')&&stlT(T))};
+const rbs501Host=(Q,e)=>{if(!e||e.host==null)return null;const h=(Q===P?IDX.get(e.host):null)||Q.els.find(x=>x.id===e.host);return h&&rbs501Ok(h)?h:null};
+const rbs501D=r=>RB_D.includes(+(r&&r.d))?+r.d:12,rbs501Lr=r=>r&&RBS501_LR.includes(r.lr)?r.lr:'s',rbs501N=r=>clamp(Math.round(+(r&&r.n))||4,1,500),
+  rbs501S=r=>clamp(Math.round(+(r&&r.s))||150,25,2000),rbs501Cv=r=>{const c=+(r&&r.c);return c>=0&&r.c!=null&&r.c!==''?Math.min(500,c):RBS501_C};
+/* the host's own frame: {o, a, c, s, zb} */
+function rbs501Fr(Q,h){if(!h)return null;const zr=zRange(Q,h);if(!zr||!isFinite(zr[0]))return null;let o,a=0;
+  if(h.cat==='beam'||h.cat==='wall'||h.cat==='wfoot'){o=[h.x1,h.y1];a=Math.atan2(h.y2-h.y1,h.x2-h.x1)}
+  else if(h.cat==='column'||h.cat==='footing'){o=[h.x,h.y];a=(+h.rot||0)*Math.PI/180}
+  else if(Array.isArray(h.pts)&&h.pts.length>=2){o=[h.pts[0][0],h.pts[0][1]];a=Math.atan2(h.pts[1][1]-h.pts[0][1],h.pts[1][0]-h.pts[0][0])}else return null;
+  return{o,a,c:Math.cos(a),s:Math.sin(a),zb:zr[0],zt:zr[1]}}
+const rbs501W=(F,q)=>[F.o[0]+q[0]*F.c-q[1]*F.s,F.o[1]+q[0]*F.s+q[1]*F.c,F.zb+q[2]];
+const rbs501L=(F,q)=>{const x=q[0]-F.o[0],y=q[1]-F.o[1];return[x*F.c+y*F.s,-x*F.s+y*F.c,q[2]-F.zb]};
+/* the host's outline in plan */
+function rbs501Loop(Q,h){if(h.cat==='wall'){const fp=Q===P?FPm().get(h.id):null;if(fp&&fp.poly)return fp.poly}if(h.cat==='wfoot')return wfootLoop(Q,h);if(h.cat==='column'||h.cat==='footing')return columnLoop(Q,h);
+  if(h.cat==='floor')return h.pts;const T=typ(Q,h)||{},w=h.cat==='wall'?+T.thick||+T.w||200:+T.w||+T.sb||200,L=Math.hypot(h.x2-h.x1,h.y2-h.y1)||1,nx=-(h.y2-h.y1)/L*w/2,ny=(h.x2-h.x1)/L*w/2;
+  return[[h.x1+nx,h.y1+ny],[h.x2+nx,h.y2+ny],[h.x2-nx,h.y2-ny],[h.x1-nx,h.y1-ny]]}
+/* where the bars of the set are, along nm from the one sketched */
+function rbs501Pos(Q,e,h,F){const r=e.rb,lr=rbs501Lr(r);if(lr==='s')return[0];const nm=r.nm,t0=r.sk[0][0]*nm[0]+r.sk[0][1]*nm[1],c=rbs501Cv(r);let lo=Infinity,hi=-Infinity;
+  for(const q of rbs501Loop(Q,h)||[]){const l=rbs501L(F,[q[0],q[1],0]),tt=l[0]*nm[0]+l[1]*nm[1];lo=Math.min(lo,tt);hi=Math.max(hi,tt)}
+  const a=lo+c-t0,b=hi-c-t0;if(!(b>a))return[0];
+  if(lr==='n'){const n=rbs501N(r);if(n===1)return[0];return Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1))}
+  const k=Math.min(RBS501_MAX,Math.max(1,Math.ceil((b-a)/rbs501S(r)-1e-9))+1);return Array.from({length:k},(_,i)=>a+(b-a)*i/(k-1))}
+/* the bars: [{p: [[x, y, z] …], d, k: 't' a closed loop | 'm', hk}] as rbSet gives them */
+function rbs501Set(Q,e){const h=rbs501Host(Q,e),r=e&&e.rb;if(!h||!r||!Array.isArray(r.sk)||r.sk.length<2||!Array.isArray(r.nm))return[];const F=rbs501Fr(Q,h);if(!F)return[];
+  const d=rbs501D(r),cl=!!r.cl&&r.sk.length>=3,ns=r.sk.length-1+(cl?1:0),hk=cl?[0,0]:ns>=3?[90,90]:ns===2?[90,0]:[0,0],out=[];
+  for(const tt of rbs501Pos(Q,e,h,F)){const p=r.sk.map(q=>rbs501W(F,[q[0]+r.nm[0]*tt,q[1]+r.nm[1]*tt,q[2]]));if(cl)p.push(p[0].slice());out.push({p,d,k:cl?'t':'m',hk:hk.slice()});if(out.length>=RBS501_MAX)break}
+  return out}
+{const f0=rbOf;rbOf=e=>{if(e&&e.cat==='rebar'){const r=e.rb;if(!r||!Array.isArray(r.sk)||r.sk.length<2||!rbs501Host(P,e))return null;const d=rbs501D(r);return{n:1,d,td:d,ts:150,c:rbs501Cv(r),s:200,two:0,hk:0,lap:40}}return f0(e)}}
+{const f0=rbSet;rbSet=(Q,e)=>e&&e.cat==='rebar'?rbs501Set(Q,e):f0(Q,e)}
+/* {bars, n, len (one bar, mm), tot (mm), kg, d, lr, cl} */
+function rbs501Geo(Q,e){const B=rbs501Set(Q,e);if(!B.length)return null;let tot=0;for(const b of B)tot+=rbCut(b,40).total;const d=B[0].d;
+  return{bars:B,n:B.length,len:rbCut(B[0],40).total,tot,kg:tot/1000*rbKg(d),d,lr:rbs501Lr(e.rb),cl:B[0].k==='t',segs:e.rb.sk.length-1+(B[0].k==='t'?1:0)}}
+{const f0=zRange;zRange=(Q,e)=>{if(!e||e.cat!=='rebar')return f0(Q,e);const B=rbs501Set(Q,e);if(!B.length){const h=rbs501Host(Q,e);return h?f0(Q,h):[0,0]}let lo=Infinity,hi=-Infinity;
+  for(const b of B)for(const q of b.p){lo=Math.min(lo,q[2]);hi=Math.max(hi,q[2])}return[lo,hi]}}
+/* ---- it goes with its host: selected, copied and pasted with it ---- */
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids);if(P.els.some(e=>e.cat==='rebar'))for(const e of P.els)if(e.cat==='rebar'&&s.has(e.host))s.add(e.id);return s}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(c&&c.cat==='rebar'&&M.has(c.host))c.host=M.get(c.host)}return out}}
+{const f0=pasteObjs;pasteObjs=(objs,dx,dy,lv,view)=>{const src=new Map(objs.map(o=>[o.id,o])),O=objs.filter(o=>o.cat!=='rebar'||src.has(o.host)),ids=f0(O,dx,dy,lv,view);          // a set needs its host
+  const made=ids.map(id=>IDX.get(id)).filter(Boolean),at=x=>x.x1!=null?[x.x1,x.y1]:x.x!=null?[x.x,x.y]:Array.isArray(x.pts)&&x.pts.length?x.pts[0]:null,gone=new Set();
+  for(const c of made){if(c.cat!=='rebar')continue;const h=src.get(c.host);const a=h&&at(h);const m=a&&made.find(x=>x.cat===h.cat&&x!==c&&(q=>q&&Math.abs(q[0]-a[0]-dx)<0.01&&Math.abs(q[1]-a[1]-dy)<0.01)(at(x)));
+    if(m){c.host=m.id;c.level=m.level}else gone.add(c.id)}
+  if(gone.size){P.els=P.els.filter(x=>!gone.has(x.id));return ids.filter(id=>!gone.has(id))}return ids}}
+/* ---- plans: the bars as they lie, in plan (the first and the last of a set, and a line across the set) ---- */
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='rebar')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'rebar')||hidEl(v,e))return'';const h=rbs501Host(P,e);return h&&f0(v,h)?'on':''}}
+const rbs501Show=G=>{const B=G.bars;return B.length<=2?B:[B[0],B[B.length-1]]};
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft)return;const L=of('rebar');if(!L.length)return;
+  for(const [e] of L){const G=rbs501Geo(P,e);if(!G)continue;g.el(e);const k=hl(e.id);ctx.save();ctx.strokeStyle=k||RBS501_HEX;g.dash(null);ctx.lineWidth=g.lw(k?0.5:0.25);
+    for(const b of rbs501Show(G)){ctx.beginPath();b.p.forEach((q,i)=>i?ctx.lineTo(g.X(q[0]),g.Y(q[1])):ctx.moveTo(g.X(q[0]),g.Y(q[1])));ctx.stroke()}
+    if(G.n>2){const a=G.bars[0].p[0],b=G.bars[G.n-1].p[0];g.dash([1,0.6]);ctx.lineWidth=g.lw(0.13);g.seg([a[0],a[1]],[b[0],b[1]]);g.dash(null)}
+    ctx.restore()}});
+XHIT.rebar=(v,e,w)=>{const G=rbs501Geo(P,e);if(!G)return Infinity;let d=Infinity;for(const b of rbs501Show(G))for(let i=1;i<b.p.length;i++)d=Math.min(d,segDist(w.x,w.y,b.p[i-1][0],b.p[i-1][1],b.p[i][0],b.p[i][1]));
+  if(G.n>2){const a=G.bars[0].p[0],b=G.bars[G.n-1].p[0];d=Math.min(d,segDist(w.x,w.y,a[0],a[1],b[0],b[1]))}return d};XHIT.rebar.pr=9;
+{const f0=elBox;elBox=(v,e)=>{if(!e||e.cat!=='rebar')return f0(v,e);const B=rbs501Set(P,e);if(!B.length)return null;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const b of B)for(const q of b.p){x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1])}return[x0,y0,x1,y1]}}
+/* ---- Properties ---- */
+const rbs501HostName=e=>{const h=rbs501Host(P,e);return h?t('cat_'+h.cat)+(h.mark?' · '+h.mark:' #'+h.id):'—'};
+function rbs501Rows(els){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},U=t('u_mm'),GS=els.map(x=>rbs501Geo(P,x)),lr=V(x=>rbs501Lr(x.rb));
+  let h=PR.grp('g_constraints')+PR.ro('p_rbs501h',V(rbs501HostName))+PR.ro('p_level',V(x=>{const l=lvl(P,x.level);return l?l.name:''}));
+  h+=PR.grp('g_rbs501')+PR.sel('rbs501d','p_rbs501d',V(x=>String(rbs501D(x.rb))),RB_D.map(d=>[String(d),rbName(d)]))+PR.sel('rbs501lr','p_rbs501lr',lr,RBS501_LR.map(x=>[x,t('rbs501lr_'+x)]));
+  if(lr==='n')h+=PR.num('rbs501n','p_rbs501n',V(x=>rbs501N(x.rb)),'','step="1" min="1" max="500"');
+  if(lr==='m')h+=PR.num('rbs501s','p_rbs501s',V(x=>rbs501S(x.rb)),U,'step="5" min="25" max="2000"');
+  if(lr!=='s')h+=PR.num('rbs501c','p_rbs501c',V(x=>rbs501Cv(x.rb)),U,'step="5" min="0" max="500"');
+  let n=0,tot=0,kg=0;for(const G of GS)if(G){n+=G.n;tot+=G.tot;kg+=G.kg}
+  h+=PR.grp('g_dims')+PR.ro('p_rbs501sh',V(x=>{const G=rbs501Geo(P,x);return G?t(G.cl?'rbs501_cl':'rbs501_op',G.segs):''}))+PR.ro('p_rbs501len',V(x=>{const G=rbs501Geo(P,x);return G?String(Math.round(G.len))+' '+U:''}))
+    +PR.ro('p_rbs501q',String(n))+PR.ro('p_rbs501tot',(tot/1000).toFixed(2)+' m')+PR.ro('p_rbs501kg',kg.toFixed(2)+' kg');
+  if(els.length===1&&GS[0]&&GS[0].n>1){const G=GS[0],a=G.bars[0].p[0],b=G.bars[1].p[0];h+=PR.ro('p_rbs501sp',String(Math.round(Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2])))+' '+U)}
+  return h+`<div class="pnote">${esc(t('n_rbs501'))}</div>`}
+{const f0=catRows;catRows=(cat,els,isNew)=>cat==='rebar'&&!isNew?rbs501Rows(els):f0(cat,els,isNew)}
+XF.push((cat,o,key,raw)=>{if(!/^rbs501/.test(key))return false;if(cat!=='rebar'||!o.rb)return true;const r=o.rb,n=parseFloat(raw);
+  if(key==='rbs501d'){if(RB_D.includes(+raw))r.d=+raw;return true}
+  if(key==='rbs501lr'){if(RBS501_LR.includes(raw)){r.lr=raw;if(raw==='n'&&r.n==null)r.n=4;if(raw==='m'&&r.s==null)r.s=150}return true}
+  if(key==='rbs501n'){if(n>=1)r.n=clamp(Math.round(n),1,500);return true}
+  if(key==='rbs501s'){if(n>0)r.s=clamp(Math.round(n),25,2000);return true}
+  if(key==='rbs501c'){if(n>=0&&Math.abs(n-RBS501_C)>1e-9)r.c=Math.min(500,Math.round(n));else if(n>=0)delete r.c;return true}
+  return true});
+/* ---- what is kept: a set needs its host and a bar of two points or more; it takes its host's level ---- */
+XC.push(()=>{if(!P.els.some(e=>e.cat==='rebar'))return;const H=new Map(P.els.filter(e=>RBS501_H.includes(e.cat)).map(e=>[e.id,e])),num=x=>typeof x==='number'&&isFinite(x);
+  P.els=P.els.filter(e=>{if(e.cat!=='rebar')return true;const h=H.get(e.host),r=e.rb;if(!h||!rbs501Ok(h)||!r||typeof r!=='object')return false;
+    if(!Array.isArray(r.sk)||r.sk.length<2||!r.sk.every(q=>Array.isArray(q)&&q.length===3&&q.every(num)))return false;
+    if(!Array.isArray(r.nm)||r.nm.length!==2||!r.nm.every(num)||Math.hypot(r.nm[0],r.nm[1])<1e-6)return false;return true});
+  for(const e of P.els){if(e.cat!=='rebar')continue;const h=H.get(e.host),r=e.rb;e.level=h.level;const l=Math.hypot(r.nm[0],r.nm[1]);r.nm=[r.nm[0]/l,r.nm[1]/l];
+    if(r.sk.length>RBS501_MAX)r.sk=r.sk.slice(0,RBS501_MAX);if(!RB_D.includes(+r.d))r.d=12;else r.d=+r.d;if(r.cl&&r.sk.length>=3)r.cl=1;else delete r.cl;
+    if(!RBS501_LR.includes(r.lr))r.lr='s';if(r.n!=null)r.n=rbs501N(r);if(r.s!=null)r.s=rbs501S(r);if(r.c!=null){const c=+r.c;if(c>=0&&Math.abs(c-RBS501_C)>1e-9)r.c=Math.min(500,c);else delete r.c}
+    for(const k of Object.keys(r))if(!['sk','nm','cl','d','lr','n','s','c','he322','cs','ce','ct'].includes(k))delete r[k]}});
+/* ---- the tool: in a section or an elevation, click a concrete host, then the points of the bar (on its cover lines), Enter to finish, or click the first point
+   again to close it; the bar is made in the plane of the view (a section's cut, or the middle of the host in an elevation), laid out by the options ---- */
+const rbs501Opt=()=>{const o=ui.opt;return{d:RB_D.includes(+o.rbs501d)?+o.rbs501d:12,lr:RBS501_LR.includes(o.rbs501lr)?o.rbs501lr:'s',n:clamp(Math.round(+o.rbs501n)||4,1,500),s:clamp(Math.round(+o.rbs501s)||150,25,2000)}};
+/* the host seen in view v: {h0, h1, z0, z1 (its box across the view), d0, d1 (its depth), dp (the plane the bar is sketched in), cv (its cover), cc (cover to the bar's middle)} */
+const rbs501Cc=B=>B.cv+rbs501Opt().d/2;          // as the bar size now picked
+function rbs501Box(v,h){const L=rbs501Loop(P,h),zr=zRange(P,h);if(!L||!L.length||!zr)return null;let h0=Infinity,h1=-Infinity,d0=Infinity,d1=-Infinity;
+  for(const q of L){const a=ev3Hq(v,q),b=ev3Dq(v,q);h0=Math.min(h0,a);h1=Math.max(h1,a);d0=Math.min(d0,b);d1=Math.max(d1,b)}
+  const R=rbOf(h),cv=R?R.c:25,cc=cv+rbs501Opt().d/2;let dp=(d0+d1)/2;
+  if(v.kind==='section'){const c=ev3Vd(v,(h0+h1)/2)[0];if(c!=null&&isFinite(c))dp=clamp(c,Math.min(d0+cc,(d0+d1)/2),Math.max(d1-cc,(d0+d1)/2))}
+  return{h0,h1,z0:zr[0],z1:zr[1],d0,d1,dp,cc,cv}}
+/* the point under p, snapped to the cover lines of the host and to the points already clicked, else as other tools of these views snap */
+function rbs501Pt(pn,v,p,S){const n=navOf(v),B=S.B,tol=8/n.s,cc=rbs501Cc(B);let h=(p.x-n.ox)/n.s,z=-(p.y-n.oy)/n.s,sh=0,sz=0;
+  const H=[B.h0+cc,B.h1-cc],Z=[B.z0+cc,B.z1-cc];for(const q of S.pts){H.push(q[0]);Z.push(q[1])}
+  let b=tol;for(const x of H)if(Math.abs(h-x)<b){b=Math.abs(h-x);sh=x}b=tol;for(const x of Z)if(Math.abs(z-x)<b){b=Math.abs(z-x);sz=x}
+  const hit=(arr,x)=>arr.some(y=>Math.abs(y-x)<tol),gh=hit(H,h),gz=hit(Z,z);if(!gh||!gz){const q=ev3Pt(pn,v,p);if(!gh)h=q.h;if(!gz)z=q.z}if(gh)h=sh;if(gz)z=sz;return[h,z]}
+/* the host under p: in a section the smallest host cut there (a ray from the cut starts inside what is cut), else what is seen first */
+function rbs501PickAt(pn,v,p){const n=navOf(v),h=(p.x-n.ox)/n.s,z=-(p.y-n.oy)/n.s;let best=null,ba=Infinity;
+  if(v.kind==='section'){const c=ev3Vd(v,h)[0];if(c!=null&&isFinite(c))for(const e of P.els){if(!rbs501Ok(e)||catHid(v,e.cat)||hidEl(v,e))continue;const B=rbs501Box(v,e);
+    if(!B||h<B.h0||h>B.h1||z<B.z0||z>B.z1||c<B.d0-1||c>B.d1+1)continue;const a=(B.h1-B.h0)*(B.z1-B.z0);if(a<ba){ba=a;best=e}}}
+  if(best)return best;const pk=pickAt(pn,v,p),e=pk&&IDX.get(pk.id);return rbs501Ok(e)?e:null}
+/* make the set from the points of S ([h, z] in view v); null when it cannot be */
+function rbs501Make(v,S,cl){const h=IDX.get(S.h);if(!rbs501Ok(h)||S.pts.length<(cl?3:2))return null;const F=rbs501Fr(P,h);if(!F)return null;const f=viewDir(v),o=rbs501Opt();
+  const sk=S.pts.map(q=>{const w=ev3At(v,q[0],S.B.dp),l=rbs501L(F,[w[0],w[1],q[1]]);return l.map(x=>Math.round(x*10)/10)});
+  const nm=[f[0]*F.c+f[1]*F.s,-f[0]*F.s+f[1]*F.c],rb={sk,nm:nm.map(x=>Math.round(x*1e6)/1e6),d:o.d,lr:o.lr};if(cl)rb.cl=1;if(o.lr==='n')rb.n=o.n;if(o.lr==='m')rb.s=o.s;
+  const e={id:P.seq++,cat:'rebar',host:h.id,level:h.level,rb};edit(()=>{P.els.push(e)});return e}
+function rbs501Finish(cl){const S=ui.rbs501,v=S&&viewById(S.v);if(!S||!v)return false;if(S.pts.length<(cl?3:2)){toast(t('rbs501_few'));return false}
+  const e=rbs501Make(v,S,cl);if(!e){toast(t('rbs501_bad'));return false}const G=rbs501Geo(P,e);ui.rbs501={v:S.v,h:S.h,B:S.B,pts:[]};ui.sel=new Set([e.id]);
+  toast(t('rbs501_done',G?G.n:0,G?G.kg.toFixed(2):'0',rbName(G?G.d:12)));refresh();return true}
+XT.rbsk501={ok:v=>!!v&&(v.kind==='section'||v.kind==='elev'),
+  on(){ui.sel.clear();ui.hov=null;ui.rbs501=null;const o=ui.opt;if(!RB_D.includes(+o.rbs501d))o.rbs501d='12';if(!RBS501_LR.includes(o.rbs501lr))o.rbs501lr='s';if(o.rbs501n==null)o.rbs501n='4';if(o.rbs501s==null)o.rbs501s='150'},
+  off(){ui.rbs501=null},
+  esc(){const S=ui.rbs501;if(S&&S.pts.length){S.pts.pop();return true}if(S){ui.rbs501=null;return true}return false},
+  fin(){rbs501Finish(false)},
+  hint:()=>t(ui.rbs501?'h_rbs501b':'h_rbs501a'),
+  opt(who,chk,sel){const o=rbs501Opt();return who+`<label>${esc(t('o_rbs501d'))} <select data-opt="rbs501d" id="opt_rbs501d">${RB_D.map(d=>`<option value="${d}"${d===o.d?' selected':''}>${rbName(d)}</option>`).join('')}</select></label>`
+    +`<label>${esc(t('o_rbs501lr'))}</label>`+sel('rbs501lr',RBS501_LR.map(x=>[x,'rbs501lr_'+x]))
+    +(o.lr==='n'?`<label>${esc(t('o_rbs501n'))} <input type="number" data-opt="rbs501n" id="opt_rbs501n" value="${o.n}" min="1" max="500" step="1" style="width:60px"></label>`:'')
+    +(o.lr==='m'?`<label>${esc(t('o_rbs501s'))} <input type="number" data-opt="rbs501s" id="opt_rbs501s" value="${o.s}" min="25" max="2000" step="5" style="width:68px"> ${esc(t('u_mm'))}</label>`:'')
+    +(ui.rbs501&&ui.rbs501.pts.length>=2?`<button class="btn" data-act="rbs501fin">${esc(t('a_rbs501fin'))}</button>`:'')},
+  hov(pn,v,p){const S=ui.rbs501;if(!S||S.v!==v.id){const e=rbs501PickAt(pn,v,p);return e?e.id:null}S.m=rbs501Pt(pn,v,p,S);S.pn=pn.i;redraw();return null},          // no highlight over the host: the sketch shows on it
+  click3(pn,v,p){let S=ui.rbs501;
+    if(!S||S.v!==v.id){const e=rbs501PickAt(pn,v,p);if(!e){toast(t('rbs501_pick'));return}const B=rbs501Box(v,e);if(!B){toast(t('rbs501_pick'));return}
+      ui.rbs501={v:v.id,h:e.id,B,pts:[]};ui.sel.clear();ui.hov=null;refresh();return}
+    const n=navOf(v),q=rbs501Pt(pn,v,p,S);
+    if(S.pts.length>=3){const a=S.pts[0];if(Math.hypot(n.ox+a[0]*n.s-p.x,n.oy-a[1]*n.s-p.y)<=10){rbs501Finish(true);return}}
+    const l=S.pts[S.pts.length-1];if(l&&Math.hypot(l[0]-q[0],l[1]-q[1])<1){if(S.pts.length>=2)rbs501Finish(false);return}          // the last point again: finish
+    S.pts.push(q);refresh()},
+  draw3(pn,ctx,v,nav){const S=ui.rbs501;if(!S||S.v!==v.id)return;const n=navOf(v),X=h=>n.ox+h*n.s,Y=z=>n.oy-z*n.s,B=S.B,cc=rbs501Cc(B);ctx.save();
+    ctx.strokeStyle='#e8590c';ctx.lineWidth=1.2;ctx.setLineDash([5,4]);ctx.strokeRect(X(B.h0+cc),Y(B.z1-cc),(B.h1-B.h0-2*cc)*n.s,(B.z1-B.z0-2*cc)*n.s);ctx.setLineDash([]);
+    const pts=S.pts.slice();if(S.m&&S.pn===pn.i)pts.push(S.m);ctx.lineWidth=Math.max(2,rbs501Opt().d*n.s);ctx.lineJoin='round';ctx.lineCap='round';ctx.strokeStyle=RBS501_SK;
+    if(pts.length>1){ctx.beginPath();pts.forEach((q,i)=>i?ctx.lineTo(X(q[0]),Y(q[1])):ctx.moveTo(X(q[0]),Y(q[1])));ctx.stroke()}
+    ctx.fillStyle=RBS501_SK;for(const q of S.pts){ctx.beginPath();ctx.arc(X(q[0]),Y(q[1]),3.5,0,7);ctx.fill()}ctx.restore()}};
+XA.rbs501fin=()=>{rbs501Finish(false)};
+/* from a plan: to a section, or else the South elevation */
+{const f0=setTool;setTool=(tool,silent)=>{if(tool==='rbsk501'){const v=activeView();if(v&&!XT.rbsk501.ok(v)){const sv=P.views.find(x=>x.kind==='section')||P.views.find(x=>x.kind==='elev'&&x.dir==='S')||P.views.find(x=>x.kind==='elev');
+  if(sv){showView(sv.id);toast(t('rbs501_view',sv.name))}}}return f0(tool,silent)}}
+for(const A of RIBBON)for(const p of A.panels||[])if(p.t==='p_rebar'&&!p.b.includes('rbsk501')){const i=p.b.indexOf('pinf');p.b.splice(i<0?0:i+1,0,'rbsk501')}
+Object.assign(BTN,{rbsk501:['rbsk501','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-rbsk501" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#c9ced6" ${E} d="M4 4H20V19H4Z"/><path fill="none" stroke="#b0362c" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M7 7H17V16H7V9.5L9.5 7"/>`
+    +`<path fill="#e8590c" ${E} d="M15.5 14.5 21 9l1.6 1.6-5.5 5.5-2.2.6Z"/></symbol>`)})();
+Object.assign(STR,{
+  t_rbsk501:['เหล็กเสริมวาดเอง (Sketch Rebar)','Sketch Rebar'],g_rbs501:['ชุดเหล็กเสริม (Rebar Set)','Rebar Set'],
+  p_rbs501h:['ชิ้นส่วนที่เสริม (Host)','Host'],p_rbs501d:['ขนาดเหล็ก (Bar Size)','Bar Size'],p_rbs501lr:['การวางเรียง (Layout Rule)','Layout Rule'],
+  rbs501lr_s:['เส้นเดียว (Single)','Single'],rbs501lr_n:['จำนวนคงที่ (Fixed Number)','Fixed Number'],rbs501lr_m:['ระยะห่างไม่เกิน (Maximum Spacing)','Maximum Spacing'],
+  p_rbs501n:['จำนวน (Quantity)','Quantity'],p_rbs501s:['ระยะห่างไม่เกิน (Spacing)','Maximum Spacing'],p_rbs501c:['ระยะหุ้มที่ปลายแนววาง','Cover at the Layout Ends'],
+  p_rbs501sh:['รูปทรง','Shape'],rbs501_cl:['วงปิด {0} ด้าน','Closed, {0} sides'],rbs501_op:['เปิด {0} ช่วง','Open, {0} legs'],
+  p_rbs501len:['ความยาวเหล็ก (Bar Length)','Bar Length'],p_rbs501q:['จำนวนเหล็ก (เส้น)','Bars'],p_rbs501tot:['ความยาวรวม (Total Bar Length)','Total Bar Length'],
+  p_rbs501kg:['น้ำหนัก','Weight'],p_rbs501sp:['ระยะห่างจริง','Actual Spacing'],
+  n_rbs501:['วาดในรูปตัดหรือรูปด้านบนชิ้นส่วนคอนกรีต วางเรียงไปตามชิ้นส่วนตั้งฉากกับระนาบที่วาด ย้าย หมุน คัดลอก และลบไปพร้อมชิ้นส่วน เข้าตารางตัดเหล็ก ปริมาณ และ BOQ',
+    'Sketched in a section or an elevation on a concrete host and laid out along it across the plane it was sketched in; it moves, turns, copies and is deleted with its host, and goes into the Rebar Schedule, the quantities and the BOQ'],
+  o_rbs501d:['ขนาด','Size'],o_rbs501lr:['การวางเรียง','Layout'],o_rbs501n:['จำนวน','Quantity'],o_rbs501s:['ระยะห่างไม่เกิน','Spacing'],a_rbs501fin:['จบการวาด','Finish'],
+  h_rbs501a:['คลิกเสา คาน พื้น ฐานราก หรือผนังคอนกรีตในรูปตัดหรือรูปด้าน','Click a concrete column, beam, slab, footing or wall in a section or an elevation'],
+  h_rbs501b:['คลิกจุดของเหล็ก (ยึดเส้นระยะหุ้ม) · Enter หรือคลิกจุดสุดท้ายซ้ำเพื่อจบเส้นเปิด · คลิกจุดแรกเพื่อปิดเป็นวง · Esc ถอยจุด',
+    'Click the points of the bar (they snap to the cover lines) · Enter or the last point again finishes an open bar · the first point closes a loop · Esc steps back'],
+  rbs501_pick:['คลิกชิ้นส่วนคอนกรีตที่เสริมเหล็กได้','Click a concrete host for rebar'],rbs501_few:['ต้องมีอย่างน้อยสองจุด (วงปิดสามจุด)','Two points at least (three for a loop)'],
+  rbs501_bad:['สร้างเหล็กเส้นนี้ไม่ได้','This bar cannot be made'],rbs501_view:['เหล็กเสริมวาดเองใช้ในรูปตัดหรือรูปด้าน เปิด {0} ให้แล้ว','Sketch Rebar works in a section or an elevation: {0} is open'],rbs501_done:['เหล็กเสริม {0} × {2} หนัก {1} กก.','Rebar: {0} × {2}, {1} kg']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -55882,6 +56054,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[g_rebar]]: เลือกเสา คาน พื้น ฐานราก ฐานรากแถบ หรือผนัง แล้วติ๊ก [[p_rbon]] ในแผงคุณสมบัติ ตั้งขนาด ระยะ [[p_rbhk]] (ไม่งอ 90° 180°) และ [[p_rblap]] (เท่าของขนาดเหล็ก ใช้เมื่อเหล็กยาวเกิน 10 ม.) ปลอกปิดด้วยขอ 135° เสมอ · คานเอียงและค้ำยันก็ใส่ได้ ผนังเว้นเหล็กตรงช่องประตู หน้าต่าง · [[a_rbsched]] (แท็บ [[tab_struct]]) รวมเหล็กที่รูปร่างและความยาวเท่ากันเป็นเบอร์เดียว บอกความยาวตัด จุดทาบ จำนวน น้ำหนัก และส่งออก CSV ได้
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_pinf]]: คลิกพื้นแล้วคลิกจุดของแนว (ขอบพื้นหรือแนวคาน) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กตั้งฉากกับแนว ยาว [[p_arL]] ยื่นเข้าไปในพื้น ([[p_arflip]] สลับข้าง) ที่ผิวบนหรือล่าง [[p_arL2]] ทำให้เหล็กทุกเส้นที่สองยาวอีกค่า · เหล็กของทั้งสองแบบหยุดที่ระยะหุ้มจากขอบเขต ขอบพื้น และช่องเปิด และเข้า [[a_rbsched]] ปริมาณ และ BOQ
+- [[t_rbsk501]]: ในรูปตัดหรือรูปด้าน คลิกชิ้นส่วนคอนกรีต แล้วคลิกจุดของเหล็ก (ยึดเส้นระยะหุ้ม) Enter หรือคลิกจุดสุดท้ายซ้ำเพื่อจบ คลิกจุดแรกเพื่อปิดเป็นวง เหล็กวางเรียงตั้งฉากกับระนาบที่วาด ตาม [[p_rbs501lr]] (เส้นเดียว จำนวนคงที่ ระยะห่างไม่เกิน) และหยุดที่ระยะหุ้มจากขอบชิ้นส่วน
 - [[t_fabarea]]: คลิกพื้น (หรือเลือกพื้นก่อน) แล้ววาดขอบเขต (หรือสี่เหลี่ยม หรือกด [[a_arwhole]]) หรือเลือก [[fab_sheet]] แล้วคลิกมุมของแผ่น ได้ตะแกรงเหล็กปูเป็นแผ่นจากมุมของขอบเขตตามทิศหลัก ทาบกันตาม [[p_fblM]] และ [[p_fblm]] ติ๊ก [[p_fbstag]] ให้แถวเว้นแถวเลื่อนครึ่งแผ่น ชนิดของแผ่น (ลวดทั้งสองทาง ระยะห่าง ขนาดแผ่น) อยู่ใน แก้ไขชนิด · แผ่นที่ถูกขอบเขต ขอบพื้น หรือช่องเปิดตัดนับเป็นแผ่นตัด · [[a_fabsched]] ในคุณสมบัติ ตารางของหมวด [[cat_fabarea]] และ BOQ นับแผ่นของแต่ละชนิด
 - [[a_cpl221]] (Revit: Rebar Coupler): เลือกชิ้นที่มีเหล็กเสริม แล้วกดปุ่มนี้ในแท็บ [[tab_struct]] แผง เหล็กเสริม หรือตั้งในแผง [[properties]] ใต้เหล็กเสริม · [[p_cs221]] เลือก [[cs_cpl221]] เหล็กที่ยาวเกิน 10 ม. ต่อด้วยข้อต่อทุก 10 ม. แทนการทาบ ความยาวตัดไม่บวกระยะทาบ · [[p_ce221]] (เสา ผนัง: ล่าง บน · คาน: ต้นคาน ปลายคาน) ใส่ข้อต่อที่ปลายเหล็กยืน ใช้ที่รอยต่อการเทหรือรอต่อเหล็กของชั้นถัดไป ปลายนั้นไม่งอ · [[p_ct221]] [[cpl_std221]] [[cpl_pos221]] หรือ [[cpl_wld221]] ขนาดตามเหล็ก · ข้อต่อเห็นใน 3 มิติและรูปตัด อยู่ใน [[a_rbsched]] (ตารางของมันเอง และในไฟล์ CSV) และใน BOQ เป็นตัวตามชนิดและขนาด (ราคาสมมติ แก้ราคาในตาราง BOQ ได้)
 - [[a_rcs252]] (แท็บ [[tab_struct]] แผงเหล็กเสริม): ตารางชื่อระยะหุ้มคอนกรีตของโครงการ (ภายใน 40 / 20 ภายนอก 50 / 40 หล่อติดดิน 75 มม. แก้ เพิ่ม ลบได้) แล้วเลือกใน [[properties]] ใต้เหล็กเสริม: [[p_rcT252]], [[p_rcB252]] และ [[p_rcO252]] (ผนัง: [[p_rcE252]] และ [[p_rcI252]]) เหล็กของเสา คาน พื้น ฐานราก และผนังขยับตามผิวนั้น ผิวที่ไม่ได้เลือกใช้ [[p_rbc]] ของเหล็กเสริม เหล็กเสริมแบบพื้นที่ แบบแนว และตะแกรงเหล็กบนพื้นใช้ระยะหุ้มผิวบนหรือผิวล่างของพื้นเมื่อพื้นตั้งไว้
@@ -56122,6 +56295,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[g_rebar]]: select a column, beam, floor, footing, wall footing or wall and tick [[p_rbon]] in Properties; set the sizes, spacing, [[p_rbhk]] (none, 90°, 180°) and [[p_rblap]] (in bar diameters, used where a bar is longer than 10 m). Ties always close with 135° hooks · sloped beams and braces take rebar too; walls leave out the bars at doors and windows · [[a_rbsched]] ([[tab_struct]] tab) gives one mark to bars of the same shape and length, with the cut length, laps, count and weight, and exports CSV
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_pinf]]: click a slab, then the points of the path (a slab edge, or over a beam); click the last point again or press Enter to finish. The bars run across the path, [[p_arL]] long, into the slab ([[p_arflip]] swaps the side), at the top or the bottom face; [[p_arL2]] makes every other bar another length · the bars of both stop at the cover from the boundary, the slab edge and openings, and go into the [[a_rbsched]], the quantities and the BOQ
+- [[t_rbsk501]]: in a section or an elevation, click a concrete host, then the points of the bar (they snap to the cover lines); Enter or the last point again finishes, the first point closes a loop. The bars are laid out across the plane they were sketched in by the [[p_rbs501lr]] (Single, Fixed Number, Maximum Spacing) and stop at the cover from the host's ends
 - [[t_fabarea]]: click a slab (or select one first), then sketch the boundary (or a rectangle, or [[a_arwhole]]), or pick [[fab_sheet]] and click the sheet's corner; welded wire fabric is laid in sheets from the corner of the boundary along the major direction, overlapping by [[p_fblM]] and [[p_fblm]]; tick [[p_fbstag]] to move every other row half a sheet. The sheet (wires both ways, spacings, size) is the type, in Edit Type · a sheet the boundary, the slab edge or an opening cuts is a cut sheet · [[a_fabsched]] in Properties, a schedule of the [[cat_fabarea]] category and the BOQ count the sheets of each type
 - [[a_cpl221]] (Revit: Rebar Coupler): select elements with rebar and press this button ([[tab_struct]] tab, Reinforcement panel), or set it in [[properties]] under the rebar · [[p_cs221]]: [[cs_cpl221]] joins bars over 10 m with a coupler every 10 m instead of a lap, and the cut length adds no lap · [[p_ce221]] (columns and walls: bottom, top · beams: start, end) puts a coupler on the main bars' ends, for a construction joint or the next pour's bars; that end has no hook · [[p_ct221]]: [[cpl_std221]], [[cpl_pos221]] or [[cpl_wld221]], sized by the bar · couplers show in 3D and sections, in the [[a_rbsched]] (a table of their own, and in its CSV), and in the BOQ by type and size, each (assumed prices: type a price in the BOQ)
 - [[a_rcs252]] ([[tab_struct]] tab, Reinforcement panel): the project's named concrete covers (interior 40 / 20, exterior 50 / 40, cast against earth 75 mm; edit, add, remove), chosen in [[properties]] under the rebar as [[p_rcT252]], [[p_rcB252]] and [[p_rcO252]] (walls: [[p_rcE252]] and [[p_rcI252]]); the bars of columns, beams, slabs, footings and walls move to those faces, and a face given none takes the [[p_rbc]] of its rebar; area and path reinforcement and fabric on a slab sit at its top or bottom cover once it has one
@@ -57102,6 +57276,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.498 · [[t_csk498]] แบบ Revit: บากปลายคานเหล็กด้านบน ล่าง หรือทั้งสองด้าน ตามความลึกและความยาวที่ตั้ง ไม่ต้องมีชิ้นส่วนมาชน แนวตัดตามปลายที่เฉียง รวมกับรอยบาก Cope เดิม แก้ได้ใน Properties และการตรวจกำลังจุดต่อของคานที่บากคิดตามด้วย
 - V1.499 · [[a_stc499]] แบบ Revit: กฎตามชนิดรอยต่อ (คานเข้าปีกเสา เอวเสา คานเข้าคาน ต่อคาน ฐานเสา ต่อเสา) เลือกแบบจุดต่อแต่ละแถว แล้วใส่จุดต่อให้รอยต่อที่ยังไม่มีทั้งโครงการหรือชิ้นที่เลือกในครั้งเดียว ที่ใส่ไม่ได้บอกเหตุผล
 - V1.500 · [[a_stc492]]: แผ่นปลายคาน (End Plate) ตรวจครบแบบ Revit: แรงแบกทานของรูสลักฝั่งรองรับ แผ่นครากและขาดจากแรงเฉือนสองข้างเอว แผ่นฉีกขาดแบบบล็อก เอวคานครากตามแนวเชื่อม และหน้าตัดที่บากถ้าคานบาก รอยเชื่อมคิดเท่าความสูงที่ทาบเอว เหล็กฉากคู่ตรวจแรงแบกทานของสลักเกลียวฝั่งรองรับด้วย
+- V1.501 · [[t_rbsk501]] แบบ Revit: เปิดรูปตัดหรือรูปด้าน คลิกเสา คาน พื้น ฐานราก หรือผนังคอนกรีต แล้วคลิกจุดของเหล็กให้เป็นรูปอะไรก็ได้ (ยึดเส้นระยะหุ้ม) Enter จบเส้นเปิด คลิกจุดแรกปิดเป็นวง วางเรียงไปตามชิ้นส่วนแบบเส้นเดียว จำนวนคงที่ หรือระยะห่างไม่เกิน เหล็กย้ายและหมุนไปกับชิ้นส่วน เข้าตารางตัดเหล็ก ปริมาณ BOQ และรูป 3D
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -57774,6 +57949,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.498 · [[t_csk498]] (as in Revit): a cope of a set depth and length at the top, the bottom or both of a steel beam's end, with nothing framing in, its cut along a skewed end; it joins Cope, is typed in Properties, and the Connection Design Check of coped beams follows it
 - V1.499 · [[a_stc499]] (as in Revit): rules by kind of joint (beam to column flange or web, beam to beam, beam splice, column base, column splice), a connection type each, run once over the whole project or the members selected; joints that cannot take theirs are listed with why
 - V1.500 · [[a_stc492]]: end plates checked as in Revit: bolt bearing on the support, the plate's shear yielding and rupture on both sides of the web, its block shear, the beam web's shear yielding along the weld and a coped beam's section; the weld counts only the height it covers on the web; clip angles also check their bolts bearing on the support
+- V1.501 · [[t_rbsk501]] (as in Revit): in a section or an elevation, click a concrete column, beam, slab, footing or wall, then click the points of a bar of any shape (they snap to the cover lines); Enter finishes an open bar, the first point closes a loop; it is laid out along the host as a Single bar, a Fixed Number or at a Maximum Spacing, moves and turns with its host, and goes into the Rebar Schedule, the quantities, the BOQ and 3D views
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -60849,6 +61025,21 @@ window.PenumBIM.r500={
   rows:id=>stc500Rows(IDX.get(id),stc492Chk(IDX.get(id))).map(a=>[a.after,a.x.k,a.x.d,a.x.c,a.x.u]),
   ep:id=>stc500Ep(stcGeo(IDX.get(id))),ts:id=>stc500Ts(stcGeo(IDX.get(id))),
   f:(ck,k)=>stc494F(ck,k),str:(k,...a)=>t(k,...a)};
+/* V1.501 test API: Sketch Rebar */
+window.PenumBIM.r501={
+  make:(vid,host,pts,o)=>{const v=viewById(vid),h=IDX.get(host);if(!v||!h)return null;const O=o||{};for(const k of ['d','lr','n','s'])if(O[k]!=null)ui.opt['rbs501'+k]=String(O[k]);
+    const B=rbs501Box(v,h);if(!B)return null;const e=rbs501Make(v,{h:host,B,pts},!!O.cl);return e?e.id:null},
+  box:(vid,host)=>rbs501Box(viewById(vid),IDX.get(host)),fr:host=>rbs501Fr(P,IDX.get(host)),
+  geo:id=>{const G=rbs501Geo(P,IDX.get(id));return G?{n:G.n,len:G.len,tot:G.tot,kg:G.kg,d:G.d,lr:G.lr,cl:G.cl,segs:G.segs,bars:G.bars.map(b=>({p:b.p.map(q=>q.map(x=>Math.round(x*10)/10)),k:b.k,hk:b.hk}))}:null},
+  get:id=>JSON.parse(JSON.stringify(IDX.get(id)||null)),st:()=>ui.rbs501?{v:ui.rbs501.v,h:ui.rbs501.h,pts:ui.rbs501.pts.slice(),B:ui.rbs501.B}:null,
+  of:host=>P.els.filter(e=>e.cat==='rebar'&&e.host===host).map(e=>e.id),
+  move:(ids,dx,dy)=>edit(()=>translateIds(expandSel(ids),dx,dy)),rot:(ids,cx,cy,deg)=>edit(()=>rotateIds([...expandSel(ids)],cx,cy,deg)),
+  copy:(ids,dx,dy)=>{let out;edit(()=>{out=cloneIds([...expandSel(ids)]);translateIds(out,dx,dy)});return out},del:ids=>edit(()=>deleteIds([...expandSel(ids)])),
+  field:(id,key,raw)=>{edit(()=>{const e=IDX.get(id);for(const f of XF)if(f(e.cat,e,key,raw))break});return JSON.parse(JSON.stringify(IDX.get(id).rb))},
+  mesh:id=>MSm().items.filter(it=>it.id===id&&it.cat==='rebar').reduce((a,it)=>a+it.t.length/9,0),
+  load:js=>{const Q=JSON.parse(js);act('new');P.els=Q.els;P.seq=Q.seq;commit();return P.els.filter(e=>e.cat==='rebar').map(e=>e.id)},
+  rows:()=>{renderProps();return[...document.querySelectorAll('#props .pr')].map(r=>[r.querySelector('label').textContent,(r.querySelector('select')?r.querySelector('select').selectedOptions[0]?.textContent:r.querySelector('input')?r.querySelector('input').value:r.querySelector('.ro')?r.querySelector('.ro').textContent:'')])},
+  av:()=>{const v=activeView();return v?{id:v.id,name:v.name,kind:v.kind}:null},str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
