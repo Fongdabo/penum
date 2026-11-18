@@ -9436,7 +9436,8 @@ function bindPane(pn){
       const cg=e.button===0?cropGripAt(pn,v,p)||acGripAt348(pn,v,p):null;if(cg){drag.mode='crop';drag.g=cg;drag.b0=v.crop.box.slice();return}
       const h=hitElev(v,p);
       if(h&&h.part==='elev'&&ui.sel.size===1&&ui.sel.has(h.id)){drag=null;ptrs.delete(e.pointerId);editLevelText(pn,v,h);return}          // as in Revit: with the level selected, click its elevation to type a new one
-      if(h&&h.part==='ann'){ui.sel=new Set([h.id]);drag.mode='ea';drag.a=IDX.get(h.id);drag.o=JSON.parse(JSON.stringify(drag.a));drag.dsm=dsMates(drag.a);refresh()}else if(h&&h.grid384){if(drag.ctrl&&ui.sel.has(h.id))ui.sel.delete(h.id);else if(drag.ctrl||drag.shift)ui.sel.add(h.id);else ui.sel=new Set([h.id]);drag.mode='gpick384';refresh()}          // V1.384 a grid
+      if(h&&h.part==='ann'&&(drag.ctrl||drag.shift)){if(drag.shift||ui.sel.has(h.id))ui.sel.delete(h.id);else ui.sel.add(h.id);refresh()}          /* V1.547 as in Revit: Ctrl+click adds an annotation of the view to the selection (or takes it off again), Shift+click takes it off */
+      else if(h&&h.part==='ann'){ui.sel=new Set([h.id]);drag.mode='ea';drag.a=IDX.get(h.id);drag.o=JSON.parse(JSON.stringify(drag.a));drag.dsm=dsMates(drag.a);refresh()}else if(h&&h.grid384){if(drag.ctrl&&ui.sel.has(h.id))ui.sel.delete(h.id);else if(drag.ctrl||drag.shift)ui.sel.add(h.id);else ui.sel=new Set([h.id]);drag.mode='gpick384';refresh()}          // V1.384 a grid
       else if(h){ui.sel=new Set([h.id]);drag.l=IDX.get(h.id);if(!drag.l.pin){drag.mode='level';drag.e0=drag.l.elev}refresh()}else{drag.mode=lxV383(v)&&e.button===0&&(!isTouch||ui.tbox)?'box':'pan';drag.pick=true;if(e.button===0&&!isTouch&&ui.sel.size&&!drag.ctrl&&!drag.shift)ev3DragStart(pn,v,p,drag)}}});          // V1.516 as in Revit: a drag from an empty spot of an elevation or a section draws a selection box
   cv.addEventListener('pointermove',e=>{const v=view();if(!v)return;const p=xy(e),nav=navOf(v);ui.cur=p;ui.curPane=pn.i;ui.shift=e.shiftKey;if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,p);
     if(!drag){hoverPane(pn,v,p);return}const is3=v.kind==='3d';
@@ -14631,7 +14632,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=556,V1_NAME='V1.546';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=557,V1_NAME='V1.547';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57387,6 +57388,77 @@ XD.push(()=>{const VS=new Map();for(const d of P.ann){if(d.cat!=='rdim'||d.ev546
 Object.assign(STR,{
   rd546_h1:['คลิกเส้นโค้งหรือวงกลมของเส้นรายละเอียดที่จะบอกระยะ','Click the arc or circle of detail lines to dimension'],
   rd546_pick:['ชี้ที่เส้นโค้งหรือวงกลมของเส้นรายละเอียดในมุมมองนี้','Point at an arc or a circle of the detail lines of this view']});
+/* ===== 547 Rotate, Mirror and Scale on the annotations of elevations and sections (V1.547; Revit: Modify › Rotate, Mirror – Pick Axis, Mirror – Draw Axis
+   and Scale work on the detail lines, filled regions, detail components, symbols and text of an elevation or a section, in the plane of the view).  The
+   annotations of these views are kept in the view's own coordinates (x along, y = −height), so the plans' own rotateIds, mirrorIds and scaleSel turn, flip and
+   size them there: Rotate about the centre of the selection (Space: another centre), a start ray and an end ray or an angle typed on the options bar; Mirror –
+   Pick Axis about a detail line or a level of the view; Mirror – Draw Axis about any two points; Scale by a factor or graphically.  Copy on the options bar
+   keeps the originals.  Text of the view turns about its point.  Model elements are turned in plans and 3D views as before (Mirror – Draw Axis still mirrors
+   them about an upright axis in an elevation). */
+/* the selection, when it is all annotations of view v that these tools take */
+const RM547_NO=new Set(['edim','espot','eadim','etag','eknote','emtag','ecfleg','callout','rdim','vref','cfleg']);
+function rm547Ids(v){const av=avid(v),out=[];for(const id of ui.sel){const d=IDX.get(id);if(!d||!P.ann.includes(d)||d.view!==av||RM547_NO.has(d.cat))return null;out.push(id)}return out.length?out:null}
+const rm547Ok=v=>{if(rm547Ids(v))return true;toast(t(ui.sel.size?'rm547_only':'rm547_none'));return false};
+/* the centre of a selection of annotations: in the view's own coordinates */
+{const f0=selCenter;selCenter=()=>{const v=activeView();if(!ev3EV(v)||!rm547Ids(v))return f0();let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const id of ui.sel){const e=IDX.get(id);if(!e)continue;const B=e.cat==='etext'?[e.x,e.y,e.x,e.y]:elBox(v,e);if(B){x0=Math.min(x0,B[0]);y0=Math.min(y0,B[1]);x1=Math.max(x1,B[2]);y1=Math.max(y1,B[3])}}
+  return isFinite(x0)?{x:(x0+x1)/2,y:(y0+y1)/2}:f0()}}
+/* text of an elevation moves with its point and turns as the text of a plan does, kept readable (turned over, its lines keep their place) */
+{const f0=mapPoints;mapPoints=(e,fn,mirror,ang)=>{if(e&&e.cat==='etext'){const a=fn(e.x,e.y);e.x=a[0];e.y=a[1];if(isFinite(ang))txSetRot(e,mirror?-(+e.rot||0)+2*ang:(+e.rot||0)+ang);return}return f0(e,fn,mirror,ang)}}
+const rm547W=(v,p)=>{const n=navOf(v);return{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s}};
+/* Rotate */
+{const R0=XT3.rotate;XT3.rotate={ok:v=>R0.ok(v)||ev3EV(v),
+  click(pn,v,p,e){if(!ev3EV(v))return R0.click(pn,v,p,e);if(!rm547Ok(v))return;if(!ui.rc)ui.rc=selCenter();toolClick(pn,v,p,e||{})},
+  draw(pn,ctx,v,nav){if(!ev3EV(v))return R0.draw(pn,ctx,v,nav);const c=ui.rc;if(!c||!rm547Ids(v))return;const g=painter(ctx,nav,v.scale||100,C,true),X=g.X,Y=g.Y,p=ui.curPane===pn.i?ui.cur:null;
+    ctx.save();ctx.strokeStyle=C.accent;ctx.fillStyle=C.accent;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(X(c.x),Y(c.y),7,0,7);ctx.moveTo(X(c.x)-10,Y(c.y));ctx.lineTo(X(c.x)+10,Y(c.y));ctx.moveTo(X(c.x),Y(c.y)-10);ctx.lineTo(X(c.x),Y(c.y)+10);ctx.stroke();
+    if(p&&!ui.rcPick){const w=rm547W(v,p),a=ui.pts.length?ui.pts[0]:null;ctx.lineWidth=1.2;g.seg([c.x,c.y],[w.x,w.y]);
+      if(a){g.dash([4,2]);g.seg([c.x,c.y],[a.x,a.y]);g.dash(null);let d=-(Math.atan2(w.y-c.y,w.x-c.x)-Math.atan2(a.y-c.y,a.x-c.x))*180/Math.PI;while(d>180)d-=360;while(d<-180)d+=360;
+        g.text(d.toFixed(1)+'°',[w.x,w.y-4*(v.scale||100)],3,{color:C.accent,mono:true,halo:true});
+        ctx.globalAlpha=0.55;rm547Ghost(g,v,(x,y)=>{const r=-d*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r);return[c.x+(x-c.x)*cs-(y-c.y)*sn,c.y+(x-c.x)*sn+(y-c.y)*cs]})}}
+    ctx.restore()},
+  hint:v=>!ev3EV(v)?R0.hint(v):t(ui.rcPick?'h_rc':ui.pts.length?'h_rot2':'h_rot1')}}
+/* what the selection would become: its lines and outlines, mapped by fn */
+function rm547Ghost(g,v,fn){const ids=rm547Ids(v)||[];for(const id of ids){const e=IDX.get(id);if(!e)continue;const G=GEOM[e.cat];let pts=null,open=true;
+    if(G==='line')pts=(lcCurve(e)?bowPts(e):[[e.x1,e.y1],[e.x2,e.y2]]);else if(G==='poly'||G==='path'){pts=e.pts;open=G==='path'}else{const B=e.cat==='etext'?null:elBox(v,e);pts=B?[[B[0],B[1]],[B[2],B[1]],[B[2],B[3]],[B[0],B[3]]]:[[e.x,e.y]];open=!B}
+    if(!pts||!pts.length)continue;g.path(pts.map(q=>fn(q[0],q[1])),open);g.ctx.stroke()}}
+/* Mirror – Pick Axis: a straight detail line or a level of the view */
+function rm547Axis(v,w){const ln=pickLine(v,w,12);if(ln)return{x1:ln.x1,y1:ln.y1,x2:ln.x2,y2:ln.y2,id:ln.id};const l=lv543(v,w);return l?{x1:w.x-1000,y1:-l.elev,x2:w.x+1000,y2:-l.elev,lv:l.id}:null}
+function rm547Mirror(v,A){const np=ui.opt.copy?0:[...ui.sel].filter(isPinned).length;
+  edit(()=>{let ids=rm547Ids(v)||[];if(ui.opt.copy){ids=ev3Clone(ids);ui.sel=new Set(ids)}else ids=ids.filter(id=>!isPinned(id));mirrorIds(ids,A.x1,A.y1,A.x2,A.y2)});if(np)toast(t('pin_block',np));setTool('modify')}
+XT3.mirrorp={ok:v=>ev3EV(v),
+  click(pn,v,p){if(!rm547Ok(v))return;const w=rm547W(v,p),A=rm547Axis(v,w);if(!A){toast(t('rm547_axis'));return}rm547Mirror(v,A)},
+  draw(pn,ctx,v,nav){const p=ui.curPane===pn.i?ui.cur:null;if(!p||!rm547Ids(v))return;const w=rm547W(v,p),A=rm547Axis(v,w);if(!A)return;const g=painter(ctx,nav,v.scale||100,C,true);
+    ctx.save();ctx.strokeStyle=C.hot;ctx.lineWidth=2.4;if(A.lv!=null){ctx.beginPath();ctx.moveTo(0,g.Y(A.y1));ctx.lineTo(pn.w,g.Y(A.y1));ctx.stroke()}else g.seg([A.x1,A.y1],[A.x2,A.y2]);
+    const dx=A.x2-A.x1,dy=A.y2-A.y1,l2=dx*dx+dy*dy||1;ctx.strokeStyle=C.accent;ctx.lineWidth=1.2;ctx.globalAlpha=0.55;
+    rm547Ghost(g,v,(x,y)=>{const tt=((x-A.x1)*dx+(y-A.y1)*dy)/l2,px=A.x1+dx*tt,py=A.y1+dy*tt;return[2*px-x,2*py-y]});ctx.restore()},
+  hint:()=>t('rm547_hp')};
+/* Mirror – Draw Axis: annotations alone take any axis; with model elements the upright axis of before */
+{const M0=XT3.mirror;XT3.mirror={ok:M0.ok,
+  click(pn,v,p,e){if(!ev3EV(v)||!rm547Ids(v))return M0.click(pn,v,p,e);const w=rm547W(v,p),s=toolSnap(v,w),q={x:s.x,y:s.y},M=ui.ev3m&&ui.ev3m.v===v.id&&ui.ev3m.ann?ui.ev3m:null;
+    if(!M){ui.ev3m={v:v.id,ann:1,a:q};hint();refresh();return}if(Math.hypot(q.x-M.a.x,q.y-M.a.y)<10)return;ui.ev3m=null;rm547Mirror(v,{x1:M.a.x,y1:M.a.y,x2:q.x,y2:q.y})},
+  draw(pn,ctx,v,nav){if(!ev3EV(v)||!rm547Ids(v))return M0.draw(pn,ctx,v,nav);const p=ui.curPane===pn.i?ui.cur:null,M=ui.ev3m&&ui.ev3m.v===v.id&&ui.ev3m.ann?ui.ev3m:null;if(!p)return;
+    const w=rm547W(v,p),s=toolSnap(v,w),g=painter(ctx,nav,v.scale||100,C,true);ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=1.4;
+    if(!M){ev3Mark(ctx,g.X(s.x),g.Y(s.y),'pt');ctx.restore();return}ev3Mark(ctx,g.X(M.a.x),g.Y(M.a.y),'pt');g.dash([10,3,2,3]);g.seg([M.a.x,M.a.y],[s.x,s.y]);g.dash(null);
+    const A={x1:M.a.x,y1:M.a.y,x2:s.x,y2:s.y},dx=A.x2-A.x1,dy=A.y2-A.y1,l2=dx*dx+dy*dy;if(l2>100){ctx.strokeStyle=C.accent;ctx.lineWidth=1.2;ctx.globalAlpha=0.55;
+      rm547Ghost(g,v,(x,y)=>{const tt=((x-A.x1)*dx+(y-A.y1)*dy)/l2,px=A.x1+dx*tt,py=A.y1+dy*tt;return[2*px-x,2*py-y]})}ctx.restore()},
+  hint:v=>ev3EV(v)&&rm547Ids(v)?t(ui.ev3m&&ui.ev3m.v===v.id&&ui.ev3m.ann?'h_mir2':'h_mir1'):M0.hint(v)}}
+/* Scale: a factor and its origin, or graphically by three points */
+XT3.scale={ok:v=>ev3EV(v),
+  click(pn,v,p,e){if(!rm547Ok(v))return;toolClick(pn,v,p,e||{})},
+  draw(pn,ctx,v,nav){const p=ui.curPane===pn.i?ui.cur:null;if(!p||!rm547Ids(v))return;const w=rm547W(v,p),s=toolSnap(v,w),g=painter(ctx,nav,v.scale||100,C,true),o=ui.pts[0];ctx.save();ctx.strokeStyle=C.accent;ctx.lineWidth=1.3;
+    if(ui.opt.scMode!=='graph'||!o){const k=+ui.opt.scF;if(ui.opt.scMode!=='graph'&&k>0){ctx.globalAlpha=0.55;rm547Ghost(g,v,(x,y)=>[s.x+(x-s.x)*k,s.y+(y-s.y)*k])}ev3Mark(ctx,g.X(s.x),g.Y(s.y),'pt');ctx.restore();return}
+    const b=ui.pts[1];if(b){g.dash([4,3]);g.seg([o.x,o.y],[b.x,b.y]);g.dash(null);const d1=Math.hypot(b.x-o.x,b.y-o.y),d2=Math.hypot(s.x-o.x,s.y-o.y),k=d1>0?d2/d1:1;ctx.globalAlpha=0.55;rm547Ghost(g,v,(x,y)=>[o.x+(x-o.x)*k,o.y+(y-o.y)*k]);ctx.globalAlpha=1;
+      g.text('× '+(Math.round(k*1000)/1000),[s.x,s.y-4*(v.scale||100)],3,{color:C.accent,mono:true,halo:true})}g.seg([o.x,o.y],[s.x,s.y]);ctx.restore()},
+  hint:()=>{const gr=ui.opt.scMode==='graph',n=ui.pts.length;return t(!gr?'rm547_hs':n===0?'rm547_hs1':n===1?'rm547_hs2':'rm547_hs3')}};
+Object.assign(STR,{
+  rm547_only:['ในรูปด้านและรูปตัด เครื่องมือนี้ใช้กับเส้นรายละเอียด พื้นที่แรเงา ชิ้นรายละเอียด สัญลักษณ์ และข้อความของมุมมองนี้เท่านั้น','In an elevation or a section this tool takes the detail lines, filled regions, detail components, symbols and text of the view only'],
+  rm547_none:['เลือกเส้นรายละเอียดหรือคำอธิบายของมุมมองนี้ก่อน','Select detail lines or annotations of this view first'],
+  rm547_axis:['ชี้ที่เส้นรายละเอียดหรือเส้นระดับชั้น','Point at a detail line or a level'],
+  rm547_hp:['คลิกเส้นรายละเอียดหรือเส้นระดับชั้นที่จะใช้เป็นแกนสะท้อน','Click a detail line or a level to mirror about'],
+  rm547_hs:['คลิกจุดอ้างอิงของการย่อขยาย (ตัวคูณบนแถบตัวเลือก)','Click the origin of the scaling (the factor is on the options bar)'],
+  rm547_hs1:['คลิกจุดอ้างอิงของการย่อขยาย','Click the origin of the scaling'],
+  rm547_hs2:['คลิกจุดที่สองบอกความยาวเดิม','Click the second point: the length as it is'],
+  rm547_hs3:['คลิกจุดที่สามบอกความยาวใหม่','Click the third point: the new length']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59845,6 +59917,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.544 · ระยะมุม (Angular Dimension) ในรูปด้านและรูปตัด แบบ Revit: คลิกเส้นแรก เส้นที่สอง แล้วที่วางส่วนโค้ง วัดได้ระหว่างเส้นรายละเอียด เส้นระดับชั้น กริด และขอบของชิ้นงาน ระยะมุมตามเส้นเหล่านั้นเมื่อย้ายหรือแก้ ลากส่วนโค้งเลือกมุมและรัศมีใหม่
 - V1.545 · สัญลักษณ์ (Symbol) ในรูปด้านและรูปตัด แบบ Revit: ลูกศรทิศเหนือ มาตราส่วนกราฟิก เส้นศูนย์กลาง ลูกศร เส้นตัดขาด และสัญลักษณ์ระดับ วางในรูปด้านหรือรูปตัดได้ เห็นสัญลักษณ์ตามเมาส์ก่อนคลิก Space หมุน เลือก ลาก คัดลอก ลบ และซ่อนตามหมวดได้ ไปบนชีท PDF และ DXF
 - V1.546 · ระยะรัศมี เส้นผ่านศูนย์กลาง และความยาวส่วนโค้งในรูปด้านและรูปตัด แบบ Revit: คลิกเส้นโค้งหรือวงกลมของเส้นรายละเอียด (เช่นวงกบโค้ง) แล้วที่วางตัวเลข ลากหมุนรอบจุดศูนย์กลาง ตามเส้นเมื่อย้ายหรือเปลี่ยนขนาด
+- V1.547 · หมุน (Rotate) สะท้อน (Mirror) และย่อขยาย (Scale) เส้นรายละเอียดและคำอธิบายในรูปด้านและรูปตัด แบบ Revit: หมุนรอบกึ่งกลางที่เลือก (Space ย้ายจุดหมุน) สะท้อนกับเส้นรายละเอียดหรือเส้นระดับชั้น หรือแกนที่คลิกสองจุด ย่อขยายตามตัวคูณหรือสามจุด เห็นเงาก่อนคลิก ทำสำเนาได้ Ctrl+คลิกเพิ่มคำอธิบายของมุมมองเข้าในชุดที่เลือก Shift+คลิกเอาออก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60563,6 +60636,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.544 · Angular dimensions in elevations and sections, as in Revit: click the first line, the second, then where the arc goes, between detail lines, levels, grids and the edges of the model; they follow those lines when they move or change, and dragging the arc picks another angle and radius
 - V1.545 · Symbols in elevations and sections, as in Revit: north arrows, a graphic scale, a centre line, an arrow, a break line and a datum go into an elevation or a section, the symbol follows the pointer before the click and Space turns it; they are picked, dragged, copied, deleted and hidden by category, and go onto sheets, PDF and DXF
 - V1.546 · Radial, Diameter and Arc Length dimensions in elevations and sections, as in Revit: click an arc or a circle of detail lines (an arched head, say), then where the value goes; drag it round the centre, and it follows the curve when it moves or changes size
+- V1.547 · Rotate, Mirror and Scale on the detail lines and annotations of elevations and sections, as in Revit: rotate about the centre of the selection (Space moves it), mirror about a detail line, a level or two points clicked, scale by a factor or by three points; a ghost shows the result before the click, and Copy keeps the originals. Ctrl+click adds annotations of the view to the selection, Shift+click takes them off
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -64258,6 +64332,25 @@ window.PenumBIM.r546={
   drive:(id,mm)=>{let r=false;edit(()=>{r=rdimDrive(P.ann.find(x=>x.id===id),mm)});refresh();return r},
   scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   sel:()=>[...ui.sel],
+  prompt:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
+/* V1.547 test API: Rotate, Mirror and Scale on the annotations of elevations and sections */
+window.PenumBIM.r547={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl,activeView()),
+  opt:o=>{Object.assign(ui.opt,o);renderOptbar();return true},
+  add:o=>{let id=0;edit(()=>{const d=Object.assign({id:P.seq++,view:avid(activeView())},JSON.parse(JSON.stringify(o)));P.ann.push(d);id=d.id});refresh();return id},
+  ann:id=>{const d=P.ann.find(x=>x.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  anns:(vid,cat)=>P.ann.filter(d=>(vid==null||d.view===vid)&&(!cat||d.cat===cat)).map(d=>JSON.parse(JSON.stringify(d))),
+  sel:ids=>{if(ids){ui.sel=new Set(ids);refresh()}return[...ui.sel]},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return ui.tool},
+  axis:(h,z)=>{const v=activeView();return rm547Axis(v,{x:h,y:-z})},
+  pl:(h,z)=>{const v=activeView();const l=pickLine(v,{x:h,y:-z},12);return l?{id:l.id,x1:l.x1,y1:l.y1,x2:l.x2,y2:l.y2}:null},
+  rc:()=>ui.rc?{x:Math.round(ui.rc.x),y:Math.round(ui.rc.y)}:null,
+  space:()=>{if(ui.tool==='rotate'){ui.rcPick=!ui.rcPick;ui.pts=[];refresh()}return ui.rcPick},
+  act:a=>{act(a);return ui.tool},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
