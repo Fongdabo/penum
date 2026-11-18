@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=555,V1_NAME='V1.545';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=556,V1_NAME='V1.546';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57357,6 +57357,36 @@ EV_ANN.add('sym');
 /* the symbol on the pointer before it is placed */
 {const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(!v||(v.kind!=='elev'&&v.kind!=='section')||ui.tool!=='sym'||pn.i!==ui.ap||ui.curPane!==pn.i||!ui.cur)return;
   const w={x:(ui.cur.x-nav.ox)/nav.s,y:(ui.cur.y-nav.oy)/nav.s},s=toolSnap(v,w),g=painter(ctx,nav,v.scale||100,C,true);ctx.save();ctx.globalAlpha=0.8;symPreview(g,ctx,v,[s.x,s.y],C.accent);ctx.restore()}}
+/* ===== 546 Radial, Diameter and Arc Length dimensions in elevations and sections (V1.546; Revit: Annotate › Dimension › Radial, Diameter, Arc Length work
+   in any view on arcs and circles, such as an arched head drawn in an elevation).  The three tools of the plans now take the arcs and circles of the detail
+   lines of an elevation or a section: a click on the curve, then where the value goes.  They are the plans' {cat:'rdim', kind, el} kept in the view, with
+   ev546:1 and the place of their value as x, y from the centre of the arc (the view's own units), so that they are dragged round the centre and out, go with
+   the curve when it moves or changes size, and are copied, pasted, box selected, hidden and deleted as the other annotations of the view.  Deleting the curve
+   deletes them, as in Revit. */
+const RD546=new Set(['rdim','ddim','ldim']);
+/* only the arcs and circles of the detail lines of the view: no walls or columns there */
+{const f0=rdimPick;rdimPick=(v,w)=>{if(!ev3EV(v))return f0(v,w);const tol=12/navOf(v).s,av=avid(v);let best=null,bd=tol;if(catHid(v,'dline'))return null;
+  for(const d of P.ann){if(d.cat!=='dline'||d.view!==av||!lcCurve(d)||hidDatum(v,d))continue;const q=bowDist(w.x,w.y,d);if(q<bd){bd=q;best={id:d.id,s:0}}}return best}}
+/* in a view the place of the value is x, y from the centre: that is where it turns round and how far out it stands */
+{const f0=rdimGeo;rdimGeo=d=>{if(!d||!d.ev546||!isFinite(d.x)||!isFinite(d.y))return f0(d);const r=Math.hypot(d.x,d.y);return f0(Object.assign({},d,{ang:Math.atan2(d.y,d.x),tr:Math.max(50,r)}))}}
+const rd546Put=(q,v)=>{const tr=q.tr>0?q.tr:0,G=rdimRef(q.el,q.s),a=q.kind==='a'&&G?G.a0+G.sw/2:q.ang;return Object.assign({},q,{ev546:1,x:edR(Math.cos(a)*tr),y:edR(Math.sin(a)*tr)})};
+const rd546W=(v,p)=>{const n=navOf(v);return{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s}};
+function rd546Click(pn,v,p){const kind=RD_TOOL[ui.tool],w=rd546W(v,p);
+  if(!ui.pts.length){const pk=rdimPick(v,w);if(!pk){toast(t('rd546_pick'));return}ui.pts=[{x:w.x,y:w.y,id:pk.id,s:0}];hint();refresh();return}
+  const q=rdimFrom(kind,ui.pts[0],w);ui.pts=[];if(!q){hint();refresh();return}const d=rd546Put(q,v);edit(()=>{P.ann.push(Object.assign({id:P.seq++,cat:'rdim',view:avid(v)},d))});hint()}
+function rd546Draw(pn,ctx,v,nav){const p=ui.curPane===pn.i?ui.cur:null;if(!p)return;const w=rd546W(v,p),g=painter(ctx,nav,v.scale||100,C,true),X=x=>x*nav.s+nav.ox,Y=y=>y*nav.s+nav.oy;
+  if(!ui.pts.length){const pk=rdimPick(v,w),G=pk&&rdimRef(pk.id,0);if(G){ctx.save();ctx.strokeStyle=C.hot;ctx.lineWidth=2.2;ctx.beginPath();ctx.arc(X(G.c[0]),Y(G.c[1]),G.R*nav.s,G.a0,G.a0+G.sw,G.sw<0);ctx.stroke();ctx.restore()}return}
+  const q=rdimFrom(RD_TOOL[ui.tool],ui.pts[0],w);if(q){ctx.save();drawRDim(g,rd546Put(q,v),C,C.sel);ctx.restore()}}
+for(const k of RD546)XT3[k]={ok:v=>ev3EV(v),click:rd546Click,draw:rd546Draw,hint:()=>t(ui.pts.length?'h_rdim2':'rd546_h1')};
+/* picked by a click on its line or its value */
+{const f0=evAnnHit;evAnnHit=(v,p,nav)=>{const r=f0(v,p,nav);if(r||ui.tool!=='modify')return r;const sc=v.scale||100,w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},tol=6/nav.s,av=avid(v);let best=null,bd=tol;
+  for(const d of P.ann){if(d.cat!=='rdim'||d.view!==av||catHid(v,'rdim')||hidDatum(v,d))continue;const m=rdimDist(v,d,w,sc);if(m<bd){bd=m;best={id:d.id,part:'ann'}}}return best}}
+/* one made in a plan's way (an older file, a copy): it takes the view's way the first time it is seen there */
+XD.push(()=>{const VS=new Map();for(const d of P.ann){if(d.cat!=='rdim'||d.ev546)continue;if(!VS.has(d.view))VS.set(d.view,viewById(d.view));if(!ev3EV(VS.get(d.view)))continue;
+    const G=rdimGeo(d);if(!G)continue;Object.assign(d,rd546Put({kind:d.kind||'r',el:d.el,s:d.s||0,ang:G.ang,tr:G.tr},VS.get(d.view)))}return false});
+Object.assign(STR,{
+  rd546_h1:['คลิกเส้นโค้งหรือวงกลมของเส้นรายละเอียดที่จะบอกระยะ','Click the arc or circle of detail lines to dimension'],
+  rd546_pick:['ชี้ที่เส้นโค้งหรือวงกลมของเส้นรายละเอียดในมุมมองนี้','Point at an arc or a circle of the detail lines of this view']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59814,6 +59844,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.543 · ตัด/ต่อ (Trim/Extend) และขนาน (Offset) เส้นรายละเอียดในรูปด้านและรูปตัด แบบ Revit: ตัด/ต่อมุม ทีละเส้น และหลายเส้น (เส้นระดับชั้นหรือเส้นรายละเอียดเป็นขอบเขตได้) ขนานตามระยะหรือตามเมาส์ แบ่งเส้นรายละเอียดได้เหมือนเดิม
 - V1.544 · ระยะมุม (Angular Dimension) ในรูปด้านและรูปตัด แบบ Revit: คลิกเส้นแรก เส้นที่สอง แล้วที่วางส่วนโค้ง วัดได้ระหว่างเส้นรายละเอียด เส้นระดับชั้น กริด และขอบของชิ้นงาน ระยะมุมตามเส้นเหล่านั้นเมื่อย้ายหรือแก้ ลากส่วนโค้งเลือกมุมและรัศมีใหม่
 - V1.545 · สัญลักษณ์ (Symbol) ในรูปด้านและรูปตัด แบบ Revit: ลูกศรทิศเหนือ มาตราส่วนกราฟิก เส้นศูนย์กลาง ลูกศร เส้นตัดขาด และสัญลักษณ์ระดับ วางในรูปด้านหรือรูปตัดได้ เห็นสัญลักษณ์ตามเมาส์ก่อนคลิก Space หมุน เลือก ลาก คัดลอก ลบ และซ่อนตามหมวดได้ ไปบนชีท PDF และ DXF
+- V1.546 · ระยะรัศมี เส้นผ่านศูนย์กลาง และความยาวส่วนโค้งในรูปด้านและรูปตัด แบบ Revit: คลิกเส้นโค้งหรือวงกลมของเส้นรายละเอียด (เช่นวงกบโค้ง) แล้วที่วางตัวเลข ลากหมุนรอบจุดศูนย์กลาง ตามเส้นเมื่อย้ายหรือเปลี่ยนขนาด
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60531,6 +60562,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.543 · Trim/Extend and Offset on the detail lines of elevations and sections, as in Revit: to Corner, Single and Multiple (a level or a detail line can be the boundary), Offset by a distance or graphically; Split works on them as before
 - V1.544 · Angular dimensions in elevations and sections, as in Revit: click the first line, the second, then where the arc goes, between detail lines, levels, grids and the edges of the model; they follow those lines when they move or change, and dragging the arc picks another angle and radius
 - V1.545 · Symbols in elevations and sections, as in Revit: north arrows, a graphic scale, a centre line, an arrow, a break line and a datum go into an elevation or a section, the symbol follows the pointer before the click and Space turns it; they are picked, dragged, copied, deleted and hidden by category, and go onto sheets, PDF and DXF
+- V1.546 · Radial, Diameter and Arc Length dimensions in elevations and sections, as in Revit: click an arc or a circle of detail lines (an arched head, say), then where the value goes; drag it round the centre, and it follows the curve when it moves or changes size
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -64204,6 +64236,30 @@ window.PenumBIM.r545={
   scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   props:()=>($('#props')||{}).textContent||'',
   sel:()=>[...ui.sel],
+  str:(k,...a)=>t(k,...a)};
+/* V1.546 test API: radial, diameter and arc length dimensions in elevations and sections */
+window.PenumBIM.r546={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl,activeView()),
+  dl:(o)=>{let id=0;edit(()=>{const d=Object.assign({id:P.seq++,cat:'dline',view:avid(activeView())},o);P.ann.push(d);id=d.id});refresh();return id},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return{pts:ui.pts.length,n:P.ann.filter(d=>d.cat==='rdim'&&d.view===avid(v)).length}},
+  pick:(h,z)=>{const v=activeView();return rdimPick(v,{x:h,y:-z})},
+  anns:vid=>P.ann.filter(d=>d.cat==='rdim'&&(vid==null||d.view===vid)).map(d=>JSON.parse(JSON.stringify(d))),
+  geo:id=>{const d=P.ann.find(x=>x.id===id),G=d&&rdimGeo(d);return G?{k:G.k,val:Math.round(G.val*10)/10,R:Math.round(G.R),c:G.c.map(x=>Math.round(x)),tp:G.tp.map(x=>Math.round(x)),ang:Math.round(G.ang*180/Math.PI*10)/10,tr:Math.round(G.tr),lab:rdimLabel(d,G)}:null},
+  hit:(h,z)=>{const v=activeView(),n=navOf(v);setTool('modify');const r=hitElev(v,{x:n.ox+h*n.s,y:n.oy-z*n.s});return r?r.id:0},
+  set:(id,o)=>{edit(()=>{const d=P.ann.find(x=>x.id===id);Object.assign(d,o)});refresh();return true},
+  ann:id=>{const d=P.ann.find(x=>x.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  shift:(ids,dh,dz)=>{const v=activeView();edit(()=>{ev3Shift(v,ids,dh,dz)});refresh();return true},
+  del:ids=>{ui.sel=new Set(ids);act('delete');return P.ann.filter(d=>d.cat==='rdim').length},
+  hide:(vid,on)=>{edit(()=>{const v=viewById(vid);v.hiddenCats=(v.hiddenCats||[]).filter(c=>c!=='rdim');if(on)v.hiddenCats.push('rdim')});refresh();return true},
+  texts:vid=>{const v=viewById(vid),out=[],no=()=>{},ctx=new Proxy({},{get:(o,k)=>k==='fillText'?(s=>out.push(String(s))):k==='measureText'?(s=>({width:String(s).length*6})):k==='createLinearGradient'||k==='createPattern'?(()=>({addColorStop:no})):k==='getLineDash'?(()=>[]):(k in o?o[k]:no),set:(o,k,val)=>{o[k]=val;return true}});
+    drawElevDatum(ctx,v,{s:1,ox:0,oy:0},{C,thin:false,screen:false});return out},
+  dxf:vid=>{const s=evDXF(viewById(vid));return(s.match(/\n1\r?\n[^\r\n]*\r?\n/g)||[]).map(x=>x.trim().split(/\r?\n/).pop())},
+  drive:(id,mm)=>{let r=false;edit(()=>{r=rdimDrive(P.ann.find(x=>x.id===id),mm)});refresh();return r},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  sel:()=>[...ui.sel],
+  prompt:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
