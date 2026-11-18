@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=508,V1_NAME='V1.498';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=509,V1_NAME='V1.499';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -54645,6 +54645,81 @@ Object.assign(STR,{
   p_csk498_1td:['ปลายสุด: ลึกบากบน','End: Top Depth'],p_csk498_1tl:['ปลายสุด: ยาวบากบน','End: Top Length'],p_csk498_1bd:['ปลายสุด: ลึกบากล่าง','End: Bottom Depth'],p_csk498_1bl:['ปลายสุด: ยาวบากล่าง','End: Bottom Length'],
   a_csk498clr:['เอารอยบากปลายคานออก','Remove Cope Skewed'],csk498_clr:['เอารอยบากปลายคานออก {0} คาน','Cope Skewed taken off {0} beams'],
   csk498_e0:['ปลายเริ่ม','Start'],csk498_e1:['ปลายสุด','End'],c_csk498:['บากปลายคาน','Cope Skewed']});
+/* ===== 499 Connection Automation (V1.499; Revit: Steel › Connection Automation, rules that place steel connections by the kind of joint). A rule per kind of
+   joint names the connection type to place there: a beam into a column's flange, into a column's web, into a beam, a beam splice, a column base, a column
+   splice. Run on the members selected or the whole project: every joint without a connection gets the type of its rule (none: left), as Connect Selected
+   Members places them (V1.200 coping and cutbacks, V1.253/V1.254 splices); what cannot take it is skipped and listed with why. The rules are kept in the project
+   (P.stc499 {kind: type id, or 0 for none}); a kind not set takes the first type that fits. ===== */
+const STC499_K=['bcf','bcw','bb','bsp','base','csp'],STC499_CK={bcf:['shear','clip','endp'],bcw:['shear','clip','endp'],bb:['shear','clip','endp'],bsp:['splice'],base:['base'],csp:['splice']};
+/* the kind of joint at end k of h (2: a column's base): one of STC499_K, or null (a free end, a corner, not steel) */
+function stc499Kind(h,k){if(k===2){if(!stcColOK(P,h))return null;return scOk254(P,h)&&scMate254(P,h)?'csp':'base'}
+  if(!stcBeamOK(P,h))return null;if(spOk253(P,h,k)&&spMate253(P,h,k))return'bsp';const BG=bcGeo(P,h);if(!BG||!BG.F||!BG.J)return null;const J=BG.J[k];
+  if(J.kind==='tee')return'bb';if(J.kind!=='col')return null;const W=stcWeb(BG.F.T),S=stcSup(P,BG.F,J,W?W.c:0);return S?(S.web?'bcw':'bcf'):null}
+/* the types a rule can name; the rule's type: a type, the splice type still to be made (v253), or null for none */
+const stc499Types=kind=>stcTL(P).filter(T=>STC499_CK[kind].includes(T.ck));
+function stc499T(kind){const R=P.stc499&&typeof P.stc499==='object'?P.stc499:{},L=stc499Types(kind);
+  if(R[kind]===0)return null;const f=R[kind]!=null&&L.find(T=>T.id===R[kind]);if(f)return f;
+  if(kind==='bsp'||kind==='csp')return L[0]||spV253();return L.find(T=>T.ck==='shear')||L[0]||null}
+XC.push(()=>{const R=P.stc499;if(R===undefined)return;if(!R||typeof R!=='object'||Array.isArray(R)){delete P.stc499;return}
+  for(const k of Object.keys(R))if(!STC499_K.includes(k)||!(R[k]===0||stcTL(P).some(T=>T.id===R[k]&&STC499_CK[k].includes(T.ck))))delete R[k];if(!Object.keys(R).length)delete P.stc499});
+/* the members to look at: the steel beams and columns selected (ids), or all */
+const stc499Hosts=ids=>(ids?ids.map(id=>IDX.get(id)):P.els).filter(e=>e&&(stcBeamOK(P,e)||stcColOK(P,e)));
+/* every joint of those members: {h, k, kind, has (a connection there already)} */
+function stc499Joints(ids){const has=new Set(P.els.filter(o=>o.cat==='sconn').map(o=>o.host+'|'+stcK(o))),out=[],H=stc499Hosts(ids),hs=new Set(H.map(h=>h.id));
+  for(const h of H)for(const k of h.cat==='column'?[2]:[0,1]){const kind=stc499Kind(h,k);if(!kind)continue;let on=has.has(h.id+'|'+k);
+    if(kind==='bsp'){const m=spMate253(P,h,k);if(m){if(hs.has(m.o.id)&&m.o.id<h.id)continue;on=on||has.has(m.o.id+'|'+m.j)}}          // a beam splice is one joint: counted once, on either end
+    out.push({h,k,kind,has:on})}return out}
+/* what a run would do: {jobs [{h, k, T, pl, kind}], sk [{h, k, kind, why}], off {kind: n}, have} */
+function stc499Plan(ids){const J=stc499Joints(ids),has=new Set(P.els.filter(o=>o.cat==='sconn').map(o=>o.host+'|'+stcK(o))),jobs=[],sk=[],off={};let have=0;
+  for(const j of J){const {h,k,kind}=j;if(j.has){have++;continue}if(spBusy253(h,k,has,jobs))continue;          // the other end of a splice takes it
+    const T=stc499T(kind);if(!T){off[kind]=(off[kind]||0)+1;continue}
+    if(!T.v253&&!stcFitE253(P,T,h,k)){sk.push({h,k,kind,why:'stc499_nofit'});continue}
+    let pl={};if(k===2){if(kind==='csp'){const q=scPlan254(h);if(q.why){sk.push({h,k,kind,why:q.why});continue}}}
+    else{pl=stcPlan(h,k,T);if(pl.why){sk.push({h,k,kind,why:pl.why,why2:pl.why2});continue}}
+    jobs.push({h,k,T,pl,kind})}
+  return{jobs,sk,off,have}}
+function stc499Run(ids){const R=stc499Plan(ids);if(R.jobs.length)edit(()=>{for(const j of R.jobs){stcPrep(j.h,j.k,j.pl);if(j.k===2&&j.h.bp)delete j.h.bp;stcNew(j.h,j.k,j.T)}});
+  const n={};for(const j of R.jobs)n[j.kind]=(n[j.kind]||0)+1;STC499_LAST={n,placed:R.jobs.length,sk:R.sk.map(s=>({id:s.h.id,k:s.k,kind:s.kind,why:s.why,why2:s.why2})),off:R.off,have:R.have};return STC499_LAST}
+let STC499_LAST=null;
+function stc499SetRule(kind,v){if(!STC499_K.includes(kind))return;edit(()=>{if(!P.stc499||typeof P.stc499!=='object')P.stc499={};if(v==='d')delete P.stc499[kind];else P.stc499[kind]=+v||0;if(!Object.keys(P.stc499).length)delete P.stc499})}
+/* ---- the dialog ---- */
+function dlgStc499(res){const sel=[...ui.sel].filter(id=>{const e=IDX.get(id);return e&&(stcBeamOK(P,e)||stcColOK(P,e))}),sc=ui.stc499sc==='sel'&&sel.length?'sel':'all',ids=sc==='sel'?sel:null;
+  const J=stc499Joints(ids),cnt={};for(const k of STC499_K)cnt[k]=[0,0];for(const j of J)cnt[j.kind][j.has?1:0]++;
+  const R=P.stc499||{},opt=kind=>{const L=stc499Types(kind),cur=R[kind]===0?'0':R[kind]!=null&&L.some(T=>T.id===R[kind])?String(R[kind]):'d',T0=stc499T(kind);
+    const o=[['d',t('stc499_def',T0?(T0.v253?t('stc499_new'):String(T0.name||'').trim()):t('stc499_none'))],['0',t('stc499_none')],...L.map(T=>[String(T.id),String(T.name||'').trim()])];
+    return`<select data-stc499r="${kind}">${o.map(([v,l])=>`<option value="${v}"${v===cur?' selected':''}>${esc(l)}</option>`).join('')}</select>`};
+  let res1='';if(res){const S=res,rows=S.sk.slice(0,12).map(s=>{const h=IDX.get(s.id);return`<li>${esc((h?elName(h):'#'+s.id)+' · '+t('stc_at'+s.k)+' · '+t(s.why,s.why2?t(s.why2):''))}</li>`}).join('');
+    const offN=Object.values(S.off).reduce((a,b)=>a+b,0),skN=S.sk.length;
+    res1=`<div id="stc499res" class="note" style="margin-top:8px;font-weight:600;color:${skN?'#c92a2a':'#2b8a3e'}">${esc(t('stc499_res',S.placed,skN,offN,S.have))}</div>${rows?`<ul id="stc499sk" style="margin:4px 0 0 18px;font-size:12px;max-height:22vh;overflow:auto">${rows}</ul>`:''}`}
+  const body=`<style>#dlg.stc499{width:min(900px,calc(100% - 32px))}#stc499tb select{width:100%;max-width:none;min-width:300px}#stc499tb td,#stc499tb th{white-space:nowrap}</style><p class="note">${esc(t('n_stc499'))}</p>`
+    +`<table class="tbl" id="stc499tb"><thead><tr><th>${esc(t('c_stc499j'))}</th><th style="width:56%">${esc(t('c_stc499t'))}</th><th style="text-align:right">${esc(t('c_stc499n'))}</th><th style="text-align:right">${esc(t('c_stc499h'))}</th></tr></thead><tbody>`
+    +STC499_K.map(k=>`<tr data-stc499k="${k}"><td>${esc(t('stc499k_'+k))}</td><td>${opt(k)}</td><td style="text-align:right">${cnt[k][0]}</td><td style="text-align:right">${cnt[k][1]}</td></tr>`).join('')+`</tbody></table>`
+    +`<p style="margin:10px 0 0"><label style="margin-right:16px"><input type="radio" name="stc499sc" value="sel"${sc==='sel'?' checked':''}${sel.length?'':' disabled'}> ${esc(t('stc499_sc_sel',sel.length))}</label>`
+    +`<label><input type="radio" name="stc499sc" value="all"${sc==='all'?' checked':''}> ${esc(t('stc499_sc_all'))}</label></p>`+res1;
+  const foot=`<button class="btn primary" data-stc499b="run">${esc(t('a_stc499run'))}</button><button class="btn" data-stc499b="chk">${esc(t('a_stc492'))}</button><span style="flex:1"></span><button class="btn" data-close="1">${esc(t('close'))}</button>`;
+  openDlg(t('a_stc499'),body,foot,{click(ev){const b=ev.target.closest('[data-stc499b]');if(!b)return;
+      if(b.dataset.stc499b==='run'){const r=stc499Run(ids);toast(t('stc_doneN',r.placed)+(r.sk.length?t('stc_skip',r.sk.length):''),4000);dlgStc499(r);return}
+      if(b.dataset.stc499b==='chk'){closeDlg();dlgStc492()}},
+    change(ev){const s=ev.target.closest('[data-stc499r]');if(s){stc499SetRule(s.dataset.stc499r,s.value);dlgStc499(res);return}
+      const r=ev.target.closest('input[name="stc499sc"]');if(r){ui.stc499sc=r.value;dlgStc499()}}},'stc499')}
+XA.stc499=()=>dlgStc499();
+{const p=(RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_sconn');if(p&&!p.b.includes('@stc499')){const i=p.b.indexOf('@stcplace');p.b.splice(i<0?p.b.length:i+1,0,'@stc499')}}
+Object.assign(BTN,{'@stc499':['stc499','']});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-stc499" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#9fb0c3" ${E} d="M2.5 4H9V6H6.8V16H9V18H2.5V16H4.7V6H2.5Z"/><path fill="#7d8b99" ${E} d="M9 9H16V13H9Z"/><circle cx="7.6" cy="10" r=".8" fill="#2a3550"/><circle cx="7.6" cy="12" r=".8" fill="#2a3550"/>`
+    +`<circle cx="17.5" cy="16.5" r="3.6" fill="#e8590c" ${E}/><path fill="#fff" d="M16.6 14.6 19.6 16.5 16.6 18.4Z"/></symbol>`)})();
+Object.assign(STR,{
+  a_stc499:['ใส่จุดต่ออัตโนมัติ (Connection Automation)','Connection Automation'],a_stc499run:['ใส่จุดต่อตามกฎ','Run'],
+  n_stc499:['กฎละหนึ่งแถวตามชนิดรอยต่อ เลือกแบบจุดต่อที่จะใส่ (ไม่ใส่ก็ได้) แล้วกดใส่จุดต่อตามกฎ รอยต่อที่ยังไม่มีจุดต่อในชิ้นที่เลือกหรือทั้งโครงการจะได้แบบตามกฎ บากปลายคานและตั้งระยะถอยให้เองเหมือนใส่ทีละจุด รอยต่อที่ใส่ไม่ได้ถูกข้ามและบอกเหตุผล กฎเก็บไว้ในโครงการ',
+    'One rule per kind of joint: pick the connection type to place there (or none) and Run. Every joint without a connection in the members selected or the whole project gets the type of its rule, coped and cut back as when placed one by one; joints that cannot take it are skipped and listed with why. The rules are kept in the project'],
+  stc499k_bcf:['คานเข้าปีกเสา','Beam to Column Flange'],stc499k_bcw:['คานเข้าเอวเสา','Beam to Column Web'],stc499k_bb:['คานเข้าคาน','Beam to Beam'],
+  stc499k_bsp:['ต่อคาน (Splice)','Beam Splice'],stc499k_base:['ฐานเสา','Column Base'],stc499k_csp:['ต่อเสา (Splice)','Column Splice'],
+  c_stc499j:['รอยต่อ','Joint'],c_stc499t:['แบบจุดต่อที่ใส่','Connection Type'],c_stc499n:['ยังไม่มีจุดต่อ','Without'],c_stc499h:['มีแล้ว','With'],
+  stc499_none:['ไม่ใส่','None'],stc499_new:['แผ่นต่อ (Splice) แบบใหม่','Splice (a new type)'],stc499_def:['ตามค่าเริ่มต้น: {0}','Default: {0}'],
+  stc499_sc_sel:['ชิ้นที่เลือก ({0})','Members selected ({0})'],stc499_sc_all:['ทั้งโครงการ','Whole project'],
+  stc499_res:['ใส่แล้ว {0} จุด · ข้าม {1} จุด · ไม่ใส่ตามกฎ {2} จุด · มีอยู่แล้ว {3} จุด','{0} placed · {1} skipped · {2} left by the rules · {3} had one already'],
+  stc499_nofit:['แบบจุดต่อตามกฎใช้กับรอยต่อนี้ไม่ได้','The rule\'s type does not fit this joint']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56562,6 +56637,8 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[t_csk498]] — แท็บ [[tab_steel]] แผง [[p_smod488]] ต่อจากตัดมุม แบบ Revit (Steel › Modifiers › Cope Skewed): คลิกใกล้ปลายคานเหล็กระดับ (H, I หรือรางน้ำ) ในแปลนหรือ 3 มิติ ปลายนั้นถูกบากตาม [[o_csk498s]] [[o_csk498d]] และ [[o_csk498l]] ในแถบตัวเลือก ไม่ต้องมีคานหรือเสามาชน แนวตัดขนานกับปลายคาน ปลายที่เฉียงจึงได้รอยบากเฉียงตาม · ถ้าปลายนั้นบากหลบ (Cope) อยู่แล้ว ใช้ค่าที่ลึกกว่าและยาวกว่า · คลิกขนาดเดิมซ้ำเพื่อเอาออก แก้ตัวเลขได้ใน Properties ของคานกลุ่ม [[g_csk498]] หรือกด [[a_csk498clr]] · 3 มิติ รูปตัด ปริมาตร ความยาวตัด และการตรวจกำลังจุดต่อของคานที่บาก (V1.496–V1.497) คิดตามรอยบากนี้ · แบ่งคานแล้วรอยบากอยู่กับปลายเดิม
 [[a_stc492]] — แท็บ [[tab_steel]] แผง [[p_sconn]] แบบ Revit (Steel connection › Design check): ตรวจกำลังจุดต่อเหล็กทุกจุดจากแรงที่ปลายชิ้นส่วน (Properties ของคานหรือเสา › แก้ไขแรงปลายชิ้นส่วน หรือปุ่มดึงแรงจากการคำนวณเหล็กในหน้าต่างนี้ ซึ่งเติมเฉพาะปลายที่ยังไม่มีแรง) ด้วยหน่วยแรงที่ยอมให้ (ASD) ตามค่ากำลังวัสดุในตั้งค่าการคำนวณเหล็ก แผ่นรับแรงเฉือน: สลักเกลียวรับแรงเฉือน แรงแบกทานของรูสลัก แผ่นครากจากแรงเฉือน แผ่นขาดจากแรงเฉือนที่หน้าตัดสุทธิ (0.3 Fu) แผ่นฉีกขาดแบบบล็อก (0.3 Fu Anv + 0.5 Fu Ant) เอวคานที่บาก (Cope) ฉีกขาดแบบบล็อกจากขอบรอยบาก หน้าตัดที่บากครากและขาดจากแรงเฉือนและรับโมเมนต์ดัด V·e ที่ขอบรอยบาก (การโก่งเฉพาะที่ตาม AISC) รอยเชื่อม เหล็กฉากคู่: สลักเกลียวรับแรงเฉือนสองระนาบ สลักเกลียวยึดฝั่งรองรับ ฉากทั้งสองขาดที่หน้าตัดสุทธิและฉีกขาดแบบบล็อก แผ่นปลายคาน: สลักเกลียวรับแรงเฉือนร่วมดึง แผ่นฐานเสา: แรงกดบนคอนกรีต (0.35 f'c) ความหนาแผ่นที่ต้องการ พุกจากตารางพุก รอยเชื่อมเสา ผลอยู่ใน Properties ของจุดต่อ ตารางรายการ และคำเตือนเมื่อไม่ผ่าน คลิกแถวในหน้าต่างเพื่อเลือกจุดต่อนั้น แผ่นต่อ (Splice) ของคานและเสา: แรงที่ปีกจากโมเมนต์และแรงตามแกน สลักเกลียวที่ปีกและแรงแบกทาน แผ่นต่อปีกครากและขาดที่หน้าตัดสุทธิ แผ่นต่อปีกและปีกของชิ้นส่วนฉีกขาดแบบบล็อก สลักเกลียวที่เอว แผ่นต่อเอวครากและขาดจากแรงเฉือน ปุ่ม [[a_stc494]] ในหน้าต่างนี้ทำรายการคำนวณเป็น PDF ของทุกจุดต่อ (ปุ่มเดียวกันใน Properties ทำเฉพาะจุดต่อที่เลือก): วิธีตรวจและค่ากำลังวัสดุ ตารางสรุป แรงที่จุดต่อ แล้วแต่ละรายการตรวจพร้อมสูตร แรงที่เกิด ค่าที่ยอมให้ และอัตราส่วน ปิดท้ายด้วยช่องลงชื่อผู้คำนวณและผู้ตรวจ
+
+[[a_stc499]] — แท็บ [[tab_steel]] แผง [[p_sconn]] ต่อจาก [[a_stcplace]] แบบ Revit (Steel › Connection Automation): กฎละหนึ่งแถวตามชนิดรอยต่อ [[stc499k_bcf]] [[stc499k_bcw]] [[stc499k_bb]] [[stc499k_bsp]] [[stc499k_base]] [[stc499k_csp]] เลือกแบบจุดต่อที่จะใส่หรือ [[stc499_none]] ตารางบอกจำนวนรอยต่อที่ยังไม่มีและมีจุดต่อแล้ว เลือก [[stc499_sc_all]] หรือชิ้นที่เลือก แล้วกด [[a_stc499run]] รอยต่อที่ยังไม่มีจุดต่อได้แบบตามกฎ บากปลายคานและตั้งระยะถอยให้เองเหมือนใส่ทีละจุด ที่ใส่ไม่ได้ถูกข้ามพร้อมเหตุผลในหน้าต่าง · กฎเก็บไว้ในโครงการ แถวที่ไม่ได้ตั้งใช้แบบแรกที่เข้ากันได้ (รอยต่อคานใช้แผ่นรับแรงเฉือน รอยต่อแผ่นต่อใช้แบบแผ่นต่อหรือสร้างใหม่) · ย้อนกลับได้ในครั้งเดียว
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
@@ -56993,6 +57070,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.496 · [[a_stc492]]: คานที่บาก (Cope) เข้าหาคานหรือเสาที่มันต่อ ตรวจเอวคานฉีกขาดแบบบล็อกจากขอบรอยบากลงตามแนวสลัก ทั้งแผ่นรับแรงเฉือนและเหล็กฉากคู่
 - V1.497 · [[a_stc492]]: คานที่บากตรวจหน้าตัดที่เหลือที่ขอบรอยบากด้วย ครากและขาดจากแรงเฉือน และรับโมเมนต์ดัด V·e พร้อมการโก่งเฉพาะที่ ขนาดหน้าตัดที่บากอยู่ใน Properties และรายการคำนวณ
 - V1.498 · [[t_csk498]] แบบ Revit: บากปลายคานเหล็กด้านบน ล่าง หรือทั้งสองด้าน ตามความลึกและความยาวที่ตั้ง ไม่ต้องมีชิ้นส่วนมาชน แนวตัดตามปลายที่เฉียง รวมกับรอยบาก Cope เดิม แก้ได้ใน Properties และการตรวจกำลังจุดต่อของคานที่บากคิดตามด้วย
+- V1.499 · [[a_stc499]] แบบ Revit: กฎตามชนิดรอยต่อ (คานเข้าปีกเสา เอวเสา คานเข้าคาน ต่อคาน ฐานเสา ต่อเสา) เลือกแบบจุดต่อแต่ละแถว แล้วใส่จุดต่อให้รอยต่อที่ยังไม่มีทั้งโครงการหรือชิ้นที่เลือกในครั้งเดียว ที่ใส่ไม่ได้บอกเหตุผล
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -57230,6 +57308,8 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 
 [[t_csk498]] — on the [[tab_steel]] tab, [[p_smod488]] panel, after Corner Cut, as in Revit (Steel › Modifiers › Cope Skewed): click near an end of a level steel beam (H, I or channel) in a plan or a 3D view and that end is coped as the options bar says: [[o_csk498s]], [[o_csk498d]] and [[o_csk498l]], with nothing needed at that end; the cut runs parallel to the end, so a skewed end gets a skewed cope · an end already coped to what it frames into (Cope) takes the deeper and the longer of the two · the same size clicked again takes it off; type the sizes in the beam's Properties, [[g_csk498]], or use [[a_csk498clr]] · 3D views, sections, the volume, the Cut Length and the Connection Design Check of coped beams (V1.496–V1.497) follow it · a split beam keeps each cope on its own end
 [[a_stc492]] — on the [[tab_steel]] tab, [[p_sconn]] panel, as in Revit (a steel connection's Design check): checks every steel connection on its member's end forces (the beam or column's Properties › Edit Member Forces, or Forces from Steel Design in this window, which fills only ends that have none) by allowable stress (ASD) with the material strengths of the Steel Design settings. Shear plates: bolt shear, bolt bearing, plate shear yielding, plate shear rupture (0.3 Fu), block shear (0.3 Fu Anv + 0.5 Fu Ant), block shear of a coped beam's web from the cope's edge, the coped section's shear yielding, shear rupture and bending V·e at the cope (local buckling as AISC Part 9), the weld; clip angles: bolts in double shear, bolts to the support, both angles' shear rupture and block shear; end plates: bolt shear with tension; base plates: concrete bearing (0.35 f'c), the plate thickness needed, anchors from the anchor table, the column weld. The results are in the connection's Properties, schedules, and the warnings when one fails; click a row to select that connection. Beam and column splices: the flange force from the moment and axial force, flange bolts and their bearing, flange plates yielding and on their net section, block shear of the flange plates and of the members' flanges, web bolts, web plates yielding and rupturing in shear. [[a_stc494]] in this dialog makes a PDF of every connection (the same button in Properties reports the selected ones): the method and material strengths, a summary table, the forces at each joint, then every check with its formula, demand, capacity and ratio, and lines to sign for who calculated and who checked.
+
+[[a_stc499]] — on the [[tab_steel]] tab, [[p_sconn]] panel, after [[a_stcplace]], as in Revit (Steel › Connection Automation): one rule per kind of joint, [[stc499k_bcf]], [[stc499k_bcw]], [[stc499k_bb]], [[stc499k_bsp]], [[stc499k_base]] and [[stc499k_csp]]: pick the connection type to place there, or [[stc499_none]]; the table counts the joints without and with a connection; choose [[stc499_sc_all]] or the members selected and [[a_stc499run]]: every joint without a connection gets its rule's type, coped and cut back as when placed one by one, and those that cannot take it are skipped and listed with why in the dialog · the rules are kept in the project; a rule not set takes the first type that fits (beam joints a shear plate, splices the splice type, made when there is none) · one undo takes the run back
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
@@ -57661,6 +57741,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.496 · [[a_stc492]]: a beam coped to what it frames into has its web checked for block shear from the cope's edge down its bolts, with shear plates and clip angles
 - V1.497 · [[a_stc492]]: a coped beam's section left at the cope is checked too, for shear yielding, shear rupture and bending V·e with local buckling; its sizes are in Properties and the calculation report
 - V1.498 · [[t_csk498]] (as in Revit): a cope of a set depth and length at the top, the bottom or both of a steel beam's end, with nothing framing in, its cut along a skewed end; it joins Cope, is typed in Properties, and the Connection Design Check of coped beams follows it
+- V1.499 · [[a_stc499]] (as in Revit): rules by kind of joint (beam to column flange or web, beam to beam, beam splice, column base, column splice), a connection type each, run once over the whole project or the members selected; joints that cannot take theirs are listed with why
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -60722,6 +60803,14 @@ window.PenumBIM.r498={
   split:(id,x,y)=>{const n0=P.seq;edit(()=>splitLine(IDX.get(id),{x,y}));return P.seq>n0?n0:null},
   clr:ids=>{ui.sel=new Set(ids);XA.csk498clr();return true},
   mods:()=>((RIBBON.find(x=>x.id==='steel')||{panels:[]}).panels.find(x=>x.t==='p_smod488')||{b:[]}).b.slice(),
+  str:(k,...a)=>t(k,...a)};
+/* V1.499 test API: Connection Automation */
+window.PenumBIM.r499={
+  kind:(id,k)=>stc499Kind(IDX.get(id),k),
+  T:kind=>{const T=stc499T(kind);return T?{id:T.id,ck:T.ck,v253:!!T.v253,name:T.name}:null},
+  plan:ids=>{const R=stc499Plan(ids||null);return{jobs:R.jobs.map(j=>[j.h.id,j.k,j.kind,j.T.v253?'v':j.T.id]),sk:R.sk.map(s=>[s.h.id,s.k,s.kind,s.why]),off:R.off,have:R.have}},
+  joints:ids=>stc499Joints(ids||null).map(j=>[j.h.id,j.k,j.kind,j.has]),
+  run:ids=>stc499Run(ids||null),rule:(kind,v)=>stc499SetRule(kind,v),rules:()=>P.stc499?Object.assign({},P.stc499):null,last:()=>STC499_LAST,
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
