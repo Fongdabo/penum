@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=551,V1_NAME='V1.541';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=552,V1_NAME='V1.542';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57141,6 +57141,86 @@ Object.assign(STR,{
   ms541_hz:['แนวนอน {0} · แนวตั้ง {1}','Across {0} · Up {1}'],
   ms541_xyz:['X {0} · Y {1} · Z {2}','X {0} · Y {1} · Z {2}'],
   ms541_tot:['ความยาวรวม {0} {1}','Total Length {0} {1}']});
+/* ===== 542 Copy and paste the annotations of elevations and sections (V1.542; Revit: Ctrl+C / Ctrl+X in an elevation or a section takes its detail lines,
+   filled regions, revision clouds, detail components, text, dimensions and spot elevations; Ctrl+V puts them on the pointer in that view or in another one
+   looking the same way, and Paste ▾ Aligned to Current View / Aligned to Selected Views puts them at the same place there).  They are kept in the coordinates
+   of their view (x along it, y = −height), and every elevation or section looking the same way shares those coordinates.  ui.clip.ev542 = {v, f}: the view
+   they were copied in and the way it looks.  A tag, a keynote or a dimension that names an element goes back only into the view it came from. */
+const EV_NO542=new Set(['ecfleg','cfleg','clabel','vref','lcomp']);
+const ev542Cat=c=>!VS_NO349.has(c)&&!EV_NO542.has(c)&&(!!EA_CAT[c]||ANN.includes(c));
+/* does view v look the same way as the one the clipboard's annotations came from */
+const ev542Fit=(c,v)=>{if(!c||!c.ev542||!ev3EV(v))return false;const f=viewDir(v),g=c.ev542.f;return f[0]*g[0]+f[1]*g[1]>0.9999};
+let EV542_SRC=null;          // while pasting: the view the annotations came from, where what a tag names shows
+{const f0=clipCopy;clipCopy=cut=>{const v=activeView();if(!ev3EV(v)||!ui.sel.size)return f0(cut);const av=avid(v),E=[],R=[];
+  for(const id of ui.sel){const d=IDX.get(id);if(d&&P.ann.includes(d)&&d.view===av&&ev542Cat(d.cat))E.push(d);else R.push(id)}
+  if(!E.length)return f0(cut);let np=0;const E2=cut?E.filter(d=>!(d.pin&&++np)):E,s=ui.sel,c0=ui.clip;let C=null;
+  if(R.length){const s2=new Set(R);ui.sel=s2;f0(false);ui.sel=s;if(ui.clip&&ui.clip!==c0){C=ui.clip;if(cut)C.objs=C.objs.filter(o=>{const e=IDX.get(o.id);if(e&&e.pin){np++;return false}return true})}}
+  if(!C){if(!E2.length){toast(np?t('pin_del',np):t('clip_none'));return}C=ui.clip={objs:[],ox:0,oy:0,pg:P.guid}}
+  const del=cut?C.objs.map(o=>o.id):[];for(const d of E2){C.objs.push(JSON.parse(JSON.stringify(d)));if(cut)del.push(d.id)}
+  C.vk349='';C.vw349=av;C.ev542={v:av,f:viewDir(v).slice()};delete C.sheet;
+  if(cut&&del.length)edit(()=>{deleteIds(del);ui.sel.clear()});
+  toast(t(cut?'clip_cut':'clip_copied',C.objs.length)+(np?' · '+t('pin_del',np):''));refreshChrome()}}
+/* the clipboard's annotations of an elevation or a section, as Paste Aligned takes them */
+{const f0=vsSrc349;vsSrc349=c=>{if(!c||!c.ev542||c.sheet||!Array.isArray(c.objs))return f0(c);const O=c.objs.filter(o=>o.view===c.ev542.v&&ev542Cat(o.cat));if(!O.length)return f0(c);
+  return{O,k:'ev',sv:new Set([c.ev542.v]),n:c.objs.length-O.length,same:!c.pg||c.pg===P.guid,ev:c.ev542}}}
+/* a tag or a dimension that names an element: back into the view it came from, while that element is there */
+{const f0=vsSees349;vsSees349=(v,id,same)=>{if(EV542_SRC!=null&&v&&v.id===EV542_SRC){const e=IDX.get(id);return!!same&&!!e&&P.els.includes(e)}return f0(v,id,same)}}
+function ev542Put(S,v){EV542_SRC=S.ev.v;try{return vsPut349(S.O,v,S.same)}finally{EV542_SRC=null}}
+/* the box of an annotation in its view: [h0, h1, z0, z1] */
+function ev542Box(v,d){const sc=v.scale||100;let pts=[];
+  if(d.cat==='edim')pts=[[d.x1,d.y1],[d.x2,d.y2],d.m==='v'?[d.off,d.y1]:[d.x1,d.off]];
+  else if(d.cat==='etext'){const L=String(d.text||'').split('\n'),k=(d.size||2.5)*sc;pts=[[d.x,d.y-k],[d.x+Math.max(...L.map(s=>s.replace(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g,'').length))*k*0.62,d.y+(L.length-1)*k*1.5]]/* Thai marks above and below take no width */}
+  else if(EA_CAT[d.cat]){pts=[[d.x,d.y]];if(isFinite(d.x2))pts.push([d.x2,d.y2])}
+  else{const B=elBox(v,d);if(B)pts=[[B[0],B[1]],[B[2],B[3]]]}
+  if(!pts.length)return null;let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;for(const q of pts){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1])}
+  return[x0,x1,-y1,-y0]}
+/* the annotations Ctrl+V brings into view v, or none */
+const ev542Anns=(c,v)=>{if(!ev542Fit(c,v))return null;const S=vsSrc349(c);return S&&S.k==='ev'?S:null};
+{const f0=ps540Boxes;ps540Boxes=v=>{const out=f0(v),S=ev542Anns(ui.clip,v);if(S)for(const d of S.O){const b=ev542Box(v,d);if(b)out.push(b)}return out}}
+/* Ctrl+V: the model elements and the annotations together, in one step */
+{const f0=ps540Go;ps540Go=(v,b)=>{const c=ui.clip,S=ev542Anns(c,v);if(!S)return f0(v,b);const R=ps540Ref(v);if(!R||!b)return false;const O=pkObjs349(c),tv=viewById(avid(v));
+  let ids=[],an=[],n=0,sk=0;edit(()=>{if(O.length)ids=pasteObjs(O,0,0,0,null);const r=ev542Put(S,tv);an=r.ids;sk=r.skip;n=ev3Shift(v,ids.concat(an),b.h-R.h,b.z-R.z);
+    ui.sel=new Set(ids.filter(id=>{const e=IDX.get(id);return e&&GEOM[e.cat]!=='host'}).concat(an))});
+  const k=ids.length+an.length,lo=Math.max(0,c.objs.length-k);if(!k){toast(t('ev542_none'));return false}
+  toast(t('clip_pasted',k)+(lo?' · '+t('ps540_skip',lo):''));if(n)setTimeout(()=>toast(t('ev3_nolift',n)),3000);return true}}
+{const f0=clipPaste;clipPaste=mode=>{const c=ui.clip,v=activeView();if(!c||c.sheet||!c.ev542||!v)return f0(mode);const S=ev542Anns(c,v);
+  if(!S){if(c.objs.every(o=>o.view===c.ev542.v&&ev542Cat(o.cat))){toast(t('ev542_dir'));return}return f0(mode)}if(mode!=='cursor'&&mode!=='same')return f0(mode);
+  if(mode==='cursor'){if(ps540Only(c))return f0(mode);setTool('paste');return}
+  const O=pkObjs349(c),tv=viewById(avid(v));let ids=[],r=null;edit(()=>{if(O.length)ids=pasteObjs(O,0,0,0,null);r=ev542Put(S,tv);ui.sel=new Set(ids.filter(id=>{const e=IDX.get(id);return e&&GEOM[e.cat]!=='host'}).concat(r.ids))});
+  const k=ids.length+r.ids.length,lo=Math.max(0,c.objs.length-k);toast(k?t('clip_pasted',k)+(lo?' · '+t('ps540_skip',lo):''):t('ev542_none'));refresh()}}
+/* while pasting: the annotations themselves follow the pointer, faint (text, lines, dimensions and spot elevations drawn, the rest as their box) */
+function ev542Ghost(ctx,v,d,dh,dz,nav){const X=x=>(x+dh)*nav.s+nav.ox,Y=y=>(y-dz)*nav.s+nav.oy,ln=(a,b,c,e)=>{ctx.moveTo(X(a),Y(b));ctx.lineTo(X(c),Y(e))},sc=v.scale||100;ctx.beginPath();
+  if(d.cat==='dline')ln(d.x1,d.y1,d.x2,d.y2);
+  else if(d.cat==='etext'){const k=(d.size||2.5)*sc;ctx.font=Math.max(6,k*nav.s)+'px sans-serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';String(d.text||'').split('\n').forEach((s,i)=>ctx.fillText(s,X(d.x),Y(d.y+i*k*1.5)))}
+  else if(d.cat==='edim'){if(d.m==='v'){ln(d.x1,d.y1,d.off,d.y1);ln(d.x2,d.y2,d.off,d.y2);ln(d.off,d.y1,d.off,d.y2)}else{ln(d.x1,d.y1,d.x1,d.off);ln(d.x2,d.y2,d.x2,d.off);ln(d.x1,d.off,d.x2,d.off)}}
+  else if(d.cat==='espot'){const x=X(d.x),y=Y(d.y),r=7;ctx.moveTo(x,y);ctx.lineTo(x-r,y-r*1.4);ctx.lineTo(x+r,y-r*1.4);ctx.closePath();ctx.moveTo(x+r,y-r*1.4);ctx.lineTo(x+r+60,y-r*1.4);
+    ctx.font='12px sans-serif';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(fmtElev(-(d.y-dz)),x+r+4,y-r*1.4-2)}
+  else{const B=ev542Box(v,d);if(B){const x0=X(B[0]),y0=Y(-B[3]);ctx.rect(x0,y0,(B[1]-B[0])*nav.s,(B[3]-B[2])*nav.s)}}
+  ctx.stroke()}
+{const f0=XT3.paste.draw;XT3.paste.draw=function(pn,ctx,v,nav){const c=ui.clip,S=ev542Anns(c,v);if(!S||ps540Only(c)||ui.curPane!==pn.i||!ui.cur)return f0.apply(this,arguments);
+  const R=ps540Ref(v),b=ps540Pt(pn,v,ui.cur);if(!R||!b)return;const dh=b.h-R.h,dz=b.z-R.z,X=h=>h*nav.s+nav.ox,Y=z=>-z*nav.s+nav.oy,src=new Map(c.objs.map(o=>[o.id,o]));
+  ctx.strokeStyle=ctx.fillStyle=C.sel;ctx.lineWidth=1.2;ctx.setLineDash([]);ctx.globalAlpha=0.85;
+  for(const o of pkObjs349(c)){let B=null;try{B=ps540Box(v,o,src,c)}catch(err){B=null}if(B)ctx.strokeRect(X(B[0]+dh),Y(B[3]+dz),(B[1]-B[0])*nav.s,(B[3]-B[2])*nav.s)}
+  for(const d of S.O)ev542Ghost(ctx,v,d,dh,dz,nav);ctx.globalAlpha=1;
+  const s0=[X(R.h),Y(R.z)],s1=[X(b.h),Y(b.z)];ctx.save();ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(s0[0],s0[1]);ctx.lineTo(s1[0],s1[1]);ctx.stroke();ctx.restore();ev3Mark(ctx,s1[0],s1[1],'pt')}}
+/* plans and the other views take no annotations of an elevation or a section */
+{const f0=pasteObjs;pasteObjs=function(objs){const c=ui.clip,L=Array.isArray(objs)?objs.filter(o=>!EA_CAT[o.cat]&&!(c&&c.ev542&&o.view===c.ev542.v&&ANN.includes(o.cat))):objs;
+  if(L===objs||L.length===objs.length)return f0.apply(this,arguments);const a=[...arguments];a[0]=L;return f0.apply(this,a)}}
+/* Aligned to Current View / Selected Views: elevations and sections that look the same way */
+{const f0=vsViews349;vsViews349=S=>S&&S.k==='ev'?P.views.filter(v=>ev3EV(v)&&avid(v)===v.id&&ev542Fit({ev542:S.ev},v)&&!(S.same&&S.sv.has(v.id)))
+  .sort((a,b)=>(a.kind===b.kind?0:a.kind==='elev'?-1:1)||String(a.name).localeCompare(String(b.name),ui.lang,{numeric:true})):f0(S)}
+{const f0=pasteVw349;pasteVw349=ids=>{const S=vsSrc349(ui.clip);if(!S||S.k!=='ev')return f0(ids);let n=0,skip=0,k=0;
+  edit(()=>{for(const id of ids){const v=viewById(id);if(!v||!ev542Fit(ui.clip,v))continue;const r=ev542Put(S,v);n+=r.ids.length;skip+=r.skip;k++}});
+  toast(t('pv_done349',n,k)+(skip?t('ev542_skip',skip):''));return{n,skip,views:k}}}
+{const f0=pasteCur349;pasteCur349=()=>{const c=ui.clip,S=c&&vsSrc349(c);if(!S||S.k!=='ev')return f0();const a=activeView(),v=a&&viewById(avid(a));
+  if(!v||!ev542Fit(c,v)){toast(t('ev542_dir'));return}let r=null;edit(()=>{r=ev542Put(S,v);ui.sel=new Set(r.ids)});
+  toast(r.ids.length?t('clip_pasted',r.ids.length)+(r.skip?t('ev542_skip',r.skip):''):t('ev542_none'));refresh()}}
+{const f0=dlgPasteVw349;dlgPasteVw349=()=>{f0();const S=vsSrc349(ui.clip);if(!S||S.k!=='ev')return;const n=document.querySelector('#dlg .note');if(n)n.textContent=t('ev542_note',S.O.length)}}
+Object.assign(STR,{
+  ev542_dir:['คำอธิบายที่คัดลอกจากรูปด้านหรือรูปตัด วางได้ในรูปด้านและรูปตัดที่มองไปทางเดียวกัน','Annotations copied in an elevation or a section go into elevations and sections that look the same way'],
+  ev542_none:['ไม่มีอะไรวางได้ในมุมมองนี้ (ป้ายและระยะที่อ้างชิ้นงานวางได้เฉพาะมุมมองที่คัดลอกมา)','Nothing to paste here (tags and dimensions that name an element go back only into the view they came from)'],
+  ev542_skip:[' (ข้าม {0} ชิ้น: ป้ายและระยะที่อ้างชิ้นงานวางได้เฉพาะมุมมองที่คัดลอกมา)',' ({0} left out: tags and dimensions that name an element go back only into their own view)'],
+  ev542_note:['วางคำอธิบาย {0} ชิ้นลงตำแหน่งเดิมในรูปด้านและรูปตัดที่ติ๊ก (ที่มองไปทางเดียวกัน) ป้ายและระยะที่อ้างชิ้นงานไม่ถูกวาง','Paste {0} annotations at the same place in each elevation and section you tick (those that look the same way); tags and dimensions that name an element are left out']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59594,6 +59674,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.539 · ทำซ้ำเป็นแถว (Array) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: เลือกชิ้นงานแล้วคลิกจุดเริ่มและจุดของชุดที่ 2 หรือชุดสุดท้าย ไปทางข้างหรือขึ้นลงได้ (Shift ล็อกแนว) หรือพิมพ์ระยะ จำนวน ระยะถึงชุดที่ 2 หรือชุดสุดท้าย และจัดเป็นกลุ่มแก้จำนวนได้ ใช้ตัวเลือกเดียวกับในแปลน หน้าต่างที่ทำซ้ำขึ้นไปยกระดับขอบล่างตาม แถวที่ขึ้นลงจำระยะขึ้นลงไว้ แก้จำนวนในแปลนแล้วชุดใหม่ขึ้นไปตาม · ใน 3 มิติสำเนาเรียงบนระนาบของจุดที่คลิก
 - V1.540 · วาง (Ctrl+V) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: สิ่งที่คัดลอกมาตามเมาส์ คลิกวาง ในรูปด้านและรูปตัดไปทางข้างและขึ้นลงได้ ความลึกเท่าเดิม (Shift ไปทางข้างหรือขึ้นลงจากที่เดิมอย่างเดียว) ใน 3 มิติวางบนระนาบระดับ เมนูคลิกขวามี วาง · ประตู หน้าต่าง และช่องเปิดที่คัดลอกหรือตัดมาโดยไม่มีผนัง วางลงผนังที่คลิกได้ทั้งในแปลน รูปด้าน รูปตัด และ 3 มิติ ระยะห่างเท่าเดิม ธรณีจับความสูงเดิมเหนือแต่ละชั้น ทับของเดิมเห็นสีแดงและไม่ให้วาง
 - V1.541 · วัดระยะ (Measure) ในรูปด้าน รูปตัด และมุมมอง 3 มิติ แบบ Revit: คลิกสองจุดได้ความยาวพร้อมระยะแนวนอนกับแนวตั้ง (3 มิติบอก X Y Z) จับเส้นระดับชั้น กริด ขอบชิ้นงาน และมุมของผิวใน 3 มิติ Shift ไปทางเดียว · วัดต่อเนื่อง (Chain) ทุกมุมมองรวมแปลน ความยาวรวม (Total Length) บนแถบตัวเลือก Esc จบโดยยังเห็นผล
+- V1.542 · คัดลอกและวางคำอธิบายในรูปด้านและรูปตัด แบบ Revit: Ctrl+C / Ctrl+X เส้นรายละเอียด พื้นที่แรเงา เมฆแก้ไข ชิ้นรายละเอียด ข้อความ ระยะ และระดับ Ctrl+V วางตามเมาส์ในมุมมองเดิมหรือรูปด้าน/รูปตัดอื่นที่มองทางเดียวกัน (วางพร้อมชิ้นงานได้) · วางลงมุมมองปัจจุบัน วางลงมุมมองที่เลือก และวางที่ตำแหน่งเดิมรับคำอธิบายของรูปด้านและรูปตัด
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60307,6 +60388,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.539 · Array in elevations, sections and 3D views, as in Revit: select, click a start point and where the 2nd or the last member goes, across or up and down (Shift keeps to one) or type the distance; Number, Move To and Group and Associate as in a plan; windows arrayed upwards get higher sills, and an array that steps up keeps its step, so a new number at its × count in a plan puts the new members up too · in a 3D view the copies go along the level plane of the point clicked
 - V1.540 · Paste (Ctrl+V) in elevations, sections and 3D views, as in Revit: what was copied follows the pointer and a click places it; in elevations and sections across and up or down at the same depth (Shift: straight across or straight up from where it was), in 3D views on its level plane; Paste on the right-click menu · doors, windows and openings copied or cut without their wall go into the wall clicked, in plans, elevations, sections and 3D views: their spacing kept, the sill catching the same height above each level; red and refused where another insert is in the way
 - V1.541 · Measure in elevations, sections and 3D views, as in Revit: two clicks give the length with its across and up parts (X, Y, Z in 3D), catching levels, grids, the edges of what is under the pointer and the corners of faces in 3D; Shift keeps to one way · Chain in every view, plans too, with the Total Length on the options bar; Esc ends it with the result kept
+- V1.542 · Copy and paste the annotations of elevations and sections, as in Revit: Ctrl+C / Ctrl+X takes detail lines, filled regions, revision clouds, detail components, text, dimensions and spot elevations; Ctrl+V places them on the pointer in that view or in another elevation or section looking the same way (with model elements too) · Paste Aligned to Current View, to Selected Views and to Same Place take them
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63891,6 +63973,28 @@ window.PenumBIM.r541={
   fmt:mm=>fmtLen(mm),
   shift:b=>{ui.shift=!!b;return ui.shift},
   lv:id=>elev(P,id),
+  str:k=>t(k)};
+window.PenumBIM.r542={
+  add:o=>{let id=0;edit(()=>{const d=Object.assign({id:P.seq++},o);if(!d.view){const v=activeView();d.view=avid(v)}P.ann.push(d);id=d.id});refresh();return id},
+  ann:id=>{const d=IDX.get(id)||P.ann.find(x=>x.id===id);return d?JSON.parse(JSON.stringify(d)):null},
+  anns:(vid,cat)=>P.ann.filter(d=>(vid==null||d.view===vid)&&(!cat||d.cat===cat)).map(d=>JSON.parse(JSON.stringify(d))),
+  sel:ids=>{ui.sel=new Set(ids);refresh();return[...ui.sel]},
+  copy:cut=>{clipCopy(!!cut);const c=ui.clip;return c?{n:c.objs.length,cats:c.objs.map(o=>o.cat),ev:c.ev542||null}:null},
+  paste:mode=>{clipPaste(mode||'cursor');return ui.tool},
+  cur:()=>{pasteCur349();return[...ui.sel]},
+  vws:()=>{const S=vsSrc349(ui.clip);return S?vsViews349(S).map(v=>v.id):null},
+  vw:ids=>pasteVw349(ids),
+  dlg:()=>{dlgPasteVw349();const d=document.querySelector('#dlg');const r={note:(d&&d.querySelector('.note')||{}).textContent||'',ids:[...document.querySelectorAll('#dlg [data-pv349]')].map(x=>+x.dataset.pv349),lbl:[...document.querySelectorAll('#dlg .pv349 label')].map(x=>x.textContent)};closeDlg();return r},
+  ref:()=>ps540Ref(activeView()),
+  boxes:()=>ps540Boxes(activeView()),
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];XT3.paste.click(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy});return ui.tool},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  fit:vid=>ev542Fit(ui.clip,viewById(vid)),
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  hint:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  shift:b=>{ui.shift=!!b;return ui.shift},
+  dir:vid=>viewDir(viewById(vid)),
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
