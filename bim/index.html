@@ -9419,6 +9419,7 @@ function bindPane(pn){
         if(drag.ctrl){const on=ui.sel.has(h.id);if(ccOk(drag,h,on)){if(!on)for(const i of gi)ui.sel.add(i);drag.ccopy=1;drag.ctog=on?gi:null;drag.mode='el';startElDrag(drag,v,p);drag.np=0}else for(const i of gi)on?ui.sel.delete(i):ui.sel.add(i)}else if(drag.shift)for(const i of gi)ui.sel.delete(i);
         else{const was=ui.sel.has(h.id);if(!was)ui.sel=new Set(gi);if(was||SOP.drag&&!h.soft){drag.mode='el';startElDrag(drag,v,p)}else{drag.mode='box';drag.ksel=1}}refresh()}
       else{drag.mode=isTouch&&!ui.tbox?'pan':'box';drag.clear=isTouch&&!ui.tbox}}
+    else if(is3&&(drag.r521=rbs521Down(pn,v,p,drag,e))){if(drag.r521==='done'){drag=null;ptrs.delete(e.pointerId);return}}          // V1.521 a selected rebar set's arrows and ⇅
     else if(is3&&e.button===0&&spTxtAt427(pn,p)){const q=spTxtAt427(pn,p);drag=null;ptrs.delete(e.pointerId);spEdit427(pn,v,q);return}          // V1.427 the time or date beside the sun: typed over
     else if(is3&&e.button===0&&sunGripAt(pn,p)){drag.mode='sun';ui.sunm424={x:p.x,y:p.y,m:e.shiftKey||!(v.sun&&v.sun.time)?'free':null}}          // the sun on its path
     else if(is3&&e.button===0&&sboxGripAt(pn,p)){drag.mode='sbox';drag.g=sboxGripAt(pn,p);drag.v0=v.sbox[drag.g.i]}          // a face of the section box
@@ -14630,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=530,V1_NAME='V1.520';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=531,V1_NAME='V1.521';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -55749,6 +55750,43 @@ function rbs520Rot(Q,E,t,deg){const a=rbs520N(deg);if(!a||!Q||!Q.length)return Q
 XF.push((cat,o,key,raw)=>{if(key!=='rbs520hrs'&&key!=='rbs520hre')return false;if(cat!=='rebar'||!o.rb)return true;const k=key==='rbs520hrs'?'hrs520':'hre520',a=rbs520N(raw);if(a)o.rb[k]=a;else delete o.rb[k];return true});
 XC.push(()=>{for(const e of P.els){if(e.cat!=='rebar'||!e.rb)continue;const r=e.rb;for(const [k,h] of [['hrs520','hs'],['hre520','he']]){const a=rbs520N(r[k]);if(a&&rbs502A(r[h]))r[k]=a;else delete r[k]}}});
 Object.assign(STR,{p_rbs520hrs:['หมุนขอที่ต้น (Hook Rotation At Start)','Hook Rotation At Start'],p_rbs520hre:['หมุนขอที่ปลาย (Hook Rotation At End)','Hook Rotation At End']});
+/* ===== 521 A rebar set's end arrows and flip control in 3D views (V1.521; Revit: a selected rebar set shows the arrows that drag the two ends of its
+   layout, and the control that flips it, in 3D views as well).  V1.513's arrows and V1.517's ⇅ were drawn in plans, sections and elevations only.  In a 3D
+   view a selected sketched set laid out in several bars now shows an arrow just outside its first and its last bar, pointing along the layout as the camera
+   sees it, and ⇅ beside the start arrow.  Dragging an arrow moves that end in 5 mm steps along the layout (the drag is measured along the layout as it lies
+   on the screen; the other end stays; Number with Spacing: the start only, the set goes with it); a click on ⇅ flips the set.  One Undo step each.  Not
+   shown where the layout runs nearly toward the camera, for a pinned or hidden set, or behind the camera. ===== */
+const RBS521_COS=Math.cos(12*Math.PI/180);          // the layout within 12° of the line of sight runs toward the camera
+/* a world point on the screen of a 3D pane (null behind the camera) */
+function rbs521P(pn,v,w){const M=camMatrix(orbitCam(navOf(v),pn.w/pn.h),MSm().bb),x=w[0],y=w[1],z=w[2],cx=M[0]*x+M[4]*z+M[8]*y+M[12],cy=M[1]*x+M[5]*z+M[9]*y+M[13],cw=M[3]*x+M[7]*z+M[11]*y+M[15];
+  return cw>1e-6?[(cx/cw+1)/2*pn.w,(1-cy/cw)/2*pn.h]:null}
+/* the selected sets whose handles 3D pane pn shows: [{e, X (rbs512Ext), g (px per mm along the layout, on the screen), l}] */
+function rbs521Sel(pn,v){if(!pn||!v||v.kind!=='3d'||ui.tool!=='modify'||catHid(v,'rebar'))return[];const out=[],f=orbitCam(navOf(v),pn.w/pn.h).f;
+  for(const id of ui.sel){const e=IDX.get(id);if(!e||e.cat!=='rebar'||!e.rb||isPinned(id)||hidEl(v,e))continue;const X=rbs512Ext(e);if(!X)continue;
+    const s0=rbs521P(pn,v,X.at(X.a2)),s1=rbs521P(pn,v,X.at(X.a2+100)),s2=rbs521P(pn,v,X.at(X.b2));if(!s0||!s1||!s2)continue;const g=[(s1[0]-s0[0])/100,(s1[1]-s0[1])/100],l=Math.hypot(g[0],g[1]);
+    if(!(l>1e-4)||Math.abs(X.N[0]*f[0]+(X.N[2]||0)*f[1]+X.N[1]*f[2])>RBS521_COS)continue;out.push({e,X,g,l,s0,s2});if(out.length>=RBS503_MAX)break}return out}
+/* its handles, as rbs512Hs: [{k: 0 start | 1 end, s, d (the way out), c (where the arrow stands)}] */
+function rbs521Hs(S){const D=[S.g[0]/S.l,S.g[1]/S.l],o=[{k:0,s:S.s0,d:[-D[0],-D[1]]}];if(S.X.lr!=='ns')o.push({k:1,s:S.s2,d:D});
+  for(const q of o)q.c=[q.s[0]+q.d[0]*12,q.s[1]+q.d[1]*12];return o}
+function rbs521GripAt(pn,v,p){for(const S of rbs521Sel(pn,v))for(const q of rbs521Hs(S))if(Math.hypot(q.c[0]-p.x,q.c[1]-p.y)<=RBS512_R)return{rbs521:1,id:S.e.id,k:q.k,g:S.g};return null}
+function rbs521FlipAt(pn,v,p){for(const S of rbs521Sel(pn,v)){const q0=rbs521Hs(S).find(q=>q.k===0);if(!q0)continue;const K=rbs517Ctl(v,S,q0);if(Math.hypot(K.c[0]-p.x,K.c[1]-p.y)<=10)return S.e.id}return null}
+function rbs521Draw(pn,ctx,v){const L=rbs521Sel(pn,v);if(!L.length)return;ctx.save();ctx.lineWidth=1.4;
+  for(const S of L){const H=rbs521Hs(S);ctx.fillStyle=C.sel;ctx.strokeStyle=C.paper;ctx.lineWidth=1.4;
+    for(const q of H){const c=q.c,d=q.d,n=[-d[1],d[0]];ctx.beginPath();ctx.moveTo(c[0]+d[0]*7,c[1]+d[1]*7);ctx.lineTo(c[0]-d[0]*5+n[0]*6,c[1]-d[1]*5+n[1]*6);ctx.lineTo(c[0]-d[0]*5-n[0]*6,c[1]-d[1]*5-n[1]*6);ctx.closePath();ctx.stroke();ctx.fill()}
+    const q0=H.find(q=>q.k===0);if(!q0)continue;const K=rbs517Ctl(v,S,q0),c=K.c,d=K.n;ctx.strokeStyle=C.sel;ctx.fillStyle=C.paper;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.arc(c[0],c[1],9,0,7);ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(c[0]-d[0]*5,c[1]-d[1]*5);ctx.lineTo(c[0]+d[0]*5,c[1]+d[1]*5);
+    for(const s of [1,-1]){const t=[c[0]+d[0]*5*s,c[1]+d[1]*5*s],u=[-d[1],d[0]];ctx.moveTo(t[0]-d[0]*3*s+u[0]*3,t[1]-d[1]*3*s+u[1]*3);ctx.lineTo(t[0],t[1]);ctx.lineTo(t[0]-d[0]*3*s-u[0]*3,t[1]-d[1]*3*s-u[1]*3)}ctx.stroke()}
+  ctx.restore()}
+/* the press in a 3D view (from the view's pointerdown): ⇅ flips at once; an arrow starts a drag in mode 'crop' (one Undo step, committed at the end) */
+function rbs521Down(pn,v,p,drag,e){if(e.button!==0||drag.ctrl||drag.shift)return false;const id=rbs521FlipAt(pn,v,p);if(id!=null){rbs517Flip([id]);ui.sel=new Set([id]);refresh();return 'done'}
+  const g=rbs521GripAt(pn,v,p);if(!g)return false;drag.mode='crop';drag.g=g;return true}
+{const f0=cropDrag;cropDrag=function(v,d,p){if(!(d&&d.g&&d.g.rbs521))return f0.apply(this,arguments);const e=IDX.get(d.g.id);if(!e||!e.rb)return;
+  if(!d.g512){const X=rbs512Ext(e);if(!X)return;d.g512={k:d.g.k,X,al:e.rb.al512}}const g=d.g.g,q=g[0]*g[0]+g[1]*g[1];if(!(q>1e-12))return;
+  rbs512Move(e,d.g512,((p.x-d.sx)*g[0]+(p.y-d.sy)*g[1])/q);touch();rbs512Hint(e);redraw()}}
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(v&&v.kind==='3d'&&pn&&!ui.box)rbs521Draw(pn,ctx,v)}}
+{const f0=hoverPane;hoverPane=function(pn,v,p){f0(pn,v,p);if(ui.tool!=='modify'||!v||v.kind!=='3d')return;const cv=pn.cv;
+  if(rbs521FlipAt(pn,v,p)!=null){cv.style.cursor='pointer';cv.title=t('p_rbs517fl');return}if(cv.title===t('p_rbs517fl'))cv.title='';
+  const g=rbs521GripAt(pn,v,p);if(!g)return;cv.style.cursor='move';if(ui.hov!==g.id){ui.hov=g.id;redraw()}}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56904,6 +56942,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rbs512al]] และ [[p_rbs512ao]] ของชุดที่วางเรียงหลายเส้น: แนววางเริ่มลึกเข้าไปจากระยะหุ้มต้นและจบก่อนถึงปลายได้ เลือกชุดแล้วลากลูกศรที่ปลายสองข้างของแนววางในแปลน รูปตัด หรือรูปด้าน (จำนวนพร้อมระยะห่าง: ลากได้เฉพาะต้นแนว)
 - เหล็กเสริมวาดเองยึดกับระยะหุ้มของชิ้นส่วน: แก้ขนาด ความยาว ความสูง หรือระยะหุ้มของชิ้นส่วนแล้วเหล็กตาม ปิด [[p_rbs513fx]] เพื่อให้ชุดอยู่ที่เดิม
 - [[p_rbs517fl]]: ติ๊กใน Properties หรือคลิกลูกศรสองทางข้างลูกศรต้นของชุดที่เลือก ชุดวางเรียงจากปลายอีกด้านของชิ้นส่วน เส้นแรก จำนวนพร้อมระยะห่าง ระยะเลื่อนต้น และความยาวแนววางนับจากปลายนั้น
+- ในมุมมอง 3 มิติ ชุดเหล็กที่เลือกก็มีลูกศรลากปลายแนววางและปุ่มลูกศรสองทาง (ไม่แสดงเมื่อแนววางพุ่งเข้าหากล้อง)
 - [[t_fabarea]]: คลิกพื้น (หรือเลือกพื้นก่อน) แล้ววาดขอบเขต (หรือสี่เหลี่ยม หรือกด [[a_arwhole]]) หรือเลือก [[fab_sheet]] แล้วคลิกมุมของแผ่น ได้ตะแกรงเหล็กปูเป็นแผ่นจากมุมของขอบเขตตามทิศหลัก ทาบกันตาม [[p_fblM]] และ [[p_fblm]] ติ๊ก [[p_fbstag]] ให้แถวเว้นแถวเลื่อนครึ่งแผ่น ชนิดของแผ่น (ลวดทั้งสองทาง ระยะห่าง ขนาดแผ่น) อยู่ใน แก้ไขชนิด · แผ่นที่ถูกขอบเขต ขอบพื้น หรือช่องเปิดตัดนับเป็นแผ่นตัด · [[a_fabsched]] ในคุณสมบัติ ตารางของหมวด [[cat_fabarea]] และ BOQ นับแผ่นของแต่ละชนิด
 - [[a_cpl221]] (Revit: Rebar Coupler): เลือกชิ้นที่มีเหล็กเสริม แล้วกดปุ่มนี้ในแท็บ [[tab_struct]] แผง เหล็กเสริม หรือตั้งในแผง [[properties]] ใต้เหล็กเสริม · [[p_cs221]] เลือก [[cs_cpl221]] เหล็กที่ยาวเกิน 10 ม. ต่อด้วยข้อต่อทุก 10 ม. แทนการทาบ ความยาวตัดไม่บวกระยะทาบ · [[p_ce221]] (เสา ผนัง: ล่าง บน · คาน: ต้นคาน ปลายคาน) ใส่ข้อต่อที่ปลายเหล็กยืน ใช้ที่รอยต่อการเทหรือรอต่อเหล็กของชั้นถัดไป ปลายนั้นไม่งอ · [[p_ct221]] [[cpl_std221]] [[cpl_pos221]] หรือ [[cpl_wld221]] ขนาดตามเหล็ก · ข้อต่อเห็นใน 3 มิติและรูปตัด อยู่ใน [[a_rbsched]] (ตารางของมันเอง และในไฟล์ CSV) และใน BOQ เป็นตัวตามชนิดและขนาด (ราคาสมมติ แก้ราคาในตาราง BOQ ได้)
 - [[a_rcs252]] (แท็บ [[tab_struct]] แผงเหล็กเสริม): ตารางชื่อระยะหุ้มคอนกรีตของโครงการ (ภายใน 40 / 20 ภายนอก 50 / 40 หล่อติดดิน 75 มม. แก้ เพิ่ม ลบได้) แล้วเลือกใน [[properties]] ใต้เหล็กเสริม: [[p_rcT252]], [[p_rcB252]] และ [[p_rcO252]] (ผนัง: [[p_rcE252]] และ [[p_rcI252]]) เหล็กของเสา คาน พื้น ฐานราก และผนังขยับตามผิวนั้น ผิวที่ไม่ได้เลือกใช้ [[p_rbc]] ของเหล็กเสริม เหล็กเสริมแบบพื้นที่ แบบแนว และตะแกรงเหล็กบนพื้นใช้ระยะหุ้มผิวบนหรือผิวล่างของพื้นเมื่อพื้นตั้งไว้
@@ -57159,6 +57198,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rbs512al]] and [[p_rbs512ao]] of a set laid out in several bars: the layout can start further in from the start cover and stop short of the far end; select the set and drag the arrows at the two ends of its layout in a plan, a section or an elevation (Number with Spacing: the start only)
 - Sketched rebar is constrained to its host's cover: change the host's size, length, height or cover and the bars follow; turn [[p_rbs513fx]] off to keep a set where it is
 - [[p_rbs517fl]]: tick it in Properties, or click the double arrow beside the start arrow of a selected set: the set is laid out from the host's other end, and the first bar, Number with Spacing, Offset at Start and Array Length count from there
+- In a 3D view a selected set shows the end arrows and the double arrow too (not where its layout runs toward the camera)
 - [[t_fabarea]]: click a slab (or select one first), then sketch the boundary (or a rectangle, or [[a_arwhole]]), or pick [[fab_sheet]] and click the sheet's corner; welded wire fabric is laid in sheets from the corner of the boundary along the major direction, overlapping by [[p_fblM]] and [[p_fblm]]; tick [[p_fbstag]] to move every other row half a sheet. The sheet (wires both ways, spacings, size) is the type, in Edit Type · a sheet the boundary, the slab edge or an opening cuts is a cut sheet · [[a_fabsched]] in Properties, a schedule of the [[cat_fabarea]] category and the BOQ count the sheets of each type
 - [[a_cpl221]] (Revit: Rebar Coupler): select elements with rebar and press this button ([[tab_struct]] tab, Reinforcement panel), or set it in [[properties]] under the rebar · [[p_cs221]]: [[cs_cpl221]] joins bars over 10 m with a coupler every 10 m instead of a lap, and the cut length adds no lap · [[p_ce221]] (columns and walls: bottom, top · beams: start, end) puts a coupler on the main bars' ends, for a construction joint or the next pour's bars; that end has no hook · [[p_ct221]]: [[cpl_std221]], [[cpl_pos221]] or [[cpl_wld221]], sized by the bar · couplers show in 3D and sections, in the [[a_rbsched]] (a table of their own, and in its CSV), and in the BOQ by type and size, each (assumed prices: type a price in the BOQ)
 - [[a_rcs252]] ([[tab_struct]] tab, Reinforcement panel): the project's named concrete covers (interior 40 / 20, exterior 50 / 40, cast against earth 75 mm; edit, add, remove), chosen in [[properties]] under the rebar as [[p_rcT252]], [[p_rcB252]] and [[p_rcO252]] (walls: [[p_rcE252]] and [[p_rcI252]]); the bars of columns, beams, slabs, footings and walls move to those faces, and a face given none takes the [[p_rbc]] of its rebar; area and path reinforcement and fabric on a slab sit at its top or bottom cover once it has one
@@ -58159,6 +58199,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.518 · ลากกรอบเลือก: ชิ้นที่กรอบจะได้สว่างขึ้นระหว่างลาก ก่อนปล่อยเมาส์ แบบ Revit (แปลน มุมมองแบบขยาย รูปด้าน รูปตัด 3 มิติ) ซ้ายไปขวาเฉพาะชิ้นที่อยู่ในกรอบทั้งชิ้น ขวาไปซ้ายทุกชิ้นที่กรอบแตะ ((Shift))+ลาก ชิ้นที่จะเอาออกกลับเป็นสีปกติ
 - V1.519 · ชีท: ลากจากที่ว่างเพื่อตีกรอบเลือกได้แบบ Revit (วิวพอร์ต ตาราง ข้อความ เส้น รูป เมฆแก้ไข กริดนำแนว) ซ้ายไปขวาเฉพาะที่อยู่ในกรอบทั้งชิ้น ขวาไปซ้ายทุกชิ้นที่กรอบแตะ ((Ctrl))+คลิกวิวพอร์ตเพิ่มหรือเอาออก กดลากชิ้นที่เลือกไว้หลายชิ้นแล้วย้ายไปด้วยกัน ปุ่มลูกศรขยับ 1 มม. (Shift 10 มม.) วิวพอร์ตด้วย เลื่อนชีทด้วยปุ่มกลาง
 - V1.520 · [[t_rbsk501]]: หมุนขอเหล็กรอบแกนเหล็กได้แบบ Revit: [[p_rbs520hrs]] และ [[p_rbs520hre]] (องศา ทวนเข็มเมื่อมองที่ปลายนั้นจากด้านนอก) หมุนขอออกจากระนาบที่วาด เช่น ขอ 135° ของปลอกหันเข้าแกน ความยาวตัดและน้ำหนักเท่าเดิม รูป 3 มิติ รูปตัด รูปด้าน และแปลนวาดขอที่หมุนแล้ว หมุน 180° ได้ขอเดียวกับทิศขอฝั่งตรงข้าม
+- V1.521 · [[t_rbsk501]]: ลูกศรลากปลายแนววางและปุ่มกลับทิศของชุดเหล็กใน 3 มิติแบบ Revit: เลือกชุดเหล็กที่วางเรียงหลายเส้นในมุมมอง 3 มิติแล้วมีลูกศรนอกเส้นแรกและเส้นสุดท้ายชี้ตามแนววางที่เห็น ลากแล้วปลายนั้นเลื่อนทีละ 5 มม. ปลายอีกข้างอยู่ที่เดิม และปุ่มลูกศรสองทางข้างลูกศรต้นกลับทิศแนววาง ย้อนกลับได้ในขั้นเดียว
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58851,6 +58892,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.518 · Selection box: the elements it would take light up while it is dragged, before the mouse is let go, as in Revit (plans, drafting views, elevations, sections, 3D views); left to right only what lies wholly inside, right to left all it touches; with ((Shift)) the ones it would take out show in their usual colour
 - V1.519 · Sheets: a drag from an empty spot draws a selection box as in Revit (viewports, schedules, texts, lines, pictures, revision clouds, the guide grid); left to right only what lies wholly inside, right to left all it touches; ((Ctrl)) + click on a viewport adds or takes it out; dragging one of several selected things moves them together; the arrow keys nudge 1 mm (Shift 10 mm), viewports too; pan the sheet with the middle button
 - V1.520 · [[t_rbsk501]]: hooks turn about the bar as in Revit: [[p_rbs520hrs]] and [[p_rbs520hre]] (degrees, counterclockwise looking at that end from outside) turn a hook out of the plane it was sketched in, e.g. a tie's 135° hooks turned toward the core; the cut length and weight stay the same; 3D views, sections, elevations and plans draw the hook turned; 180° gives the hook the other orientation gives
+- V1.521 · [[t_rbsk501]]: a rebar set's end arrows and flip control in 3D views, as in Revit: select a set laid out in several bars in a 3D view and arrows stand just outside its first and last bars, pointing along the layout as the camera sees it; dragging one moves that end in 5 mm steps, the other end stays; the double arrow beside the start arrow flips the layout; one Undo step each
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -62158,6 +62200,13 @@ window.PenumBIM.r520={
   ink:(x0,y0,x1,y1,rx,ry)=>{const pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect(),d=pn.cv.width/r.width,g=pn.cv.getContext('2d'),X=Math.round((Math.min(x0,x1)-r.left)*d),Y=Math.round((Math.min(y0,y1)-r.top)*d),w=Math.max(1,Math.round(Math.abs(x1-x0)*d)),h=Math.max(1,Math.round(Math.abs(y1-y0)*d));
     const a=g.getImageData(X,Y,w,h).data,P0=g.getImageData(Math.round((rx-r.left)*d),Math.round((ry-r.top)*d),1,1).data;let n=0;for(let i=0;i<a.length;i+=4)if(Math.abs(a[i]-P0[0])+Math.abs(a[i+1]-P0[1])+Math.abs(a[i+2]-P0[2])>90)n++;return n},
   rows:id=>{const h=rbs502Rows([IDX.get(id)]);return[...h.matchAll(/data-p="([^"]+)"/g)].map(m=>m[1])}};
+/* V1.521 test API: a rebar set's arrows and flip control in 3D views */
+window.PenumBIM.r521={
+  hs:()=>{const pn=PANES[ui.ap],v=paneView(pn.i),r=pn.cv.getBoundingClientRect();return rbs521Sel(pn,v).map(S=>{const H=rbs521Hs(S),q0=H.find(q=>q.k===0),K=q0?rbs517Ctl(v,S,q0):null;
+    return{id:S.e.id,l:S.l,g:S.g,h:H.map(q=>({k:q.k,x:r.left+q.c[0],y:r.top+q.c[1]})),f:K?{x:r.left+K.c[0],y:r.top+K.c[1]}:null}})},
+  at:(id,t)=>{const X=rbs512Ext(IDX.get(id));return X?X.at(t):null},ext:id=>{const X=rbs512Ext(IDX.get(id));return X?{a:X.a,b:X.b,a2:X.a2,b2:X.b2,lr:X.lr,fl:X.fl}:null},
+  scr:(x,y,z)=>{const pn=PANES[ui.ap],v=paneView(pn.i),r=pn.cv.getBoundingClientRect(),s=rbs521P(pn,v,[x,y,z]);return s?{x:r.left+s[0],y:r.top+s[1]}:null},
+  cur:()=>PANES[ui.ap].cv.style.cursor,title:()=>PANES[ui.ap].cv.title,str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
