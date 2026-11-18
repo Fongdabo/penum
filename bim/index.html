@@ -9426,7 +9426,8 @@ function bindPane(pn){
       if(ui.sel.size&&e.button===0&&!isTouch){const pk=dspPick(pn,v,p);          // dragging something that is already selected moves it on its own level plane; anything else orbits
         if(pk&&ui.sel.has(pk.id)&&!isPinned(pk.id)){const el=IDX.get(pk.id);drag.mode='move3';drag.h=pk.p[1];drag.p0=[pk.p[0],pk.p[2]];drag.ids=movable(ui.sel,true);drag.last=[0,0];drag.carry=[];
           if(ui.sel.size===1&&el&&el.cat==='wall')for(const o of P.els)if(o.cat==='wall'&&o!==el&&o.level===el.level)for(const en of [0,1]){const ox=en?o.x2:o.x1,oy=en?o.y2:o.y1;if(segDist(ox,oy,el.x1,el.y1,el.x2,el.y2)<2)drag.carry.push([o,en,ox,oy])}}}}
-    else if(v.kind==='sheet'&&saDown(pn,v,p,drag,e)){}          // a text, line or picture of the sheet itself, or a grip of one (98)
+    else if(v.kind==='sheet'&&saDown(pn,v,p,drag,e)){}
+    else if(v.kind==='sheet'&&shDown519(pn,v,p,drag,e)){}          // V1.519: Ctrl/Shift on a viewport, several moved together, the selection box          // a text, line or picture of the sheet itself, or a grip of one (98)
     else if(v.kind==='sheet'){const gh=ggHit(v,p),vp=gh&&gh.part!=='move'?null:hitSheet(v,p);if(vp&&vp.cloud){ui.sel=new Set([vp.id]);refresh()}else if(vp){ui.sel=new Set([vp.id]);drag.mode='vp';drag.vp=vp;drag.x0=vp.x;drag.y0=vp.y;refresh()}
       else if(gh){ui.sel=new Set([gh.g.id]);drag.mode='gg';drag.g=gh.g;drag.part=gh.part;drag.b0=gh.g.b.slice();refresh()}else{drag.mode='pan';drag.clear=true}}          // a viewport; the guide grid by its border or one of its grips; else the sheet is moved
     else{const td=tdAt(p);if(td){drag=null;ptrs.delete(e.pointerId);openInline(pn,td.x,td.y,fmtLen(td.val),val=>{const mm=parseLen(val);if(isFinite(mm)&&mm>=0)td.apply(mm)});return}
@@ -9461,7 +9462,7 @@ function bindPane(pn){
     else if(drag.mode==='el')moveElDrag(drag,v,p);
     else if(drag.mode==='ea'){const a=drag.a,o=drag.o,mx=Math.round(dx/nav.s),my=Math.round(dy/nav.s);if(a.cat==='edim'){a.off=o.off+(a.m==='v'?mx:my);for(const [m0,o0] of drag.dsm||[])m0.off=o0+(a.off-o.off)}else{a.x=o.x+mx;a.y=a.cat==='espot'?o.y:o.y+my}touch()}          /* a dimension line is moved sideways, a spot elevation along its height, a text anywhere */
     else if(drag.mode==='level'){drag.l.elev=Math.round((drag.e0-dy/nav.s)/50)*50;touch();hint(drag.l.name+'  '+fmtElev(drag.l.elev))}
-    else if(drag.mode==='vp'){drag.vp.x=drag.x0+dx/nav.s;drag.vp.y=drag.y0+dy/nav.s;if(!e.shiftKey)ggSnapVp(v,drag.vp,nav)}
+    else if(drag.mode==='vp'){drag.vp.x=drag.x0+dx/nav.s;drag.vp.y=drag.y0+dy/nav.s;if(!e.shiftKey)ggSnapVp(v,drag.vp,nav);if(drag.mv519)mv519(drag)}
     else if(drag.mode==='gg'){ggDrag(drag,dx/nav.s,dy/nav.s);touch()}
     else if(drag.mode==='tool'){hoverPane(pn,v,p);return}
     showCoord(v,p);redraw()});
@@ -9577,7 +9578,7 @@ function bindKeys(){
         if(ch){ui.chain=ui.chain?null:ch;hint(ui.chain?t('h_chain',ch.size):'');redraw();return}          // as in Revit: Tab over a wall takes the whole chain of walls joined to it
         ui.chain=null;ui.cyc=(ui.cyc||0)+1;ui.cycAt={x:ui.cur.x,y:ui.cur.y};const h=hitPlan(v,ui.cur);ui.hov=h?h.id:null;redraw()}return}
     if(k===' '){e.preventDefault();if(ui.tool==='rotate'){ui.rcPick=!ui.rcPick;ui.pts=[];refresh();return}if(ui.tool==='door'||ui.tool==='window'||ui.tool==='mtext'||ui.tool==='sym'||ui.tool==='dcomp'||POINT_TOOLS.includes(ui.tool)){ui.flip++;redraw()}else if(ui.tool==='wall')wdSpace();else if(ui.tool==='modify'&&ui.sel.size)spaceFlip();return}
-    if(k.startsWith('Arrow')&&ui.sel.size&&ui.tool==='modify'){const v=activeView();if(v&&saSelOk(v)){e.preventDefault();saNudge(v,k,e.shiftKey);return}if(!v||v.kind!=='plan')return;e.preventDefault();const inc=snapInc(navOf(v))*(e.shiftKey?10:1),dx=k==='ArrowLeft'?-inc:k==='ArrowRight'?inc:0,dy=k==='ArrowUp'?-inc:k==='ArrowDown'?inc:0;const ids=movable(ui.sel);if(ids.length)edit(()=>translateIds(ids,dx,dy));return}
+    if(k.startsWith('Arrow')&&ui.sel.size&&ui.tool==='modify'){const v=activeView();if(v&&saSelOk(v)){e.preventDefault();saNudge(v,k,e.shiftKey);return}if(v&&sh519SelOk(v)){e.preventDefault();sh519Nudge(v,k,e.shiftKey);return}if(!v||v.kind!=='plan')return;e.preventDefault();const inc=snapInc(navOf(v))*(e.shiftKey?10:1),dx=k==='ArrowLeft'?-inc:k==='ArrowRight'?inc:0,dy=k==='ArrowUp'?-inc:k==='ArrowDown'?inc:0;const ids=movable(ui.sel);if(ids.length)edit(()=>translateIds(ids,dx,dy));return}
     if(/^[a-zA-Z]$/.test(k)){ui.keys+=k.toUpperCase();if(ui.keys.length>=2){const c=SHORT[ui.keys];if(c||ui.keys.length>=3||!KEY3.has(ui.keys)){ui.keys='';if(c){e.preventDefault();if(c[0]==='@'){const q=c.slice(1).split(':');act(q[0],q[1])}else setTool(c)}}}showKeys();clearTimeout(keyT);keyT=setTimeout(()=>{ui.keys='';showKeys()},1600)}});
   document.addEventListener('keyup',e=>{ui.shift=e.shiftKey})}
 function showKeys(){$('#keys').textContent=ui.keys?ui.keys+'…':''}
@@ -11514,7 +11515,7 @@ function sboxDrag(v,d,p){if(d.g.rot){sboxTurn(v,d,p);return}const g=d.g,l2=g.dx*
 const GGC='#2f9fd8';
 /* ---- guide grids: drawn on the screen only, over the sheet ---- */
 const ggGrips=g=>{const b=g.b,mx=(b[0]+b[2])/2,my=(b[1]+b[3])/2;return[['l',b[0],my],['r',b[2],my],['t',mx,b[1]],['b',mx,b[3]]]};
-function ggDraw(ctx,sh,T){const g=ggOf(P,sh);if(!g)return;const X=x=>x*T.s+T.ox,Y=y=>y*T.s+T.oy,L=ggLines(g),b=g.b,on=ui.sel.has(g.id),hot=ui.hov===g.id;ctx.save();ctx.setLineDash([]);ctx.strokeStyle=GGC;ctx.globalAlpha=0.5;ctx.lineWidth=1;ctx.beginPath();
+function ggDraw(ctx,sh,T){const g=ggOf(P,sh);if(!g)return;const X=x=>x*T.s+T.ox,Y=y=>y*T.s+T.oy,L=ggLines(g),b=g.b,on=pr518S(sh,ui.sel,g.id),hot=ui.hov===g.id||pr518H(sh,{screen:true},g.id);ctx.save();ctx.setLineDash([]);ctx.strokeStyle=GGC;ctx.globalAlpha=0.5;ctx.lineWidth=1;ctx.beginPath();
   for(const x of L.xs){const q=Math.round(X(x))+0.5;ctx.moveTo(q,Y(b[1]));ctx.lineTo(q,Y(b[3]))}for(const y of L.ys){const q=Math.round(Y(y))+0.5;ctx.moveTo(X(b[0]),q);ctx.lineTo(X(b[2]),q)}ctx.stroke();
   ctx.globalAlpha=1;ctx.lineWidth=on||hot?2:1.2;ctx.strokeStyle=on?C.sel:hot?C.hot:GGC;ctx.strokeRect(X(b[0]),Y(b[1]),(b[2]-b[0])*T.s,(b[3]-b[1])*T.s);
   if(on)for(const q of ggGrips(g)){ctx.fillStyle=C.raise;ctx.beginPath();ctx.arc(X(q[1]),Y(q[2]),4.5,0,7);ctx.fill();ctx.stroke()}ctx.restore()}
@@ -14629,7 +14630,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=528,V1_NAME='V1.518';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=529,V1_NAME='V1.519';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -18319,10 +18320,10 @@ function saDown(pn,v,p,drag,e){if(e.button!==0)return false;const gh=ggHit(v,p);
   if(drag.ctrl){if(ui.sel.has(d.id))ui.sel.delete(d.id);else ui.sel.add(d.id);drag.mode='none';refresh();return true}
   if(drag.shift){ui.sel.delete(d.id);drag.mode='none';refresh();return true}
   if(!ui.sel.has(d.id))ui.sel=new Set([d.id]);refresh();
-  const ids=[...ui.sel].filter(id=>{const x=IDX.get(id);return x&&saCat(x.cat)&&x.view===v.id&&!x.pin});if(!ids.length||ids.length<ui.sel.size&&!saSelOk(v)){drag.mode='none';return true}
+  const ids=[...ui.sel].filter(id=>{const x=IDX.get(id);return x&&saCat(x.cat)&&x.view===v.id&&!x.pin});if(!ids.length||ids.length<ui.sel.size&&!saSelOk(v)&&!sh519Mix(v,ids)){drag.mode='none';return true}
   const nav=navOf(v),w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},own=[];for(const id of ids)saOwnKeys(IDX.get(id),own);let ref=null,bd=9/nav.s;
   for(const k of own){const q=Math.hypot(k.x-w.x,k.y-w.y);if(q<bd){bd=q;ref={x:k.x,y:k.y}}}          // the point under the pointer that snaps: a corner, an end, the anchor of a text
-  drag.mode='gg';drag.sa={ids,ex:new Set(ids),o:new Map(ids.map(id=>[id,JSON.parse(JSON.stringify(IDX.get(id)))])),ref:ref||w,free:!ref};return true}
+  drag.mode='gg';drag.sa={ids,ex:new Set(ids),o:new Map(ids.map(id=>[id,JSON.parse(JSON.stringify(IDX.get(id)))])),ref:ref||w,free:!ref};sh519MixSet(v,drag);return true}
 function saRestore(d,o){for(const k of ['x','y','x1','y1','x2','y2','w','h','bow'])if(o[k]!==undefined)d[k]=o[k];if(o.lead)d.lead=o.lead.slice();if(o.elb)d.elb=o.elb.slice()}
 {const f0=ggDrag;ggDrag=(d,dx,dy)=>d.sa?saDrag(d,dx,dy):f0(d,dx,dy)}
 function saDrag(d,dx,dy){const v=activeView();if(!saOn(v))return;const A=d.sa;if(A.grip){saGripDrag(v,A,dx,dy);return}
@@ -18381,8 +18382,8 @@ XAD.simg=(g,d)=>{if(!d.back)saImgDraw(g,d,!!(g.ctx.canvas&&g.ctx.canvas.isConnec
 /* the pictures behind the views, on the paper before anything else */
 function saImgs(ctx,g,sh,T,o){for(const d of P.ann)if(d.view===sh.id&&d.cat==='simg'&&d.back)saImgDraw(g,d,!!o.screen)}
 /* the texts, lines and pictures of the sheet, over its title block; on the screen the frame of a picture selected or under the pointer */
-function saTop(ctx,g,sh,T,o){const hv=id=>o.screen&&ui.sel.has(id)?C.sel:(o.screen&&ui.hov===id?C.hot:null);drawAnn(g,shAnnV(sh),T,g.C,hv,k=>!saCat(k));if(!o.screen)return;
-  for(const d of P.ann){if(d.view!==sh.id||d.cat!=='simg')continue;const c=ui.sel.has(d.id)?C.sel:ui.hov===d.id?C.hot:null;if(!c)continue;
+function saTop(ctx,g,sh,T,o){const hv=id=>o.screen&&pr518S(sh,ui.sel,id)?C.sel:(o.screen&&(ui.hov===id||pr518H(sh,o,id))?C.hot:null);drawAnn(g,shAnnV(sh),T,g.C,hv,k=>!saCat(k));if(!o.screen)return;
+  for(const d of P.ann){if(d.view!==sh.id||d.cat!=='simg')continue;const c=pr518S(sh,ui.sel,d.id)?C.sel:(ui.hov===d.id||pr518H(sh,o,d.id))?C.hot:null;if(!c)continue;
     ctx.save();ctx.strokeStyle=c;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);ctx.strokeRect(g.X(d.x-d.w/2)-1,g.Y(d.y-d.h/2)-1,d.w*T.s+2,d.h*T.s+2);ctx.restore()}}
 /* the box of one of them, mm of paper */
 function saBox(d){if(d.cat==='simg')return[d.x-d.w/2,d.y-d.h/2,d.x+d.w/2,d.y+d.h/2];let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const add=q=>{x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1])};
@@ -55683,6 +55684,52 @@ function pre518Upd(pn,v,d){const R=ui.box;if(!R||ui.tool!=='modify')return;const
 /* the box itself in a 3D view: it selected there but was never drawn (the overlay of a 3D view stopped before it) */
 {const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(!v||v.kind!=='3d'||!ui.box||pn.i!==ui.ap)return;const b=ui.box,cr=b.x1<b.x0;ctx.save();
   ctx.strokeStyle=C.sel;ctx.lineWidth=1;ctx.setLineDash(cr?[5,4]:[]);ctx.fillStyle=C.sel;ctx.globalAlpha=0.08;ctx.fillRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);ctx.globalAlpha=1;ctx.strokeRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);ctx.restore()}}
+/* ===== 519 Box selection on sheets (V1.519; Revit: on a sheet a drag from an empty spot draws a selection box that takes viewports, schedules, legends,
+   texts, lines, pictures, revision clouds and the guide grid; Ctrl+click adds, Shift+click takes out; the selected viewports move together).  A drag with
+   the left button from an empty spot of a sheet draws the box (left to right: what lies wholly inside · right to left: all it touches; a viewport by its
+   frame, a text, line or picture of the sheet by its extents, a revision cloud by its points, the guide grid by its lines), Ctrl adds, Shift takes out, and
+   what it would take lights up while it is dragged (V1.518).  The sheet still pans with the middle button, the wheel and the navigation bar.  Ctrl+click on
+   a viewport or a revision cloud adds it or takes it out, Shift+click takes it out; a viewport pressed among several selected things drags them all: the
+   other viewports, texts, lines, pictures and clouds of the sheet go with it in the one step (what is pinned stays), and so does a selected text, line or
+   picture pressed among selected viewports.  The arrow keys nudge what is selected on a sheet by 1 mm of paper (Shift: 10 mm), viewports too. ===== */
+function shItems519(sh){const out=[];
+  for(const vp of sh.vps||[]){const B=vpBox(vp);if(!B)continue;out.push({id:vp.id,r:[vp.x-B.w/2,vp.y-B.h/2,vp.x+B.w/2,vp.y+B.h/2]})}
+  for(const d of P.ann){if(d.view!==sh.id)continue;let r=null;if(saCat(d.cat))r=saBox(d);else if(d.cat==='cloud'&&d.pts&&d.pts.length){r=[Infinity,Infinity,-Infinity,-Infinity];for(const q of d.pts){r[0]=Math.min(r[0],q[0]);r[1]=Math.min(r[1],q[1]);r[2]=Math.max(r[2],q[0]);r[3]=Math.max(r[3],q[1])}}
+    if(r&&isFinite(r[0]))out.push({id:d.id,r})}
+  return out}
+function shBox519(sh,a,b,add){const R=[Math.min(a.x,b.x),Math.min(a.y,b.y),Math.max(a.x,b.x),Math.max(a.y,b.y)],cross=b.x<a.x,s0=add?new Set(ui.sel):new Set();if(!add)ui.sel.clear();
+  for(const it of shItems519(sh)){const r=it.r,inside=r[0]>=R[0]&&r[2]<=R[2]&&r[1]>=R[1]&&r[3]<=R[3],touch=r[0]<=R[2]&&r[2]>=R[0]&&r[1]<=R[3]&&r[3]>=R[1];if(cross?touch:inside)ui.sel.add(it.id)}
+  const g=ggOf(P,sh);if(g){const B=g.b,L=ggLines(g);let hit=B[0]>=R[0]&&B[2]<=R[2]&&B[1]>=R[1]&&B[3]<=R[3];          // the guide grid: wholly inside, or (right to left) one of its lines crossed
+    if(!hit&&cross){for(const x of L.xs)if(segR515([x,B[1]],[x,B[3]],R)){hit=true;break}if(!hit)for(const y of L.ys)if(segR515([B[0],y],[B[2],y],R)){hit=true;break}}if(hit)ui.sel.add(g.id)}
+  soPrune(s0)}
+{const f0=boxSelect;boxSelect=(v,a,b,add)=>v&&v.kind==='sheet'?shBox519(v,a,b,add):f0(v,a,b,add)}
+/* a press on a sheet that is not on one of its own texts, lines or pictures: Ctrl/Shift on a viewport or a cloud, several selected moved together, the box */
+function shDown519(pn,v,p,drag,e){const gh=ggHit(v,p),h=gh&&gh.part!=='move'?null:hitSheet(v,p);
+  if(h&&(drag.ctrl||drag.shift)&&e.button===0){const on=ui.sel.has(h.id);if(drag.shift&&!drag.ctrl)ui.sel.delete(h.id);else if(on)ui.sel.delete(h.id);else ui.sel.add(h.id);drag.mode='none';refresh();return true}
+  if(h&&!h.cloud&&e.button===0&&ui.sel.has(h.id)&&ui.sel.size>1){const vp=h;drag.mode='vp';drag.vp=vp;drag.x0=vp.x;drag.y0=vp.y;
+    const o=[];for(const id of ui.sel){if(id===vp.id||isPinned(id))continue;const x=IDX.get(id);if(!x)continue;
+      if(x.cat==='vp'?(v.vps||[]).includes(x):(x.view===v.id&&(saCat(x.cat)||x.cat==='cloud')))o.push([x,JSON.parse(JSON.stringify(x))])}
+    drag.mv519=o;refresh();return true}
+  if(!h&&!gh&&e.button===0&&ui.tool==='modify'&&(e.pointerType!=='touch'||ui.tbox)){drag.mode='box';return true}
+  return false}
+function sh519Mv(e,o,dx,dy){if(o.x!=null&&o.y!=null){e.x=o.x+dx;e.y=o.y+dy}if(o.x1!=null){e.x1=o.x1+dx;e.y1=o.y1+dy}if(o.x2!=null){e.x2=o.x2+dx;e.y2=o.y2+dy}
+  if(o.lead)e.lead=[o.lead[0]+dx,o.lead[1]+dy];if(o.elb)e.elb=[o.elb[0]+dx,o.elb[1]+dy];if(o.pts)e.pts=o.pts.map(q=>[q[0]+dx,q[1]+dy].concat(q.slice(2)))}
+function mv519(drag){const dx=drag.vp.x-drag.x0,dy=drag.vp.y-drag.y0;for(const [e,o] of drag.mv519)sh519Mv(e,o,dx,dy)}
+/* what is selected on a sheet is all its own: viewports placed on it, its texts, lines, pictures and clouds */
+function sh519Own(v,id){const x=IDX.get(id);if(!x)return false;return x.cat==='vp'?(v.vps||[]).includes(x):(x.view===v.id&&(saCat(x.cat)||x.cat==='cloud'))}
+function sh519SelOk(v){if(!v||v.kind!=='sheet'||!ui.sel.size)return false;for(const id of ui.sel)if(!sh519Own(v,id))return false;return true}
+/* a text, line or picture pressed among selected viewports or clouds: they go along (saDrag moves the texts, lines and pictures) */
+function sh519Mix(v,ids){if(!sh519SelOk(v))return false;return ids.length>0}
+function sh519MixSet(v,drag){const A=drag.sa;if(!A||A.grip)return;const own=new Set(A.ids),o=[];for(const id of ui.sel){if(own.has(id)||isPinned(id))continue;const x=IDX.get(id);if(x&&sh519Own(v,x.id))o.push([x,JSON.parse(JSON.stringify(x))])}if(o.length)A.oth=o}
+{const f0=saDrag;saDrag=(d,dx,dy)=>{f0(d,dx,dy);const A=d.sa;if(!A||A.grip||!A.oth)return;const id0=A.ids[0],e=IDX.get(id0),o=A.o.get(id0);if(!e||!o)return;
+  const mx=o.x!=null?e.x-o.x:e.x1-o.x1,my=o.y!=null?e.y-o.y:e.y1-o.y1;for(const [x,c] of A.oth)sh519Mv(x,c,mx,my)}}
+/* the arrow keys on a sheet: 1 mm of paper, Shift 10 mm; what is pinned stays */
+function sh519Nudge(v,k,big){const m=big?10:1,dx=k==='ArrowLeft'?-m:k==='ArrowRight'?m:0,dy=k==='ArrowUp'?-m:k==='ArrowDown'?m:0;if(!dx&&!dy)return;
+  const ids=[...ui.sel].filter(id=>!isPinned(id));if(ids.length<ui.sel.size)toast(t('pin_block',ui.sel.size-ids.length));if(!ids.length)return;
+  edit(()=>{for(const id of ids){const x=IDX.get(id);if(!x)continue;sh519Mv(x,JSON.parse(JSON.stringify(x)),dx,dy)}})}
+/* the box on a sheet: the overlay of a sheet stopped before it, as that of a 3D view did (V1.518) */
+{const f0=drawOverlay;drawOverlay=(pn,ctx,v,nav)=>{f0(pn,ctx,v,nav);if(!v||v.kind!=='sheet'||!ui.box||pn.i!==ui.ap)return;const b=ui.box,cr=b.x1<b.x0;ctx.save();
+  ctx.strokeStyle=C.sel;ctx.lineWidth=1;ctx.setLineDash(cr?[5,4]:[]);ctx.fillStyle=C.sel;ctx.globalAlpha=0.08;ctx.fillRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);ctx.globalAlpha=1;ctx.strokeRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);ctx.restore()}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56525,6 +56572,7 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - ในรูปตัด: คลิกที่หน้าตัดของชิ้นที่ถูกตัด (คาน เสา ผนัง พื้น) ได้ชิ้นนั้นก่อนชิ้นที่มองเห็นอยู่ข้างหลัง · กด ((Tab)) ต่อเพื่อไปยังชิ้นข้างหลัง
 - ในรูปด้านและรูปตัด ลากจากที่ว่างเพื่อตีกรอบเลือกได้เหมือนในแปลน (ซ้ายไปขวา = เฉพาะชิ้นที่อยู่ในกรอบทั้งชิ้น · ขวาไปซ้าย = ทุกชิ้นที่กรอบแตะ) นับเฉพาะส่วนที่มุมมองแสดง · เลื่อนภาพด้วยปุ่มกลางของเมาส์ · ((Shift))+ลากกรอบ = เอาออกจากที่เลือก (ใช้ในแปลนและ 3 มิติด้วย)
 - ระหว่างลากกรอบเลือก ชิ้นที่กรอบจะได้สว่างขึ้นก่อนปล่อยเมาส์ · ((Ctrl)) แสดงชิ้นที่จะเพิ่ม · ((Shift)) ชิ้นที่จะเอาออกกลับเป็นสีปกติ
+- ในชีท ลากจากที่ว่างเพื่อตีกรอบเลือกวิวพอร์ต ตาราง ข้อความ เส้น รูป เมฆแก้ไข และกริดนำแนว · ((Ctrl))+คลิกวิวพอร์ต = เพิ่มหรือเอาออก · กดลากชิ้นที่เลือกไว้หลายชิ้น = ย้ายทั้งหมดไปด้วยกัน · ปุ่มลูกศร = ขยับ 1 มม. ((Shift)) 10 มม. · เลื่อนชีทด้วยปุ่มกลางของเมาส์
 - ((Ctrl+A)) เลือกทุกชิ้นที่แปลนนี้แสดง · [[a_selsame]] ((SA)) เลือกทุกชิ้นที่เป็นชนิดเดียวกัน · [[a_selprev]] ((Ctrl+←)) เรียกชุดที่เลือกก่อนหน้า
 - เลือกมาหลายหมวดปนกัน: คลิกจำนวนที่เลือกบนแถบสถานะ หรือกด [[a_filter]] เพื่อคัดเฉพาะหมวดที่ต้องการ
 - [[a_selsave]]: เก็บชิ้นที่เลือกอยู่เป็นชุดที่มีชื่อ · [[a_selload]] เรียกชุดนั้นกลับมาเลือกอีกครั้ง · [[a_seledit]] เพิ่มหรือเอาชิ้นออกจากชุด (แท็บ [[tab_manage]] กลุ่ม [[p_selection]]) · ชุดที่บันทึกไว้ใช้เป็นตัวกรองของมุมมองได้ด้วย
@@ -56637,6 +56685,7 @@ A click in a view makes it the active one (it gets a coloured frame). Change the
 - In a section a click on the cut face of an element (a beam, a column, a wall, a floor) picks it before what is seen beyond it · ((Tab)) goes on to what is behind
 - In elevations and sections a drag from an empty spot draws a selection box as in plans (left to right: what lies wholly inside · right to left: all it touches), measured by what the view shows · pan with the middle button · ((Shift)) + box takes out of the selection (in plans and 3D views too)
 - While a selection box is dragged, the elements it would take light up before the mouse is let go · ((Ctrl)) shows what it adds · ((Shift)) shows the selected elements it takes out in their usual colour
+- On a sheet a drag from an empty spot draws a selection box for viewports, schedules, texts, lines, pictures, revision clouds and the guide grid · ((Ctrl)) + click on a viewport adds or takes out · dragging one of several selected things moves them all · the arrow keys nudge 1 mm, ((Shift)) 10 mm · pan the sheet with the middle button
 - ((Ctrl+A)) selects everything this plan shows · [[a_selsame]] ((SA)) everything of the same type · [[a_selprev]] ((Ctrl+←)) brings the previous selection back
 - With several categories selected, click the count in the status bar, or [[a_filter]], to keep only the categories you want
 - [[a_selsave]]: keeps what is selected as a named set · [[a_selload]] selects that set again · [[a_seledit]] adds elements to a set or takes them out (the [[tab_manage]] tab, [[p_selection]]) · a saved set can also be the filter of a view
@@ -58087,6 +58136,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.516 · รูปด้านและรูปตัด: ลากจากที่ว่างเพื่อตีกรอบเลือกแบบ Revit (เดิมลากแล้วเลื่อนภาพ) ซ้ายไปขวาได้ชิ้นที่อยู่ในกรอบทั้งชิ้น ขวาไปซ้ายได้ทุกชิ้นที่กรอบแตะ นับตามส่วนที่มุมมองแสดง (ส่วนที่รูปตัดเก็บไว้และอยู่ในกรอบครอป) รวมระดับ กริด เส้นบอกขนาด ข้อความ ป้าย และรายละเอียดของมุมมอง ((Ctrl)) เพิ่ม ((Shift)) เอาออก (Shift เอาออกใช้ในแปลนและ 3 มิติด้วย) เลื่อนภาพด้วยปุ่มกลางของเมาส์
 - V1.517 · [[t_rbsk501]]: กลับทิศแนววางของชุดเหล็กแบบ Revit: ติ๊ก [[p_rbs517fl]] ใน Properties หรือคลิกลูกศรสองทางข้างลูกศรต้นของชุดที่เลือก (แปลน รูปตัด รูปด้าน) ชุดวางเรียงจากปลายอีกด้าน เส้นแรก จำนวนพร้อมระยะห่าง ระยะเลื่อนต้น ความยาวแนววาง และใส่เส้นแรกนับจากปลายนั้น เช่นปลอกถี่ที่ปลายคานด้านไกล
 - V1.518 · ลากกรอบเลือก: ชิ้นที่กรอบจะได้สว่างขึ้นระหว่างลาก ก่อนปล่อยเมาส์ แบบ Revit (แปลน มุมมองแบบขยาย รูปด้าน รูปตัด 3 มิติ) ซ้ายไปขวาเฉพาะชิ้นที่อยู่ในกรอบทั้งชิ้น ขวาไปซ้ายทุกชิ้นที่กรอบแตะ ((Shift))+ลาก ชิ้นที่จะเอาออกกลับเป็นสีปกติ
+- V1.519 · ชีท: ลากจากที่ว่างเพื่อตีกรอบเลือกได้แบบ Revit (วิวพอร์ต ตาราง ข้อความ เส้น รูป เมฆแก้ไข กริดนำแนว) ซ้ายไปขวาเฉพาะที่อยู่ในกรอบทั้งชิ้น ขวาไปซ้ายทุกชิ้นที่กรอบแตะ ((Ctrl))+คลิกวิวพอร์ตเพิ่มหรือเอาออก กดลากชิ้นที่เลือกไว้หลายชิ้นแล้วย้ายไปด้วยกัน ปุ่มลูกศรขยับ 1 มม. (Shift 10 มม.) วิวพอร์ตด้วย เลื่อนชีทด้วยปุ่มกลาง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58777,6 +58827,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.516 · Elevations and sections: a drag from an empty spot draws a selection box as in Revit (it used to pan the view): left to right takes what lies wholly inside, right to left all it touches, measured by what the view shows (the part the section keeps, inside the crop region); levels, grids, dimensions, text, tags and the view's detailing count too; ((Ctrl)) adds, ((Shift)) takes out (Shift taking out works in plans and 3D views too); pan with the middle button
 - V1.517 · [[t_rbsk501]]: a rebar set's layout flips as in Revit: tick [[p_rbs517fl]] in Properties, or click the double arrow beside the start arrow of a selected set (plans, sections, elevations); the set is laid out from the other end, and the first bar, Number with Spacing, Offset at Start, Array Length and Include First Bar count from there, e.g. close stirrups at a beam's far end
 - V1.518 · Selection box: the elements it would take light up while it is dragged, before the mouse is let go, as in Revit (plans, drafting views, elevations, sections, 3D views); left to right only what lies wholly inside, right to left all it touches; with ((Shift)) the ones it would take out show in their usual colour
+- V1.519 · Sheets: a drag from an empty spot draws a selection box as in Revit (viewports, schedules, texts, lines, pictures, revision clouds, the guide grid); left to right only what lies wholly inside, right to left all it touches; ((Ctrl)) + click on a viewport adds or takes it out; dragging one of several selected things moves them together; the arrow keys nudge 1 mm (Shift 10 mm), viewports too; pan the sheet with the middle button
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -62066,6 +62117,15 @@ window.PenumBIM.r518={
   sheet:vid=>{let sid,vpid;edit(()=>{const s={id:P.seq++,kind:'sheet',name:'S',number:'S-01',size:'A3',vps:[],scale:1,hidden:[],hiddenCats:[]};P.views.push(s);sid=s.id;vpid=addViewport(s,vid).id});return[sid,vpid]},
   vpScr:(sid,vpid)=>{const sh=viewById(sid),vp=sh.vps.find(q=>q.id===vpid),pn=PANES[ui.ap],n=navOf(sh),r=pn.cv.getBoundingClientRect();return{x:r.left+n.ox+vp.x*n.s,y:r.top+n.oy+vp.y*n.s,s:n.s}},
   str:(k,...a)=>t(k,...a)
+};
+window.PenumBIM.r519={
+  sheet:(vids,o)=>{let sid;const ids=[];edit(()=>{const s={id:P.seq++,kind:'sheet',name:'S',number:'S-01',size:'A3',vps:[],scale:1,hidden:[],hiddenCats:[]};P.views.push(s);sid=s.id;for(const v of vids){const vp=addViewport(s,v);ids.push(vp.id)}});return[sid,ids]},
+  vp:(sid,id)=>{const sh=viewById(sid),vp=sh.vps.find(q=>q.id===id),B=vp&&vpBox(vp);return vp?{x:vp.x,y:vp.y,w:B?B.w:0,h:B?B.h:0}:null},
+  setVp:(sid,id,x,y)=>{const sh=viewById(sid),vp=sh.vps.find(q=>q.id===id);edit(()=>{vp.x=x;vp.y=y});return true},
+  scr:(x,y)=>{const pn=PANES[ui.ap],n=navOf(activeView()),r=pn.cv.getBoundingClientRect();return{x:r.left+n.ox+x*n.s,y:r.top+n.oy+y*n.s}},
+  ann:id=>{const d=IDX.get(id);return d?JSON.parse(JSON.stringify(d)):null},
+  gg:(sid,sp)=>{let g;edit(()=>{const sh=viewById(sid);g=ggNew(P,'GG',sheetSize(sh));if(sp)g.sp=sp;(P.ggrids||(P.ggrids=[])).push(g);sh.gg=g.id});return{id:g.id,b:g.b.slice(),sp:g.sp}},
+  addAnn:(o)=>{let id;edit(()=>{const d=Object.assign({id:P.seq++},o);P.ann.push(d);id=d.id});return id}
 };
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
