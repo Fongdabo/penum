@@ -12,7 +12,7 @@ let esgF=0;
   try{o=localStorage.getItem(ESASK);localStorage.setItem(ESASK,'1')}catch(e){}
   try{return p.apply(this,arguments)}finally{try{if(o==null)localStorage.removeItem(ESASK);else localStorage.setItem(ESASK,o)}catch(e){}}}}
 ACT.esgPrint=b=>{const pb=document.querySelector(`#view button[data-a="print"][data-k="quote"][data-id="${b.dataset.id}"]`);if(!pb)return;esgF=Date.now();pb.click()};
-{const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote);
+{const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=qsgSel(C);
   if(Q&&!esAsk()&&esgAny())return h.replace(/(<button type="button" class="btn sm" data-a="print" data-k="quote"[^>]*>[^<]*<\/button>)/,`$1<button type="button" class="btn sm" data-a="esgPrint" data-id="${Q.id}" title="เครื่องนี้ตั้งไว้ไม่ให้ถามเรื่องลายเซ็นตอนพิมพ์ ปุ่มนี้พิมพ์โดยถามว่าจะใส่ลายเซ็นของใครในช่องไหน">✍ พิมพ์พร้อมลายเซ็น</button>`);
   if(!esgNeed())return h;const u=me();
   const b=u?`<button type="button" class="btn sm" data-a="esigEdit" title="ตั้งลายเซ็นครั้งเดียว ตอนกดพิมพ์ระบบจะถามว่าจะใส่ลายเซ็นของใครในช่องไหน">✍ ตั้งลายเซ็น</button>`
