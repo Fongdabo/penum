@@ -9462,7 +9462,7 @@ function bindPane(pn){
         if(e.shiftKey){if(Math.abs(mx)>=Math.abs(my))my=0;else mx=0}
         translateIds(drag.ids,mx-drag.last[0],my-drag.last[1]);drag.last=[mx,my];for(const c of drag.carry){if(c[1]){c[0].x2=c[2]+mx;c[0].y2=c[3]+my}else{c[0].x1=c[2]+mx;c[0].y1=c[3]+my}}touch();hint(t('h_move3',fmtLen(mx),fmtLen(-my),unitName()))}}
     else if(drag.mode==='el')moveElDrag(drag,v,p);
-    else if(drag.mode==='ea'){const a=drag.a,o=drag.o,mx=Math.round(dx/nav.s),my=Math.round(dy/nav.s);if(a.cat==='edim'){a.off=o.off+(a.m==='v'?mx:my);for(const [m0,o0] of drag.dsm||[])m0.off=o0+(a.off-o.off)}else{a.x=o.x+mx;a.y=a.cat==='espot'?o.y:o.y+my}touch()}          /* a dimension line is moved sideways, a spot elevation along its height, a text anywhere */
+    else if(drag.mode==='ea'){const a=drag.a,o=drag.o,mx=Math.round(dx/nav.s),my=Math.round(dy/nav.s);if(a.cat==='edim'){a.off=o.off+(a.m==='v'?mx:my);for(const [m0,o0] of drag.dsm||[])m0.off=o0+(a.off-o.off)}else if(a.cat==='trnum'){const r=clamp(Math.round((+o.ro||0)-my),-5000,5000);if(r)a.ro=r;else delete a.ro}else{a.x=o.x+mx;a.y=a.cat==='espot'?o.y:o.y+my}touch()}          /* a dimension line is moved sideways, a spot elevation along its height, a text anywhere */
     else if(drag.mode==='level'){drag.l.elev=Math.round((drag.e0-dy/nav.s)/50)*50;touch();hint(drag.l.name+'  '+fmtElev(drag.l.elev))}
     else if(drag.mode==='vp'){drag.vp.x=drag.x0+dx/nav.s;drag.vp.y=drag.y0+dy/nav.s;if(!e.shiftKey)ggSnapVp(v,drag.vp,nav);if(drag.mv519)mv519(drag)}
     else if(drag.mode==='gg'){ggDrag(drag,dx/nav.s,dy/nav.s);touch()}
@@ -14632,7 +14632,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=559,V1_NAME='V1.549';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=560,V1_NAME='V1.550';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57511,6 +57511,63 @@ XT3.mtext={ok:v=>ev3GL(v),click:mt549Click,draw:mt549Draw,hov(pn,v,p){const c=mt
 Object.assign(STR,{
   mt549_h:['คลิกผิวผนังที่จะวางข้อความ 3 มิติ (ข้อความและความหนาอยู่บนแถบตัวเลือก)','Click the face of a wall to put the model text on (its text and depth are on the options bar)'],
   mt549_wall:['ชี้ที่ผนังที่เห็นผิวในมุมมองนี้','Point at a wall whose face this view sees']});
+/* ===== 550 Tread Number in elevations and sections (V1.550; Revit: Annotate › Tag › Tread Number places the numbers of a run of a component stair in a plan,
+   an elevation or a section; in an elevation or a section the numbers go along the stair path, the reference Left / Center / Right being for plans).  The
+   plans' {cat:'trnum', view, el, run, tk, st, sz} kept in the elevation or section: each tread number stands over the middle of its tread, each riser number
+   beside its riser half way up, on the side the stair comes up from; ro moves them up (+) or down (mm of the model) and a drag up or down sets it.  They follow
+   the stair when it moves or its risers change, are hidden by category, go to sheets and DXF with the view, and go when the stair does, as in plans. */
+/* is stair e seen in elevation or section v: not hidden, and not wholly in front of the cut or beyond the far clip */
+function tr550Shown(v,e){if(!e||e.cat!=='stair'||!etgShown(v,null,e)||phHid(v,e.id))return false;let D=null;try{D=etg536Dep(v,e)}catch(err){D=null}if(!D)return true;
+  const B=ev3Box(v,e),c=ev3Vd(v,B?(B[0]+B[1])/2:0),d=c[0],far=c[1];if(d==null)return true;if(D[1]<d-1)return false;return!(far>0&&D[0]>d+far+1)}
+/* the numbers of d in view v at scale sc: [{n, p (the middle of the number, in the view), rot, w, sz}] */
+function tr550List(v,d,sc){const e=IDX.get(d.el);if(!e||e.cat!=='stair')return[];const s=stairGeo(P,e),R=d.tk==='r',st=d.st==null?1:Math.round(+d.st)||0,sz=clamp(+d.sz||2.5,1.5,6),
+    ro=+d.ro||0,out=[],gap=0.8*sc,half=sz*sc/2,tw=n=>twmm(String(n),false,true)*sz/2.2*sc,H=q=>ev3Hq(v,q),put=(n,h,z)=>out.push({n,p:[h,-z],rot:0,w:tw(n),sz});
+  if(s.spiral){const S=s.spiral,nt=S.treads.length,at=a=>[S.c[0]+Math.cos(a)*S.rw,S.c[1]+Math.sin(a)*S.rw];if(d.run)return out;
+    for(let i=0;i<(R?nt+1:nt);i++){const n=st+i;
+      if(R){const a=S.a0+i*S.da,q=at(a),q2=at(a-S.da*0.5),sg=H(q2)<H(q)?-1:1;put(n,H(q)+sg*(tw(n)/2+gap),s.z0+(i+0.5)*s.r+ro)}
+      else{const T=S.treads[i];put(n,H(at((T.a+T.b)/2)),T.z+half+gap+ro)}}return out}
+  let base=0;s.runs.forEach((Rn,k)=>{const cnt=R?Rn.n:Rn.n-1;
+    if(k===d.run){const sg=H([Rn.dx,Rn.dy])<-0.05?1:-1;          // the side the run comes up from: to the left in the view when it goes up to the right
+      for(let i=0;i<cnt;i++){const n=st+base+i,at=a=>[Rn.A[0]+Rn.dx*a,Rn.A[1]+Rn.dy*a];
+        if(R)put(n,H(at(i*s.g))+sg*(tw(n)/2+gap),Rn.z0+(i+0.5)*s.r+ro);else put(n,H(at((i+0.5)*s.g)),Rn.z0+(i+1)*s.r+half+gap+ro)}}
+    base+=cnt});
+  return out}
+/* the run of a stair the view shows under w (a landing: every run): the box each takes in the view, the nearest within 6 px, the smaller where two hold it */
+function tr550Pick(v,w,tol){const z=-w.y;let best=null,bd=Infinity,ba=Infinity;
+  for(const e of P.els){if(e.cat!=='stair'||!tr550Shown(v,e))continue;const s=stairGeo(P,e),C=[];
+    const box=(pl,z0,z1)=>{let h0=Infinity,h1=-Infinity;for(const q of pl){const h=ev3Hq(v,q);if(h<h0)h0=h;if(h>h1)h1=h}return[h0,h1,z0,z1]};
+    if(s.spiral||s.wind)C.push({b:box([].concat(...s.polys),s.z0,s.z1),H:{e,run:0,n:1}});
+    else{s.runs.forEach((Rn,k)=>C.push({b:box(Rn.rect,Rn.z0,Rn.z1),H:{e,run:k,n:s.runs.length}}));for(const l of s.lands)C.push({b:box(l.poly,l.z-250,l.z+10),H:{e,all:1,n:s.runs.length}})}
+    for(const c of C){const b=c.b,dd=Math.hypot(Math.max(b[0]-w.x,0,w.x-b[1]),Math.max(b[2]-z,0,z-b[3])),a=(b[1]-b[0])*(b[3]-b[2]);if(dd>tol)continue;
+      if(dd<bd-1e-6||(Math.abs(dd-bd)<1e-6&&a<ba)){bd=dd;ba=a;best=Object.assign({},c.H,{b})}}}
+  return best}
+const tr550W=(v,p)=>{const n=navOf(v);return{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s}};
+XT3.trnum={ok:v=>ev3EV(v),hint:()=>t('h_tr550'),
+  hov(pn,v,p){const H=tr550Pick(v,tr550W(v,p),6/navOf(v).s);ui.trH=H?Object.assign(H,{pn:pn.i,v:v.id}):null;return H?H.e.id:null},
+  click(pn,v,p){const H=tr550Pick(v,tr550W(v,p),6/navOf(v).s);if(!H){toast(t('tr550_pick'));return}trPlace(v,H);refresh()},
+  draw(pn,ctx,v,nav){const H=ui.trH;if(!H||H.pn!==pn.i||H.v!==v.id||!IDX.get(H.e.id))return;const b=H.b,X=h=>h*nav.s+nav.ox,Y=z=>-z*nav.s+nav.oy;
+    ctx.save();ctx.strokeStyle=C.sel;ctx.fillStyle=C.sel;ctx.lineWidth=1.6;ctx.beginPath();ctx.rect(X(b[0]),Y(b[3]),(b[1]-b[0])*nav.s,(b[3]-b[2])*nav.s);ctx.globalAlpha=0.16;ctx.fill();ctx.globalAlpha=1;ctx.stroke();ctx.restore()}};
+/* drawn and picked in the view */
+{const f0=XAD.trnum;XAD.trnum=(g,d,col,h,v)=>{if(!ev3EV(v))return f0(g,d,col,h,v);if(!tr550Shown(v,IDX.get(d.el)))return;const ink=h||col.ink;
+  for(const q of tr550List(v,d,g.scale))g.text(String(q.n),q.p,q.sz,{color:ink,mono:true,halo:true})}}
+const tr550Dist=(v,d,w,sc)=>{if(!tr550Shown(v,IDX.get(d.el)))return Infinity;let m=Infinity;for(const q of tr550List(v,d,sc))m=Math.min(m,dsBox({m:q.p,rot:0,tw:q.w,sz:q.sz},w,sc));return m};
+{const f0=evAnnHit;evAnnHit=(v,p,nav)=>{const r=f0(v,p,nav);if(r||ui.tool!=='modify')return r;const sc=v.scale||100,w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s},av=avid(v);let best=null,bd=6/nav.s;
+  for(const d of P.ann){if(d.cat!=='trnum'||d.view!==av||catHid(v,'trnum')||hidDatum(v,d))continue;const m=tr550Dist(v,d,w,sc);if(m<bd){bd=m;best={id:d.id,part:'ann'}}}return best}}
+/* the box of its numbers, for a box selection */
+{const f0=elBox;elBox=(v,e)=>{if(!e||e.cat!=='trnum'||!v||!ev3EV(v))return f0(v,e);const sc=v.scale||100,L=tr550Shown(v,IDX.get(e.el))?tr550List(v,e,sc):[];if(!L.length)return null;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const q of L){const a=q.w/2,b=q.sz*sc/2;x0=Math.min(x0,q.p[0]-a);x1=Math.max(x1,q.p[0]+a);y0=Math.min(y0,q.p[1]-b);y1=Math.max(y1,q.p[1]+b)}return[x0,y0,x1,y1]}}
+/* Properties in an elevation or a section: no reference or turning (the stair path, as in Revit); the offset is up or down */
+{const i=XP.findIndex(f=>String(f).includes("'trref'"));if(i>=0){const f0=XP[i];XP[i]=(c,els)=>{if(c!=='trnum'||!els.length||!els.every(d=>ev3EV(viewById(d.view))))return f0(c,els);
+  const d=els[0],e=IDX.get(d.el),V=f=>{const a=f(d);return els.every(x=>f(x)===a)?a:''};let h=PR.grp('g_identity');
+  if(els.length===1&&e){const s=stairGeo(P,e);h+=PR.ro('p_tagof',elName(e))+PR.ro('p_trrun',(d.run+1)+' / '+(s.spiral||s.wind?1:s.runs.length))}
+  return h+PR.grp('g_graphics')+PR.sel('trtk','p_trtk',V(x=>x.tk==='r'?'r':'t'),[['t',t('trk_t')],['r',t('trk_r')]])+PR.num('trst','p_trst',V(x=>x.st==null?1:x.st),'','step="1"')
+    +PR.num('trro','p_tr550o',V(x=>Math.round(+x.ro||0)),t('u_mm'),'step="10"')+PR.num('trsz','p_trsz',V(x=>+x.sz||2.5),t('u_mm'),'step="0.5" min="1.5" max="6"')+`<div class="pnote">${t('n_tr550')}</div>`}}}
+/* one made in a plan's way (a reference, turned numbers) keeps them for when it is seen in a plan again: nothing to clean */
+Object.assign(STR,{
+  h_tr550:['คลิกช่วงบันไดเพื่อใส่เลขลูกขั้นตามแนวทางเดินของบันได หรือคลิกชานพักเพื่อใส่ทุกช่วง · Esc จบ','Click a run of a stair to number it along its stair path, or a landing to number every run · Esc ends'],
+  tr550_pick:['คลิกบนช่วงบันไดหรือชานพักที่มุมมองนี้เห็น','Click a run or a landing of a stair this view shows'],
+  p_tr550o:['ระยะเลื่อนขึ้นลง','Offset up or down'],
+  n_tr550:['ในรูปด้านและรูปตัด เลขอยู่ตามแนวทางเดินของบันได (แบบ Revit) เลขลูกนอนอยู่เหนือกึ่งกลางลูกนอน เลขลูกตั้งอยู่ข้างลูกตั้ง ลากขึ้นลงหรือใส่ระยะเลื่อนเพื่อย้าย','In an elevation or a section the numbers go along the stair path (as in Revit): a tread number over the middle of its tread, a riser number beside its riser; drag up or down, or type the offset, to move them']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59972,6 +60029,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.547 · หมุน (Rotate) สะท้อน (Mirror) และย่อขยาย (Scale) เส้นรายละเอียดและคำอธิบายในรูปด้านและรูปตัด แบบ Revit: หมุนรอบกึ่งกลางที่เลือก (Space ย้ายจุดหมุน) สะท้อนกับเส้นรายละเอียดหรือเส้นระดับชั้น หรือแกนที่คลิกสองจุด ย่อขยายตามตัวคูณหรือสามจุด เห็นเงาก่อนคลิก ทำสำเนาได้ Ctrl+คลิกเพิ่มคำอธิบายของมุมมองเข้าในชุดที่เลือก Shift+คลิกเอาออก
 - V1.548 · ทาชนิด (Match Type) ในรูปด้าน รูปตัด และ 3 มิติ แบบ Revit: คลิกชิ้นต้นแบบแล้วคลิกชิ้นที่จะเปลี่ยนให้เป็นชนิดเดียวกันทีละชิ้น ผนัง หน้าต่าง ประตู และชิ้นงานอื่นในรูปด้าน รูปตัด และ 3 มิติ ข้อความ ระยะ และคำอธิบายของรูปด้าน ต้นแบบมีกรอบประจนกด Esc คลิกที่ว่างเริ่มต้นแบบใหม่ หน้าต่างได้ระดับขอบล่างของชนิดใหม่
 - V1.549 · ข้อความ 3 มิติ (Model Text) ในรูปด้าน รูปตัด และ 3 มิติ แบบ Revit: คลิกผนังที่เห็นในมุมมอง ข้อความยืนบนผิวด้านที่มอง อ่านจากด้านนอก กึ่งกลางฐานอยู่ที่คลิก เห็นตัวอักษรตามเมาส์ก่อนคลิก ข้อความไปกับผนังเหมือนที่วางในแปลน
+- V1.550 · เลขลูกขั้นบันได (Tread Number) ในรูปด้านและรูปตัด แบบ Revit: คลิกช่วงบันไดที่มุมมองเห็นเพื่อใส่เลข หรือคลิกชานพักเพื่อใส่ทุกช่วง เลขอยู่ตามแนวทางเดินของบันได เลขลูกนอนอยู่เหนือกึ่งกลางลูกนอน เลขลูกตั้งอยู่ข้างลูกตั้ง ตามบันไดเมื่อย้ายหรือเปลี่ยน ลากขึ้นลงเพื่อเลื่อน ซ่อนตามหมวด ไปบนชีทและ DXF
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60693,6 +60751,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.547 · Rotate, Mirror and Scale on the detail lines and annotations of elevations and sections, as in Revit: rotate about the centre of the selection (Space moves it), mirror about a detail line, a level or two points clicked, scale by a factor or by three points; a ghost shows the result before the click, and Copy keeps the originals. Ctrl+click adds annotations of the view to the selection, Shift+click takes them off
 - V1.548 · Match Type in elevations, sections and 3D views, as in Revit: click the element whose type to copy, then each element to take it; walls, windows, doors and other elements in elevations, sections and 3D, and the text, dimensions and other annotations of an elevation; the source keeps a dashed outline until Esc, a click on nothing picks a new source, and a window takes the sill of its new type
 - V1.549 · Model Text in elevations, sections and 3D views, as in Revit: click a wall seen in the view and the text stands on the face looked at, read from outside, the middle of its foot where the click was; the letters follow the pointer before the click, and the text goes with the wall as one placed in a plan
+- V1.550 · Tread Number in elevations and sections, as in Revit: click a run of a stair the view shows to number it, or a landing to number every run; the numbers go along the stair path, a tread number over the middle of its tread, a riser number beside its riser; they follow the stair, a drag up or down moves them, they hide by category and go to sheets and DXF
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -60872,7 +60931,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - [[t_sym]]: สัญลักษณ์ 2 มิติของมุมมองนั้น ขนาดคงที่บนกระดาษ: ทิศเหนือ 2 แบบ มาตราส่วนกราฟิก (ปรับตามมาตราส่วนของมุมมอง) เส้นกึ่งกลาง ℄ ลูกศร เส้นตัดขาด สามเหลี่ยมระดับ · เลือกในแถบตัวเลือกแล้วคลิกวาง ((Space)) หมุน 90° · ใช้ได้ในแปลน มุมมองร่าง และคำอธิบายสัญลักษณ์
 - [[t_rtag]] ((RT)): ชื่อห้องในแปลนเป็นป้ายห้อง วางห้องแล้วป้ายขึ้นเองในทุกแปลนของชั้นนั้น ลากเพื่อย้าย ถ้าลากออกนอกห้องจะมีเส้นชี้ให้เอง ดับเบิลคลิกเพื่อแก้ชื่อห้อง · ลบป้ายแล้วติดใหม่ได้โดยกด ((RT)) แล้วคลิกในห้อง · [[p_rtkind]] เลือกได้ว่าจะแสดงชื่อ เลขห้อง และพื้นที่ หรือเฉพาะบางอย่าง
 - [[t_mtag]] (แท็บ [[tab_annot]] › [[p_tag]]): คลิกผนัง พื้น หลังคา ฝ้า หรือโครงสร้าง ตรงจุดที่ต้องการ ป้ายบอกชื่อวัสดุของชั้นที่จุดนั้น (ผนังตามความหนา พื้นและหลังคาที่ผิวบน ฝ้าที่ผิวล่างในแปลนฝ้า) · ลากจุดปลายลูกศรไปชั้นอื่นได้ · ในรูปด้านและรูปตัดคลิกตรงชั้นที่ต้องการ · ติ๊ก [[p_leader]] เพื่อเปิดปิดเส้นชี้
-- [[t_trnum]] (แท็บ [[tab_annot]] › [[p_tag]]): คลิกช่วงบันไดในแปลนเพื่อใส่เลขลูกนอน หรือคลิกชานพักเพื่อใส่ทุกช่วง เลขต่อเนื่องข้ามช่วง ใช้ได้กับบันไดตรง ตัวแอล ตัวยู และบันไดเวียน · ใน [[properties]] เลือกนับลูกนอนหรือลูกตั้ง เลขเริ่มต้น แนวอ้างอิง ระยะเลื่อน ทิศตัวเลข และขนาด
+- [[t_trnum]] (แท็บ [[tab_annot]] › [[p_tag]]): คลิกช่วงบันไดในแปลนเพื่อใส่เลขลูกนอน หรือคลิกชานพักเพื่อใส่ทุกช่วง เลขต่อเนื่องข้ามช่วง ใช้ได้กับบันไดตรง ตัวแอล ตัวยู และบันไดเวียน · ในรูปด้านและรูปตัดคลิกช่วงบันไดที่เห็นได้เหมือนกัน เลขอยู่ตามแนวทางเดินของบันได ลากขึ้นลงเพื่อเลื่อน · ใน [[properties]] เลือกนับลูกนอนหรือลูกตั้ง เลขเริ่มต้น แนวอ้างอิง ระยะเลื่อน ทิศตัวเลข และขนาด
 
 # รายละเอียด
 - [[t_dline]] ((DL)): เส้น 2 มิติ เลือก [[p_lstyle]] ได้ (บาง กลาง หนา ประ ศูนย์กลาง รื้อถอน และรูปแบบที่สร้างเอง)
@@ -60977,7 +61036,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - [[t_sym]]: 2D marks of one view that keep their size on paper: two north arrows, a graphic scale (it follows the scale of the view), the centre line mark ℄, an arrow, a break mark, a level mark · choose one in the options bar and click to place it, ((Space)) turns it 90° · they work in plans, drafting views and legends
 - [[t_rtag]] ((RT)): the names of rooms in a plan are room tags. A room that is placed gets one in every plan of its level; drag it to move it — dragged out of its room it gets a leader — and double-click it to change the name of the room · a tag that was deleted is put back with ((RT)) and a click inside the room · [[p_rtkind]] chooses between name, number and area, or less
 - [[t_mtag]] ([[tab_annot]] › [[p_tag]]): click a wall, floor, roof, ceiling or structure where you want it; the tag names the material of the layer there (a wall across its thickness, a floor or a roof at its top, a ceiling at its underside in a reflected ceiling plan) · drag the arrow point to another layer · in elevations and sections click the layer itself · [[p_leader]] turns the leader on and off
-- [[t_trnum]] ([[tab_annot]] › [[p_tag]]): click a run of a stair in a plan to number its treads, or a landing to number every run; the numbers carry on from run to run, on straight, L, U and spiral stairs · in [[properties]] choose treads or risers, the start number, the reference, the offset, the direction of the numbers and their size
+- [[t_trnum]] ([[tab_annot]] › [[p_tag]]): click a run of a stair in a plan to number its treads, or a landing to number every run; the numbers carry on from run to run, on straight, L, U and spiral stairs · in an elevation or a section click a run seen there the same way: the numbers go along the stair path, and a drag up or down moves them · in [[properties]] choose treads or risers, the start number, the reference, the offset, the direction of the numbers and their size
 
 # Detailing
 - [[t_dline]] ((DL)): a 2D line, with a [[p_lstyle]] (thin, medium, wide, hidden, centre, demolished, and the styles made in the project)
@@ -64451,6 +64510,36 @@ window.PenumBIM.r549={
   page3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]),r=pn.cv.getBoundingClientRect();return s?{x:r.left+s[0],y:r.top+s[1]}:null},
   prompt:()=>{hint();return $('#prompt').textContent},
   bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
+/* V1.550 test API: Tread Number in elevations and sections */
+window.PenumBIM.r550={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl||'trnum',activeView()),
+  stair:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const e=Object.assign(newLineEl('stair',lid,{x:x1,y:y1},{x:x2,y:y2}),o||{});P.els.push(e);id=e.id});refresh();return id},
+  geo:id=>{const e=IDX.get(id);if(!e)return null;const s=stairGeo(P,e);return{N:s.N,r:Math.round(s.r*10)/10,g:s.g,z0:s.z0,z1:s.z1,runs:s.runs.map(q=>({n:q.n,z0:Math.round(q.z0),A:q.A.map(Math.round),dx:q.dx,dy:q.dy})),lands:s.lands.map(l=>Math.round(l.z))}},
+  pick:(h,z)=>{const v=activeView(),n=navOf(v),H=tr550Pick(v,{x:h,y:-z},6/n.s);return H?{el:H.e.id,run:H.all?'all':H.run}:null},
+  hov:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];return XT3.trnum.hov(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy})},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return P.ann.filter(a=>a.cat==='trnum').length},
+  plan:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];toolClick(pn,v,{x:x*n.s+n.ox,y:y*n.s+n.oy},{});refresh();return P.ann.filter(a=>a.cat==='trnum').length},
+  anns:vid=>P.ann.filter(a=>a.cat==='trnum'&&(vid==null||a.view===vid)).map(a=>JSON.parse(JSON.stringify(a))),
+  /* the numbers of tread number annotation id as drawn in its view: [{n, h, z}] (the middle of each number) */
+  list:id=>{const d=IDX.get(id),v=d&&viewById(d.view);if(!d||!v)return null;if(!ev3EV(v))return trList(d,v.scale||100).map(q=>({n:q.n,x:Math.round(q.p[0]),y:Math.round(q.p[1])}));return tr550List(v,d,v.scale||100).map(q=>({n:q.n,h:Math.round(q.p[0]),z:Math.round(-q.p[1])}))},
+  shown:id=>{const v=activeView();return tr550Shown(v,IDX.get(id))},
+  hit:(h,z)=>{const v=activeView(),n=navOf(v),keep=ui.tool;ui.tool='modify';try{const r=evAnnHit(v,{x:h*n.s+n.ox,y:-z*n.s+n.oy},n);return r?r.id:null}finally{ui.tool=keep}},
+  box:id=>{const v=activeView(),b=elBox(v,IDX.get(id));return b?b.map(Math.round):null},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);if(e)for(const k in o){if(o[k]==null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  del:ids=>{ui.sel=new Set(ids);act('delete');refresh();return P.ann.filter(a=>a.cat==='trnum').length},
+  hide:(vid,on)=>{const v=viewById(vid);edit(()=>{v.hiddenCats=(v.hiddenCats||[]).filter(c=>c!=='trnum');if(on)v.hiddenCats.push('trnum')});refresh();return true},
+  texts:vid=>{const v=viewById(vid),out=[],cv=document.createElement('canvas').getContext('2d'),T={s:1,ox:0,oy:0};const px=new Proxy(cv,{get(tg,k){if(k==='fillText'||k==='strokeText')return(s,x,y)=>{out.push(String(s))};const f=tg[k];return typeof f==='function'?f.bind(tg):f},set(tg,k,val){tg[k]=val;return true}});
+    try{drawElevDatum(px,v,T,{C:C,screen:false})}catch(err){out.push('ERR '+err.message)}return[...new Set(out)]},
+  dxf:vid=>{const v=viewById(vid);const s=evDXF(v)||'';const L=s.split(/\r?\n/),out=[];for(let i=0;i<L.length-1;i++)if(L[i].trim()==='1')out.push(L[i+1]);return out},
+  props:()=>{const b=$('#props');return b?b.textContent.replace(/\s+/g,' '):''},
+  sel:ids=>{ui.sel=new Set(ids);refresh();return ui.sel.size},
+  field:(key,val)=>{const el=$('#p_'+key);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));refresh();return true},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
