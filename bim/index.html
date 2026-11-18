@@ -14632,7 +14632,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=560,V1_NAME='V1.550';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=561,V1_NAME='V1.551';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57568,6 +57568,40 @@ Object.assign(STR,{
   tr550_pick:['คลิกบนช่วงบันไดหรือชานพักที่มุมมองนี้เห็น','Click a run or a landing of a stair this view shows'],
   p_tr550o:['ระยะเลื่อนขึ้นลง','Offset up or down'],
   n_tr550:['ในรูปด้านและรูปตัด เลขอยู่ตามแนวทางเดินของบันได (แบบ Revit) เลขลูกนอนอยู่เหนือกึ่งกลางลูกนอน เลขลูกตั้งอยู่ข้างลูกตั้ง ลากขึ้นลงหรือใส่ระยะเลื่อนเพื่อย้าย','In an elevation or a section the numbers go along the stair path (as in Revit): a tread number over the middle of its tread, a riser number beside its riser; drag up or down, or type the offset, to move them']});
+/* ===== 551 Measure Along an Element in elevations, sections and 3D views (V1.551; Revit: Modify › Measure › Measure Along An Element works in these views
+   too: the length of a wall, beam, duct, pipe, tray, conduit, railing or line, and of several added up).  As in plans nothing is drawn into the project: each
+   element clicked is outlined with its length, a second click takes it out, the options bar adds them up, Esc clears and Esc again ends.  Here a beam, brace
+   or run that slopes counts its length along the slope, and the detail lines of the elevation or section count as well. */
+const ML551=['wall','beam','duct','pipe','tray','conduit','railing','ramp','mline'];
+/* the length of e as these views measure it: along a slope too */
+function ml551Len(e){if(!e)return 0;if(e.cat==='beam'&&!e.bow&&!lcCurve(e))return beamLen3(P,e);
+  if(RUN_CATS.includes(e.cat)&&!e.bow){const z=runZ(P,e);return Math.hypot(mlLen(e),z[1]-z[0])}return mlLen(e)}
+const ml551Sum=()=>mlIds().reduce((s,id)=>s+ml551Len(IDX.get(id)),0);
+/* what a click takes: a detail line of the view first, then the element under the pointer */
+function ml551Pick(pn,v,p){if(ev3EV(v)){const keep=ui.tool;let h=null;ui.tool='modify';try{h=hitElev(v,p)}finally{ui.tool=keep}const d=h&&IDX.get(h.id);if(d&&d.cat==='dline'&&P.ann.includes(d))return d}
+  const k=pickAt3(pn,v,p),e=k&&IDX.get(k.id);return e&&ML551.includes(e.cat)&&P.els.includes(e)?e:null}
+/* the line of e in the model ([x, y, height] points), to outline it: walls half way up, runs and beams at their axis */
+function ml551Pts(e){const q=bowPts(e);if(!q||q.length<2)return null;let z0,z1;
+  if(e.cat==='beam'){const z=beamZ(P,e);z0=z[0];z1=z[1]}else if(RUN_CATS.includes(e.cat)){const z=runZ(P,e);z0=z[0];z1=z[1]}
+  else if(e.cat==='mline'){z0=z1=elev(P,e.level)+(+e.off||0)}else{const r=zRange(P,e);z0=z1=r&&isFinite(r[0])?(e.cat==='wall'?(r[0]+r[1])/2:r[1]):elev(P,e.level)}
+  return q.map((a,i)=>[a[0],a[1],z0+(z1-z0)*i/(q.length-1)])}
+XT3.measel={ok:v=>ev3GL(v),hint:()=>t('h_measel'),
+  hov(pn,v,p){const e=ml551Pick(pn,v,p);return e?e.id:null},
+  click(pn,v,p){const e=ml551Pick(pn,v,p);if(!e){toast(t('ml551_pick'));return}const L=ui.ml||(ui.ml=[]),i=L.indexOf(e.id);if(i>=0)L.splice(i,1);else L.push(e.id);refresh()},
+  draw(pn,ctx,v,nav){if(ui.tool!=='measel'||!ui.ml)return;const L=mlIds();if(!L.length)return;const S=ev3Scr(pn,v,nav),av=avid(v),col=C.hot;ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+    for(const id of L){const e=IDX.get(id);let s=null;
+      if(P.ann.includes(e)){if(e.view!==av)continue;s=bowPts(e).map(q=>[q[0]*nav.s+nav.ox,q[1]*nav.s+nav.oy])}
+      else{const Q=ml551Pts(e);if(!Q)continue;s=Q.map(S);if(s.some(x=>!x))continue}
+      ctx.strokeStyle=col;ctx.lineWidth=4;ctx.globalAlpha=0.8;ctx.beginPath();s.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.stroke();ctx.globalAlpha=1;
+      const k=Math.floor((s.length-1)/2),a=s[k],b=s[Math.min(s.length-1,k+1)],m=s.length===2?[(a[0]+b[0])/2,(a[1]+b[1])/2]:a;let r=Math.atan2(b[1]-a[1],b[0]-a[0]);if(r>Math.PI/2)r-=Math.PI;else if(r<-Math.PI/2)r+=Math.PI;
+      ctx.save();ctx.translate(m[0],m[1]);ctx.rotate(r);ctx.font='600 12px '+FONT;ctx.textAlign='center';ctx.textBaseline='bottom';const txt=fmtLen(ml551Len(e));
+      ctx.lineWidth=3;ctx.strokeStyle=C.paper||'#fff';ctx.strokeText(txt,0,-3);ctx.fillStyle=col;ctx.fillText(txt,0,-3);ctx.restore()}
+    ctx.restore()}};
+/* the total on the options bar: along the slope in these views */
+{const f0=XT.measel.opt;XT.measel.opt=who=>{const v=activeView();if(!ev3GL(v))return f0(who);const n=mlIds().length;
+  return who+`<span class="mlsum">${esc(t('ml_total'))}: <b>${esc(fmtLen(ml551Sum())+' '+unitName())}</b> · ${esc(t(n===1?'ml_1':'ml_n',n))}</span>`+`<button type="button" class="btn mlclr" data-act="mlclear"${n?'':' disabled'}>${esc(t('ml_clear'))}</button>`}}
+Object.assign(STR,{
+  ml551_pick:['คลิกผนัง คาน ท่อ ราง ราวกันตก หรือเส้นรายละเอียดของมุมมองนี้','Click a wall, beam, duct, pipe, tray, railing or a detail line of this view']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60030,6 +60064,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.548 · ทาชนิด (Match Type) ในรูปด้าน รูปตัด และ 3 มิติ แบบ Revit: คลิกชิ้นต้นแบบแล้วคลิกชิ้นที่จะเปลี่ยนให้เป็นชนิดเดียวกันทีละชิ้น ผนัง หน้าต่าง ประตู และชิ้นงานอื่นในรูปด้าน รูปตัด และ 3 มิติ ข้อความ ระยะ และคำอธิบายของรูปด้าน ต้นแบบมีกรอบประจนกด Esc คลิกที่ว่างเริ่มต้นแบบใหม่ หน้าต่างได้ระดับขอบล่างของชนิดใหม่
 - V1.549 · ข้อความ 3 มิติ (Model Text) ในรูปด้าน รูปตัด และ 3 มิติ แบบ Revit: คลิกผนังที่เห็นในมุมมอง ข้อความยืนบนผิวด้านที่มอง อ่านจากด้านนอก กึ่งกลางฐานอยู่ที่คลิก เห็นตัวอักษรตามเมาส์ก่อนคลิก ข้อความไปกับผนังเหมือนที่วางในแปลน
 - V1.550 · เลขลูกขั้นบันได (Tread Number) ในรูปด้านและรูปตัด แบบ Revit: คลิกช่วงบันไดที่มุมมองเห็นเพื่อใส่เลข หรือคลิกชานพักเพื่อใส่ทุกช่วง เลขอยู่ตามแนวทางเดินของบันได เลขลูกนอนอยู่เหนือกึ่งกลางลูกนอน เลขลูกตั้งอยู่ข้างลูกตั้ง ตามบันไดเมื่อย้ายหรือเปลี่ยน ลากขึ้นลงเพื่อเลื่อน ซ่อนตามหมวด ไปบนชีทและ DXF
+- V1.551 · วัดตามความยาวชิ้นงาน (Measure Along an Element) ในรูปด้าน รูปตัด และ 3 มิติ แบบ Revit: คลิกผนัง คาน ท่อ ราง ราวกันตก หรือเส้นรายละเอียดของมุมมอง ความยาวขึ้นบนชิ้นนั้น ความยาวรวมขึ้นที่แถบตัวเลือก คานและท่อที่ลาดวัดตามแนวลาด คลิกซ้ำเพื่อเอาออก Esc ล้าง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60752,6 +60787,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.548 · Match Type in elevations, sections and 3D views, as in Revit: click the element whose type to copy, then each element to take it; walls, windows, doors and other elements in elevations, sections and 3D, and the text, dimensions and other annotations of an elevation; the source keeps a dashed outline until Esc, a click on nothing picks a new source, and a window takes the sill of its new type
 - V1.549 · Model Text in elevations, sections and 3D views, as in Revit: click a wall seen in the view and the text stands on the face looked at, read from outside, the middle of its foot where the click was; the letters follow the pointer before the click, and the text goes with the wall as one placed in a plan
 - V1.550 · Tread Number in elevations and sections, as in Revit: click a run of a stair the view shows to number it, or a landing to number every run; the numbers go along the stair path, a tread number over the middle of its tread, a riser number beside its riser; they follow the stair, a drag up or down moves them, they hide by category and go to sheets and DXF
+- V1.551 · Measure Along an Element in elevations, sections and 3D views, as in Revit: click walls, beams, runs, railings or the detail lines of the view; each length shows on it and the total on the options bar, sloping beams and runs measured along the slope; click one again to take it out, Esc clears
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -60869,7 +60905,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - [[a_dimlock]] (แม่กุญแจ): เลือกเส้นบอกระยะแล้วคลิกแม่กุญแจข้างเส้น ระยะนั้นจะคงที่ — ขยับด้านหนึ่ง อีกด้านตามไปพร้อมสิ่งที่ยืนอยู่บนมัน ถ้าอีกด้านขยับไม่ได้ ด้านที่ขยับจะกลับที่เดิม · คลิกแม่กุญแจอีกครั้งเพื่อปลด ระยะที่ล็อกต้องปลดก่อนจึงพิมพ์ค่าใหม่ได้
 - [[a_dimeq]]: เลือกช่วงหนึ่งของแนวต่อเนื่องแล้วคลิก EQ ทุกช่วงจะเท่ากันและเท่ากันเสมอ ตัวเลขเปลี่ยนเป็น EQ (ตั้ง [[p_dimeqd]] เป็น [[eqd_val]] ถ้าอยากเห็นตัวเลข) · ขยับปลายแนว จุดข้างในจะจัดระยะใหม่ · ขยับจุดข้างใน จุดอื่นจะขยับตามโดยจุดที่มีรูปสมออยู่กับที่ — คลิกวงกลมที่จุดอื่นเพื่อย้ายสมอไปที่นั่น · ระยะที่ทำตามไม่ได้จะแสดงเป็นสีแดง
 - [[t_adim]]: คลิกสองเส้นแล้ววางส่วนโค้ง · [[t_spot]] ((EL)): แสดงค่าระดับความสูงของจุดที่คลิก · [[t_measure]]: วัดระยะโดยไม่ทิ้งเส้นไว้ในแบบ
-- [[t_measel]] (แท็บแก้ไข › วัด): คลิกผนัง เส้น ท่อ หรือราง ความยาวแต่ละชิ้นขึ้นบนแบบ ความยาวรวมขึ้นที่แถบตัวเลือก คลิกซ้ำเพื่อเอาออก Esc เพื่อล้าง
+- [[t_measel]] (แท็บแก้ไข › วัด): คลิกผนัง เส้น ท่อ หรือราง ความยาวแต่ละชิ้นขึ้นบนแบบ ความยาวรวมขึ้นที่แถบตัวเลือก คลิกซ้ำเพื่อเอาออก Esc เพื่อล้าง · ใช้ในรูปด้าน รูปตัด และ 3 มิติได้ คานและท่อที่ลาดวัดตามแนวลาด เส้นรายละเอียดของมุมมองนับด้วย
 - [[t_rdim]] [[t_ddim]] [[t_ldim]]: คลิกผนังโค้ง เสากลม หรือเส้นโค้ง แล้วคลิกตำแหน่งที่จะวางตัวเลข · ลากเพื่อหมุนแนวเส้นรอบจุดศูนย์กลางหรือย้ายตัวเลข · ผนังโค้งเลือกวัดที่ผิวใน แนวกึ่งกลาง หรือผิวนอกได้ · ดับเบิลคลิกตัวเลขแล้วพิมพ์ค่าใหม่ ผนังโค้งทั้งแนวจะปรับตาม โดยจุดศูนย์กลางอยู่ที่เดิม
 - [[t_dim]] เลือก **ทั้งผนัง (Entire Walls)** ในแถบตัวเลือก: คลิกผนังหนึ่งครั้งได้ระยะปลายผนัง ช่องเปิด (กึ่งกลางหรือความกว้าง) ผนังที่ตัดผ่าน และกริด ตาม **ตัวเลือก** คลิกผนังแนวเดียวกันเพิ่มได้ แล้วคลิกที่ว่างเพื่อวาง · ชนิดของเส้นบอกระยะ (แก้ชนิด): เครื่องหมายปลายเส้น (ขีดเฉียง ลูกศร จุด) ขนาดและฟอนต์ตัวเลข ตัวหนา สี หน่วยและทศนิยม ระยะเส้นช่วย · [[t_spot]] บนท่อ รางเคเบิล คาน หลังคา ทางลาด หรือพื้นดินในแปลน อ่านค่าระดับของสิ่งนั้น เลือกแสดงแนวกึ่งกลาง (CL) ขอบบน (TOP) ขอบล่าง (BOT) หรือทั้งบนและล่างได้ในแผงคุณสมบัติ
 - ระยะจากจุดฐานและระยะพิกัด: ใน [[edit_type]] ของเส้นบอกระยะ ตั้ง [[f_dstr]] เป็น [[dst_base]] (ทุกช่วงวัดจากจุดแรก ซ้อนกันเป็นแถว) หรือ [[dst_ord]] (ระยะจากจุดตั้งต้นที่ปลายเส้นช่วยทุกเส้น) แล้ววางเส้นบอกระยะผ่านหลายจุดตามปกติ หรือเลือกชนิด [[dst_base]] / [[dst_ord]] ที่มีให้ · จุดตั้งต้นคือจุดที่คลิกก่อน ลูกศรตรงจุดตั้งต้นหรือปุ่ม [[a_dsflip]] ย้ายไปอีกปลาย · พิมพ์ค่าใหม่ได้ (นับจากจุดตั้งต้น) · ลากแถวใดก็ได้ ทั้งสายย้ายตาม · [[p_dsbo]] อยู่ใน [[properties]] · ใช้ได้ทั้งในแปลน รูปด้าน และรูปตัด
@@ -60974,7 +61010,7 @@ What this chapter covers is annotation: it shows only in the view it was placed 
 - [[a_dimlock]] (the padlock): select a dimension and click the padlock beside it. The distance is then kept — move one side and the other follows with whatever stands on it; when the other side cannot move, the one you moved goes back · click the padlock again to release it. A locked distance is released before a new value can be typed
 - [[a_dimeq]]: select a segment of a string and click EQ. All its segments become equal and stay equal, and read EQ (set [[p_dimeqd]] to [[eqd_val]] to see the numbers) · move an end of the string and the inner points are spaced again · move an inner point and the others follow, the point with the anchor staying put — click the circle at another point to put the anchor there · a distance that cannot be kept is shown in red
 - [[t_adim]]: click two lines and place the arc · [[t_spot]] ((EL)): the elevation at a point · [[t_measure]]: measures without leaving a line in the drawing
-- [[t_measel]] (Modify › Measure): click walls, lines, runs or trays; each length shows on the drawing and the total on the options bar · click one again to take it out, Esc clears
+- [[t_measel]] (Modify › Measure): click walls, lines, runs or trays; each length shows on the drawing and the total on the options bar · click one again to take it out, Esc clears · it works in elevations, sections and 3D views too, where sloping beams and runs are measured along the slope and the detail lines of the view count
 - [[t_rdim]], [[t_ddim]], [[t_ldim]]: click a curved wall, a round column or a curved line, then where the value goes · drag to turn the line round the centre or to move the value · a curved wall is measured at its inner face, its centre line or its outer face · double-click the value and type a new one: the whole curved wall follows, its centre stays where it is
 - [[t_dim]] with **Entire Walls** in the options bar: one click on a wall gives its ends, its openings (centres or widths), the walls that cross it and the grids, as **Options** say; click more walls running the same way, then empty space to place it · dimension types (Edit Type): tick mark (diagonal, arrow, dot), text size and font, bold, colour, units and rounding, witness lines · [[t_spot]] on a pipe, a duct, a tray, a beam, a roof, a ramp or the ground in a plan reads its elevation; Properties chooses the centre line (CL), the top (TOP), the bottom (BOT) or both
 - Baseline and ordinate dimensions: in a dimension type ([[edit_type]]) set [[f_dstr]] to [[dst_base]] (every segment measured from the first point, stacked in rows) or [[dst_ord]] (the distance from the origin at the end of every witness line), then dimension through several points as usual, or pick the stock [[dst_base]] and [[dst_ord]] types · the origin is the point clicked first; the arrow at the origin or [[a_dsflip]] moves it to the other end · type a value (from the origin) to move what is measured · drag any row and the whole string follows · [[p_dsbo]] is in [[properties]] · in plans, elevations and sections
@@ -64540,6 +64576,31 @@ window.PenumBIM.r550={
   field:(key,val)=>{const el=$('#p_'+key);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));refresh();return true},
   scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   prompt:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
+/* V1.551 test API: Measure Along an Element in elevations, sections and 3D views */
+window.PenumBIM.r551={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl||'measel',activeView()),
+  pick:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];const e=ml551Pick(pn,v,{x:h*n.s+n.ox,y:-z*n.s+n.oy});return e?e.id:null},
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return mlIds()},
+  click3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]);XT3[ui.tool].click(pn,v,{x:s[0],y:s[1]},{});refresh();return mlIds()},
+  plan:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];toolClick(pn,v,{x:x*n.s+n.ox,y:y*n.s+n.oy},{});refresh();return mlIds()},
+  ml:()=>mlIds(),
+  line:(cat,lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const e=Object.assign(newLineEl(cat,lid,{x:x1,y:y1},{x:x2,y:y2}),o||{});P.els.push(e);id=e.id});refresh();return id},
+  fmt:x=>fmtLen(x)+' '+unitName(),
+  sumTxt:()=>fmtLen(ml551Sum())+' '+unitName(),
+  sum:()=>Math.round(ml551Sum()),
+  len:id=>Math.round(ml551Len(IDX.get(id))),
+  len2:id=>Math.round(mlLen(IDX.get(id))),
+  sel:ids=>{ui.sel=new Set(ids);refresh();return ui.sel.size},
+  get:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);if(e)for(const k in o){if(o[k]==null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  el:o=>{let id;edit(()=>{const e=Object.assign({id:P.seq++},o);P.els.push(e);id=e.id});refresh();return id},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  page3:(x,y,z)=>{const v=activeView(),pn=PANES[ui.ap],s=ev3Proj(pn,v)([x,y,z]),r=pn.cv.getBoundingClientRect();return s?{x:r.left+s[0],y:r.top+s[1]}:null},
+  prompt:()=>{hint();return $('#prompt').textContent},
+  bar:()=>{const b=$('#optbar');return b?b.textContent.replace(/\s+/g,' ').trim():''},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
