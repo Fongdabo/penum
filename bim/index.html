@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=536,V1_NAME='V1.526';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=537,V1_NAME='V1.527';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -56111,6 +56111,38 @@ XC.push(()=>{let M=null;for(const e of P.els){if(e.cat!=='rebar'||!e.rb||e.rb.vl
   if(r.vl526!==1||!rbs526Ok(r,h))delete r.vl526}});
 Object.assign(STR,{
   p_rbs526vl:['ความยาวแปรผันตามชิ้นส่วน (Varying Length)','Varying Length']});
+/* ===== 527 Varying rebar sets in walls (V1.527; Revit: the bars of a wall's rebar set stop at the openings, doors and windows in it, at the cover).
+   V1.526 cut the flat bars of a set in a floor to its outline and openings.  Sets in walls now vary too: a horizontal bar along the wall (straight, or a U or
+   an L whose legs turn up or down at its ends) is cut at each door, window, wall opening or void it crosses, and a standing bar (00 ⊥) over a door stops above
+   it, over a window is two (below the sill, above the head), each end the cover plus half the bar from the opening; a bar across the wall (a hairpin, a U
+   over its top) drops out where it would pass through an opening; a piece shorter than 50 mm drops out, and a wall with no opening keeps its bars.  Sets placed by Rebar by Shape in a wall (lying along a face, or standing, in a plan or a section)
+   vary from the start; Properties › Varying Length turns it on or off as in floors.  Moving a window or a door moves the cuts. ===== */
+let RBS527NEW=0;
+const rbs527V=p=>Array.isArray(p)&&p.length===2&&Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])<0.5&&Math.abs(p[1][2]-p[0][2])>1;          // a standing straight bar
+/* the openings of wall h in its frame F: [[u0, u1, z0, z1]] (doors, windows and wall openings hosted by it, void forms through it, embedded curtain walls) */
+function rbs527Ops(Q,h,F){const out=[],base=elev(Q,h.level);
+  for(const o of Q.els){if(!HOSTED.includes(o.cat)||o.host!==h.id)continue;const T=typ(Q,o);if(!T||!(+T.width>0)||!(+T.height>0))continue;const z=base+(+o.sill||0)-F.zb;out.push([o.pos-T.width/2,o.pos+T.width/2,z,z+(+T.height)])}
+  for(const q of voidCuts(Q,h,F.zb,F.zt))out.push([q[0],q[1],q[2]-F.zb,q[3]-F.zb]);
+  if(Q===P&&typeof EMB230!=='undefined'&&EMB230&&EMB230.get)for(const q of EMB230.get(h.id)||[])out.push([q.a,q.b,q.s-F.zb,q.t-F.zb]);
+  return out}
+/* [lo, hi] less the blocks [a, b] grown by c: the pieces at least RBS526_MIN long */
+function rbs527Less(lo,hi,blk,c){let S=[[lo,hi]];for(const [a,b] of blk){const A=a-c,B=b+c;S=S.flatMap(([p,q])=>B<=p||A>=q?[[p,q]]:[[p,A],[B,q]].filter(([x,y])=>y-x>=RBS526_MIN))}return S}
+/* a set in a wall may vary: a run along the wall (flat, along u) or a standing straight bar */
+const rbs527X=p=>Array.isArray(p)&&p.length>=2&&p.every(q=>Math.abs(q[0]-p[0][0])<0.5);          // a bar in a plane across the wall (its points at one u)
+{const f0=rbs526Ok;rbs526Ok=(r,h)=>{if(!h||h.cat!=='wall')return f0(r,h);if(!r||r.cl||r.sp525||!Array.isArray(r.sk))return false;if(rbs527V(r.sk)||rbs527X(r.sk))return true;const I=rbs526Run(r.sk);
+  return!!I&&Math.abs(r.sk[I[0]][1]-r.sk[I[1]][1])<0.5}}
+{const f0=rbs526Cut;rbs526Cut=(Q,h,b,cv)=>{if(h.cat!=='wall')return f0(Q,h,b,cv);const F=rbs501Fr(Q,h);if(!F)return null;const O=rbs527Ops(Q,h,F);if(!O.length)return null;
+  const L=b.p.map(q=>rbs501L(F,q)),c=cv+b.d/2,W=x=>rbs501W(F,x);
+  if(rbs527V(L)){const u=L[0][0],v=L[0][1],up=L[1][2]>L[0][2],z0=Math.min(L[0][2],L[1][2]),z1=Math.max(L[0][2],L[1][2]);
+    return rbs527Less(z0,z1,O.filter(r=>u>r[0]-c&&u<r[1]+c).map(r=>[r[2],r[3]]),c).map(([a,z])=>(up?[[u,v,a],[u,v,z]]:[[u,v,z],[u,v,a]]).map(W))}
+  if(rbs527X(L)){const u=L[0][0],z0=Math.min(...L.map(q=>q[2])),z1=Math.max(...L.map(q=>q[2]));return O.some(r=>u>r[0]-c&&u<r[1]+c&&z1>r[2]-c&&z0<r[3]+c)?[]:null}          // across the wall: out where an opening is
+  const I=rbs526Run(b.p);if(!I)return null;const A=L[I[0]],B=L[I[1]];if(Math.abs(A[1]-B[1])>0.5)return null;
+  const z=A[2],fw=B[0]>A[0],n=L.length;
+  return rbs527Less(Math.min(A[0],B[0]),Math.max(A[0],B[0]),O.filter(r=>z>r[2]-c&&z<r[3]+c).map(r=>[r[0],r[1]]),c).map(([a,bb])=>{const s0=fw?a:bb,s1=fw?bb:a,p=L.map(q=>q.slice());
+    p[I[0]][0]=s0;p[I[1]][0]=s1;if(I[0]===1)p[0][0]=s0;if(I[1]===n-2)p[n-1][0]=s1;return p.map(W)})}}
+/* sets placed by Rebar by Shape in a wall vary from the start: the new set (the last element) is marked inside the same Undo step */
+{const f0=rbs522Place;rbs522Place=(pn,v,p)=>{RBS527NEW=1;try{return f0(pn,v,p)}finally{RBS527NEW=0}}}
+XC.push(()=>{if(!RBS527NEW)return;const e=P.els[P.els.length-1];if(!e||e.cat!=='rebar'||!e.rb||e.rb.vl526!==undefined)return;const h=P.els.find(x=>x.id===e.host);if(h&&h.cat==='wall'&&rbs526Ok(e.rb,h))e.rb.vl526=1});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -57256,6 +57288,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_rbsh522]] ในแปลน การวาง: ขนานระนาบทำงาน (รูปทรงนอน วางเรียงขึ้น) หรือขนานระยะหุ้ม (รูปทรงตั้งในระนาบของด้านที่ใกล้เมาส์ ที่ระยะหุ้มบนหรือล่าง วางเรียงขวางชิ้นส่วน เช่นเหล็กล่างของพื้นทีละทิศในคลิกเดียว)
 - [[t_rbsh522]] รูปทรงเกลียว (Spiral) ในแปลน: คลิกในเสาหรือฐานราก ได้เหล็กเกลียววงในระยะหุ้ม จากระยะหุ้มล่างถึงบน ตามระยะเกลียวในแถบตัวเลือก รอบปิดล่างและบนอย่างละ 1 รอบ แก้ระยะเกลียวและรอบปิดใน Properties
 - [[t_rbsh522]] ความยาวแปรผัน (Varying Length): ชุดเหล็กนอนในพื้น (เส้นตรง ตัว U ตัว L) ตัดแต่ละเส้นตามขอบพื้นและช่องเปิดที่ระยะหุ้ม เส้นที่ผ่านช่องเปิดเป็นสองเส้น ชุดที่วางขนานระยะหุ้มในพื้นเป็นแบบนี้ตั้งแต่ต้น เปิดหรือปิดใน Properties
+- [[t_rbsh522]] ในผนัง: เหล็กนอนตามผนังตัดที่ประตู หน้าต่าง ช่องเปิด เหล็กยืนเหนือประตูหยุดเหนือวงกบ เหนือหน้าต่างเป็นสองท่อน (ใต้ธรณีและเหนือวงกบ) ห่างระยะหุ้ม ชุดที่วางด้วยเหล็กเสริมตามรูปทรงในผนังเป็นแบบนี้ตั้งแต่ต้น
 - [[t_rbsk501]]: ในรูปตัดหรือรูปด้าน คลิกชิ้นส่วนคอนกรีต แล้วคลิกจุดของเหล็ก (ยึดเส้นระยะหุ้ม) Enter หรือคลิกจุดสุดท้ายซ้ำเพื่อจบ คลิกจุดแรกเพื่อปิดเป็นวง เหล็กวางเรียงตั้งฉากกับระนาบที่วาด ตาม [[p_rbs501lr]] (เส้นเดียว จำนวนคงที่ ระยะห่างไม่เกิน) และหยุดที่ระยะหุ้มจากขอบชิ้นส่วน
 - [[p_rbs502hs]] / [[p_rbs502he]]: ขอ 90° 135° หรือ 180° ที่ต้นหรือปลายเหล็กที่วาดเอง เลือกในแถบตัวเลือกก่อนวาดหรือใน Properties [[p_rbs502hos]] เลือกให้ขอหันซ้ายหรือขวา (ค่าเริ่มหันเข้าในรูป) วงปิดมีขอที่จุดแรกทั้งสองข้าง ความยาวขอตาม [[a_rhk301]]
 - [[p_rbs520hrs]] / [[p_rbs520hre]]: หมุนขอรอบแกนของเหล็กเป็นองศา ทวนเข็มเมื่อมองที่ปลายนั้นจากด้านนอก (−180 ถึง 180) ขอออกจากระนาบที่วาด ความยาวตัดเท่าเดิม แสดงเมื่อปลายนั้นมีขอ
@@ -57517,6 +57550,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_rbsh522]] in a plan, Orientation: Parallel to Work Plane (the shape lies flat, laid out up) or Parallel to Cover (the shape stands in the plane of the side nearest the pointer, at the top or bottom cover, laid out across the host: a slab's bottom bars one way in one click)
 - [[t_rbsh522]] Spiral, in a plan: click in a column or footing for a spiral inside its cover, from the bottom cover to the top at the pitch in the options bar, with one finishing turn at each end; change the pitch and finishing turns in Properties
 - [[t_rbsh522]] Varying Length: a set of flat bars in a floor (straight, U, L) has each bar cut to the floor's edges and openings at the cover, a bar across an opening becomes two; sets placed Parallel to Cover in a floor vary from the start; turn it on or off in Properties
+- [[t_rbsh522]] In walls: horizontal bars along the wall stop at doors, windows and openings, standing bars over a door stop above it and over a window are two (below the sill, above the head), the cover away; sets placed by Rebar by Shape in a wall vary from the start
 - [[t_rbsk501]]: in a section or an elevation, click a concrete host, then the points of the bar (they snap to the cover lines); Enter or the last point again finishes, the first point closes a loop. The bars are laid out across the plane they were sketched in by the [[p_rbs501lr]] (Single, Fixed Number, Maximum Spacing) and stop at the cover from the host's ends
 - [[p_rbs502hs]] / [[p_rbs502he]]: a 90°, 135° or 180° hook at a sketched bar's start or end, picked in the options bar before sketching or in Properties; [[p_rbs502hos]] turns it left or right (it turns into the shape until set); a closed loop has both at its first point; their lengths are the [[a_rhk301]]
 - [[p_rbs520hrs]] / [[p_rbs520hre]]: turns that hook about the bar's axis, in degrees counterclockwise looking at that end from outside (−180 to 180), out of the plane it was sketched in; the cut length stays the same; shown when that end has a hook
@@ -58539,6 +58573,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.524 · [[t_rbsh522]]: การวางแบบขนานระยะหุ้ม (Parallel to Cover) ของ Revit ในแปลน: แถบตัวเลือกมี "การวาง" ขนานระนาบทำงาน (นอน วางเรียงขึ้น เหมือนเดิม) หรือขนานระยะหุ้ม รูปทรงตั้งในระนาบของด้านที่ใกล้เมาส์ ยาวตามด้านนั้นระหว่างระยะหุ้มปลาย ที่ระยะหุ้มบนหรือล่าง แล้ววางเรียงขวางชิ้นส่วนถึงด้านตรงข้าม เช่นเหล็กล่างของพื้นทิศหนึ่งในคลิกเดียวใกล้ขอบ อีกทิศคลิกใกล้ขอบที่ตั้งฉาก ตัว U งอขึ้นสองปลาย ตัว L งอที่ปลายใกล้เมาส์ เห็นเหล็กทุกเส้นก่อนคลิก
 - V1.525 · [[t_rbsh522]]: เหล็กเกลียว (Spiral) แบบ Revit: รูปทรงเกลียวในเหล็กเสริมตามรูปทรง คลิกในเสาหรือฐานรากในแปลน ได้เหล็กเกลียววงในระยะหุ้ม (วงกลมในเส้นระยะหุ้ม เสากลมได้วงของเสาเอง) จากระยะหุ้มล่างถึงบน ตามระยะเกลียวในแถบตัวเลือก รอบปิดแบนล่างและบนอย่างละ 1 รอบ Properties แก้ขนาด ระยะเกลียว รอบปิดล่าง/บน เห็นเส้นผ่านศูนย์กลาง ความสูง จำนวนรอบ ความยาว น้ำหนัก เป็นเหล็กเส้นต่อเนื่องเส้นเดียว (ไม่คิดระยะทาบ) ตามขนาดเสาเมื่อแก้ แปลนแสดงเป็นวงกลม รูปตัดและ 3 มิติเห็นเป็นเกลียว เหล็กยืนที่วางทีหลังอยู่ด้านในเกลียว บนวงกลมตามมุมของเมาส์ (ดูดเข้ามุมทุก 45°) เช่นเดียวกับในเสากลม
 - V1.526 · [[t_rbsh522]]: ชุดเหล็กความยาวแปรผัน (Varying Length) แบบ Revit: ชุดเหล็กนอนในพื้นที่ไม่ใช่สี่เหลี่ยม (รูปตัว L มีช่องเปิด ช่องท่อ ช่องบันได) ตัดแต่ละเส้นตามขอบพื้นและช่องเปิดที่ระยะหุ้ม (วัดตั้งฉากกับขอบที่เหล็กชนเป็นมุม) เส้นที่ผ่านช่องเปิดเป็นสองเส้น เส้นที่อยู่นอกพื้นทั้งเส้นหายไป ขาของตัว U ตัว L ย้ายตามปลาย ชุดที่วางขนานระยะหุ้มในพื้นเป็นแบบนี้ตั้งแต่ต้น Properties มีช่องเปิดปิด และความยาวเหล็กแสดงสั้นสุดถึงยาวสุด จำนวนเหล็ก ตาราง BOQ แปลน และ 3 มิติตามเหล็กที่ตัดแล้ว
+- V1.527 · [[t_rbsh522]]: เหล็กในผนังหยุดที่ช่องเปิด แบบ Revit: ชุดเหล็กในผนังแปรผันได้แล้ว เหล็กนอนตามผนัง (เส้นตรง ตัว U ตัว L) ตัดที่ประตู หน้าต่าง ช่องเปิดในผนัง และรูปตันที่เจาะผนัง เหล็กยืนเหนือประตูหยุดเหนือวงกบ เหนือหน้าต่างเป็นสองท่อน ใต้ธรณีและเหนือวงกบ ปลายห่างช่องเปิดเท่าระยะหุ้มบวกครึ่งขนาดเหล็ก ผนังที่ไม่มีช่องเปิดเหล็กเหมือนเดิม ชุดที่วางด้วยเหล็กเสริมตามรูปทรงในผนังเป็นแบบนี้ตั้งแต่ต้น เปิดปิดใน Properties ได้ ย้ายประตูหน้าต่างแล้วรอยตัดตามไปเอง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -59237,6 +59272,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.524 · [[t_rbsh522]]: Revit's Parallel to Cover placement in plans: the options bar has Orientation, Parallel to Work Plane (lying flat, laid out up, as before) or Parallel to Cover: the shape stands in the plane of the side nearest the pointer, along that side between the end covers, at the top or bottom cover, and the set is laid out across the host to the opposite side; a slab's bottom bars one way are one click near an edge, the other way one click near the edge at right angles; a U-bar turns up at both ends, an L-bar at the end nearest the pointer; every bar shows before the click
 - V1.525 · [[t_rbsh522]]: spiral rebar as in Revit: Spiral in Rebar by Shape, a click in a column or footing in a plan makes a spiral inside its cover (the circle inscribed in the cover lines, a round column's own), from the bottom cover to the top at the pitch in the options bar, with one flat finishing turn at each end; Properties: bar size, pitch, base and top finishing turns, with its diameter, height, turns, length and weight; one continuous bar (no laps); it follows the column when it changes; plans draw a circle, sections and 3D the helix; standing bars placed after it go inside it, on its circle at the pointer's angle (snapped every 45°), as in a round column
 - V1.526 · [[t_rbsh522]]: varying length rebar sets as in Revit: a set of flat bars in a floor that is not a plain rectangle (an L, holes, shafts, stair wells) has each bar cut to the floor's edges and openings at the cover (square to an edge it meets at an angle); a bar across an opening becomes two, a bar wholly outside drops out, the legs of a U or an L move with its ends; sets placed Parallel to Cover in a floor vary from the start; Properties has the switch and the bar length from the shortest to the longest; the bar count, schedules, BOQ, plan and 3D follow the cut bars
+- V1.527 · [[t_rbsh522]]: wall bars stop at openings as in Revit: sets in walls vary too; horizontal bars along a wall (straight, U, L) are cut at doors, windows, wall openings and voids through it; standing bars over a door stop above it and over a window are two, below the sill and above the head; each end the cover plus half the bar from the opening; a wall with no opening keeps its bars; sets placed by Rebar by Shape in a wall vary from the start, Properties turns it on or off; moving a door or window moves the cuts
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -62588,6 +62624,11 @@ window.PenumBIM.r526={
   bars:id=>{const e=IDX.get(id);if(!e)return null;return rbs501Set(P,e).map(b=>{const I=rbs526Run(b.p),r1=x=>Math.round(x*10)/10;return{p:b.p.map(q=>q.map(r1)),len:r1(rbCut(b,40).total),run:I?[b.p[I[0]].slice(0,2).map(r1),b.p[I[1]].slice(0,2).map(r1)]:null}})},
   can:id=>rbs526Can(P,IDX.get(id)),on:id=>rbs526On(IDX.get(id)),mm:id=>{const m=rbs526MM(IDX.get(id));return m?m.map(x=>Math.round(x*10)/10):null},
   clip:(fid,a,b,c)=>rbs526Clip(P,IDX.get(fid),a,b,c).map(s=>s.map(q=>q.map(x=>Math.round(x*10)/10))),run:p=>rbs526Run(p),str:(k,...a)=>t(k,...a)};
+/* V1.527 test API: varying rebar sets in walls */
+window.PenumBIM.r527={
+  ops:wid=>{const h=IDX.get(wid),F=h&&rbs501Fr(P,h);return F?rbs527Ops(P,h,F).map(r=>r.map(x=>Math.round(x*10)/10)):null},
+  less:(lo,hi,blk,c)=>rbs527Less(lo,hi,blk,c),loc:id=>{const e=IDX.get(id),h=e&&rbs501Host(P,e),F=h&&rbs501Fr(P,h);if(!F)return null;
+    return rbs501Set(P,e).map(b=>b.p.map(q=>rbs501L(F,q).map(x=>Math.round(x*10)/10)))},str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
