@@ -7700,7 +7700,7 @@ function drawPlan(ctx,v,T,o){ctx=vgCtx(ctx,v,o.C,T.s*v.scale,o.thin);          /
   // room colour fill
   const rooms=of('room'),regs=REG(v.level,viewPhase(v),dopShown(P,v)),CS=v.cs?CSm(v.cs):null;
   rooms.forEach(([r],i)=>{g.el(r);const k=regionAt(regs,r.x,r.y);if(k<0)return;const h=hl(r.id),ci=CS&&CS.of.get(r.id);
-    if(ci){g.own(1);g.path(regs[k].net);ctx.globalAlpha=CS_ALPHA;ctx.fillStyle=ci.color;ctx.fill();ctx.globalAlpha=1;g.own(0)}
+    if(ci&&v.csl!=='f'){g.own(1);g.path(regs[k].net);ctx.globalAlpha=CS_ALPHA;ctx.fillStyle=ci.color;ctx.fill();ctx.globalAlpha=1;g.own(0)}
     if(h){g.path(regs[k].net);ctx.globalAlpha=0.14;ctx.fillStyle=h;ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=h;ctx.lineWidth=1;ctx.stroke();const n=regs[k].net;let x0=1e12,y0=1e12,x1=-1e12,y1=-1e12;for(const p of n){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}
       ctx.save();g.path(n);ctx.clip();ctx.globalAlpha=0.6;g.seg([x0,y0],[x1,y1]);g.seg([x1,y0],[x0,y1]);ctx.restore()}});
   if(v.area!=null)areaDrawFills(ctx,g,v,of('area'),hl);          // an area plan: the fill of its areas
@@ -14631,7 +14631,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=547,V1_NAME='V1.537';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=548,V1_NAME='V1.538';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -56894,6 +56894,64 @@ XT3.rtag={ok:v=>!!v&&v.kind==='section',
 {const f0=etg536Cats;etg536Cats=by=>[...(by.has('room')?['room']:[]),...f0(by)]}
 Object.assign(STR,{rst537_h:['คลิกห้องที่รูปตัดตัดผ่านเพื่อติดป้ายห้อง (กรอบประคือห้องที่รูปตัดนี้ตัด) · ติ๊กเส้นชี้หรือเลือกชนิดป้ายที่แถบตัวเลือก','Click a room the section cuts to tag it (the dashed frames are the rooms this section cuts) · Leader and the kind of tag on the options bar'],
   rst537_pick:['ตรงนั้นไม่มีห้องที่รูปตัดนี้ตัดผ่าน','No room this section cuts there']});
+/* ===== 538 Color fill in sections (V1.538; Revit: a section view's Color Scheme and Color Scheme Location, the rooms it cuts filled with the colours of the
+   scheme; the Color Fill Legend placed in a section; Color Scheme Location in plans too)
+   A section names the scheme its rooms are coloured by (v.cs, the schemes of the plans: by name, use, cooled or not, area, zone, and those of the lighting and
+   airflow checks).  Each room the section cuts is filled over the spans of its cut (rst537Cut: at the faces its area is measured at), from its base to its upper
+   limit, in the colour of its value.  Color Scheme Location (v.csl): Background, the default, puts the fill behind the model, so its lines and the patterns of
+   what is cut stay as they are; Foreground ('f') paints it solid over the model elements, hiding them, as Revit's solid fill does.  A plan takes Foreground too: its rooms are filled after the model.
+   A Color Fill Legend in a section ({cat:'ecfleg', view, x, y, title, all}) lists the values of the rooms the section cuts (all: every value of the scheme) and
+   is moved, copied and deleted as the other annotations of a section; Edit Scheme works from a section as from a plan.  Elevations do not show rooms. */
+EA_CAT.ecfleg='cfleg';PH_NO.add('ecfleg');
+/* the rooms of a section with the colour of their value: [{e, it (the item of the scheme), C (rst537Cut)}] */
+function csf538Of(v){const out=[];if(!v||v.kind!=='section'||!v.cs)return out;const S=CSm(v.cs);if(!S)return out;
+  for(const o of rst537List(v)){const it=S.of.get(o.e.id);if(it)out.push({e:o.e,it,C:o.C})}return out}
+/* the colour of a value as it shows over the paper (CS_ALPHA of it): Foreground paints it solid, so that it hides what is under it, as Revit's solid fill does */
+function csf538Rgb(c){c=String(c||'').trim();let m=/^#([0-9a-f]{3})$/i.exec(c);if(m)return m[1].split('').map(x=>parseInt(x+x,16));m=/^#([0-9a-f]{6})$/i.exec(c);if(m)return[0,2,4].map(i=>parseInt(m[1].slice(i,i+2),16));
+  m=/rgba?\(([^)]*)\)/i.exec(c);if(m){const a=m[1].split(/[ ,/]+/).map(Number).slice(0,3);if(a.length===3&&a.every(isFinite))return a}return[255,255,255]}
+const csf538Solid=(c,paper)=>{const a=csf538Rgb(c),b=csf538Rgb(paper);return'#'+a.map((x,i)=>Math.round(b[i]+(x-b[i])*CS_ALPHA).toString(16).padStart(2,'0')).join('')};
+/* draw them: behind the model (multiplied into it, or screened on dark paper: what is drawn stays drawn) or over it, solid; inside the crop region */
+function csf538Fill(ctx,g,v,col){const L=csf538Of(v);if(!L.length)return;const fore=v.csl==='f';ctx.save();
+  if(cropOn(v)){const b=v.crop.box;g.path([[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]]);ctx.clip()}
+  if(!fore){const q=csf538Rgb(col.paper);ctx.globalCompositeOperation=q[0]+q[1]+q[2]>=384?'multiply':'screen'}          // on dark paper the lines are light: screen keeps them
+  for(const o of L){g.el(o.e);g.own(1);ctx.fillStyle=fore?csf538Solid(o.it.color,col.paper):o.it.color;ctx.globalAlpha=fore?1:CS_ALPHA;for(const q of o.C.I){g.path([[q[0],-o.C.t],[q[1],-o.C.t],[q[1],-o.C.b],[q[0],-o.C.b]]);ctx.fill()}g.own(0)}
+  ctx.restore()}
+{const f0=drawElevDatum;drawElevDatum=function(ctx,v,T,o){if(v&&v.kind==='section'&&v.cs){try{csf538Fill(ctx,painter(ctx,T,v.scale||100,o.C,o.thin),v,o.C)}catch(err){}}return f0.apply(this,arguments)}}
+/* a plan in Foreground: its rooms filled solid after the model, before the annotations (the fill of the model's pass is left out) */
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||v.area!=null||!v.cs||v.csl!=='f')return;const CS=CSm(v.cs);if(!CS)return;const regs=REG(v.level,viewPhase(v),dopShown(P,v));
+  for(const [r] of of('room')){const k=regionAt(regs,r.x,r.y),ci=k>=0&&CS.of.get(r.id);if(!ci)continue;g.el(r);g.own(1);g.path(regs[k].net);ctx.fillStyle=csf538Solid(ci.color,col.paper);ctx.fill();g.own(0)}});
+/* the legend in a section: the values of the rooms it cuts */
+{const f0=cflegRows;cflegRows=(v,d)=>{if(!v||v.kind!=='section')return f0(v,d);const S=v.cs?CSm(v.cs):null;if(!S)return null;let items=S.items;
+  if(!d.all){const seen=new Set(csf538Of(v).map(o=>o.it));items=items.filter(it=>seen.has(it))}return{S,items}}}
+{const f0=eaDraw;eaDraw=(ctx,g,v,col,hl,o)=>{f0(ctx,g,v,col,hl,o);const D=eaList(v).filter(d=>d.cat==='ecfleg');if(!D.length)return;const was=ctx.layerNow?ctx.layerNow():null;g.lay('cfleg');
+  for(const d of D){g.el(d);drawCfLeg(g,d,col,hl(d.id),v)}if(was)ctx.layer(was[0],was[1])}}
+{const f0=eaHit;eaHit=(v,p,nav)=>{const h=f0(v,p,nav);if(h||ui.tool!=='modify')return h;const sc=v.scale||100,w={x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};
+  for(const d of eaList(v))if(d.cat==='ecfleg'&&cflegDist(v,d,w,sc)===0)return{id:d.id,part:'ann'};return null}}
+/* the Color Fill Legend tool in a section: one click places it; a section not filled yet takes the scheme by name, as in a plan */
+XT3.cfleg={ok:v=>!!v&&v.kind==='section',
+  click(pn,v,p){const n=navOf(v),w={x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s},had=!!v.cs;
+    edit(()=>{if(!v.cs)v.cs='name';const mk={id:P.seq++,cat:'ecfleg',view:avid(v),x:Math.round(w.x),y:Math.round(w.y)};P.ann.push(mk);ui.sel=new Set([mk.id])});setTool('modify');if(!had)toast(t('cs_applied',t('cs_name')))},
+  draw(pn,ctx,v,nav){if(!ui.cur||ui.curPane!==pn.i)return;const g=painter(ctx,nav,v.scale||100,C,false),w={x:(ui.cur.x-nav.ox)/nav.s,y:(ui.cur.y-nav.oy)/nav.s};
+    ctx.globalAlpha=0.75;drawCfLeg(g,{id:0,cat:'ecfleg',x:w.x,y:w.y},C,C.sel,v.cs?v:Object.assign({},v,{cs:'name'}));ctx.globalAlpha=1},
+  hint:()=>t('csf538_h')};
+/* Edit Scheme from a section, or from its legend */
+{const f0=csPlan;csPlan=function(){const s=ui.sel.size===1?IDX.get([...ui.sel][0]):null,v=s&&s.cat==='ecfleg'?viewById(s.view):activeView();if(v&&v.kind==='section')return v;return f0.apply(this,arguments)}}
+/* Properties: the scheme and where it goes, of a section; where it goes, of a plan; the legend of a section */
+XVR.push(v=>{if(!v)return'';const sec=v.kind==='section',pl=v.kind==='plan'&&!v.draft&&v.area==null;if(!sec&&!pl)return'';let h=PR.grp('g_csf538');
+  if(sec)h+=PR.sel('cs538','p_cscheme',CS_KEYS.includes(v.cs)?v.cs:'~',[['~',t('none')],...CS_KEYS.map(k=>[k,t('cs_'+k)])]);          /* '~' is none: an empty value means "varies" */
+  h+=PR.sel('csl538','p_csl538',v.csl==='f'?'f':'b',[['b',t('csl538_b')],['f',t('csl538_f')]]);
+  if(sec)h+=`<div class="pa"><button class="btn" data-act="cscheme">${t('a_cscheme')}…</button></div>`;return h});
+XVF.push((v,key,raw)=>{if(key==='cs538'){edit(()=>{if(CS_KEYS.includes(raw))v.cs=raw;else delete v.cs});return true}if(key!=='csl538')return false;edit(()=>{if(raw==='f')v.csl='f';else delete v.csl});return true});
+XP.push((c,els)=>{if(c!=='ecfleg'||!els.length)return'';const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},cv=viewById(els[0].view);
+  return PR.grp('g_identity')+PR.ro('p_cscheme',cv&&cv.cs?t('cs_'+cv.cs):t('none'))+PR.text('title','p_cftitle',V(x=>x.title||''))+PR.chk('all','p_cfall',V(x=>!!x.all)===true)
+    +`<div class="pa"><button class="btn" data-act="cscheme">${t('a_cscheme')}…</button></div><div class="pnote">${t('n_csf538')}</div>`});
+/* keep only what is valid: Foreground in a plan or a section */
+XC.push(()=>{for(const v of P.views)if(v.csl!=null&&(v.csl!=='f'||!(v.kind==='plan'||v.kind==='section')))delete v.csl});
+Object.assign(STR,{g_csf538:['การระบายสีห้อง','Color Fill'],p_csl538:['ตำแหน่งสีห้อง (Color Scheme Location)','Color Scheme Location'],
+  csl538_b:['ด้านหลัง (Background) ชิ้นงานอยู่บนสี','Background'],csl538_f:['ด้านหน้า (Foreground) สีทับชิ้นงาน','Foreground'],cat_ecfleg:['ตารางคำอธิบายสี','Color Fill Legends'],
+  csf538_h:['คลิกที่วางตารางคำอธิบายสีของรูปตัดนี้ (แสดงค่าของห้องที่รูปตัดตัดผ่าน)','Click where the Color Fill Legend of this section goes (it lists the values of the rooms the section cuts)'],
+  n_csf538:['ตารางนี้ตามแบบสีของรูปตัด แสดงค่าของห้องที่รูปตัดตัดผ่าน ลากเพื่อย้ายได้ สีแก้ที่ แบบสีของห้อง','The legend follows the scheme of the section and lists the values of the rooms it cuts. Drag it to move it; colours are changed in Color Schemes.'],
+  cfleg_na:['ตารางคำอธิบายสีใช้ได้ในแปลนหรือรูปตัดที่มีห้อง','A colour fill legend goes in a plan or a section that has rooms']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59343,6 +59401,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.535 · ป้ายของเหล็กเสริมแบบพื้นที่ ตามแนว และตะแกรงเหล็ก แบบ Revit: เครื่องมือป้าย (Tag) ใช้กับสามหมวดนี้ได้แล้ว ในแปลน (บนพื้น) และในรูปด้านหรือรูปตัดที่มองผนัง (ในผนัง) ป้ายบอกเหล็กและระยะห่างทุกชั้น เหล็กตามแนวบอกเหล็ก ระยะห่าง และความยาว ตะแกรงบอกชนิดและจำนวนแผ่น แผ่นเดี่ยวบอกหมายเลขตะแกรง ป้ายทุกอันที่ยังไม่มีก็ใส่ให้ได้
 - V1.536 · ติดป้ายทั้งหมด (Tag All) ในรูปด้านและรูปตัด แบบ Revit: ปุ่มติดป้ายทั้งหมดใช้ได้ในรูปด้านและรูปตัดแล้ว นับทุกชิ้นที่มุมมองแสดงอยู่ (ในกรอบตัด เลยแนวตัด ไม่เลยระยะมองไกล) และยังไม่มีป้าย แยกตามหมวด เลือกหมวดและเส้นชี้ได้ ป้ายวางกลางแต่ละชิ้น Ctrl+Z เอาออกทีเดียว
 - V1.537 · ป้ายห้อง (Room Tag) ในรูปตัด แบบ Revit: เครื่องมือป้ายห้องใช้ในรูปตัดได้ ชี้แล้วเห็นกรอบห้องที่รูปตัดตัดผ่าน (ช่วงที่ตัดจากพื้นห้องถึงขอบบนของห้อง) คลิกติดป้ายชื่อและเลขห้องตรงนั้น มีเส้นชี้และชนิดป้ายเหมือนในแปลน ป้ายตามห้องเมื่อห้องเปลี่ยน ติดป้ายทั้งหมดในรูปตัดมีหมวดห้องด้วย
+- V1.538 · ระบายสีห้องในรูปตัด แบบ Revit: รูปตัดเลือกแบบสีของห้องได้ใน Properties (ชื่อห้อง การใช้งาน ปรับอากาศหรือไม่ พื้นที่ โซน) ห้องที่รูปตัดตัดผ่านระบายสีเต็มช่วงที่ตัด ตั้งแต่ฐานห้องถึงขอบบนของห้อง · ตำแหน่งสีห้อง (Color Scheme Location): ด้านหลัง ชิ้นงานและลายตัดยังเห็นชัดอยู่บนสี หรือด้านหน้า สีทับชิ้นงาน ใช้ได้ทั้งรูปตัดและแปลน · วางตารางคำอธิบายสีในรูปตัดได้ แสดงค่าของห้องที่รูปตัดตัดผ่าน ลาก คัดลอก ลบ ได้เหมือนคำอธิบายอื่น และแก้สีได้ที่ แบบสีของห้อง จากรูปตัด
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60052,6 +60111,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.535 · tags on Area and Path Reinforcement and on fabric, as in Revit: the Tag tool takes these three categories, in plans (in slabs) and in elevations or sections facing the wall (in walls); the tag gives each layer's bar and spacing, the path's bar, spacing and lengths, the fabric's type and sheets, a single sheet's Fabric Number; Tag All Not Tagged includes them
 - V1.536 · Tag All in elevations and sections, as in Revit: the Tag All button works in elevations and sections; it counts, by category, everything the view shows (inside the crop region, past the cut, short of the far clip) that has no tag there yet; pick the categories and Leader; each tag goes at the middle of its element; Ctrl+Z takes them all off
 - V1.537 · Room Tags in sections, as in Revit: the Room Tag tool works in a section; the pointer shows the rooms the section cuts (each span of the cut, from the room's base to its upper limit) and a click tags one there with its name and number, Leader and the kind of tag as in a plan; the tag follows the room; Tag All in a section offers Rooms too
+- V1.538 · Color fill in sections, as in Revit: a section takes a Color Scheme in its Properties (by name, use, cooled or not, area or zone) and every room it cuts is filled over the spans of the cut, from the room's base to its upper limit · Color Scheme Location: Background keeps the model's lines and cut patterns on top of the fill, Foreground puts the fill over the model, in sections and in plans · a Color Fill Legend placed in a section lists the values of the rooms it cuts, is moved, copied and deleted as any annotation, and Edit Scheme opens from the section
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -63552,6 +63612,23 @@ window.PenumBIM.r537={
   lines:aid=>{const d=P.ann.find(a=>a.id===aid);return d?rtagLines(d,IDX.get(d.el)):null},
   ok:k=>!!(XT3[k]&&XT3[k].ok(activeView())),
   set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=JSON.parse(JSON.stringify(o[k]))}});refresh();return JSON.parse(JSON.stringify(IDX.get(id)))},
+  str:k=>t(k)};
+window.PenumBIM.r538={
+  set:(vid,o)=>{edit(()=>{const v=viewById(vid);for(const k in o){if(o[k]==null)delete v[k];else v[k]=o[k]}});const v=viewById(vid);return{cs:v.cs||'',csl:v.csl||''}},
+  prop:(k,raw)=>{const v=activeView();ui.sel=new Set();setProp(k,raw,{type:'select-one'});refresh();return{cs:v.cs||'',csl:v.csl||''}},
+  of:vid=>csf538Of(viewById(vid)).map(o=>({id:o.e.id,color:o.it.color,v:o.it.v,I:o.C.I,b:o.C.b,t:o.C.t})),
+  rows:id=>{const d=IDX.get(id),v=viewById(d.view),R=cflegRows(v,d);return R?R.items.map(it=>[csLabel(R.S,it,t),it.color]):null},
+  title:id=>{const d=IDX.get(id);return cflegTitle(viewById(d.view),d)},
+  anns:()=>P.ann.filter(a=>a.cat==='ecfleg').map(a=>JSON.parse(JSON.stringify(a))),
+  place:(h,z)=>{const v=activeView(),nav=navOf(v),pn=PANES[ui.ap];setTool('cfleg');const ok=toolAllowed('cfleg',v);if(ok)XT3.cfleg.click(pn,v,{x:h*nav.s+nav.ox,y:-z*nav.s+nav.oy});return ok?P.ann.filter(a=>a.cat==='ecfleg').slice(-1)[0]||null:null},
+  hit:(id,h,z)=>{const v=activeView(),n=navOf(v);setTool('modify');const r=eaHit(v,{x:n.ox+h*n.s,y:n.oy-z*n.s},n);return r?r.id===id:false},
+  ok:tl=>toolAllowed(tl,activeView()),
+  pane:()=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{s:n.s,ox:n.ox,oy:n.oy,l:r.left,t:r.top}},
+  px:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],dpr=pn.cv.width/pn.cv.getBoundingClientRect().width,x=Math.round((h*n.s+n.ox)*dpr),y=Math.round((-z*n.s+n.oy)*dpr),d=pn.ctx.getImageData(x,y,1,1).data;return[d[0],d[1],d[2]]},
+  pxp:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],dpr=pn.cv.width/pn.cv.getBoundingClientRect().width,d=pn.ctx.getImageData(Math.round((x*n.s+n.ox)*dpr),Math.round((y*n.s+n.oy)*dpr),1,1).data;return[d[0],d[1],d[2]]},
+  dark:(x0,y0,x1,y1,th)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],dpr=pn.cv.width/pn.cv.getBoundingClientRect().width,X=x=>Math.round((x*n.s+n.ox)*dpr),Y=y=>Math.round((y*n.s+n.oy)*dpr),D=pn.ctx.getImageData(X(x0),Y(y0),Math.max(1,X(x1)-X(x0)),Math.max(1,Y(y1)-Y(y0))).data;let k=0;for(let i=0;i<D.length;i+=4)if(D[i]+D[i+1]+D[i+2]<(th||180))k++;return k},
+  rows3:()=>{const el=$('#props');return el?[...el.querySelectorAll('[data-p]')].map(x=>x.dataset.p):[]},
+  csPlanV:()=>{const v=csPlan();return v?v.id:null},
   str:k=>t(k)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
