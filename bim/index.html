@@ -14621,7 +14621,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=512,V1_NAME='V1.502';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=513,V1_NAME='V1.503';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -54974,6 +54974,62 @@ Object.assign(STR,{
   p_rbs502hs:['ขอที่ต้นเหล็ก (Hook At Start)','Hook At Start'],p_rbs502he:['ขอที่ปลายเหล็ก (Hook At End)','Hook At End'],
   p_rbs502hos:['ทิศขอที่ต้น (Hook Orientation At Start)','Hook Orientation At Start'],p_rbs502hoe:['ทิศขอที่ปลาย (Hook Orientation At End)','Hook Orientation At End'],
   rbs502o_l:['ซ้าย (Left)','Left'],rbs502o_r:['ขวา (Right)','Right'],rbs502_none:['ไม่มี','None'],o_rbs502hs:['ขอต้น','Start Hook'],o_rbs502he:['ขอปลาย','End Hook']});
+/* ===== 503 shape handles on sketched rebar (V1.503; Revit: a sketched Rebar selected in a view parallel to its sketch shows its shape handles, and dragging
+   one changes the bar's shape).  A set selected in a section or an elevation that looks along its layout (the view it was sketched in, or one parallel to it)
+   shows a round grip at each point of its sketch and a square one at the middle of each segment: a point is dragged anywhere (Shift: across or up and down
+   only), a segment is moved square to itself; both snap to the host's cover lines (its cover + half the set's bar), to the lines of the bar's other points
+   and else to 5 mm.  A point is not let onto its neighbour.  The bars, their hooks, lengths, the schedule and 3D follow; Ctrl+Z undoes a drag. ===== */
+const RBS503_MAX=8,RBS503_R=7;
+/* the selected sketched sets that view v looks along: [{e, h, F}] */
+function rbs503Sel(v){if(!lxV383(v)||ui.tool!=='modify'||catHid(v,'rebar'))return[];const f=viewDir(v),out=[];
+  for(const id of ui.sel){const e=IDX.get(id);if(!e||e.cat!=='rebar'||!e.rb||!Array.isArray(e.rb.sk)||e.rb.sk.length<2||isPinned(id)||hidEl(v,e))continue;
+    const h=rbs501Host(P,e),F=h&&rbs501Fr(P,h);if(!F)continue;const n=rbs502N(F,e.rb.nm);if(Math.abs(n[0]*f[0]+n[1]*f[1])<0.999)continue;
+    out.push({e,h,F});if(out.length>=RBS503_MAX)break}return out}
+/* its sketch's points in the view, [h, z] */
+const rbs503Pts=(v,S)=>S.e.rb.sk.map(q=>{const w=rbs501W(S.F,q);return[ev3Hq(v,w),w[2]]});
+/* its segments: [i, j] */
+const rbs503Segs=r=>{const n=r.sk.length,o=[];for(let i=0;i<n-1;i++)o.push([i,i+1]);if(r.cl&&n>=3)o.push([n-1,0]);return o};
+const rbs503Mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+/* the grip under p: a point {rbs503, id, i} before a segment {rbs503, id, i, j, seg} */
+function rbs503GripAt(pn,v,p){if(!lxV383(v)||(pn&&pn.i!==ui.ap))return null;const n=navOf(v),L=rbs503Sel(v),near=q=>Math.hypot(n.ox+q[0]*n.s-p.x,n.oy-q[1]*n.s-p.y)<=RBS503_R;
+  const Q=L.map(S=>rbs503Pts(v,S));
+  for(let k=0;k<L.length;k++)for(let i=0;i<Q[k].length;i++)if(near(Q[k][i]))return{rbs503:1,id:L[k].e.id,i};
+  for(let k=0;k<L.length;k++)for(const[i,j]of rbs503Segs(L[k].e.rb))if(near(rbs503Mid(Q[k][i],Q[k][j])))return{rbs503:1,id:L[k].e.id,i,j,seg:1};return null}
+{const f0=lxGripAt383;lxGripAt383=function(pn,v,p){return rbs503GripAt(pn,v,p)||f0(pn,v,p)}}
+/* over a grip: the set itself is what the pointer is over (not the host around it), and the cursor says it moves */
+{const f0=hoverPane;hoverPane=function(pn,v,p){f0(pn,v,p);if(ui.tool!=='modify'||!lxV383(v))return;const g=rbs503GripAt(pn,v,p);if(!g)return;pn.cv.style.cursor='move';if(ui.hov!==g.id){ui.hov=g.id;redraw()}}}
+/* x snapped to the nearest of the lines A within tol, else to 5 mm: [x, snapped] */
+const rbs503Snap=(x,A,tol)=>{let b=tol,s=null;for(const a of A)if(Math.abs(x-a)<b){b=Math.abs(x-a);s=a}return s==null?[Math.round(x/5)*5,false]:[s,true]};
+/* where the grip G of the set would put the points for a pointer moved by (dh, dz) in the view: [[h, z] …] (the sketch as it was when the drag began) */
+function rbs503Move(v,G,dh,dz,tol,shift){const Q=G.q.map(q=>q.slice()),B=G.B,cc=B?B.cv+rbs501D(IDX.get(G.id).rb)/2:0,
+    H=B?[B.h0+cc,B.h1-cc]:[],Z=B?[B.z0+cc,B.z1-cc]:[],oth=(arr,k)=>arr.concat(Q.filter((_,m)=>!G.mv.includes(m)).map(q=>q[k]));
+  if(!G.seg){const i=G.i;if(shift){if(Math.abs(dh)>=Math.abs(dz))dz=0;else dh=0}
+    const h=dh?rbs503Snap(Q[i][0]+dh,oth(H,0).concat([Q[i][0]]),tol)[0]:Q[i][0],z=dz?rbs503Snap(Q[i][1]+dz,oth(Z,1).concat([Q[i][1]]),tol)[0]:Q[i][1];Q[i]=[h,z];
+    const n=Q.length,nb=[i-1,i+1].map(m=>G.cl?(m+n)%n:m).filter(m=>m>=0&&m<n&&m!==i);if(nb.some(m=>Math.hypot(Q[m][0]-h,Q[m][1]-z)<1))return null;return Q}
+  const a=Q[G.i],b=Q[G.j],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-6)return null;const nr=[-(b[1]-a[1])/L,(b[0]-a[0])/L];let off=dh*nr[0]+dz*nr[1];
+  if(Math.abs(nr[1])>0.999){const z=rbs503Snap(a[1]+off*nr[1],oth(Z,1).concat([a[1]]),tol);off=(z[0]-a[1])*nr[1]}
+  else if(Math.abs(nr[0])>0.999){const h=rbs503Snap(a[0]+off*nr[0],oth(H,0).concat([a[0]]),tol);off=(h[0]-a[0])*nr[0]}else off=Math.round(off/5)*5;
+  for(const m of [G.i,G.j])Q[m]=[Q[m][0]+nr[0]*off,Q[m][1]+nr[1]*off];G.off=off;return Q}
+/* the drag: the sketch, its points in the view and their depths are taken at the first move */
+function rbs503Drag(v,d,p){const G=d.g,e=IDX.get(G.id),h=e&&rbs501Host(P,e),F=h&&rbs501Fr(P,h);if(!F||!e.rb)return;const n=navOf(v);
+  if(!G.q){const W=e.rb.sk.map(q=>rbs501W(F,q));G.q=W.map(w=>[ev3Hq(v,w),w[2]]);G.dp=W.map(w=>ev3Dq(v,w));G.B=rbs501Box(v,h);G.cl=!!e.rb.cl&&e.rb.sk.length>=3;G.mv=G.seg?[G.i,G.j]:[G.i]}
+  const Q=rbs503Move(v,G,(p.x-d.sx)/n.s,-(p.y-d.sy)/n.s,8/n.s,ui.shift);if(!Q)return;
+  e.rb.sk=Q.map((q,m)=>{const w=ev3At(v,q[0],G.dp[m]);return rbs501L(F,[w[0],w[1],q[1]]).map(x=>Math.round(x*10)/10)});touch();
+  const U=t('u_mm'),q=Q[G.i],q0=G.q[G.i],r=x=>String(Math.round(x*10)/10);hint(G.seg?t('h_rbs503seg',r(G.off||0),U):t('h_rbs503pt',G.i+1,r(q[0]-q0[0]),r(q[1]-q0[1]),U));redraw()}
+{const f0=cropDrag;cropDrag=function(v,d,p){if(d&&d.g&&d.g.rbs503)return rbs503Drag(v,d,p);return f0.apply(this,arguments)}}
+/* the grips of the selected sets */
+function rbs503Ctrls(pn,ctx,v,nav){const L=rbs503Sel(v);if(!L.length)return;const X=h=>nav.ox+h*nav.s,Y=z=>nav.oy-z*nav.s;ctx.save();ctx.fillStyle=C.paper;ctx.strokeStyle=C.sel;ctx.lineWidth=1.6;
+  for(const S of L){const Q=rbs503Pts(v,S);for(const[i,j]of rbs503Segs(S.e.rb)){const m=rbs503Mid(Q[i],Q[j]);ctx.beginPath();ctx.rect(X(m[0])-3.5,Y(m[1])-3.5,7,7);ctx.fill();ctx.stroke()}
+    for(const q of Q){ctx.beginPath();ctx.arc(X(q[0]),Y(q[1]),4.5,0,7);ctx.fill();ctx.stroke()}}ctx.restore()}
+{const f0=lxCtrls383;lxCtrls383=function(pn,ctx,v,nav,g){f0.apply(this,arguments);rbs503Ctrls(pn,ctx,v,nav)}}
+/* Properties: how to change the shape */
+{const f0=rbs501Rows;rbs501Rows=els=>f0(els).replace(`<div class="pnote">${esc(t('n_rbs501'))}`,`<div class="pnote">${esc(t('n_rbs501'))}${esc(t('rbs503_sep'))}${esc(t('n_rbs503'))}`)}
+Object.assign(STR,{
+  h_rbs503pt:['ลากจุดที่ {0} ของเหล็ก: แนวนอน {1} แนวดิ่ง {2} {3}','Dragging point {0} of the bar: {1} across, {2} up ({3})'],
+  h_rbs503seg:['ลากช่วงของเหล็กตั้งฉากกับช่วง {0} {1}','Dragging a segment of the bar square to itself: {0} {1}'],
+  rbs503_sep:[' ','. '],
+  n_rbs503:['เลือกชุดเหล็กในรูปตัดหรือรูปด้านที่มองตามแนววางเรียง แล้วลากจุดกลมเพื่อย้ายจุดของเหล็ก หรือจุดสี่เหลี่ยมกลางช่วงเพื่อเลื่อนช่วงนั้น จุดยึดเส้นระยะหุ้ม',
+    'Select the set in a section or an elevation that looks along its layout and drag a round grip to move a point of the bar, or a square one to move a segment; they snap to the cover lines']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -56108,6 +56164,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_pinf]]: คลิกพื้นแล้วคลิกจุดของแนว (ขอบพื้นหรือแนวคาน) คลิกจุดสุดท้ายซ้ำหรือกด Enter เพื่อจบ เหล็กตั้งฉากกับแนว ยาว [[p_arL]] ยื่นเข้าไปในพื้น ([[p_arflip]] สลับข้าง) ที่ผิวบนหรือล่าง [[p_arL2]] ทำให้เหล็กทุกเส้นที่สองยาวอีกค่า · เหล็กของทั้งสองแบบหยุดที่ระยะหุ้มจากขอบเขต ขอบพื้น และช่องเปิด และเข้า [[a_rbsched]] ปริมาณ และ BOQ
 - [[t_rbsk501]]: ในรูปตัดหรือรูปด้าน คลิกชิ้นส่วนคอนกรีต แล้วคลิกจุดของเหล็ก (ยึดเส้นระยะหุ้ม) Enter หรือคลิกจุดสุดท้ายซ้ำเพื่อจบ คลิกจุดแรกเพื่อปิดเป็นวง เหล็กวางเรียงตั้งฉากกับระนาบที่วาด ตาม [[p_rbs501lr]] (เส้นเดียว จำนวนคงที่ ระยะห่างไม่เกิน) และหยุดที่ระยะหุ้มจากขอบชิ้นส่วน
 - [[p_rbs502hs]] / [[p_rbs502he]]: ขอ 90° 135° หรือ 180° ที่ต้นหรือปลายเหล็กที่วาดเอง เลือกในแถบตัวเลือกก่อนวาดหรือใน Properties [[p_rbs502hos]] เลือกให้ขอหันซ้ายหรือขวา (ค่าเริ่มหันเข้าในรูป) วงปิดมีขอที่จุดแรกทั้งสองข้าง ความยาวขอตาม [[a_rhk301]]
+- จุดจับของ [[t_rbsk501]]: เลือกชุดเหล็กในรูปตัดหรือรูปด้านที่มองตามแนววางเรียง ลากจุดกลมย้ายจุดของเหล็ก (Shift ล็อกแนว) ลากจุดสี่เหลี่ยมกลางช่วงเลื่อนช่วงนั้นตั้งฉากกับตัวเอง จุดยึดเส้นระยะหุ้มและแนวของจุดอื่น
 - [[t_fabarea]]: คลิกพื้น (หรือเลือกพื้นก่อน) แล้ววาดขอบเขต (หรือสี่เหลี่ยม หรือกด [[a_arwhole]]) หรือเลือก [[fab_sheet]] แล้วคลิกมุมของแผ่น ได้ตะแกรงเหล็กปูเป็นแผ่นจากมุมของขอบเขตตามทิศหลัก ทาบกันตาม [[p_fblM]] และ [[p_fblm]] ติ๊ก [[p_fbstag]] ให้แถวเว้นแถวเลื่อนครึ่งแผ่น ชนิดของแผ่น (ลวดทั้งสองทาง ระยะห่าง ขนาดแผ่น) อยู่ใน แก้ไขชนิด · แผ่นที่ถูกขอบเขต ขอบพื้น หรือช่องเปิดตัดนับเป็นแผ่นตัด · [[a_fabsched]] ในคุณสมบัติ ตารางของหมวด [[cat_fabarea]] และ BOQ นับแผ่นของแต่ละชนิด
 - [[a_cpl221]] (Revit: Rebar Coupler): เลือกชิ้นที่มีเหล็กเสริม แล้วกดปุ่มนี้ในแท็บ [[tab_struct]] แผง เหล็กเสริม หรือตั้งในแผง [[properties]] ใต้เหล็กเสริม · [[p_cs221]] เลือก [[cs_cpl221]] เหล็กที่ยาวเกิน 10 ม. ต่อด้วยข้อต่อทุก 10 ม. แทนการทาบ ความยาวตัดไม่บวกระยะทาบ · [[p_ce221]] (เสา ผนัง: ล่าง บน · คาน: ต้นคาน ปลายคาน) ใส่ข้อต่อที่ปลายเหล็กยืน ใช้ที่รอยต่อการเทหรือรอต่อเหล็กของชั้นถัดไป ปลายนั้นไม่งอ · [[p_ct221]] [[cpl_std221]] [[cpl_pos221]] หรือ [[cpl_wld221]] ขนาดตามเหล็ก · ข้อต่อเห็นใน 3 มิติและรูปตัด อยู่ใน [[a_rbsched]] (ตารางของมันเอง และในไฟล์ CSV) และใน BOQ เป็นตัวตามชนิดและขนาด (ราคาสมมติ แก้ราคาในตาราง BOQ ได้)
 - [[a_rcs252]] (แท็บ [[tab_struct]] แผงเหล็กเสริม): ตารางชื่อระยะหุ้มคอนกรีตของโครงการ (ภายใน 40 / 20 ภายนอก 50 / 40 หล่อติดดิน 75 มม. แก้ เพิ่ม ลบได้) แล้วเลือกใน [[properties]] ใต้เหล็กเสริม: [[p_rcT252]], [[p_rcB252]] และ [[p_rcO252]] (ผนัง: [[p_rcE252]] และ [[p_rcI252]]) เหล็กของเสา คาน พื้น ฐานราก และผนังขยับตามผิวนั้น ผิวที่ไม่ได้เลือกใช้ [[p_rbc]] ของเหล็กเสริม เหล็กเสริมแบบพื้นที่ แบบแนว และตะแกรงเหล็กบนพื้นใช้ระยะหุ้มผิวบนหรือผิวล่างของพื้นเมื่อพื้นตั้งไว้
@@ -56350,6 +56407,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_pinf]]: click a slab, then the points of the path (a slab edge, or over a beam); click the last point again or press Enter to finish. The bars run across the path, [[p_arL]] long, into the slab ([[p_arflip]] swaps the side), at the top or the bottom face; [[p_arL2]] makes every other bar another length · the bars of both stop at the cover from the boundary, the slab edge and openings, and go into the [[a_rbsched]], the quantities and the BOQ
 - [[t_rbsk501]]: in a section or an elevation, click a concrete host, then the points of the bar (they snap to the cover lines); Enter or the last point again finishes, the first point closes a loop. The bars are laid out across the plane they were sketched in by the [[p_rbs501lr]] (Single, Fixed Number, Maximum Spacing) and stop at the cover from the host's ends
 - [[p_rbs502hs]] / [[p_rbs502he]]: a 90°, 135° or 180° hook at a sketched bar's start or end, picked in the options bar before sketching or in Properties; [[p_rbs502hos]] turns it left or right (it turns into the shape until set); a closed loop has both at its first point; their lengths are the [[a_rhk301]]
+- The grips of a [[t_rbsk501]] set: select it in a section or an elevation that looks along its layout; drag a round grip to move a point of the bar (Shift keeps it straight), a square one at a segment's middle to move that segment square to itself; they snap to the cover lines and the other points' lines
 - [[t_fabarea]]: click a slab (or select one first), then sketch the boundary (or a rectangle, or [[a_arwhole]]), or pick [[fab_sheet]] and click the sheet's corner; welded wire fabric is laid in sheets from the corner of the boundary along the major direction, overlapping by [[p_fblM]] and [[p_fblm]]; tick [[p_fbstag]] to move every other row half a sheet. The sheet (wires both ways, spacings, size) is the type, in Edit Type · a sheet the boundary, the slab edge or an opening cuts is a cut sheet · [[a_fabsched]] in Properties, a schedule of the [[cat_fabarea]] category and the BOQ count the sheets of each type
 - [[a_cpl221]] (Revit: Rebar Coupler): select elements with rebar and press this button ([[tab_struct]] tab, Reinforcement panel), or set it in [[properties]] under the rebar · [[p_cs221]]: [[cs_cpl221]] joins bars over 10 m with a coupler every 10 m instead of a lap, and the cut length adds no lap · [[p_ce221]] (columns and walls: bottom, top · beams: start, end) puts a coupler on the main bars' ends, for a construction joint or the next pour's bars; that end has no hook · [[p_ct221]]: [[cpl_std221]], [[cpl_pos221]] or [[cpl_wld221]], sized by the bar · couplers show in 3D and sections, in the [[a_rbsched]] (a table of their own, and in its CSV), and in the BOQ by type and size, each (assumed prices: type a price in the BOQ)
 - [[a_rcs252]] ([[tab_struct]] tab, Reinforcement panel): the project's named concrete covers (interior 40 / 20, exterior 50 / 40, cast against earth 75 mm; edit, add, remove), chosen in [[properties]] under the rebar as [[p_rcT252]], [[p_rcB252]] and [[p_rcO252]] (walls: [[p_rcE252]] and [[p_rcI252]]); the bars of columns, beams, slabs, footings and walls move to those faces, and a face given none takes the [[p_rbc]] of its rebar; area and path reinforcement and fabric on a slab sit at its top or bottom cover once it has one
@@ -57332,6 +57390,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.500 · [[a_stc492]]: แผ่นปลายคาน (End Plate) ตรวจครบแบบ Revit: แรงแบกทานของรูสลักฝั่งรองรับ แผ่นครากและขาดจากแรงเฉือนสองข้างเอว แผ่นฉีกขาดแบบบล็อก เอวคานครากตามแนวเชื่อม และหน้าตัดที่บากถ้าคานบาก รอยเชื่อมคิดเท่าความสูงที่ทาบเอว เหล็กฉากคู่ตรวจแรงแบกทานของสลักเกลียวฝั่งรองรับด้วย
 - V1.501 · [[t_rbsk501]] แบบ Revit: เปิดรูปตัดหรือรูปด้าน คลิกเสา คาน พื้น ฐานราก หรือผนังคอนกรีต แล้วคลิกจุดของเหล็กให้เป็นรูปอะไรก็ได้ (ยึดเส้นระยะหุ้ม) Enter จบเส้นเปิด คลิกจุดแรกปิดเป็นวง วางเรียงไปตามชิ้นส่วนแบบเส้นเดียว จำนวนคงที่ หรือระยะห่างไม่เกิน เหล็กย้ายและหมุนไปกับชิ้นส่วน เข้าตารางตัดเหล็ก ปริมาณ BOQ และรูป 3D
 - V1.502 · [[t_rbsk501]]: ขอเหล็กแบบ Revit: [[p_rbs502hs]] และ [[p_rbs502he]] (90° 135° 180°) พร้อมทิศขอซ้ายหรือขวา ตั้งในแถบตัวเลือกก่อนวาดหรือใน Properties ขอยาวตามความยาวขอเหล็กของโครงการ (เหล็กเปิดใช้ขอมาตรฐาน วงปิดใช้ขอปลอก) ขอเข้าความยาวตัด ตารางตัดเหล็ก BOQ และรูป 3D Properties ของชุดเหล็กมีพาร์ทิชันด้วย
+- V1.503 · [[t_rbsk501]]: จุดจับรูปทรงแบบ Revit: เลือกชุดเหล็กวาดเองในรูปตัดหรือรูปด้านที่มองตามแนววางเรียง มีจุดกลมที่จุดของเหล็กและจุดสี่เหลี่ยมกลางแต่ละช่วง ลากจุดกลมย้ายจุด (Shift ล็อกแนวนอนหรือแนวดิ่ง) ลากจุดสี่เหลี่ยมเลื่อนทั้งช่วงตั้งฉากกับตัวเอง จุดยึดเส้นระยะหุ้มและแนวของจุดอื่น ขอ ความยาว ตารางตัดเหล็ก และรูป 3D เปลี่ยนตาม Ctrl+Z ย้อนได้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -58006,6 +58065,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.500 · [[a_stc492]]: end plates checked as in Revit: bolt bearing on the support, the plate's shear yielding and rupture on both sides of the web, its block shear, the beam web's shear yielding along the weld and a coped beam's section; the weld counts only the height it covers on the web; clip angles also check their bolts bearing on the support
 - V1.501 · [[t_rbsk501]] (as in Revit): in a section or an elevation, click a concrete column, beam, slab, footing or wall, then click the points of a bar of any shape (they snap to the cover lines); Enter finishes an open bar, the first point closes a loop; it is laid out along the host as a Single bar, a Fixed Number or at a Maximum Spacing, moves and turns with its host, and goes into the Rebar Schedule, the quantities, the BOQ and 3D views
 - V1.502 · [[t_rbsk501]]: hooks as in Revit: [[p_rbs502hs]] and [[p_rbs502he]] (90°, 135°, 180°) turning left or right, set in the options bar before sketching or in Properties; a hook is as long as the project's Rebar Hook Lengths give (Standard for open bars, Stirrup/Tie for closed loops) and goes into the cut length, the Rebar Schedule, the BOQ and 3D views; the set's Properties also have its Partition
+- V1.503 · [[t_rbsk501]]: shape handles as in Revit: a sketched set selected in a section or an elevation that looks along its layout shows a round grip at each point of the bar and a square one at the middle of each segment; drag a round one to move a point (Shift keeps it across or up and down) or a square one to move the whole segment square to itself; they snap to the cover lines and to the other points' lines, and the hooks, lengths, the Rebar Schedule and 3D views follow; Ctrl+Z undoes it
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -61102,6 +61162,17 @@ window.PenumBIM.r502={
   raw:id=>rbs501SetRaw(P,IDX.get(id)).map(b=>({p:b.p.map(q=>q.map(x=>Math.round(x*10)/10)),hk:b.hk})),
   bars:id=>rbs501Set(P,IDX.get(id)).map(b=>({p:b.p.map(q=>q.map(x=>Math.round(x*10)/10)),hk:b.hk,k:b.k,cut:Math.round(rbCut(b,40).total*10)/10})),
   len:(d,a,tie)=>rhk301(d,a,tie),str:(k,...a)=>t(k,...a)};
+/* V1.503 test API: shape handles on sketched rebar */
+window.PenumBIM.r503={
+  grips:(vid,id)=>{const v=viewById(vid),S=rbs503Sel(v).find(x=>x.e.id===id);if(!S)return null;const Q=rbs503Pts(v,S);return{pts:Q.map(q=>q.map(x=>Math.round(x*10)/10)),segs:rbs503Segs(S.e.rb).map(([i,j])=>[i,j,rbs503Mid(Q[i],Q[j]).map(x=>Math.round(x*10)/10)])}},
+  sel:vid=>rbs503Sel(viewById(vid)).map(S=>S.e.id),
+  grip:(vid,h,z)=>{const v=viewById(vid),n=navOf(v),g=lxGripAt383(null,v,{x:n.ox+h*n.s,y:n.oy-z*n.s});return g&&g.rbs503?{id:g.id,i:g.i,j:g.j==null?null:g.j,seg:!!g.seg}:null},
+  /* a drag of the grip at (h, z) by (dh, dz) in the view, as the mouse would make it */
+  drag:(vid,h,z,dh,dz,shift)=>{const v=viewById(vid),n=navOf(v),sx=n.ox+h*n.s,sy=n.oy-z*n.s,g=lxGripAt383(null,v,{x:sx,y:sy});if(!g||!g.rbs503)return null;
+    const s0=ui.shift;ui.shift=!!shift;snapshot();const d={mode:'crop',g,sx,sy};cropDrag(v,d,{x:sx+dh*n.s,y:sy-dz*n.s});ui.shift=s0;commit();refresh();const e=IDX.get(g.id);return e?JSON.parse(JSON.stringify(e.rb.sk)):null},
+  zoom:(vid,sc)=>{const v=viewById(vid),n=navOf(v);n.auto=false;n.s=sc;redraw();return{s:n.s,ox:n.ox,oy:n.oy}},nav:vid=>{const n=navOf(viewById(vid));return{s:n.s,ox:n.ox,oy:n.oy}},
+  sched:()=>rbSched(P).map(r=>({sh:r.shape,d:r.d,n:r.n,cut:Math.round(r.cut*10)/10})),
+  note:()=>{renderProps();const e=document.querySelector('#props .pnote');return e?e.textContent:''},str:(k,...a)=>t(k,...a)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
