@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=567,V1_NAME='V1.557';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=568,V1_NAME='V1.558';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57918,6 +57918,122 @@ Object.assign(STR,{
   bm557_made:['วางคานแล้ว ยาว {0} คลิกจุดเริ่มของคานถัดไปได้เลย','Beam placed, {0} long: click the start of the next one'],
   bm557_on_col:['ในแนวแกนเสา','On the axis of the column'],bm557_on_beam:['ในแนวแกนคาน','On the axis of the beam'],bm557_on_wall:['ในแนวผนัง','On the location line of the wall'],
   bm557_on_cut:['บนแนวตัด','On the cut of the section'],bm557_on_mark:['บนแนวเครื่องหมายรูปด้าน','On the line of the elevation'],bm557_on_mid:['กลางโมเดล','In the middle of the model']});
+/* ===== 558 Vertical Opening (V1.558; Revit: Architecture › Opening › Vertical, and Structure › Opening › Vertical: a shape sketched in a plan that cuts one
+   floor, ceiling or roof, the one picked first, and nothing else).  e = {cat:'vopn', host: the floor, ceiling or roof it cuts, level (its host's), pts: its
+   shape, in plan}.  A shaft (Opening › Shaft) cuts every floor and ceiling between its base and its top; this cuts its host only (shaftHoles wrapped, so floors,
+   ceilings and roofs take it in 3D, sections, their area and volume, the rooms under a roof and picking).  In a plan its edges are drawn as the host's own and the
+   host's patterns leave it out (sh397G and rh400G are handed the host with it among its holes).  It goes with its host when the host is moved, turned,
+   mirrored, copied, pasted or deleted.  The tool: pick the host (or have it selected), then sketch the shape (lines or a rectangle); Esc picks another host. */
+const VO558_H=new Set(['floor','ceiling','roof']);
+const vo558Ok=e=>!!e&&e.cat==='vopn'&&Array.isArray(e.pts)&&e.pts.length>=3&&e.pts.every(p=>Array.isArray(p)&&isFinite(+p[0])&&isFinite(+p[1]));
+const vo558El=(Q,id)=>(Q===P?IDX.get(id):null)||Q.els.find(x=>x.id===id);
+const vo558HOk=h=>!!h&&VO558_H.has(h.cat)&&Array.isArray(h.pts)&&h.pts.length>=3;
+const vo558Host=(Q,e)=>{if(!e||e.host==null)return null;const h=vo558El(Q,e.host);return vo558HOk(h)?h:null};
+const VO558_IX=new WeakMap();
+function vo558Of(Q,hid){let c=VO558_IX.get(Q.els);if(!c||c.v!==VER||c.n!==Q.els.length){const m=new Map();for(const e of Q.els)if(e.cat==='vopn')(m.get(e.host)||m.set(e.host,[]).get(e.host)).push(e);c={v:VER,n:Q.els.length,m};VO558_IX.set(Q.els,c)}return c.m.get(hid)||[]}
+function vo558Polys(Q,h){return vo558Of(Q,h.id).filter(c=>c.host===h.id&&vo558Ok(c)).map(c=>c.pts)}          // the shapes cut out of the host h
+/* the host's outline in plan (a roof: with its overhang) */
+function vo558Out(Q,h){if(h.cat!=='roof')return h.pts;const R=roofGeo(Q,h);return R.out||R.eave||h.pts}
+{const f0=shaftHoles;shaftHoles=function(Q,e){const r=f0.apply(this,arguments);if(!e||e.id==null||!VO558_H.has(e.cat))return r;const K=vo558Polys(Q,e);return K.length?r.concat(K):r}}
+{const f0=zRange;zRange=(Q,e)=>{if(!e||e.cat!=='vopn')return f0(Q,e);const h=vo558Host(Q,e);return h?f0(Q,h):f0(Q,Object.assign({},e,{cat:'floor'}))}}
+/* what it takes out of its host: plan area (m²), volume (m³) and its own perimeter (m) */
+function vo558Geo(Q,e){if(!vo558Ok(e))return null;const h=vo558Host(Q,e);if(!h)return null;const O=vo558Out(Q,h),H=h.cat==='roof'?roofHoles(Q,h):slabHoles(Q,h),
+    A=L=>polyMinus(O,holeParts(L)).reduce((s,pc)=>s+Math.abs(area2(pc)),0),a0=A(H.filter(k=>k!==e.pts)),a1=A(H),cut=Math.max(0,a0-a1)/1e6,T=typ(Q,h)||{};
+  const th=h.cat==='roof'?(+T.thickness||200):h.cat==='ceiling'?(+T.thickness||12):(+T.thickness||150);let per=0;for(let i=0;i<e.pts.length;i++){const a=e.pts[i],b=e.pts[(i+1)%e.pts.length];per+=Math.hypot(b[0]-a[0],b[1]-a[1])}
+  return{h,cut,vol:cut*th/1000,per:per/1000,th}}
+const vo558HN=(Q,e)=>{const h=vo558Host(Q,e);if(!h)return'—';const T=typ(Q,h)||{};return t('t_'+h.cat)+(T.name?' : '+T.name:'')+(h.mark?' ('+h.mark+')':'')};
+/* ---- the plan: the host drawn with the opening among its holes ---- */
+const vo558Px=(e,K)=>Object.assign(Object.create(e),{holes:sh397(e).concat(K)});
+{const f0=sh397G;sh397G=function(g,e){if(!e||!VO558_H.has(e.cat))return f0.apply(this,arguments);const K=vo558Polys(P,e);return K.length?f0.call(this,g,vo558Px(e,K)):f0.apply(this,arguments)}}
+{const f0=rh400G;rh400G=function(g,e){if(!e||e.cat!=='roof')return f0.apply(this,arguments);const K=vo558Polys(P,e);return K.length?f0.call(this,g,vo558Px(e,K)):f0.apply(this,arguments)}}
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='vopn')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'vopn')||hidEl(v,e))return'';const h=vo558Host(P,e);return h?f0(v,h):''}}
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||!o.screen)return;          // picked or selected: its edges in the highlight
+  for(const [e] of of('vopn')){const k=hl(e.id);if(!k||!vo558Ok(e))continue;g.el(e);ctx.save();ctx.strokeStyle=k;ctx.lineWidth=2;g.path(e.pts);ctx.stroke();ctx.restore()}});
+XHIT.vopn=(v,e,w,tol)=>{if(!vo558Ok(e))return Infinity;const d=polyEdgeDist(w.x,w.y,e.pts);if(d<=tol)return d;return inPoly(w.x,w.y,e.pts)?tol:Infinity};XHIT.vopn.pr=7;          // its edges, or anywhere in the hole where nothing else is nearer
+GEOM.vopn='poly';DISC.vopn='arch';CREATE_TOOLS.add('vopn');
+{const i=VG_CATS.indexOf('shaft');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'vopn')}DXF_LAYER.vopn=['A-FLOR-OPEN',8];
+FLT_CATS.push('vopn');SF_CATS.push('vopn');SF_DISC.arch.push('vopn');SF_DEF.vopn=['vo558h','level','vo558a','vo558v','vo558p','comment'];
+/* ---- it goes with its host ---- */
+function vo558Exp(ids){const s=new Set(ids),add=[];for(const id of s){const e=IDX.get(id);if(e&&VO558_H.has(e.cat))for(const c of vo558Of(P,id))if(!s.has(c.id)&&c.host===id)add.push(c.id)}return add.length?[...s,...add]:ids}
+{const f0=translateIds;translateIds=(ids,dx,dy)=>f0(vo558Exp(ids),dx,dy)}
+{const f0=rotateIds;rotateIds=(ids,cx,cy,deg)=>f0(vo558Exp(ids),cx,cy,deg)}
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids);for(const id of [...s]){const e=IDX.get(id);if(e&&VO558_H.has(e.cat))for(const c of vo558Of(P,id))if(c.host===id)s.add(c.id)}return s}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(c&&c.cat==='vopn'&&M.has(c.host))c.host=M.get(c.host)}return out}}
+/* pasted: with its host it goes on the host's copy; alone, on the floor, ceiling or roof of its level under it (the kind it had first), else it is dropped */
+{const f0=pasteObjs;pasteObjs=(objs,dx,dy,lv,view)=>{if(!objs.some(o=>o.cat==='vopn'))return f0(objs,dx,dy,lv,view);const src=new Map(objs.map(o=>[o.id,o])),ids=f0(objs,dx,dy,lv,view);
+  const made=ids.map(id=>IDX.get(id)).filter(Boolean),hs=made.filter(vo558HOk),drop=new Set();
+  for(const c of made){if(c.cat!=='vopn')continue;const h=src.get(c.host);
+    if(h){const m=hs.find(p=>p.cat===h.cat&&p.pts.length===h.pts.length&&p.pts.every((q,i)=>Math.abs(q[0]-h.pts[i][0]-dx)<0.01&&Math.abs(q[1]-h.pts[i][1]-dy)<0.01));if(m){c.host=m.id;c.level=m.level;continue}}
+    const k0=(IDX.get(c.host)||{}).cat,L=P.els.filter(q=>vo558HOk(q)&&q.level===c.level&&polyHit(c.pts,vo558Out(P,q)));L.sort((a,b)=>(b.cat===k0)-(a.cat===k0));
+    if(L.length)c.host=L[0].id;else drop.add(c.id)}
+  if(!drop.size)return ids;P.els=P.els.filter(e=>!drop.has(e.id));IDX=indexProject(P);return ids.filter(id=>!drop.has(id))}}
+/* ---- what is kept: an opening needs its host (another of its level it lies on takes it when it has been moved off) and three points ---- */
+XC.push(()=>{const hs=new Map(P.els.filter(vo558HOk).map(e=>[e.id,e]));
+  P.els=P.els.filter(e=>e.cat!=='vopn'||(hs.has(e.host)&&vo558Ok(e)));
+  for(const e of P.els){if(e.cat!=='vopn')continue;e.pts=e.pts.map(p=>[Math.round(+p[0]*100)/100,Math.round(+p[1]*100)/100]);let h=hs.get(e.host);
+    const on=q=>q.level===h.level&&polyHit(e.pts,vo558Out(P,q));
+    if(!polyHit(e.pts,vo558Out(P,h))){const o=[...hs.values()].find(q=>q!==h&&q.cat===h.cat&&on(q));if(o){e.host=o.id;h=o}}e.level=h.level}});
+/* ---- Properties ---- */
+function vo558Rows(els){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},GS=els.map(x=>vo558Geo(P,x)),F=(x,d)=>(Math.round(x*10**d)/10**d).toFixed(d);
+  let h=PR.grp('g_constraints')+PR.ro('p_vo558h',V(x=>vo558HN(P,x)))+PR.ro('p_level',V(x=>{const l=lvl(P,x.level);return l?l.name:''}));
+  h+=PR.grp('g_dims');const a=GS.reduce((s,G)=>s+(G?G.cut:0),0),vo=GS.reduce((s,G)=>s+(G?G.vol:0),0);h+=PR.ro('p_vo558a',F(a,3)+' m²')+PR.ro('p_vo558v',F(vo,3)+' m³');
+  if(els.length===1&&GS[0]){h+=PR.ro('p_vo558p',F(GS[0].per,3)+' m');if(!(GS[0].cut>1e-6))h+=`<div class="pnote warn">${esc(t('vo558_nonote'))}</div>`}
+  return h+`<div class="pnote">${esc(t('n_vo558'))}</div>`}
+{const f0=catRows;catRows=(cat,els,isNew)=>{if(cat==='vopn')return vo558Rows(els);const h=f0(cat,els,isNew);if(!VO558_H.has(cat)||isNew)return h;let n=0;
+  for(const x of els)n+=vo558Of(P,x.id).filter(c=>c.host===x.id&&vo558Ok(c)).length;return n?h+PR.grp('g_vo558')+PR.ro('p_vo558n',String(n)):h}}
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='vopn')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),r=(x,d)=>Math.round(x*10**d)/10**d;
+  add('vo558h',tr('p_vo558h'),e=>{const h=vo558Host(Q,e);if(!h)return'';const T=typ(Q,h)||{};return tr('t_'+h.cat)+(T.name?' : '+T.name:'')+(h.mark?' ('+h.mark+')':'')});
+  add('vo558a',tr('p_vo558a')+' (m²)',e=>{const G=vo558Geo(Q,e);return G?r(G.cut,3):0},{num:1,dec:3,sum:1});add('vo558v',tr('p_vo558v')+' (m³)',e=>{const G=vo558Geo(Q,e);return G?r(G.vol,3):0},{num:1,dec:3,sum:1});
+  add('vo558p',tr('p_vo558p')+' (m)',e=>{const G=vo558Geo(Q,e);return G?r(G.per,3):0},{num:1,dec:3,sum:1});return F}}
+/* ---- the tool: pick the host, then sketch ---- */
+/* the floor, ceiling or roof of this plan under w: in a ceiling plan the ceilings first; else the highest */
+function vo558Pick(v,w){const L=[];for(const e of P.els){if(!vo558HOk(e)||!planShow(v,e)||prtHideOrg(v,e))continue;const O=vo558Out(P,e),d=polyEdgeDist(w.x,w.y,O);
+    if(!(inPoly(w.x,w.y,O)||d<=8/navOf(v).s))continue;if(sh397(e).concat(vo558Polys(P,e)).some(k=>inPoly(w.x,w.y,k)&&polyEdgeDist(w.x,w.y,k)>1))continue;          // not in one of its holes
+    L.push([e,(v.rcp?(e.cat==='ceiling'?0:1):(e.cat==='ceiling'?1:0)),zRange(P,e)[1]])}
+  L.sort((a,b)=>a[1]-b[1]||b[2]-a[2]);return L.length?L[0][0]:null}
+const vo558S=()=>ui.vo558||null;
+const vo558H=()=>{const S=vo558S(),h=S&&S.h!=null?IDX.get(S.h):null;return vo558HOk(h)?h:null};
+function vo558Put(v,pts){const h=vo558H();if(!h){toast(t('h_vo558_1'));return null}if(pts.length<3||Math.abs(area2(pts))<1e4){toast(t('sk_small'));return null}
+  const O=vo558Out(P,h),nm=vo558HN(P,{host:h.id});if(!polyHit(pts,O)){toast(t('vo558_none',nm));return null}
+  const H=h.cat==='roof'?roofHoles(P,h):slabHoles(P,h);if(polyMinus(O,holeParts(H.concat([pts]))).reduce((s,pc)=>s+Math.abs(area2(pc)),0)<1){toast(t('vo558_all',nm));return null}
+  const e={id:P.seq++,cat:'vopn',host:h.id,level:h.level,pts:pts.map(p=>[Math.round(p[0]),Math.round(p[1])])};setTool('modify');edit(()=>{P.els.push(e)});ui.sel=new Set([e.id]);refresh();
+  const G=vo558Geo(P,e);toast(t('vo558_made',nm,G?(Math.round(G.cut*1000)/1000).toFixed(3):'0'));return e.id}
+{const f0=skDone;skDone=(tool,v,pts)=>{if(tool!=='vopn')return f0(tool,v,pts);if(vo558Put(v,pts)==null&&ui.sk){ui.sk.pts=[];refresh()}}}          // refused: the shape again
+XT.vopn={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){const v=activeView(),s=[...ui.sel].map(id=>IDX.get(id)),h=s.length===1&&vo558HOk(s[0])&&v&&planShow(v,s[0])?s[0]:null;ui.vo558={h:h?h.id:null};ui.sk=h?{pts:[]}:null;ui.sel.clear();ui.hov=null;if(ui.opt.siteMode!=='rect')ui.opt.siteMode='poly'},
+  off(){ui.vo558=null;ui.sk=null},
+  hov(pn,v,p){const S=vo558S();if(!S||S.h!=null)return null;const n=navOf(v),h=vo558Pick(v,{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s});return h?h.id:null},
+  click(pn,v,p,w,pt){const S=vo558S();if(!S)return;if(S.h==null){const h=vo558Pick(v,w);if(!h){toast(t('vo558_nohost'));return}S.h=h.id;ui.sk={pts:[]};ui.hov=null;renderOptbar();refresh();return}
+    if(!vo558H()){S.h=null;ui.sk=null;refresh();return}skClick('vopn',pn,v,p,w,pt)},
+  draw(pn,ctx,v,nav,g){const h=vo558H();if(h){ctx.save();ctx.strokeStyle=C.sketch;ctx.globalAlpha=0.5;ctx.lineWidth=3;g.path(vo558Out(P,h));ctx.stroke();ctx.restore()}skDraw(pn,ctx,v,nav,g)},
+  hint(){const h=vo558H();if(!h)return t('h_vo558_1');const n=ui.sk?ui.sk.pts.length:0,nm=vo558HN(P,{host:h.id});return skMode()==='rect'?(n?t('h_sk_r2'):t('h_vo558_r1',nm)):n>=3?t('h_sk_p3'):n?t('h_sk_p2'):t('h_vo558_p1',nm)},
+  opt(who,chk,sel){const h=vo558H();return who+skOpt(sel)+(h?`<span class="vo558h">${esc(t('p_vo558h'))}: ${esc(vo558HN(P,{host:h.id}))}</span>`:'')},
+  esc(){const S=ui.sk;if(S&&S.pts.length){S.pts.pop();return true}const Q=vo558S();if(Q&&Q.h!=null){Q.h=null;ui.sk=null;renderOptbar();refresh();return true}return false},
+  fin(){const S=ui.sk,v=activeView();if(vo558H()&&S&&skMode()==='poly'&&S.pts.length>=3&&v)skDone('vopn',v,S.pts.slice());else toast(t(vo558H()?'sk_need3':'h_vo558_1'))}};
+XR.push(tl=>tl==='vopn'&&vo558H()&&skMode()==='poly'?[{t:'p_mode',b:['@skfinish','@cancel']}]:[]);
+/* the ribbon: Architecture › Opening after Shaft, and an Opening panel on Structure as in Revit */
+{const A=RIBBON.find(x=>x.id==='arch'),p=A&&A.panels.find(x=>x.t==='p_opening');if(p&&!p.b.includes('vopn')){const i=p.b.indexOf('shaft');p.b.splice(i<0?p.b.length:i+1,0,'vopn')}
+  const S=RIBBON.find(x=>x.id==='struct');if(S&&p&&!S.panels.some(x=>x.t==='p_opening')){const i=S.panels.findIndex(x=>x.t==='p_datum');S.panels.splice(i<0?S.panels.length:i,0,{t:'p_opening',b:p.b.slice()})}}
+Object.assign(BTN,{vopn:['vopn','']});
+{const f0=helpTopic;helpTopic=function(){if(ui.tool==='vopn'||(ui.sel.size&&[...ui.sel].every(id=>{const e=IDX.get(id);return e&&e.cat==='vopn'})))return'arch';return f0.apply(this,arguments)}}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-vopn" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#c9d3de" ${E} d="M2 15 8 7H22L16 15Z"/><path fill="#9fb0c3" ${E} d="M2 15H16V18H2Z"/><path fill="#9fb0c3" ${E} d="M16 15 22 7V10L16 18Z"/>`
+    +`<path fill="#fff" stroke="#e8590c" stroke-width="1.2" stroke-dasharray="1.6 1.1" stroke-linejoin="round" d="M8.6 13 11.4 9H16.4L13.6 13Z"/></symbol>`)})();
+Object.assign(STR,{
+  t_vopn:['ช่องเปิดในแผ่น (Vertical)','Vertical Opening'],cat_vopn:['ช่องเปิดในแผ่น (Vertical Openings)','Vertical Openings'],
+  n_vopn:['เจาะช่องในพื้น ฝ้า หรือหลังคาแผ่นเดียว คลิกแผ่นที่จะเจาะก่อน แล้ววาดขอบช่องในแปลน ไม่ทะลุชั้นอื่น (ถ้าจะเจาะหลายชั้นใช้ช่องเปิดพื้น Shaft)','An opening cut in one floor, ceiling or roof: click the one to cut, then sketch the shape in a plan. Nothing else is cut (a Shaft cuts every storey it passes).'],
+  h_vo558_1:['คลิกพื้น ฝ้า หรือหลังคาที่จะเจาะช่อง','Click the floor, ceiling or roof to cut'],
+  h_vo558_p1:['คลิกจุดแรกของขอบช่องใน {0} · Esc เลือกแผ่นอื่น','Click the first point of the opening in {0} · Esc picks another'],
+  h_vo558_r1:['คลิกมุมแรกของช่องสี่เหลี่ยมใน {0} · Esc เลือกแผ่นอื่น','Click the first corner of the opening in {0} · Esc picks another'],
+  vo558_nohost:['ตรงนี้ไม่มีพื้น ฝ้า หรือหลังคาในแปลนนี้','There is no floor, ceiling or roof of this plan here'],
+  vo558_none:['วาดรูปให้ทับ {0}','Sketch the shape over {0}'],vo558_all:['รูปนี้คลุม {0} ทั้งแผ่น ถ้าจะเอาออกให้ลบแผ่นนั้น','This shape covers all of {0}: delete it instead'],
+  vo558_made:['เจาะช่องใน {0} แล้ว {1} ตร.ม.','Opening cut in {0}: {1} m²'],
+  p_vo558h:['แผ่นที่เจาะ (Host)','Host'],p_vo558a:['พื้นที่ที่เจาะออก','Area Cut'],p_vo558v:['ปริมาตรที่เจาะออก','Volume Cut'],p_vo558p:['เส้นรอบช่อง','Perimeter'],
+  g_vo558:['ช่องเปิดในแผ่น','Vertical Openings'],p_vo558n:['จำนวนช่องเปิด (Vertical)','Vertical Openings'],
+  vo558_nonote:['รูปนี้ไม่ทับแผ่นแล้ว จึงไม่ได้เจาะอะไร','This shape no longer lies on its host, so it cuts nothing'],
+  n_vo558:['ช่องนี้เจาะเฉพาะแผ่นนี้ ไม่ทะลุชั้นอื่น ย้าย หมุน สะท้อน คัดลอก และลบไปพร้อมแผ่น ลบช่องแล้วแผ่นกลับเต็มเหมือนเดิม','It cuts its host only, no other storey; it goes with its host when the host is moved, turned, mirrored, copied or deleted; delete it and the host is whole again']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59026,6 +59142,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_door]] ((DR)) และ [[t_window]] ((WN)): เลือกชนิด แล้วชี้บนผนัง ด้านเปิดตามด้านที่เมาส์อยู่ กด ((Space)) สลับบานพับ
 - [[t_opening]]: ช่องสี่เหลี่ยมทะลุผนัง ไม่มีบาน
 - [[t_shaft]]: ช่องเปิดแนวดิ่ง เจาะพื้นและฝ้าทุกแผ่นที่ผ่าน (ช่องลิฟต์ ช่องท่อ)
+- [[t_vopn]]: เจาะช่องในพื้น ฝ้า หรือหลังคาแผ่นเดียว (สถาปัตย์หรือโครงสร้าง › ช่องเปิด) คลิกแผ่นที่จะเจาะ แล้ววาดขอบช่องเป็นเส้นหรือสี่เหลี่ยม ช่องไม่ทะลุชั้นอื่น และไปกับแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือลบ
 - หลายวง: ติ๊ก หลายวง ที่แถบตัวเลือกของ [[t_shaft]] วงในเป็นเกาะที่พื้นยังอยู่ วงแยกเป็นช่องชาฟต์อีกช่อง · เลือกช่องชาฟต์แล้วกด [[a_ebd397]] เพื่อแก้วงทั้งหมด
 
 # เสาและคาน
@@ -59293,6 +59410,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_door]] ((DR)) and [[t_window]] ((WN)): pick a type, then point at a wall. The swing follows the side the pointer is on; ((Space)) flips the hand
 - [[t_opening]]: a rectangular hole through a wall, with no leaf
 - [[t_shaft]]: a vertical opening that cuts every floor and ceiling it passes (lift shaft, riser shaft)
+- [[t_vopn]]: an opening in one floor, ceiling or roof (Architecture or Structure › Opening): click the one to cut, then sketch the shape with lines or a rectangle; nothing else is cut, and it goes with its host when the host is moved, turned, mirrored, copied or deleted
 - Multiple Loops: tick it on the Options Bar of [[t_shaft]]; a loop inside another is an island the floors keep, a loop apart is another shaft · select a shaft and press [[a_ebd397]] to edit its loops
 
 # Columns and beams
@@ -60390,6 +60508,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.555 · หลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion) วาดในรูปด้านและรูปตัด แบบ Revit: สถาปัตย์ › หลังคา ในรูปด้านหรือรูปตัด คลิกตามเส้นใต้หลังคาไปทางเดียวกัน (จับระดับชั้น กริด และขอบชิ้นงาน) Enter หรือ เสร็จสิ้น สร้างหลังคา Esc ถอยจุดสุดท้าย หลังคายาวตลอดความลึกของผนังที่อยู่ใต้ สันตามความลึกของมุมมอง ระดับและระยะเยื้องตั้งจากจุดต่ำสุด แก้หน้าตัดและขอบเขตได้เหมือนหลังคาแบบดึงอื่น ลากย้อนกลับหรือขึ้นตรงถูกปฏิเสธพร้อมบอกเหตุผล
 - V1.556 · กล้อง (Camera) วางในรูปด้านและรูปตัด และช่อง Perspective แบบ Revit: มุมมอง › กล้อง ในรูปด้านหรือรูปตัด คลิกแรกคือตำแหน่งตาที่ความสูงที่คลิก (ในรูปตัดอยู่บนแนวตัด ในรูปด้านอยู่ที่แนวรูปด้าน) คลิกที่สองคือจุดที่มอง บนชิ้นงานจะเล็งที่ผิวใต้เมาส์ ที่ว่างจะเล็งเข้าไปกลางรูป จับระดับชั้น กริด และขอบชิ้นงาน กล้องเงยหรือก้มตามความสูงสองจุด เปิดมุมมองใหม่ให้ทันที แสดงกล้องในรูปที่วางได้ ช่อง Perspective ในแถบตัวเลือก (ทั้งในแปลนและรูปด้าน) เอาออกจะได้มุมมอง 3 มิติแบบขนาน Esc เลือกตำแหน่งตาใหม่
 - V1.557 · วาดคานในรูปด้านและรูปตัด แบบ Revit: โครงสร้าง › คาน ในรูปด้านหรือรูปตัด คลิกจุดเริ่มและปลายของหลังคาน (จับระดับชั้น กริด และขอบชิ้นงาน เช่นหัวเสา) ความสูงต่างกันได้คานลาด คานอยู่ในแนวแกนเสาหรือคานใต้คลิกแรก หรือแนวผนังที่ขนานกับรูป ไม่มีจะอยู่บนแนวตัดของรูปตัดหรือแนวเครื่องหมายรูปด้าน ระดับอ้างอิงคือชั้นที่อยู่ใต้ปลายต่ำ พร้อมระยะเยื้องต้นและปลาย ระหว่างวาดเห็นแนวหลังคานและความลึกคาน เครื่องมือยังอยู่สำหรับคานถัดไป Esc เลือกจุดเริ่มใหม่ ค้ำยันยังวาดแบบเดิม
+- V1.558 · ช่องเปิดในแผ่น (Vertical Opening) แบบ Revit: สถาปัตย์หรือโครงสร้าง › ช่องเปิด › Vertical คลิกพื้น ฝ้า หรือหลังคาที่จะเจาะ (หรือเลือกไว้ก่อน) แล้ววาดขอบช่องเป็นเส้นหรือสี่เหลี่ยม เจาะเฉพาะแผ่นนั้น ไม่ทะลุชั้นอื่นแบบช่องชาฟต์ เห็นช่องในแปลน 3 มิติ รูปตัด พื้นที่และปริมาตรของแผ่น ช่องไปกับแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก วาง และลบ คุณสมบัติบอกแผ่นที่เจาะ พื้นที่และปริมาตรที่เจาะออก มีในตารางรายการ แท็บโครงสร้างมีแผงช่องเปิดเพิ่ม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61120,6 +61239,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.555 · Roof by Extrusion sketched in elevations and sections, as in Revit: Architecture › Roof in an elevation or a section takes clicks along the roof's underside, one way across (catching levels, grids and edges); Enter or Finish makes the roof, Esc takes the last point back; it runs the depth of the walls under it, its ridge along the view's depth, its level and offset from the lowest point; its profile and footprint are edited as any extruded roof's; a point that turns back or goes straight up is refused with the reason
 - V1.556 · Camera placed in elevations and sections, and Perspective on the options bar, as in Revit: View › Camera in an elevation or a section takes the eye where clicked, at that height (on the cut of a section, on the line of an elevation), then what it looks at: the face of the model under the pointer, else into the middle of the view; clicks catch levels, grids and edges; the camera tilts up or down between the two heights and its view opens; Show Camera shows it where it was placed; Perspective on the options bar (in plans too), cleared, makes an orthographic 3D view; Esc picks the eye again
 - V1.557 · Beams drawn in elevations and sections, as in Revit: Structure › Beam in an elevation or a section takes the start and the end of the beam's top (catching levels, grids and edges, such as the top of a column); at two heights it slopes; it goes on the axis of the column or beam under the first click, or on a wall along the view, else on the cut of a section or the line of an elevation; its Reference Level is the one under its lower end, with its Start and End Level Offsets; the top and the depth of the beam follow the pointer; the tool stays on for the next beam; Esc picks the start again; Brace works as before
+- V1.558 · Vertical Opening, as in Revit: Architecture or Structure › Opening › Vertical: click the floor, ceiling or roof to cut (or have it selected), then sketch the shape with lines or a rectangle; it cuts that one only, not every storey as a Shaft does; the opening shows in plans, 3D and sections and comes off the host's area and volume; it goes with its host when the host is moved, turned, mirrored, copied, pasted or deleted; Properties give its host and the area and volume cut; it can be scheduled; the Structure tab has an Opening panel too
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -65067,6 +65187,48 @@ window.PenumBIM.r557={
   prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
+/* V1.558 test API: Vertical Opening */
+window.PenumBIM.r558={
+  mk:(cat,lid,pts,o)=>{let id=0;edit(()=>{const d=defs(cat),T=(P.types[cat]||[])[0],e=cat==='roof'?{id:P.seq++,cat,type:T.id,level:lid,pts,shape:'flat',slope:0,overhang:0,off:0,alt:0}
+      :cat==='ceiling'?{id:P.seq++,cat,type:T.id,level:lid,pts,off:2600}:{id:P.seq++,cat,type:T.id,level:lid,pts,off:0};Object.assign(e,o||{});P.els.push(e);id=e.id});refresh();return id},
+  vo:(hid,pts)=>{let id=0;edit(()=>{const h=IDX.get(hid);const e={id:P.seq++,cat:'vopn',host:hid,level:h.level,pts};P.els.push(e);id=e.id});refresh();return id},
+  shaft:(lid,pts,top)=>{let id=0;edit(()=>{const e={id:P.seq++,cat:'shaft',level:lid,pts,baseOff:0,top:top||0,topOff:0,height:top?0:9000};P.els.push(e);id=e.id});refresh();return id},
+  rcp:lid=>{let v=null;edit(()=>{v=rcpPlan(P,lid,LANG==='en')});refresh();return v.id},
+  tool:()=>ui.tool,hv:()=>ui.hov,selIds:()=>[...ui.sel],
+  pscr:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+x*n.s+n.ox,y:r.top+y*n.s+n.oy}},
+  el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  vos:()=>P.els.filter(e=>e.cat==='vopn').map(e=>JSON.parse(JSON.stringify(e))),
+  holes:id=>{const e=IDX.get(id);return e?(e.cat==='roof'?roofHoles(P,e):slabHoles(P,e)).length:-1},
+  net:id=>{const e=IDX.get(id);if(!e)return-1;const O=vo558Out(P,e),H=e.cat==='roof'?roofHoles(P,e):slabHoles(P,e);return Math.round(polyMinus(O,holeParts(H)).reduce((s,pc)=>s+Math.abs(area2(pc)),0)/1e4)/100},
+  qty:id=>{const q=QTY().get(id);return q?{area:Math.round(q.area/1e4)/100,vol:q.vol!=null?Math.round(q.vol/1e7)/100:null}:null},
+  geo:id=>{const G=vo558Geo(P,IDX.get(id));return G?{h:G.h.id,cut:Math.round(G.cut*1000)/1000,vol:Math.round(G.vol*1000)/1000,per:Math.round(G.per*1000)/1000}:null},
+  z:id=>zRange(P,IDX.get(id)).map(Math.round),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  /* how many triangles of the element's 3D cover the plan point (x, y) */
+  cover:(id,x,y)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let n=0;const s=(a,b,c)=>(a[0]-c[0])*(b[1]-c[1])-(b[0]-c[0])*(a[1]-c[1]);
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+8<m.t.length;k+=9){const A=[m.t[k],m.t[k+2]],Bq=[m.t[k+3],m.t[k+5]],Cq=[m.t[k+6],m.t[k+8]],p=[x,y],d1=s(p,A,Bq),d2=s(p,Bq,Cq),d3=s(p,Cq,A);
+      if(Math.abs(s(A,Bq,Cq))<1)continue;const ng=d1<0||d2<0||d3<0,ps=d1>0||d2>0||d3>0;if(!(ng&&ps))n++}}return n},
+  pick:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null},
+  hov:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);return XT.vopn.hov(PANES[ui.ap],v,{x:x*n.s+n.ox,y:y*n.s+n.oy})},
+  sel:ids=>{ui.sel=new Set(ids);refresh();return[...ui.sel]},so:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  st:()=>ui.vo558?JSON.parse(JSON.stringify(ui.vo558)):null,sk:()=>ui.sk?ui.sk.pts.length:-1,
+  esc:()=>{cancelTool();return{s:ui.vo558?JSON.parse(JSON.stringify(ui.vo558)):null,tool:ui.tool}},
+  fin:()=>{finishSketch();return ui.tool},
+  move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));refresh();return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh();return true},
+  mirror:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh();return true},
+  copy:(ids,dx,dy)=>{let out=[];edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});refresh();return out},
+  del:ids=>{edit(()=>deleteIds([...expandSel(ids)]));refresh();return P.els.filter(e=>e.cat==='vopn').length},
+  delOnly:ids=>{edit(()=>deleteIds(ids));refresh();return P.els.filter(e=>e.cat==='vopn').length},
+  clip:(ids,dx,dy,lid)=>{ui.sel=new Set(ids);act('copyclip');const v=activeView();let out=[];edit(()=>{out=pasteObjs(ui.clip.objs,dx,dy,lid||v.level,v)});refresh();return out},
+  props:()=>{renderProps();return[...document.querySelectorAll('#props .pr')].map(r=>[r.querySelector('label')?r.querySelector('label').textContent:'',r.querySelector('.ro,input,select')?(r.querySelector('.ro')?r.querySelector('.ro').textContent:r.querySelector('input,select').value):''])},
+  note:()=>[...document.querySelectorAll('#props .pnote')].map(x=>x.textContent),
+  ribbon:()=>RIBBON.filter(x=>x.id==='arch'||x.id==='struct').map(x=>[x.id,(x.panels.find(p=>p.t==='p_opening')||{b:[]}).b]),
+  sf:()=>sfAll(P,'vopn',t).map(f=>f.k),sfv:(id,k)=>{const f=sfAll(P,'vopn',t).find(x=>x.k===k);return f?f.g(IDX.get(id)):null},
+  vg:()=>VG_CATS.indexOf('vopn')-VG_CATS.indexOf('shaft'),
+  prompt:()=>{hint();return $('#prompt').textContent},opt:()=>{const o=$('#optbar');return o?o.textContent:''},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},str:(k,...a)=>t(k,...a),
+  rtab:()=>[...document.querySelectorAll('#ribbon [data-act],#ribbon [data-tool]')].map(b=>b.dataset.tool||b.dataset.act).filter(Boolean)};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
