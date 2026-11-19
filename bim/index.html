@@ -5824,8 +5824,8 @@ function ckFree(P,mk,poles){const pe=pnFind(P,mk),occ=pnlOcc(P,mk),lay=panelLay(
 function pnlBalance(P,mk){const pe=pnFind(P,mk);if(!pe)return{err:'pb_none'};if(panelDist(P,pe)!=='3p')return{err:'pb_1p'};
   const E=esOf(P),lay=panelLay(pe),C=circuits(P).filter(c=>c.panel===mk),fixed=new Set(),mv=[],base=[0,0,0],imb=a=>{const av=(a[0]+a[1]+a[2])/3;return av>0?(Math.max(a[0],a[1],a[2])-av)/av*100:0};
   for(const c of C){const n=ckSlot(c.circuit),pw=!(c.sys&&c.sys!=='power'&&!c.mix);
-    if(pw&&c.poles!==3&&n>0&&/^\d+$/.test(c.circuit))mv.push({c,n,va:c.load/E.pf});else{for(const s of ckSlots(lay,n,c.poles))fixed.add(s);const q=ckPhv(E,c,lay,false);for(let i=0;i<3;i++)base[i]+=q[i]}}
-  for(const q of pnSpares(pe))for(const s of ckSlots(lay,q[0],q[1]))fixed.add(s);
+    if(pw&&c.poles!==3&&n>0&&/^\d+$/.test(c.circuit)&&!lkOf655(pe).has(n))mv.push({c,n,va:c.load/E.pf});else{for(const s of ckSlots(lay,n,c.poles))fixed.add(s);const q=ckPhv(E,c,lay,false);for(let i=0;i<3;i++)base[i]+=q[i]}}
+  for(const q of pnSpares(pe))for(const s of ckSlots(lay,q[0],q[1]))fixed.add(s);for(const s of lkOf655(pe))fixed.add(s);
   const before=base.slice();for(const m of mv)before[slotPh(lay,m.n)]+=m.va;
   if(mv.length<2)return{same:1,imb:imb(before)};
   let N=Math.max(+pe.ways||0,...mv.map(m=>m.n),...fixed);if(!pe.ways)N=Math.ceil(N/6)*6+6;
@@ -5864,7 +5864,7 @@ function pnlSched(P,id,tr,fmt){const pe=P.els.find(e=>e.id===id&&e.cat==='eequip
     const side=(o,q,s)=>{const x=W.get(s);o[q+'ck']=x&&x.c&&x.k===0?ckLab(P,mk,x.c.circuit,1):String(s);
       if(!x){o[q+'desc']=s<=top?tr('pnl_space'):'';return}
       if(x.k>0){o[q+'desc']='〃';if(x.c)o[q+'va']=vaAt(x.c,s);return}          // the second and third ways of a three-pole breaker
-      if(x.sp){o[q+'desc']=tr('pnl_spare');o[q+'brk']=x.sp[2]||'';o[q+'p']=one?1:x.sp[1];return}
+      if(x.sp){o[q+'desc']=tr(x.sp[3]===1?'pnl_space':'pnl_spare');o[q+'brk']=x.sp[3]===1?'':x.sp[2]||'';o[q+'p']=one?1:x.sp[1];return}
       const c=x.c;o[q+'desc']=ckDesc(c,tr);if(c.lv)return;o[q+'brk']=c.brk;o[q+'p']=one?1:c.poles;o[q+'va']=vaAt(c,s);o[q+'k']=c.panel+'|'+c.circuit;o[q+'ks']=c.set};
     rows.push(H(cols,head));
     for(let i=0;2*i<top;i++){const r={ph:phL(2*i+1)};side(r,'l',2*i+1);side(r,'r',2*i+2);rows.push(r)}
@@ -5877,7 +5877,7 @@ function pnlSched(P,id,tr,fmt){const pe=P.els.find(e=>e.id===id&&e.cat==='eequip
     rows.push(H(cols,head));
     for(let s=1;s<=top;s++){const x=W.get(s);if(x&&x.k>0)continue;
       if(!x){rows.push({ckt:String(s),ph:phL(s),desc:tr('pnl_space')});continue}
-      if(x.sp){const sl=ckSlots(lay,x.sp[0],one?1:x.sp[1]);rows.push({ckt:sl.join(','),ph:sl.length>1?'L1–L3':phL(s),desc:tr('pnl_spare'),brk:x.sp[2]||'',poles:one?1:x.sp[1]});continue}
+      if(x.sp){const sl=ckSlots(lay,x.sp[0],one?1:x.sp[1]);rows.push({ckt:sl.join(','),ph:sl.length>1?'L1–L3':phL(s),desc:tr(x.sp[3]===1?'pnl_space':'pnl_spare'),brk:x.sp[3]===1?'':x.sp[2]||'',poles:one?1:x.sp[1]});continue}
       rows.push(row(x.c))}
     for(const c of loose)rows.push(row(c));
     const f={_g:'f',desc:tr('c_total'),count:num('count')};for(let i=0;i<(one?1:3);i++)f['va'+i]=num('va'+i);rows.push(f)}
@@ -5931,7 +5931,7 @@ function circuitCheck(P){const out=[],C=circuitCalc(P),E=esOf(P),marks=new Map()
     for(const e of P.els)if(e.cat==='eequip'&&e.panel){if(e.panel===e.mark)out.push({k:'ck_loop',ids:[e.id],panel:e.mark});else if(!F.pan.has(e.panel))out.push({k:'ck_feedmiss',ids:[e.id],panel:e.mark||'—',a:[e.panel]})}
     for(const p of PN){const lay=panelLay(p.e),one=p.dist!=='3p',by=new Map(),put=(s,who,ids)=>{(by.get(s)||by.set(s,[]).get(s)).push({who,ids})};
       for(const c of C)if(c.panel===p.mark)for(const s of ckSlots(lay,ckSlot(c.circuit),one?1:c.poles))put(s,ckLab(P,p.mark,c.circuit,1),c.els.map(e=>e.id));
-      for(const q of pnSpares(p.e))for(const s of ckSlots(lay,q[0],one?1:q[1]))put(s,null,[p.e.id]);          // null: a spare
+      for(const q of pnSpares(p.e))for(const s of ckSlots(lay,q[0],one?1:q[1]))put(s,q[3]===1?0:null,[p.e.id]);          // null: a spare
       const seen=new Set();for(const [s,q] of [...by].sort((x,y)=>x[0]-y[0]))if(q.length>1){const key=q.map(x=>x.who).join('\u0001');if(seen.has(key))continue;seen.add(key);out.push({k:'ck_slot',ids:[...new Set(q.flatMap(x=>x.ids))],panel:p.mark,circuit:String(s),a:q.map(x=>x.who)})}
       const hi=by.size?Math.max(...by.keys()):0;if(p.e.ways&&hi>p.e.ways)out.push({k:'ck_ways',ids:[p.e.id],panel:p.mark,a:[hi,p.e.ways]});
       if(!one&&p.n>=3&&p.imb>CK_UNBAL)out.push({k:'ck_unbal',ids:[p.e.id],panel:p.mark,a:[p.imb].concat(p.phv)})}}
@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=664,V1_NAME='V1.654';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=665,V1_NAME='V1.655';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15602,7 +15602,7 @@ const distName=d=>d==='3p'?t('es_3p',esOf(P).vll,esOf(P).vln):d==='1p'?t('es_1p'
    a three-pole circuit on a single-phase panel, more current than the breaker allows, no wire in the table that will do. */
 function ckText(i){const a=i.a||[];switch(i.k){case'ck_nopanel':return t('ck_unasg',i.ids.length);case'ck_missing':return t('ck_missing',i.panel,i.circuit||'—');case'ck_nonum':return t('ck_nonum',i.panel,i.ids.length);case'ck_poles':return t('ck_poles',i.panel,i.circuit);
     case'ck_over':return t('ck_over',i.panel,i.circuit,a[0].toFixed(1),a[1],Math.round(100/esOf(P).brkK));case'ck_wire':return t('ck_wiresz',i.panel,i.circuit,a[0],esOf(P).vd);case'ck_dup':return t('ck_dup',i.panel,i.ids.length);case'ck_mix':return t('ck_mix',i.panel,i.circuit||'—');
-    case'ck_loop':return t('ck_loop',i.panel);case'ck_feedmiss':return t('ck_feedmiss',i.panel,a[0]);case'ck_slot':return t('ck_slot',i.panel,i.circuit,a.map(x=>x==null?t('pnl_spare'):x).join(', '));
+    case'ck_loop':return t('ck_loop',i.panel);case'ck_feedmiss':return t('ck_feedmiss',i.panel,a[0]);case'ck_slot':return t('ck_slot',i.panel,i.circuit,a.map(x=>x==null?t('pnl_spare'):x===0?t('pnl_space'):x).join(', '));
     case'ck_ways':return t('ck_ways',i.panel,a[0],a[1]);case'ck_unbal':return t('ck_unbal',i.panel,a[0].toFixed(0),money(a[1]),money(a[2]),money(a[3]));default:return i.k}}
 function dlgCircuits(){const C=circuitCalc(P),I=circuitCheck(P),PN=panelCalc(P,C),row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`;
   const cards=PN.map((p,i)=>`<div class="card"><div class="ch"><i style="background:${ECOL}"></i>${esc(p.mark)}<button class="btn" data-ck="s${i}">${t('pnl_open')}</button><button class="btn" data-ck="p${i}">${t('sr_select')}</button></div>`+row(t('p_dist'),esc(p.e?dsName649(P,p.e):distName(p.dist)))+(p.up?row(t('p_supply'),esc(p.up)):'')+row(t('p_circuits'),p.n)
@@ -15659,24 +15659,25 @@ XA.pnlsched=arg=>{let pes=(arg!=null&&arg!==''?String(arg).split(',').map(id=>ID
   const of=e=>P.views.find(v=>v.kind==='schedule'&&v.sched==='pnl'&&v.pnl===e.id),need=ok.filter(e=>!of(e));
   if(need.length)edit(()=>{for(const e of need)P.views.push(Object.assign({id:P.seq++,kind:'schedule',sched:'pnl',pnl:e.id,pnm:e.mark,name:t('pnl_name',e.mark),scale:100,detail:'coarse',hidden:[],hiddenCats:[]},pstOf330(P.pstd330)?{pst330:P.pstd330}:{}))});
   const v=of(ok[0]);if(v)showView(v.id);if(need.length>1)toast(t('pnl_made',need.length),6000)};
-XA.pnlbal=arg=>{const e=pnlPick(arg);if(!e)return;const R=pnlBalance(P,e.mark);if(R.err){toast(t(R.err),6000);return}if(R.same){toast(t('pb_same',R.imb.toFixed(1)),6000);return}
-  edit(()=>{pnlApply(P,e.mark,R.moves)});toast(t('pb_done',R.moves.length,R.imbB.toFixed(1),R.imbA.toFixed(1)),8000)};
+XA.pnlbal=arg=>{const e=pnlPick(arg);if(!e)return;const R=pnlBalance(P,e.mark);if(R.err){toast(t(R.err),6000);return}if(R.same){toast(t('pb_same',R.imb.toFixed(1))+pbNote655(e),6000);return}
+  edit(()=>{pnlApply(P,e.mark,R.moves)});toast(t('pb_done',R.moves.length,R.imbB.toFixed(1),R.imbA.toFixed(1))+pbNote655(e),8000)};
 XA.pnlspare=arg=>{const e=pnlPick(arg);if(e)dlgSpares(e.id)};
 XA.pnlsel=arg=>{const e=pnlPick(arg);if(e)showEls([e.id])};
 /* Spares (Revit: Add Spare in a panel schedule): a breaker on a way with nothing on it yet */
 function dlgSpares(id){const e=IDX.get(id);if(!e||e.cat!=='eequip'||!e.mark)return;ui.helpAt='calc';const E=esOf(P),lay=panelLay(e),one=panelDist(P,e)!=='3p',L=pnSpares(e),b0=E.brk.find(b=>b>=E.brkMin)||E.brk[0];
-  const body=`<p class="note">${t('psp_intro',esc(e.mark))}</p>`+(L.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('psp_slot')}</th><th>${t('c_poles')}</th><th>${t('c_brk')}</th><th></th></tr></thead><tbody>`+
-      L.map((q,i)=>`<tr><td>${ckSlots(lay,q[0],one?1:q[1]).join(', ')}</td><td>${one?1:q[1]}</td><td>${q[2]||'—'}</td><td><button class="btn" data-psp="del:${i}">${t('delete')}</button></td></tr>`).join('')+'</tbody></table></div>':`<p class="note">${t('psp_none')}</p>`)
+  const body=`<p class="note">${t('psp_intro',esc(e.mark))}</p><p class="note">${t('psp_note655')}</p>`+(L.length?`<div class="tblw"><table class="tbl"><thead><tr><th>${t('psp_slot')}</th><th>${t('psp_kind655')}</th><th>${t('c_poles')}</th><th>${t('c_brk')}</th><th></th></tr></thead><tbody>`+
+      L.map((q,i)=>`<tr><td>${ckSlots(lay,q[0],one?1:q[1]).join(', ')}</td><td>${t(isSpc655(q)?'pnl_space':'pnl_spare')}</td><td>${one?1:q[1]}</td><td>${isSpc655(q)?'—':q[2]||'—'}</td><td style="white-space:nowrap"><button class="btn" data-psp="kind:${i}">${t(isSpc655(q)?'psp_tospr655':'psp_tosp655')}</button> <button class="btn" data-psp="del:${i}">${t('delete')}</button></td></tr>`).join('')+'</tbody></table></div>':`<p class="note">${t('psp_none')}</p>`)
     +`<div class="ldg pz" style="padding:6px 10px"><label><span>${t('psp_slot')}</span><span><input type="number" id="pspN" min="1" max="400" step="1" placeholder="${ckFree(P,e.mark,1)}" style="width:74px"></span></label>`
     +`<label><span>${t('c_poles')}</span><span><select id="pspP"><option value="1">1</option>${one?'':'<option value="3">3</option>'}</select></span></label>`
     +`<label><span>${t('c_brk')}</span><span><select id="pspB">${E.brk.map(b=>`<option value="${b}"${b===b0?' selected':''}>${b}</option>`).join('')}</select></span></label></div>`
-    +`<div style="display:flex;gap:8px;padding:4px 10px 8px"><button class="btn primary" data-psp="add">${t('psp_add')}</button></div>`;
+    +`<div style="display:flex;gap:8px;padding:4px 10px 8px"><button class="btn primary" data-psp="add">${t('psp_add')}</button><button class="btn" data-psp="addsp">${t('psp_addsp655')}</button></div>`;
   openDlg(t('a_pnlspare')+' · '+e.mark,body,`<button class="btn" data-psp="sched">${t('a_pnlsched')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,
     {click(ev){const k=ev.target.dataset.psp;if(!k)return;
       if(k==='sched'){closeDlg();act('pnlsched',String(id));return}
-      if(k==='add'){const pp=+(($('#pspP')||{}).value)===3&&!one?3:1,n=parseInt(($('#pspN')||{}).value,10)||+ckFree(P,e.mark,pp),b=+(($('#pspB')||{}).value)||0;
-        if(!(n>=1&&n<=400)){toast(t('psp_bad'));return}const occ=pnlOcc(P,e.mark);if(ckSlots(lay,n,pp).some(s=>occ.has(s))){toast(t('psp_busy',n));return}
-        edit(()=>{e.sp=pnSpares(e).concat([[n,pp,b]])});dlgSpares(id);return}
+      if(k==='add'||k==='addsp'){const pp=+(($('#pspP')||{}).value)===3&&!one?3:1,n=parseInt(($('#pspN')||{}).value,10)||+ckFree(P,e.mark,pp),b=+(($('#pspB')||{}).value)||0;
+        if(!(n>=1&&n<=400)){toast(t('psp_bad'));return}if(ckSlots(lay,n,pp).some(s=>lkOf655(e).has(s))){toast(t('psp_lk655',n));return}const occ=pnlOcc(P,e.mark);if(ckSlots(lay,n,pp).some(s=>occ.has(s))){toast(t('psp_busy',n));return}
+        edit(()=>{e.sp=pnSpares(e).concat([k==='addsp'?[n,pp,0,1]:[n,pp,b]])});dlgSpares(id);return}
+      if(k.startsWith('kind:')){const i=+k.slice(5),b=+(($('#pspB')||{}).value)||b0;edit(()=>{const a=pnSpares(e).map(q=>q.slice()),q=a[i];if(!q)return;a[i]=isSpc655(q)?[q[0],q[1],b]:[q[0],q[1],0,1];e.sp=a});dlgSpares(id);return}
       if(k.startsWith('del:')){const i=+k.slice(4);edit(()=>{const a=pnSpares(e).slice();a.splice(i,1);if(a.length)e.sp=a;else delete e.sp});dlgSpares(id)}}})}
 /* Properties of a panel: what feeds it, the way it lays out its circuits, its ways and spares, and what it feeds */
 XP.push((c,els)=>{if(c!=='eequip')return'';const e=els[0],one=els.length===1,V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},own=new Set(els.map(x=>x.mark).filter(Boolean));
@@ -15684,8 +15685,8 @@ XP.push((c,els)=>{if(c!=='eequip')return'';const e=els[0],one=els.length===1,V=f
   if(els.some(x=>x.panel))h+=PR.text('circuit','p_supckt',V(x=>x.circuit||''));
   if(els.every(x=>panelDist(P,x)==='3p'))h+=PR.sel('lay','p_lay',V(x=>panelLay(x)),[['two',t('pl_two')],['one',t('pl_one')]]);
   h+=PR.num('ways','p_ways',V(x=>x.ways||0),'','step="1" min="0" max="200"');
-  if(one&&e.mark){const kids=[...feedMap(P).up].filter(q=>q[1]===e.mark).map(q=>q[0]).sort();if(kids.length)h+=PR.ro('p_feeds',kids.join(', '));if(pnSpares(e).length)h+=PR.ro('p_spares',pnSpares(e).map(q=>q[0]).join(', '))}
-  if(one)h+=`<div class="pa"><button class="btn" data-act="pnlsched" data-arg="${e.id}">${t('a_pnlsched')}</button><button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button>${panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:''}</div>`;
+  if(one&&e.mark){const kids=[...feedMap(P).up].filter(q=>q[1]===e.mark).map(q=>q[0]).sort();if(kids.length)h+=PR.ro('p_feeds',kids.join(', '));h+=spRows655(e)}
+  if(one)h+=`<div class="pa"><button class="btn" data-act="pnlsched" data-arg="${e.id}">${t('a_pnlsched')}</button><button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button><button class="btn" data-act="pnllk655" data-arg="${e.id}">${t('a_pnllk655')}…</button>${panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:''}</div>`;
   return h});
 XF.push((cat,o,key,raw)=>{if(cat!=='eequip')return false;const s=String(raw==null?'':raw).trim();
   if(key==='panel'){if(!s||s==='~'||s===o.mark){delete o.panel;delete o.circuit;return true}if(o.panel!==s||!o.circuit){o.panel=s;delete o.circuit;if(o.id)o.circuit=ckFree(P,s,panelDist(P,o)==='3p'?3:1)}return true}          // a new supply: the first free way there
@@ -15698,15 +15699,15 @@ XF.push((cat,o,key,raw)=>{if(cat!=='eequip')return false;const s=String(raw==nul
 const pnlFmtOpts=v=>[['two',t('pf_two')],['list',t('pf_list')]].map(([k,l])=>`<option value="${k}"${(v.pfmt==='list'?'list':'two')===k?' selected':''}>${esc(l)}</option>`).join('');
 XVR.push(v=>{if(v.kind!=='schedule'||v.sched!=='pnl')return'';const e=IDX.get(v.pnl);if(!e)return'';
   return PR.grp('g_pnlsched')+PR.ro('p_panel',e.mark||'—')+(panelLay(e)==='two'?PR.sel('pfmt','p_pfmt',v.pfmt==='list'?'list':'two',[['two',t('pf_two')],['list',t('pf_list')]]):PR.ro('p_pfmt',t('pf_list')))
-    +`<div class="pa"><button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button>${panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:''}<button class="btn" data-act="pnlsel" data-arg="${e.id}">${t('pnl_selpanel')}</button></div>`});
+    +`<div class="pa"><button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button><button class="btn" data-act="pnllk655" data-arg="${e.id}">${t('a_pnllk655')}…</button>${panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:''}<button class="btn" data-act="pnlsel" data-arg="${e.id}">${t('pnl_selpanel')}</button></div>`});
 XVF.push((v,key,raw)=>{if(key!=='pfmt'||v.kind!=='schedule'||v.sched!=='pnl')return false;edit(()=>{if(raw==='list')v.pfmt='list';else delete v.pfmt});return true});
 XVB.push((pn,v)=>{if(v.kind!=='schedule'||v.sched!=='pnl')return'';const e=IDX.get(v.pnl);if(!e)return'';
   return(panelLay(e)==='two'?`<select data-vp="pfmt" data-pane="${pn.i}" title="${esc(t('p_pfmt'))}" aria-label="${esc(t('p_pfmt'))}">${pnlFmtOpts(v)}</select>`:'')
-    +`<button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button>`+(panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:'')});
+    +`<button class="btn" data-act="pnlspare" data-arg="${e.id}">${t('a_pnlspare')}…</button><button class="btn" data-act="pnllk655" data-arg="${e.id}">${t('a_pnllk655')}…</button>`+(panelDist(P,e)==='3p'?`<button class="btn" data-act="pnlbal" data-arg="${e.id}">${t('a_pnlbal')}</button>`:'')});
 /* what a panel keeps of the distribution, and the schedules that go with the panels: one whose panel is gone goes too, and its name follows the mark */
 XC.push(()=>{const pe=new Map();for(const e of P.els){if(e.cat!=='eequip')continue;pe.set(e.id,e);
     if(e.lay!=null&&e.lay!=='one')delete e.lay;if(e.ways!=null){const n=Math.round(+e.ways);if(n>=1&&n<=200)e.ways=n;else delete e.ways}
-    if(e.sp!=null){const seen=new Set(),a=(Array.isArray(e.sp)?e.sp:[]).filter(q=>Array.isArray(q)).map(q=>[Math.round(+q[0]),+q[1]===3?3:1,Math.round(+q[2])||0])
+    if(e.sp!=null){const seen=new Set(),a=(Array.isArray(e.sp)?e.sp:[]).filter(q=>Array.isArray(q)).map(q=>q[3]===1?[Math.round(+q[0]),+q[1]===3?3:1,0,1]:[Math.round(+q[0]),+q[1]===3?3:1,Math.round(+q[2])||0])
         .filter(q=>q[0]>=1&&q[0]<=400&&q[2]>=0&&q[2]<=6300&&!seen.has(q[0])&&seen.add(q[0]));if(a.length)e.sp=a.sort((p,q)=>p[0]-q[0]);else delete e.sp}
     if(typeof e.panel!=='string'||!e.panel.trim()){delete e.panel;delete e.circuit}else if(e.circuit!=null&&typeof e.circuit!=='string')e.circuit=String(e.circuit)}
   P.views=P.views.filter(v=>{if(v.kind!=='schedule'||v.sched!=='pnl')return true;const e=pe.get(v.pnl);if(!e)return false;if(v.pfmt!=null&&v.pfmt!=='list')delete v.pfmt;
@@ -62523,6 +62524,55 @@ Object.assign(STR,{es_p_vdef:['นิยามแรงดัน (Voltage Defini
   ck_vnd654:['วงจร {0}/{1} มีแรงดัน {2} V ที่ไม่มีนิยามแรงดันใดครอบ','Circuit {0}/{1} is at {2} V, which no voltage definition holds'],
   ck_cv654:['อุปกรณ์ที่เลือกใช้แรงดัน {0} V แต่วงจรของตู้ {1} เป็น {2} V ({3} ช่วง {4} ถึง {5} V)','The selection is at {0} V; a circuit of {1} is at {2} V ({3}, {4} to {5} V)'],
   ck_cvn654:['อุปกรณ์ที่เลือกใช้แรงดัน {0} V แต่วงจรของตู้ {1} เป็น {2} V ที่ไม่มีนิยามแรงดันใดครอบ','The selection is at {0} V; a circuit of {1} is at {2} V, which no voltage definition holds']});
+/* ===== 655 Spaces and locked slots (V1.655; Revit: Panel Schedule › Add Space, Lock/Unlock) =====
+   e.sp of a panel kept its spares, [[way, poles, breaker A]].  A space is [way, poles, 0, 1]: ways kept for later with no breaker, read Space in the schedule and taken as a
+   spare is (a new circuit, another spare and Rebalance Loads leave them), and the spares dialog adds one (Add Space) or turns a spare into a space and back.
+   e.lk655 [ways]: the locked slots of a panel.  Rebalance Loads leaves a circuit on a locked slot where it is and moves nothing onto a locked slot that is free; a new circuit,
+   spare or space does not go on one (pnlOcc counts the locked ways as taken, so the first free way, Create Circuit and the circuit sequence pass them by).  Lock Slots…
+   (Properties of a panel, its schedule's Properties and view bar) lists the slots with what is on each, a box to lock it, Lock all used and Unlock all. ===== */
+function isSpc655(q){return Array.isArray(q)&&q[3]===1}
+function lkOf655(e){return new Set(e&&Array.isArray(e.lk655)?e.lk655:[])}
+function lkSet655(e,a){const b=[...new Set((Array.isArray(a)?a:[]).map(x=>Math.round(+x)))].filter(x=>x>=1&&x<=400).sort((p,q)=>p-q);if(b.length)e.lk655=b;else delete e.lk655}
+XC.push(()=>{for(const e of P.els){if(e.lk655==null)continue;if(e.cat!=='eequip'||!Array.isArray(e.lk655)){delete e.lk655;continue}lkSet655(e,e.lk655)}});
+{const f0=pnlOcc;pnlOcc=function(P0,mk){const S=f0.apply(this,arguments);for(const s of lkOf655(pnFind(P0,mk)))S.add(s);return S}}
+/* the slots of a panel, one row for each circuit, spare or space (all its ways) and each free way: {sl: ways, ph, kind 'c' | 'spare' | 'space' | '', what, lk} */
+function lkItems655(P0,pe,tr){if(!pe||!pe.mark)return[];const mk=pe.mark,lay=panelLay(pe),one=panelDist(P0,pe)!=='3p',sup=pnSupPh(P0,pe),W=new Map(),L=lkOf655(pe);
+  const C=circuitCalc(P0).filter(c=>c.panel===mk&&ckSlot(c.circuit)>0).sort((a,b)=>ckSlot(a.circuit)-ckSlot(b.circuit));
+  for(const c of C){const sl=ckSlots(lay,ckSlot(c.circuit),one?1:c.poles);sl.forEach((s,k)=>{if(!W.has(s))W.set(s,{c,k,sl})})}
+  for(const q of pnSpares(pe)){const sl=ckSlots(lay,q[0],one?1:q[1]);sl.forEach((s,k)=>{if(!W.has(s))W.set(s,{sp:q,k,sl})})}
+  const hi=Math.max(+pe.ways||0,0,...W.keys(),...L),N=lay==='two'&&!pe.ways&&hi%2?hi+1:hi,out=[];
+  for(let s=1;s<=N;s++){const x=W.get(s);if(x&&x.k>0)continue;const sl=x?x.sl:[s],ph=one?'L'+(sup+1):sl.length>1?'L1–L3':'L'+(slotPh(lay,s)+1);
+    const kind=!x?'':x.c?'c':isSpc655(x.sp)?'space':'spare',what=!x?'':x.c?ckLab(P0,mk,x.c.circuit,1)+' · '+ckDesc(x.c,tr):tr(kind==='space'?'pnl_space':'pnl_spare')+(kind==='spare'&&x.sp[2]?' · '+x.sp[2]+' A':'');
+    out.push({sl,ph,kind,what,lk:sl.every(q=>L.has(q))})}
+  return out}
+function dlgLock655(id){const e=IDX.get(id);if(!e||e.cat!=='eequip'||!e.mark)return;ui.helpAt='calc';const R=lkItems655(P,e,t),L=lkOf655(e),used=R.filter(r=>r.kind);
+  const body=`<p class="note">${t('lk655_intro',esc(e.mark))}</p>`+(R.length?`<div class="tblw"><table class="tbl lk655"><thead><tr><th>${t('lk655_lk')}</th><th>${t('psp_slot')}</th><th>${t('c_ph')}</th><th>${t('lk655_on')}</th></tr></thead><tbody>`
+      +R.map(r=>`<tr data-lks="${r.sl.join(',')}"${r.lk?' class="lk"':''}><td class="lkc"><label><input type="checkbox" data-lk655="${r.sl.join(',')}"${r.lk?' checked':''}> ${r.lk?'🔒':''}</label></td>`
+        +`<td>${r.sl.join(', ')}</td><td>${r.ph}</td><td class="lkw">${r.what?esc(r.what):`<span class="lkfree">${t('lk655_free')}</span>`}</td></tr>`).join('')+'</tbody></table></div>':`<p class="note">${t('lk655_nows')}</p>`)
+    +`<p class="note">${t('lk655_n',L.size)}</p>`;
+  openDlg(t('a_pnllk655')+' · '+e.mark,body,`<button class="btn" data-lkx="all"${used.length&&!used.every(r=>r.lk)?'':' disabled'}>${t('lk655_all')}</button><button class="btn" data-lkx="none"${L.size?'':' disabled'}>${t('lk655_none')}</button>`
+      +(panelDist(P,e)==='3p'?`<button class="btn" data-lkx="bal">${t('a_pnlbal')}</button>`:'')+`<button class="btn" data-lkx="sched">${t('a_pnlsched')}</button><span style="flex:1"></span><button class="btn" data-close="1">${t('close')}</button>`,
+    {click(ev){const k=ev.target.dataset&&ev.target.dataset.lkx;if(!k)return;
+      if(k==='all'){edit(()=>{lkSet655(e,[...L,...used.flatMap(r=>r.sl)])});dlgLock655(id);return}
+      if(k==='none'){edit(()=>{delete e.lk655});dlgLock655(id);return}
+      if(k==='bal'){act('pnlbal',String(id));dlgLock655(id);return}
+      if(k==='sched'){closeDlg();act('pnlsched',String(id))}},
+     change(ev){const v=ev.target.dataset&&ev.target.dataset.lk655;if(v==null)return;const sl=v.split(',').map(Number),on=ev.target.checked;
+      edit(()=>{const S=lkOf655(e);for(const s of sl){if(on)S.add(s);else S.delete(s)}lkSet655(e,[...S])});dlgLock655(id)}})}
+XA.pnllk655=arg=>{const e=pnlPick(arg);if(e)dlgLock655(e.id)};
+/* the Properties of a panel: its spares, its spaces and its locked slots */
+function spRows655(e){const A=pnSpares(e),sp=A.filter(q=>!isSpc655(q)),sc=A.filter(isSpc655),L=[...lkOf655(e)];
+  return(sp.length?PR.ro('p_spares',sp.map(q=>q[0]).join(', ')):'')+(sc.length?PR.ro('p_spaces655',sc.map(q=>q[0]).join(', ')):'')+(L.length?PR.ro('p_lk655','🔒 '+L.join(', ')):'')}
+/* after Rebalance Loads: how many locked slots stayed */
+function pbNote655(e){const n=lkOf655(e).size;return n?' · '+t('pb_lk655',n):''}
+Object.assign(STR,{a_pnllk655:['ล็อกช่อง (Lock)','Lock Slots'],lk655_intro:['ช่องที่ล็อกของตู้ {0}: ปรับสมดุลโหลดไม่ย้ายวงจรในช่องที่ล็อก และไม่ย้ายวงจรอื่นเข้าไป วงจรใหม่ วงจรสำรอง และช่องว่างจะไม่ลงในช่องที่ล็อก','Locked slots of {0}: Rebalance Loads leaves the circuit on a locked slot where it is and moves no other circuit onto it; a new circuit, spare or space does not go on a locked slot'],
+  lk655_on:['ในช่อง','On it'],lk655_lk:['ล็อก','Locked'],lk655_free:['ว่าง','free'],lk655_nows:['ตู้นี้ยังไม่มีช่อง ใส่จำนวนช่องหรือวงจรก่อน','This panel has no slots yet: give it ways or circuits first'],
+  lk655_n:['ล็อกอยู่ {0} ช่อง','{0} slot(s) locked'],lk655_all:['ล็อกทุกช่องที่ใช้','Lock all used'],lk655_none:['ปลดล็อกทั้งหมด','Unlock all'],
+  p_lk655:['ช่องที่ล็อก','Locked slots'],p_spaces655:['ช่องว่างที่จองไว้','Spaces'],pb_lk655:['ช่องที่ล็อก {0} ช่องอยู่ที่เดิม','{0} locked slot(s) kept'],
+  psp_addsp655:['เพิ่มช่องว่าง (Space)','Add Space'],psp_kind655:['ชนิด','Kind'],psp_tosp655:['เป็นช่องว่าง','To space'],psp_tospr655:['เป็นวงจรสำรอง','To spare'],
+  psp_lk655:['ช่อง {0} ล็อกอยู่','Way {0} is locked'],
+  psp_note655:['วงจรสำรอง (Spare) มีเบรกเกอร์รอไว้ ช่องว่าง (Space) จองช่องไว้โดยยังไม่มีเบรกเกอร์ ทั้งสองแบบวงจรใหม่และการปรับสมดุลโหลดจะไม่ใช้ช่องนั้น','A spare has a breaker waiting; a space keeps the ways with no breaker yet. New circuits and Rebalance Loads leave both alone']});
+{const st=document.createElement('style');st.textContent='#dlg table.lk655 td,#dlg table.lk655 th{vertical-align:middle}#dlg table.lk655 tr.lk td{background:color-mix(in srgb,var(--accent,#2f6fde) 10%,transparent)}#dlg table.lk655{width:100%;table-layout:auto}#dlg table.lk655 td.lkc{text-align:left;white-space:nowrap;width:64px}#dlg table.lk655 td.lkw{white-space:normal;min-width:220px}#dlg table.lk655 .lkfree{opacity:.55}';document.head.appendChild(st)}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -63690,6 +63740,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ช่องว่างตรงสายตัดกัน (Revit: Electrical Settings › Wiring › Wire Crossing Gap): ตั้งค่างานไฟฟ้า › ขนาดสาย ส่วนเครื่องหมายสาย ตั้งความกว้างช่องว่างเป็นมม. บนกระดาษ (ตั้งต้น 1.6 มม. 0 ไม่เว้น) สายสองเส้นในวิวเดียวกันที่ตัดกันห่างจากปลายสาย เส้นที่วาดทีหลังเว้นช่องว่างตรงจุดตัด แสดงว่าไม่ได้ต่อกัน เส้นที่วาดก่อนลากต่อเนื่อง ใช้กับแปลน แผ่นงาน และการพิมพ์
 - ค่าของตู้ไฟ (Revit: Mounting, Enclosure, Mains, MCB Rating, Short Circuit Rating, Modifications): Properties ของตู้มีกลุ่มแผงจ่ายไฟ เลือกการติดตั้งติดลอย ฝังผนัง หรือตั้งพื้น พิมพ์ตัวตู้ พิกัดบัสบาร์ (A) พิกัดเมนเบรกเกอร์ (A) พิกัดทนกระแสลัดวงจร (kA) และการดัดแปลง พร้อมกระแสลัดวงจรที่ตู้ที่คำนวณจากระบบจ่ายไฟ ตารางโหลดรายตู้แสดงบัสบาร์ MCB และพิกัดทนลัดวงจรต่อจากหัวตาราง แม่แบบตารางเลือกเป็นช่องหัวตารางได้ ตารางอุปกรณ์ไฟฟ้ามีช่องเหล่านี้ ตรวจวงจรไฟฟ้าเตือนเมื่อ MCB ต่ำกว่าเมนเบรกเกอร์ที่โหลดต้องการ บัสบาร์ต่ำกว่า MCB และพิกัดทนลัดวงจรต่ำกว่ากระแสลัดวงจรที่ตู้
 - นิยามแรงดัน (Revit: Electrical Settings › Voltage Definitions และ Voltage ของจุดต่อไฟฟ้า): ตั้งค่างานไฟฟ้ามีหน้านิยามแรงดันก่อนระบบจ่ายไฟ แต่ละนิยามมีชื่อ แรงดัน ต่ำสุด และสูงสุด (ตั้งต้น 230 V ช่วง 220 ถึง 240 และ 400 V ช่วง 380 ถึง 415) เพิ่ม แก้ ลบได้ บอกระบบจ่ายไฟที่ใช้แต่ละนิยามและแรงดันที่ยังไม่มีนิยามครอบ คุณสมบัติชนิดของโคมไฟ อุปกรณ์ไฟฟ้า และเครื่องจักรมีแรงดันไฟฟ้า Properties ของชิ้นงานแสดงแรงดันของมันและแรงดันวงจร ตรวจวงจรไฟฟ้าเตือนเมื่อแรงดันของอุปกรณ์อยู่นอกช่วงของนิยามที่วงจรใช้ สร้างวงจรเตือนก่อนเมื่อเลือกตู้ที่แรงดันไม่ตรง
+- ช่องว่างและล็อกช่อง (Revit: Panel Schedule › Add Space, Lock/Unlock): หน้าวงจรสำรองมีปุ่มเพิ่มช่องว่าง (Space) ที่จองช่องไว้โดยยังไม่มีเบรกเกอร์ และเปลี่ยนวงจรสำรองเป็นช่องว่างหรือกลับได้ ตารางโหลดรายตู้เขียนว่าช่องว่างโดยไม่มีพิกัดเบรกเกอร์ ปุ่มล็อกช่องใน Properties ของตู้ ของตารางโหลด และแถบมุมมอง แสดงทุกช่องกับสิ่งที่อยู่ในช่อง ติ๊กล็อกได้ทีละช่อง ล็อกทุกช่องที่ใช้ หรือปลดล็อกทั้งหมด ปรับสมดุลโหลดไม่ย้ายวงจรในช่องที่ล็อกและไม่ย้ายวงจรอื่นเข้าไป วงจรใหม่ วงจรสำรอง และช่องว่างจะข้ามช่องที่ล็อก
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -64055,6 +64106,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Wire crossing gap (Revit: Electrical Settings › Wiring › Wire Crossing Gap): Electrical Settings › Wire sizes › Tick marks sets the gap in mm on paper (1.6 to start, 0 none); where two wires of a view cross away from their ends, the one drawn later is broken by the gap to show they are not connected, the earlier runs on unbroken; plans, sheets and prints
 - Panelboard parameters (Revit: Mounting, Enclosure, Mains, MCB Rating, Short Circuit Rating, Modifications): a panel's Properties have a Panelboard group with Surface, Recessed or Floor standing mounting, the enclosure, Mains (A), MCB Rating (A), Short Circuit Rating (kA) and Modifications, with the fault current the service works out at the panel; the panel schedule reads Mains, MCB and the short circuit rating after its head and a template can show each as a header field; electrical equipment schedules list them; Check Circuits flags an MCB Rating under the main breaker the load needs, Mains under the MCB Rating and a Short Circuit Rating under the fault current at the panel
 - Voltage definitions (Revit: Electrical Settings › Voltage Definitions and the Voltage of an electrical connector): Electrical Settings has a Voltage definitions page before Distribution systems, each with a name, a value, a minimum and a maximum (230 V from 220 to 240 and 400 V from 380 to 415 to start), added, changed or deleted, with the systems using each and the voltages no definition holds; the Type Properties of luminaires, electrical devices and mechanical equipment take a Voltage, the Properties of each element show it with its circuit voltage; Check Circuits flags an element outside the definition of its circuit voltage and Create Circuit warns before a panel of another voltage is used
+- Spaces and locked slots (Revit: Panel Schedule › Add Space, Lock/Unlock): the Spares dialog has Add Space, ways kept for later with no breaker, and turns a spare into a space and back; the panel schedule reads Space there with no breaker; Lock Slots… in the Properties of a panel, of its schedule and on the view bar lists every slot with what is on it, a box to lock each, Lock all used and Unlock all; Rebalance Loads leaves the circuit on a locked slot where it is and moves no other circuit onto one, and a new circuit, spare or space passes locked slots by
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -65288,6 +65340,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.652 · ช่องว่างตรงสายตัดกัน (Wire Crossing Gap)
 - V1.653 · ค่าของตู้ไฟแบบ Revit บัสบาร์ MCB พิกัดทนลัดวงจร การติดตั้ง (Panelboard)
 - V1.654 · นิยามแรงดันแบบ Revit และแรงดันของอุปกรณ์ (Voltage Definitions)
+- V1.655 · ช่องว่าง (Add Space) และล็อกช่องในตู้ไฟแบบ Revit ปรับสมดุลโหลดไม่ย้ายช่องที่ล็อก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -66115,6 +66168,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.652 · Wire Crossing Gap: wires that cross without a connection
 - V1.653 · Panelboard parameters as in Revit: Mains, MCB Rating, Short Circuit Rating, Mounting
 - V1.654 · Voltage Definitions as in Revit, and the voltage of luminaires, devices and equipment
+- V1.655 · Add Space and locked slots in panels as in Revit; Rebalance Loads keeps locked slots
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -71343,6 +71397,21 @@ window.PenumBIM.r654={
   u:(pn,ck)=>{const c=circuits(P).find(x=>x.panel===pn&&x.circuit===String(ck));return c?ckU654(P,c):null},
   chk:()=>vdCheck654(P).map(x=>({k:x.k,panel:x.panel,circuit:x.circuit,a:x.a,n:x.ids.length,txt:ckText(x)})),all:()=>circuitCheck(P).map(x=>x.k),
   sf:cat=>{const f=sfAll(P,cat,t).find(f=>f.k==='v654');return f?P.els.filter(e=>e.cat===cat).map(e=>f.g(e,{P})):null},pages:()=>ES_PAGES.slice(),dlg:(c,id)=>dlgTypes(c,id)};
+/* V1.655 test API: spaces and locked slots */
+window.PenumBIM.r655={
+  id:mk=>{const e=pnFind(P,mk);return e?e.id:null},
+  sp:mk=>{const e=pnFind(P,mk);return e&&e.sp?JSON.parse(JSON.stringify(e.sp)):null},
+  setSp:(mk,a)=>{edit(()=>{const e=pnFind(P,mk);if(a==null)delete e.sp;else e.sp=a});refresh()},
+  lk:mk=>{const e=pnFind(P,mk);return e&&e.lk655!==undefined?JSON.parse(JSON.stringify(e.lk655)):null},
+  setLk:(mk,a)=>{edit(()=>{const e=pnFind(P,mk);if(a==null)delete e.lk655;else e.lk655=a});refresh()},
+  clean:()=>{for(const f of XC)f();return true},
+  occ:mk=>[...pnlOcc(P,mk)].sort((a,b)=>a-b),free:(mk,p)=>ckFree(P,mk,p||1),
+  bal:mk=>{const R=pnlBalance(P,mk);return R.moves?{moves:R.moves,imbB:+R.imbB.toFixed(2),imbA:+R.imbA.toFixed(2)}:{err:R.err||null,same:R.same||0}},
+  cks:mk=>circuits(P).filter(c=>c.panel===mk).map(c=>[c.circuit,c.poles,c.sys||'']),
+  sched:(mk,fmt)=>{const e=pnFind(P,mk);return pnlSched(P,e.id,t,fmt).rows.filter(r=>!r._g)},
+  slot:()=>circuitCheck(P).filter(x=>x.k==='ck_slot').map(x=>({panel:x.panel,circuit:x.circuit,a:x.a,txt:ckText(x)})),
+  items:mk=>lkItems655(P,pnFind(P,mk),t).map(r=>({sl:r.sl,ph:r.ph,kind:r.kind,what:r.what,lk:r.lk})),
+  rows:mk=>{const e=pnFind(P,mk);return e?spRows655(e):''}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
