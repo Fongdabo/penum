@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=570,V1_NAME='V1.560';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=571,V1_NAME='V1.561';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58134,6 +58134,70 @@ Object.assign(STR,{
   p_yo560:['ระยะเลื่อนแนวราบ (y Offset Value)','y Offset Value']});
 {const k='n_zj559';if(STR[k])STR[k]=['แนวคานอยู่ตามเส้นที่วาด ที่ระดับอ้างอิงบวกระยะเลื่อนปลายเริ่มและปลายสุด การจัดชิดบอกว่าด้านไหนของคานอยู่บนแนวนั้น (ซ้ายขวามองจากปลายเริ่มไปปลายสุด) แล้วเลื่อนคานออกไปอีกตามระยะเลื่อน',
   'The location line is where the beam was drawn, at the Reference Level plus the Start and End Level Offsets; the justifications say which part of the beam is on it (left and right looking from its start to its end), and the offsets move the beam from there']}
+/* ===== 561 Beam Cross-Section Rotation (V1.561; Revit: a beam's Properties › Constraints › Cross-Section Rotation).  The section of a beam turns about its
+   location line by an angle, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin square to a roof's slope or a beam
+   under a sloping slab.  The beam keeps its justifications (V1.559, V1.560): they place the section on the line first, then it turns about the line.  The beam as
+   it is seen and built turns with it: its outline in plans (as wide as the turned section), its 3D (and so elevations, sections, clashes and exports), its
+   Elevation at Top and Bottom, tags and schedules, what a click picks and the surface a wall or a column attached under it reaches.  Its length, volume,
+   ends and analytical line stay as they were.  Mirror turns the angle round; a new beam takes it from Properties while the Beam tool is on.  Braces are not
+   turned this way. */
+/* e.csr561 degrees in (-180, 180], to 0.1 (none: 0) */
+const csr561Of=e=>{if(!e||e.cat!=='beam'||e.use==='brace')return 0;const a=+e.csr561;return isFinite(a)&&a?a:0};
+const csr561N=a=>{a=+a;if(!isFinite(a))return 0;a=((a%360)+360)%360;if(a>180)a-=360;a=Math.round(a*10)/10;return Math.abs(a)<0.05?0:a};
+/* the corners of the section across the beam: [left, up] from its location line, before and after the turn */
+const csr561C=(Q,e)=>{const c=yj560D(Q,e),w=yj560W(Q,e),dz=zj559D(Q,e),h=zj559Dep(Q,e);return[[c-w/2,dz],[c+w/2,dz],[c+w/2,dz-h],[c-w/2,dz-h]]};
+const csr561R=(th,l,v)=>{const a=th*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return[l*c+v*s,-l*s+v*c]};
+/* how far the turned section reaches: left [min, max], up [min, max] */
+const csr561X=(Q,e)=>{const th=csr561Of(e),C=csr561C(Q,e),R=th?C.map(p=>csr561R(th,p[0],p[1])):C,L=R.map(p=>p[0]),V=R.map(p=>p[1]);
+  return{c:C,r:R,l:[Math.min(...L),Math.max(...L)],v:[Math.min(...V),Math.max(...V)],l0:[C[0][0],C[1][0]],v0:[C[2][1],C[0][1]]}};
+let csr561Raw=0;          // while the 3D is built the beam is made upright first, then turned
+/* the plan: the outline as wide as the turned section, at its side of the location line (a coped end keeps its cope) */
+{const f0=beamLoop;beamLoop=(Q,b)=>{const L=f0(Q,b);if(!b||b.cat!=='beam'||!csr561Of(b)||!Array.isArray(L))return L;const E=Math.hypot(b.x2-b.x1,b.y2-b.y1);if(E<1)return L;
+  const ux=(b.x2-b.x1)/E,uy=(b.y2-b.y1)/E,X=csr561X(Q,b),w=X.l0[1]-X.l0[0]||1;
+  return L.map(p=>{const dx=p[0]-b.x1,dy=p[1]-b.y1,a=dx*ux+dy*uy,l=dx*uy-dy*ux,n=X.l[0]+(l-X.l0[0])/w*(X.l[1]-X.l[0]);return[b.x1+ux*a+uy*n,b.y1+uy*a-ux*n]})}}
+/* its range of heights: the turned section's */
+{const f0=zRange;zRange=(Q,e)=>{const z=f0(Q,e);if(csr561Raw||!e||e.cat!=='beam'||!csr561Of(e))return z;const X=csr561X(Q,e);return[z[0]-X.v0[0]+X.v[0],z[1]-X.v0[1]+X.v[1]]}}
+/* 3D: every mesh of the beam turned about its location line */
+const csr561Frame=(Q,e)=>{const zl=zj559Loc(Q,e),A=[e.x1,zl[0],e.y1],B=[e.x2,zl[1],e.y2],d=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],n=Math.hypot(...d);if(n<1)return null;
+  const k=d.map(v=>v/n),L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,N=[(e.y2-e.y1)/L,0,-(e.x2-e.x1)/L];let U=[k[1]*N[2]-k[2]*N[1],k[2]*N[0]-k[0]*N[2],k[0]*N[1]-k[1]*N[0]];if(U[1]<0)U=U.map(v=>-v);
+  const a=csr561Of(e)*Math.PI/180;return{A,k,N,U,c:Math.cos(a),s:Math.sin(a)}};
+const csr561Vec=(F,r)=>{const a=r[0]*F.k[0]+r[1]*F.k[1]+r[2]*F.k[2],l=r[0]*F.N[0]+r[1]*F.N[1]+r[2]*F.N[2],v=r[0]*F.U[0]+r[1]*F.U[1]+r[2]*F.U[2],l2=l*F.c+v*F.s,v2=-l*F.s+v*F.c;
+  return[a*F.k[0]+l2*F.N[0]+v2*F.U[0],a*F.k[1]+l2*F.N[1]+v2*F.U[1],a*F.k[2]+l2*F.N[2]+v2*F.U[2]]};
+const csr561Arr=(F,A)=>{const B=A.slice();for(let i=0;i+2<B.length;i+=3){const r=csr561Vec(F,[A[i]-F.A[0],A[i+1]-F.A[1],A[i+2]-F.A[2]]);B[i]=F.A[0]+r[0];B[i+1]=F.A[1]+r[1];B[i+2]=F.A[2]+r[2]}return B};
+{const f0=buildMeshes;buildMeshes=function(Q,FP,FIT){let R;csr561Raw++;try{R=f0.apply(this,arguments)}finally{csr561Raw--}const items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;const M=new Map();
+  for(const e of Q.els)if(e.cat==='beam'&&csr561Of(e)){const F=csr561Frame(Q,e);if(F)M.set(e.id,F)}if(!M.size)return R;let n=0;
+  for(let i=0;i<items.length;i++){const it=items[i],F=it&&M.get(it.id);if(!F)continue;const o=Object.assign({},it);
+    if(Array.isArray(it.t))o.t=csr561Arr(F,it.t);if(Array.isArray(it.l))o.l=csr561Arr(F,it.l);
+    if(Array.isArray(it.s))o.s=it.s.map(q=>{const r=Object.assign({},q);if(Array.isArray(q.a))r.a=csr561Arr(F,q.a);if(Array.isArray(q.b))r.b=csr561Arr(F,q.b);if(Array.isArray(q.n1))r.n1=csr561Vec(F,q.n1);if(Array.isArray(q.n2))r.n2=csr561Vec(F,q.n2);return r});
+    items[i]=o;n++}
+  if(n&&!Array.isArray(R)){const bb=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];for(const it of items){const a=it.ml?it.l:it.t;if(!a)continue;for(let i=0;i+2<a.length;i+=3)for(let k=0;k<3;k++){const v=a[i+k];if(v<bb[k])bb[k]=v;if(v>bb[k+3])bb[k+3]=v}}
+    if(isFinite(bb[0])){R.bb=bb;if(typeof pkBB==='function')R.bbx=pkBB(items,bb)}}return R}}
+/* tags: the top and bottom of the turned section */
+{const f0=tgZ;tgZ=function(e){if(!e||e.cat!=='beam'||!csr561Of(e))return f0.apply(this,arguments);const z=zRange(P,e);return{c:(z[0]+z[1])/2,t:z[1],b:z[0]}}}
+/* a click picks the beam across its turned width */
+{const f0=bowDist;bowDist=function(x,y,e){const d=f0.apply(this,arguments);if(!e||e.cat!=='beam'||e.bow||!csr561Of(e))return d;const X=csr561X(P,e),g=((X.l[1]-X.l[0])-(X.l0[1]-X.l0[0]))/2,m=((X.l[0]+X.l[1])-(X.l0[0]+X.l0[1]))/2;
+  if(!m&&g<=0)return d;const E=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(E<1)return d;const ux=(e.x2-e.x1)/E,uy=(e.y2-e.y1)/E;return Math.max(0,f0.call(this,x-uy*m,y+ux*m,e)-Math.max(0,g))}}
+/* a wall or a column attached under (or over) the beam reaches the lowest (or highest) of the turned section, across its turned width */
+{const f0=attSurf;attSurf=function(Q,T,under){const r=f0.apply(this,arguments);if(!r||!T||T.cat!=='beam'||!csr561Of(T))return r;const X=csr561X(Q,T),E=Math.hypot(T.x2-T.x1,T.y2-T.y1);if(E<1)return r;
+  const ux=(T.x2-T.x1)/E,uy=(T.y2-T.y1)/E,w=X.l0[1]-X.l0[0]||1,dc=under?X.v[0]-X.v0[0]:X.v[1]-X.v0[1];
+  const poly=r.poly.map(p=>{const dx=p[0]-T.x1,dy=p[1]-T.y1,a=dx*ux+dy*uy,l=dx*uy-dy*ux,n=X.l[0]+(l-X.l0[0])/w*(X.l[1]-X.l[0]);return[T.x1+ux*a+uy*n,T.y1+uy*a-ux*n]});
+  return Object.assign({},r,{poly,planes:r.planes.map(q=>[q[0],q[1],q[2]+dc])})}}
+/* Mirror: the angle turns round, so that the mirrored beam is a true image */
+{const f0=mirrorIds;mirrorIds=function(ids){const B=[...new Set(expandSel(ids))].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='beam'&&csr561Of(e));const r=f0.apply(this,arguments);
+  for(const e of B)if(+e.csr561)e.csr561=-e.csr561;return r}}
+/* ---- Properties: Constraints, after End Level Offset (Revit's place for it); Elevation at Top and Bottom of the turned section ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='beam'||!els.length||els.some(x=>x.use==='brace')||(isNew&&braceMode()))return h;
+  const gv=x=>csr561N(x&&x.csr561),V=(()=>{const a=gv(els[0]);return els.every(x=>gv(x)===a)?a:''})(),row=PR.num('csr561','p_csr561',V,'°','step="5"');
+  let k=h.indexOf('<div class="pr"><label for="p_use">');if(k<0){const g=`<div class="pg">${t('g_bcend')}</div>`;k=h.indexOf(g)}if(k<0)k=h.length;h=h.slice(0,k)+row+h.slice(k);
+  if(!isNew&&els.length===1&&csr561Of(els[0])&&typeof zj559Elev==='function'){const o=zj559Elev(els),z=zRange(P,els[0]);
+    if(o&&h.includes(o))h=h.replace(o,PR.ro('p_zt559',fmtLen(Math.round(z[1]))+' '+unitName())+PR.ro('p_zb559',fmtLen(Math.round(z[0]))+' '+unitName()))}return h}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||key!=='csr561')return false;const v=parseFloat(raw);if(!isFinite(v))return true;const a=csr561N(v);if(a)o.csr561=a;else delete o.csr561;return true});
+/* a new beam drawn with the Beam tool takes it from Properties */
+XN.push(s0=>{if(ui.tool!=='beam')return;const d=ui.defs&&ui.defs.beam,a=d?csr561N(d.csr561):0;if(!a)return;for(const e of P.els)if(e.id>=s0&&e.cat==='beam'&&e.use!=='brace')e.csr561=a});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam'||!('csr561' in e))continue;const a=csr561N(e.csr561);if(a)e.csr561=a;else delete e.csr561}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;F.push({k:'csr561',l:tr('p_csr561')+' (°)',g:e=>e.use==='brace'?'':csr561Of(e),grp:'i',num:1,dec:1});return F}}
+Object.assign(STR,{p_csr561:['มุมหมุนหน้าตัด (Cross-Section Rotation)','Cross-Section Rotation']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59250,6 +59314,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_beam]] ((BM)) อยู่ในแท็บ [[tab_struct]]: วาดเป็นเส้นเหมือนผนัง ระดับหลังคานตั้งในแผงคุณสมบัติ
 - คุณสมบัติของคาน [[g_bcend]]: [[p_zj559]] บอกว่าส่วนไหนของคานอยู่บนแนวคาน (ระดับอ้างอิงบวกระยะเลื่อนปลายเริ่มและปลายสุด): [[zj559_t]] (เดิม) [[zj559_c]] หรือ [[zj559_b]] แล้ว [[p_zo559]] เลื่อนคานขึ้นลงอีก ทั้งคานย้ายตาม ใน 3 มิติ รูปตัด ปริมาณ เสาและผนังที่ยึดใต้คาน · [[p_zt559]] และ [[p_zb559]] อยู่ในหมวดขนาด และในตารางรายการ
 - [[p_yj560]] ของคาน: ด้านไหนของคานอยู่บนเส้นที่วาด มองจากปลายเริ่มไปปลายสุด [[yj560_l]] (คานอยู่ทางขวาของเส้น) [[yj560_c]] (เดิม) หรือ [[yj560_r]] แล้ว [[p_yo560]] เลื่อนคานออกข้าง ค่าบวกไปทางซ้าย คานในแปลน 3 มิติ รูปตัด และการคลิกเลือกย้ายตาม ความยาว ปลายคาน และเส้นวิเคราะห์อยู่ที่เส้นที่วาด สะท้อนแล้วซ้ายกลายเป็นขวา (คานขอบพื้นชิดขอบ คานชิดแนวกริด)
+- [[p_csr561]] ของคาน: หมุนหน้าตัดรอบแนวคาน ค่าบวกหลังคานเอียงไปทางซ้าย (มองจากปลายเริ่มไปปลายสุด) เช่นแปหลังคาที่วางตามความลาด รูปร่างในแปลน 3 มิติ รูปตัด ระดับหลังคานและท้องคาน และการคลิกเลือกตามมุม สะท้อนแล้วมุมกลับทิศ
 - [[a_steel]] (แท็บ [[tab_struct]] แผง [[p_struct]]): ตารางหน้าตัดเหล็กมาตรฐาน H, I, รางน้ำ [, ตัวซี C, ฉาก L, กล่อง □ และท่อกลม Ø (JIS G 3192, 3350, 3466, 3444 · มอก. 1227, 1228, 107) · ติ๊กเลือกขนาดแล้วกด โหลด เป็นชนิดเสาหรือคานเหล็ก · ใน แก้ชนิด ตั้ง [[f_sec]] เป็นเหล็กแล้วแก้ขนาด d b tw tf r ได้ พร้อมค่า A น้ำหนัก กก./ม. Ix Iy Zx Zy rx ry · แปลน 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดจริง · ถอดปริมาณและ BOQ เป็นกิโลกรัม (42 บาท/กก. แก้ได้)
 - [[a_colgrids]] (ขณะใช้ [[t_column]]) และ [[a_beamgrids]] (ขณะใช้ [[t_beam]]): วางเสาที่จุดตัดกริด หรือวางคานตามแนวกริดจากจุดตัดหนึ่งถึงจุดตัดถัดไป · ใช้กริดที่เลือก หรือทุกกริดถ้าไม่ได้เลือก · ข้ามตำแหน่งที่มีอยู่แล้ว (รวมเสาจากชั้นล่างที่สูงทะลุขึ้นมา)
 - [[a_cols]] (ขณะใช้ [[t_column]] แผง [[p_placement]]): คลิกจุดฐาน แล้วคลิกจุดบน · แถบตัวเลือกมี [[o_sl1]] และ [[o_sl2]] แต่ละอันเป็นระดับกับระยะ (เริ่มที่ระดับนี้ถึงระดับถัดขึ้นไป) · ในรูปด้านและรูปตัด เครื่องมือเสาวางได้เฉพาะเสาเอียง คลิกสองจุดบนระนาบของมุมมอง ความสูงตามที่คลิก (เสา ผนัง หรือคานใต้ตัวชี้ตอนคลิกแรกกำหนดระนาบ หรือเลือก [[o_slpl]] เป็นกริดหรือแนวตัดในแถบตัวเลือก) · ใน 3 มิติ คลิกบนระดับของ [[o_sl1]] แล้วบนระดับของ [[o_sl2]] หรือติ๊ก [[o_sl3s]] เพื่อใช้จุดบนผิวที่คลิก · [[a_colv]] กลับไปวางเสาแนวดิ่ง
@@ -59520,6 +59585,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_beam]] ((BM)) is on the [[tab_struct]] tab: drawn as a line, like a wall; the top level is in Properties
 - A beam's Properties, [[g_bcend]]: [[p_zj559]] says which part of the beam is on its location line (the Reference Level plus the Start and End Level Offsets): [[zj559_t]] (as before), [[zj559_c]] or [[zj559_b]]; [[p_zo559]] then moves the beam up or down; the whole beam follows, in 3D, sections, quantities, and the columns and walls attached under it · [[p_zt559]] and [[p_zb559]] are with its dimensions and in schedules
 - A beam's [[p_yj560]]: which side of the beam is on the line it was drawn along, looking from its start to its end: [[yj560_l]] (the beam to the right of the line), [[yj560_c]] (as before) or [[yj560_r]]; [[p_yo560]] then moves it sideways, more than 0 to its left; the beam in plans, 3D and sections, and what a click picks, follow; its length, ends and analytical line stay on the line; Mirror makes Left Right (edge beams flush with a slab edge or a grid)
+- A beam's [[p_csr561]]: its section turned about its line, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin square to a roof's slope; its outline in plans, its 3D and sections, its Elevation at Top and Bottom and what a click picks follow; Mirror turns the angle round
 - [[a_steel]] (the [[tab_struct]] tab, [[p_struct]] panel): tables of standard steel shapes: H, I, channels [, lipped channels C, angles L, hollow sections □ and round tubes Ø (JIS G 3192, 3350, 3466, 3444 · TIS 1227, 1228, 107) · tick the sizes and Load them as steel column or beam types · in Edit Type set [[f_sec]] to a steel shape and change its d, b, tw, tf, r, with its A, kg/m, Ix, Iy, Zx, Zy, rx, ry · plans, 3D views, elevations and sections show the real section · quantities and the BOQ count it in kg (42 THB/kg, to change)
 - [[a_colgrids]] (with [[t_column]]) and [[a_beamgrids]] (with [[t_beam]]): a column at every grid crossing, or beams along the grids from one crossing to the next · of the selected grids, or of all of them · none where there is one already (a column from a level below that runs up through this one counts)
 - [[a_cols]] (with [[t_column]], in the [[p_placement]] panel): click the base, then the top · the options bar has the [[o_sl1]] and the [[o_sl2]], each a level with its offset (this level to the one above, to start with) · in an elevation or a section the column tool places slanted columns only: click two points on the plane of the view, at the heights you click (the column, wall or beam under the pointer at the first click sets the plane, or pick a grid or the cut as the [[o_slpl]] in the options bar) · in a 3D view click on the level of the [[o_sl1]], then on that of the [[o_sl2]], or tick [[o_sl3s]] to take the point you click on · [[a_colv]] goes back to upright columns
@@ -60615,6 +60681,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.558 · ช่องเปิดในแผ่น (Vertical Opening) แบบ Revit: สถาปัตย์หรือโครงสร้าง › ช่องเปิด › Vertical คลิกพื้น ฝ้า หรือหลังคาที่จะเจาะ (หรือเลือกไว้ก่อน) แล้ววาดขอบช่องเป็นเส้นหรือสี่เหลี่ยม เจาะเฉพาะแผ่นนั้น ไม่ทะลุชั้นอื่นแบบช่องชาฟต์ เห็นช่องในแปลน 3 มิติ รูปตัด พื้นที่และปริมาตรของแผ่น ช่องไปกับแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก วาง และลบ คุณสมบัติบอกแผ่นที่เจาะ พื้นที่และปริมาตรที่เจาะออก มีในตารางรายการ แท็บโครงสร้างมีแผงช่องเปิดเพิ่ม
 - V1.559 · การจัดชิดแนวดิ่งของคาน (z Justification) แบบ Revit: คุณสมบัติของคาน หมวดตำแหน่งทางเรขาคณิต เลือกว่าหลังคาน กึ่งกลาง หรือท้องคานอยู่บนแนวคาน แล้วใส่ระยะเลื่อนแนวดิ่ง (z Offset Value) เลื่อนขึ้นลงอีก คานทั้งตัวย้ายตามใน 3 มิติ รูปตัด รูปด้าน ปริมาณ ระดับที่แท็กและ Spot อ่าน เสาและผนังที่ยึดใต้คาน และจุดต่อเหล็ก คุณสมบัติบอกระดับหลังคานและท้องคาน (Elevation at Top/Bottom) มีในตารางรายการ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน
 - V1.560 · การจัดชิดแนวราบของคาน (y Justification) แบบ Revit: คุณสมบัติของคาน หมวดตำแหน่งทางเรขาคณิต เลือกว่าด้านซ้าย กึ่งกลาง หรือด้านขวาของคานอยู่บนเส้นที่วาด (มองจากปลายเริ่ม) แล้วใส่ระยะเลื่อนแนวราบ (y Offset Value) เลื่อนออกข้างอีก คานในแปลน 3 มิติ รูปด้าน รูปตัด การคลิกเลือก และผนังหรือเสาที่ยึดใต้คานย้ายตาม ความยาวและปลายคานอยู่ที่เส้นเดิม สะท้อนแล้วซ้ายเป็นขวาให้ได้ภาพสะท้อนจริง มีในตารางรายการ คานใหม่รับค่าจากแผงคุณสมบัติ
+- V1.561 · มุมหมุนหน้าตัดของคาน (Cross-Section Rotation) แบบ Revit: คุณสมบัติของคาน หมวดข้อจำกัด ใส่มุมหมุนหน้าตัดรอบแนวคาน ค่าบวกหลังคานเอียงไปทางซ้าย (มองจากปลายเริ่มไปปลายสุด) เช่นแปหรือคานที่วางตั้งฉากกับหลังคาลาด หน้าตัดอยู่ตามการจัดชิดก่อนแล้วหมุนรอบเส้นแนวคาน รูปร่างในแปลนกว้างตามหน้าตัดที่หมุน 3 มิติ รูปด้าน รูปตัด ระดับหลังคานและท้องคาน ป้ายกำกับ ตารางรายการ การคลิกเลือก และผิวที่ผนังหรือเสายึดถึงตามไปด้วย ความยาวและปริมาตรเท่าเดิม สะท้อนแล้วมุมกลับทิศ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน ค้ำยันไม่ใช้ค่านี้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61348,6 +61415,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.558 · Vertical Opening, as in Revit: Architecture or Structure › Opening › Vertical: click the floor, ceiling or roof to cut (or have it selected), then sketch the shape with lines or a rectangle; it cuts that one only, not every storey as a Shaft does; the opening shows in plans, 3D and sections and comes off the host's area and volume; it goes with its host when the host is moved, turned, mirrored, copied, pasted or deleted; Properties give its host and the area and volume cut; it can be scheduled; the Structure tab has an Opening panel too
 - V1.559 · Beam z Justification, as in Revit: in a beam's Properties, Geometric Position, choose whether its top, its centre or its bottom is on the location line, and a z Offset Value moves it up or down from there; the whole beam follows in 3D, sections, elevations, quantities, the heights tags and spots read, the columns and walls attached under it and its steel connections; Properties give its Elevation at Top and Elevation at Bottom, also in schedules; a new beam takes them from Properties while the Beam tool is on
 - V1.560 · Beam y Justification, as in Revit: in a beam's Properties, Geometric Position, choose whether its left side, its centre or its right side (looking from its start) is on the line it was drawn along, and a y Offset Value moves it further sideways; the beam in plans, 3D, elevations and sections, what a click picks and the walls or columns attached under it follow, while its length and ends stay on the line; Mirror turns Left into Right for a true image; also in schedules; a new beam takes them from Properties
+- V1.561 · Beam Cross-Section Rotation, as in Revit: in a beam's Properties, Constraints, type the angle its section turns about its line, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin or a beam square to a sloping roof; the section sits by its justifications first and then turns about the location line; its outline in plans (as wide as the turned section), 3D, elevations and sections, its Elevation at Top and Bottom, tags, schedules, what a click picks and the surface a wall or a column attached to it reaches all follow; its length and volume stay; Mirror turns the angle round; a new beam takes it from Properties while the Beam tool is on; braces are not turned
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -65379,6 +65447,28 @@ window.PenumBIM.r560={
   defs:()=>{const d=defs('beam');return{yj:d.yj560===undefined?null:d.yj560,yo:d.yo560===undefined?null:d.yo560}},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,yj:e.yj560===undefined?null:e.yj560,yo:e.yo560===undefined?null:e.yo560}))},
   att:(id,under)=>{const S=attSurf(P,IDX.get(id),!!under);return S?S.poly.map(p=>p.map(Math.round)):null}};
+/* V1.561 test API: beam Cross-Section Rotation */
+window.PenumBIM.r561={
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return e.csr561===undefined?null:e.csr561},
+  ang:id=>{const e=IDX.get(id);return e.csr561===undefined?null:e.csr561},
+  ext:id=>{const X=csr561X(P,IDX.get(id));return{l:X.l.map(v=>Math.round(v)),v:X.v.map(v=>Math.round(v))}},
+  loop:id=>beamLoop(P,IDX.get(id)).map(p=>p.map(Math.round)),
+  zr:id=>zRange(P,IDX.get(id)).map(Math.round),
+  /* the extent of the element's 3D: [x, z, y] low and high */
+  m3:id=>{MSC=null;const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];let n=0;
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+2<m.t.length;k+=3)for(let j=0;j<3;j++){const v=m.t[k+j];if(v<lo[j])lo[j]=v;if(v>hi[j])hi[j]=v;n++}}return n?[lo.map(Math.round),hi.map(Math.round)]:null},
+  /* the 3D points of the beam at a distance along it (a slice across it): the [left, up] of each from the location line */
+  sl:(id,at)=>{MSC=null;const e=IDX.get(id),B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,L=Math.hypot(e.x2-e.x1,e.y2-e.y1),ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,zl=zj559Loc(P,e);const out=[];
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+2<m.t.length;k+=3){const dx=m.t[k]-e.x1,dy=m.t[k+2]-e.y1,a=dx*ux+dy*uy;if(Math.abs(a-at)>1)continue;out.push([Math.round(dx*uy-dy*ux),Math.round(m.t[k+1]-zl[0]-(zl[1]-zl[0])*a/L)])}}return out},
+  bb:()=>{MSC=null;const B0=buildMeshes(P,FPm(),FITm());return B0&&B0.bb?B0.bb.map(Math.round):null},
+  pick:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null},
+  mirror:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh();return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh();return true},
+  defs:()=>{const d=defs('beam');return d.csr561===undefined?null:d.csr561},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,a:e.csr561===undefined?null:e.csr561}))},
+  att:(id,under)=>{const S=attSurf(P,IDX.get(id),!!under);return S?{poly:S.poly.map(p=>p.map(Math.round)),c:S.planes.map(q=>Math.round(q[2]))}:null},
+  cam:(vid,yaw,pitch)=>{const n=navOf(viewById(vid));n.yaw=yaw;n.pitch=pitch;refresh();return true},
+  len:id=>{const q=window.PenumBIM.r559.qty(id);return q}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
