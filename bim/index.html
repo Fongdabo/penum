@@ -5760,7 +5760,7 @@ const CK_SYS={data:'data',tv:'data',smoke:'fa',heat:'fa',pull:'fa',bell:'fa',tel
 function circuits(P){const m=new Map();
   for(const e of P.els){if(!e.panel||(e.cat!=='light'&&e.cat!=='device'&&e.cat!=='equip'))continue;const T=typ(P,e)||{},W=e.cat==='equip'?(+T.kw||0)*1000:(+T.load||0),k=e.panel+'|'+(e.circuit||'');
     let r=m.get(k);if(!r){r={panel:e.panel,circuit:String(e.circuit||''),n:0,load:0,items:new Map(),els:[],cls:{light:0,power:0,hvac:0,other:0},poles:1};m.set(k,r)}
-    {const sy=ckSysOf(P,e);if(!r.sys)r.sys=sy;else if(r.sys!==sy)r.mix=1}r.n++;r.load+=W;r.items.set(T.name||e.cat,(r.items.get(T.name||e.cat)||0)+1);r.els.push(e);r.cls[loadClass(e)]+=W;if(+e.poles===3)r.poles=3}
+    {const sy=ckSysOf(P,e);if(!r.sys)r.sys=sy;else if(r.sys!==sy)r.mix=1}r.n++;r.load+=W;r.items.set(T.name||e.cat,(r.items.get(T.name||e.cat)||0)+1);r.els.push(e);{const lk=lcOf637(P,e)||loadClass(e);r.cls[lk]=(r.cls[lk]||0)+W};if(+e.poles===3)r.poles=3}
   const C=[...m.values()];for(const f of elecTree(P,C).feeds)C.push(f);          /* a panel fed from another is a circuit of that one, its feeder (V1.86) */
   return C.sort((a,b)=>a.panel.localeCompare(b.panel)||(parseFloat(a.circuit)||0)-(parseFloat(b.circuit)||0)||a.circuit.localeCompare(b.circuit))}
 /* ---- distribution (Revit: Panel Schedules, Supply From, Rebalance Loads) ----
@@ -5787,7 +5787,7 @@ function ckPhv(E,c,lay,one){const o=[0,0,0];if(c.sys&&c.sys!=='power'&&!c.mix)re
 function elecTree(P,base){const E=esOf(P),F=feedMap(P),pan=F.pan,kids=new Map(),by=new Map(),tot=new Map(),feeds=[];
   for(const [s,p] of F.up)(kids.get(p)||kids.set(p,[]).get(p)).push(s);for(const c of base||[])(by.get(c.panel)||by.set(c.panel,[]).get(c.panel)).push(c);
   const sum=mk=>{let o=tot.get(mk);if(o)return o;const pe=pan.get(mk),lay=panelLay(pe),one=panelDist(P,pe)!=='3p';o={load:0,cls:{light:0,power:0,hvac:0,other:0},phv:[0,0,0],dem:0};tot.set(mk,o);
-    const add=c=>{o.load+=c.load;for(const k in o.cls)o.cls[k]+=c.cls[k]||0;const q=ckPhv(E,c,lay,one);for(let i=0;i<3;i++)o.phv[i]+=q[i]};
+    const add=c=>{o.load+=c.load;for(const k in c.cls)o.cls[k]=(o.cls[k]||0)+(c.cls[k]||0);const q=ckPhv(E,c,lay,one);for(let i=0;i<3;i++)o.phv[i]+=q[i]};
     for(const c of by.get(mk)||[])add(c);
     for(const s of (kids.get(mk)||[]).sort()){const T=sum(s),se=pan.get(s),f={panel:mk,circuit:String(se.circuit||''),n:1,load:T.load,items:new Map([[s,1]]),els:[se],cls:Object.assign({},T.cls),
         poles:panelDist(P,se)==='3p'?3:1,sys:'power',feed:s,phv:T.phv.slice(),dem:T.dem};feeds.push(f);add(f)}
@@ -5878,7 +5878,7 @@ function pnlSched(P,id,tr,fmt){const pe=P.els.find(e=>e.id===id&&e.cat==='eequip
     const f={_g:'f',desc:tr('c_total'),count:num('count')};for(let i=0;i<(one?1:3);i++)f['va'+i]=num('va'+i);rows.push(f)}
   const ph=p.phv||[0,0,0],A=v=>(v/E.vln).toFixed(1);
   rows.push(H(cols,one?tr('pnl_ph1',money(ph[0]),A(ph[0])):tr('pnl_ph3',money(ph[0]),money(ph[1]),money(ph[2]),A(ph[0]),A(ph[1]),A(ph[2]),(p.imb||0).toFixed(1))));
-  for(const k of ['light','power','hvac','other'])if((p.cls||{})[k]>0)rows.push(H(cols,tr('pnl_cls',tr('es_cl_'+k),money(p.cls[k]),money(demOf(E,k,p.cls[k])))));
+  for(const k of lcKeys637(P))if((p.cls||{})[k]>0)rows.push(H(cols,tr('pnl_cls',lcName637(P,k,tr),money(p.cls[k]),money(demOf(E,k,p.cls[k])))));
   rows.push(H(cols,tr('pnl_tot',money(p.load),money(p.va||0),(p.amp||0).toFixed(1),p.main||'—')));
   return{cols,rows,foot:null}}
 /* the way of a circuit, mm: from the panel to the nearest of its elements, on to the nearest of the rest and so on, along the axes and up and down (Revit: the path through all devices) */
@@ -5909,7 +5909,7 @@ function circuitCalc(P){const E=esOf(P),pan=new Map(),OV=P.ckt||{},W=E.wire.some
    phv: VA connected on L1 L2 L3, ia: A on each, imb: % the most loaded phase is over the mean of the three, up: the panel it is fed from */
 function panelCalc(P,C){C=C||circuitCalc(P);const E=esOf(P),by=new Map();
   for(const e of P.els)if(e.cat==='eequip'&&e.mark&&!by.has(e.mark))by.set(e.mark,{mark:e.mark,e,dist:panelDist(P,e),n:0,load:0,dem:0,cls:{light:0,power:0,hvac:0,other:0},phv:[0,0,0]});
-  for(const c of C){const p=by.get(c.panel);if(!p)continue;p.n++;p.load+=c.load;for(const k in c.cls)p.cls[k]+=c.cls[k];if(c.phv)for(let i=0;i<3;i++)p.phv[i]+=c.phv[i]}
+  for(const c of C){const p=by.get(c.panel);if(!p)continue;p.n++;p.load+=c.load;for(const k in c.cls)p.cls[k]=(p.cls[k]||0)+c.cls[k];if(c.phv)for(let i=0;i<3;i++)p.phv[i]+=c.phv[i]}
   for(const p of by.values()){for(const k in p.cls)p.dem+=demOf(E,k,p.cls[k]);p.va=p.dem/E.pf;p.amp=p.va/(p.dist==='3p'?E.vll*Math.sqrt(3):E.vln);const need=p.amp*E.brkK;p.main=p.n?(E.brk.find(b=>b>=need-1e-9)||E.brk[E.brk.length-1]):0;
     const av=(p.phv[0]+p.phv[1]+p.phv[2])/3;p.ia=p.phv.map(v=>v/E.vln);p.imb=p.dist==='3p'&&av>0?(Math.max(...p.phv)-av)/av*100:0;p.up=p.e.panel&&p.e.panel!==p.mark?p.e.panel:''}
   return[...by.values()]}
@@ -14638,7 +14638,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=646,V1_NAME='V1.636';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=647,V1_NAME='V1.637';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -61622,6 +61622,69 @@ Object.assign(STR,{mto636_elec:['ระบบไฟฟ้า','Electrical'],tm63
   cm636_EMT:['เหล็กอาบสังกะสี EMT','Galvanised steel EMT'],cm636_IMC:['เหล็กอาบสังกะสี IMC','Galvanised steel IMC'],cm636_PVC:['พีวีซี (PVC)','PVC'],
   mk_note:['ปริมาณวัสดุของผนัง พื้น ฝ้า และหลังคาแยกตามชั้น (Edit Structure) ถ้าชนิดมีหลายชั้น ส่วนที่แบ่งเป็นชิ้นส่วนย่อยนับตามชิ้นส่วน ผนังกระจกแยกเสาครีบ แผงกระจก และแผงทึบ และของเสา คาน ขอบพื้น บัวผนัง เชิงชาย รางน้ำ ฝ้าชายคา ส่วนอื่นตามชนิด ประตูและหน้าต่างแยกวงกบ บาน และกระจก ราวกันตกแยกราว ลูกกรง เสา และแผงกระจก ชิ้นงานในโครงการตามวัสดุของรูปทรง จุดต่อเหล็กแยกแผ่นเหล็กและสลักเกลียว แผ่นเสริม แผ่นประกับ Haunch และหมุดรับแรงเฉือนแยกหมวดของตัวเอง แผ่นเหล็กตามเกรด สลักเกลียวและสมอ และรอยเชื่อม เหล็กเสริมแยกข้ออ้อยและเส้นกลม ตะแกรงเหล็กตามลวดที่วาง ข้อต่อเหล็กเสริมตามปลอก ท่อตามวัสดุของ Segment ท่อลมตามแผ่นที่ใช้ทำ ฉนวนและวัสดุบุภายในตามความหนา รางเคเบิลตามแผ่นที่ใช้ทำ ท่อร้อยสายตามชนิด · น้ำหนักจากความหนาแน่นของวัสดุ',
   'Quantities of walls, floors, ceilings and roofs by layer (Edit Structure) where the type has layers, by their parts where made into parts, of curtain walls by mullions, glazed and solid panels, of columns, beams, slab edges, wall sweeps, fascias, gutters, soffits and the rest by type, of doors and windows by frame, leaves and glass, of railings by rails, balusters, posts and panels, of in-place components by the materials of their forms, of steel connections by plates and bolts, of stiffeners, gusset plates, haunches and shear studs each in its own category, of plates by grade, of bolts and anchors and of welds, of rebar by deformed and round bars, of fabric by the wires laid, of couplers by their sleeves, of pipes by the material of their segments, of ducts by the sheet they are made of, of insulation and lining by thickness, of cable trays by the sheet they are made of, of conduits by kind · weight from the material density']});
+/* ===== 637 Load Classifications (V1.637; Revit: Manage › MEP Settings › Load Classifications, each with its demand factor, the classification of a load set
+   on the type of what draws it).  Beside the four the project always has (Lighting, Power, HVAC, Other: their demand factors stay in Electrical Settings),
+   a project can keep classifications of its own, P.lc637 [{k: 'u1', n: name, df: %, dfs: [[up to kW, %] … [0, % of the rest]]}], each with a constant or a
+   stepped demand factor as the four have.  The type of a luminaire, an electrical device or a piece of mechanical equipment takes one (T.lc637; none: by
+   its category, as before: Lighting, Power, HVAC); a circuit adds each load to its classification, a panel totals them, takes the demand factor of each
+   and lists each in its schedule; schedules of those categories have a Load Classification field.  A classification deleted gives its types back their
+   category's. ===== */
+const LC637_BI=['light','power','hvac','other'];
+const lcCust637=P0=>Array.isArray(P0&&P0.lc637)?P0.lc637.filter(c=>c&&typeof c.k==='string'&&/^u\d+$/.test(c.k)):[];
+const lcKeys637=P0=>LC637_BI.concat(lcCust637(P0).map(c=>c.k));
+function lcName637(P0,k,tr){tr=tr||t;if(LC637_BI.includes(k))return tr('es_cl_'+k);const c=lcCust637(P0).find(x=>x.k===k);return c?String(c.n):k}
+/* the classification a type gives: null when it gives none (or one the project no longer has) */
+function lcOf637(P0,e){if(!e||!['light','device','equip'].includes(e.cat))return null;const T=typ(P0,e),k=T&&T.lc637;return k&&lcKeys637(P0).includes(k)?k:null}
+const lcDef637=cat=>cat==='light'?'light':cat==='equip'?'hvac':cat==='device'?'power':'other';
+/* the demand factors of the project's own classifications, with those of the four */
+{const f0=esOf;esOf=function(P0){const o=f0.apply(this,arguments);for(const c of lcCust637(P0)){const d=+c.df;o.df[c.k]=isFinite(d)&&d>=0&&d<=100?d:100;const a=dfsParse(c.dfs);if(a.length)o.dfs[c.k]=a}return o}}
+function lc637Clean(){const L=lcCust637(P),seen=new Set(),out=[];for(const c of L){const n=String(c.n||'').trim().slice(0,60);if(!n||seen.has(c.k)||out.some(x=>x.n===n))continue;seen.add(c.k);
+    const o={k:c.k,n},d=+c.df;if(isFinite(d)&&d>=0&&d<=100&&d!==100)o.df=d;const a=dfsParse(c.dfs);if(a.length)o.dfs=a;out.push(o)}
+  if(out.length)P.lc637=out;else delete P.lc637;const ks=lcKeys637(P);
+  for(const c of ['light','device','equip'])for(const T of (P.types&&P.types[c])||[])if(T.lc637!=null&&!(typeof T.lc637==='string'&&ks.includes(T.lc637)))delete T.lc637}
+XC.push(lc637Clean);
+/* Type Properties: Load Classification */
+RG_TF.lc637=(T,f)=>{const cat=['light','device','equip'].find(c=>(P.types[c]||[]).includes(T))||'device',d=lcDef637(cat),cur=T.lc637&&lcKeys637(P).includes(T.lc637)?T.lc637:'';
+  return`<div class="fr"><label for="tf_lc637">${esc(t('f_lc637'))}</label><select id="tf_lc637" data-tf="lc637"><option value=""${cur?'':' selected'}>${esc(t('lc637_def',lcName637(P,d)))}</option>${lcKeys637(P).map(k=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(lcName637(P,k))}</option>`).join('')}</select></div>`};
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||!['light','device','equip'].includes(cs.value))return;const c=cs.value,T=(P.types[c]||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;
+  H.change=e=>{const el=e.target;if(!el||!el.dataset||el.dataset.tf!=='lc637')return c0(e);const v=el.value;if(v&&!lcKeys637(P).includes(v))return dlgTypes(c,T.id);if((T.lc637||'')!==v)edit(()=>{if(v)T.lc637=v;else delete T.lc637});refresh();return dlgTypes(c,T.id)}}}
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);return F&&['light','device','equip'].includes(cat)?F.concat([['lc637','lc637']]):F}}
+/* schedules: Load Classification */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(!['light','device','equip'].includes(cat))return F;F.push({k:'lc637',l:tr('f_lc637'),g:e=>lcName637(Q,lcOf637(Q,e)||lcDef637(e.cat),tr),grp:'t'});return F}}
+/* the dialog: the four with their demand factors (those of Electrical Settings), the project's own to add, rename and delete */
+function dlgLc637(){const E=esOf(P),C=lcCust637(P),used=k=>['light','device','equip'].reduce((s,c)=>s+(P.types[c]||[]).filter(T=>T.lc637===k).length,0);
+  const row=(k,bi)=>`<tr data-lck="${k}"><td>${bi?`${esc(lcName637(P,k))} <small class="note">(${esc(t('lc637_bi'))})</small>`:`<input type="text" data-lcf="n" value="${esc(lcName637(P,k))}" maxlength="60" aria-label="${esc(t('lc637_name'))}">`}</td>`
+    +`<td><span class="un"><input type="number" data-lcf="df" value="${E.df[k]}" min="0" max="100" step="5"${E.dfs[k]?' disabled':''} aria-label="${esc(t('lc637_df'))} ${esc(lcName637(P,k))}"> %</span></td>`
+    +`<td><input type="text" data-lcf="dfs" value="${esc(dfsText(E.dfs[k]))}" placeholder="10:100, *:50" aria-label="${esc(t('es_dfs'))} ${esc(lcName637(P,k))}"></td>`
+    +`<td class="n">${bi?'':used(k)}</td><td class="fb">${bi?'':`<button type="button" data-lcx="del" title="${esc(t('lc637_delt'))}" aria-label="${esc(t('lc637_delt'))} ${esc(lcName637(P,k))}">✕</button>`}</td></tr>`;
+  const body=`<p class="note">${esc(t('lc637_note'))}</p><div class="tblw"><table class="tbl lc637"><thead><tr><th>${esc(t('lc637_name'))}</th><th>${esc(t('lc637_df'))}</th><th>${esc(t('es_dfs'))}</th><th>${esc(t('lc637_types'))}</th><th></th></tr></thead><tbody>`
+    +LC637_BI.map(k=>row(k,1)).join('')+C.map(c=>row(c.k,0)).join('')+`</tbody></table></div>`
+    +`<div class="pa msa"><label for="lcNew637">${esc(t('lc637_new'))}</label><input type="text" id="lcNew637" maxlength="60"><button class="btn" data-lcx="add">${esc(t('ms_add'))}</button></div><p class="note">${esc(t('es_dfsnote'))}</p>`;
+  const setC=(k,fn)=>edit(()=>{const L=lcCust637(P).map(c=>Object.assign({},c)),c=L.find(x=>x.k===k);if(c)fn(c,L);P.lc637=L;lc637Clean()});
+  openDlg(t('a_lcl637'),body,`<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,{
+    change(ev){const el=ev.target,f=el.dataset.lcf,tr0=el.closest('tr[data-lck]');if(!f||!tr0)return;const k=tr0.dataset.lck,bi=LC637_BI.includes(k);
+      if(f==='n'){const n=el.value.trim();if(!n||lcKeys637(P).some(x=>x!==k&&lcName637(P,x)===n)){toast(t(n?'lc637_dup':'lc637_noname'));return dlgLc637()}setC(k,c=>{c.n=n})}
+      else if(f==='df'){const v=parseFloat(el.value);if(!isFinite(v)||v<0||v>100){toast(t('es_badnum',0,100));return dlgLc637()}if(bi)esEdit(m=>{(m.df=m.df||{})[k]=v});else setC(k,c=>{c.df=v})}
+      else if(f==='dfs'){const a=dfsParse(el.value);if(el.value.trim()&&!a.length){toast(t('es_baddfs'));return dlgLc637()}
+        if(bi)esEdit(m=>{const d=Object.assign({},m.dfs||{});if(a.length)d[k]=a;else delete d[k];if(Object.keys(d).length)m.dfs=d;else delete m.dfs});else setC(k,c=>{if(a.length)c.dfs=a;else delete c.dfs})}
+      refresh();dlgLc637()},
+    click(ev){const x=ev.target.dataset.lcx;if(!x)return;
+      if(x==='add'){const n=(($('#lcNew637')||{}).value||'').trim();if(!n){toast(t('lc637_noname'));return}if(lcKeys637(P).some(k=>lcName637(P,k)===n)){toast(t('lc637_dup'));return}
+        edit(()=>{const L=lcCust637(P).slice();let i=1;while(L.some(c=>c.k==='u'+i))i++;L.push({k:'u'+i,n});P.lc637=L;lc637Clean()});refresh();return dlgLc637()}
+      if(x==='del'){const k=ev.target.closest('tr[data-lck]').dataset.lck,u=used(k);edit(()=>{P.lc637=lcCust637(P).filter(c=>c.k!==k);lc637Clean()});if(u)toast(t('lc637_deld',u));refresh();return dlgLc637()}}},'wide')}
+XA.lcl637=dlgLc637;BTN['@lcl637']=['circuit',''];
+{const A=RIBBON.find(r=>r.id==='manage'),p=A&&A.panels.find(q=>q.t==='p_settings');if(p&&!p.b.includes('@lcl637')){const i=p.b.indexOf('@eset');p.b.splice(i<0?p.b.length:i+1,0,'@lcl637')}}
+/* Electrical Settings › Demand factors: the project's own classifications and the way to them */
+{const f0=dlgElec;dlgElec=function(pg){const r=f0.apply(this,arguments);if(ui.esPage!=='load')return r;const c=$('#dlg .msc');if(!c)return r;const C=lcCust637(P),E=esOf(P);
+  c.insertAdjacentHTML('beforeend',`<h4 class="esh">${esc(t('a_lcl637'))}</h4>`+(C.length?`<p class="note" id="lcEs637">${C.map(x=>esc(x.n)+': '+(E.dfs[x.k]?esc(dfsText(E.dfs[x.k])):E.df[x.k]+' %')).join(' · ')}</p>`:'')
+    +`<div class="pa"><button class="btn" data-act="lcl637">${esc(t('a_lcl637'))}…</button></div>`);return r}}
+{const st=document.createElement('style');st.textContent='#dlg table.lc637 input[type=text]{width:100%;min-width:140px}#dlg table.lc637 input[type=number]{width:70px}#dlg table.lc637 td{vertical-align:middle}';document.head.appendChild(st)}
+Object.assign(STR,{a_lcl637:['ประเภทโหลด (Load Classifications)','Load Classifications'],f_lc637:['ประเภทโหลด (Load Classification)','Load Classification'],lc637_def:['ตามหมวด ({0})','By category ({0})'],
+  lc637_bi:['มีในโปรแกรม','built in'],lc637_name:['ชื่อ','Name'],lc637_df:['Demand Factor','Demand factor'],lc637_types:['ชนิดที่ใช้','Types using it'],lc637_new:['ประเภทโหลดใหม่','New classification'],
+  lc637_delt:['ลบประเภทโหลด','Delete classification'],lc637_dup:['มีประเภทโหลดชื่อนี้แล้ว','A classification of that name exists'],lc637_noname:['พิมพ์ชื่อประเภทโหลดก่อน','Type a name for the classification'],
+  lc637_deld:['ลบแล้ว ชนิด {0} ชนิดกลับไปใช้ประเภทตามหมวด','Deleted: {0} types back to their category\'s classification'],
+  lc637_note:['ประเภทโหลดแต่ละประเภทมี Demand Factor ของตัวเอง แบบคงที่หรือแบบขั้นบันได ตั้งประเภทโหลดใน คุณสมบัติชนิด ของโคมไฟ อุปกรณ์ไฟฟ้า และเครื่องจักร ถ้าไม่ตั้ง โคมไฟเป็นแสงสว่าง อุปกรณ์ไฟฟ้าเป็นเต้ารับและอุปกรณ์ เครื่องจักรเป็นเครื่องปรับอากาศและเครื่องจักร ตารางโหลดของตู้แยกยอดตามประเภทและคิด Demand ของแต่ละประเภท',
+    'Each classification has its own demand factor, constant or stepped. Set it in the Type Properties of luminaires, electrical devices and mechanical equipment; without one, luminaires are Lighting, devices Receptacles and devices, and equipment HVAC and machines. A panel totals its loads by classification and takes the demand of each']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -62771,6 +62834,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ท่อลมในตารางถอดวัสดุ (Revit: Material Takeoff ของ Ducts): ท่อลมนับแผ่นที่ใช้ทำตามผิวที่วาด (เส้นรอบรูปตลอดความยาว เท่าปริมาณงาน) เหล็กอาบสังกะสีหนาตามด้านยาวของท่อ (ประมาณ SMACNA เท่าในรายงานชิ้นงานท่อลม) แยกเป็นวัสดุตามความหนา 7850 กก./ลบ.ม. ท่อลม PID นับแผ่นฉนวนสำเร็จรูปหนา 20 มม. 70 กก./ลบ.ม. ตะเข็บและหน้าแปลนที่รายงานชิ้นงานบวก 15% ไม่ได้วาดจึงไม่นับ ท่อลมตัวแทน ท่อลมอ่อน และท่อที่ถูกยกเว้นจากกลุ่มไม่นับ ท่อลมเป็นหมวดของตารางถอดวัสดุในกลุ่มระบบปรับอากาศก่อนระบบท่อ หนึ่งแถวต่อท่อพร้อมชนิด ขนาด และความยาว
 - ฉนวนท่อลม วัสดุบุภายในท่อลม และฉนวนท่อน้ำในตารางถอดวัสดุ (Revit: Material Takeoff ของ Duct Insulations, Duct Linings และ Pipe Insulations): ฉนวนของท่อลม ท่อน้ำ หรือท่อแนวดิ่งนับเนื้อฉนวนจากผิวนอกของท่อ (ท่อน้ำใช้เส้นผ่านศูนย์กลางนอกของ Segment) ถึงผิวนอกของฉนวน ตลอดความยาว และพื้นที่ผิวนอก วัสดุบุภายในท่อลมนับเนื้อด้านในท่อและพื้นที่ผิวใน แต่ละอย่างตามวัสดุและความหนา ด้วยความหนาแน่นของวัสดุนั้น (ยางดำ 60 ใยแก้วหุ้มฟอยล์ 24 โฟม PE 30 ใยหิน 100 ใยแก้ว 64 โฟม PU 40 ใยแก้วแผ่น 48 กก./ลบ.ม.) ทั้งสามเป็นหมวดของตารางถอดวัสดุ (ระบบปรับอากาศและระบบท่อ) แถวคือท่อที่มีฉนวน จัดการ › ถอดปริมาณวัสดุแสดงด้วย
 - รางเคเบิลและท่อร้อยสายในตารางถอดวัสดุ (Revit: Material Takeoff ของ Cable Trays และ Conduits): รางเคเบิลนับแผ่นที่ใช้ทำตลอดความยาว แบบบันไดนับรางข้างสองเส้น (รางตัว C สูงเท่าราง ปีก 20 มม.) และขั้นบันได (ตัว C กว้างคลี่ 80 มม. ทุก 300 มม. ตามที่วาดใน 3D) แบบเจาะรูนับพื้นและข้างสองด้านโดยไม่หักรู รางเดินสาย (Wireway) นับรอบตัวรวมฝา ความหนา 1.2 มม. ถึงกว้าง 300 มม. 1.5 มม. ถึง 600 มม. และ 2.0 มม. ถ้ากว้างกว่า เป็นเหล็กอาบสังกะสี เว้นแต่ชื่อชนิดบอกว่าสแตนเลส อะลูมิเนียม หรือ FRP ท่อร้อยสายนับเนื้อท่อ (OD² − ID²) π/4 ตลอดความยาวและผิวนอก EMT และ IMC เป็นเหล็กอาบสังกะสี PVC 1,400 กก./ลบ.ม. ทั้งสองเป็นหมวดของตารางถอดวัสดุในกลุ่มระบบไฟฟ้า ระหว่างระบบปรับอากาศกับระบบท่อ แถวคือรางหรือท่อแต่ละเส้น พร้อมชนิด ขนาด และความยาว จัดการ › ถอดปริมาณวัสดุแสดงด้วย
+- ประเภทโหลด (Load Classifications, Revit: Manage › MEP Settings › Load Classifications): นอกจากสี่ประเภทที่มีในโปรแกรม (แสงสว่าง เต้ารับและอุปกรณ์ เครื่องปรับอากาศและเครื่องจักร อื่น ๆ ซึ่ง Demand Factor อยู่ในตั้งค่างานไฟฟ้า) โครงการสร้างประเภทโหลดของตัวเองได้ เช่น ครัว ลิฟต์ มอเตอร์ แต่ละประเภทมี Demand Factor แบบคงที่หรือแบบขั้นบันได เปลี่ยนชื่อและลบได้ เลือกประเภทโหลดใน คุณสมบัติชนิด ของโคมไฟ อุปกรณ์ไฟฟ้า และเครื่องจักร (ถ้าไม่เลือกเป็นตามหมวด) วงจรรวมโหลดแยกตามประเภท ตู้รวมยอดแต่ละประเภทแล้วคิด Demand ของประเภทนั้น ตารางโหลดของตู้แสดงทุกประเภทที่มีโหลด ตารางของโคมไฟ อุปกรณ์ และเครื่องจักรมีช่องประเภทโหลด ลบประเภทแล้วชนิดที่ใช้อยู่กลับไปใช้ประเภทตามหมวด ปุ่มอยู่ที่ จัดการ › ตั้งค่า ถัดจากตั้งค่างานไฟฟ้า และในหน้า Demand Factor ของตั้งค่างานไฟฟ้า
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -63118,6 +63182,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Ducts in Material Takeoffs (Revit: the Material Takeoff of Ducts): a rigid duct counts the sheet it is made of over the face it is drawn with (its perimeter along its length, as its quantities count it): galvanised steel at the gauge of its long side (about SMACNA, as the fabrication report has it), each gauge a material of its own, 7850 kg/m³; a PID duct its pre-insulated panel, 20 mm at 70 kg/m³. The seams and flanges the fabrication report adds (15%) are not drawn and not counted; placeholders, flexible ducts and ducts excluded from their group count nothing. Ducts are a category of Material Takeoffs under Mechanical, before Piping, a duct a row with its type, size and length.
 - Duct insulation, duct lining and pipe insulation in Material Takeoffs (Revit: the Material Takeoffs of Duct Insulations, Duct Linings and Pipe Insulations): the insulation of a duct, pipe or riser counts its shell from the outside of the run (a pipe at the outside diameter of its segment) to its own outer face, along its length, and that outer face; a duct's lining counts its shell inside the duct and its inner face; each in its material and thickness at that material's density (elastomeric 60, duct wrap 24, PE foam 30, mineral wool 100, fiberglass 64, PU foam 40, fiberglass board 48 kg/m³). The three are categories of Material Takeoffs (under Mechanical and Piping) whose rows are the insulated runs; Manage › Material Takeoff lists them.
 - Cable trays and conduits in Material Takeoffs (Revit: the Material Takeoffs of Cable Trays and Conduits): a cable tray counts the sheet it is made of along its length; a ladder its two side rails (channels as high as the tray with 20 mm lips) and its rungs (80 mm developed channels every 300 mm, as drawn in 3D); a perforated tray its bottom and two sides, the holes not taken off; a wireway all round with its cover; 1.2 mm up to 300 wide, 1.5 mm to 600 and 2.0 mm wider, galvanised steel unless its type's name says stainless steel, aluminium or FRP. A conduit counts its wall, (OD² − ID²) π/4 along its length, and its outer face: EMT and IMC galvanised steel, PVC at 1,400 kg/m³. Both are categories of Material Takeoffs in an Electrical group between Mechanical and Piping, a row for each run with its type, size and length; Manage › Material Takeoff lists them.
+- Load Classifications (Revit: Manage › MEP Settings › Load Classifications): besides the four built in (Lighting, Receptacles and devices, HVAC and machines, Other, whose demand factors stay in Electrical Settings) a project can keep classifications of its own, such as Kitchen, Elevators or Motors, each with a constant or stepped demand factor, renamed or deleted at will. Pick one in the Type Properties of luminaires, electrical devices and mechanical equipment (none: by category). A circuit adds its loads by classification, a panel totals each and takes its demand factor, the panel schedule lists every classification with load, and schedules of those categories have a Load Classification field. Deleting a classification gives its types back their category's. The button is on Manage › Settings next to Electrical Settings and on the demand factors page of Electrical Settings.
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -64333,6 +64398,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.634 · ท่อลมในตารางถอดวัสดุ แยกความหนาแผ่นเหล็กอาบสังกะสีและ PID
 - V1.635 · ฉนวนท่อลม วัสดุบุภายในท่อลม และฉนวนท่อน้ำในตารางถอดวัสดุ
 - V1.636 · รางเคเบิลและท่อร้อยสายในตารางถอดวัสดุ
+- V1.637 · ประเภทโหลด (Load Classifications) ที่สร้างเองได้ แต่ละประเภทมี Demand Factor ของตัวเอง
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -65142,6 +65208,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.634 · Ducts in Material Takeoffs, galvanised sheet by gauge and PID panel
 - V1.635 · Duct insulation, duct lining and pipe insulation in Material Takeoffs
 - V1.636 · Cable trays and conduits in Material Takeoffs
+- V1.637 · Load Classifications of your own, each with its own demand factor
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -70204,6 +70271,18 @@ window.PenumBIM.r636={
   flds:cat=>mtoFlds({scat:cat},mtoAll(P,cat,t)),
   cls:id=>{const e=IDX.get(id),m=e&&mtoParts(P,e,QTY(),t)[0];return m?t('mcl_'+(MTO_CLS[m.b]||'misc')):null},
   cats:()=>[MTO_CATS.slice(),MTO_ARCH.slice()]};
+/* V1.637 test API: Load Classifications */
+window.PenumBIM.r637={
+  keys:()=>lcKeys637(P),names:()=>lcKeys637(P).map(k=>lcName637(P,k)),list:()=>JSON.parse(JSON.stringify(P.lc637||null)),
+  add:(n,df,dfs)=>{let k;edit(()=>{const L=lcCust637(P).slice();let i=1;while(L.some(c=>c.k==='u'+i))i++;k='u'+i;const c={k,n};if(df!=null)c.df=df;if(dfs)c.dfs=dfs;L.push(c);P.lc637=L;lc637Clean()});refresh();return k},
+  setType:(cat,mark,k)=>{edit(()=>{const T=P.types[cat].find(x=>x.mark===mark);if(k)T.lc637=k;else delete T.lc637});refresh()},
+  typeOf:(cat,mark)=>{const T=P.types[cat].find(x=>x.mark===mark);return T?T.lc637==null?null:T.lc637:undefined},
+  of:id=>{const e=IDX.get(id);return e?lcOf637(P,e)||lcDef637(e.cat):null},
+  cks:pn=>circuits(P).filter(c=>c.panel===pn).map(c=>({ck:c.circuit,load:c.load,cls:c.cls})),
+  pan:pn=>{const p=panelCalc(P).find(x=>x.mark===pn);return p?{load:p.load,dem:Math.round(p.dem*1000)/1000,cls:p.cls,main:p.main}:null},
+  dem:(k,W)=>demOf(esOf(P),k,W),es:()=>{const E=esOf(P);return{df:E.df,dfs:E.dfs}},
+  pnl:id=>pnlSched(P,id,t).rows.filter(r=>r._g==='h').map(r=>Object.keys(r).filter(k=>k!=='_g').map(k=>r[k]).join('')),
+  fld:(cat,id)=>{const F=sfAll(P,cat,t).find(f=>f.k==='lc637'),e=IDX.get(id);return F&&e?F.g(e):null}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
