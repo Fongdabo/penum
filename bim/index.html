@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=586,V1_NAME='V1.576';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=587,V1_NAME='V1.577';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -59137,6 +59137,76 @@ XF.push((cat,o,key,raw)=>{if(key!=='col576'&&key!=='coo576')return false;if(cat!
   F.push({k:'col576',l:tr('p_col576'),g:(e,X)=>{if(!co576Ok(e))return'';const L=co576Lv(Q,e);return L?L.name:X.tr('co576_none')},grp:'i'});
   F.push({k:'coo576',l:tr('p_coo576'),g:e=>co576Ok(e)&&e.col576!=null?(+e.coo576||0):'',grp:'i'})}return F}}
 Object.assign(STR,{p_col576:['ระดับตัดหลังคา (Cutoff Level)','Cutoff Level'],p_coo576:['ระยะเลื่อนระดับตัด (Cutoff Offset)','Cutoff Offset'],co576_none:['ไม่มี','None']});
+/* ===== 577 Sloped Glazing (V1.577; Revit: the roof family Sloped Glazing: a footprint or extrusion roof whose type is Sloped Glazing is made of curtain
+   panels on a grid, with mullions on its grid lines and round its edges, instead of layers).  A roof type has Sloped Glazing (No / Yes) in Type Properties; with
+   Yes it has Grid 1 Spacing (the lines across the slope, measured up the slope from the eave), Grid 2 Spacing (the lines down the slope, measured level, from the
+   middle of each slope), Mullion Width and Mullion Depth.  Every slope of a roof of that type is then glass panels between mullions in 3D, sections and
+   elevations (no fascia, ridge caps or soffit); its rafter cut, Rafter or Truss, cutoff, openings and gable ends go as for any roof.  Plans draw its grid lines.
+   Quantities: the area of its glass. */
+/* T.sg577 'yes': the type is Sloped Glazing; T.sgg1 / T.sgg2 the spacings of Grid 1 / Grid 2 (0: none); T.sgmw / T.sgmd the width / depth of its mullions */
+const SG577_D={sgg1:1500,sgg2:1200,sgmw:60,sgmd:150};
+const sg577T=T=>!!T&&T.sg577==='yes';
+const sg577On=(Q,e)=>!!e&&e.cat==='roof'&&Array.isArray(e.pts)&&e.pts.length>=3&&sg577T(typ(Q,e));
+const L1x=L=>L.slice().sort((a,b)=>a-b);
+const sg577V=(T,k)=>{const v=+T[k];return isFinite(v)&&v>=0?v:SG577_D[k]};
+/* a face of the roof: its plan loop, its height z(q), the way up its slope v (plan), level along it u, how steep t */
+function sg577F(f){const pl=planeOf(f.loop);if(!pl)return null;const lp=f.loop.map(q=>[q[0],q[1]]),t=Math.hypot(pl[0],pl[1]),v=t>1e-6?[pl[0]/t,pl[1]/t]:[0,1],u=[-v[1],v[0]];
+  return{lp,pl,t,v,u,z:q=>pl[0]*q[0]+pl[1]*q[1]+pl[2],X1:q=>q[0]*v[0]+q[1]*v[1],X2:q=>q[0]*u[0]+q[1]*u[1]}}
+/* where its grid lines are on a face: Grid 1 from its lowest point up the slope, Grid 2 from its middle both ways (each kept a mullion clear of its edges) */
+function sg577Lines(F,T){const g1=sg577V(T,'sgg1'),g2=sg577V(T,'sgg2'),w=sg577V(T,'sgmw'),k=Math.sqrt(1+F.t*F.t),a=F.lp.map(F.X1),b=F.lp.map(F.X2),A0=Math.min(...a),A1=Math.max(...a),B0=Math.min(...b),B1=Math.max(...b),L1=[],L2=[];
+  if(g1>=100&&F.t>1e-6){const s=g1/k;for(let x=A0+s;x<A1-w;x+=s)L1.push(x)}
+  else if(g1>=100){const c=(A0+A1)/2;for(let x=c;x<A1-w;x+=g1)L1.push(x);for(let x=c-g1;x>A0+w;x-=g1)L1.unshift(x)}
+  if(g2>=100){const c=(B0+B1)/2;for(let x=c;x<B1-w;x+=g2)L2.push(x);for(let x=c-g2;x>B0+w;x-=g2)L2.unshift(x)}
+  return{L1,L2}}
+/* the pieces of a face: less its openings, in convex parts */
+function sg577Pcs(Q,e,F){const RH=roofHoles(Q,e),RHP=RH.length?holeParts(RH):null;return RHP&&RH.some(h=>polyTouch(h,F.lp))?polyMinus(F.lp,RHP):[F.lp]}
+/* its glass and mullions, as triangles into gl and mu, and the lines of its grid and edges into ln; the area of its glass (sloped) */
+function sg577Put(Q,e,T,G,gl,mu,ln){const w=sg577V(T,'sgmw'),d=sg577V(T,'sgmd'),up=12,gt=12,ED=new Map(),key=(a,b)=>{const m=[Math.round((a[0]+b[0])/4),Math.round((a[1]+b[1])/4)];return m[0]+','+m[1]};let A=0;
+  const FS=G.faces.map(sg577F).filter(Boolean);for(const F of FS)for(let i=0;i<F.lp.length;i++){const k=key(F.lp[i],F.lp[(i+1)%F.lp.length]);ED.set(k,(ED.get(k)||0)+1)}
+  const band=(pc,f)=>{for(const cv of holeParts([pc])){const s=co576Dd(clipHP(cv,f));if(s.length>=3&&Math.abs(area2(s))>1)return s}return null};
+  for(const F of FS){const L=sg577Lines(F,T),pw=n=>w/Math.sqrt(1+Math.pow(F.t*(n[0]*F.v[0]+n[1]*F.v[1]),2)),m1=pw(F.v),m2=pw(F.u),sl=Math.sqrt(1+F.t*F.t);
+    for(const pc of sg577Pcs(Q,e,F)){
+      /* glass: cells between the grid lines, under the tops of the mullions */
+      for(const cv of holeParts([pc]))for(const s1 of rc574Strips(cv,F.X1,L1x(L.L1)))for(const c of rc574Strips(s1,F.X2,L1x(L.L2))){const a=Math.abs(area2(c));if(a<1)continue;
+        const Fz=co576Dd(c);if(Fz.length<3)continue;slopePrism(gl,Fz,q=>F.z(q)-up-gt,q=>F.z(q)-up);A+=a*sl}
+      /* mullions on the grid lines */
+      const put=(cv,f0,f1)=>{const s=co576Dd(clipHP(co576Dd(clipHP(cv,f0)),f1));if(s.length>=3&&Math.abs(area2(s))>1)slopePrism(mu,s,q=>F.z(q)-d,q=>F.z(q))};
+      for(const cv of holeParts([pc])){for(const x of L.L1)put(cv,q=>F.X1(q)-(x-m1/2),q=>(x+m1/2)-F.X1(q));for(const x of L.L2)put(cv,q=>F.X2(q)-(x-m2/2),q=>(x+m2/2)-F.X2(q))}
+      for(const x of L.L1)for(const [a,b] of rc574Across(pc,F.X1,x))ln.push(a[0],F.z(a),a[1],b[0],F.z(b),b[1]);
+      for(const x of L.L2)for(const [a,b] of rc574Across(pc,F.X2,x))ln.push(a[0],F.z(a),a[1],b[0],F.z(b),b[1]);
+      /* mullions round its edges: half on an edge two slopes share (hip, valley, ridge), whole on the others */
+      const n=pc.length,sg=area2(pc)>0?1:-1;for(let i=0;i<n;i++){const a=pc[i],b=pc[(i+1)%n],Lb=Math.hypot(b[0]-a[0],b[1]-a[1]);if(Lb<1)continue;const ud=[(b[0]-a[0])/Lb,(b[1]-a[1])/Lb],nn=[-ud[1]*sg,ud[0]*sg],
+          we=pw(nn)*((ED.get(key(a,b))||0)>1?0.5:1),D=q=>(q[0]-a[0])*nn[0]+(q[1]-a[1])*nn[1],S=q=>(q[0]-a[0])*ud[0]+(q[1]-a[1])*ud[1];
+        for(const cv of holeParts([pc])){const s=co576Dd(clipHP(co576Dd(clipHP(co576Dd(clipHP(co576Dd(clipHP(cv,q=>D(q)+0.01)),q=>we-D(q))),q=>S(q)+we)),q=>Lb+we-S(q)));if(s.length>=3&&Math.abs(area2(s))>1)slopePrism(mu,s,q=>F.z(q)-d,q=>F.z(q))}
+        ln.push(a[0],F.z(a),a[1],b[0],F.z(b),b[1])}}}
+  return A}
+/* in 3D: its layers, ridge caps, fascia boards and soffit give way to glass and mullions */
+{const f0=buildMeshes;buildMeshes=function(P0,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!P0||!Array.isArray(P0.els))return R;
+  try{for(const e of P0.els){if(!sg577On(P0,e))continue;const mine=items.filter(m=>m&&m.id===e.id&&m.cat==='roof');const B=mine.filter(m=>typeof m.li==='number');if(!B.length)continue;
+      const T=typ(P0,e),G=roofGeo(P0,e);if(!G||!Array.isArray(G.faces)||!G.faces.length)continue;
+      const base={};for(const k in B[0])if(!['t','l','s','c','a','mt','li'].includes(k))base[k]=B[0][k];
+      const gl=Object.assign({},base,{id:e.id,cat:'roof',c:GLASS,a:0.38,t:[],l:[],s:[]}),mu=Object.assign({},base,{id:e.id,cat:'roof',c:hex2rgb(T.sgmc||'#56606b'),a:1,t:[],l:[],s:[]});mu.mt=MAT.metal;
+      sg577Put(P0,e,T,G,gl.t,mu.t,mu.l);
+      const drop=new Set(mine.filter(m=>typeof m.li==='number'||rc574IsFa(m)||(Array.isArray(m.s)&&m.s.length>0)));
+      for(let i=items.length-1;i>=0;i--)if(drop.has(items[i]))items.splice(i,1);if(gl.t.length)items.push(gl);if(mu.t.length)items.push(mu)}}catch(_){}
+  return R}}
+/* in plans: its grid lines */
+{const f0=rfePlan;rfePlan=function(ctx,g,v,T0,col,o,of,hl,A){const r=f0.apply(this,arguments);try{for(const [e] of of('roof')){if(!sg577On(P,e))continue;const T=typ(P,e),G=roofGeo(P,e);
+      ctx.strokeStyle=hl(e.id)||A.ink;ctx.lineWidth=g.lw(0.1);for(const f of G.faces){const F=sg577F(f);if(!F)continue;const L=sg577Lines(F,T);
+        for(const pc of sg577Pcs(P,e,F)){for(const x of L.L1)for(const [a,b] of rc574Across(pc,F.X1,x))g.seg(a,b);for(const x of L.L2)for(const [a,b] of rc574Across(pc,F.X2,x))g.seg(a,b)}}}}catch(_){}return r}}
+/* quantities: the area of its glass */
+function sg577Area(Q,e){if(!sg577On(Q,e))return 0;const T=typ(Q,e),G=roofGeo(Q,e);if(!G||!Array.isArray(G.faces))return 0;return sg577Put(Q,e,T,G,[],[],[])}
+{const f0=quantities;quantities=function(P0){const q=f0.apply(this,arguments);try{for(const e of P0.els){if(!sg577On(P0,e))continue;const r=q.get(e.id);if(r)r.glz577=sg577Area(P0,e)}}catch(_){}return q}}
+/* ---- Type Properties ---- */
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='roof'||!F)return F;const o=F.slice(),i=o.findIndex(f=>f[0]==='thickness'),r=[['sg577','sel',['no','yes'],'sg577_']];
+  if(sg577T(T))r.push(['sgg1','num'],['sgg2','num'],['sgmw','num'],['sgmd','num']);o.splice(i<0?o.length:i+1,0,...r);return o}}
+/* a type made Sloped Glazing gets its spacings and mullions; the numbers kept in range */
+XC.push(()=>{for(const T of (P.types&&P.types.roof)||[]){if(!('sg577' in T)&&!('sgg1' in T)&&!('sgg2' in T)&&!('sgmw' in T)&&!('sgmd' in T))continue;
+  if(T.sg577!=='yes'){for(const k of ['sg577','sgg1','sgg2','sgmw','sgmd'])delete T[k];continue}
+  for(const k in SG577_D){let v=+T[k];if(!isFinite(v)||v<0)v=SG577_D[k];if(k==='sgg1'||k==='sgg2')v=v>0?Math.max(100,Math.min(20000,v)):0;else if(k==='sgmw')v=Math.max(10,Math.min(500,v));else v=Math.max(20,Math.min(1000,v));T[k]=Math.round(v)}}});
+Object.assign(STR,{f_sg577:['กระจกหลังคา (Sloped Glazing)','Sloped Glazing'],sg577_no:['ไม่ใช่','No'],sg577_yes:['ใช่','Yes'],
+  f_sgg1:['ระยะกริด 1 ตามลาด (Grid 1 Spacing)','Grid 1 Spacing (up the slope)'],f_sgg2:['ระยะกริด 2 แนวราบ (Grid 2 Spacing)','Grid 2 Spacing (level)'],
+  f_sgmw:['ความกว้างเสากระจก (Mullion Width)','Mullion Width'],f_sgmd:['ความลึกเสากระจก (Mullion Depth)','Mullion Depth']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60402,6 +60472,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rc574]] ในคุณสมบัติของหลังคาลาด (ต่อจากระยะยื่นชายคา): [[rc574_n]] แบบเดิม [[rc574_p]] หรือ [[rc574_s]] พร้อม [[p_fd574]] (0 ถึงความหนาหลังคา) ชายคาถูกตัดตามนั้นทั้งในภาพ 3 มิติ รูปตัด และปริมาตร
 - [[p_rt575]] ในคุณสมบัติของหลังคาที่สร้างด้วย Pick Walls: [[rt575_t]] (ค่าเริ่มต้น) วัดฐานหลังคาจากผิวนอกผนัง [[rt575_r]] วัดจากผิวในผนัง หลังคาจึงต่ำลงตามความชันคูณความหนาผนัง
 - [[p_col576]] และ [[p_coo576]] ในคุณสมบัติของหลังคาลาด: ตัดหลังคาเป็นระนาบที่ระดับนั้นบวกระยะเลื่อน ส่วนที่สูงกว่าหายไป เหลือหลังคาแบนรอบช่องเปิด แล้ววาดหลังคาอีกหลังบนระดับนั้นเป็นหลังคาทรงแมนซาร์ดหรือปั้นหยาซ้อนจั่ว
+- [[f_sg577]] ในคุณสมบัติชนิดหลังคา (แก้ไขชนิด): เลือกใช่แล้วหลังคาชนิดนั้นเป็นแผงกระจกระหว่างเสากระจก ตั้ง [[f_sgg1]] [[f_sgg2]] [[f_sgmw]] และ [[f_sgmd]] ได้
 - [[p_ul240]], [[p_lo240]] และ [[p_bo240]] ในคุณสมบัติของห้อง: ห้องสูงจากระดับชั้นบวกระยะยกฐาน ขึ้นไปถึงระดับบนบวกระยะเลื่อน (ตั้งต้นถึงชั้นถัดไป ถ้าไม่มีชั้นบนสูง 3000 มม.) ตั้ง [[ac_vol240]] ใน [[a_areacomp]] เป็น พื้นที่และปริมาตร แล้วห้องจะแสดง [[p_vol240]] ที่หักส่วนเหนือฝ้าและใต้พื้นชั้นบนออก ตารางห้องและ IFC ใช้ค่านี้ด้วย
 - [[wlf_deck]] เป็นหน้าที่ของชั้นหนึ่งใน [[a_slayers]] ของชนิดพื้น: ชั้นนี้หนาเท่าความสูงลอน เลือก [[dk_prof241]] ได้สามแบบ (ลอนสูง 38 ระยะ 150, 50 ระยะ 200, 75 ระยะ 300 มม.) และ [[dk_use241]] ผูกกับชั้นบน (คอนกรีตของชั้นที่อยู่เหนือเต็มร่องลอน) หรือแผ่นเดี่ยว · ลอนวิ่งตามทิศทางแผ่นพื้น (Span Direction) ในคุณสมบัติของพื้น · 3 มิติและรูปตัดเห็นแผ่นพับเป็นลอนและคอนกรีตในร่อง ใต้สันลอนเป็นช่องว่าง · ปริมาตรของพื้นนับคอนกรีตในร่องแต่ไม่นับช่องว่าง [[a_mtake]] นับแผ่นเหล็กเป็นพื้นที่คลี่และปริมาตรเหล็ก · ชนิดหนึ่งมีได้แผ่นเดียว และใช้ได้กับพื้นเท่านั้น
 - หลังคาเป็นขอบเขตบนของห้องด้วย: เมื่อเปิด พื้นที่และปริมาตร ปริมาตรของห้องหักส่วนที่อยู่เหนือท้องหลังคาทีละผืน (ท้องหลังคาคือผิวบนลบความหนาของหลังคา) ตรงไหนฝ้าหรือพื้นชั้นบนต่ำกว่าก็ใช้อันนั้น ตรงไหนหลังคาต่ำกว่าก็ใช้หลังคา ส่วนของหลังคาที่ต่ำกว่าฐานห้องไม่นับ · ป้ายห้องแบบ [[rk_vol242]] แสดงปริมาตรต่อจากพื้นที่ (เลือกได้ในแถบตัวเลือกของ [[t_rtag]] และในคุณสมบัติของป้าย)
@@ -60688,6 +60759,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rc574]] in the properties of a sloped roof (after Overhang): [[rc574_n]] as before, [[rc574_p]] or [[rc574_s]], with a [[p_fd574]] from 0 to the roof's thickness: its eaves are cut so in 3D, sections and its volume
 - [[p_rt575]] in the properties of a roof made with Pick Walls: [[rt575_t]] (the default) measures the roof's base from the outside of the walls, [[rt575_r]] from their inside, so the roof comes down by its slope times the walls' thickness
 - [[p_col576]] and [[p_coo576]] in the properties of a sloped roof: the roof is cut off level at that level plus the offset and all of it above is gone, leaving a flat top round an opening; a second roof drawn at that level makes a mansard or a Dutch hip
+- [[f_sg577]] in the Type Properties of a roof type: Yes makes roofs of that type glass panels between mullions, with [[f_sgg1]], [[f_sgg2]], [[f_sgmw]] and [[f_sgmd]]
 - [[p_ul240]], [[p_lo240]] and [[p_bo240]] in the properties of rooms: a room rises from its level plus the base offset to the upper limit plus the limit offset (by default the next level up; with no level above, 3000 mm); set [[ac_vol240]] in [[a_areacomp]] to Areas and Volumes and rooms show their [[p_vol240]], less what lies above ceilings and below the floor above; room schedules and IFC use it too
 - [[wlf_deck]] is a Function for a layer in the [[a_slayers]] of a floor type: the layer is as thick as the ribs are high; pick the [[dk_prof241]] (ribs 38 at 150, 50 at 200 or 75 at 300 mm) and the [[dk_use241]]: Bound Layer Above (the concrete of the layer above fills the troughs) or Standalone Deck · the ribs run along the floor's Span Direction in its properties · 3D and sections show the folded sheet and the concrete in the troughs, with the voids under the crests empty · the floor's volume counts the concrete in the troughs and not the voids; the [[a_mtake]] counts the sheet by its area folded out and its steel · one deck per type, in floors only
 - Roofs bound rooms from above too: once Areas and Volumes is set, the volume of a room leaves out what lies above the underside of a roof, face by face (the underside: the top less the roof's thickness); where a ceiling or a floor above is lower that one counts, where the roof dips lower the roof does; parts of a roof below the room's base do not count · a room tag of the kind [[rk_vol242]] shows the volume after the area (in the options of [[t_rtag]] and in the tag's properties)
@@ -61666,6 +61738,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.574 · การตัดปลายจันทัน (Rafter Cut) แบบ Revit: หลังคาลาดที่สร้างจากรูปรอบ (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะยื่นชายคาได้ว่า ตัดแนวดิ่ง (Plumb Cut แบบเดิม) ตัดสองครั้งแนวดิ่ง (Two Cut - Plumb: ตัดดิ่งลงจากหลังหลังคาลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอนเข้าไปจนชนท้องหลังคา) หรือตัดสองครั้งตั้งฉากกับหลังคา (Two Cut - Square: ตัดตั้งฉากกับความลาดลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอน) · ความลึกเชิงชาย (Fascia Depth) ตั้งได้ตั้งแต่ 0 ถึงความหนาหลังคา เริ่มที่ครึ่งหนึ่งของความหนา · ชั้นวัสดุของหลังคา เส้นขอบ เชิงชายที่หลังคาวาดเอง (ลึกเท่ารอยตัดแรก และเอียงตั้งฉากกับหลังคาเมื่อตัดแบบตั้งฉาก) และฝ้าชายคาใต้หลังคาปั้นหยา (อยู่ใต้รอยตัดแนวนอน) ตามไปด้วย · ภาพ 3 มิติ รูปตัด รูปด้าน การเชื่อมรูปทรง และปริมาตรในตารางถอดปริมาณคิดตามรอยตัด · ตารางรายการมีช่องการตัดปลายจันทันและความลึกเชิงชาย
 - V1.575 · จันทันหรือโครงถัก (Rafter or Truss) แบบ Revit: หลังคาลาดที่สร้างด้วย Pick Walls (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะยื่นชายคาได้ว่า โครงถัก (Truss ค่าเริ่มต้น: ท้องหลังคาวางที่ฐานตรงผิวนอกผนัง) หรือจันทัน (Rafter: ท้องหลังคาวางที่ฐานตรงผิวในผนัง หลังคาจึงต่ำลงเท่าความชันคูณความหนาผนังใต้ด้านที่ลาด) · ชายคา สันหลังคา สันตะเข้ หน้าจั่ว การตัดปลายจันทัน และผนังที่ยึดกับหลังคาลดตามลงไปด้วย ส่วนเส้นรอบรูปหลังคาในผังพื้นคงเดิม · ย้ายผนังหรือเปลี่ยนชนิดผนัง ฐานหลังคายังอยู่ที่ผิวในผนังเสมอ ถ้าปลดออกจากผนังจะคงระยะล่าสุดไว้ · ผนังใต้ด้านลาดหนาไม่เท่ากันใช้ค่าเฉลี่ยตามความยาว · ตารางรายการมีช่องจันทันหรือโครงถัก
 - V1.576 · ระดับตัดหลังคา (Cutoff Level) และระยะเลื่อนระดับตัด (Cutoff Offset) แบบ Revit: หลังคาลาด (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะเลื่อนฐานได้ว่าจะตัดที่ระดับใด (ไม่มี หรือระดับชั้น) และเลื่อนขึ้นลงเท่าไร · หลังคาถูกตัดเป็นระนาบที่ความสูงนั้น ส่วนที่สูงกว่าหายไป ชั้นวัสดุจบด้วยหลังแบนที่รอยตัด ครอบสันและสันตะเข้หยุดที่รอยตัด หน้าจั่วถูกตัดตาม เหลือช่องเปิดกลางหลังคา วาดหลังคาอีกหลังบนระดับนั้นเป็นหลังคาทรงแมนซาร์ดหรือปั้นหยาซ้อนจั่ว · ผังพื้นแสดงสันตะเข้ถึงรอยตัดและเส้นรอบรอยตัด ผนังที่ยึดกับท้องหลังคาสูงถึงท้องหลังคา ใต้ช่องเปิดคงความสูงของผนังเอง · พื้นที่ (นับหลังแบน) และปริมาตรคิดตามรอยตัด ตารางรายการมีช่องระดับตัดและระยะเลื่อน
+- V1.577 · กระจกหลังคา (Sloped Glazing) แบบ Revit: ชนิดหลังคามีช่องกระจกหลังคาในคุณสมบัติชนิด เลือกใช่แล้วตั้งระยะกริด 1 (เส้นขวางลาด วัดตามลาดจากชายคา) ระยะกริด 2 (เส้นตามลาด วัดแนวราบจากกึ่งกลางแต่ละด้าน) ความกว้างและความลึกเสากระจกได้ · หลังคาชนิดนั้นทุกด้านลาดเป็นแผงกระจกระหว่างเสากระจกบนเส้นกริดและรอบขอบ (ขอบที่สองด้านใช้ร่วมกันเช่นสันตะเข้ครึ่งละด้าน) แทนชั้นวัสดุ ไม่มีเชิงชาย ครอบสัน และฝ้าชายคา ใน 3 มิติ รูปตัด และรูปด้าน · การตัดปลายจันทัน จันทันหรือโครงถัก ระดับตัด ช่องเปิด และหน้าจั่วใช้ได้เหมือนหลังคาอื่น ผังพื้นวาดเส้นกริด ตารางถอดปริมาณมีพื้นที่กระจก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -62415,6 +62488,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.574 · Rafter Cut, as in Revit: a sloped roof by footprint (hip, gable, shed, or slopes by edge) has Rafter Cut in Properties after Overhang: Plumb Cut (as before), Two Cut - Plumb (cut straight down from its top for its Fascia Depth, then level inwards to its underside) or Two Cut - Square (cut square to its slope for its Fascia Depth, then level) · Fascia Depth runs from 0 to the thickness of the roof and starts at half of it · the layers of the roof, its edges, the fascia boards it draws by itself (as deep as the first cut, and square to the slope for a square cut) and the soffit under a hip roof's overhang (under the level cut) follow · 3D, sections, elevations, Join Geometry and the volume in quantities follow the cut · schedules have Rafter Cut and Fascia Depth
 - V1.575 · Rafter or Truss, as in Revit: a sloped roof made with Pick Walls (hip, gable, shed, or slopes by edge) has Rafter or Truss in Properties after Overhang: Truss (the default: the underside of the roof stands at its base at the outside face of the walls) or Rafter (at their inside face, so the roof comes down by its slope times the thickness of the walls under its sloping sides) · its eaves, ridge, hips, gable ends, rafter cut and the walls attached to it come down with it; its outline in plans stays · moving or retyping the walls keeps the base on their inside face; unlocked from them, it keeps the last distance · walls of different thickness under its slopes: their average along its sides · schedules have Rafter or Truss
 - V1.576 · Cutoff Level and Cutoff Offset, as in Revit: a sloped roof (hip, gable, shed, or slopes by edge) has Cutoff Level (None, or a level) and Cutoff Offset in Properties after Base Offset · the roof is cut off level at that height and all of it above is gone: its layers end in a flat top at the cut, its ridge and hip caps stop there, its gable ends are cut, leaving an opening; a second roof drawn at that level makes a mansard or a Dutch hip · plans show its hips up to the cut and the outline of the cut; a wall attached under it rises to its underside, and under the opening keeps its own height · its area (the flat top counted) and volume follow the cut; schedules have Cutoff Level and Cutoff Offset
+- V1.577 · Sloped Glazing, as in Revit: a roof type has Sloped Glazing in Type Properties; with Yes it has Grid 1 Spacing (lines across the slope, measured up it from the eave), Grid 2 Spacing (lines down the slope, measured level from the middle of each slope), Mullion Width and Mullion Depth · every slope of a roof of that type is glass panels between mullions on its grid lines and round its edges (half each side on an edge two slopes share, such as a hip) instead of layers, with no fascia, ridge caps or soffit, in 3D, sections and elevations · its rafter cut, Rafter or Truss, cutoff, openings and gable ends go as for any roof; plans draw its grid lines; quantities give the area of its glass
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66719,6 +66793,30 @@ window.PenumBIM.r576={
   sfv:(id,k)=>{const e=IDX.get(id),f=sfAll(P,e.cat,t).find(x=>x.k===k);return f?f.g(e,{tr:t}):null},
   raw:(id,o)=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}return true},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'col576' in e||'coo576' in e).map(e=>[e.id,e.col576===undefined?null:e.col576,e.coo576===undefined?null:e.coo576])}};
+/* V1.577 test API: Sloped Glazing */
+window.PenumBIM.r577={
+  rf:(lid,pts,o)=>{let id;edit(()=>{const d=defs('roof')||{},e=Object.assign({id:P.seq++,cat:'roof',type:d.type,level:lid,pts,off:0,shape:'hip',slope:30,overhang:600,alt:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  /* a copy of the first roof type made Sloped Glazing (o: its other settings) */
+  ty:o=>{let id;edit(()=>{const T0=P.types.roof[0],T=JSON.parse(JSON.stringify(T0));T.id=P.seq++;T.name='Glazing '+T.id;T.sg577='yes';Object.assign(T,o||{});P.types.roof.push(T);id=T.id});refresh();return id},
+  tset:(id,o)=>{edit(()=>{const T=P.types.roof.find(x=>x.id===id);for(const k in o){if(o[k]===null)delete T[k];else T[k]=o[k]}});refresh();const T=P.types.roof.find(x=>x.id===id);return['sg577','sgg1','sgg2','sgmw','sgmd'].map(k=>T[k]===undefined?null:T[k])},
+  tget:id=>{const T=P.types.roof.find(x=>x.id===id);return['sg577','sgg1','sgg2','sgmw','sgmd'].map(k=>T[k]===undefined?null:T[k])},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  /* its 3D: items by kind: b layers, gl glass, mu mullions, cap, fa fascia/soffit, g the rest; triangles each */
+  kinds:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,o={};for(const m of B){if(m.id!==id||m.cat!=='roof')continue;
+      const k=typeof m.li==='number'?'b':m.c===GLASS||(m.a<1&&m.c&&m.c[0]===GLASS[0])?'gl':m.mt===MAT.metal&&m.t.length&&m.c&&Math.abs(m.c[0]-0x56/255)<1e-3?'mu':rc574IsFa(m)?'fa':Array.isArray(m.s)&&m.s.length?'cap':'g';o[k]=(o[k]||0)+m.t.length/9}return o},
+  /* the heights where its glass (w 'gl') or mullions ('mu') cross the vertical line at x, y */
+  at3:(id,x,y,w)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,zs=new Set();
+    for(const m of B){if(m.id!==id||!m.t||m.cat!=='roof')continue;const k=m.c===GLASS?'gl':m.mt===MAT.metal&&m.c&&Math.abs(m.c[0]-0x56/255)<1e-3?'mu':'x';if(k!==w)continue;const t=m.t;
+      for(let i=0;i+8<t.length;i+=9){const ax=t[i],ay=t[i+2],bx=t[i+3],by=t[i+5],cx=t[i+6],cy=t[i+8],d=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy);if(Math.abs(d)<1e-6)continue;
+        const l1=((by-cy)*(x-cx)+(cx-bx)*(y-cy))/d,l2=((cy-ay)*(x-cx)+(ax-cx)*(y-cy))/d,l3=1-l1-l2;if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;zs.add(Math.round(l1*t[i+1]+l2*t[i+4]+l3*t[i+7]))}}
+    return[...zs].sort((a,b)=>a-b)},
+  /* its faces: for each, how many grid lines each way */
+  lines:id=>{const e=IDX.get(id),T=typ(P,e),G=roofGeo(P,e);return G.faces.map(f=>{const F=sg577F(f);if(!F)return null;const L=sg577Lines(F,T);return[L.L1.length,L.L2.length,Math.round(F.t*1000)/1000]})},
+  glass:id=>{const q=quantities(P).get(id);return q&&q.glz577!=null?Math.round(q.glz577/1e4)/100:null},
+  area:id=>{const q=quantities(P).get(id);return q?Math.round(q.area/1e4)/100:null},
+  zE:id=>{const R=roofGeo(P,IDX.get(id));return Math.min(...R.faces.map(f=>Math.min(...f.loop.map(q=>q[2]))))},
+  rows:id=>{dlgTypes('roof',id);const o=[...document.querySelectorAll('#dlg [data-tf]')].map(x=>[x.dataset.tf,x.value]);return o},
+  tidy:()=>{for(const f of XC)f();return P.types.roof.filter(T=>'sg577' in T||'sgg1' in T).map(T=>[T.id,T.sg577===undefined?null:T.sg577,T.sgg1===undefined?null:T.sgg1,T.sgg2===undefined?null:T.sgg2,T.sgmw===undefined?null:T.sgmw,T.sgmd===undefined?null:T.sgmd])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
