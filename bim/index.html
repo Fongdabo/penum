@@ -9570,7 +9570,7 @@ function bindKeys(){
     if(numericTool()){if(/^[0-9.]$/.test(k)||((k==='-'||code==='NumpadSubtract')&&!ui.typed)){const k2=/^[0-9.]$/.test(k)?k:'-';ui.typed+=k2;ui.keys='';gridTypedRefresh();showKeys();hint();redraw();e.preventDefault();return}
       if(k==='Backspace'&&ui.typed){ui.typed=ui.typed.slice(0,-1);gridTypedRefresh();hint();redraw();e.preventDefault();return}
       if(k==='Enter'&&ui.typed){e.preventDefault();applyTyped();return}}
-    if(k==='Enter'){if(tn==='BUTTON'||tn==='A'||tn==='SUMMARY')return;e.preventDefault();if(XT[ui.tool]&&XT[ui.tool].fin){XT[ui.tool].fin();return}if(ui.tool==='stair'&&ui.pts.length===2&&defs('stair').shape==='S'){stairS(activeView(),ui.pts[0],ui.pts[1],null);return}if(ui.sketch&&ui.sketch.length>=(ui.tool==='wire'||ui.tool==='matchline'?2:3))finishSketch();else if(ui.tool==='modify'&&!ui.sketch)act('repeat');return}          // as in Revit: Enter repeats the last command
+    if(k==='Enter'){if(tn==='BUTTON'||tn==='A'||tn==='SUMMARY')return;e.preventDefault();if(rx555Fin())return;if(XT[ui.tool]&&XT[ui.tool].fin){XT[ui.tool].fin();return}if(ui.tool==='stair'&&ui.pts.length===2&&defs('stair').shape==='S'){stairS(activeView(),ui.pts[0],ui.pts[1],null);return}if(ui.sketch&&ui.sketch.length>=(ui.tool==='wire'||ui.tool==='matchline'?2:3))finishSketch();else if(ui.tool==='modify'&&!ui.sketch)act('repeat');return}          // as in Revit: Enter repeats the last command
     if(k==='Backspace'&&ui.sketch&&ui.sketch.length){ui.sketch.pop();while(ui.sketch.length&&ui.sketch[ui.sketch.length-1][2])ui.sketch.pop();redraw();e.preventDefault();return}
     if(k==='Delete'||k==='Backspace'){if(ui.sel.size){e.preventDefault();act('delete')}return}
     if(k==='Tab'&&ui.tool==='ppipe'){e.preventDefault();ui.opt.ppRun=!ui.opt.ppRun;renderOptbar();hint(t(ui.opt.ppRun?'pp_run_on':'pp_run_off'));redraw();return}          // as in Revit: Tab takes the whole run
@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=564,V1_NAME='V1.554';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=565,V1_NAME='V1.555';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57765,6 +57765,66 @@ Object.assign(STR,{
   sc554_h2:['คลิกจุดปลาย รูปตัดสูงเท่าเส้นที่ลาก ลากขึ้นมองไปทางซ้าย ลากลงมองไปทางขวา หรือพิมพ์ความยาว','Click its end: the section is as high as the line; drawn up it looks left, drawn down it looks right; or type the length'],
   sc554_up:['ในรูปด้านและรูปตัด เส้นตัดเป็นเส้นตั้ง ลากขึ้นหรือลง','In an elevation or a section the section line is upright: draw it up or down'],
   sc554_made:['สร้าง {0} แล้ว ดับเบิลคลิกที่หัวรูปตัดเพื่อเปิด','{0} made: double-click its head to open it']});
+/* ===== 555 Roof by Extrusion sketched in an elevation or a section (V1.555; Revit: Architecture › Roof › Roof by Extrusion: the profile is sketched in an
+   elevation or a section as a chain of lines, and the roof is that profile pushed along the view's depth).  Architecture › Roof in an elevation or a section:
+   clicks along the profile (they catch levels, grids and the edges of what is under the pointer), each one further the same way across the view; Enter or Finish
+   on the options bar makes the roof, Esc takes the last point back.  The roof is a roof of the shape 'ext' (Roof by Extrusion, V1.88 rf.rp): its footprint the
+   width of the profile by the depth of the walls under it (else of the model), its ridge along the view's depth, rp the profile, the line sketched its
+   underside (its level the one at or under the lowest point, Offset to that point).  Its footprint and profile are edited afterwards as any extruded roof's. */
+/* ui.rx555 = {v, pts: [{h, z}]} */
+const rx555On=v=>ui.tool==='roof'&&!!v&&ev3EV(v);
+const rx555S=v=>{const S=ui.rx555;return S&&v&&S.v===v.id?S:null};
+/* the way across the profile runs (+1 or -1), once it has two points */
+const rx555Dir=S=>S.pts.length>1?Math.sign(S.pts[1].h-S.pts[0].h):0;
+function rx555Pt(pn,v,p){const w=ev3Pt(pn,v,p);return{h:Math.round(w.h),z:Math.round(w.z)}}
+/* the axis the profile of an extruded roof is laid across (as roofGeo takes it): the ridge g along the longest edge of the footprint, turned when alt is odd */
+function rx555Ax(rf){let pts=[];const R0=rf.pts,m=R0.length;for(let i=0;i<m;i++){const a=R0[i],b=R0[(i+1)%m];if(Math.abs(a[0]-b[0])<=0.5&&Math.abs(a[1]-b[1])<=0.5)continue;pts.push([a[0],a[1]])}
+  if(area2(pts)>0)pts.reverse();const n=pts.length,E=pts.map((p,i)=>{const q=pts[(i+1)%n],L=Math.hypot(q[0]-p[0],q[1]-p[1])||1;return{L,dx:(q[0]-p[0])/L,dy:(q[1]-p[1])/L}});
+  let li=0;E.forEach((e,i)=>{if(e.L>E[li].L+1)li=i});let gx=E[li].dx,gy=E[li].dy;if((rf.alt||0)%2){const t=gx;gx=-gy;gy=t}return{g:[gx,gy],u:[-gy,gx]}}
+/* how deep the roof runs: the walls under the profile, else the model */
+function rx555Depth(v,h0,h1){let d0=Infinity,d1=-Infinity;const fp=FPm();
+  for(const e of P.els){if(e.cat!=='wall'||hidEl(v,e))continue;const F=fp.get(e.id),Q=F&&F.poly?F.poly:[[e.x1,e.y1],[e.x2,e.y2]],H=Q.map(q=>ev3Hq(v,q));if(Math.max(...H)<h0+1||Math.min(...H)>h1-1)continue;
+    for(const q of Q){const d=ev3Dq(v,q);if(d<d0)d0=d;if(d>d1)d1=d}}
+  if(d1-d0>=100)return[d0,d1];const D=rp552Depth(v);return[D[0]+1000,D[1]-1000]}
+function rx555Make(v,pts){const H=pts.map(q=>q.h),h0=Math.min(...H),h1=Math.max(...H),zmin=Math.min(...pts.map(q=>q.z));if(pts.length<2||h1-h0<300){toast(t('rx555_short'));return null}
+  const L=sortedLevels(P);let lv=L[0];for(const l of L)if(l.elev<=zmin+1)lv=l;
+  const [d0,d1]=rx555Depth(v,h0,h1),C4=[[h0,d0],[h1,d0],[h1,d1],[h0,d1]].map(q=>ev3At(v,q[0],q[1]).map(Math.round)),d=defs('roof')||{},f=viewDir(v),r=[-f[1],f[0]];
+  const rf={id:0,cat:'roof',type:d.type,level:lv.id,pts:C4,shape:'ext',slope:d.slope||30,overhang:0,off:Math.round(zmin-lv.elev),alt:0};
+  let A=rx555Ax(rf);if(Math.abs(A.g[0]*f[0]+A.g[1]*f[1])<0.5){rf.alt=1;A=rx555Ax(rf)}const sg=A.u[0]*r[0]+A.u[1]*r[1]<0?-1:1;          // the ridge along the view's depth; the profile read across the way the roof takes it
+  rf.rp=pts.map(q=>{const u=(q.h-h0)/(h1-h0);return[Math.round((sg>0?u:1-u)*1e4)/1e4,Math.round(q.z-zmin)]}).sort((a,b)=>a[0]-b[0]);
+  edit(()=>{rf.id=P.seq++;P.els.push(rf);ui.sel=new Set([rf.id])});return rf}
+/* Enter or Finish: the roof, then Modify with it selected */
+function rx555Fin(){const v=activeView(),S=rx555S(v);if(!rx555On(v)||!S)return false;if(S.pts.length<2){toast(t('rx555_short'));return true}
+  const rf=rx555Make(v,S.pts);if(!rf)return true;ui.rx555=null;setTool('modify');ui.sel=new Set([rf.id]);refresh();toast(t('rx555_made'));return true}
+XA.rx555fin=()=>{rx555Fin()};
+XT3.roof={ok:v=>ev3EV(v),hint:v=>{const S=rx555S(v);return t(!S||!S.pts.length?'rx555_h1':'rx555_h2')},
+  click(pn,v,p){const w=rx555Pt(pn,v,p);let S=rx555S(v);if(!S){S=ui.rx555={v:v.id,pts:[]}}const a=S.pts[S.pts.length-1];
+    if(a){if(Math.abs(w.h-a.h)<1&&Math.abs(w.z-a.z)<1)return;const dr=rx555Dir(S);if(Math.abs(w.h-a.h)<1||(dr&&Math.sign(w.h-a.h)!==dr)){toast(t('rx555_back'));return}}
+    S.pts.push(w);renderOptbar();refresh()},
+  draw(pn,ctx,v,nav){const S=rx555S(v);if(!S||!S.pts.length)return;const X=q=>[q.h*nav.s+nav.ox,-q.z*nav.s+nav.oy],Q=S.pts.map(X);ctx.save();ctx.strokeStyle=C.sketch;ctx.fillStyle=C.sketch;ctx.lineWidth=2;
+    ctx.beginPath();Q.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.stroke();for(const q of Q){ctx.beginPath();ctx.arc(q[0],q[1],3,0,7);ctx.fill()}
+    const c=ui.curPane===pn.i&&ui.cur?rx555Pt(pn,v,ui.cur):null;if(c){const a=S.pts[S.pts.length-1],dr=rx555Dir(S),bad=Math.abs(c.h-a.h)<1||(dr&&Math.sign(c.h-a.h)!==dr),A=X(a),B=X(c);
+      ctx.strokeStyle=bad?(C.warn||'#d33'):C.sketch;ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.setLineDash([]);
+      ctx.font='600 11px '+FONT;ctx.fillStyle=ctx.strokeStyle;ctx.textAlign='left';ctx.textBaseline='bottom';const s=bad?t('rx555_back'):fmtLen(Math.hypot(c.h-a.h,c.z-a.z));ctx.lineWidth=3;ctx.strokeStyle=C.paper||'#fff';ctx.strokeText(s,B[0]+10,B[1]-6);ctx.fillText(s,B[0]+10,B[1]-6)}
+    ctx.restore()}};
+/* the options bar in an elevation or a section: what is being made, and Finish */
+{const f0=renderOptbar;renderOptbar=()=>{f0();const v=activeView();if(!rx555On(v))return;const o=$('#optbar');if(!o)return;const S=rx555S(v);
+  o.innerHTML=`<span class="who">${esc(t('rx555_who'))}</span><span>${esc(t('rx555_note'))}</span>`+(S&&S.pts.length>1?`<button class="btn primary" data-act="rx555fin">✓ ${esc(t('a_skfinish'))}</button>`:'')}}
+/* Esc takes the last point back, then ends the sketch, then the tool */
+{const f0=cancelTool;cancelTool=function(hard){const v=activeView(),S=rx555S(v);if(!hard&&S&&rx555On(v)){if(S.pts.length>1){S.pts.pop();renderOptbar();refresh();return}ui.rx555=null;renderOptbar();refresh();return}return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(){ui.rx555=null;return f0.apply(this,arguments)}}
+/* the ribbon while sketching: Draw › Line, then Mode › Finish and Cancel */
+{const f0=ctxPanels;ctxPanels=function(){const out=f0.apply(this,arguments),v=activeView();if(!rx555On(v))return out;const S=rx555S(v),o2=out.filter(q=>q.t!=='p_draw'&&q.t!=='p_mode');
+  o2.push({t:'p_draw',b:['@line']});if(S&&S.pts.length>1)o2.push({t:'p_mode',b:['@finish','@cancel']});return o2}}
+{const f0=act;act=function(a){const v=activeView();if(rx555On(v)&&rx555S(v)){if(a==='finish'){rx555Fin();return}if(a==='cancel'){ui.rx555=null;renderOptbar();refresh();return}}return f0.apply(this,arguments)}}
+Object.assign(STR,{
+  rx555_h1:['คลิกจุดแรกของรูปหน้าตัดหลังคา (จับระดับชั้น กริด และขอบชิ้นงาน) · Esc จบ','Click the first point of the roof\'s profile (it catches levels, grids and edges) · Esc ends'],
+  rx555_h2:['คลิกจุดถัดไปไปทางเดียวกัน · Enter หรือ เสร็จ สร้างหลังคา · Esc ถอยจุดสุดท้าย','Click the next point, on the same way across · Enter or Finish makes the roof · Esc takes the last point back'],
+  rx555_back:['รูปหน้าตัดต้องไปทางเดียวกันตลอด ไม่ย้อนกลับหรือขึ้นตรง','The profile goes one way across: it cannot turn back or go straight up'],
+  rx555_short:['ต้องมีอย่างน้อยสองจุด กว้างไม่น้อยกว่า 300 มม.','It takes two points at least, 300 mm apart across'],
+  rx555_who:['หลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion)','Roof by Extrusion'],
+  rx555_note:['ลากเส้นใต้หลังคา หลังคายาวตลอดผนังที่อยู่ใต้','Sketch its underside: it runs the depth of the walls under it'],
+  rx555_made:['สร้างหลังคาแล้ว แก้รูปหน้าตัดได้ที่ แก้หน้าตัดหลังคา ในแผงคุณสมบัติ','Roof made: Edit Roof Profile in Properties changes its profile']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -58941,6 +59001,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > ต่างจาก Revit: ตัดปลายและบากเฉพาะคานเหล็กที่อยู่ระดับ (คานลาด ค้ำยัน และคานคอนกรีตยาวถึงปลายของมันเหมือนเดิม คานคอนกรีตใช้ [[t_join]]) · บากได้เฉพาะหน้าตัด H, I และรางน้ำ ที่ชนด้านเอวของคานหรือเสาเหล็ก
 
 # พื้น ฝ้า หลังคา
+- [[t_roof]] ในรูปด้านหรือรูปตัดคือหลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion): คลิกตามเส้นใต้หลังคาไปทางเดียวกัน แล้วกด ((Enter)) หรือ [[a_finish]] หลังคายาวตลอดผนังที่อยู่ใต้
 - [[t_floor]] ((SB)) · [[t_ceiling]] · [[t_roof]] วาดขอบเขตได้สามวิธี: [[a_rect]] คลิกสองมุม · [[a_line]] คลิกทีละมุมจนครบรอบ แล้วกด ((Enter)) หรือ [[a_finish]] · [[a_pick]] คลิกในห้องเพื่อใช้ขอบห้อง
 - หลังคา: เลือก [[p_shape]] (ปั้นหยา จั่ว เพิงหมาแหงน โค้ง เรียบ) [[p_slope]] และ [[p_overhang]] ในแผงคุณสมบัติ · ปุ่ม [[a_ridge]] เปลี่ยนทิศของสันหลังคา · หลังคาโค้ง (เหมือน Roof by Extrusion ที่หน้าตัดเป็นส่วนโค้ง) ตั้ง [[p_arcrise]] เหนือผนัง โค้งไปตามแนวสัน มีผนังปิดหัวโค้งสองด้าน รางน้ำ และผนังยึดใต้หลังคาได้
 - หลังคาบนรูปร่างใดก็ได้ (รูป L T U กากบาท หรือมีด้านเอียง): ปั้นหยา จั่ว และเพิงหาสัน ตะเข้สัน และตะเข้รางให้เองจากขอบชายคา · จั่วบนรูป L T U ทำหน้าจั่วที่ปลายปีกแต่ละด้าน · [[a_roofedges]] (ในแถบแก้ไขของหลังคา หรือปุ่มในแผงคุณสมบัติ): คลิกขอบในรูปเพื่อสลับว่าขอบนั้นลาด (Defines Slope) หรือเป็นจั่ว ตั้งความชันของแต่ละขอบได้ ชายคาทุกด้านสูงเท่ากัน · รูปทรง [[rs_fp]] เก็บค่าของแต่ละขอบไว้
@@ -59207,6 +59268,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 > Unlike Revit: ends are cut and coped on level steel beams only (sloped beams, braces and concrete beams run to their ends as before; join concrete ones with [[t_join]]) · only H, I and channel sections are coped, where they meet the web side of a steel beam or column
 
 # Floors, ceilings, roofs
+- [[t_roof]] in an elevation or a section is Roof by Extrusion: click along its underside, one way across, then ((Enter)) or [[a_finish]]; it runs the depth of the walls under it
 - [[t_floor]] ((SB)) · [[t_ceiling]] · [[t_roof]]: the boundary is sketched in one of three ways: [[a_rect]] two corners · [[a_line]] corner by corner, then ((Enter)) or [[a_finish]] · [[a_pick]] a click inside a room takes its boundary
 - Roofs: [[p_shape]] (hip, gable, shed, curved, flat), [[p_slope]] and [[p_overhang]] are in Properties · [[a_ridge]] turns the ridge · a curved roof (Revit's Roof by Extrusion with an arc profile) takes an [[p_arcrise]] over the walls and runs along the ridge, with its two arched ends filled, gutters, and walls that can attach under it
 - Roofs over any outline (an L, T, U, a cross, slanted sides): hip, gable and shed roofs find their ridges, hips and valleys from the eaves · a gable roof over an L, T or U gets a gable at the end of each wing · [[a_roofedges]] (on the roof's Modify tab, or the button in Properties): click an edge in the drawing to switch it between sloping (Defines Slope) and a gable, and give an edge its own slope; the eaves stay level all round · the shape [[rs_fp]] keeps the setting of each edge
@@ -60231,6 +60293,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.552 · ระนาบอ้างอิง (Reference Plane) ในรูปด้านและรูปตัด แบบ Revit: วาดสองคลิก ระนาบตั้งฉากกับมุมมอง ลากขึ้นลงได้ระนาบตั้งที่แปลนทุกชั้นเห็น ลากซ้ายขวาได้ระนาบนอนที่ความสูงนั้น คลิกเลือก ลากเลื่อน ดับเบิลคลิกตั้งชื่อ ย้าย คัดลอก ลบ และตีกรอบเลือกได้ ระนาบนอนที่มีชื่อตั้งเป็นระนาบทำงานได้ ไม่ถูกพิมพ์
 - V1.553 · วาดกริด (Grid) ในรูปด้านและรูปตัด แบบ Revit: ลากขึ้นหรือลงสองคลิก กริดตั้งฉากกับมุมมองยาวตลอดความลึกของโมเดล สองจุดเป็นขอบเขต 3 มิติ (ความสูงที่กริดลากถึงในรูปด้านและรูปตัด) ชื่อเรียงต่อจากกริดก่อน พิมพ์ความยาวได้ แปลนเห็นเหมือนกริดอื่น ลากขวางถูกปฏิเสธพร้อมบอกเหตุผล
 - V1.554 · รูปตัด (Section) ในรูปด้านและรูปตัด แบบ Revit: ลากเส้นตัดขึ้นหรือลงสองคลิก รูปตัดใหม่ตั้งฉากกับมุมมองตลอดความลึกของโมเดล สูงเท่าเส้นที่ลาก (ขอบครอป) ลากขึ้นมองไปทางซ้าย ลากลงมองไปทางขวา จับระดับชั้น กริด และขอบชิ้นงาน พิมพ์ความยาวได้ รูปตัดที่ตั้งฉากกับรูปด้านหรือรูปตัดแสดงเป็นเส้นพร้อมหัวและหางตามชนิดของมัน คลิกเลือก ลากไปด้านข้าง ย้าย คัดลอก ลบ เห็นระยะมองลึกเมื่อเลือก ดับเบิลคลิกที่หัวเพื่อเปิด
+- V1.555 · หลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion) วาดในรูปด้านและรูปตัด แบบ Revit: สถาปัตย์ › หลังคา ในรูปด้านหรือรูปตัด คลิกตามเส้นใต้หลังคาไปทางเดียวกัน (จับระดับชั้น กริด และขอบชิ้นงาน) Enter หรือ เสร็จสิ้น สร้างหลังคา Esc ถอยจุดสุดท้าย หลังคายาวตลอดความลึกของผนังที่อยู่ใต้ สันตามความลึกของมุมมอง ระดับและระยะเยื้องตั้งจากจุดต่ำสุด แก้หน้าตัดและขอบเขตได้เหมือนหลังคาแบบดึงอื่น ลากย้อนกลับหรือขึ้นตรงถูกปฏิเสธพร้อมบอกเหตุผล
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60957,6 +61020,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.552 · Reference Plane in elevations and sections, as in Revit: two clicks, the plane at right angles to the view; drawn up or down it is an upright plane that the plans of every level show, drawn across a horizontal plane at that height; click to pick, drag to move, double-click to name, Move, Copy, Delete and box selection work there; a named horizontal plane can be set as the work plane; it never prints
 - V1.553 · Grid in elevations and sections, as in Revit: two clicks up or down; the grid stands at right angles to the view across the depth of the model, its two ends its 3D extents (the heights it runs between in elevations and sections), named after the last grid; a length can be typed; the plans show it as any other; a line drawn across is refused with the reason
 - V1.554 · Sections in elevations and sections, as in Revit: two clicks up or down draw a section at right angles to the view across the depth of the model, as high as the line (its crop region), drawn up it looks left, drawn down it looks right; it catches levels, grids and edges; a length can be typed; a section at right angles to an elevation or a section shows there as its line with its head and tail as its type draws them, picked, dragged sideways, moved, copied, deleted, its far clip shown while selected, a double-click on its head opening it
+- V1.555 · Roof by Extrusion sketched in elevations and sections, as in Revit: Architecture › Roof in an elevation or a section takes clicks along the roof's underside, one way across (catching levels, grids and edges); Enter or Finish makes the roof, Esc takes the last point back; it runs the depth of the walls under it, its ridge along the view's depth, its level and offset from the lowest point; its profile and footprint are edited as any extruded roof's; a point that turns back or goes straight up is refused with the reason
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -64838,6 +64902,26 @@ window.PenumBIM.r554={
   set:(id,o)=>{edit(()=>{const s=P.sections.find(x=>x.id===id);Object.assign(s,o)});refresh();return true},
   sel:ids=>{ui.sel=new Set(ids);refresh();return ui.sel.size},
   view:()=>activeView().id,
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  prompt:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
+/* V1.555 test API: Roof by Extrusion sketched in elevations and sections */
+window.PenumBIM.r555={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  ok:tl=>toolAllowed(tl||'roof',activeView()),
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return{pts:ui.rx555?ui.rx555.pts.length:0,n:P.els.filter(e=>e.cat==='roof').length}},
+  sk:()=>ui.rx555?JSON.parse(JSON.stringify(ui.rx555)):null,
+  fin:()=>rx555Fin(),
+  esc:()=>{cancelTool();return ui.rx555?ui.rx555.pts.length:-1},
+  roofs:()=>P.els.filter(e=>e.cat==='roof').map(e=>JSON.parse(JSON.stringify(e))),
+  /* the roof's faces: z at a plan point on its top and its underside, and its whole height range */
+  zAt:(id,x,y)=>{const e=IDX.get(id),R=roofGeo(P,e),out=[];for(const it of MSm().items){if(it.id!==id||!it.t)continue;const q=it.t;for(let i=0;i+8<q.length;i+=9){const A=[q[i],q[i+2],q[i+1]],B=[q[i+3],q[i+5],q[i+4]],C=[q[i+6],q[i+8],q[i+7]];
+      const d=(B[1]-C[1])*(A[0]-C[0])+(C[0]-B[0])*(A[1]-C[1]);if(Math.abs(d)<1e-6)continue;const l1=((B[1]-C[1])*(x-C[0])+(C[0]-B[0])*(y-C[1]))/d,l2=((C[1]-A[1])*(x-C[0])+(A[0]-C[0])*(y-C[1]))/d,l3=1-l1-l2;
+      if(l1>=-1e-6&&l2>=-1e-6&&l3>=-1e-6)out.push(Math.round(l1*A[2]+l2*B[2]+l3*C[2]))}}out.sort((a,b)=>a-b);return out},
+  zr:id=>{let z0=Infinity,z1=-Infinity;for(const it of MSm().items){if(it.id!==id||!it.t)continue;const q=it.t;for(let i=1;i<q.length;i+=3){z0=Math.min(z0,q[i]);z1=Math.max(z1,q[i])}}return[Math.round(z0),Math.round(z1)]},
+  opt:()=>{const o=$('#optbar');return o?o.textContent:''},
+  lv:id=>{const l=P.levels.find(x=>x.id===id);return l?l.elev:null},
   scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
