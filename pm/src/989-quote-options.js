@@ -159,7 +159,9 @@ ACT.qopPick=b=>{const Q=qopFind(b.dataset.id);if(!Q)return;const o=qopEns(Q),k=b
 // settings follow the new name), uses the option's own discount, drops Q.opt and returns the quotation to the regular form. ↶ ย้อนกลับ undoes it.
 ACT.qopCut=b=>{const Q=qopFind(b.dataset.id);if(!Q||!qopOn(Q))return;const k=b.dataset.k,M=qopMap(Q),Ls=qopLet(Q);if(!Ls.includes(k))return;
   const gone=qopSecs(Q).filter(g=>M[g]&&M[g]!==k),nm=qopNm(Q,k);
-  if(!confirm(`ตัดออปชั่น ${Ls.filter(x=>x!==k).join(', ')} ออก ให้ใบนี้เหลือแค่ออปชั่น ${k}${nm?' · '+nm:''}?\n\nจะลบหมวดเหล่านี้ออกจากใบเสนอราคา:\n${gone.map(g=>'• '+gName(g)).join('\n')}\n\nแล้วใบนี้กลับเป็นแบบฟอร์มปกติ (ORIEN Modern)\nกด ↶ ย้อนกลับ ได้ถ้าตัดผิด`))return;
+  if(!confirm(`ตัดออปชั่น ${Ls.filter(x=>x!==k).join(', ')} ออก ให้ใบนี้เหลือแค่ออปชั่น ${k}${nm?' · '+nm:''}?\n\nจะลบหมวดเหล่านี้ออกจากใบเสนอราคา:\n${gone.map(g=>'• '+gName(g)).join('\n')}\n\nแล้วใบนี้กลับเป็นแบบฟอร์มปกติ (ORIEN Modern)\nใบเดิมครบทุกออปชั่นจะเก็บไว้ใน ประวัติการแก้ไข (Rev.) พิมพ์ซ้ำหรือเทียบได้\nกด ↶ ย้อนกลับ ได้ถ้าตัดผิด`))return;
+  // the whole quotation with every option is kept first as a Rev. (ประวัติการแก้ไข), so it can be printed or compared later (user: "ตัดออกแล้วข้อมูลเดิมเราจะเก็บยังไง")
+  let kept=null;if(typeof qrvSave==='function'){if(typeof QRV_WHY==='object')QRV_WHY.optcut='ก่อนตัดออปชั่น';kept=qrvSave(Q,'optcut',`ครบทุกออปชั่น ${Ls.join('/')} ลูกค้าเลือก ${k}`)||qrvLast(Q)}
   const d=qopDisc(Q,k);Q.items=Q.items.filter(i=>!gone.includes(i.g));
   if(Array.isArray(Q.pics))Q.pics=Q.pics.filter(p=>!p||!gone.includes(p.g));
   ['subs','hsp','noHs'].forEach(x=>{if(Q[x]&&typeof Q[x]==='object')gone.forEach(g=>delete Q[x][g])});
@@ -168,7 +170,7 @@ ACT.qopCut=b=>{const Q=qopFind(b.dataset.id);if(!Q||!qopOn(Q))return;const k=b.d
     Q.items.forEach(i=>{if(i.g===g)i.g=ng});if(Array.isArray(Q.pics))Q.pics.forEach(p=>{if(p&&p.g===g)p.g=ng});
     ['subs','hsp','noHs'].forEach(x=>{const o=Q[x];if(o&&typeof o==='object'&&Object.prototype.hasOwnProperty.call(o,g)){o[ng]=o[g];delete o[g]}})});
   Q.disc=d||'';Q.optCut=k+(nm?' · '+nm:'');delete Q.opt;Q.form='';
-  save();render();toast(`ใบนี้เหลือแค่ออปชั่น ${k} แล้ว · กด ↶ ย้อนกลับ ถ้าตัดผิด`)};
+  save();render();toast(`ใบนี้เหลือแค่ออปชั่น ${k} แล้ว${kept?` · ใบเดิมครบทุกออปชั่นเก็บไว้เป็น Rev.${kept.n} ในประวัติการแก้ไข`:''} · กด ↶ ย้อนกลับ ถ้าตัดผิด`)};
 // ⧉ a copy of the section's lines as the next free option, right under it; a shared section becomes the first free option itself
 ACT.qopDup=b=>{const Q=qopFind(b.dataset.id);if(!Q)return;const o=qopEns(Q),g=decodeURIComponent(b.dataset.g),M=qopMap(Q);let used=qopLet(Q);
   if(!M[g]){const k=QOP_L.find(x=>!used.includes(x));if(!k){toast('มีครบ 4 ออปชั่นแล้ว');return}o.sec[g]=k;used=qopLet(Q)}
