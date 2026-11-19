@@ -43,7 +43,7 @@ const torSvc=t=>{if(!t)return null;const C=CO(),L=C.svc||[];return L.find(s=>s.i
 const torTd=t=>t&&t.td?(CO().tenders||[]).find(x=>x.id===t.td):null;
 const torDays=d=>okD(d)?Math.round((pd(d)-pd(today()))/864e5):null;
 const torOpenSt=t=>!['won','lost','drop','sent'].includes(t.status);
-const torCnt=t=>{const R=(t.req||[]).filter(r=>String(r.t||'').trim()||r.ok);return {all:R.length,y:R.filter(r=>r.ok==='y').length,q:R.filter(r=>r.ok==='q').length,n:R.filter(r=>r.ok==='n').length,none:R.filter(r=>!r.ok).length}};
+const torCnt=t=>{const R=(t.req||[]).filter(r=>(String(r.t||'').trim()||r.ok)&&r.ok!=='i');return {all:R.length,y:R.filter(r=>r.ok==='y').length,q:R.filter(r=>r.ok==='q').length,n:R.filter(r=>r.ok==='n').length,none:R.filter(r=>!r.ok).length}};
 const torCur=k=>{const L=torCfg().filter(t=>torKind(t)===k);return L.find(t=>t.id===S.sel.tor)||null};
 const torDue=t=>{const d=torDays(t.due);if(d==null)return '–';const c=!torOpenSt(t)?'':d<0?'bad':d<=3?'warn':'';
   return `${thD(t.due)}${torOpenSt(t)?` <span class="pill ${c}">${d<0?`เลย ${-d} วัน`:d===0?'วันนี้':`อีก ${d} วัน`}</span>`:''}`};

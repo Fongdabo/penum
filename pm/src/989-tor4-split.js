@@ -7,8 +7,9 @@ const TORS_OK={y:['ทำได้','#16794C','#E6F4EC'],q:['ต้องถา�
 const TQ_COLS='<colgroup><col style="width:52px"><col><col style="width:96px"><col style="width:30%"></colgroup>';
 PRINT.tor=id=>{const t=torCfg().find(x=>x.id===id);if(!t)return '';const C=CO(),c=torCnt(t),ma=torKind(t)==='ma',Q=torQ(t),
     cat=k=>{const L=(TORCAT[torKind(t)]||[]).find(x=>x[0]===k);return L?L[1]:''},d=s=>s&&typeof fmtD==='function'?fmtD(s):esc(s||'');
-  const L=(t.req||[]).filter(r=>String(r.t||'').trim()||r.ok||String(r.ans||'').trim()).map(r=>{const ref=String(r.ref||'').trim(),head=ref&&!ref.includes('.')&&!r.ok&&!String(r.ans||'').trim(),o=TORS_OK[r.ok];
-    if(head)return `<tr id="tq-${r.id}" class="tq-h"><td>${esc(ref)}</td><td colspan="3"><b>${esc(r.t)}</b></td></tr>`;
+  const L=(t.req||[]).filter(r=>String(r.t||'').trim()||r.ok||String(r.ans||'').trim()).map(r=>{const ref=String(r.ref||'').trim(),head=r.ok==='i'||ref&&!ref.includes('.')&&!r.ok&&!String(r.ans||'').trim(),o=TORS_OK[r.ok];
+    // 4.99.64: a heading or information row (ok 'i') spans the answer columns; a long one (ความเป็นมา) is not bold
+    if(head)return `<tr id="tq-${r.id}" class="tq-h"><td>${esc(ref)}</td><td colspan="3">${String(r.t||'').length>160?esc(r.t):`<b>${esc(r.t)}</b>`}</td></tr>`;
     return `<tr id="tq-${r.id}"><td>${esc(ref)}</td><td>${esc(r.t||'').replace(/\n/g,'<br>')}${cat(r.cat)?`<div class="tq-c">${esc(cat(r.cat))}</div>`:''}</td>
       <td>${o?`<span class="tq-ok" style="color:${o[1]};background:${o[2]}">${o[0]}</span>`:'<span class="tq-ok">–</span>'}</td><td>${esc(r.ans||'').replace(/\n/g,'<br>')}</td></tr>`});
   // the last clauses and the signatures stay on one page: a sign-off alone on an empty page, its signatures cut at the top, is gone (4.99.61)
