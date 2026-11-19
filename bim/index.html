@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=580,V1_NAME='V1.570';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=581,V1_NAME='V1.571';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58732,6 +58732,44 @@ function wf570JnDone(a){if(ui.opt.jnMulti){ui.sel=new Set([a.id]);refresh();retu
 XC.push(()=>{if(!('nj570' in P))return;const ok=new Set(P.els.filter(e=>e.cat==='wfoot'||e.cat==='footing').map(e=>e.id)),seen=new Set(),out=[];
   if(Array.isArray(P.nj570))for(const q of P.nj570){if(!Array.isArray(q)||q.length<2)continue;const a=Math.min(+q[0],+q[1]),b=Math.max(+q[0],+q[1]);if(a===b||!ok.has(a)||!ok.has(b))continue;const k=a+'|'+b;if(seen.has(k))continue;seen.add(k);out.push([a,b])}
   if(out.length)P.nj570=out;else delete P.nj570});
+/* ===== 571 Columns move with grids (V1.571; Revit: a column's Moves With Grids, checked by default: a column placed where grids cross, or on a grid, goes
+   with them when they are moved or turned, and the framing joined to it goes along).  A column standing where two grids cross goes to where they cross after
+   one or both of them is moved, turned or stretched; one standing on one grid stays on it (it goes square across to the grid's new line); a beam or brace
+   whose end is at the column goes along with that end.  A column moved in the same edit (with the grid or by itself), a slanted column, one in a group, or one
+   whose Moves With Grids is cleared (Properties, under Room Bounding) stays where it is; a grid made longer or shorter along its own line moves nothing. */
+/* e.mwg571 0: Moves With Grids cleared (none: checked) */
+let MG571=null;          // the grids, columns and framing as they were before the edit
+function mg571Base(){const g=new Map(),c=new Map(),b=new Map();for(const q of P.grids||[])if(!gridBent(q))g.set(q.id,[q.x1,q.y1,q.x2,q.y2]);
+  for(const e of P.els){if(e.cat==='column')c.set(e.id,[e.x,e.y]);else if(e.cat==='beam'&&!e.bow)b.set(e.id,[e.x1,e.y1,e.x2,e.y2])}MG571={P,g,c,b}}
+/* is point x, y on grid line L ([x1, y1, x2, y2], within a millimetre)? */
+function mg571On(L,x,y){const dx=L[2]-L[0],dy=L[3]-L[1],l=Math.hypot(dx,dy);if(l<1)return false;const t=((x-L[0])*dx+(y-L[1])*dy)/l;return t>=-1&&t<=l+1&&Math.abs((x-L[0])*dy-(y-L[1])*dx)/l<=1}
+/* where lines A and B cross (null: they run the same way) */
+function mg571X(A,B){const ax=A[2]-A[0],ay=A[3]-A[1],bx=B[2]-B[0],by=B[3]-B[1],d=ax*by-ay*bx,la=Math.hypot(ax,ay),lb=Math.hypot(bx,by);if(!la||!lb||Math.abs(d)<1e-6*la*lb)return null;
+  const s=((B[0]-A[0])*by-(B[1]-A[1])*bx)/d;return[A[0]+ax*s,A[1]+ay*s]}
+/* the point of line L nearest x, y */
+function mg571Pr(L,x,y){const dx=L[2]-L[0],dy=L[3]-L[1],l2=dx*dx+dy*dy;if(!l2)return null;const s=((x-L[0])*dx+(y-L[1])*dy)/l2;return[L[0]+dx*s,L[1]+dy*s]}
+const mg571Ok=e=>!!e&&e.cat==='column'&&e.mwg571!==0&&!e.slm&&!e.grp;
+{const f0=snapshot;snapshot=function(){try{mg571Base()}catch(_){MG571=null}return f0.apply(this,arguments)}}
+/* after an edit: the columns on grids that moved go with them, and the framing at those columns with them (before the rest that follows its host) */
+XD.unshift(()=>{const B=MG571;if(!B||B.P!==P){mg571Base();return false}let ch=false;const now=new Map();for(const q of P.grids||[])if(!gridBent(q))now.set(q.id,[q.x1,q.y1,q.x2,q.y2]);
+  const moved=new Set();for(const [id,o] of B.g){const q=now.get(id);if(q&&(q[0]!==o[0]||q[1]!==o[1]||q[2]!==o[2]||q[3]!==o[3]))moved.add(id)}
+  if(moved.size){const D=[];
+    for(const e of P.els){if(!mg571Ok(e))continue;const p0=B.c.get(e.id);if(!p0||Math.abs(p0[0]-e.x)>0.01||Math.abs(p0[1]-e.y)>0.01)continue;
+      const on=[...B.g].filter(([id,o])=>mg571On(o,e.x,e.y)).map(([id])=>id);if(!on.some(id=>moved.has(id)))continue;
+      const L=on.filter(id=>now.has(id)).map(id=>now.get(id));let q=null;for(let i=0;i<L.length&&!q;i++)for(let j=i+1;j<L.length&&!q;j++)q=mg571X(L[i],L[j]);
+      if(!q){const m=on.find(id=>moved.has(id)&&now.has(id));if(m!=null)q=mg571Pr(now.get(m),e.x,e.y)}if(!q)continue;
+      const x=Math.round(q[0]*10)/10,y=Math.round(q[1]*10)/10;if(x===e.x&&y===e.y)continue;let z=null;try{z=zRange(P,e)}catch(_){}D.push({x0:e.x,y0:e.y,dx:x-e.x,dy:y-e.y,z});e.x=x;e.y=y;ch=true}
+    if(D.length)for(const b of P.els){if(b.cat!=='beam'||b.bow||b.grp)continue;const o=B.b.get(b.id);if(!o||o[0]!==b.x1||o[1]!==b.y1||o[2]!==b.x2||o[3]!==b.y2)continue;let zb=null;try{zb=zRange(P,b)}catch(_){}
+      for(const en of [0,1]){const px=en?b.x2:b.x1,py=en?b.y2:b.y1,d=D.find(d=>Math.hypot(px-d.x0,py-d.y0)<=5&&(!d.z||!zb||(zb[0]<=d.z[1]+50&&zb[1]>=d.z[0]-50)));if(!d)continue;
+        if(en){b.x2=Math.round((b.x2+d.dx)*10)/10;b.y2=Math.round((b.y2+d.dy)*10)/10}else{b.x1=Math.round((b.x1+d.dx)*10)/10;b.y1=Math.round((b.y1+d.dy)*10)/10}ch=true}}}
+  mg571Base();return ch});
+/* ---- Properties: Moves With Grids, after Room Bounding; schedules ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='column'||isNew||!els.length)return h;const on=e=>e.mwg571!==0,a=on(els[0]),r=PR.chk('mwg571','p_mwg571',els.every(x=>on(x)===a)?a:'');
+  const i=h.indexOf('id="p_rbd239"');if(i<0)return h+r;const j=h.indexOf('</div></div>',i);return j<0?h+r:h.slice(0,j+12)+r+h.slice(j+12)}}
+XF.push((cat,o,key,raw)=>{if(key!=='mwg571')return false;if(cat!=='column')return true;const on=!!raw&&raw!=='0'&&raw!=='false';if(on)delete o.mwg571;else o.mwg571=0;return true});
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat==='column')F.push({k:'mwg571',l:tr('p_mwg571'),g:(e,X)=>X.tr(e.mwg571===0?'o_no':'o_yes'),grp:'i'});return F}}
+XC.push(()=>{for(const e of P.els)if('mwg571' in e&&!(e.cat==='column'&&e.mwg571===0))delete e.mwg571});
+Object.assign(STR,{p_mwg571:['ย้ายตามกริด (Moves With Grids)','Moves With Grids']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59991,6 +60029,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_room]] ((RM)): คลิกในพื้นที่ที่ผนังปิดล้อม · [[a_roomauto]] วางให้ทุกพื้นที่ในครั้งเดียว
 - [[t_rsep]]: ใช้แบ่งพื้นที่ที่ไม่มีผนังกั้น เช่น ห้องนั่งเล่นกับส่วนทานอาหาร
 - [[p_rbd239]] ในคุณสมบัติของผนังและเสา: เอาติ๊กออกจากผนัง ห้องสองข้างจะรวมเป็นพื้นที่เดียว (ผนังกระจกก็ได้) แล้วใช้ [[t_rsep]] แบ่งเองตามต้องการ ติ๊กที่เสา พื้นที่ของเสาส่วนที่อยู่ในห้องจะถูกหักออกจากพื้นที่ห้อง (เสาตั้งต้นไม่ติ๊ก พื้นที่ห้องเดิมจึงไม่เปลี่ยน)
+- [[p_mwg571]] ในคุณสมบัติของเสา (ติ๊กไว้เป็นค่าเริ่มต้น): เสาที่ตั้งตรงจุดตัดกริดหรือบนกริดย้ายตามเมื่อย้าย หมุน หรือยืดกริด คานและค้ำยันที่ปลายอยู่ที่เสาย้ายตาม เอาติ๊กออกแล้วเสาอยู่ที่เดิม
 - [[p_ul240]], [[p_lo240]] และ [[p_bo240]] ในคุณสมบัติของห้อง: ห้องสูงจากระดับชั้นบวกระยะยกฐาน ขึ้นไปถึงระดับบนบวกระยะเลื่อน (ตั้งต้นถึงชั้นถัดไป ถ้าไม่มีชั้นบนสูง 3000 มม.) ตั้ง [[ac_vol240]] ใน [[a_areacomp]] เป็น พื้นที่และปริมาตร แล้วห้องจะแสดง [[p_vol240]] ที่หักส่วนเหนือฝ้าและใต้พื้นชั้นบนออก ตารางห้องและ IFC ใช้ค่านี้ด้วย
 - [[wlf_deck]] เป็นหน้าที่ของชั้นหนึ่งใน [[a_slayers]] ของชนิดพื้น: ชั้นนี้หนาเท่าความสูงลอน เลือก [[dk_prof241]] ได้สามแบบ (ลอนสูง 38 ระยะ 150, 50 ระยะ 200, 75 ระยะ 300 มม.) และ [[dk_use241]] ผูกกับชั้นบน (คอนกรีตของชั้นที่อยู่เหนือเต็มร่องลอน) หรือแผ่นเดี่ยว · ลอนวิ่งตามทิศทางแผ่นพื้น (Span Direction) ในคุณสมบัติของพื้น · 3 มิติและรูปตัดเห็นแผ่นพับเป็นลอนและคอนกรีตในร่อง ใต้สันลอนเป็นช่องว่าง · ปริมาตรของพื้นนับคอนกรีตในร่องแต่ไม่นับช่องว่าง [[a_mtake]] นับแผ่นเหล็กเป็นพื้นที่คลี่และปริมาตรเหล็ก · ชนิดหนึ่งมีได้แผ่นเดียว และใช้ได้กับพื้นเท่านั้น
 - หลังคาเป็นขอบเขตบนของห้องด้วย: เมื่อเปิด พื้นที่และปริมาตร ปริมาตรของห้องหักส่วนที่อยู่เหนือท้องหลังคาทีละผืน (ท้องหลังคาคือผิวบนลบความหนาของหลังคา) ตรงไหนฝ้าหรือพื้นชั้นบนต่ำกว่าก็ใช้อันนั้น ตรงไหนหลังคาต่ำกว่าก็ใช้หลังคา ส่วนของหลังคาที่ต่ำกว่าฐานห้องไม่นับ · ป้ายห้องแบบ [[rk_vol242]] แสดงปริมาตรต่อจากพื้นที่ (เลือกได้ในแถบตัวเลือกของ [[t_rtag]] และในคุณสมบัติของป้าย)
@@ -60271,6 +60310,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_room]] ((RM)): click inside an area enclosed by walls · [[a_roomauto]] places a room in every such area at once
 - [[t_rsep]]: bounds rooms where no wall stands, a living room and a dining area for one
 - [[p_rbd239]] in the properties of walls and columns: clear it on a wall and the rooms on both sides become one region (curtain walls too), then split them with [[t_rsep]] as you like; tick it on a column and the part of the column inside a room comes off that room's area (columns start unticked, so room areas already there do not change)
+- [[p_mwg571]] in the properties of a column (checked by default): a column where grids cross, or on a grid, goes with them when they are moved, turned or stretched, and the beams and braces whose ends are at it go along; cleared, the column stays where it is
 - [[p_ul240]], [[p_lo240]] and [[p_bo240]] in the properties of rooms: a room rises from its level plus the base offset to the upper limit plus the limit offset (by default the next level up; with no level above, 3000 mm); set [[ac_vol240]] in [[a_areacomp]] to Areas and Volumes and rooms show their [[p_vol240]], less what lies above ceilings and below the floor above; room schedules and IFC use it too
 - [[wlf_deck]] is a Function for a layer in the [[a_slayers]] of a floor type: the layer is as thick as the ribs are high; pick the [[dk_prof241]] (ribs 38 at 150, 50 at 200 or 75 at 300 mm) and the [[dk_use241]]: Bound Layer Above (the concrete of the layer above fills the troughs) or Standalone Deck · the ribs run along the floor's Span Direction in its properties · 3D and sections show the folded sheet and the concrete in the troughs, with the voids under the crests empty · the floor's volume counts the concrete in the troughs and not the voids; the [[a_mtake]] counts the sheet by its area folded out and its steel · one deck per type, in floors only
 - Roofs bound rooms from above too: once Areas and Volumes is set, the volume of a room leaves out what lies above the underside of a roof, face by face (the underside: the top less the roof's thickness); where a ceiling or a floor above is lower that one counts, where the roof dips lower the roof does; parts of a roof below the room's base do not count · a room tag of the kind [[rk_vol242]] shows the volume after the area (in the options of [[t_rtag]] and in the tag's properties)
@@ -61243,6 +61283,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.568 · ฐานรากใต้ผนังแบบรับน้ำหนักและแบบกันดิน (Structural Usage: Bearing / Retaining) แบบ Revit: ชนิดฐานรากใต้ผนังมีการใช้งานโครงสร้าง รับน้ำหนัก (ค่าเริ่มต้น เหมือนเดิม) กว้างตามชนิด อยู่กึ่งกลางผนังหรือเยื้องตามระยะเยื้องศูนย์ (Eccentricity) ในคุณสมบัติ กันดิน ยื่นเกินผิวผนังด้านนอกตามยาวปลายหน้า (Toe Length) และด้านในตามยาวส้น (Heel Length) กว้างเท่าสองค่ากับผนังรวมกัน กลับด้านผนังแล้วปลายหน้าไปด้วย ระยะยื่นเกินปลายผนัง (Default End Extension Length) ว่างไว้คือครึ่งความกว้างเหมือนเดิม แปลน 3 มิติ ปริมาณ ตารางรายการ เหล็กเสริม และการเลือกตามไป
 - V1.569 · ฐานรากใต้ผนังขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts) แบบ Revit: ชนิดฐานรากใต้ผนังมีช่องไม่ขาดใต้ประตูหน้าต่าง ติ๊กไว้ (ค่าเริ่มต้น) ต่อเนื่องเหมือนเดิม เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง กว้างเท่าประตูหน้าต่าง ช่องเปิดผนังที่ลงถึงฐานผนังตัดฐานรากเสมอ แปลน 3 มิติ และปริมาณนับเฉพาะช่วงที่เหลือ ย้าย ปรับขนาด หรือลบประตู รอยขาดตามไป
 - V1.570 · ฐานรากใต้ผนังต่อกันเองที่มุมและทางแยกแบบ Revit: ปลายที่ชนฐานรากใต้ผนังอื่นยื่นไปถึงขอบด้านไกลของอีกฐาน ตัดตามขอบนั้น มุมจึงปิดพอดีไม่ว่ากว้าง ปลายหน้า หรือส้นเท่าไร สองฐานที่ต่อปลายกันในแนวเดียวกันหยุดที่รอยต่อ ฐานรากที่ซ้อนหรือชนกัน และฐานรากเดี่ยวกับฐานรากใต้ผนัง เชื่อมกันเอง แปลนวาดเป็นเส้นรอบรูปเดียว 3 มิติตัดชิ้นหลังออก ปริมาณคอนกรีตส่วนที่ซ้อนนับครั้งเดียว เลิกเชื่อม เชื่อม และสลับลำดับการเชื่อมใช้กับฐานรากได้ ฐานรากที่ขาดใต้ประตูก็ถูกตัดด้วย
+- V1.571 · เสาย้ายตามกริด (Moves With Grids) แบบ Revit: เสาที่ตั้งตรงจุดตัดกริดไปอยู่ที่จุดตัดใหม่เมื่อย้าย หมุน หรือยืดกริด เสาที่อยู่บนกริดเส้นเดียวไปตามเส้นใหม่ คานและค้ำยันที่ปลายอยู่ที่เสาย้ายปลายตาม ฐานรากเดี่ยวใต้เสาตามไปด้วย เสาที่ย้ายพร้อมกันในครั้งเดียว เสาเอียง เสาในกลุ่ม หรือเสาที่เอาติ๊กย้ายตามกริดออก อยู่ที่เดิม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61986,6 +62027,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.568 · Wall foundations Bearing or Retaining (Structural Usage), as in Revit: a wall foundation type's Structural Usage: Bearing (the default, as before) is as wide as the type, centred under the wall or set off it by the Eccentricity in Properties; Retaining reaches past the exterior face of the wall by the Toe Length and past the interior face by the Heel Length, as wide as the two and the wall together, and a flipped wall takes the toe with it; Default End Extension Length left empty is half the width, as before; plans, 3D, quantities, schedules, rebar and selection follow
 - V1.569 · Wall foundations break beneath doors and windows (Do Not Break at Inserts), as in Revit: a wall foundation type's Do Not Break at Inserts, checked (the default), keeps it continuous as before; cleared, the foundation breaks beneath each door or window that reaches the base of the wall, as wide as the insert; a wall opening that reaches the base of the wall always breaks it; plans, 3D and quantities count only the pieces, and the break follows the door when it is moved, resized or deleted
 - V1.570 · Wall foundations join at corners and junctions, as in Revit: an end that meets another wall foundation runs on to the far side of the other, cut along it, so that the corner closes whatever the widths, toes and heels; two that meet end to end in one line stop at the joint; wall foundations that overlap or touch, and an isolated foundation and a wall foundation, join of themselves: plans draw one outline, 3D cuts the later one and the quantities count the concrete they share once; Unjoin Geometry, Join Geometry and Switch Join Order work on them, and a foundation broken at inserts is cut too
+- V1.571 · Columns move with grids (Moves With Grids), as in Revit: a column where two grids cross goes to where they cross after they are moved, turned or stretched; one on a grid goes to its new line; the beams and braces whose ends are at it go along, and its isolated foundation too; a column moved in the same edit, a slanted column, one in a group or one with Moves With Grids cleared stays where it is
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66152,6 +66194,21 @@ window.PenumBIM.r570={
     return pts.map(([x,y])=>{const px=Math.round((x*n.s+n.ox)*dpr),py=Math.round((y*n.s+n.oy)*dpr);for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){const q=c.getImageData(px+dx,py+dy,1,1).data;if(q[0]+q[1]+q[2]<700)return 1}return 0})},
   raw:o=>{Object.assign(P,o);return true},
   tidy:()=>{for(const f of XC)f();return P.nj570?JSON.parse(JSON.stringify(P.nj570)):null}};
+/* V1.571 test API: columns move with grids */
+window.PenumBIM.r571={
+  grid:(x1,y1,x2,y2,name)=>{let id;edit(()=>{const g={id:P.seq++,cat:'grid',name:name||('G'+P.seq),x1,y1,x2,y2};P.grids.push(g);id=g.id});refresh();return id},
+  gset:(id,o)=>{edit(()=>{const g=P.grids.find(x=>x.id===id);Object.assign(g,o)});refresh();return true},
+  gdel:id=>{edit(()=>{P.grids=P.grids.filter(x=>x.id!==id)});refresh();return true},
+  /* a grid and a column changed in one edit */
+  both:(gid,go,cid,co)=>{edit(()=>{Object.assign(P.grids.find(x=>x.id===gid),go);Object.assign(IDX.get(cid),co)});refresh();return true},
+  g:id=>{const g=P.grids.find(x=>x.id===id);return g?[g.x1,g.y1,g.x2,g.y2]:null},
+  xy:id=>{const e=IDX.get(id);return e?(e.cat==='beam'?[e.x1,e.y1,e.x2,e.y2]:[e.x,e.y]):null},
+  foot:cid=>{let id;edit(()=>{const d=defs('footing')||{},c=IDX.get(cid),e={id:P.seq++,cat:'footing',type:d.type,level:c.level,col:cid,x:c.x,y:c.y,rot:0,off:0};P.els.push(e);id=e.id});refresh();return id},
+  field:(id,raw)=>{edit(()=>applyField('column',IDX.get(id),'mwg571',raw));refresh();const e=IDX.get(id);return e.mwg571===undefined?null:e.mwg571},
+  prow:()=>{const b=document.querySelector('#props #p_mwg571');if(!b)return null;const rows=[...document.querySelectorAll('#props .pr label')].map(l=>l.getAttribute('for')||'');return{on:b.checked,i:rows.indexOf('p_mwg571'),j:rows.indexOf('p_rbd239')}},
+  sfv:id=>{const f=sfAll(P,'column',t).find(x=>x.k==='mwg571');return f?f.g(IDX.get(id),{tr:t}):null},
+  raw:(id,v)=>{IDX.get(id).mwg571=v;return true},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'mwg571' in e).map(e=>[e.id,e.mwg571])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
