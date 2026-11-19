@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=567,V1_NAME='V1.557';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=577,V1_NAME='V1.567';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57918,6 +57918,598 @@ Object.assign(STR,{
   bm557_made:['วางคานแล้ว ยาว {0} คลิกจุดเริ่มของคานถัดไปได้เลย','Beam placed, {0} long: click the start of the next one'],
   bm557_on_col:['ในแนวแกนเสา','On the axis of the column'],bm557_on_beam:['ในแนวแกนคาน','On the axis of the beam'],bm557_on_wall:['ในแนวผนัง','On the location line of the wall'],
   bm557_on_cut:['บนแนวตัด','On the cut of the section'],bm557_on_mark:['บนแนวเครื่องหมายรูปด้าน','On the line of the elevation'],bm557_on_mid:['กลางโมเดล','In the middle of the model']});
+/* ===== 558 Vertical Opening (V1.558; Revit: Architecture › Opening › Vertical, and Structure › Opening › Vertical: a shape sketched in a plan that cuts one
+   floor, ceiling or roof, the one picked first, and nothing else).  e = {cat:'vopn', host: the floor, ceiling or roof it cuts, level (its host's), pts: its
+   shape, in plan}.  A shaft (Opening › Shaft) cuts every floor and ceiling between its base and its top; this cuts its host only (shaftHoles wrapped, so floors,
+   ceilings and roofs take it in 3D, sections, their area and volume, the rooms under a roof and picking).  In a plan its edges are drawn as the host's own and the
+   host's patterns leave it out (sh397G and rh400G are handed the host with it among its holes).  It goes with its host when the host is moved, turned,
+   mirrored, copied, pasted or deleted.  The tool: pick the host (or have it selected), then sketch the shape (lines or a rectangle); Esc picks another host. */
+const VO558_H=new Set(['floor','ceiling','roof']);
+const vo558Ok=e=>!!e&&e.cat==='vopn'&&Array.isArray(e.pts)&&e.pts.length>=3&&e.pts.every(p=>Array.isArray(p)&&isFinite(+p[0])&&isFinite(+p[1]));
+const vo558El=(Q,id)=>(Q===P?IDX.get(id):null)||Q.els.find(x=>x.id===id);
+const vo558HOk=h=>!!h&&VO558_H.has(h.cat)&&Array.isArray(h.pts)&&h.pts.length>=3;
+const vo558Host=(Q,e)=>{if(!e||e.host==null)return null;const h=vo558El(Q,e.host);return vo558HOk(h)?h:null};
+const VO558_IX=new WeakMap();
+function vo558Of(Q,hid){let c=VO558_IX.get(Q.els);if(!c||c.v!==VER||c.n!==Q.els.length){const m=new Map();for(const e of Q.els)if(e.cat==='vopn')(m.get(e.host)||m.set(e.host,[]).get(e.host)).push(e);c={v:VER,n:Q.els.length,m};VO558_IX.set(Q.els,c)}return c.m.get(hid)||[]}
+function vo558Polys(Q,h){return vo558Of(Q,h.id).filter(c=>c.host===h.id&&vo558Ok(c)).map(c=>c.pts)}          // the shapes cut out of the host h
+/* the host's outline in plan (a roof: with its overhang) */
+function vo558Out(Q,h){if(h.cat!=='roof')return h.pts;const R=roofGeo(Q,h);return R.out||R.eave||h.pts}
+{const f0=shaftHoles;shaftHoles=function(Q,e){const r=f0.apply(this,arguments);if(!e||e.id==null||!VO558_H.has(e.cat))return r;const K=vo558Polys(Q,e);return K.length?r.concat(K):r}}
+{const f0=zRange;zRange=(Q,e)=>{if(!e||e.cat!=='vopn')return f0(Q,e);const h=vo558Host(Q,e);return h?f0(Q,h):f0(Q,Object.assign({},e,{cat:'floor'}))}}
+/* what it takes out of its host: plan area (m²), volume (m³) and its own perimeter (m) */
+function vo558Geo(Q,e){if(!vo558Ok(e))return null;const h=vo558Host(Q,e);if(!h)return null;const O=vo558Out(Q,h),H=h.cat==='roof'?roofHoles(Q,h):slabHoles(Q,h),
+    A=L=>polyMinus(O,holeParts(L)).reduce((s,pc)=>s+Math.abs(area2(pc)),0),a0=A(H.filter(k=>k!==e.pts)),a1=A(H),cut=Math.max(0,a0-a1)/1e6,T=typ(Q,h)||{};
+  const th=h.cat==='roof'?(+T.thickness||200):h.cat==='ceiling'?(+T.thickness||12):(+T.thickness||150);let per=0;for(let i=0;i<e.pts.length;i++){const a=e.pts[i],b=e.pts[(i+1)%e.pts.length];per+=Math.hypot(b[0]-a[0],b[1]-a[1])}
+  return{h,cut,vol:cut*th/1000,per:per/1000,th}}
+const vo558HN=(Q,e)=>{const h=vo558Host(Q,e);if(!h)return'—';const T=typ(Q,h)||{};return t('t_'+h.cat)+(T.name?' : '+T.name:'')+(h.mark?' ('+h.mark+')':'')};
+/* ---- the plan: the host drawn with the opening among its holes ---- */
+const vo558Px=(e,K)=>Object.assign(Object.create(e),{holes:sh397(e).concat(K)});
+{const f0=sh397G;sh397G=function(g,e){if(!e||!VO558_H.has(e.cat))return f0.apply(this,arguments);const K=vo558Polys(P,e);return K.length?f0.call(this,g,vo558Px(e,K)):f0.apply(this,arguments)}}
+{const f0=rh400G;rh400G=function(g,e){if(!e||e.cat!=='roof')return f0.apply(this,arguments);const K=vo558Polys(P,e);return K.length?f0.call(this,g,vo558Px(e,K)):f0.apply(this,arguments)}}
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='vopn')return f0(v,e);if(v.kind!=='plan'||v.draft||v.area!=null||catHid(v,'vopn')||hidEl(v,e))return'';const h=vo558Host(P,e);return h?f0(v,h):''}}
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||!o.screen)return;          // picked or selected: its edges in the highlight
+  for(const [e] of of('vopn')){const k=hl(e.id);if(!k||!vo558Ok(e))continue;g.el(e);ctx.save();ctx.strokeStyle=k;ctx.lineWidth=2;g.path(e.pts);ctx.stroke();ctx.restore()}});
+XHIT.vopn=(v,e,w,tol)=>{if(!vo558Ok(e))return Infinity;const d=polyEdgeDist(w.x,w.y,e.pts);if(d<=tol)return d;return inPoly(w.x,w.y,e.pts)?tol:Infinity};XHIT.vopn.pr=7;          // its edges, or anywhere in the hole where nothing else is nearer
+GEOM.vopn='poly';DISC.vopn='arch';CREATE_TOOLS.add('vopn');
+{const i=VG_CATS.indexOf('shaft');VG_CATS.splice(i<0?VG_CATS.length:i+1,0,'vopn')}DXF_LAYER.vopn=['A-FLOR-OPEN',8];
+FLT_CATS.push('vopn');SF_CATS.push('vopn');SF_DISC.arch.push('vopn');SF_DEF.vopn=['vo558h','level','vo558a','vo558v','vo558p','comment'];
+/* ---- it goes with its host ---- */
+function vo558Exp(ids){const s=new Set(ids),add=[];for(const id of s){const e=IDX.get(id);if(e&&VO558_H.has(e.cat))for(const c of vo558Of(P,id))if(!s.has(c.id)&&c.host===id)add.push(c.id)}return add.length?[...s,...add]:ids}
+{const f0=translateIds;translateIds=(ids,dx,dy)=>f0(vo558Exp(ids),dx,dy)}
+{const f0=rotateIds;rotateIds=(ids,cx,cy,deg)=>f0(vo558Exp(ids),cx,cy,deg)}
+{const f0=expandSel;expandSel=ids=>{const s=f0(ids);for(const id of [...s]){const e=IDX.get(id);if(e&&VO558_H.has(e.cat))for(const c of vo558Of(P,id))if(c.host===id)s.add(c.id)}return s}}
+{const f0=cloneIds;cloneIds=ids=>{const out=f0(ids),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(c&&c.cat==='vopn'&&M.has(c.host))c.host=M.get(c.host)}return out}}
+/* pasted: with its host it goes on the host's copy; alone, on the floor, ceiling or roof of its level under it (the kind it had first), else it is dropped */
+{const f0=pasteObjs;pasteObjs=(objs,dx,dy,lv,view)=>{if(!objs.some(o=>o.cat==='vopn'))return f0(objs,dx,dy,lv,view);const src=new Map(objs.map(o=>[o.id,o])),ids=f0(objs,dx,dy,lv,view);
+  const made=ids.map(id=>IDX.get(id)).filter(Boolean),hs=made.filter(vo558HOk),drop=new Set();
+  for(const c of made){if(c.cat!=='vopn')continue;const h=src.get(c.host);
+    if(h){const m=hs.find(p=>p.cat===h.cat&&p.pts.length===h.pts.length&&p.pts.every((q,i)=>Math.abs(q[0]-h.pts[i][0]-dx)<0.01&&Math.abs(q[1]-h.pts[i][1]-dy)<0.01));if(m){c.host=m.id;c.level=m.level;continue}}
+    const k0=(IDX.get(c.host)||{}).cat,L=P.els.filter(q=>vo558HOk(q)&&q.level===c.level&&polyHit(c.pts,vo558Out(P,q)));L.sort((a,b)=>(b.cat===k0)-(a.cat===k0));
+    if(L.length)c.host=L[0].id;else drop.add(c.id)}
+  if(!drop.size)return ids;P.els=P.els.filter(e=>!drop.has(e.id));IDX=indexProject(P);return ids.filter(id=>!drop.has(id))}}
+/* ---- what is kept: an opening needs its host (another of its level it lies on takes it when it has been moved off) and three points ---- */
+XC.push(()=>{const hs=new Map(P.els.filter(vo558HOk).map(e=>[e.id,e]));
+  P.els=P.els.filter(e=>e.cat!=='vopn'||(hs.has(e.host)&&vo558Ok(e)));
+  for(const e of P.els){if(e.cat!=='vopn')continue;e.pts=e.pts.map(p=>[Math.round(+p[0]*100)/100,Math.round(+p[1]*100)/100]);let h=hs.get(e.host);
+    const on=q=>q.level===h.level&&polyHit(e.pts,vo558Out(P,q));
+    if(!polyHit(e.pts,vo558Out(P,h))){const o=[...hs.values()].find(q=>q!==h&&q.cat===h.cat&&on(q));if(o){e.host=o.id;h=o}}e.level=h.level}});
+/* ---- Properties ---- */
+function vo558Rows(els){const e=els[0],V=f=>{const a=f(e);return els.every(x=>f(x)===a)?a:''},GS=els.map(x=>vo558Geo(P,x)),F=(x,d)=>(Math.round(x*10**d)/10**d).toFixed(d);
+  let h=PR.grp('g_constraints')+PR.ro('p_vo558h',V(x=>vo558HN(P,x)))+PR.ro('p_level',V(x=>{const l=lvl(P,x.level);return l?l.name:''}));
+  h+=PR.grp('g_dims');const a=GS.reduce((s,G)=>s+(G?G.cut:0),0),vo=GS.reduce((s,G)=>s+(G?G.vol:0),0);h+=PR.ro('p_vo558a',F(a,3)+' m²')+PR.ro('p_vo558v',F(vo,3)+' m³');
+  if(els.length===1&&GS[0]){h+=PR.ro('p_vo558p',F(GS[0].per,3)+' m');if(!(GS[0].cut>1e-6))h+=`<div class="pnote warn">${esc(t('vo558_nonote'))}</div>`}
+  return h+`<div class="pnote">${esc(t('n_vo558'))}</div>`}
+{const f0=catRows;catRows=(cat,els,isNew)=>{if(cat==='vopn')return vo558Rows(els);const h=f0(cat,els,isNew);if(!VO558_H.has(cat)||isNew)return h;let n=0;
+  for(const x of els)n+=vo558Of(P,x.id).filter(c=>c.host===x.id&&vo558Ok(c)).length;return n?h+PR.grp('g_vo558')+PR.ro('p_vo558n',String(n)):h}}
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='vopn')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),r=(x,d)=>Math.round(x*10**d)/10**d;
+  add('vo558h',tr('p_vo558h'),e=>{const h=vo558Host(Q,e);if(!h)return'';const T=typ(Q,h)||{};return tr('t_'+h.cat)+(T.name?' : '+T.name:'')+(h.mark?' ('+h.mark+')':'')});
+  add('vo558a',tr('p_vo558a')+' (m²)',e=>{const G=vo558Geo(Q,e);return G?r(G.cut,3):0},{num:1,dec:3,sum:1});add('vo558v',tr('p_vo558v')+' (m³)',e=>{const G=vo558Geo(Q,e);return G?r(G.vol,3):0},{num:1,dec:3,sum:1});
+  add('vo558p',tr('p_vo558p')+' (m)',e=>{const G=vo558Geo(Q,e);return G?r(G.per,3):0},{num:1,dec:3,sum:1});return F}}
+/* ---- the tool: pick the host, then sketch ---- */
+/* the floor, ceiling or roof of this plan under w: in a ceiling plan the ceilings first; else the highest */
+function vo558Pick(v,w){const L=[];for(const e of P.els){if(!vo558HOk(e)||!planShow(v,e)||prtHideOrg(v,e))continue;const O=vo558Out(P,e),d=polyEdgeDist(w.x,w.y,O);
+    if(!(inPoly(w.x,w.y,O)||d<=8/navOf(v).s))continue;if(sh397(e).concat(vo558Polys(P,e)).some(k=>inPoly(w.x,w.y,k)&&polyEdgeDist(w.x,w.y,k)>1))continue;          // not in one of its holes
+    L.push([e,(v.rcp?(e.cat==='ceiling'?0:1):(e.cat==='ceiling'?1:0)),zRange(P,e)[1]])}
+  L.sort((a,b)=>a[1]-b[1]||b[2]-a[2]);return L.length?L[0][0]:null}
+const vo558S=()=>ui.vo558||null;
+const vo558H=()=>{const S=vo558S(),h=S&&S.h!=null?IDX.get(S.h):null;return vo558HOk(h)?h:null};
+function vo558Put(v,pts){const h=vo558H();if(!h){toast(t('h_vo558_1'));return null}if(pts.length<3||Math.abs(area2(pts))<1e4){toast(t('sk_small'));return null}
+  const O=vo558Out(P,h),nm=vo558HN(P,{host:h.id});if(!polyHit(pts,O)){toast(t('vo558_none',nm));return null}
+  const H=h.cat==='roof'?roofHoles(P,h):slabHoles(P,h);if(polyMinus(O,holeParts(H.concat([pts]))).reduce((s,pc)=>s+Math.abs(area2(pc)),0)<1){toast(t('vo558_all',nm));return null}
+  const e={id:P.seq++,cat:'vopn',host:h.id,level:h.level,pts:pts.map(p=>[Math.round(p[0]),Math.round(p[1])])};setTool('modify');edit(()=>{P.els.push(e)});ui.sel=new Set([e.id]);refresh();
+  const G=vo558Geo(P,e);toast(t('vo558_made',nm,G?(Math.round(G.cut*1000)/1000).toFixed(3):'0'));return e.id}
+{const f0=skDone;skDone=(tool,v,pts)=>{if(tool!=='vopn')return f0(tool,v,pts);if(vo558Put(v,pts)==null&&ui.sk){ui.sk.pts=[];refresh()}}}          // refused: the shape again
+XT.vopn={ok:v=>!!v&&v.kind==='plan'&&!v.draft&&v.area==null,
+  on(){const v=activeView(),s=[...ui.sel].map(id=>IDX.get(id)),h=s.length===1&&vo558HOk(s[0])&&v&&planShow(v,s[0])?s[0]:null;ui.vo558={h:h?h.id:null};ui.sk=h?{pts:[]}:null;ui.sel.clear();ui.hov=null;if(ui.opt.siteMode!=='rect')ui.opt.siteMode='poly'},
+  off(){ui.vo558=null;ui.sk=null},
+  hov(pn,v,p){const S=vo558S();if(!S||S.h!=null)return null;const n=navOf(v),h=vo558Pick(v,{x:(p.x-n.ox)/n.s,y:(p.y-n.oy)/n.s});return h?h.id:null},
+  click(pn,v,p,w,pt){const S=vo558S();if(!S)return;if(S.h==null){const h=vo558Pick(v,w);if(!h){toast(t('vo558_nohost'));return}S.h=h.id;ui.sk={pts:[]};ui.hov=null;renderOptbar();refresh();return}
+    if(!vo558H()){S.h=null;ui.sk=null;refresh();return}skClick('vopn',pn,v,p,w,pt)},
+  draw(pn,ctx,v,nav,g){const h=vo558H();if(h){ctx.save();ctx.strokeStyle=C.sketch;ctx.globalAlpha=0.5;ctx.lineWidth=3;g.path(vo558Out(P,h));ctx.stroke();ctx.restore()}skDraw(pn,ctx,v,nav,g)},
+  hint(){const h=vo558H();if(!h)return t('h_vo558_1');const n=ui.sk?ui.sk.pts.length:0,nm=vo558HN(P,{host:h.id});return skMode()==='rect'?(n?t('h_sk_r2'):t('h_vo558_r1',nm)):n>=3?t('h_sk_p3'):n?t('h_sk_p2'):t('h_vo558_p1',nm)},
+  opt(who,chk,sel){const h=vo558H();return who+skOpt(sel)+(h?`<span class="vo558h">${esc(t('p_vo558h'))}: ${esc(vo558HN(P,{host:h.id}))}</span>`:'')},
+  esc(){const S=ui.sk;if(S&&S.pts.length){S.pts.pop();return true}const Q=vo558S();if(Q&&Q.h!=null){Q.h=null;ui.sk=null;renderOptbar();refresh();return true}return false},
+  fin(){const S=ui.sk,v=activeView();if(vo558H()&&S&&skMode()==='poly'&&S.pts.length>=3&&v)skDone('vopn',v,S.pts.slice());else toast(t(vo558H()?'sk_need3':'h_vo558_1'))}};
+XR.push(tl=>tl==='vopn'&&vo558H()&&skMode()==='poly'?[{t:'p_mode',b:['@skfinish','@cancel']}]:[]);
+/* the ribbon: Architecture › Opening after Shaft, and an Opening panel on Structure as in Revit */
+{const A=RIBBON.find(x=>x.id==='arch'),p=A&&A.panels.find(x=>x.t==='p_opening');if(p&&!p.b.includes('vopn')){const i=p.b.indexOf('shaft');p.b.splice(i<0?p.b.length:i+1,0,'vopn')}
+  const S=RIBBON.find(x=>x.id==='struct');if(S&&p&&!S.panels.some(x=>x.t==='p_opening')){const i=S.panels.findIndex(x=>x.t==='p_datum');S.panels.splice(i<0?S.panels.length:i,0,{t:'p_opening',b:p.b.slice()})}}
+Object.assign(BTN,{vopn:['vopn','']});
+{const f0=helpTopic;helpTopic=function(){if(ui.tool==='vopn'||(ui.sel.size&&[...ui.sel].every(id=>{const e=IDX.get(id);return e&&e.cat==='vopn'})))return'arch';return f0.apply(this,arguments)}}
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-vopn" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#c9d3de" ${E} d="M2 15 8 7H22L16 15Z"/><path fill="#9fb0c3" ${E} d="M2 15H16V18H2Z"/><path fill="#9fb0c3" ${E} d="M16 15 22 7V10L16 18Z"/>`
+    +`<path fill="#fff" stroke="#e8590c" stroke-width="1.2" stroke-dasharray="1.6 1.1" stroke-linejoin="round" d="M8.6 13 11.4 9H16.4L13.6 13Z"/></symbol>`)})();
+Object.assign(STR,{
+  t_vopn:['ช่องเปิดในแผ่น (Vertical)','Vertical Opening'],cat_vopn:['ช่องเปิดในแผ่น (Vertical Openings)','Vertical Openings'],
+  n_vopn:['เจาะช่องในพื้น ฝ้า หรือหลังคาแผ่นเดียว คลิกแผ่นที่จะเจาะก่อน แล้ววาดขอบช่องในแปลน ไม่ทะลุชั้นอื่น (ถ้าจะเจาะหลายชั้นใช้ช่องเปิดพื้น Shaft)','An opening cut in one floor, ceiling or roof: click the one to cut, then sketch the shape in a plan. Nothing else is cut (a Shaft cuts every storey it passes).'],
+  h_vo558_1:['คลิกพื้น ฝ้า หรือหลังคาที่จะเจาะช่อง','Click the floor, ceiling or roof to cut'],
+  h_vo558_p1:['คลิกจุดแรกของขอบช่องใน {0} · Esc เลือกแผ่นอื่น','Click the first point of the opening in {0} · Esc picks another'],
+  h_vo558_r1:['คลิกมุมแรกของช่องสี่เหลี่ยมใน {0} · Esc เลือกแผ่นอื่น','Click the first corner of the opening in {0} · Esc picks another'],
+  vo558_nohost:['ตรงนี้ไม่มีพื้น ฝ้า หรือหลังคาในแปลนนี้','There is no floor, ceiling or roof of this plan here'],
+  vo558_none:['วาดรูปให้ทับ {0}','Sketch the shape over {0}'],vo558_all:['รูปนี้คลุม {0} ทั้งแผ่น ถ้าจะเอาออกให้ลบแผ่นนั้น','This shape covers all of {0}: delete it instead'],
+  vo558_made:['เจาะช่องใน {0} แล้ว {1} ตร.ม.','Opening cut in {0}: {1} m²'],
+  p_vo558h:['แผ่นที่เจาะ (Host)','Host'],p_vo558a:['พื้นที่ที่เจาะออก','Area Cut'],p_vo558v:['ปริมาตรที่เจาะออก','Volume Cut'],p_vo558p:['เส้นรอบช่อง','Perimeter'],
+  g_vo558:['ช่องเปิดในแผ่น','Vertical Openings'],p_vo558n:['จำนวนช่องเปิด (Vertical)','Vertical Openings'],
+  vo558_nonote:['รูปนี้ไม่ทับแผ่นแล้ว จึงไม่ได้เจาะอะไร','This shape no longer lies on its host, so it cuts nothing'],
+  n_vo558:['ช่องนี้เจาะเฉพาะแผ่นนี้ ไม่ทะลุชั้นอื่น ย้าย หมุน สะท้อน คัดลอก และลบไปพร้อมแผ่น ลบช่องแล้วแผ่นกลับเต็มเหมือนเดิม','It cuts its host only, no other storey; it goes with its host when the host is moved, turned, mirrored, copied or deleted; delete it and the host is whole again']});
+/* ===== 559 Beam z Justification and z Offset Value (V1.559; Revit: a beam's Properties › Geometric Position › z Justification (Top, Center, Bottom) and
+   z Offset Value; Dimensions › Elevation at Top and Elevation at Bottom).  A beam's location line stays where its Reference Level and its Start and End Level
+   Offsets put it; z Justification says which part of the beam is on that line: its top (as before, the default), its centre or its bottom; z Offset Value then
+   moves the beam up (more than 0) or down from there.  The whole beam goes with it: in plans, 3D, sections and elevations, its quantities, the tops and
+   bottoms of spot elevations and tags, what attaches to it (columns, walls), clashes, its steel connections and its analytical line.  Properties show the
+   Elevation at Top and the Elevation at Bottom of the beam as it now stands (a sloping one: its highest top, its lowest bottom); schedules have the four fields.
+   A new beam takes them from Properties while the Beam tool is on.  Braces are not justified this way (their line is their centre). */
+/* e.zj559 'c' | 'b' (none: Top), e.zo559 mm (none: 0) */
+const ZJ559=['t','c','b'];
+const zj559Of=e=>e&&ZJ559.includes(e.zj559)?e.zj559:'t';
+const zj559Dep=(Q,e)=>{const T=typ(Q,e)||{};return stlT(T)?(+T.sd||+T.h||400):(+T.h||400)};
+/* how far the beam's top is above its location line */
+const zj559D=(Q,e,k)=>{if(!e||e.cat!=='beam'||e.use==='brace')return 0;const I=yzi562(e),j=I?zj562Of(e,k):zj559Of(e),o=I?yzN562(e.zo562,k):(+e.zo559||0);if(j==='t'&&!o)return 0;const h=zj559Dep(Q,e);return(j==='c'?h/2:j==='b'?h:0)+o};
+{const f0=beamZ;beamZ=function(Q,e){const z=f0.apply(this,arguments),d=zj559D(Q,e,0),d1=yzi562(e)?zj559D(Q,e,1):d;return d||d1?[z[0]+d,z[1]+d1]:z}}          // V1.562: each end its own when yz Justification is Independent
+/* the location line itself, before the justification: [start, end] */
+const zj559Loc=(Q,e)=>{const z=beamZ(Q,e);return[z[0]-zj559D(Q,e,0),z[1]-zj559D(Q,e,1)]};
+/* Elevation at Top, Elevation at Bottom */
+const zj559TB=(Q,e)=>{const z=beamZ(Q,e),h=zj559Dep(Q,e);return[Math.max(z[0],z[1]),Math.min(z[0],z[1])-h]};
+/* ---- Properties ---- */
+function zj559Rows(els,isNew){const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},U=t('u_mm');
+  return PR.sel('zj559','p_zj559',V(zj559Of),ZJ559.map(k=>[k,t('zj559_'+k)]))+PR.num('zo559','p_zo559',V(x=>+x.zo559||0),U,'step="10"')+(isNew?'':`<div class="pnote">${t('n_zj559')}</div>`)}
+function zj559Elev(els){if(els.length!==1)return'';const e=els[0],b=zj559TB(P,e);return PR.ro('p_zt559',fmtLen(Math.round(b[0]))+' '+unitName())+PR.ro('p_zb559',fmtLen(Math.round(b[1]))+' '+unitName())}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||!els.length||els.some(x=>x.use==='brace'))return h;
+  if(isNew){if(braceMode())return h;return h+PR.grp('g_bcend')+zj559Rows(els,true)}
+  const R=zj559Rows(els,false),GB=PR.grp('g_bcend'),GD=PR.grp('g_dims');let out=h;
+  const kb=out.indexOf(GB);if(kb>=0){let j=out.indexOf('<div class="pg">',kb+GB.length);if(j<0)j=out.length;out=out.slice(0,j)+R+out.slice(j)}
+  else{const kd=out.lastIndexOf(GD);out=kd>=0?out.slice(0,kd)+GB+R+out.slice(kd):out+GB+R}
+  const E=zj559Elev(els);if(E){const kd=out.lastIndexOf(GD);if(kd>=0){let j=out.indexOf('<div class="pg">',kd+GD.length);if(j<0)j=out.length;out=out.slice(0,j)+E+out.slice(j)}else out+=GD+E}
+  return out}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||(key!=='zj559'&&key!=='zo559'))return false;
+  if(key==='zj559'){if(raw==='c'||raw==='b')o.zj559=raw;else delete o.zj559;return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;const r=Math.round(clamp(v,-20000,20000));if(r)o.zo559=r;else delete o.zo559;return true});
+/* a new beam drawn with the Beam tool takes the z Justification and the z Offset Value set in Properties */
+XN.push(s0=>{if(ui.tool!=='beam')return;const d=ui.defs&&ui.defs.beam;if(!d||(!ZJ559.slice(1).includes(d.zj559)&&!(+d.zo559)))return;
+  for(const e of P.els)if(e.id>=s0&&e.cat==='beam'&&e.use!=='brace'){if(d.zj559==='c'||d.zj559==='b')e.zj559=d.zj559;if(+d.zo559)e.zo559=Math.round(+d.zo559)}});
+/* clean: only 'c' or 'b', whole millimetres */
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam')continue;if('zj559' in e&&e.zj559!=='c'&&e.zj559!=='b')delete e.zj559;
+  if('zo559' in e){const v=Math.round(+e.zo559);if(!isFinite(v)||!v)delete e.zo559;else e.zo559=clamp(v,-20000,20000)}}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),br=e=>e.use==='brace';
+  add('zj559',tr('p_zj559'),e=>br(e)?'':tr('zj559_'+zj559Of(e)));add('zo559',tr('p_zo559')+' (mm)',e=>br(e)?'':(+e.zo559||0),{num:1,dec:0});
+  add('zt559',tr('p_zt559')+' (mm)',e=>Math.round(zRange(Q,e)[1]),{num:1,dec:0});add('zb559',tr('p_zb559')+' (mm)',e=>Math.round(zRange(Q,e)[0]),{num:1,dec:0});return F}}
+Object.assign(STR,{
+  p_zj559:['การจัดชิดแนวดิ่ง (z Justification)','z Justification'],zj559_t:['บน (Top)','Top'],zj559_c:['กึ่งกลาง (Center)','Center'],zj559_b:['ล่าง (Bottom)','Bottom'],
+  p_zo559:['ระยะเลื่อนแนวดิ่ง (z Offset Value)','z Offset Value'],p_zt559:['ระดับหลังคาน (Elevation at Top)','Elevation at Top'],p_zb559:['ระดับท้องคาน (Elevation at Bottom)','Elevation at Bottom'],
+  n_zj559:['แนวคานอยู่ที่ระดับอ้างอิงบวกระยะเลื่อนปลายเริ่มและปลายสุด การจัดชิดบอกว่าส่วนไหนของคานอยู่บนแนวนั้น แล้วเลื่อนขึ้นลงอีกตามระยะเลื่อนแนวดิ่ง',
+    'The location line is at the Reference Level plus the Start and End Level Offsets; z Justification says which part of the beam is on it, and z Offset Value moves the beam up or down from there']});
+/* ===== 560 Beam y Justification and y Offset Value (V1.560; Revit: a beam's Properties › Geometric Position › y Justification (Left, Center, Right) and
+   y Offset Value).  A beam's location line stays where it is drawn; y Justification says which side of the beam is on that line, looking from its start to its
+   end: Left (the beam lies to the right of the line), Center (as before, the default) or Right; y Offset Value then moves the beam sideways, more than 0 to its
+   left.  The beam as it is seen and built goes with it: its outline in plans, its 3D (and so elevations, sections, clashes and exports), what a click picks, and
+   the surface a wall or a column attached under it reaches.  Its length, volume, ends, joins and analytical line stay on the location line.  Mirror turns Left
+   into Right (and the offset round) so that the copy is a true image.  A new beam takes them from Properties while the Beam tool is on.  Braces are not
+   justified this way. */
+/* e.yj560 'l' | 'r' (none: Center), e.yo560 mm (none: 0) */
+const YJ560=['l','c','r'];
+const yj560Of=e=>e&&(e.yj560==='l'||e.yj560==='r')?e.yj560:'c';
+const yj560W=(Q,e)=>{const T=typ(Q,e)||{};return+T.w||200};
+/* how far the beam's centre lies to the left of its location line */
+const yj560D=(Q,e,k)=>{if(!e||e.cat!=='beam'||e.use==='brace')return 0;const I=yzi562(e),j=I?yj562Of(e,k):yj560Of(e),o=I?yzN562(e.yo562,k):(+e.yo560||0);if(j==='c'&&!o)return 0;const w=yj560W(Q,e);return(j==='l'?-w/2:j==='r'?w/2:0)+o};
+/* the shift in plan: its left is (uy, -ux) as the plan shows it (y down the screen) */
+const yj560V=(Q,e,k)=>{const d=yj560D(Q,e,k);if(!d||![e.x1,e.y1,e.x2,e.y2].every(isFinite))return null;const L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<1)return null;const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L;return[uy*d,-ux*d]};
+/* the axis of the beam as it is built: [[x1, y1], [x2, y2]] */
+const yj560Ax=(Q,e)=>{const s=yj560V(Q,e,0)||[0,0],s1=yj560V(Q,e,1)||[0,0];return[[e.x1+s[0],e.y1+s[1]],[e.x2+s1[0],e.y2+s1[1]]]};
+/* the shift at a point of the plan: the same all along, or (V1.562, yz Justification Independent) between the shift at its start and at its end */
+const yj560At=(Q,e)=>{const a=yj560V(Q,e,0),b=yzi562(e)?yj560V(Q,e,1):a;if(!a&&!b)return null;const s0=a||[0,0],s1=b||[0,0];if(s0[0]===s1[0]&&s0[1]===s1[1])return()=>s0;
+  const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L;return(x,y)=>{const t=clamp(((x-e.x1)*ux+(y-e.y1)*uy)/L,0,1);return[s0[0]+(s1[0]-s0[0])*t,s0[1]+(s1[1]-s0[1])*t]}};
+{const f0=beamLoop;beamLoop=(Q,b)=>{const L=f0(Q,b),F=b&&b.cat==='beam'?yj560At(Q,b):null;return F&&Array.isArray(L)?L.map(p=>{const s=F(p[0],p[1]);return[p[0]+s[0],p[1]+s[1]]}):L}}
+/* 3D: every mesh of the beam (its body, end plates, studs and bars of its own) moved sideways; the meshes of other elements stay */
+{const f0=buildMeshes;buildMeshes=function(Q,FP,FIT){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;const M=new Map();
+  for(const e of Q.els)if(e.cat==='beam'&&(e.yj560||e.yo560||yzi562(e))){const s=yj560At(Q,e);if(s)M.set(e.id,s)}if(!M.size)return R;let n=0;
+  for(let i=0;i<items.length;i++){const it=items[i],S=it&&M.get(it.id);if(!S)continue;const F=A=>{const B=A.slice();for(let k=0;k+2<B.length;k+=3){const s=S(A[k],A[k+2]);B[k]+=s[0];B[k+2]+=s[1]}return B},o=Object.assign({},it);
+    if(Array.isArray(it.t))o.t=F(it.t);if(Array.isArray(it.l))o.l=F(it.l);if(Array.isArray(it.s))o.s=it.s.map(q=>{const r=Object.assign({},q);if(Array.isArray(q.a))r.a=F(q.a);if(Array.isArray(q.b))r.b=F(q.b);return r});items[i]=o;n++}
+  if(n&&!Array.isArray(R)){const bb=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];for(const it of items){const a=it.ml?it.l:it.t;if(!a)continue;for(let i=0;i+2<a.length;i+=3)for(let k=0;k<3;k++){const v=a[i+k];if(v<bb[k])bb[k]=v;if(v>bb[k+3])bb[k+3]=v}}
+    if(isFinite(bb[0])){R.bb=bb;if(typeof pkBB==='function')R.bbx=pkBB(items,bb)}}return R}}
+/* a click picks the beam where it is built */
+{const f0=bowDist;bowDist=function(x,y,e){const F=e&&e.cat==='beam'&&!e.bow?yj560At(P,e):null;if(!F)return f0.apply(this,arguments);const a=F(e.x1,e.y1),b=F(e.x2,e.y2);
+  return a[0]===b[0]&&a[1]===b[1]?f0.call(this,x-a[0],y-a[1],e):f0.call(this,x,y,Object.assign({},e,{x1:e.x1+a[0],y1:e.y1+a[1],x2:e.x2+b[0],y2:e.y2+b[1]}))}}
+/* a wall or a column attached under the beam reaches its underside where it is built */
+{const f0=attSurf;attSurf=function(Q,T,under){const r=f0.apply(this,arguments),F=r&&T&&T.cat==='beam'?yj560At(Q,T):null;if(!F)return r;return Object.assign({},r,{poly:r.poly.map(p=>{const s=F(p[0],p[1]);return[p[0]+s[0],p[1]+s[1]]})})}}
+/* Mirror: Left becomes Right and the offset turns round, so that the mirrored beam is a true image */
+{const f0=mirrorIds;mirrorIds=function(ids){const B=[...new Set(expandSel(ids))].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='beam'&&(e.yj560||e.yo560||e.yj562||e.yo562));const r=f0.apply(this,arguments);
+  for(const e of B){if(e.yj560==='l')e.yj560='r';else if(e.yj560==='r')e.yj560='l';if(+e.yo560)e.yo560=-e.yo560;if(Array.isArray(e.yj562))e.yj562=e.yj562.map(j=>j==='l'?'r':j==='r'?'l':j);if(Array.isArray(e.yo562))e.yo562=e.yo562.map(v=>+v?-v:0)}return r}}
+/* ---- Properties: before z Justification in Geometric Position ---- */
+function yj560Rows(els){const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},U=t('u_mm');
+  return PR.sel('yj560','p_yj560',V(yj560Of),YJ560.map(k=>[k,t('yj560_'+k)]))+PR.num('yo560','p_yo560',V(x=>+x.yo560||0),U,'step="10"')}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||!els.length||els.some(x=>x.use==='brace'))return h;
+  const k=h.indexOf('<div class="pr"><label for="p_zj559">');if(k<0)return h;return h.slice(0,k)+yj560Rows(els)+h.slice(k)}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||(key!=='yj560'&&key!=='yo560'))return false;
+  if(key==='yj560'){if(raw==='l'||raw==='r')o.yj560=raw;else delete o.yj560;return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;const r=Math.round(clamp(v,-20000,20000));if(r)o.yo560=r;else delete o.yo560;return true});
+/* a new beam drawn with the Beam tool takes them from Properties */
+XN.push(s0=>{if(ui.tool!=='beam')return;const d=ui.defs&&ui.defs.beam;if(!d||(d.yj560!=='l'&&d.yj560!=='r'&&!(+d.yo560)))return;
+  for(const e of P.els)if(e.id>=s0&&e.cat==='beam'&&e.use!=='brace'){if(d.yj560==='l'||d.yj560==='r')e.yj560=d.yj560;if(+d.yo560)e.yo560=Math.round(+d.yo560)}});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam')continue;if('yj560' in e&&e.yj560!=='l'&&e.yj560!=='r')delete e.yj560;
+  if('yo560' in e){const v=Math.round(+e.yo560);if(!isFinite(v)||!v)delete e.yo560;else e.yo560=clamp(v,-20000,20000)}}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),br=e=>e.use==='brace';
+  add('yj560',tr('p_yj560'),e=>br(e)?'':tr('yj560_'+yj560Of(e)));add('yo560',tr('p_yo560')+' (mm)',e=>br(e)?'':(+e.yo560||0),{num:1,dec:0});return F}}
+Object.assign(STR,{
+  p_yj560:['การจัดชิดแนวราบ (y Justification)','y Justification'],yj560_l:['ซ้าย (Left)','Left'],yj560_c:['กึ่งกลาง (Center)','Center'],yj560_r:['ขวา (Right)','Right'],
+  p_yo560:['ระยะเลื่อนแนวราบ (y Offset Value)','y Offset Value']});
+{const k='n_zj559';if(STR[k])STR[k]=['แนวคานอยู่ตามเส้นที่วาด ที่ระดับอ้างอิงบวกระยะเลื่อนปลายเริ่มและปลายสุด การจัดชิดบอกว่าด้านไหนของคานอยู่บนแนวนั้น (ซ้ายขวามองจากปลายเริ่มไปปลายสุด) แล้วเลื่อนคานออกไปอีกตามระยะเลื่อน',
+  'The location line is where the beam was drawn, at the Reference Level plus the Start and End Level Offsets; the justifications say which part of the beam is on it (left and right looking from its start to its end), and the offsets move the beam from there']}
+/* ===== 561 Beam Cross-Section Rotation (V1.561; Revit: a beam's Properties › Constraints › Cross-Section Rotation).  The section of a beam turns about its
+   location line by an angle, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin square to a roof's slope or a beam
+   under a sloping slab.  The beam keeps its justifications (V1.559, V1.560): they place the section on the line first, then it turns about the line.  The beam as
+   it is seen and built turns with it: its outline in plans (as wide as the turned section), its 3D (and so elevations, sections, clashes and exports), its
+   Elevation at Top and Bottom, tags and schedules, what a click picks and the surface a wall or a column attached under it reaches.  Its length, volume,
+   ends and analytical line stay as they were.  Mirror turns the angle round; a new beam takes it from Properties while the Beam tool is on.  Braces are not
+   turned this way. */
+/* e.csr561 degrees in (-180, 180], to 0.1 (none: 0) */
+const csr561Of=e=>{if(!e||e.cat!=='beam'||e.use==='brace')return 0;const a=+e.csr561;return isFinite(a)&&a?a:0};
+const csr561N=a=>{a=+a;if(!isFinite(a))return 0;a=((a%360)+360)%360;if(a>180)a-=360;a=Math.round(a*10)/10;return Math.abs(a)<0.05?0:a};
+/* the corners of the section across the beam: [left, up] from its location line, before and after the turn */
+const csr561C=(Q,e,k)=>{const c=yj560D(Q,e,k),w=yj560W(Q,e),dz=zj559D(Q,e,k),h=zj559Dep(Q,e);return[[c-w/2,dz],[c+w/2,dz],[c+w/2,dz-h],[c-w/2,dz-h]]};
+const csr561R=(th,l,v)=>{const a=th*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return[l*c+v*s,-l*s+v*c]};
+/* how far the turned section reaches: left [min, max], up [min, max] */
+const csr561X=(Q,e,k)=>{const th=csr561Of(e),C=csr561C(Q,e,k),R=th?C.map(p=>csr561R(th,p[0],p[1])):C,L=R.map(p=>p[0]),V=R.map(p=>p[1]);
+  return{c:C,r:R,l:[Math.min(...L),Math.max(...L)],v:[Math.min(...V),Math.max(...V)],l0:[C[0][0],C[1][0]],v0:[C[2][1],C[0][1]]}};
+let csr561Raw=0;          // while the 3D is built the beam is made upright first, then turned
+/* the plan: the outline as wide as the turned section, at its side of the location line (a coped end keeps its cope) */
+/* a point of the upright outline to its place across the turned section (V1.562: between the two ends when they sit differently) */
+const csr561Map=(Q,b)=>{const E=Math.hypot(b.x2-b.x1,b.y2-b.y1);if(E<1)return null;const ux=(b.x2-b.x1)/E,uy=(b.y2-b.y1)/E,X0=csr561X(Q,b,0),X1=yzi562(b)?csr561X(Q,b,1):X0,w=X0.l0[1]-X0.l0[0]||1;
+  return p=>{const dx=p[0]-b.x1,dy=p[1]-b.y1,a=dx*ux+dy*uy,l=dx*uy-dy*ux,t=clamp(a/E,0,1),f=(u,v)=>u+(v-u)*t,lo=f(X0.l[0],X1.l[0]),n=lo+(l-f(X0.l0[0],X1.l0[0]))/w*(f(X0.l[1],X1.l[1])-lo);return[b.x1+ux*a+uy*n,b.y1+uy*a-ux*n]}};
+{const f0=beamLoop;beamLoop=(Q,b)=>{const L=f0(Q,b);if(!b||b.cat!=='beam'||!csr561Of(b)||!Array.isArray(L))return L;const M=csr561Map(Q,b);return M?L.map(M):L}}
+/* its range of heights: the turned section's */
+{const f0=zRange;zRange=(Q,e)=>{const z=f0(Q,e);if(csr561Raw||!e||e.cat!=='beam'||!csr561Of(e))return z;const X0=csr561X(Q,e,0),X1=yzi562(e)?csr561X(Q,e,1):X0,zl=zj559Loc(Q,e);return[Math.min(zl[0]+X0.v[0],zl[1]+X1.v[0]),Math.max(zl[0]+X0.v[1],zl[1]+X1.v[1])]}}
+/* 3D: every mesh of the beam turned about its location line */
+const csr561Frame=(Q,e)=>{const zl=zj559Loc(Q,e),A=[e.x1,zl[0],e.y1],B=[e.x2,zl[1],e.y2],d=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],n=Math.hypot(...d);if(n<1)return null;
+  const k=d.map(v=>v/n),L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,N=[(e.y2-e.y1)/L,0,-(e.x2-e.x1)/L];let U=[k[1]*N[2]-k[2]*N[1],k[2]*N[0]-k[0]*N[2],k[0]*N[1]-k[1]*N[0]];if(U[1]<0)U=U.map(v=>-v);
+  const a=csr561Of(e)*Math.PI/180;return{A,k,N,U,c:Math.cos(a),s:Math.sin(a)}};
+const csr561Vec=(F,r)=>{const a=r[0]*F.k[0]+r[1]*F.k[1]+r[2]*F.k[2],l=r[0]*F.N[0]+r[1]*F.N[1]+r[2]*F.N[2],v=r[0]*F.U[0]+r[1]*F.U[1]+r[2]*F.U[2],l2=l*F.c+v*F.s,v2=-l*F.s+v*F.c;
+  return[a*F.k[0]+l2*F.N[0]+v2*F.U[0],a*F.k[1]+l2*F.N[1]+v2*F.U[1],a*F.k[2]+l2*F.N[2]+v2*F.U[2]]};
+const csr561Arr=(F,A)=>{const B=A.slice();for(let i=0;i+2<B.length;i+=3){const r=csr561Vec(F,[A[i]-F.A[0],A[i+1]-F.A[1],A[i+2]-F.A[2]]);B[i]=F.A[0]+r[0];B[i+1]=F.A[1]+r[1];B[i+2]=F.A[2]+r[2]}return B};
+{const f0=buildMeshes;buildMeshes=function(Q,FP,FIT){let R;csr561Raw++;try{R=f0.apply(this,arguments)}finally{csr561Raw--}const items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;const M=new Map();
+  for(const e of Q.els)if(e.cat==='beam'&&csr561Of(e)){const F=csr561Frame(Q,e);if(F)M.set(e.id,F)}if(!M.size)return R;let n=0;
+  for(let i=0;i<items.length;i++){const it=items[i],F=it&&M.get(it.id);if(!F)continue;const o=Object.assign({},it);
+    if(Array.isArray(it.t))o.t=csr561Arr(F,it.t);if(Array.isArray(it.l))o.l=csr561Arr(F,it.l);
+    if(Array.isArray(it.s))o.s=it.s.map(q=>{const r=Object.assign({},q);if(Array.isArray(q.a))r.a=csr561Arr(F,q.a);if(Array.isArray(q.b))r.b=csr561Arr(F,q.b);if(Array.isArray(q.n1))r.n1=csr561Vec(F,q.n1);if(Array.isArray(q.n2))r.n2=csr561Vec(F,q.n2);return r});
+    items[i]=o;n++}
+  if(n&&!Array.isArray(R)){const bb=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity];for(const it of items){const a=it.ml?it.l:it.t;if(!a)continue;for(let i=0;i+2<a.length;i+=3)for(let k=0;k<3;k++){const v=a[i+k];if(v<bb[k])bb[k]=v;if(v>bb[k+3])bb[k+3]=v}}
+    if(isFinite(bb[0])){R.bb=bb;if(typeof pkBB==='function')R.bbx=pkBB(items,bb)}}return R}}
+/* tags: the top and bottom of the turned section */
+{const f0=tgZ;tgZ=function(e){if(!e||e.cat!=='beam'||!csr561Of(e))return f0.apply(this,arguments);const z=zRange(P,e);return{c:(z[0]+z[1])/2,t:z[1],b:z[0]}}}
+/* a click picks the beam across its turned width */
+{const f0=bowDist;bowDist=function(x,y,e){const d=f0.apply(this,arguments);if(!e||e.cat!=='beam'||e.bow||!csr561Of(e))return d;const X0=csr561X(P,e,0),X1=yzi562(e)?csr561X(P,e,1):X0,A=(f,i,j)=>(X0[f][i]+X1[f][i])/2,g=((A('l',1)-A('l',0))-(A('l0',1)-A('l0',0)))/2,m=((A('l',0)+A('l',1))-(A('l0',0)+A('l0',1)))/2;
+  if(!m&&g<=0)return d;const E=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(E<1)return d;const ux=(e.x2-e.x1)/E,uy=(e.y2-e.y1)/E;return Math.max(0,f0.call(this,x-uy*m,y+ux*m,e)-Math.max(0,g))}}
+/* a wall or a column attached under (or over) the beam reaches the lowest (or highest) of the turned section, across its turned width */
+{const f0=attSurf;attSurf=function(Q,T,under){const r=f0.apply(this,arguments);if(!r||!T||T.cat!=='beam'||!csr561Of(T))return r;const M=csr561Map(Q,T);if(!M)return r;const X0=csr561X(Q,T,0),X1=yzi562(T)?csr561X(Q,T,1):X0,dc=under?Math.min(X0.v[0]-X0.v0[0],X1.v[0]-X1.v0[0]):Math.max(X0.v[1]-X0.v0[1],X1.v[1]-X1.v0[1]);
+  const poly=r.poly.map(M);
+  return Object.assign({},r,{poly,planes:r.planes.map(q=>[q[0],q[1],q[2]+dc])})}}
+/* Mirror: the angle turns round, so that the mirrored beam is a true image */
+{const f0=mirrorIds;mirrorIds=function(ids){const B=[...new Set(expandSel(ids))].map(id=>IDX.get(id)).filter(e=>e&&e.cat==='beam'&&csr561Of(e));const r=f0.apply(this,arguments);
+  for(const e of B)if(+e.csr561)e.csr561=-e.csr561;return r}}
+/* ---- Properties: Constraints, after End Level Offset (Revit's place for it); Elevation at Top and Bottom of the turned section ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='beam'||!els.length||els.some(x=>x.use==='brace')||(isNew&&braceMode()))return h;
+  const gv=x=>csr561N(x&&x.csr561),V=(()=>{const a=gv(els[0]);return els.every(x=>gv(x)===a)?a:''})(),row=PR.num('csr561','p_csr561',V,'°','step="5"');
+  let k=h.indexOf('<div class="pr"><label for="p_use">');if(k<0){const g=`<div class="pg">${t('g_bcend')}</div>`;k=h.indexOf(g)}if(k<0)k=h.length;h=h.slice(0,k)+row+h.slice(k);
+  if(!isNew&&els.length===1&&csr561Of(els[0])&&typeof zj559Elev==='function'){const o=zj559Elev(els),z=zRange(P,els[0]);
+    if(o&&h.includes(o))h=h.replace(o,PR.ro('p_zt559',fmtLen(Math.round(z[1]))+' '+unitName())+PR.ro('p_zb559',fmtLen(Math.round(z[0]))+' '+unitName()))}return h}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||key!=='csr561')return false;const v=parseFloat(raw);if(!isFinite(v))return true;const a=csr561N(v);if(a)o.csr561=a;else delete o.csr561;return true});
+/* a new beam drawn with the Beam tool takes it from Properties */
+XN.push(s0=>{if(ui.tool!=='beam')return;const d=ui.defs&&ui.defs.beam,a=d?csr561N(d.csr561):0;if(!a)return;for(const e of P.els)if(e.id>=s0&&e.cat==='beam'&&e.use!=='brace')e.csr561=a});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam'||!('csr561' in e))continue;const a=csr561N(e.csr561);if(a)e.csr561=a;else delete e.csr561}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;F.push({k:'csr561',l:tr('p_csr561')+' (°)',g:e=>e.use==='brace'?'':csr561Of(e),grp:'i',num:1,dec:1});return F}}
+Object.assign(STR,{p_csr561:['มุมหมุนหน้าตัด (Cross-Section Rotation)','Cross-Section Rotation']});
+/* ===== 562 Beam yz Justification: Uniform or Independent (V1.562; Revit: a beam's Properties › Geometric Position › yz Justification).  Uniform (as
+   before) places the whole beam by one y Justification, y Offset Value, z Justification and z Offset Value (V1.559, V1.560).  Independent gives each end its
+   own Start and End y Justification, y Offset Value, z Justification and z Offset Value, so that the beam as built may run askew to its location line: flush
+   with a face that is not parallel to it, or its top on the line at one support and its underside on it at the other.  Between the ends the beam as built
+   follows: its outline in plans, its 3D (and so elevations, sections, clashes and exports), its heights (Elevation at Top and Bottom, tags, schedules), what a
+   click picks and the surface an attached wall or column reaches; its location line, ends and length on plan stay.  Turning to Independent gives both ends the
+   Uniform values; back to Uniform takes the start's.  Mirror swaps Left and Right at each end.  Braces are not justified this way.
+   The sections 559, 560 and 561 read each end through yzi562 / yj562Of / zj562Of / yzN562 (declared here as functions, so they are there from the start). */
+/* e.yzi562 1 (none: Uniform); e.yj562 [start, end] 'l'|'c'|'r'; e.yo562 [start, end] mm; e.zj562 [start, end] 't'|'c'|'b'; e.zo562 [start, end] mm */
+function yzi562(e){return!!(e&&e.cat==='beam'&&e.use!=='brace'&&e.yzi562)}
+function yzN562(a,k){const v=Array.isArray(a)?+a[k?1:0]:0;return isFinite(v)?v:0}
+function yj562Of(e,k){const a=e&&Array.isArray(e.yj562)?e.yj562[k?1:0]:'';return a==='l'||a==='r'?a:'c'}
+function zj562Of(e,k){const a=e&&Array.isArray(e.zj562)?e.zj562[k?1:0]:'';return a==='c'||a==='b'?a:'t'}
+const YZ562=['yj560','yo560','zj559','zo559'];
+/* ---- Properties: yz Justification before y Justification; Independent shows the start's and the end's in place of the beam's ---- */
+function yz562Rows(els){const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},U=t('u_mm'),I=V(x=>yzi562(x)?'i':'u');
+  let h=PR.sel('yzi562','p_yzi562',I,[['u',t('yzi562_u')],['i',t('yzi562_i')]]);if(I!=='i')return{h,I};
+  for(const k of [0,1]){const s=k?'e':'s';h+=PR.sel('yj562'+s,'p_yj562'+s,V(x=>yj562Of(x,k)),YJ560.map(j=>[j,t('yj560_'+j)]))+PR.num('yo562'+s,'p_yo562'+s,V(x=>yzN562(x.yo562,k)),U,'step="10"')}
+  for(const k of [0,1]){const s=k?'e':'s';h+=PR.sel('zj562'+s,'p_zj562'+s,V(x=>zj562Of(x,k)),ZJ559.map(j=>[j,t('zj559_'+j)]))+PR.num('zo562'+s,'p_zo562'+s,V(x=>yzN562(x.zo562,k)),U,'step="10"')}
+  return{h,I}}
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='beam'||isNew||!els.length||els.some(x=>x.use==='brace'))return h;
+  const k=h.indexOf('<div class="pr"><label for="p_yj560">');if(k<0)return h;const R=yz562Rows(els);let a=h.slice(0,k),b=h.slice(k);
+  if(R.I!=='u')b=b.replace(/<div class="pr"><label for="p_(yj560|yo560|zj559|zo559)">[\s\S]*?<\/div><\/div>/g,'');return a+R.h+b}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam')return false;
+  if(key==='yzi562'){if(raw==='i'){if(!o.yzi562){const yj=yj560Of(o),zj=zj559Of(o),yo=Math.round(+o.yo560||0),zo=Math.round(+o.zo559||0);
+        Object.assign(o,{yzi562:1,yj562:[yj,yj],yo562:[yo,yo],zj562:[zj,zj],zo562:[zo,zo]});for(const f of YZ562)delete o[f]}}
+    else if(o.yzi562){const yj=yj562Of(o,0),zj=zj562Of(o,0),yo=Math.round(yzN562(o.yo562,0)),zo=Math.round(yzN562(o.zo562,0));for(const f of ['yzi562','yj562','yo562','zj562','zo562'])delete o[f];
+      if(yj!=='c')o.yj560=yj;if(yo)o.yo560=yo;if(zj!=='t')o.zj559=zj;if(zo)o.zo559=zo}return true}
+  const m=/^(yj|yo|zj|zo)562(s|e)$/.exec(key);if(!m)return false;if(!o.yzi562)return true;const i=m[2]==='e'?1:0,f=m[1]+'562';let A;
+  if(m[1]==='yj'){A=[yj562Of(o,0),yj562Of(o,1)];A[i]=raw==='l'||raw==='r'?raw:'c'}
+  else if(m[1]==='zj'){A=[zj562Of(o,0),zj562Of(o,1)];A[i]=raw==='c'||raw==='b'?raw:'t'}
+  else{const v=parseFloat(raw);if(!isFinite(v))return true;A=[yzN562(o[f],0),yzN562(o[f],1)];A[i]=Math.round(clamp(v,-20000,20000))}
+  o[f]=A;return true});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam')continue;
+  if(!e.yzi562){for(const f of ['yzi562','yj562','yo562','zj562','zo562'])if(f in e)delete e[f];continue}
+  const n=a=>[0,1].map(k=>{const v=Math.round(yzN562(a,k));return clamp(v,-20000,20000)});
+  Object.assign(e,{yzi562:1,yj562:[yj562Of(e,0),yj562Of(e,1)],yo562:n(e.yo562),zj562:[zj562Of(e,0),zj562Of(e,1)],zo562:n(e.zo562)});for(const f of YZ562)delete e[f]}});
+/* ---- schedules: yz Justification and each end's; the beam's own fields stay empty for an Independent one ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;for(const f of F)if(YZ562.includes(f.k)){const g=f.g;f.g=e=>yzi562(e)?'':g(e)}
+  const add=(k,l,g,o)=>F.push(Object.assign({k,l,g,grp:'i'},o||{})),br=e=>e.use==='brace';add('yzi562',tr('p_yzi562'),e=>br(e)?'':tr(yzi562(e)?'yzi562_i':'yzi562_u'));
+  for(const k of [0,1]){const s=k?'e':'s';add('yj562'+s,tr('p_yj562'+s),e=>br(e)?'':tr('yj560_'+(yzi562(e)?yj562Of(e,k):yj560Of(e))));
+    add('yo562'+s,tr('p_yo562'+s)+' (mm)',e=>br(e)?'':(yzi562(e)?yzN562(e.yo562,k):(+e.yo560||0)),{num:1,dec:0})}
+  for(const k of [0,1]){const s=k?'e':'s';add('zj562'+s,tr('p_zj562'+s),e=>br(e)?'':tr('zj559_'+(yzi562(e)?zj562Of(e,k):zj559Of(e))));
+    add('zo562'+s,tr('p_zo562'+s)+' (mm)',e=>br(e)?'':(yzi562(e)?yzN562(e.zo562,k):(+e.zo559||0)),{num:1,dec:0})}return F}}
+Object.assign(STR,{
+  p_yzi562:['จัดชิดสองปลาย (yz Justification)','yz Justification'],yzi562_u:['เท่ากัน (Uniform)','Uniform'],yzi562_i:['แยกปลาย (Independent)','Independent'],
+  p_yj562s:['ปลายเริ่ม จัดชิดแนวราบ (Start y Justification)','Start y Justification'],p_yo562s:['ปลายเริ่ม เลื่อนแนวราบ (Start y Offset Value)','Start y Offset Value'],
+  p_yj562e:['ปลายสุด จัดชิดแนวราบ (End y Justification)','End y Justification'],p_yo562e:['ปลายสุด เลื่อนแนวราบ (End y Offset Value)','End y Offset Value'],
+  p_zj562s:['ปลายเริ่ม จัดชิดแนวดิ่ง (Start z Justification)','Start z Justification'],p_zo562s:['ปลายเริ่ม เลื่อนแนวดิ่ง (Start z Offset Value)','Start z Offset Value'],
+  p_zj562e:['ปลายสุด จัดชิดแนวดิ่ง (End z Justification)','End z Justification'],p_zo562e:['ปลายสุด เลื่อนแนวดิ่ง (End z Offset Value)','End z Offset Value']});
+/* ===== 563 Beam Moment Connections and their symbols (V1.563; Revit: a beam's Properties › Moment Connection Start / End: None, Moment Frame, Cantilever
+   Moment; Structural Settings › Symbolic Representation Settings › connection symbols).  Each end of a beam says how it is connected, and plans show it at
+   that end of the beam as built: Moment Frame a filled triangle, Cantilever Moment an open triangle with a bar across its tip, 2.5 mm long on paper at any
+   scale (shorter on a very short beam).  Structural Settings has a Symbolic Representation page with the two symbols and whether plans show them.  A new beam
+   takes them from Properties while the Beam tool is on; schedules have both ends; copies keep them; braces have none.  The analysis keeps its own releases. */
+/* e.mc563 [start, end] 'n' | 'f' | 'c' (none: None at both); P.mcs563 0: plans show no connection symbols */
+const MC563=['n','f','c'];
+const mc563Of=(e,k)=>{const a=e&&Array.isArray(e.mc563)?e.mc563[k?1:0]:'';return a==='f'||a==='c'?a:'n'};
+const mc563On=e=>!!(e&&e.cat==='beam'&&e.use!=='brace'&&(mc563Of(e,0)!=='n'||mc563Of(e,1)!=='n'));
+/* the symbols of a beam in a plan of scale sc: at each end of its axis as built, pointing into the beam */
+function mc563Geo(Q,e,sc){if(!mc563On(e))return[];const A=yj560Ax(Q,e),L=Math.hypot(A[1][0]-A[0][0],A[1][1]-A[0][1]);if(L<1)return[];const out=[];
+  for(const i of [0,1]){const m=mc563Of(e,i);if(m==='n')continue;const E=A[i],O=A[1-i],ux=(O[0]-E[0])/L,uy=(O[1]-E[1])/L,len=Math.min(2.5*sc,L/3),hw=Math.min(1.25*sc,L/6);
+    const tip=[E[0]+ux*len,E[1]+uy*len];out.push({k:m,end:i,tri:[[E[0]-uy*hw,E[1]+ux*hw],[E[0]+uy*hw,E[1]-ux*hw],tip],bar:m==='c'?[[tip[0]-uy*hw,tip[1]+ux*hw],[tip[0]+uy*hw,tip[1]-ux*hw]]:null})}
+  return out}
+XPL1.push((ctx,g,v,T,col,o,of,hl)=>{if(v.kind!=='plan'||v.draft||P.mcs563===0)return;const sc=v.scale||100;
+  for(const [e] of of('beam')){const G=mc563Geo(P,e,sc);if(!G.length)continue;g.el(e);const k=hl(e.id)||col.ink;ctx.strokeStyle=k;ctx.fillStyle=k;ctx.lineWidth=g.lw(0.25);g.dash(null);
+    for(const s of G){g.path(s.tri);if(s.k==='f')ctx.fill();else{ctx.stroke();g.seg(s.bar[0],s.bar[1])}}}});
+/* ---- Properties: after Structural Usage (for a new beam, with the other settings of the Beam tool) ---- */
+function mc563Rows(els){const V=k=>{const a=mc563Of(els[0],k);return els.every(x=>mc563Of(x,k)===a)?a:''};
+  return[0,1].map(k=>PR.sel('mc563'+(k?'e':'s'),'p_mc563'+(k?'e':'s'),V(k),MC563.map(m=>[m,t('mc563_'+m)]))).join('')}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||!els.length||els.some(x=>x.use==='brace')||(isNew&&braceMode()))return h;
+  const R=mc563Rows(els),m=/<div class="pr"><label for="p_use">[\s\S]*?<\/div><\/div>/.exec(h);if(m){const j=m.index+m[0].length;return h.slice(0,j)+R+h.slice(j)}
+  const k=h.indexOf(`<div class="pg">${t('g_bcend')}</div>`);return k<0?h+R:h.slice(0,k)+R+h.slice(k)}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||(key!=='mc563s'&&key!=='mc563e'))return false;const A=[mc563Of(o,0),mc563Of(o,1)];A[key==='mc563e'?1:0]=raw==='f'||raw==='c'?raw:'n';
+  if(A[0]==='n'&&A[1]==='n')delete o.mc563;else o.mc563=A;return true});
+XN.push(s0=>{if(ui.tool!=='beam')return;const d=ui.defs&&ui.defs.beam,A=[mc563Of(d,0),mc563Of(d,1)];if(A[0]==='n'&&A[1]==='n')return;
+  for(const e of P.els)if(e.id>=s0&&e.cat==='beam'&&e.use!=='brace')e.mc563=A.slice()});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam'||!('mc563' in e))continue;const A=[mc563Of(e,0),mc563Of(e,1)];if(A[0]==='n'&&A[1]==='n')delete e.mc563;else e.mc563=A}
+  if('mcs563' in P&&P.mcs563!==0)delete P.mcs563});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;for(const k of [0,1])F.push({k:'mc563'+(k?'e':'s'),l:tr('p_mc563'+(k?'e':'s')),g:e=>e.use==='brace'?'':tr('mc563_'+mc563Of(e,k)),grp:'i'});return F}}
+/* ---- Structural Settings › Symbolic Representation: the connection symbols, shown in plans or not ---- */
+const mc563Svg=m=>{const S='stroke="currentColor" stroke-width="0.6" fill="none"',tri='M16 -2.5 L16 2.5 L11 0 Z';
+  return`<path d="M-16 -3 H16 M-16 3 H16 M16 -3 V3" ${S} opacity="0.55"/>`+(m==='f'?`<path d="${tri}" fill="currentColor"/>`:`<path d="${tri}" ${S}/><path d="M11 -2.5 V2.5" ${S}/>`)};
+function dlgSr563(){const on=P.mcs563!==0,pv=['f','c'].map(m=>`<figure style="margin:0;text-align:center;min-width:110px"><svg viewBox="-18 -6 36 12" width="132" height="44" aria-hidden="true">${mc563Svg(m)}</svg><figcaption>${t('mc563_'+m)}</figcaption></figure>`).join('');
+  const h=`<p class="note">${t('sr563_note')}</p><div class="fr"><label for="mcs563">${t('sr563_show')}</label><input id="mcs563" type="checkbox"${on?' checked':''}></div><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">${pv}</div>`;
+  openDlg(t('a_stset'),`<div class="msw"><nav class="msn" aria-label="${t('a_stset')}">${['sr','lc','lb','bc'].map(k=>`<button type="button" data-stp="${k}" aria-pressed="${k==='sr'}">${t(k==='sr'?'a_sr563':k==='lc'?'a_lcases':k==='lb'?'a_lcombs':'a_bcset')}</button>`).join('')}</nav><div class="msc">${h}</div></div>`,
+    `<span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
+    {change(ev){if(ev.target.id!=='mcs563')return;const c=ev.target.checked;edit(()=>{if(c)delete P.mcs563;else P.mcs563=0});refresh()},
+     click(ev){const b=ev.target.closest('button');if(b&&b.dataset.stp&&b.dataset.stp!=='sr')dlgStSet216(b.dataset.stp)}},'wide')}
+const sr563Nav=()=>{const nav=document.querySelector('#dlg nav.msn');if(nav&&!nav.querySelector('[data-stp="sr"]')){nav.insertAdjacentHTML('afterbegin',`<button type="button" data-stp="sr" aria-pressed="false">${t('a_sr563')}</button>`);
+  nav.querySelector('[data-stp="sr"]').addEventListener('click',ev=>{ev.stopPropagation();dlgSr563()})}};
+dlgStSet216=(f0=>pg=>{if(pg==='sr'){dlgSr563();return}f0(pg);sr563Nav()})(dlgStSet216);
+{const f0=dlgBcSet217;dlgBcSet217=function(){const r=f0.apply(this,arguments);sr563Nav();return r}}
+XA.srset563=()=>dlgStSet216('sr');
+Object.assign(STR,{
+  p_mc563s:['การต่อปลายเริ่ม (Moment Connection Start)','Moment Connection Start'],p_mc563e:['การต่อปลายสุด (Moment Connection End)','Moment Connection End'],
+  mc563_n:['ไม่มี (None)','None'],mc563_f:['โครงข้อแข็ง (Moment Frame)','Moment Frame'],mc563_c:['โมเมนต์ยื่น (Cantilever Moment)','Cantilever Moment'],
+  a_sr563:['การแสดงสัญลักษณ์ (Symbolic Representation)','Symbolic Representation Settings'],sr563_show:['แสดงสัญลักษณ์จุดต่อในแปลน','Show connection symbols in plans'],
+  sr563_note:['สัญลักษณ์ที่ปลายคานในแปลนตามการต่อปลายเริ่มและปลายสุดในคุณสมบัติของคาน: โครงข้อแข็ง (Moment Frame) เป็นสามเหลี่ยมทึบ โมเมนต์ยื่น (Cantilever Moment) เป็นสามเหลี่ยมโปร่งมีขีดขวางที่ปลาย ยาว 2.5 มม. บนกระดาษทุกมาตราส่วน',
+    'Plans show these at the ends of beams, by the Moment Connection Start and End in a beam\'s Properties: Moment Frame a filled triangle, Cantilever Moment an open triangle with a bar across its tip, 2.5 mm long on paper at any scale']});
+/* ===== 564 Stick symbols of framing in Coarse plans, with Symbolic Cutback (V1.564; Revit: structural framing at the Coarse detail level shows as a single
+   line, cut back where it meets a column or other framing by Structural Settings › Symbolic Representation Settings › Symbolic Cutback Distance).  In a plan
+   whose Detail Level is Coarse, a beam or a brace is drawn as one line along its location line in place of its outline, in its own pen and dashes (cut,
+   below, beyond), with its ends held back by the cutback distance (on paper) where they meet a column or another beam or brace; Medium and Fine show the
+   outline as before.  Structural Settings › Symbolic Representation Settings says which plans do it: Structural plans (the default, so that architectural and
+   coordination plans keep their look), all plans (as Revit draws framing at Coarse in a plan of any discipline), or none (the outline at every level), and
+   the cutback distances of beams and of braces. */
+/* P.stk564 'a' all plans | 'n' none (none: structural plans); P.scb564 / P.scr564 mm on paper, beams / braces (none: 2.4) */
+const STK564=['s','a','n'];
+const stk564M=()=>P.stk564==='a'||P.stk564==='n'?P.stk564:'s';
+const stk564Cut=e=>{const v=e&&e.use==='brace'?P.scr564:P.scb564;return isFinite(+v)&&v!==undefined&&v!==null?+v:2.4};
+function stk564On(v){if(!v||v.kind!=='plan'||v.draft||v.legend||(v.detail||'coarse')!=='coarse')return false;const m=stk564M();return m==='a'||(m==='s'&&v.disc==='struct')}
+/* what an end of a stick can meet: the columns (their outlines, boxes and heights) and the beams and braces of the project, gathered once for each plan drawn;
+   one meets an end where it holds the end on plan (a column's outline, within 5 mm of it, or a beam's width) and their heights touch (within 50 mm) */
+let STK564V=null,STK564C=null;          // the plan being drawn with stick symbols; what its sticks can meet
+const stk564Z=(Q,o)=>{try{const z=zRange(Q,o);return Array.isArray(z)&&isFinite(z[0])&&isFinite(z[1])?[Math.min(z[0],z[1]),Math.max(z[0],z[1])]:null}catch(_){return null}};
+function stk564Meet(Q){if(Q===P&&STK564C)return STK564C;const cols=[],beams=[];for(const o of Q.els){if(o.cat==='column'){let lp=null;try{lp=columnLoop(Q,o)}catch(_){}if(!lp||lp.length<3)continue;
+    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of lp){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])}cols.push({lp,bb:[x0-5,y0-5,x1+5,y1+5],z:stk564Z(Q,o)})}
+    else if(o.cat==='beam'&&!o.bow)beams.push({o,w:((typ(Q,o)||{}).w||200)/2,z:stk564Z(Q,o)})}
+  const C={cols,beams};if(Q===P&&STK564V)STK564C=C;return C}
+const stk564ZT=(a,b)=>!a||!b||(a[0]<=b[1]+50&&b[0]<=a[1]+50);
+/* the stick of a beam in a plan of scale sc: its location line, held back at an end that meets a column or other framing */
+function stk564Line(Q,e,sc){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<1)return[[e.x1,e.y1],[e.x2,e.y2]];const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,c=Math.min(stk564Cut(e)*sc,L/3);if(!c)return[[e.x1,e.y1],[e.x2,e.y2]];
+  const M=stk564Meet(Q),z=stk564Z(Q,e),meets=(x,y)=>M.cols.some(k=>x>=k.bb[0]&&x<=k.bb[2]&&y>=k.bb[1]&&y<=k.bb[3]&&stk564ZT(z,k.z)&&(inPoly(x,y,k.lp)||polyEdgeDist(x,y,k.lp)<=5))
+    ||M.beams.some(k=>k.o!==e&&k.o.id!==e.id&&stk564ZT(z,k.z)&&segDist(x,y,k.o.x1,k.o.y1,k.o.x2,k.o.y2)<=k.w+1);
+  const a=meets(e.x1,e.y1)?c:0,b=meets(e.x2,e.y2)?c:0;return[[e.x1+ux*a,e.y1+uy*a],[e.x2-ux*b,e.y2-uy*b]]}
+{const f0=drawPlan;drawPlan=function(ctx,v,T,o){const q=STK564V,qc=STK564C;STK564V=stk564On(v)?v:null;STK564C=null;try{return f0.apply(this,arguments)}finally{STK564V=q;STK564C=qc}}}
+{const f0=beamLoop;beamLoop=(Q,b)=>{if(!STK564V||Q!==P||!b||b.cat!=='beam'||b.bow)return f0(Q,b);const s=stk564Line(Q,b,STK564V.scale||100),l=[s[0],s[1],s[1],s[0]];l.stk564=1;return l}}
+/* the painter of a plan with stick symbols: a stick is drawn as an open line (once, so that its dashes keep their gaps); a brace's centre line (drawn over its
+   outline) is its stick already, so it is left out */
+{const f0=painter;painter=function(){const g=f0.apply(this,arguments);if(!STK564V)return g;const el0=g.el,sg0=g.seg,pa0=g.path;let cur=null;
+  g.path=function(pts){if(pts&&pts.stk564)return pa0.call(this,[pts[0],pts[1]],true);return pa0.apply(this,arguments)};
+  g.el=function(e){cur=e;return el0.apply(this,arguments)};
+  g.seg=function(a,b){if(cur&&cur.cat==='beam'&&cur.use==='brace'&&!cur.bow&&a&&b&&a[0]===cur.x1&&a[1]===cur.y1&&b[0]===cur.x2&&b[1]===cur.y2)return;return sg0.apply(this,arguments)};return g}}
+/* the moment connection symbols (V1.563) at the ends of the stick */
+{const f0=mc563Geo;mc563Geo=function(Q,e,sc){if(!STK564V||Q!==P||!mc563On(e))return f0.apply(this,arguments);const s=stk564Line(Q,e,sc),c=Object.assign({},e,{x1:s[0][0],y1:s[0][1],x2:s[1][0],y2:s[1][1],yj560:undefined,yo560:undefined,yzi562:undefined});return f0.call(this,Q,c,sc)}}
+/* ---- Structural Settings › Symbolic Representation Settings ---- */
+{const f0=dlgSr563;dlgSr563=function(){const r=f0.apply(this,arguments),box=document.querySelector('#dlg .msc');if(!box)return r;const m=stk564M(),n=k=>{const v=P[k];return v===undefined||v===null?2.4:+v};
+  box.insertAdjacentHTML('beforeend',`<p class="note" style="margin-top:14px">${t('stk564_note')}</p><div class="fr"><label for="stk564">${t('stk564_l')}</label><select id="stk564">${STK564.map(k=>`<option value="${k}"${k===m?' selected':''}>${t('stk564_'+k)}</option>`).join('')}</select></div>`
+    +`<div class="fr"><label for="scb564">${t('scb564_l')}</label><span class="un" style="display:flex;align-items:center;gap:6px"><input id="scb564" type="number" min="0" max="20" step="0.1" value="${n('scb564')}" style="max-width:100px"> ${t('u_mm')}</span></div>`
+    +`<div class="fr"><label for="scr564">${t('scr564_l')}</label><span class="un" style="display:flex;align-items:center;gap:6px"><input id="scr564" type="number" min="0" max="20" step="0.1" value="${n('scr564')}" style="max-width:100px"> ${t('u_mm')}</span></div>`);
+  box.addEventListener('change',ev=>{const id=ev.target.id;if(id==='stk564'){const k=ev.target.value;edit(()=>{if(k==='a'||k==='n')P.stk564=k;else delete P.stk564});refresh();return}
+    if(id==='scb564'||id==='scr564'){const x=Math.round(clamp(+ev.target.value,0,20)*10)/10;if(!isFinite(x))return;edit(()=>{if(x===2.4)delete P[id];else P[id]=x});refresh()}});return r}}
+XC.push(()=>{if('stk564' in P&&P.stk564!=='a'&&P.stk564!=='n')delete P.stk564;for(const k of ['scb564','scr564'])if(k in P){const x=Math.round(clamp(+P[k],0,20)*10)/10;if(!isFinite(x)||x===2.4)delete P[k];else P[k]=x}});
+Object.assign(STR,{
+  stk564_note:['ระดับรายละเอียดหยาบ (Coarse) ในแปลน คานและค้ำยันแสดงเป็นเส้นเดียวตามแนวคาน (Stick Symbol) แบบ Revit ปลายที่ชนเสา คาน หรือค้ำยันอื่นร่นเข้าตามระยะร่นบนกระดาษ ระดับกลางและละเอียดแสดงขอบคานเหมือนเดิม',
+    'At the Coarse detail level, plans show beams and braces as one line along their location line (stick symbols), as in Revit; an end that meets a column, a beam or a brace is held back by the cutback distance on paper. Medium and Fine show the outline as before'],
+  stk564_l:['คานในแปลนหยาบเป็นเส้นเดียว','Framing as stick symbols in Coarse plans'],stk564_s:['เฉพาะแปลนงานโครงสร้าง','Structural plans'],stk564_a:['ทุกแปลน','All plans'],stk564_n:['ไม่ใช้ (แสดงขอบคาน)','None (outline)'],
+  scb564_l:['ระยะร่นสัญลักษณ์ คาน (Symbolic Cutback: Beam)','Symbolic Cutback Distance: Beam/Truss'],scr564_l:['ระยะร่นสัญลักษณ์ ค้ำยัน (Symbolic Cutback: Brace)','Symbolic Cutback Distance: Brace']});
+/* ===== 565 Brace symbols in plans (V1.565; Revit: Structural Settings › Symbolic Representation Settings › Brace Symbols: Plan representation Line or
+   Parallel Line, Parallel Line Offset, Show brace above, Show brace below).  A plan shows the braces above its level (their lower end on it, as before) and
+   now also the braces below it: those that come up to the level from under it (their upper end within 1220 mm under its floor, as a floor is shown), in
+   the pen of what lies beyond.  A brace that goes down from its own level is a brace below there, and a brace above in the plan of the level it reaches.  Plan representation says how a brace is drawn: on its
+   line (Line, as before) or beside it (Parallel Line), offset to its left by the Parallel Line Offset on paper, so that a brace under a beam is not lost in
+   the beam's line; its outline or stick (V1.564), its centre line and what a click picks move with it.  Each of the four is on the Symbolic Representation
+   Settings page of Structural Settings. */
+/* P.brp565 'p' Parallel Line (none: Line); P.bro565 mm on paper (none: 2.5); P.bra565 0 / P.brb565 0: braces above / below not shown */
+const br565Par=()=>P.brp565==='p';
+const br565Off=()=>{const v=P.bro565;return v!==undefined&&v!==null&&isFinite(+v)?+v:2.5};
+/* where a brace stands in the plan of view v: 'a' above its level, 'b' below it, '' neither */
+function br565Where(v,e){if(!e||e.cat!=='beam'||e.use!=='brace'||!v||v.kind!=='plan'||v.draft||v.rcp||v.site||v.area!=null)return'';const L=lvl(P,v.level);if(!L)return'';
+  const z=beamZ(P,e),lo=Math.min(z[0],z[1]),hi=Math.max(z[0],z[1]),E=L.elev;
+  if(e.level===v.level)return lo>=E-50?'a':'b';
+  if(lo>=E-50&&lo<=E+50&&hi>lo+50)return'a';          // one of another level coming down to this one: its lower end is here
+  return hi>E-1220.5&&hi<=E+50&&lo<E-50?'b':''}
+{const f0=planShow;planShow=(v,e)=>{if(!e||e.cat!=='beam'||e.use!=='brace')return f0(v,e);const w=br565Where(v,e);if(!w)return f0(v,e);
+  if(w==='a')return P.bra565===0?'':e.level===v.level?f0(v,e):vr9Vis(v,e)?'on':'';
+  if(P.brb565===0)return'';if(e.level===v.level){const m=f0(v,e);return m?'far':''}return vr9Vis(v,e)?'far':''}}
+/* Parallel Line: the plan being drawn, and the offset of a brace's lines in it */
+let BR565V=null;
+{const f0=drawPlan;drawPlan=function(ctx,v,T,o){const q=BR565V;BR565V=v&&v.kind==='plan'&&!v.draft&&br565Par()?v:null;try{return f0.apply(this,arguments)}finally{BR565V=q}}}
+function br565Sh(e,sc){if(!e||e.cat!=='beam'||e.use!=='brace'||e.bow)return null;const L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<1)return null;const d=br565Off()*sc;return d?[(e.y2-e.y1)/L*d,-(e.x2-e.x1)/L*d]:null}
+{const f0=beamLoop;beamLoop=(Q,b)=>{const l=f0(Q,b);if(!BR565V||Q!==P||!Array.isArray(l))return l;const s=br565Sh(b,BR565V.scale||100);if(!s)return l;
+  const r=l.map(p=>[p[0]+s[0],p[1]+s[1]]);if(l.stk564)r.stk564=1;return r}}
+{const f0=painter;painter=function(){const g=f0.apply(this,arguments);if(!BR565V)return g;const el0=g.el,sg0=g.seg,sc=BR565V.scale||100;let cur=null;
+  g.el=function(e){cur=e;return el0.apply(this,arguments)};
+  g.seg=function(a,b){if(cur&&!STK564V&&a&&b&&a[0]===cur.x1&&a[1]===cur.y1&&b[0]===cur.x2&&b[1]===cur.y2){const s=br565Sh(cur,sc);if(s)return sg0.call(this,[a[0]+s[0],a[1]+s[1]],[b[0]+s[0],b[1]+s[1]])}return sg0.apply(this,arguments)};return g}}
+/* a click on the line drawn picks the brace */
+let BR565H=null;
+{const f0=hitPlan;hitPlan=function(v){const q=BR565H;BR565H=v&&v.kind==='plan'&&!v.draft&&br565Par()?v:null;try{return f0.apply(this,arguments)}finally{BR565H=q}}}
+{const f0=bowDist;bowDist=(x,y,e)=>{const d=f0(x,y,e);if(!BR565H)return d;const s=br565Sh(e,BR565H.scale||100);return s?Math.min(d,segDist(x,y,e.x1+s[0],e.y1+s[1],e.x2+s[0],e.y2+s[1])):d}}
+/* ---- Structural Settings › Symbolic Representation Settings: Brace Symbols ---- */
+{const f0=dlgSr563;dlgSr563=function(){const r=f0.apply(this,arguments),box=document.querySelector('#dlg .msc');if(!box)return r;const ck=k=>P[k]===0?'':' checked';
+  box.insertAdjacentHTML('beforeend',`<p class="note" style="margin-top:14px">${t('br565_note')}</p><div class="fr"><label for="brp565">${t('br565_rep')}</label><select id="brp565">${['l','p'].map(k=>`<option value="${k}"${(k==='p')===br565Par()?' selected':''}>${t('br565_'+k)}</option>`).join('')}</select></div>`
+    +`<div class="fr"><label for="bro565">${t('br565_off')}</label><span class="un" style="display:flex;align-items:center;gap:6px"><input id="bro565" type="number" min="0" max="20" step="0.1" value="${br565Off()}" style="max-width:100px"> ${t('u_mm')}</span></div>`
+    +`<div class="fr"><label for="bra565">${t('br565_a')}</label><input id="bra565" type="checkbox"${ck('bra565')}></div><div class="fr"><label for="brb565">${t('br565_b')}</label><input id="brb565" type="checkbox"${ck('brb565')}></div>`);
+  box.addEventListener('change',ev=>{const id=ev.target.id;
+    if(id==='brp565'){const p=ev.target.value==='p';edit(()=>{if(p)P.brp565='p';else delete P.brp565});refresh();return}
+    if(id==='bro565'){const x=Math.round(clamp(+ev.target.value,0,20)*10)/10;if(!isFinite(x))return;edit(()=>{if(x===2.5)delete P.bro565;else P.bro565=x});refresh();return}
+    if(id==='bra565'||id==='brb565'){const c=ev.target.checked;edit(()=>{if(c)delete P[id];else P[id]=0});refresh()}});return r}}
+XC.push(()=>{if('brp565' in P&&P.brp565!=='p')delete P.brp565;if('bro565' in P){const x=Math.round(clamp(+P.bro565,0,20)*10)/10;if(!isFinite(x)||x===2.5)delete P.bro565;else P.bro565=x}
+  for(const k of ['bra565','brb565'])if(k in P&&P[k]!==0)delete P[k]});
+Object.assign(STR,{
+  br565_note:['สัญลักษณ์ค้ำยันในแปลน (Brace Symbols): แปลนแสดงค้ำยันเหนือระดับ (ปลายล่างอยู่ที่ระดับนั้น) และค้ำยันใต้ระดับ (ขึ้นมาถึงระดับนั้นจากข้างล่าง) ด้วยเส้นของสิ่งที่อยู่ไกล แบบเส้นขนาน (Parallel Line) วาดค้ำยันเยื้องไปทางซ้ายตามระยะบนกระดาษ ไม่ทับเส้นคานที่อยู่เหนือมัน',
+    'Brace Symbols: plans show the braces above their level (their lower end on it) and the braces below it (coming up to it from under it), in the pen of what lies beyond; Parallel Line draws a brace beside its line, offset to its left on paper, so that it is not lost in the line of a beam over it'],
+  br565_rep:['การแสดงค้ำยันในแปลน (Plan representation)','Plan representation'],br565_l:['เส้น (Line)','Line'],br565_p:['เส้นขนาน (Parallel Line)','Parallel Line'],
+  br565_off:['ระยะเยื้องเส้นขนาน (Parallel Line Offset)','Parallel Line Offset'],br565_a:['แสดงค้ำยันเหนือระดับ (Show brace above)','Show brace above'],br565_b:['แสดงค้ำยันใต้ระดับ (Show brace below)','Show brace below']});
+/* ===== 566 Brace ends attached to beams (V1.566; Revit: a brace end placed on a beam is attached to it: Properties › Start / End Attachment Type
+   Distance or Ratio, Start / End Attachment Distance or Ratio, measured from the start or the end of the beam).  A new brace whose end lies on a beam (on
+   its location line in plan, within its width, its height within 50 mm, not on a column) is attached there: the end keeps its place along the beam when the
+   beam moves, turns, is stretched or is split, and slides along the beam when it is moved along it; moved onto another beam it holds that one, moved off
+   every beam it lets go, and a deleted beam lets
+   go of it.  Properties give each attached end its Attachment Type, its Distance (mm) or Ratio (0 to 1) and the end of the beam it is measured from; Type
+   Detached lets go.  Copies of a brace and its beam keep the attachment; schedules have it. */
+/* e.ba566 [start, end]: null or {h: beam id, t:'d'|'r', v: mm or ratio, r: 0 from the beam's start | 1 from its end, p: [x,y,z] where the end was put, g: the beam's line then} */
+const ba566Of=(e,k)=>{const a=e&&e.cat==='beam'&&e.use==='brace'&&Array.isArray(e.ba566)?e.ba566[k?1:0]:null;return a&&typeof a==='object'&&a.h!=null?a:null};
+/* the location line of a beam in 3D, [[x,y,z],[x,y,z]]; null for a brace, a bowed beam or none */
+function ba566Seg(Q,b){if(!b||b.cat!=='beam'||b.use==='brace'||b.bow||!isFinite(b.x1))return null;const z=beamZ(Q,b);return[[b.x1,b.y1,z[0]],[b.x2,b.y2,z[1]]]}
+const ba566G=S=>S?[...S[0],...S[1]].map(x=>Math.round(x*10)/10):null;
+/* the place along the beam (0 at its start, 1 at its end) of an attachment */
+function ba566S(a,L){const v=+a.v||0;let s=a.t==='r'?v:(L>0?v/L:0);if(a.r)s=1-s;return clamp(s,0,1)}
+function ba566At(S,s){return[0,1,2].map(i=>S[0][i]+(S[1][i]-S[0][i])*s)}
+const ba566End=(Q,e,k)=>{const z=beamZ(Q,e);return k?[e.x2,e.y2,z[1]]:[e.x1,e.y1,z[0]]};
+function ba566Put(Q,e,k,p){const r=x=>Math.round(x*10)/10;if(!k){e.x1=r(p[0]);e.y1=r(p[1]);e.off=r(p[2]-elev(Q,e.level))}else{e.x2=r(p[0]);e.y2=r(p[1]);e.off2=r(p[2]-elev(Q,e.lv2&&lvl(Q,e.lv2)?e.lv2:e.level))}}
+/* where a point lies on a beam: its place along it and how far off it is on plan and in height */
+function ba566Proj(S,p){const dx=S[1][0]-S[0][0],dy=S[1][1]-S[0][1],l2=dx*dx+dy*dy;if(l2<1)return null;const s=((p[0]-S[0][0])*dx+(p[1]-S[0][1])*dy)/l2;const q=ba566At(S,clamp(s,0,1));
+  return{s,d:Math.hypot(p[0]-q[0],p[1]-q[1]),dz:Math.abs(p[2]-q[2]),L:Math.sqrt(l2)}}
+const ba566OnCol=(Q,p)=>Q.els.some(c=>{if(c.cat!=='column')return false;let lp=null;try{lp=columnLoop(Q,c)}catch(_){}if(!lp||lp.length<3||!inPoly(p[0],p[1],lp))return false;const z=zRange(Q,c);return p[2]>=z[0]-50&&p[2]<=z[1]+50});
+/* the beam a brace end lies on, if any: {b, s, L} */
+function ba566Find(Q,e,p){if(ba566OnCol(Q,p))return null;let best=null;
+  for(const b of Q.els){const S=ba566Seg(Q,b);if(!S)continue;const j=ba566Proj(S,p);if(!j||j.s<-1e-6||j.s>1+1e-6)continue;const hw=Math.max(((typ(Q,b)||{}).w||200)/2,20);
+    if(j.d<=hw+0.5&&j.dz<=50&&(!best||j.d+j.dz<best.d+best.dz))best={b,s:clamp(j.s,0,1),L:j.L,d:j.d,dz:j.dz}}return best}
+const ba566New=(Q,f,p)=>{const S=ba566Seg(Q,f.b);return{h:f.b.id,t:'d',v:Math.round(f.s*f.L*10)/10,r:0,p:ba566At(S,f.s).map(x=>Math.round(x*10)/10),g:ba566G(S)}};
+const ba566Near=(a,b,tol)=>!!a&&!!b&&Math.abs(a[0]-b[0])<=tol&&Math.abs(a[1]-b[1])<=tol&&Math.abs(a[2]-b[2])<=tol;
+function ba566Tidy(e){if(Array.isArray(e.ba566)&&!e.ba566[0]&&!e.ba566[1])delete e.ba566}
+/* a new brace: each end that lies on a beam is attached to it, and put on its line */
+XN.push(s0=>{for(const e of P.els){if(e.id<s0||e.cat!=='beam'||e.use!=='brace'||e.bow||Array.isArray(e.ba566))continue;const A=[null,null];          // a copy keeps what it holds
+  for(const k of [0,1]){const p=ba566End(P,e,k),f=ba566Find(P,e,p);if(!f)continue;A[k]=ba566New(P,f,p);ba566Put(P,e,k,A[k].p)}
+  if(A[0]||A[1])e.ba566=A;else delete e.ba566}});
+/* after every change: an attached end follows its beam, slides along it when moved along it, lets go when moved off it or when the beam is gone */
+XD.push(()=>{let ch=false;for(const e of P.els){if(e.cat!=='beam'||e.use!=='brace'||!Array.isArray(e.ba566))continue;
+  for(const k of [0,1]){const a=ba566Of(e,k);if(!a){if(e.ba566[k]){e.ba566[k]=null;ch=true}continue}
+    let b=IDX.get(a.h),S=ba566Seg(P,b);const cur=ba566End(P,e,k);
+    if(!S){e.ba566[k]=null;ch=true;continue}          // the beam is gone (or is no beam any more): the end stays where it is
+    const L=Math.hypot(S[1][0]-S[0][0],S[1][1]-S[0][1]),G=ba566G(S),comp=ba566At(S,ba566S(a,L));
+    if(ba566Near(cur,comp,0.5)){if(!ba566Near(a.p,cur,0.05)||String(a.g)!==String(G)){a.p=cur.map(x=>Math.round(x*10)/10);a.g=G;ch=true}continue}
+    if(!ba566Near(cur,a.p,0.5)){          // the brace end was moved: along the beam it slides, off it it lets go
+      const j=ba566Proj(S,cur),hw=Math.max(((typ(P,b)||{}).w||200)/2,20);
+      if(j&&j.s>=-1e-6&&j.s<=1+1e-6&&j.d<=hw+0.5&&j.dz<=50){const s=clamp(j.s,0,1),q=ba566At(S,s);a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*L:s*L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);
+        ba566Put(P,e,k,q);a.p=ba566End(P,e,k);a.g=G}else{const f=ba566Find(P,e,cur);if(f){e.ba566[k]=ba566New(P,f,cur);ba566Put(P,e,k,e.ba566[k].p);e.ba566[k].p=ba566End(P,e,k)}else e.ba566[k]=null}ch=true;continue}
+    if(String(a.g)!==String(G)){          // the beam changed under a brace end that did not move: on the beam still (stretched, split) it stays; on a piece split off it goes with that piece
+      const j=ba566Proj(S,a.p);if(j&&j.s>=-1e-6&&j.s<=1+1e-6&&j.d<=0.5&&j.dz<=0.5){const s=clamp(j.s,0,1);a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*L:s*L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);a.g=G;ch=true;continue}
+      const f=P.els.find(o=>{if(o===b)return false;const T=ba566Seg(P,o);if(!T||String(ba566G(T))===String(G))return false;const q=ba566Proj(T,a.p);return q&&q.s>=-1e-6&&q.s<=1+1e-6&&q.d<=0.5&&q.dz<=0.5&&o.level===b.level});
+      if(f&&f.id>b.id&&Math.hypot(b.x2-b.x1,b.y2-b.y1)<Math.hypot(a.g[3]-a.g[0],a.g[4]-a.g[1])-0.5){const T=ba566Seg(P,f),q=ba566Proj(T,a.p),s=clamp(q.s,0,1);a.h=f.id;a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*q.L:s*q.L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);a.g=ba566G(T);ch=true;continue}}
+    ba566Put(P,e,k,comp);a.p=ba566End(P,e,k);a.g=G;ch=true}          // the beam moved, turned or changed: the end goes with its place along it
+  ba566Tidy(e)}return ch});
+/* copies of a brace and its beam: the copy of the brace holds the copy of the beam */
+{const f0=cloneIds;cloneIds=function(ids){const out=f0.apply(this,arguments),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(!c||!Array.isArray(c.ba566))continue;for(const a of c.ba566)if(a&&M.has(a.h))a.h=M.get(a.h)}return out}}
+/* ---- Properties of attached braces: after Structural Usage ---- */
+function ba566Rows(els){const R=[];for(const k of [0,1]){if(!els.every(x=>ba566Of(x,k)))continue;const s=k?'e':'s',V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},A=x=>ba566Of(x,k),T=V(x=>A(x).t==='r'?'r':'d');
+    R.push(PR.ro('p_ba566h'+s,(()=>{const h=V(x=>A(x).h),b=h===''?null:IDX.get(h);return b?((typ(P,b)||{}).name||t('beam'))+(b.mark?' ('+b.mark+')':''):t('varies')})()));
+    R.push(PR.sel('ba566t'+s,'p_ba566t'+s,T,[['d',t('ba566_d')],['r',t('ba566_r')],['n',t('ba566_n')]]));
+    if(T==='d')R.push(PR.num('ba566v'+s,'p_ba566d'+s,V(x=>A(x).v),t('u_mm'),'step="10" min="0"'));else if(T==='r')R.push(PR.num('ba566v'+s,'p_ba566r'+s,V(x=>A(x).v),'','step="0.05" min="0" max="1"'));
+    R.push(PR.sel('ba566r'+s,'p_ba566f'+s,V(x=>A(x).r?1:0),[[0,t('ba566_fs')],[1,t('ba566_fe')]]))}return R.join('')}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||isNew||!els.length||!els.every(x=>x.use==='brace'))return h;const R=ba566Rows(els);if(!R)return h;
+  const m=/<div class="pr"><label for="p_use">[\s\S]*?<\/div><\/div>/.exec(h);if(m){const j=m.index+m[0].length;return h.slice(0,j)+R+h.slice(j)}return h+R}}
+XF.push((cat,o,key,raw)=>{const m=/^ba566(t|v|r)(s|e)$/.exec(key);if(cat!=='beam'||!m)return false;const k=m[2]==='e'?1:0,a=ba566Of(o,k);if(!a)return true;
+  const b=IDX.get(a.h),S=ba566Seg(P,b);if(!S)return true;const L=Math.hypot(S[1][0]-S[0][0],S[1][1]-S[0][1]),s=ba566S(a,L);
+  const val=(t,r)=>{const u=r?1-s:s;return t==='r'?Math.round(u*1e4)/1e4:Math.round(u*L*10)/10};
+  if(m[1]==='t'){if(raw==='n'){o.ba566[k]=null;ba566Tidy(o);return true}const t=raw==='r'?'r':'d';if(t!==a.t){a.t=t;a.v=val(t,a.r)}return true}
+  if(m[1]==='r'){const r=raw==='1'||raw===1?1:0;if(r!==(a.r?1:0)){a.r=r;a.v=val(a.t,r)}return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;a.v=a.t==='r'?Math.round(clamp(v,0,1)*1e4)/1e4:Math.round(clamp(v,0,L)*10)/10;return true});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam'||!('ba566' in e))continue;if(e.use!=='brace'||!Array.isArray(e.ba566)){delete e.ba566;continue}
+  e.ba566=[0,1].map(k=>{const a=e.ba566[k];if(!a||typeof a!=='object'||a.h==null||!isFinite(+a.v))return null;const t=a.t==='r'?'r':'d',v=t==='r'?clamp(+a.v,0,1):Math.max(0,+a.v);
+    const p=Array.isArray(a.p)&&a.p.length===3&&a.p.every(x=>isFinite(+x))?a.p.map(Number):null,g=Array.isArray(a.g)&&a.g.length===6&&a.g.every(x=>isFinite(+x))?a.g.map(Number):null;
+    return{h:a.h,t,v,r:a.r?1:0,p:p||ba566End(P,e,k),g:g||[0,0,0,0,0,0]}});ba566Tidy(e)}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;for(const k of [0,1]){const s=k?'e':'s',A=e=>ba566Of(e,k);
+    F.push({k:'ba566t'+s,l:tr('p_ba566t'+s),g:e=>{const a=A(e);return a?tr(a.t==='r'?'ba566_r':'ba566_d'):''},grp:'i'});
+    F.push({k:'ba566v'+s,l:tr('p_ba566v'+s),g:e=>{const a=A(e);return a?a.v:''},grp:'i',num:1,dec:2})}return F}}
+Object.assign(STR,{
+  p_ba566hs:['ปลายเริ่ม ยึดกับคาน','Start Attached to'],p_ba566he:['ปลายสุด ยึดกับคาน','End Attached to'],
+  p_ba566ts:['ปลายเริ่ม แบบการยึด (Start Attachment Type)','Start Attachment Type'],p_ba566te:['ปลายสุด แบบการยึด (End Attachment Type)','End Attachment Type'],
+  p_ba566ds:['ปลายเริ่ม ระยะยึด (Start Attachment Distance)','Start Attachment Distance'],p_ba566de:['ปลายสุด ระยะยึด (End Attachment Distance)','End Attachment Distance'],
+  p_ba566rs:['ปลายเริ่ม สัดส่วนยึด (Start Attachment Ratio)','Start Attachment Ratio'],p_ba566re:['ปลายสุด สัดส่วนยึด (End Attachment Ratio)','End Attachment Ratio'],
+  p_ba566vs:['ปลายเริ่ม ระยะหรือสัดส่วนยึด','Start Attachment Distance or Ratio'],p_ba566ve:['ปลายสุด ระยะหรือสัดส่วนยึด','End Attachment Distance or Ratio'],
+  p_ba566fs:['ปลายเริ่ม วัดจาก (ปลายของคาน)','Start Attachment measured from'],p_ba566fe:['ปลายสุด วัดจาก (ปลายของคาน)','End Attachment measured from'],
+  ba566_d:['ระยะ (Distance)','Distance'],ba566_r:['สัดส่วน (Ratio)','Ratio'],ba566_n:['ปล่อย (ไม่ยึด)','Detached'],ba566_fs:['ปลายเริ่มของคาน','Start of the beam'],ba566_fe:['ปลายสุดของคาน','End of the beam']});
+/* ===== 567 Stick Symbol Location and Camber Size of beams (V1.567; Revit: a structural framing's Properties › Structural: Stick Symbol Location, Top of
+   Geometry, Center of Geometry, Bottom of Geometry or Location Line; Camber Size).  The stick symbol of a beam in a Coarse plan (V1.564) is drawn on the
+   beam as built (its y Justification and y Offset Value, at each end when they are Independent) for Top, Center and Bottom of Geometry (Center the
+   default), or on its location line for Location Line; its cutback and its moment connection symbols go with it.  Camber Size is the upward camber the
+   beam is to be made with (mm, 0 none): in Properties, schedules and beam tags (with a 'c=' before it); the model is drawn straight, as in Revit.
+   Braces have neither. */
+/* e.ssl567 't' | 'b' | 'l' (none: 'c' Center of Geometry); e.cmb567 mm (none: 0) */
+const SSL567=['t','c','b','l'];
+const ssl567Of=e=>{const v=e&&e.ssl567;return v==='t'||v==='b'||v==='l'?v:'c'};
+const cmb567Of=e=>{const v=e&&e.cat==='beam'&&e.use!=='brace'?+e.cmb567:0;return isFinite(v)&&v>0?v:0};
+/* the stick on the beam as built, unless it is to stay on the location line */
+stk564Line=(f0=>(Q,e,sc)=>{const s=f0(Q,e,sc);if(!e||e.use==='brace'||ssl567Of(e)==='l')return s;const F=yj560At(Q,e);if(!F)return s;return s.map(p=>{const d=F(p[0],p[1]);return[p[0]+d[0],p[1]+d[1]]})})(stk564Line);
+/* ---- Properties: after the moment connections ---- */
+function bm567Rows(els){const V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''};
+  return PR.num('cmb567','p_cmb567',V(cmb567Of),t('u_mm'),'step="1" min="0"')+PR.sel('ssl567','p_ssl567',V(ssl567Of),SSL567.map(k=>[k,t('ssl567_'+k)]))}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||isNew||!els.length||els.some(x=>x.use==='brace'))return h;const R=bm567Rows(els);
+  const m=/<div class="pr"><label for="p_mc563e">[\s\S]*?<\/div><\/div>/.exec(h)||/<div class="pr"><label for="p_use">[\s\S]*?<\/div><\/div>/.exec(h);if(m){const j=m.index+m[0].length;return h.slice(0,j)+R+h.slice(j)}return h+R}}
+XF.push((cat,o,key,raw)=>{if(cat!=='beam'||(key!=='cmb567'&&key!=='ssl567'))return false;if(o.use==='brace')return true;
+  if(key==='ssl567'){if(raw==='t'||raw==='b'||raw==='l')o.ssl567=raw;else delete o.ssl567;return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;const r=Math.round(clamp(v,0,1000));if(r)o.cmb567=r;else delete o.cmb567;return true});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam')continue;if(e.use==='brace'){delete e.ssl567;delete e.cmb567;continue}
+  if('ssl567' in e&&ssl567Of(e)==='c')delete e.ssl567;if('cmb567' in e){const v=Math.round(clamp(+e.cmb567,0,1000));if(isFinite(v)&&v>0)e.cmb567=v;else delete e.cmb567}}});
+/* ---- schedules and tags ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;F.push({k:'cmb567',l:tr('p_cmb567')+' (mm)',g:e=>e.use==='brace'?'':cmb567Of(e),grp:'i',num:1,dec:0});
+  F.push({k:'ssl567',l:tr('p_ssl567'),g:e=>e.use==='brace'?'':tr('ssl567_'+ssl567Of(e)),grp:'i'});return F}}
+{const f0=tagLabel;tagLabel=(Q,e,d)=>{const s=f0(Q,e,d),c=e&&e.cat==='beam'&&!(d&&d.sp)?cmb567Of(e):0;return c?s+' c='+c:s}}
+Object.assign(STR,{
+  p_cmb567:['ระยะโก่งคาน (Camber Size)','Camber Size'],p_ssl567:['ตำแหน่งเส้นเดี่ยว (Stick Symbol Location)','Stick Symbol Location'],
+  ssl567_t:['บนสุดของคาน (Top of Geometry)','Top of Geometry'],ssl567_c:['กึ่งกลางคาน (Center of Geometry)','Center of Geometry'],ssl567_b:['ท้องคาน (Bottom of Geometry)','Bottom of Geometry'],ssl567_l:['แนวคาน (Location Line)','Location Line']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59026,11 +59618,21 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_door]] ((DR)) และ [[t_window]] ((WN)): เลือกชนิด แล้วชี้บนผนัง ด้านเปิดตามด้านที่เมาส์อยู่ กด ((Space)) สลับบานพับ
 - [[t_opening]]: ช่องสี่เหลี่ยมทะลุผนัง ไม่มีบาน
 - [[t_shaft]]: ช่องเปิดแนวดิ่ง เจาะพื้นและฝ้าทุกแผ่นที่ผ่าน (ช่องลิฟต์ ช่องท่อ)
+- [[t_vopn]]: เจาะช่องในพื้น ฝ้า หรือหลังคาแผ่นเดียว (สถาปัตย์หรือโครงสร้าง › ช่องเปิด) คลิกแผ่นที่จะเจาะ แล้ววาดขอบช่องเป็นเส้นหรือสี่เหลี่ยม ช่องไม่ทะลุชั้นอื่น และไปกับแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก หรือลบ
 - หลายวง: ติ๊ก หลายวง ที่แถบตัวเลือกของ [[t_shaft]] วงในเป็นเกาะที่พื้นยังอยู่ วงแยกเป็นช่องชาฟต์อีกช่อง · เลือกช่องชาฟต์แล้วกด [[a_ebd397]] เพื่อแก้วงทั้งหมด
 
 # เสาและคาน
 - [[t_column]] ((CL)): คลิกเพื่อวาง กด ((Space)) หมุน 90°
 - [[t_beam]] ((BM)) อยู่ในแท็บ [[tab_struct]]: วาดเป็นเส้นเหมือนผนัง ระดับหลังคานตั้งในแผงคุณสมบัติ
+- คุณสมบัติของคาน [[g_bcend]]: [[p_zj559]] บอกว่าส่วนไหนของคานอยู่บนแนวคาน (ระดับอ้างอิงบวกระยะเลื่อนปลายเริ่มและปลายสุด): [[zj559_t]] (เดิม) [[zj559_c]] หรือ [[zj559_b]] แล้ว [[p_zo559]] เลื่อนคานขึ้นลงอีก ทั้งคานย้ายตาม ใน 3 มิติ รูปตัด ปริมาณ เสาและผนังที่ยึดใต้คาน · [[p_zt559]] และ [[p_zb559]] อยู่ในหมวดขนาด และในตารางรายการ
+- [[p_yj560]] ของคาน: ด้านไหนของคานอยู่บนเส้นที่วาด มองจากปลายเริ่มไปปลายสุด [[yj560_l]] (คานอยู่ทางขวาของเส้น) [[yj560_c]] (เดิม) หรือ [[yj560_r]] แล้ว [[p_yo560]] เลื่อนคานออกข้าง ค่าบวกไปทางซ้าย คานในแปลน 3 มิติ รูปตัด และการคลิกเลือกย้ายตาม ความยาว ปลายคาน และเส้นวิเคราะห์อยู่ที่เส้นที่วาด สะท้อนแล้วซ้ายกลายเป็นขวา (คานขอบพื้นชิดขอบ คานชิดแนวกริด)
+- [[p_csr561]] ของคาน: หมุนหน้าตัดรอบแนวคาน ค่าบวกหลังคานเอียงไปทางซ้าย (มองจากปลายเริ่มไปปลายสุด) เช่นแปหลังคาที่วางตามความลาด รูปร่างในแปลน 3 มิติ รูปตัด ระดับหลังคานและท้องคาน และการคลิกเลือกตามมุม สะท้อนแล้วมุมกลับทิศ
+- [[p_yzi562]] ของคาน: [[yzi562_u]] (แบบเดิม) ใช้การจัดชิดและระยะเลื่อนชุดเดียวทั้งตัว [[yzi562_i]] ให้ปลายเริ่มและปลายสุดมีการจัดชิดและระยะเลื่อนแนวราบและแนวดิ่งของตัวเอง คานที่สร้างจึงเฉียงจากแนวคานได้ เช่นชิดผิวผนังที่ไม่ขนานกับแนว หรือหลังคานอยู่บนแนวที่ปลายหนึ่งและท้องคานอยู่บนแนวที่อีกปลาย เปลี่ยนเป็นแยกปลายแล้วทั้งสองปลายได้ค่าเดิม กลับเป็นเท่ากันได้ค่าของปลายเริ่ม
+- [[p_mc563s]] และ [[p_mc563e]] ของคาน: [[mc563_n]] [[mc563_f]] หรือ [[mc563_c]] แปลนแสดงสัญลักษณ์ที่ปลายนั้น (สามเหลี่ยมทึบ หรือสามเหลี่ยมโปร่งมีขีดขวาง) [[a_stset]] หน้า [[a_sr563]] เลือกได้ว่าจะแสดงหรือไม่
+- [[stk564_l]]: ที่ระดับรายละเอียดหยาบ แปลนวาดคานและค้ำยันเป็นเส้นเดียวตามแนวคาน ปลายที่ชนเสา คาน หรือค้ำยันอื่นร่นเข้าตาม [[scb564_l]] และ [[scr564_l]] (มม. บนกระดาษ) [[a_stset]] หน้า [[a_sr563]] เลือก [[stk564_s]] [[stk564_a]] หรือ [[stk564_n]]
+- สัญลักษณ์ค้ำยันในแปลน: [[br565_rep]] [[br565_l]] หรือ [[br565_p]] (เยื้องไปทางซ้ายตาม [[br565_off]] มม. บนกระดาษ) [[br565_a]] และ [[br565_b]] (ค้ำยันที่ขึ้นมาถึงระดับนั้นจากข้างล่าง) อยู่ใน [[a_stset]] หน้า [[a_sr563]]
+- ค้ำยันที่ปลายวางบนคาน (บนแนวคานในแปลน สูงต่างไม่เกิน 50 มม. ไม่ใช่บนเสา) ยึดกับคานนั้น: [[p_ba566ts]] [[ba566_d]] หรือ [[ba566_r]] ระยะหรือสัดส่วนวัดจากปลายเริ่มหรือปลายสุดของคาน ปลายตามคานเมื่อคานย้าย หมุน ยืด หรือแบ่ง เลื่อนตามคานเมื่อย้ายไปตามคาน ย้ายออกจากคานหรือเลือก [[ba566_n]] แล้วปล่อย
+- [[p_ssl567]] ของคาน: [[ssl567_t]] [[ssl567_c]] หรือ [[ssl567_b]] วาดเส้นเดี่ยวบนคานตามที่สร้าง (ตามการจัดชิดแนวราบ) [[ssl567_l]] วาดบนแนวคาน [[p_cmb567]] (มม.) อยู่ในคุณสมบัติ ตารางรายการ และป้ายคาน (c=)
 - [[a_steel]] (แท็บ [[tab_struct]] แผง [[p_struct]]): ตารางหน้าตัดเหล็กมาตรฐาน H, I, รางน้ำ [, ตัวซี C, ฉาก L, กล่อง □ และท่อกลม Ø (JIS G 3192, 3350, 3466, 3444 · มอก. 1227, 1228, 107) · ติ๊กเลือกขนาดแล้วกด โหลด เป็นชนิดเสาหรือคานเหล็ก · ใน แก้ชนิด ตั้ง [[f_sec]] เป็นเหล็กแล้วแก้ขนาด d b tw tf r ได้ พร้อมค่า A น้ำหนัก กก./ม. Ix Iy Zx Zy rx ry · แปลน 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดจริง · ถอดปริมาณและ BOQ เป็นกิโลกรัม (42 บาท/กก. แก้ได้)
 - [[a_colgrids]] (ขณะใช้ [[t_column]]) และ [[a_beamgrids]] (ขณะใช้ [[t_beam]]): วางเสาที่จุดตัดกริด หรือวางคานตามแนวกริดจากจุดตัดหนึ่งถึงจุดตัดถัดไป · ใช้กริดที่เลือก หรือทุกกริดถ้าไม่ได้เลือก · ข้ามตำแหน่งที่มีอยู่แล้ว (รวมเสาจากชั้นล่างที่สูงทะลุขึ้นมา)
 - [[a_cols]] (ขณะใช้ [[t_column]] แผง [[p_placement]]): คลิกจุดฐาน แล้วคลิกจุดบน · แถบตัวเลือกมี [[o_sl1]] และ [[o_sl2]] แต่ละอันเป็นระดับกับระยะ (เริ่มที่ระดับนี้ถึงระดับถัดขึ้นไป) · ในรูปด้านและรูปตัด เครื่องมือเสาวางได้เฉพาะเสาเอียง คลิกสองจุดบนระนาบของมุมมอง ความสูงตามที่คลิก (เสา ผนัง หรือคานใต้ตัวชี้ตอนคลิกแรกกำหนดระนาบ หรือเลือก [[o_slpl]] เป็นกริดหรือแนวตัดในแถบตัวเลือก) · ใน 3 มิติ คลิกบนระดับของ [[o_sl1]] แล้วบนระดับของ [[o_sl2]] หรือติ๊ก [[o_sl3s]] เพื่อใช้จุดบนผิวที่คลิก · [[a_colv]] กลับไปวางเสาแนวดิ่ง
@@ -59293,11 +59895,21 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_door]] ((DR)) and [[t_window]] ((WN)): pick a type, then point at a wall. The swing follows the side the pointer is on; ((Space)) flips the hand
 - [[t_opening]]: a rectangular hole through a wall, with no leaf
 - [[t_shaft]]: a vertical opening that cuts every floor and ceiling it passes (lift shaft, riser shaft)
+- [[t_vopn]]: an opening in one floor, ceiling or roof (Architecture or Structure › Opening): click the one to cut, then sketch the shape with lines or a rectangle; nothing else is cut, and it goes with its host when the host is moved, turned, mirrored, copied or deleted
 - Multiple Loops: tick it on the Options Bar of [[t_shaft]]; a loop inside another is an island the floors keep, a loop apart is another shaft · select a shaft and press [[a_ebd397]] to edit its loops
 
 # Columns and beams
 - [[t_column]] ((CL)): click to place; ((Space)) turns it 90°
 - [[t_beam]] ((BM)) is on the [[tab_struct]] tab: drawn as a line, like a wall; the top level is in Properties
+- A beam's Properties, [[g_bcend]]: [[p_zj559]] says which part of the beam is on its location line (the Reference Level plus the Start and End Level Offsets): [[zj559_t]] (as before), [[zj559_c]] or [[zj559_b]]; [[p_zo559]] then moves the beam up or down; the whole beam follows, in 3D, sections, quantities, and the columns and walls attached under it · [[p_zt559]] and [[p_zb559]] are with its dimensions and in schedules
+- A beam's [[p_yj560]]: which side of the beam is on the line it was drawn along, looking from its start to its end: [[yj560_l]] (the beam to the right of the line), [[yj560_c]] (as before) or [[yj560_r]]; [[p_yo560]] then moves it sideways, more than 0 to its left; the beam in plans, 3D and sections, and what a click picks, follow; its length, ends and analytical line stay on the line; Mirror makes Left Right (edge beams flush with a slab edge or a grid)
+- A beam's [[p_csr561]]: its section turned about its line, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin square to a roof's slope; its outline in plans, its 3D and sections, its Elevation at Top and Bottom and what a click picks follow; Mirror turns the angle round
+- A beam's [[p_yzi562]]: [[yzi562_u]] (as before) places the whole beam by one justification and offset each way; [[yzi562_i]] gives its start and its end their own y and z Justification and Offset Value, so that the beam as built may run askew to its location line, e.g. flush with a wall face that is not parallel to it, or its top on the line at one end and its underside at the other; turning to Independent gives both ends the values it had, back to Uniform takes the start's
+- A beam's [[p_mc563s]] and [[p_mc563e]]: [[mc563_n]], [[mc563_f]] or [[mc563_c]]; plans show a symbol at that end (a filled triangle, or an open one with a bar across its tip); [[a_stset]], [[a_sr563]], says whether plans show them
+- [[stk564_l]]: at the Coarse detail level plans draw beams and braces as one line along their location line; an end that meets a column, a beam or a brace is held back by [[scb564_l]] or [[scr564_l]] (mm on paper); [[a_stset]], [[a_sr563]], chooses [[stk564_s]], [[stk564_a]] or [[stk564_n]]
+- Brace symbols in plans: [[br565_rep]] [[br565_l]] or [[br565_p]] (offset to its left by the [[br565_off]], mm on paper), [[br565_a]] and [[br565_b]] (braces coming up to the level from under it), in [[a_stset]], [[a_sr563]]
+- A brace end placed on a beam (on its line in plan, its height within 50 mm, not on a column) is attached to it: [[p_ba566ts]] [[ba566_d]] or [[ba566_r]], measured from the start or the end of the beam; the end follows the beam when it moves, turns, is stretched or split, slides along it when moved along it, and lets go when moved off it or set to [[ba566_n]]
+- A beam's [[p_ssl567]]: [[ssl567_t]], [[ssl567_c]] or [[ssl567_b]] draws the stick on the beam as built (by its y Justification), [[ssl567_l]] on its location line; [[p_cmb567]] (mm) is in Properties, schedules and beam tags (c=)
 - [[a_steel]] (the [[tab_struct]] tab, [[p_struct]] panel): tables of standard steel shapes: H, I, channels [, lipped channels C, angles L, hollow sections □ and round tubes Ø (JIS G 3192, 3350, 3466, 3444 · TIS 1227, 1228, 107) · tick the sizes and Load them as steel column or beam types · in Edit Type set [[f_sec]] to a steel shape and change its d, b, tw, tf, r, with its A, kg/m, Ix, Iy, Zx, Zy, rx, ry · plans, 3D views, elevations and sections show the real section · quantities and the BOQ count it in kg (42 THB/kg, to change)
 - [[a_colgrids]] (with [[t_column]]) and [[a_beamgrids]] (with [[t_beam]]): a column at every grid crossing, or beams along the grids from one crossing to the next · of the selected grids, or of all of them · none where there is one already (a column from a level below that runs up through this one counts)
 - [[a_cols]] (with [[t_column]], in the [[p_placement]] panel): click the base, then the top · the options bar has the [[o_sl1]] and the [[o_sl2]], each a level with its offset (this level to the one above, to start with) · in an elevation or a section the column tool places slanted columns only: click two points on the plane of the view, at the heights you click (the column, wall or beam under the pointer at the first click sets the plane, or pick a grid or the cut as the [[o_slpl]] in the options bar) · in a 3D view click on the level of the [[o_sl1]], then on that of the [[o_sl2]], or tick [[o_sl3s]] to take the point you click on · [[a_colv]] goes back to upright columns
@@ -60390,6 +61002,16 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.555 · หลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion) วาดในรูปด้านและรูปตัด แบบ Revit: สถาปัตย์ › หลังคา ในรูปด้านหรือรูปตัด คลิกตามเส้นใต้หลังคาไปทางเดียวกัน (จับระดับชั้น กริด และขอบชิ้นงาน) Enter หรือ เสร็จสิ้น สร้างหลังคา Esc ถอยจุดสุดท้าย หลังคายาวตลอดความลึกของผนังที่อยู่ใต้ สันตามความลึกของมุมมอง ระดับและระยะเยื้องตั้งจากจุดต่ำสุด แก้หน้าตัดและขอบเขตได้เหมือนหลังคาแบบดึงอื่น ลากย้อนกลับหรือขึ้นตรงถูกปฏิเสธพร้อมบอกเหตุผล
 - V1.556 · กล้อง (Camera) วางในรูปด้านและรูปตัด และช่อง Perspective แบบ Revit: มุมมอง › กล้อง ในรูปด้านหรือรูปตัด คลิกแรกคือตำแหน่งตาที่ความสูงที่คลิก (ในรูปตัดอยู่บนแนวตัด ในรูปด้านอยู่ที่แนวรูปด้าน) คลิกที่สองคือจุดที่มอง บนชิ้นงานจะเล็งที่ผิวใต้เมาส์ ที่ว่างจะเล็งเข้าไปกลางรูป จับระดับชั้น กริด และขอบชิ้นงาน กล้องเงยหรือก้มตามความสูงสองจุด เปิดมุมมองใหม่ให้ทันที แสดงกล้องในรูปที่วางได้ ช่อง Perspective ในแถบตัวเลือก (ทั้งในแปลนและรูปด้าน) เอาออกจะได้มุมมอง 3 มิติแบบขนาน Esc เลือกตำแหน่งตาใหม่
 - V1.557 · วาดคานในรูปด้านและรูปตัด แบบ Revit: โครงสร้าง › คาน ในรูปด้านหรือรูปตัด คลิกจุดเริ่มและปลายของหลังคาน (จับระดับชั้น กริด และขอบชิ้นงาน เช่นหัวเสา) ความสูงต่างกันได้คานลาด คานอยู่ในแนวแกนเสาหรือคานใต้คลิกแรก หรือแนวผนังที่ขนานกับรูป ไม่มีจะอยู่บนแนวตัดของรูปตัดหรือแนวเครื่องหมายรูปด้าน ระดับอ้างอิงคือชั้นที่อยู่ใต้ปลายต่ำ พร้อมระยะเยื้องต้นและปลาย ระหว่างวาดเห็นแนวหลังคานและความลึกคาน เครื่องมือยังอยู่สำหรับคานถัดไป Esc เลือกจุดเริ่มใหม่ ค้ำยันยังวาดแบบเดิม
+- V1.558 · ช่องเปิดในแผ่น (Vertical Opening) แบบ Revit: สถาปัตย์หรือโครงสร้าง › ช่องเปิด › Vertical คลิกพื้น ฝ้า หรือหลังคาที่จะเจาะ (หรือเลือกไว้ก่อน) แล้ววาดขอบช่องเป็นเส้นหรือสี่เหลี่ยม เจาะเฉพาะแผ่นนั้น ไม่ทะลุชั้นอื่นแบบช่องชาฟต์ เห็นช่องในแปลน 3 มิติ รูปตัด พื้นที่และปริมาตรของแผ่น ช่องไปกับแผ่นเมื่อย้าย หมุน สะท้อน คัดลอก วาง และลบ คุณสมบัติบอกแผ่นที่เจาะ พื้นที่และปริมาตรที่เจาะออก มีในตารางรายการ แท็บโครงสร้างมีแผงช่องเปิดเพิ่ม
+- V1.559 · การจัดชิดแนวดิ่งของคาน (z Justification) แบบ Revit: คุณสมบัติของคาน หมวดตำแหน่งทางเรขาคณิต เลือกว่าหลังคาน กึ่งกลาง หรือท้องคานอยู่บนแนวคาน แล้วใส่ระยะเลื่อนแนวดิ่ง (z Offset Value) เลื่อนขึ้นลงอีก คานทั้งตัวย้ายตามใน 3 มิติ รูปตัด รูปด้าน ปริมาณ ระดับที่แท็กและ Spot อ่าน เสาและผนังที่ยึดใต้คาน และจุดต่อเหล็ก คุณสมบัติบอกระดับหลังคานและท้องคาน (Elevation at Top/Bottom) มีในตารางรายการ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน
+- V1.560 · การจัดชิดแนวราบของคาน (y Justification) แบบ Revit: คุณสมบัติของคาน หมวดตำแหน่งทางเรขาคณิต เลือกว่าด้านซ้าย กึ่งกลาง หรือด้านขวาของคานอยู่บนเส้นที่วาด (มองจากปลายเริ่ม) แล้วใส่ระยะเลื่อนแนวราบ (y Offset Value) เลื่อนออกข้างอีก คานในแปลน 3 มิติ รูปด้าน รูปตัด การคลิกเลือก และผนังหรือเสาที่ยึดใต้คานย้ายตาม ความยาวและปลายคานอยู่ที่เส้นเดิม สะท้อนแล้วซ้ายเป็นขวาให้ได้ภาพสะท้อนจริง มีในตารางรายการ คานใหม่รับค่าจากแผงคุณสมบัติ
+- V1.561 · มุมหมุนหน้าตัดของคาน (Cross-Section Rotation) แบบ Revit: คุณสมบัติของคาน หมวดข้อจำกัด ใส่มุมหมุนหน้าตัดรอบแนวคาน ค่าบวกหลังคานเอียงไปทางซ้าย (มองจากปลายเริ่มไปปลายสุด) เช่นแปหรือคานที่วางตั้งฉากกับหลังคาลาด หน้าตัดอยู่ตามการจัดชิดก่อนแล้วหมุนรอบเส้นแนวคาน รูปร่างในแปลนกว้างตามหน้าตัดที่หมุน 3 มิติ รูปด้าน รูปตัด ระดับหลังคานและท้องคาน ป้ายกำกับ ตารางรายการ การคลิกเลือก และผิวที่ผนังหรือเสายึดถึงตามไปด้วย ความยาวและปริมาตรเท่าเดิม สะท้อนแล้วมุมกลับทิศ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน ค้ำยันไม่ใช้ค่านี้
+- V1.562 · การจัดชิดแยกปลายของคาน (yz Justification: Independent) แบบ Revit: คุณสมบัติของคาน หมวดตำแหน่งทางเรขาคณิต มี yz Justification ก่อน y Justification เลือกเท่ากันทั้งตัว (แบบเดิม) หรือแยกแต่ละปลาย แยกปลายแล้วปลายเริ่มและปลายสุดมีการจัดชิดและระยะเลื่อนแนวราบและแนวดิ่งของตัวเอง คานที่สร้างเฉียงจากแนวคานได้ เช่นชิดผิวผนังที่ไม่ขนานกับแนว หรือหลังคานอยู่บนแนวที่ปลายหนึ่งและท้องคานอยู่บนแนวที่อีกปลาย แปลน 3 มิติ รูปตัด ระดับหลังคานและท้องคาน การคลิกเลือก และผิวที่ยึดตามไปทีละช่วง เปลี่ยนเป็นแยกปลายแล้วทั้งสองปลายได้ค่าเดิม กลับเป็นเท่ากันได้ค่าของปลายเริ่ม สะท้อนแล้วซ้ายขวาสลับที่ทั้งสองปลาย ตารางรายการมีช่องของแต่ละปลาย
+- V1.563 · การต่อปลายคานรับโมเมนต์ (Moment Connection Start / End) แบบ Revit: คุณสมบัติของคานมีการต่อปลายเริ่มและปลายสุด เลือกไม่มี โครงข้อแข็ง (Moment Frame) หรือโมเมนต์ยื่น (Cantilever Moment) แปลนแสดงสัญลักษณ์ที่ปลายนั้นของคานตามที่สร้าง: สามเหลี่ยมทึบสำหรับโครงข้อแข็ง สามเหลี่ยมโปร่งมีขีดขวางสำหรับโมเมนต์ยื่น ยาว 2.5 มม. บนกระดาษทุกมาตราส่วน การตั้งค่าโครงสร้างมีหน้าการแสดงสัญลักษณ์ (Symbolic Representation Settings) ดูรูปสัญลักษณ์และเลือกว่าจะแสดงในแปลนหรือไม่ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน ตารางรายการมีสองช่อง คัดลอกติดไป ค้ำยันไม่มีค่านี้
+- V1.564 · คานในแปลนหยาบแสดงเป็นเส้นเดียว (Stick Symbols) และระยะร่นสัญลักษณ์ (Symbolic Cutback Distance) แบบ Revit: แปลนที่ระดับรายละเอียดหยาบ (Coarse) วาดคานและค้ำยันเป็นเส้นเดียวตามแนวคาน แทนขอบคาน ด้วยเส้นและเส้นประของมันเอง (ตัด ใต้ระดับ หรือไกล) ปลายที่ชนเสา คาน หรือค้ำยันอื่นร่นเข้าตามระยะร่นบนกระดาษ (2.4 มม. ทุกมาตราส่วน) สัญลักษณ์การต่อปลายคานย้ายตามปลายเส้น ระดับกลางและละเอียดแสดงขอบคานเหมือนเดิม การตั้งค่าโครงสร้าง หน้าการแสดงสัญลักษณ์ เลือกว่าแปลนใดใช้: เฉพาะแปลนงานโครงสร้าง (ค่าเริ่มต้น) ทุกแปลน หรือไม่ใช้ และตั้งระยะร่นของคานและของค้ำยันแยกกัน
+- V1.565 · สัญลักษณ์ค้ำยันในแปลน (Brace Symbols) แบบ Revit: แปลนแสดงค้ำยันเหนือระดับ (ปลายล่างอยู่ที่ระดับนั้น เหมือนเดิม) และค้ำยันใต้ระดับ คือค้ำยันที่ขึ้นมาถึงระดับนั้นจากข้างล่าง (ปลายบนอยู่ไม่เกิน 1220 มม. ใต้พื้น) หรือลงจากระดับนั้น ด้วยเส้นของสิ่งที่อยู่ไกล การแสดงในแปลนเลือกได้ เส้น (Line) วาดบนแนวค้ำยันเหมือนเดิม หรือ เส้นขนาน (Parallel Line) วาดเยื้องไปทางซ้ายตามระยะบนกระดาษ (2.5 มม.) ไม่หายไปในเส้นคานที่อยู่เหนือมัน ขอบ เส้นเดี่ยว และเส้นกึ่งกลางเยื้องไปด้วย คลิกที่เส้นที่เห็นเลือกค้ำยันได้ การตั้งค่าโครงสร้าง หน้าการแสดงสัญลักษณ์ มีทั้งสี่ค่า
+- V1.566 · ค้ำยันยึดกับคาน (Brace Attachment) แบบ Revit: ค้ำยันใหม่ที่ปลายวางบนคาน (บนแนวคานในแปลนภายในความกว้างคาน สูงต่างไม่เกิน 50 มม. ไม่ใช่บนเสา) ยึดกับคานนั้นและวางบนแนวคาน คุณสมบัติของปลายที่ยึดมีแบบการยึด ระยะ (Distance) หรือสัดส่วน (Ratio 0 ถึง 1) และวัดจากปลายเริ่มหรือปลายสุดของคาน แก้ค่าแล้วปลายค้ำยันเลื่อนตาม ย้าย หมุน ยืด หรือแบ่งคานแล้วปลายค้ำยันไปกับตำแหน่งบนคาน ย้ายค้ำยันไปตามคานแล้วเลื่อนตามและค่าเปลี่ยน ย้ายออกจากคาน เลือกปล่อย หรือลบคานแล้วไม่ยึด คัดลอกค้ำยันพร้อมคานแล้วยึดกับคานที่คัดลอก ตารางรายการมีแบบและค่าของทั้งสองปลาย
+- V1.567 · ตำแหน่งเส้นเดี่ยว (Stick Symbol Location) และระยะโก่งคาน (Camber Size) แบบ Revit: คุณสมบัติของคานมีตำแหน่งเส้นเดี่ยว บนสุด กึ่งกลาง (ค่าเริ่มต้น) หรือท้องคาน วาดเส้นเดี่ยวในแปลนหยาบบนคานตามที่สร้าง (ตามการจัดชิดและระยะเลื่อนแนวราบ แยกปลายได้) หรือ แนวคาน (Location Line) วาดบนแนวคาน ระยะร่นและสัญลักษณ์การต่อปลายไปด้วย ระยะโก่งคาน (มม.) อยู่ในคุณสมบัติ ตารางรายการ และป้ายคาน (c=) แบบจำลองยังตรงเหมือน Revit ค้ำยันไม่มีค่านี้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61120,6 +61742,16 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.555 · Roof by Extrusion sketched in elevations and sections, as in Revit: Architecture › Roof in an elevation or a section takes clicks along the roof's underside, one way across (catching levels, grids and edges); Enter or Finish makes the roof, Esc takes the last point back; it runs the depth of the walls under it, its ridge along the view's depth, its level and offset from the lowest point; its profile and footprint are edited as any extruded roof's; a point that turns back or goes straight up is refused with the reason
 - V1.556 · Camera placed in elevations and sections, and Perspective on the options bar, as in Revit: View › Camera in an elevation or a section takes the eye where clicked, at that height (on the cut of a section, on the line of an elevation), then what it looks at: the face of the model under the pointer, else into the middle of the view; clicks catch levels, grids and edges; the camera tilts up or down between the two heights and its view opens; Show Camera shows it where it was placed; Perspective on the options bar (in plans too), cleared, makes an orthographic 3D view; Esc picks the eye again
 - V1.557 · Beams drawn in elevations and sections, as in Revit: Structure › Beam in an elevation or a section takes the start and the end of the beam's top (catching levels, grids and edges, such as the top of a column); at two heights it slopes; it goes on the axis of the column or beam under the first click, or on a wall along the view, else on the cut of a section or the line of an elevation; its Reference Level is the one under its lower end, with its Start and End Level Offsets; the top and the depth of the beam follow the pointer; the tool stays on for the next beam; Esc picks the start again; Brace works as before
+- V1.558 · Vertical Opening, as in Revit: Architecture or Structure › Opening › Vertical: click the floor, ceiling or roof to cut (or have it selected), then sketch the shape with lines or a rectangle; it cuts that one only, not every storey as a Shaft does; the opening shows in plans, 3D and sections and comes off the host's area and volume; it goes with its host when the host is moved, turned, mirrored, copied, pasted or deleted; Properties give its host and the area and volume cut; it can be scheduled; the Structure tab has an Opening panel too
+- V1.559 · Beam z Justification, as in Revit: in a beam's Properties, Geometric Position, choose whether its top, its centre or its bottom is on the location line, and a z Offset Value moves it up or down from there; the whole beam follows in 3D, sections, elevations, quantities, the heights tags and spots read, the columns and walls attached under it and its steel connections; Properties give its Elevation at Top and Elevation at Bottom, also in schedules; a new beam takes them from Properties while the Beam tool is on
+- V1.560 · Beam y Justification, as in Revit: in a beam's Properties, Geometric Position, choose whether its left side, its centre or its right side (looking from its start) is on the line it was drawn along, and a y Offset Value moves it further sideways; the beam in plans, 3D, elevations and sections, what a click picks and the walls or columns attached under it follow, while its length and ends stay on the line; Mirror turns Left into Right for a true image; also in schedules; a new beam takes them from Properties
+- V1.561 · Beam Cross-Section Rotation, as in Revit: in a beam's Properties, Constraints, type the angle its section turns about its line, more than 0 tipping its top to its left (looking from its start to its end), e.g. a purlin or a beam square to a sloping roof; the section sits by its justifications first and then turns about the location line; its outline in plans (as wide as the turned section), 3D, elevations and sections, its Elevation at Top and Bottom, tags, schedules, what a click picks and the surface a wall or a column attached to it reaches all follow; its length and volume stay; Mirror turns the angle round; a new beam takes it from Properties while the Beam tool is on; braces are not turned
+- V1.562 · Beam yz Justification, Independent, as in Revit: a beam's Properties, Geometric Position, have yz Justification before y Justification: Uniform (as before) or Independent, which gives its start and its end their own y and z Justification and Offset Value, so that the beam as built may run askew to its location line, e.g. flush with a wall face that is not parallel to it, or its top on the line at one end and its underside at the other; plans, 3D, sections, Elevation at Top and Bottom, picking and attached walls and columns follow between the ends; turning to Independent gives both ends the values it had, back to Uniform takes the start's; Mirror swaps Left and Right at both ends; schedules have each end's fields
+- V1.563 · Beam Moment Connections, as in Revit: a beam's Properties have Moment Connection Start and End: None, Moment Frame or Cantilever Moment; plans show a symbol at that end of the beam as built, a filled triangle for a moment frame, an open triangle with a bar across its tip for a cantilever moment, 2.5 mm long on paper at any scale; Structural Settings has a Symbolic Representation Settings page with the symbols and whether plans show them; a new beam takes them from Properties while the Beam tool is on; schedules have both ends; copies keep them; braces have none
+- V1.564 · Framing as stick symbols in Coarse plans, with Symbolic Cutback Distance, as in Revit: a plan at the Coarse detail level draws beams and braces as one line along their location line in place of their outline, in their own pen and dashes (cut, below, beyond); an end that meets a column, a beam or a brace is held back by the cutback distance on paper (2.4 mm at any scale); the moment connection symbols move with the ends; Medium and Fine show the outline as before; Structural Settings, Symbolic Representation Settings, says which plans do it: Structural plans (the default), All plans or None, with the cutback of beams and of braces set apart
+- V1.565 · Brace Symbols in plans, as in Revit: a plan shows the braces above its level (their lower end on it, as before) and now the braces below it, those coming up to it from under it (their upper end within 1220 mm under its floor) or going down from it, in the pen of what lies beyond; Plan representation Line draws a brace on its line as before, Parallel Line beside it, offset to its left by the Parallel Line Offset on paper (2.5 mm), so that it is not lost in the line of a beam over it; its outline, stick and centre line move with it and a click on the line drawn picks it; Structural Settings, Symbolic Representation Settings, has the four
+- V1.566 · Brace ends attached to beams, as in Revit: a new brace whose end is placed on a beam (on its line in plan, within its width, its height within 50 mm, not on a column) is attached to it and put on its line; Properties give an attached end its Attachment Type, Distance or Ratio (0 to 1), measured from the start or the end of the beam, and the end moves when they change; a beam moved, turned, stretched or split takes the brace end along at its place on it; a brace moved along the beam slides on it and its value changes; moved off the beam, set Detached, or its beam deleted, it lets go; a brace copied with its beam holds the copy; schedules have both ends' type and value
+- V1.567 · Stick Symbol Location and Camber Size of beams, as in Revit: a beam's Properties have Stick Symbol Location: Top, Center (the default) or Bottom of Geometry draw its stick in Coarse plans on the beam as built (its y Justification and y Offset Value, end by end when Independent), Location Line on its location line; the cutback and moment connection symbols go with it; Camber Size (mm) is in Properties, schedules and beam tags (c=), the model drawn straight as in Revit; braces have neither
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -65067,6 +65699,168 @@ window.PenumBIM.r557={
   prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
+/* V1.558 test API: Vertical Opening */
+window.PenumBIM.r558={
+  mk:(cat,lid,pts,o)=>{let id=0;edit(()=>{const d=defs(cat),T=(P.types[cat]||[])[0],e=cat==='roof'?{id:P.seq++,cat,type:T.id,level:lid,pts,shape:'flat',slope:0,overhang:0,off:0,alt:0}
+      :cat==='ceiling'?{id:P.seq++,cat,type:T.id,level:lid,pts,off:2600}:{id:P.seq++,cat,type:T.id,level:lid,pts,off:0};Object.assign(e,o||{});P.els.push(e);id=e.id});refresh();return id},
+  vo:(hid,pts)=>{let id=0;edit(()=>{const h=IDX.get(hid);const e={id:P.seq++,cat:'vopn',host:hid,level:h.level,pts};P.els.push(e);id=e.id});refresh();return id},
+  shaft:(lid,pts,top)=>{let id=0;edit(()=>{const e={id:P.seq++,cat:'shaft',level:lid,pts,baseOff:0,top:top||0,topOff:0,height:top?0:9000};P.els.push(e);id=e.id});refresh();return id},
+  rcp:lid=>{let v=null;edit(()=>{v=rcpPlan(P,lid,LANG==='en')});refresh();return v.id},
+  tool:()=>ui.tool,hv:()=>ui.hov,selIds:()=>[...ui.sel],
+  pscr:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+x*n.s+n.ox,y:r.top+y*n.s+n.oy}},
+  el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  vos:()=>P.els.filter(e=>e.cat==='vopn').map(e=>JSON.parse(JSON.stringify(e))),
+  holes:id=>{const e=IDX.get(id);return e?(e.cat==='roof'?roofHoles(P,e):slabHoles(P,e)).length:-1},
+  net:id=>{const e=IDX.get(id);if(!e)return-1;const O=vo558Out(P,e),H=e.cat==='roof'?roofHoles(P,e):slabHoles(P,e);return Math.round(polyMinus(O,holeParts(H)).reduce((s,pc)=>s+Math.abs(area2(pc)),0)/1e4)/100},
+  qty:id=>{const q=QTY().get(id);return q?{area:Math.round(q.area/1e4)/100,vol:q.vol!=null?Math.round(q.vol/1e7)/100:null}:null},
+  geo:id=>{const G=vo558Geo(P,IDX.get(id));return G?{h:G.h.id,cut:Math.round(G.cut*1000)/1000,vol:Math.round(G.vol*1000)/1000,per:Math.round(G.per*1000)/1000}:null},
+  z:id=>zRange(P,IDX.get(id)).map(Math.round),
+  show:(vid,id)=>planShow(viewById(vid),IDX.get(id)),
+  /* how many triangles of the element's 3D cover the plan point (x, y) */
+  cover:(id,x,y)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let n=0;const s=(a,b,c)=>(a[0]-c[0])*(b[1]-c[1])-(b[0]-c[0])*(a[1]-c[1]);
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+8<m.t.length;k+=9){const A=[m.t[k],m.t[k+2]],Bq=[m.t[k+3],m.t[k+5]],Cq=[m.t[k+6],m.t[k+8]],p=[x,y],d1=s(p,A,Bq),d2=s(p,Bq,Cq),d3=s(p,Cq,A);
+      if(Math.abs(s(A,Bq,Cq))<1)continue;const ng=d1<0||d2<0||d3<0,ps=d1>0||d2>0||d3>0;if(!(ng&&ps))n++}}return n},
+  pick:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null},
+  hov:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);return XT.vopn.hov(PANES[ui.ap],v,{x:x*n.s+n.ox,y:y*n.s+n.oy})},
+  sel:ids=>{ui.sel=new Set(ids);refresh();return[...ui.sel]},so:(k,v)=>{ui.opt[k]=v;refresh();return ui.opt[k]},
+  st:()=>ui.vo558?JSON.parse(JSON.stringify(ui.vo558)):null,sk:()=>ui.sk?ui.sk.pts.length:-1,
+  esc:()=>{cancelTool();return{s:ui.vo558?JSON.parse(JSON.stringify(ui.vo558)):null,tool:ui.tool}},
+  fin:()=>{finishSketch();return ui.tool},
+  move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));refresh();return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh();return true},
+  mirror:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh();return true},
+  copy:(ids,dx,dy)=>{let out=[];edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});refresh();return out},
+  del:ids=>{edit(()=>deleteIds([...expandSel(ids)]));refresh();return P.els.filter(e=>e.cat==='vopn').length},
+  delOnly:ids=>{edit(()=>deleteIds(ids));refresh();return P.els.filter(e=>e.cat==='vopn').length},
+  clip:(ids,dx,dy,lid)=>{ui.sel=new Set(ids);act('copyclip');const v=activeView();let out=[];edit(()=>{out=pasteObjs(ui.clip.objs,dx,dy,lid||v.level,v)});refresh();return out},
+  props:()=>{renderProps();return[...document.querySelectorAll('#props .pr')].map(r=>[r.querySelector('label')?r.querySelector('label').textContent:'',r.querySelector('.ro,input,select')?(r.querySelector('.ro')?r.querySelector('.ro').textContent:r.querySelector('input,select').value):''])},
+  note:()=>[...document.querySelectorAll('#props .pnote')].map(x=>x.textContent),
+  ribbon:()=>RIBBON.filter(x=>x.id==='arch'||x.id==='struct').map(x=>[x.id,(x.panels.find(p=>p.t==='p_opening')||{b:[]}).b]),
+  sf:()=>sfAll(P,'vopn',t).map(f=>f.k),sfv:(id,k)=>{const f=sfAll(P,'vopn',t).find(x=>x.k===k);return f?f.g(IDX.get(id)):null},
+  vg:()=>VG_CATS.indexOf('vopn')-VG_CATS.indexOf('shaft'),
+  prompt:()=>{hint();return $('#prompt').textContent},opt:()=>{const o=$('#optbar');return o?o.textContent:''},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},str:(k,...a)=>t(k,...a),
+  rtab:()=>[...document.querySelectorAll('#ribbon [data-act],#ribbon [data-tool]')].map(b=>b.dataset.tool||b.dataset.act).filter(Boolean)};
+/* V1.559 test API: beam z Justification */
+window.PenumBIM.r559={
+  bm:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('beam'),e=Object.assign({id:P.seq++,cat:'beam',type:d.type,level:lid,x1,y1,x2,y2,off:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  col:(lid,x,y,o)=>{let id;edit(()=>{const d=defs('column'),e=Object.assign({id:P.seq++,cat:'column',type:d.type,level:lid,x,y,top:-1,height:3000,baseOff:0,rot:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  wall:(lid,x1,y1,x2,y2,o)=>{let id;edit(()=>{const d=defs('wall'),e=Object.assign({id:P.seq++,cat:'wall',type:d.type,level:lid,x1,y1,x2,y2,top:-1,height:3000,baseOff:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  steelType:sec=>{const L=P.types.beam||[];const T=L.find(x=>stlT(x)&&(!sec||x.sec===sec));return T?{id:T.id,sd:+T.sd,h:+T.h,name:T.name}:null},
+  types:()=>(P.types.beam||[]).map(T=>({id:T.id,name:T.name,h:+T.h,sec:T.sec||'',st:stlT(T)})),
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]==null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return{zj:e.zj559===undefined?null:e.zj559,zo:e.zo559===undefined?null:e.zo559}},
+  el:id=>{const e=IDX.get(id);return e?JSON.parse(JSON.stringify(e)):null},
+  bz:id=>beamZ(P,IDX.get(id)).map(Math.round),loc:id=>zj559Loc(P,IDX.get(id)).map(Math.round),z:id=>zRange(P,IDX.get(id)).map(Math.round),
+  tb:id=>zj559TB(P,IDX.get(id)).map(Math.round),tg:id=>{const q=tgZ(IDX.get(id));return q?{c:Math.round(q.c),t:Math.round(q.t),b:Math.round(q.b)}:null},
+  /* the lowest and highest z of the element's 3D */
+  m3:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let lo=Infinity,hi=-Infinity,n=0;
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=1;k<m.t.length;k+=3){const z=m.t[k];if(z<lo)lo=z;if(z>hi)hi=z;n++}}return n?[Math.round(lo),Math.round(hi)]:null},
+  qty:id=>{const q=QTY().get(id);return q?{len:Math.round(q.len||0),vol:q.vol!=null?Math.round(q.vol/1e6):null}:null},
+  sf:()=>sfAll(P,'beam',t).map(f=>f.k),sfv:(id,k)=>{const f=sfAll(P,'beam',t).find(x=>x.k===k);return f?f.g(IDX.get(id)):null},
+  props:()=>{renderProps();return[...document.querySelectorAll('#props .pr,#props .pg')].map(r=>r.classList.contains('pg')?['#',r.textContent]:[r.querySelector('label')?r.querySelector('label').textContent:'',r.querySelector('.ro,input,select')?(r.querySelector('.ro')?r.querySelector('.ro').textContent:r.querySelector('input,select').value):''])},
+  sel:ids=>{ui.sel=new Set(ids);refresh();return[...ui.sel]},selIds:()=>[...ui.sel],tool:()=>ui.tool,
+  defs:()=>{const d=defs('beam');return{zj:d.zj559===undefined?null:d.zj559,zo:d.zo559===undefined?null:d.zo559}},
+  beams:()=>P.els.filter(e=>e.cat==='beam').map(e=>JSON.parse(JSON.stringify(e))),
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,zj:e.zj559===undefined?null:e.zj559,zo:e.zo559===undefined?null:e.zo559}))},
+  pscr:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+x*n.s+n.ox,y:r.top+y*n.s+n.oy}},
+  escr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
+  colTop:id=>Math.round(zRange(P,IDX.get(id))[1]),wallTop:id=>{const e=IDX.get(id),W=wallProf(P,e);return W&&W.top?W.top.map(q=>Math.round(q[1])):null},
+  copy:(ids,dx,dy)=>{let out=[];edit(()=>{out=cloneIds(ids);translateIds(out,dx,dy)});refresh();return out},
+  str:(k,...a)=>t(k,...a),undo:()=>{act('undo');return true}};
+/* V1.560 test API: beam y Justification */
+window.PenumBIM.r560={
+  ax:id=>yj560Ax(P,IDX.get(id)).map(p=>p.map(Math.round)),d:id=>Math.round(yj560D(P,IDX.get(id))),
+  loop:id=>beamLoop(P,IDX.get(id)).map(p=>p.map(Math.round)),
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return{yj:e.yj560===undefined?null:e.yj560,yo:e.yo560===undefined?null:e.yo560}},
+  /* the extent across x and y (plan) of the element's 3D */
+  m3:id=>{MSC=null;const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;const lo=[Infinity,Infinity],hi=[-Infinity,-Infinity];let n=0;
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+2<m.t.length;k+=3){const x=m.t[k],y=m.t[k+2];if(x<lo[0])lo[0]=x;if(y<lo[1])lo[1]=y;if(x>hi[0])hi[0]=x;if(y>hi[1])hi[1]=y;n++}}return n?[lo.map(Math.round),hi.map(Math.round)]:null},
+  m3twice:id=>{MSC=null;const a=window.PenumBIM.r560.m3(id),b=window.PenumBIM.r560.m3(id);return JSON.stringify(a)===JSON.stringify(b)},
+  pick:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null},
+  mirror:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh();return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh();return true},
+  defs:()=>{const d=defs('beam');return{yj:d.yj560===undefined?null:d.yj560,yo:d.yo560===undefined?null:d.yo560}},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,yj:e.yj560===undefined?null:e.yj560,yo:e.yo560===undefined?null:e.yo560}))},
+  att:(id,under)=>{const S=attSurf(P,IDX.get(id),!!under);return S?S.poly.map(p=>p.map(Math.round)):null}};
+/* V1.561 test API: beam Cross-Section Rotation */
+window.PenumBIM.r561={
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return e.csr561===undefined?null:e.csr561},
+  ang:id=>{const e=IDX.get(id);return e.csr561===undefined?null:e.csr561},
+  ext:id=>{const X=csr561X(P,IDX.get(id));return{l:X.l.map(v=>Math.round(v)),v:X.v.map(v=>Math.round(v))}},
+  loop:id=>beamLoop(P,IDX.get(id)).map(p=>p.map(Math.round)),
+  zr:id=>zRange(P,IDX.get(id)).map(Math.round),
+  /* the extent of the element's 3D: [x, z, y] low and high */
+  m3:id=>{MSC=null;const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];let n=0;
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+2<m.t.length;k+=3)for(let j=0;j<3;j++){const v=m.t[k+j];if(v<lo[j])lo[j]=v;if(v>hi[j])hi[j]=v;n++}}return n?[lo.map(Math.round),hi.map(Math.round)]:null},
+  /* the 3D points of the beam at a distance along it (a slice across it): the [left, up] of each from the location line */
+  sl:(id,at)=>{MSC=null;const e=IDX.get(id),B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,L=Math.hypot(e.x2-e.x1,e.y2-e.y1),ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,zl=zj559Loc(P,e);const out=[];
+    for(const m of B){if(m.id!==id||!m.t)continue;for(let k=0;k+2<m.t.length;k+=3){const dx=m.t[k]-e.x1,dy=m.t[k+2]-e.y1,a=dx*ux+dy*uy;if(Math.abs(a-at)>1)continue;out.push([Math.round(dx*uy-dy*ux),Math.round(m.t[k+1]-zl[0]-(zl[1]-zl[0])*a/L)])}}return out},
+  bb:()=>{MSC=null;const B0=buildMeshes(P,FPm(),FITm());return B0&&B0.bb?B0.bb.map(Math.round):null},
+  pick:(vid,x,y)=>{const v=viewById(vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null},
+  mirror:(ids,ax,ay,bx,by)=>{edit(()=>mirrorIds(ids,ax,ay,bx,by));refresh();return true},
+  rot:(ids,cx,cy,deg)=>{edit(()=>rotateIds(ids,cx,cy,deg));refresh();return true},
+  defs:()=>{const d=defs('beam');return d.csr561===undefined?null:d.csr561},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,a:e.csr561===undefined?null:e.csr561}))},
+  att:(id,under)=>{const S=attSurf(P,IDX.get(id),!!under);return S?{poly:S.poly.map(p=>p.map(Math.round)),c:S.planes.map(q=>Math.round(q[2]))}:null},
+  cam:(vid,yaw,pitch)=>{const n=navOf(viewById(vid));n.yaw=yaw;n.pitch=pitch;refresh();return true},
+  len:id=>{const q=window.PenumBIM.r559.qty(id);return q}};
+/* V1.562 test API: beam yz Justification Uniform / Independent */
+window.PenumBIM.r562={
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();return window.PenumBIM.r562.st(id)},
+  st:id=>{const e=IDX.get(id),g=k=>e[k]===undefined?null:e[k];return{i:g('yzi562'),yj:g('yj562'),yo:g('yo562'),zj:g('zj562'),zo:g('zo562'),u:[g('yj560'),g('yo560'),g('zj559'),g('zo559')]}},
+  dz:id=>[0,1].map(k=>Math.round(zj559D(P,IDX.get(id),k))),dy:id=>[0,1].map(k=>Math.round(yj560D(P,IDX.get(id),k)))};
+/* V1.563 test API: beam Moment Connections */
+window.PenumBIM.r563={
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return e.mc563===undefined?null:e.mc563},
+  geo:(id,sc)=>mc563Geo(P,IDX.get(id),sc||100).map(s=>({k:s.k,end:s.end,tri:s.tri.map(p=>p.map(Math.round)),bar:s.bar?s.bar.map(p=>p.map(Math.round)):null})),
+  defs:()=>{const d=defs('beam');return d.mc563===undefined?null:d.mc563},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,m:e.mc563===undefined?null:e.mc563}))},
+  show:on=>{edit(()=>{if(on)delete P.mcs563;else P.mcs563=0});refresh();return P.mcs563===undefined?1:P.mcs563},
+  /* how many dark pixels the active plan pane has within r screen pixels of a model point */
+  dark:(x,y,r,th)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],cv=pn.cv,b=cv.getBoundingClientRect(),k=cv.width/b.width,c=cv.getContext('2d');if(!c)return-1;
+    const px=Math.round((x*n.s+n.ox)*k),py=Math.round((y*n.s+n.oy)*k),R=Math.max(1,Math.round(r*k)),d=c.getImageData(px-R,py-R,2*R,2*R).data;let m=0;
+    for(let i=0;i<d.length;i+=4)if(d[i+3]>100&&d[i]+d[i+1]+d[i+2]<(th||300))m++;return m}};
+/* V1.564 test API: stick symbols of framing in Coarse plans */
+window.PenumBIM.r564={
+  on:vid=>stk564On(P.views.find(x=>x.id===vid)||activeView()),
+  mode:m=>{if(m!==undefined){edit(()=>{if(m==='a'||m==='n')P.stk564=m;else delete P.stk564});refresh()}return stk564M()},
+  cut:(b,r)=>{edit(()=>{if(b===null)delete P.scb564;else if(b!==undefined)P.scb564=b;if(r===null)delete P.scr564;else if(r!==undefined)P.scr564=r});refresh();return[P.scb564===undefined?null:P.scb564,P.scr564===undefined?null:P.scr564]},
+  line:(id,sc)=>stk564Line(P,IDX.get(id),sc||100).map(p=>p.map(Math.round)),
+  view:(vid,o)=>{const v=P.views.find(x=>x.id===vid);edit(()=>{for(const k in o){if(o[k]===null)delete v[k];else v[k]=o[k]}});refresh();return{disc:v.disc||null,detail:v.detail||null}},
+  /* the moment connection symbols as a plan draws them */
+  mc:(id,vid)=>{const v=P.views.find(x=>x.id===vid),q=STK564V,qc=STK564C;STK564V=stk564On(v)?v:null;STK564C=null;try{return mc563Geo(P,IDX.get(id),v.scale||100).map(s=>({k:s.k,end:s.end,tip:s.tri[2].map(Math.round),base:s.tri[0].map(Math.round)}))}finally{STK564V=q;STK564C=qc}},
+  /* the outline the last plan drawn gave each beam (recorded while rec is on) */
+  rec:on=>{window.PenumBIM.r564._r=on?new Map():null;return!!on},
+  drawn:id=>{const m=window.PenumBIM.r564._r,l=m&&m.get(id);return l?l.map(p=>p.map(Math.round)):null},
+  /* how many inked pixels (r+g+b under th) the active plan pane has in a model rectangle */
+  ink:(x0,y0,x1,y1,th)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],cv=pn.cv,bb=cv.getBoundingClientRect(),k=cv.width/bb.width,c=cv.getContext('2d');if(!c)return-1;
+    const X=x=>Math.round((x*n.s+n.ox)*k),Y=y=>Math.round((y*n.s+n.oy)*k),a=Math.min(X(x0),X(x1)),b=Math.min(Y(y0),Y(y1)),w=Math.max(1,Math.abs(X(x1)-X(x0))),h=Math.max(1,Math.abs(Y(y1)-Y(y0))),d=c.getImageData(a,b,w,h).data;let m=0;
+    for(let i=0;i<d.length;i+=4)if(d[i+3]>100&&d[i]+d[i+1]+d[i+2]<(th||600))m++;return m},
+  tidy:()=>{for(const f of XC)f();return{stk:P.stk564===undefined?null:P.stk564,scb:P.scb564===undefined?null:P.scb564,scr:P.scr564===undefined?null:P.scr564}}};
+{const f0=beamLoop;beamLoop=(Q,b)=>{const l=f0(Q,b),m=window.PenumBIM.r564&&window.PenumBIM.r564._r;if(m&&b&&Q===P)m.set(b.id,l);return l}}
+/* V1.565 test API: brace symbols in plans */
+window.PenumBIM.r565={
+  where:(vid,id)=>br565Where(P.views.find(x=>x.id===vid),IDX.get(id)),
+  show:(vid,id)=>planShow(P.views.find(x=>x.id===vid),IDX.get(id)),
+  set:o=>{edit(()=>{for(const k in o){if(o[k]===null)delete P[k];else P[k]=o[k]}});refresh();const r={};for(const k of ['brp565','bro565','bra565','brb565'])r[k]=P[k]===undefined?null:P[k];return r},
+  tidy:()=>{for(const f of XC)f();const r={};for(const k of ['brp565','bro565','bra565','brb565'])r[k]=P[k]===undefined?null:P[k];return r},
+  hit:(vid,x,y)=>{const v=P.views.find(q=>q.id===vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null}};
+/* V1.566 test API: brace ends attached to beams */
+window.PenumBIM.r566={
+  ba:id=>{const e=IDX.get(id);return e&&Array.isArray(e.ba566)?e.ba566.map(a=>a?{h:a.h,t:a.t,v:a.v,r:a.r}:null):null},
+  ends:id=>{const e=IDX.get(id);return[0,1].map(k=>ba566End(P,e,k).map(x=>Math.round(x)))},
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();return window.PenumBIM.r566.ba(id)},
+  move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));refresh();return true},
+  setEl:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  split:(id,x,y)=>{edit(()=>splitLine(IDX.get(id),{x,y}));refresh();return P.els.filter(e=>e.cat==='beam'&&e.use!=='brace').map(e=>e.id)},
+  del:ids=>{ui.sel=new Set(ids);act('delete');refresh();return P.els.length},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam'&&e.use==='brace').map(e=>({id:e.id,ba:e.ba566===undefined?null:e.ba566.map(a=>a?{h:a.h,t:a.t,v:a.v,r:a.r}:null)}))}};
+/* V1.567 test API: Stick Symbol Location and Camber Size */
+window.PenumBIM.r567={
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();const e=IDX.get(id);return{ssl:e.ssl567===undefined?null:e.ssl567,cmb:e.cmb567===undefined?null:e.cmb567}},
+  tag:id=>tagLabel(P,IDX.get(id),null),
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam').map(e=>({id:e.id,ssl:e.ssl567===undefined?null:e.ssl567,cmb:e.cmb567===undefined?null:e.cmb567}))}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
