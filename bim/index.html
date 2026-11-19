@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=579,V1_NAME='V1.569';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=580,V1_NAME='V1.570';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58618,6 +58618,120 @@ function wf569Loops(Q,e){const G=wf568G(Q,e),L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||
   F.push({k:'n569',l:tr('p_n569'),g:e=>{try{return wf569Parts(Q,e).length}catch(_){return 1}},num:1,dec:0,grp:'i'});return F}}
 XC.push(()=>{for(const T of P.types.wfoot||[])if('dnb569' in T&&T.dnb569!=='no')delete T.dnb569});
 Object.assign(STR,{f_dnb569:['ไม่ขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts)','Do Not Break at Inserts'],p_n569:['จำนวนช่วง','Pieces']});
+/* ===== 570 Wall foundations join (V1.570; Revit: concrete elements join by themselves where they meet, an Isolated Foundation before a Wall Foundation, and
+   cannot be kept from it, but Unjoin Geometry takes them apart and Switch Join Order turns them round).  Where the end of a wall foundation meets another
+   wall foundation (its wall joined to the other's at a corner or a junction), it runs on to the far side of the other in place of its Default End Extension
+   Length, its end cut along that side, so that the two cover the corner whatever their widths, toes and heels; two that meet end to end in one line stop at
+   the joint.  Wall foundations that overlap or touch, and an isolated foundation and a wall foundation, are joined: a plan draws them as one outline, 3D cuts
+   the later wall foundation (or the wall foundation, by the isolated one) by the other, and the quantities count the concrete they share once.  Unjoin
+   Geometry, Join Geometry and Switch Join Order work on these joins; a wall end whose join is disallowed (Wall Joins) keeps its foundation's own extension. */
+/* P.nj570 [[a, b] …]: pairs of foundations unjoined (the smaller id first) */
+let WF570C=null,WF570V=null,WF570S=null,wf570L0=null,wf570C0=null;
+const wf570Ok=e=>!!e&&!e.gx&&(e.cat==='wfoot'||e.cat==='footing');
+const wf570Key=(a,b)=>Math.min(a,b)+'|'+Math.max(a,b);
+const wf570NJ=Q=>new Set((Array.isArray(Q.nj570)?Q.nj570:[]).filter(q=>Array.isArray(q)).map(q=>wf570Key(q[0],q[1])));
+function wf570Z(Q,e){try{const z=zRange(Q,e);return Array.isArray(z)&&isFinite(z[0])&&isFinite(z[1])?[Math.min(z[0],z[1]),Math.max(z[0],z[1])]:null}catch(_){return null}}
+const wf570ZO=(a,b)=>!!a&&!!b&&Math.min(a[1],b[1])-Math.max(a[0],b[0])>1;
+const wf570BB=(a,b)=>a[0]<=b[2]+1&&b[0]<=a[2]+1&&a[1]<=b[3]+1&&b[1]<=a[3]+1;
+function wf570Ar(p){let a=0;for(let i=0;i<p.length;i++){const q=p[i],r=p[(i+1)%p.length];a+=q[0]*r[1]-r[0]*q[1]}return a/2}
+/* the part of convex outline p inside convex outline c */
+function wf570Clip(p,c){if(wf570Ar(c)<0)c=c.slice().reverse();let o=p;for(let i=0;i<c.length&&o.length>=3;i++){const a=c[i],b=c[(i+1)%c.length];o=clipHP(o,q=>(b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0]))}return o}
+const wf570OvA=(A,B)=>{let s=0;for(const p of A)for(const c of B){const o=wf570Clip(p,c);if(o.length>=3)s+=Math.abs(wf570Ar(o))}return s};
+/* the wall foundations of the project with their lines and sides, once for each version */
+function wf570Data(Q){const k=Q.els;if(WF570C&&WF570C.els===k&&WF570C.ver===VER&&WF570C.n===k.length)return WF570C;const fr=[];
+  for(const e of k){if(e.cat!=='wfoot'||e.gx)continue;const L=Math.hypot(e.x2-e.x1,e.y2-e.y1);if(L<1)continue;let G;try{G=wf568G(Q,e)}catch(_){continue}const ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L;
+    fr.push({e,L,ux,uy,nx:-uy,ny:ux,ex:G.ex,ins:G.ins,w:G.w,ext:G.ext,z:wf570Z(Q,e)})}
+  WF570C={els:k,ver:VER,n:k.length,fr,by:new Map(fr.map(f=>[f.e.id,f])),out:new Map(),ends:new Map(),pairs:null};return WF570C}
+/* what end k of wall foundation A meets: {k:'flush'} another in its line, end to end; {k:'far', B, off} one across it, A running on to B's side at offset off
+   from B's line; null: nothing (or its wall's join is disallowed there) */
+function wf570End(D,Q,A,k){const w=wf568Wall(Q,A.e);if(w&&Array.isArray(w.wj)&&w.wj[k]===3)return null;
+  const px=k?A.e.x2:A.e.x1,py=k?A.e.y2:A.e.y1,dx=k?A.ux:-A.ux,dy=k?A.uy:-A.uy;let best=null,flush=false;
+  for(const B of D.fr){if(B===A||!wf570ZO(A.z,B.z))continue;const rx=px-B.e.x1,ry=py-B.e.y1,s=rx*B.ux+ry*B.uy,o=rx*B.nx+ry*B.ny;
+    if(s<-1||s>B.L+1||o<-B.ins-1||o>B.ex+1)continue;const dn=dx*B.nx+dy*B.ny;
+    if(Math.abs(dn)<0.05){const eb=s<1?1:s>B.L-1?-1:0;if(eb&&(dx*B.ux+dy*B.uy)*eb>0.9)flush=true;continue}
+    const tE=(B.ex-o)/dn,tI=(-B.ins-o)/dn,t=Math.max(tE,tI);if(t<-1||t>3*(A.w+B.w))continue;if(!best||t>best.t)best={B,t,off:tE>tI?B.ex:-B.ins}}
+  return flush?{k:'flush'}:best?{k:'far',B:best.B,off:best.off}:null}
+/* the outline of a wall foundation whose end meets another (null: none does, the outline is as before) */
+function wf570Out(Q,e){if(!e||e.cat!=='wfoot'||e.gx)return null;const D=wf570Data(Q);if(D.out.has(e.id))return D.out.get(e.id);let r=null;const A=D.by.get(e.id);
+  if(A){const E=[wf570End(D,Q,A,0),wf570End(D,Q,A,1)];D.ends.set(e.id,E);
+    if(E[0]||E[1]){const par=(en,sg,o)=>{if(!en)return sg?A.L+A.ext:-A.ext;if(en.k==='flush')return sg?A.L:0;const B=en.B,un=A.ux*B.nx+A.uy*B.ny,nn=A.nx*B.nx+A.ny*B.ny,b0=(A.e.x1-B.e.x1)*B.nx+(A.e.y1-B.e.y1)*B.ny;return(en.off-b0-o*nn)/un};
+      const s0e=par(E[0],0,A.ex),s1e=par(E[1],1,A.ex),s0i=par(E[0],0,-A.ins),s1i=par(E[1],1,-A.ins),pt=(t,s)=>[A.e.x1+A.ux*t+A.nx*s,A.e.y1+A.uy*t+A.ny*s];
+      if(s1e-s0e>1&&s1i-s0i>1)r=[pt(s0e,A.ex),pt(s1e,A.ex),pt(s1i,-A.ins),pt(s0i,-A.ins)]}}
+  D.out.set(e.id,r);return r}
+const wf570Ends=(Q,e)=>{wf570Out(Q,e);const E=wf570Data(Q).ends.get(e.id);return E||[null,null]};
+/* the pieces of a broken foundation (V1.569) run between the ends as they now are */
+{const f0=wf569Parts;wf569Parts=function(Q,e){const o=wf570Out(Q,e);if(!o)return f0.apply(this,arguments);const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,s=q=>(q[0]-e.x1)*ux+(q[1]-e.y1)*uy,
+  A=Math.min(s(o[0]),s(o[3])),B=Math.max(s(o[1]),s(o[2])),out=[];let st=A;for(const g of wf569Gaps(Q,e)){if(g[0]-st>1)out.push([st,g[0]]);st=Math.max(st,g[1])}if(B-st>1)out.push([st,B]);return out}}
+{const f0=wf569Loops;wf569Loops=function(Q,e){const o=wf570Out(Q,e);if(!o)return f0.apply(this,arguments);const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,s=q=>(q[0]-e.x1)*ux+(q[1]-e.y1)*uy,
+  S=wf569Parts(Q,e);if(!S.length)return[];const A=S[0][0],B=S[S.length-1][1];
+  return S.map(([a,b])=>{let p=o;if(a>A+0.01)p=clipHP(p,q=>s(q)-a);if(b<B-0.01)p=clipHP(p,q=>b-s(q));return p}).filter(p=>p.length>=3)}}
+/* the outline as it is, with its pieces; in a plan being drawn it carries the lines to draw (wf570): the outline less what lies inside what it is joined to */
+function wf570Raw(Q,e){let lp=wf570L0(Q,e);const o=wf570Out(Q,e);if(o){const n=o.slice();if(lp&&lp.wf569)n.wf569=lp.wf569;lp=n}return lp}
+{wf570L0=wfootLoop;wfootLoop=function(Q,e){let lp=wf570Raw(Q,e);if(WF570V&&Q===P&&e&&lp){const s=wf570Segs(e.id);if(s){const n=lp.slice();if(lp.wf569)n.wf569=lp.wf569;n.wf570=s;lp=n}}return lp}}
+{wf570C0=columnLoop;columnLoop=function(Q,e){const lp=wf570C0.apply(this,arguments);if(!WF570V||Q!==P||!e||e.cat!=='footing'||!lp)return lp;const s=wf570Segs(e.id);if(!s)return lp;const n=Object.assign(lp.slice(),lp);n.wf570=s;return n}}
+/* the foundations, their pieces and boxes */
+function wf570Items(Q,f){const out=[];for(const e of Q.els){if(!wf570Ok(e)||(f&&!f(e)))continue;let lps;
+    try{if(e.cat==='footing'){const l=wf570C0(Q,e);lps=l?[l]:[]}else{const l=wf570Raw(Q,e);lps=l?(l.wf569||[l]):[]}}catch(_){continue}
+    lps=lps.filter(l=>Array.isArray(l)&&l.length>=3);if(!lps.length)continue;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    for(const l of lps)for(const p of l){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1]}out.push({e,id:e.id,cat:e.cat,lps,bb:[x0,y0,x1,y1],z:wf570Z(Q,e)})}
+  return out}
+/* what joins of itself: pairs [cutter, cut] of foundations that overlap, an isolated foundation first, then the earlier wall foundation (pairs joined by hand or unjoined left out) */
+function wf570Pairs(Q){const D=wf570Data(Q);if(D.pairs)return D.pairs;const I=wf570Items(Q),nj=wf570NJ(Q),J=new Set((Q.joins||[]).map(q=>wf570Key(q[0],q[1]))),out=[];
+  for(let i=0;i<I.length;i++)for(let j=i+1;j<I.length;j++){const A=I[i],B=I[j];if(A.cat!=='wfoot'&&B.cat!=='wfoot')continue;if(!wf570BB(A.bb,B.bb)||!wf570ZO(A.z,B.z))continue;
+    const k=wf570Key(A.id,B.id);if(nj.has(k)||J.has(k)||wf570OvA(A.lps,B.lps)<100)continue;out.push(A.cat==='footing'?[A.id,B.id]:B.cat==='footing'?[B.id,A.id]:A.id<B.id?[A.id,B.id]:[B.id,A.id])}
+  D.pairs=out;return out}
+/* the lines of outline lp that are drawn: not where just outside it lies inside one it is joined to (O), nor on the edge of an earlier one on the same side */
+function wf570Cut(lp,O,id){const out=[],sg=wf570Ar(lp)>=0?1:-1;
+  for(let i=0;i<lp.length;i++){const a=lp[i],b=lp[(i+1)%lp.length],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy);if(l<0.5)continue;const ts=[0,1];
+    for(const B of O)for(const q of B.lps)for(let j=0;j<q.length;j++){const c=q[j],d=q[(j+1)%q.length],ex=d[0]-c[0],ey=d[1]-c[1],den=dx*ey-dy*ex;
+      if(Math.abs(den)>1e-9*l*Math.hypot(ex,ey)){const t=((c[0]-a[0])*ey-(c[1]-a[1])*ex)/den,u=((c[0]-a[0])*dy-(c[1]-a[1])*dx)/den;if(t>0&&t<1&&u>=-1e-9&&u<=1+1e-9)ts.push(t)}
+      else for(const r of [c,d]){const t=((r[0]-a[0])*dx+(r[1]-a[1])*dy)/(l*l);if(t>0&&t<1&&Math.abs((r[0]-a[0])*dy-(r[1]-a[1])*dx)/l<0.5)ts.push(t)}}
+    ts.sort((p,q)=>p-q);const ox=sg*dy/l,oy=-sg*dx/l;let run=null;
+    for(let k=0;k+1<ts.length;k++){const t0=ts[k],t1=ts[k+1];if((t1-t0)*l<0.5)continue;const mx=a[0]+dx*(t0+t1)/2,my=a[1]+dy*(t0+t1)/2;
+      const hid=O.some(B=>B.lps.some(q=>inPoly(mx+ox*0.6,my+oy*0.6,q)))||O.some(B=>B.id<id&&B.lps.some(q=>polyEdgeDist(mx,my,q)<0.3&&inPoly(mx-ox*0.6,my-oy*0.6,q)));
+      if(hid){if(run){out.push(run);run=null}continue}const p0=[a[0]+dx*t0,a[1]+dy*t0],p1=[a[0]+dx*t1,a[1]+dy*t1];if(run)run[1]=p1;else run=[p0,p1]}
+    if(run)out.push(run)}
+  return out}
+/* in the plan being drawn: Map(id → its lines), for the foundations it shows that are joined to another it shows */
+function wf570PlanSegs(v){const M=new Map();if(!v)return M;let I;try{I=wf570Items(P,e=>!!planShow(v,e))}catch(_){return M}if(I.length<2)return M;const nj=wf570NJ(P);
+  for(const A of I){const O=I.filter(B=>B!==A&&(A.cat==='wfoot'||B.cat==='wfoot')&&wf570BB(A.bb,B.bb)&&wf570ZO(A.z,B.z)&&!nj.has(wf570Key(A.id,B.id)));if(!O.length)continue;
+    const s=[];for(const lp of A.lps)for(const x of wf570Cut(lp,O,A.id))s.push(x);M.set(A.id,s)}
+  return M}
+function wf570Segs(id){if(!WF570S)WF570S=wf570PlanSegs(WF570V);return WF570S.get(id)||null}
+{const f0=drawPlan;drawPlan=function(ctx,v){const q=WF570V,qs=WF570S;WF570V=v&&v.kind==='plan'?v:null;WF570S=null;try{return f0.apply(this,arguments)}finally{WF570V=q;WF570S=qs}}}
+{const f0=painter;painter=function(){const g=f0.apply(this,arguments),pa0=g.path;
+  g.path=function(pts,open){if(!pts||!pts.wf570||open)return pa0.apply(this,arguments);const c=g.ctx;c.beginPath();for(const s of pts.wf570){c.moveTo(g.X(s[0][0]),g.Y(s[0][1]));c.lineTo(g.X(s[1][0]),g.Y(s[1][1]))}};return g}}
+/* 3D and quantities: the joins of themselves go with the joins made by hand */
+for(const nm of ['joinApply','joinLoss']){const f0=nm==='joinApply'?joinApply:joinLoss,w=function(Q){let A=[];try{A=Q&&Q.els?wf570Pairs(Q):[]}catch(_){}if(!A.length)return f0.apply(this,arguments);
+    const had=Object.prototype.hasOwnProperty.call(Q,'joins'),J0=Q.joins;Q.joins=(J0||[]).concat(A);try{return f0.apply(this,arguments)}finally{if(had)Q.joins=J0;else delete Q.joins}};
+  if(nm==='joinApply')joinApply=w;else joinLoss=w}
+/* a broken foundation (V1.569) is built again after the joins were cut: cut its pieces too */
+{const f0=buildMeshes;buildMeshes=function(Q){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;let br=null;
+  for(const e of Q.els)if(e.cat==='wfoot'&&e.host!=null&&!e.gx){try{if(wf569Gaps(Q,e).length)(br||(br=new Set())).add(e.id)}catch(_){}}if(!br)return R;
+  let J=[];try{J=(Q.joins||[]).concat(wf570Pairs(Q),typeof cutsNE231==='function'?cutsNE231(Q):[]).filter(q=>br.has(q[1]))}catch(_){}if(!J.length)return R;
+  const by=new Map();for(const it of items)if(it.t&&it.t.length&&!it.ml&&!it.ins)(by.get(it.id)||by.set(it.id,[]).get(it.id)).push(it);
+  const S=id=>{const s=[];for(const it of by.get(id)||[])if(it.a>=1&&!it.inf)for(const v of it.t)s.push(v);return s},jobs=J.map(q=>[q[1],S(q[0])]);
+  for(const [id,c] of jobs)if(c.length)for(const it of by.get(id)||[])if(it.cat==='wfoot'){const r=csgCut(it.t,it.l,it.s,c);if(r){it.t=r.t;it.l=r.l;it.s=r.s}}return R}}
+/* quantities of one whose end meets another: its outline as it now is (its length: the area over its width) */
+{const f0=quantities;quantities=function(P0){const q=f0.apply(this,arguments);if(!q||!P0||!P0.els)return q;
+  for(const e of P0.els){if(e.cat!=='wfoot'||e.gx)continue;const o=q.get(e.id);if(!o)continue;let lp;try{if(!wf570Out(P0,e))continue;lp=wf570Raw(P0,e)}catch(_){continue}
+    const S=lp.wf569||[lp],A=S.reduce((s,p)=>s+Math.abs(wf570Ar(p)),0),T=typ(P0,e)||{},G=wf568G(P0,e);if(G.w>0)o.len=A/G.w;o.area=A;o.vol=Math.max(0,A*(+T.h||0)-(o.cutv||0))}return q}}
+/* Unjoin Geometry, Join Geometry and Switch Join Order on foundations joined of themselves */
+function wf570JnDone(a){if(ui.opt.jnMulti){ui.sel=new Set([a.id]);refresh();return}ui.jn=null;ui.sel.clear();refresh()}
+{const f0=jnPick;jnPick=function(tl,e){
+  if(tl==='unjoin'&&wf570Ok(e)){const A=wf570Pairs(P).filter(q=>q[0]===e.id||q[1]===e.id),man=(P.joins||[]).filter(q=>q[0]===e.id||q[1]===e.id),mf=man.filter(q=>wf570Ok(IDX.get(q[0]))&&wf570Ok(IDX.get(q[1])));
+    if(!A.length&&!mf.length)return f0.apply(this,arguments);
+    edit(()=>{if(P.joins){P.joins=P.joins.filter(q=>q[0]!==e.id&&q[1]!==e.id);if(!P.joins.length)delete P.joins}const N=P.nj570||(P.nj570=[]);for(const q of A.concat(mf))N.push([Math.min(q[0],q[1]),Math.max(q[0],q[1])])});
+    toast(t('jn_unjoined',man.length+A.length));return}
+  const a=ui.jn&&IDX.get(ui.jn);
+  if((tl==='join'||tl==='swjoin')&&a&&e&&a!==e&&wf570Ok(a)&&wf570Ok(e)&&joinIdx(P,a.id,e.id)<0){const k=wf570Key(a.id,e.id),un=(P.nj570||[]).some(q=>wf570Key(q[0],q[1])===k),au=wf570Pairs(P).find(q=>wf570Key(q[0],q[1])===k);
+    if(tl==='join'&&un){edit(()=>{P.nj570=P.nj570.filter(q=>wf570Key(q[0],q[1])!==k);if(!P.nj570.length)delete P.nj570});return wf570JnDone(a)}
+    if(tl==='join'&&au){toast(t('jn_already'));ui.jn=null;ui.sel.clear();refresh();return}
+    if(tl==='swjoin'&&au){const r=[au[1],au[0]];edit(()=>{(P.joins=P.joins||[]).push(r)});toast(t('jn_order',jnName(r[0]),jnName(r[1])));return wf570JnDone(a)}}
+  return f0.apply(this,arguments)}}
+XC.push(()=>{if(!('nj570' in P))return;const ok=new Set(P.els.filter(e=>e.cat==='wfoot'||e.cat==='footing').map(e=>e.id)),seen=new Set(),out=[];
+  if(Array.isArray(P.nj570))for(const q of P.nj570){if(!Array.isArray(q)||q.length<2)continue;const a=Math.min(+q[0],+q[1]),b=Math.max(+q[0],+q[1]);if(a===b||!ok.has(a)||!ok.has(b))continue;const k=a+'|'+b;if(seen.has(k))continue;seen.add(k);out.push([a,b])}
+  if(out.length)P.nj570=out;else delete P.nj570});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59767,6 +59881,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_wfoot]] ((FT)): คลิกบนผนัง ฐานรากแถบจะยาวตามผนัง (เกินปลายผนังข้างละครึ่งความกว้างเพื่อให้ชนกันที่มุม) และเปลี่ยนตามผนัง · [[a_wfootall]] ใส่ให้ผนังทุกแนวของชั้นนี้
 - [[f_su568]] ของชนิดฐานรากใต้ผนัง: [[su568_b]] กว้างตาม [[f_w]] ของชนิด อยู่กึ่งกลางผนังหรือเยื้องตาม [[p_ecc568]] ในคุณสมบัติ (บวกไปทางด้านนอกของผนัง) [[su568_r]] ยื่นเกินผิวผนังด้านนอกตาม [[f_toe568]] และด้านในตาม [[f_heel568]] กลับด้านผนังแล้วปลายหน้าไปด้วย [[f_eel568]] ว่างไว้คือครึ่งความกว้าง
 - [[f_dnb569]] ของชนิดฐานรากใต้ผนัง: ติ๊กไว้ (ค่าเริ่มต้น) ฐานรากต่อเนื่องใต้ประตูหน้าต่าง เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง ช่องเปิดผนัง (Wall Opening) ที่ลงถึงฐานผนังตัดฐานรากเสมอ
+- ฐานรากใต้ผนังต่อกันเองแบบ Revit: ปลายที่ชนฐานรากใต้ผนังอื่นที่มุมหรือทางแยกยื่นไปถึงขอบด้านไกลของอีกฐาน แทนระยะยื่นตามชนิด สองฐานที่ต่อปลายกันในแนวเดียวกันหยุดที่รอยต่อ ฐานรากที่ซ้อนหรือชนกันและฐานรากเดี่ยวกับฐานรากใต้ผนังเชื่อมกันเอง แปลนวาดเป็นเส้นรอบรูปเดียว 3 มิติตัดชิ้นหลัง (ฐานรากเดี่ยวตัดฐานรากใต้ผนัง) ปริมาณนับคอนกรีตส่วนที่ซ้อนครั้งเดียว [[t_unjoin]] แยกออก [[t_join]] เชื่อมกลับ [[t_swjoin]] สลับว่าชิ้นใดตัด ปลายผนังที่ห้ามต่อ (Disallow Join) ใช้ระยะยื่นตามชนิด
 - [[g_rebar]]: เลือกเสา คาน พื้น ฐานราก ฐานรากแถบ หรือผนัง แล้วติ๊ก [[p_rbon]] ในแผงคุณสมบัติ ตั้งขนาด ระยะ [[p_rbhk]] (ไม่งอ 90° 180°) และ [[p_rblap]] (เท่าของขนาดเหล็ก ใช้เมื่อเหล็กยาวเกิน 10 ม.) ปลอกปิดด้วยขอ 135° เสมอ · คานเอียงและค้ำยันก็ใส่ได้ ผนังเว้นเหล็กตรงช่องประตู หน้าต่าง · [[a_rbsched]] (แท็บ [[tab_struct]]) รวมเหล็กที่รูปร่างและความยาวเท่ากันเป็นเบอร์เดียว บอกความยาวตัด จุดทาบ จำนวน น้ำหนัก และส่งออก CSV ได้
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_areinf]] ในผนัง: เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้ววาดขอบเขต (จุดหรือกรอบ) หรือกด [[a_ar528whole]] · ในแปลนเลือกผนังก่อนแล้วกดเครื่องมือ ได้เต็มผนัง · ชั้น [[p_ar528e1]] [[p_ar528e2]] [[p_ar528i1]] [[p_ar528i2]] · [[p_ar528wh]] ยืดตามผนัง · คลิกขอบเขตหรือสัญลักษณ์ในรูปด้านเพื่อเลือก
@@ -60046,6 +60161,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[t_wfoot]] ((FT)): click a wall; the strip is as long as the wall (half its own width longer at either end, so that the strips of two walls meet at a corner) and follows it · [[a_wfootall]] does it for every wall of this level
 - A wall foundation type's [[f_su568]]: [[su568_b]] is as wide as the type's [[f_w]], centred under the wall or set off by the [[p_ecc568]] in Properties (above 0 towards the exterior of the wall); [[su568_r]] reaches past the exterior face of the wall by the [[f_toe568]] and past the interior face by the [[f_heel568]], and a flipped wall takes the toe with it; [[f_eel568]] left empty is half the width
 - A wall foundation type's [[f_dnb569]]: checked (the default), the foundation runs on beneath doors and windows; cleared, it breaks beneath a door or window that reaches the base of the wall; a wall opening that reaches the base of the wall always breaks it
+- Wall foundations join, as in Revit: an end that meets another wall foundation at a corner or a junction runs on to the far side of the other in place of the type's extension; two that meet end to end in one line stop at the joint; wall foundations that overlap or touch, and an isolated foundation and a wall foundation, join of themselves: plans draw one outline, 3D cuts the later one (an isolated foundation cuts the wall foundation) and the quantities count the concrete they share once; [[t_unjoin]] takes them apart, [[t_join]] joins them again, [[t_swjoin]] switches which cuts; a wall end whose join is disallowed keeps the type's extension
 - [[g_rebar]]: select a column, beam, floor, footing, wall footing or wall and tick [[p_rbon]] in Properties; set the sizes, spacing, [[p_rbhk]] (none, 90°, 180°) and [[p_rblap]] (in bar diameters, used where a bar is longer than 10 m). Ties always close with 135° hooks · sloped beams and braces take rebar too; walls leave out the bars at doors and windows · [[a_rbsched]] ([[tab_struct]] tab) gives one mark to bars of the same shape and length, with the cut length, laps, count and weight, and exports CSV
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_areinf]] in walls: in an elevation or a section parallel to the wall, the tool, a click on the wall, then the boundary (points or a rectangle) or [[a_ar528whole]] · in a plan, select a wall first, then the tool: the whole wall · layers [[p_ar528e1]], [[p_ar528e2]], [[p_ar528i1]], [[p_ar528i2]] · [[p_ar528wh]] follows the wall · click the boundary or the symbol in an elevation to select it
@@ -61126,6 +61242,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.567 · ตำแหน่งเส้นเดี่ยว (Stick Symbol Location) และระยะโก่งคาน (Camber Size) แบบ Revit: คุณสมบัติของคานมีตำแหน่งเส้นเดี่ยว บนสุด กึ่งกลาง (ค่าเริ่มต้น) หรือท้องคาน วาดเส้นเดี่ยวในแปลนหยาบบนคานตามที่สร้าง (ตามการจัดชิดและระยะเลื่อนแนวราบ แยกปลายได้) หรือ แนวคาน (Location Line) วาดบนแนวคาน ระยะร่นและสัญลักษณ์การต่อปลายไปด้วย ระยะโก่งคาน (มม.) อยู่ในคุณสมบัติ ตารางรายการ และป้ายคาน (c=) แบบจำลองยังตรงเหมือน Revit ค้ำยันไม่มีค่านี้
 - V1.568 · ฐานรากใต้ผนังแบบรับน้ำหนักและแบบกันดิน (Structural Usage: Bearing / Retaining) แบบ Revit: ชนิดฐานรากใต้ผนังมีการใช้งานโครงสร้าง รับน้ำหนัก (ค่าเริ่มต้น เหมือนเดิม) กว้างตามชนิด อยู่กึ่งกลางผนังหรือเยื้องตามระยะเยื้องศูนย์ (Eccentricity) ในคุณสมบัติ กันดิน ยื่นเกินผิวผนังด้านนอกตามยาวปลายหน้า (Toe Length) และด้านในตามยาวส้น (Heel Length) กว้างเท่าสองค่ากับผนังรวมกัน กลับด้านผนังแล้วปลายหน้าไปด้วย ระยะยื่นเกินปลายผนัง (Default End Extension Length) ว่างไว้คือครึ่งความกว้างเหมือนเดิม แปลน 3 มิติ ปริมาณ ตารางรายการ เหล็กเสริม และการเลือกตามไป
 - V1.569 · ฐานรากใต้ผนังขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts) แบบ Revit: ชนิดฐานรากใต้ผนังมีช่องไม่ขาดใต้ประตูหน้าต่าง ติ๊กไว้ (ค่าเริ่มต้น) ต่อเนื่องเหมือนเดิม เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง กว้างเท่าประตูหน้าต่าง ช่องเปิดผนังที่ลงถึงฐานผนังตัดฐานรากเสมอ แปลน 3 มิติ และปริมาณนับเฉพาะช่วงที่เหลือ ย้าย ปรับขนาด หรือลบประตู รอยขาดตามไป
+- V1.570 · ฐานรากใต้ผนังต่อกันเองที่มุมและทางแยกแบบ Revit: ปลายที่ชนฐานรากใต้ผนังอื่นยื่นไปถึงขอบด้านไกลของอีกฐาน ตัดตามขอบนั้น มุมจึงปิดพอดีไม่ว่ากว้าง ปลายหน้า หรือส้นเท่าไร สองฐานที่ต่อปลายกันในแนวเดียวกันหยุดที่รอยต่อ ฐานรากที่ซ้อนหรือชนกัน และฐานรากเดี่ยวกับฐานรากใต้ผนัง เชื่อมกันเอง แปลนวาดเป็นเส้นรอบรูปเดียว 3 มิติตัดชิ้นหลังออก ปริมาณคอนกรีตส่วนที่ซ้อนนับครั้งเดียว เลิกเชื่อม เชื่อม และสลับลำดับการเชื่อมใช้กับฐานรากได้ ฐานรากที่ขาดใต้ประตูก็ถูกตัดด้วย
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61868,6 +61985,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.567 · Stick Symbol Location and Camber Size of beams, as in Revit: a beam's Properties have Stick Symbol Location: Top, Center (the default) or Bottom of Geometry draw its stick in Coarse plans on the beam as built (its y Justification and y Offset Value, end by end when Independent), Location Line on its location line; the cutback and moment connection symbols go with it; Camber Size (mm) is in Properties, schedules and beam tags (c=), the model drawn straight as in Revit; braces have neither
 - V1.568 · Wall foundations Bearing or Retaining (Structural Usage), as in Revit: a wall foundation type's Structural Usage: Bearing (the default, as before) is as wide as the type, centred under the wall or set off it by the Eccentricity in Properties; Retaining reaches past the exterior face of the wall by the Toe Length and past the interior face by the Heel Length, as wide as the two and the wall together, and a flipped wall takes the toe with it; Default End Extension Length left empty is half the width, as before; plans, 3D, quantities, schedules, rebar and selection follow
 - V1.569 · Wall foundations break beneath doors and windows (Do Not Break at Inserts), as in Revit: a wall foundation type's Do Not Break at Inserts, checked (the default), keeps it continuous as before; cleared, the foundation breaks beneath each door or window that reaches the base of the wall, as wide as the insert; a wall opening that reaches the base of the wall always breaks it; plans, 3D and quantities count only the pieces, and the break follows the door when it is moved, resized or deleted
+- V1.570 · Wall foundations join at corners and junctions, as in Revit: an end that meets another wall foundation runs on to the far side of the other, cut along it, so that the corner closes whatever the widths, toes and heels; two that meet end to end in one line stop at the joint; wall foundations that overlap or touch, and an isolated foundation and a wall foundation, join of themselves: plans draw one outline, 3D cuts the later one and the quantities count the concrete they share once; Unjoin Geometry, Join Geometry and Switch Join Order work on them, and a foundation broken at inserts is cut too
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66015,6 +66133,25 @@ window.PenumBIM.r569={
   del:id=>{ui.sel=new Set([id]);act('delete');refresh();return!IDX.get(id)},
   tidy:()=>{for(const f of XC)f();return(P.types.wfoot||[]).map(T=>({id:T.id,dnb:T.dnb569??null}))},
   rawT:(tid,o)=>{const T=(P.types.wfoot||[]).find(x=>x.id===tid);Object.assign(T,o);return true}};
+/* V1.570 test API: wall foundations join */
+window.PenumBIM.r570={
+  ends:id=>wf570Ends(P,IDX.get(id)).map(x=>x?(x.k==='far'?'far:'+x.B.e.id+':'+Math.round(x.off):x.k):null),
+  out:id=>{const o=wf570Out(P,IDX.get(id));return o?o.map(p=>p.map(Math.round)):null},
+  pairs:()=>wf570Pairs(P).map(q=>q.slice()),
+  /* the lines a plan draws of a foundation (null: all of its outline) */
+  segs:(vid,id)=>{const s=wf570PlanSegs(viewById(vid)).get(id);return s?s.map(q=>q.map(p=>p.map(Math.round))):null},
+  /* the volume (dm³) and triangles of its 3D */
+  v3:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let v=0,n=0;for(const m of B)if(m.id===id&&m.t){v+=triVol(m.t);n+=m.t.length/9}return{v:Math.round(Math.abs(v)/1e6),n}},
+  foot:(lid,x,y,o)=>{let id;edit(()=>{const d=defs('footing')||{},e=Object.assign({id:P.seq++,cat:'footing',type:d.type,level:lid,x,y,rot:0,off:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  fT:id=>{const e=IDX.get(id),T=e&&typ(P,e);return T?{w:T.w,d:T.d,h:T.h}:null},
+  /* the join tools as a click would use them: one pick (unjoin) or two */
+  jn:(tl,a,b)=>{ui.jn=null;jnPick(tl,IDX.get(a));if(b!=null)jnPick(tl,IDX.get(b));refresh();return{nj:P.nj570?JSON.parse(JSON.stringify(P.nj570)):null,joins:P.joins?JSON.parse(JSON.stringify(P.joins)):null}},
+  st:()=>({nj:P.nj570?JSON.parse(JSON.stringify(P.nj570)):null,joins:P.joins?JSON.parse(JSON.stringify(P.joins)):null}),
+  /* the plan inked at points [x, y] (a dark pixel within 2 of it) */
+  ink:pts=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],cv=pn.cv,c=cv.getContext('2d'),dpr=cv.width/cv.getBoundingClientRect().width;
+    return pts.map(([x,y])=>{const px=Math.round((x*n.s+n.ox)*dpr),py=Math.round((y*n.s+n.oy)*dpr);for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){const q=c.getImageData(px+dx,py+dy,1,1).data;if(q[0]+q[1]+q[2]<700)return 1}return 0})},
+  raw:o=>{Object.assign(P,o);return true},
+  tidy:()=>{for(const f of XC)f();return P.nj570?JSON.parse(JSON.stringify(P.nj570)):null}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
