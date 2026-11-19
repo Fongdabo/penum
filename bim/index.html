@@ -14637,7 +14637,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=605,V1_NAME='V1.595';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=606,V1_NAME='V1.596';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -60292,6 +60292,49 @@ RG_TF.rt595=(T,f)=>{const k=f[0],L=k==='rty595'?RTY595:RTC595,cur=L.includes(T[k
 Object.assign(STR,{
   f_rty595:['ชนิดลูกตั้ง','Riser Type'],rty595_st:['ตรง (เหมือนเดิม)','Straight (as before)'],rty595_sl:['เอียง (Slanted)','Slanted'],rty595_n:['ไม่มีลูกตั้ง (บันไดโปร่ง)','None (open risers)'],
   f_rtc595:['การต่อลูกตั้งกับลูกนอน','Riser to Tread Connection'],rtc595_t:['ลูกนอนสอดใต้ลูกตั้ง (เหมือนเดิม)','Extend Tread Under Riser (as before)'],rtc595_r:['ลูกตั้งลงหลังลูกนอน','Extend Riser Behind Tread']});
+/* ===== 596 Calculation Rules of stairs (V1.596; Revit: the stair type › Calculation Rules: Maximum Riser Height, Minimum Tread Depth, Minimum Run Width and
+   the Stair Calculator: Use Stair Calculator for Slope Calculation, a × Riser Height + b × Tread Depth with its Target, Maximum and Minimum Result).  A stair
+   type takes T.mtd596 / T.mrw596 (mm; unset: no check), T.usc596 (1: the calculator on), T.scmr596 / T.scmt596 (a, b; unset 2 and 1), T.scr596 / T.scx596 /
+   T.scn596 (the target, maximum and minimum result; unset 630, 650 and 600).  A stair that breaks a rule is a warning (Review Warnings), and its Properties
+   show the calculation. ===== */
+const CR596={mtd596:[0,2000,null],mrw596:[0,5000,null],scmr596:[0.5,4,2],scmt596:[0.5,4,1],scr596:[100,2000,630],scx596:[100,2000,650],scn596:[100,2000,600]};
+const cr596N=(T,k)=>{const A=CR596[k],x=T&&T[k];return x!=null&&x!==''&&isFinite(+x)?clamp(+x,A[0],A[1]):A[2]};
+/* the rules of a stair of type T and geometry g: the result of the calculator and what is broken */
+function cr596(T,g){T=T||{};const mt=cr596N(T,'mtd596'),mw=cr596N(T,'mrw596'),use=!!T.usc596,a=cr596N(T,'scmr596'),b=cr596N(T,'scmt596'),
+    res=a*g.r+b*g.g,tg=cr596N(T,'scr596'),hi=Math.max(cr596N(T,'scx596'),cr596N(T,'scn596')),lo=Math.min(cr596N(T,'scx596'),cr596N(T,'scn596'));
+  return{a,b,res,tg,hi,lo,use,mt,mw,t:mt!=null&&g.g<mt-0.05,w:mw!=null&&g.W<mw-0.05,c:use&&(res>hi+0.05||res<lo-0.05)}}
+WARN_K.push('st596t','st596w','st596c');
+{const f0=warnings;warnings=(P0,regsOf)=>{const out=f0(P0,regsOf);for(const e of P0.els){if(e.cat!=='stair'||e.msP!=null)continue;const T=typ(P0,e);if(!T||!(T.mtd596!=null||T.mrw596!=null||T.usc596))continue;
+  let g;try{g=stairGeo(P0,e)}catch(err){continue}if(!g)continue;const C=cr596(T,g),R=x=>Math.round(x);
+  if(C.t)out.push({k:'st596t',ids:[e.id],a:R(g.g)+' < '+R(C.mt)});if(C.w)out.push({k:'st596w',ids:[e.id],a:R(g.W)+' < '+R(C.mw)});
+  if(C.c)out.push({k:'st596c',ids:[e.id],a:R(C.res)+(C.res>C.hi?' > '+R(C.hi):' < '+R(C.lo))})}return out}}
+/* Properties of a stair whose type uses the calculator: the sum, against the target */
+XP.push((c,els)=>{if(c!=='stair'||els.length!==1)return'';const e=els[0],T=typ(P,e);if(!T||!T.usc596)return'';const g=stairGeo(P,e);if(!g)return'';const C=cr596(T,g),f=x=>String(Math.round(x*10)/10);
+  const fx=f(C.a)+'×'+Math.round(g.r)+' + '+f(C.b)+'×'+Math.round(g.g),rs=(C.c?'⚠ ':'')+Math.round(C.res)+' ('+t('sc596_tg',Math.round(C.tg))+')',
+    row=(l,v)=>`<div class="pr"><label>${t(l)}</label><div><span class="ro" title="${esc(fx+' = '+rs)}">${esc(v)}</span></div></div>`;          // two rows: the panel is narrow
+  return row('p_sc596',fx)+row('p_scv596',rs)});
+XC.push(()=>{for(const T of P.types.stair||[]){for(const k in CR596)if(T[k]!=null){const x=T[k];if(x===''||!isFinite(+x))delete T[k];else T[k]=clamp(+x,CR596[k][0],CR596[k][1])}
+  if(T.usc596!=null){if(T.usc596)T.usc596=1;else delete T.usc596}}});
+/* Type Properties of a stair: Calculation Rules after the Maximum Riser and Tread Depth, the calculator's numbers while it is on */
+RG_TF.cr596=(T,f)=>{const k=f[0],H=k==='mtd596'?`<div class="pg" style="margin:4px -16px;padding-left:16px">${t('g_cr596')}</div>`:'';
+  if(k==='usc596')return`<div class="fr"><label for="tf_usc596">${esc(t('f_usc596'))}</label><input type="checkbox" id="tf_usc596" data-tf="usc596" data-cr596="1"${T.usc596?' checked':''}></div>`;
+  const A=CR596[k],has=T[k]!=null&&T[k]!=='',u=k==='scmr596'||k==='scmt596'?'':' ('+t('u_mm')+')',ph=A[2]==null?t('cr596_none'):String(A[2]);
+  return H+`<div class="fr"><label for="tf_${k}">${esc(t('f_'+k)+u)}</label><span style="display:flex;gap:6px;align-items:center"><input type="number" id="tf_${k}" data-tf="${k}" data-cr596="1" value="${has?esc(T[k]):''}" min="${A[0]}" max="${A[1]}" step="${u?5:0.5}" placeholder="${esc(ph)}" style="flex:1">${has?`<button type="button" class="btn" data-td="nc:${k}" title="${t('vg_clear')}" aria-label="${t('vg_clear')}">✕</button>`:''}</span></div>`};
+{const f0=tdFields;tdFields=(cat,T)=>{const F=f0(cat,T);if(cat!=='stair'||!F)return F;T=T||{};const i=F.findIndex(f=>f[0]==='tread');const o=F.slice(),add=[['mtd596','cr596'],['mrw596','cr596'],['usc596','cr596'],...(T.usc596?[['scmr596','cr596'],['scmt596','cr596'],['scr596','cr596'],['scx596','cr596'],['scn596','cr596']]:[])];
+  o.splice(i<0?o.length:i+1,0,...add);return o}}
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='stair')return;const T=(P.types.stair||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;
+  H.change=ev=>{const el=ev.target,d=el&&el.dataset;if(!d||!d.cr596)return c0&&c0(ev);const k=d.tf,back=()=>dlgTypes('stair',T.id);
+    if(k==='usc596'){const v=!!el.checked;if(!!T.usc596!==v)edit(()=>{if(v)T.usc596=1;else delete T.usc596});return back()}
+    const A=CR596[k];if(!A)return back();const raw=String(el.value).trim();if(!raw){if(T[k]!=null)edit(()=>{delete T[k]});return back()}const n=parseFloat(raw);if(!isFinite(n))return back();
+    const x=clamp(Math.round(n*10)/10,A[0],A[1]);if(T[k]==null||+T[k]!==x)edit(()=>{T[k]=x});return back()}}}
+Object.assign(STR,{
+  g_cr596:['กฎการคำนวณ (Calculation Rules)','Calculation Rules'],f_mtd596:['ลูกนอนต่ำสุด','Minimum Tread Depth'],f_mrw596:['ความกว้างช่วงต่ำสุด','Minimum Run Width'],cr596_none:['ไม่ตรวจ','no check'],
+  f_usc596:['ใช้ตัวคำนวณความชันบันได (Stair Calculator)','Use Stair Calculator'],f_scmr596:['ตัวคูณลูกตั้ง','Riser Height multiplier'],f_scmt596:['ตัวคูณลูกนอน','Tread Depth multiplier'],
+  f_scr596:['ผลลัพธ์เป้าหมาย','Target Result'],f_scx596:['ผลลัพธ์สูงสุด','Maximum Result'],f_scn596:['ผลลัพธ์ต่ำสุด','Minimum Result'],
+  p_sc596:['ตัวคำนวณความชัน','Stair Calculator'],p_scv596:['ผลตัวคำนวณ','Calculator Result'],sc596_tg:['เป้า {0}','target {0}'],
+  wn_st596t:['ลูกนอนของบันไดน้อยกว่าลูกนอนต่ำสุดของชนิด ({0} มม.)','A stair\'s tread depth is less than its type\'s Minimum Tread Depth ({0} mm)'],
+  wn_st596w:['ความกว้างช่วงบันไดน้อยกว่าความกว้างต่ำสุดของชนิด ({0} มม.)','A stair\'s run width is less than its type\'s Minimum Run Width ({0} mm)'],
+  wn_st596c:['ผลของตัวคำนวณความชันบันไดอยู่นอกช่วงของชนิด ({0} มม.)','A stair\'s Stair Calculator result is out of its type\'s range ({0} mm)']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -61400,6 +61443,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ราวจับ (Handrail) ของชนิดราวกันตกเลือก [[f_hpr591]] ได้ (Revit: Profile ของชนิดราวจับ): กลมตามเส้นผ่านศูนย์กลาง สี่เหลี่ยม หรือโปรไฟล์ของโครงการ รูปวาดเป็นหน้าตัดขวางราวจับ x ออกจากราว y ขึ้น กึ่งกลางอยู่ที่แนวราวจับ ใช้ขนาดตามรูป ราวจับทั้งเส้นรวมส่วนยื่น ส่วนวกกลับเข้าผนังและส่วนลงพื้นกวาดรูปเดียวต่อเนื่อง ตัดเฉียงที่ทุกมุมเลี้ยว ต่อกับราวจับของราวกันตกถัดไปบนแนวตัดเฉียง ขาจับยาวถึงใต้รูป ผังแสดงตามความกว้างของรูป มีปุ่ม [[pf_btn587]] ในคุณสมบัติชนิด
 - บันไดที่มีผิวลูกนอนเลือก [[f_np592]] ได้ (Revit: Nosing Profile ของลูกนอน): สี่เหลี่ยมตามระยะยื่น (เดิม) หรือโปรไฟล์ของโครงการ รูปวาดเป็นหน้าตัดขอบลูกนอน x ยื่นออกจากผิวลูกตั้งด้านล่าง y ขึ้นจากผิวบนลูกนอน ระยะยื่นจมูกบันไดเป็นความยาวของรูป ผิวลูกนอนหยุดที่ผิวลูกตั้งแล้วกวาดรูปไปตามขอบหน้าของทุกลูกนอนที่มีจมูก [[f_npa592]] ให้รูปวิ่งต่อไปตามปลายซ้ายและขวาของลูกนอน (มองขึ้นบันได) ตัดเฉียงที่มุม มีปุ่ม [[pf_btn587]] ในคุณสมบัติชนิด
 - [[f_rty595]] (Revit: Riser Type ของชนิดบันได): [[rty595_st]] [[rty595_sl]] ให้ลูกตั้งทุกขั้นที่มีจมูกเอียงจากโคนขึ้นไปถึงจมูกของลูกนอนข้างบน โครงสร้างหลังลูกตั้งเอียงตาม (ลูกตั้งแรกและสุดท้ายยังตั้งตรง) หรือ [[rty595_n]] (ไม่มีผิวลูกตั้ง บันไดลูกนอนบนแม่บันไดเป็นบันไดโปร่ง) · [[f_rtc595]]: [[rtc595_t]] หรือ [[rtc595_r]] (ผิวลูกตั้งลงไปถึงโครงสร้างหลังลูกนอนล่าง ลูกนอนหยุดที่หน้าลูกตั้ง) · 3D รูปตัด และปริมาณผิวตามนั้น
+- [[g_cr596]] (Revit: Calculation Rules ของชนิดบันได): ใน [[edit_type]] ใต้ลูกนอน ตั้ง [[f_mtd596]] และ [[f_mrw596]] (เว้นว่าง = ไม่ตรวจ) และติ๊ก [[f_usc596]] แล้วตั้ง [[f_scmr596]] [[f_scmt596]] (2 และ 1 คือ 2R + T) [[f_scr596]] [[f_scx596]] และ [[f_scn596]] (630 650 600) · บันไดที่ผิดกฎขึ้นใน [[a_warn]] และคุณสมบัติของบันไดแสดง [[p_sc596]] ของตัวเองเทียบกับเป้าหมาย
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -61706,6 +61750,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - The handrails of a railing type take a [[f_hpr591]] (Revit: the Profile of a Handrail type): circular by the diameter, rectangular, or a project profile drawn as a section across the handrail, x out from the railing and y up, centred on the handrail line, at its own size; the whole handrail (extensions, returns to the wall and drops to the floor) is one sweep with mitres at every bend, joined to the next railing's handrail on the mitre; supports reach the underside of the outline and plans show its width; [[pf_btn587]] in Type Properties
 - A stair with a tread finish takes a [[f_np592]] (Revit: the Nosing Profile of its treads): Square by the Nosing Length (as before) or a project profile drawn as a section of the tread's edge, x forward from the face of the riser below and y up from the top of the tread; the nosing stands out by the profile's length, the tread finish stops at the riser face and the outline sweeps along the front of every tread with a nosing; [[f_npa592]] runs it along the left and right ends of the treads too (walking up), mitred at the corners; [[pf_btn587]] in Type Properties
 - [[f_rty595]] (Revit: the Riser Type of a stair type): [[rty595_st]], [[rty595_sl]] (every riser under a tread that stands out leans from its foot up to the nosing above, the structure behind it too; the first and last risers stay plumb) or [[rty595_n]] (no riser finish; treads on supports make an open stair) · [[f_rtc595]]: [[rtc595_t]] or [[rtc595_r]] (the riser finish runs down behind the tread below to the structure, the tread stops at its face) · 3D views, sections and the finish quantities follow
+- [[g_cr596]] (Revit: the Calculation Rules of a stair type): in [[edit_type]], under the tread depth, set a [[f_mtd596]] and a [[f_mrw596]] (empty: no check), and tick [[f_usc596]] to set the [[f_scmr596]] and [[f_scmt596]] (2 and 1: 2R + T), the [[f_scr596]], [[f_scx596]] and [[f_scn596]] (630, 650, 600) · a stair that breaks a rule is in [[a_warn]], and the Properties of a stair show its own [[p_sc596]] against the target
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -62880,6 +62925,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.593 · เส้นตัดบันได (Cut Mark): เส้นเดี่ยวหรือคู่ ซิกแซก โค้ง หรือตรง ตั้งมุมได้ และคำว่าขึ้น/ลงของบันไดแต่ละตัว
 - V1.594 · ชนิดเส้นทางบันได (Stair Path): ชี้ขึ้นเสมอ จุดต้นทางและหัวลูกศรแบบทึบ โปร่ง หรือไม่มี และจบที่ลูกตั้ง
 - V1.595 · ชนิดลูกตั้ง: ตรง เอียง หรือไม่มี (บันไดโปร่ง) และการต่อลูกตั้งกับลูกนอน
+- V1.596 · กฎการคำนวณบันได: ลูกนอนและความกว้างต่ำสุด ตัวคำนวณความชัน 2R + T พร้อมคำเตือน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -63648,6 +63694,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.593 · Stair cut marks: single or double, zigzag, curve or straight, at an angle, and the up / down text of each stair
 - V1.594 · Stair path types: Fixed Up Direction, filled, open or no start symbol and arrow, End at Riser
 - V1.595 · Riser types: straight, slanted or none (open risers), and the riser to tread connection
+- V1.596 · Stair calculation rules: minimum tread depth and run width, the 2R + T stair calculator, with warnings
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -68301,6 +68348,12 @@ window.PenumBIM.r595={
   run:(id,i)=>{const S=stParts(P,IDX.get(id)),X=S.runs[i||0],R1=v=>Math.round(v*10)/10;return{F:{rt:S.F.rt,tt:S.F.tt,ns:S.F.ns,rty:S.F.rty||null,rtc:S.F.rtc||null},pr:X.pr.map(p=>p.map(R1)),tf:X.tf.map(b=>b.map(R1)),rf:X.rf.map(b=>b.map(R1).concat(b.k?[Math.round(b.k*1e4)/1e4]:[]))}},
   q:id=>{const o=quantities(P).get(id)||{};return{rfa:Math.round(o.rfa||0),tfa:Math.round(o.tfa||0),vol:Math.round(o.vol||0)}},
   tidy:()=>{for(const f of XC)f();return(P.types.stair||[]).map(T=>[T.rty595||'st',T.rtc595||'t'])}};
+/* V1.596 test API: stair calculation rules */
+window.PenumBIM.r596={
+  types:()=>(P.types.stair||[]).map(T=>[T.id,T.name,T.mtd596==null?null:T.mtd596,T.mrw596==null?null:T.mrw596,T.usc596?1:0,T.tread,T.width,T.maxRiser]),
+  cr:id=>{const e=IDX.get(id),g=stairGeo(P,e),C=cr596(typ(P,e),g);return{r:Math.round(g.r*100)/100,g:g.g,W:g.W,res:Math.round(C.res*10)/10,t:C.t,w:C.w,c:C.c,lo:C.lo,hi:C.hi}},
+  warn:()=>warnings(P).filter(w=>/^st596/.test(w.k)).map(w=>[w.k,w.ids,w.a]),
+  tidy:()=>{for(const f of XC)f();return(P.types.stair||[]).map(T=>[T.mtd596==null?null:T.mtd596,T.scr596==null?null:T.scr596,T.usc596==null?null:T.usc596])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
