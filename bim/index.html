@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=575,V1_NAME='V1.565';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=576,V1_NAME='V1.566';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58400,6 +58400,87 @@ Object.assign(STR,{
     'Brace Symbols: plans show the braces above their level (their lower end on it) and the braces below it (coming up to it from under it), in the pen of what lies beyond; Parallel Line draws a brace beside its line, offset to its left on paper, so that it is not lost in the line of a beam over it'],
   br565_rep:['การแสดงค้ำยันในแปลน (Plan representation)','Plan representation'],br565_l:['เส้น (Line)','Line'],br565_p:['เส้นขนาน (Parallel Line)','Parallel Line'],
   br565_off:['ระยะเยื้องเส้นขนาน (Parallel Line Offset)','Parallel Line Offset'],br565_a:['แสดงค้ำยันเหนือระดับ (Show brace above)','Show brace above'],br565_b:['แสดงค้ำยันใต้ระดับ (Show brace below)','Show brace below']});
+/* ===== 566 Brace ends attached to beams (V1.566; Revit: a brace end placed on a beam is attached to it: Properties › Start / End Attachment Type
+   Distance or Ratio, Start / End Attachment Distance or Ratio, measured from the start or the end of the beam).  A new brace whose end lies on a beam (on
+   its location line in plan, within its width, its height within 50 mm, not on a column) is attached there: the end keeps its place along the beam when the
+   beam moves, turns, is stretched or is split, and slides along the beam when it is moved along it; moved onto another beam it holds that one, moved off
+   every beam it lets go, and a deleted beam lets
+   go of it.  Properties give each attached end its Attachment Type, its Distance (mm) or Ratio (0 to 1) and the end of the beam it is measured from; Type
+   Detached lets go.  Copies of a brace and its beam keep the attachment; schedules have it. */
+/* e.ba566 [start, end]: null or {h: beam id, t:'d'|'r', v: mm or ratio, r: 0 from the beam's start | 1 from its end, p: [x,y,z] where the end was put, g: the beam's line then} */
+const ba566Of=(e,k)=>{const a=e&&e.cat==='beam'&&e.use==='brace'&&Array.isArray(e.ba566)?e.ba566[k?1:0]:null;return a&&typeof a==='object'&&a.h!=null?a:null};
+/* the location line of a beam in 3D, [[x,y,z],[x,y,z]]; null for a brace, a bowed beam or none */
+function ba566Seg(Q,b){if(!b||b.cat!=='beam'||b.use==='brace'||b.bow||!isFinite(b.x1))return null;const z=beamZ(Q,b);return[[b.x1,b.y1,z[0]],[b.x2,b.y2,z[1]]]}
+const ba566G=S=>S?[...S[0],...S[1]].map(x=>Math.round(x*10)/10):null;
+/* the place along the beam (0 at its start, 1 at its end) of an attachment */
+function ba566S(a,L){const v=+a.v||0;let s=a.t==='r'?v:(L>0?v/L:0);if(a.r)s=1-s;return clamp(s,0,1)}
+function ba566At(S,s){return[0,1,2].map(i=>S[0][i]+(S[1][i]-S[0][i])*s)}
+const ba566End=(Q,e,k)=>{const z=beamZ(Q,e);return k?[e.x2,e.y2,z[1]]:[e.x1,e.y1,z[0]]};
+function ba566Put(Q,e,k,p){const r=x=>Math.round(x*10)/10;if(!k){e.x1=r(p[0]);e.y1=r(p[1]);e.off=r(p[2]-elev(Q,e.level))}else{e.x2=r(p[0]);e.y2=r(p[1]);e.off2=r(p[2]-elev(Q,e.lv2&&lvl(Q,e.lv2)?e.lv2:e.level))}}
+/* where a point lies on a beam: its place along it and how far off it is on plan and in height */
+function ba566Proj(S,p){const dx=S[1][0]-S[0][0],dy=S[1][1]-S[0][1],l2=dx*dx+dy*dy;if(l2<1)return null;const s=((p[0]-S[0][0])*dx+(p[1]-S[0][1])*dy)/l2;const q=ba566At(S,clamp(s,0,1));
+  return{s,d:Math.hypot(p[0]-q[0],p[1]-q[1]),dz:Math.abs(p[2]-q[2]),L:Math.sqrt(l2)}}
+const ba566OnCol=(Q,p)=>Q.els.some(c=>{if(c.cat!=='column')return false;let lp=null;try{lp=columnLoop(Q,c)}catch(_){}if(!lp||lp.length<3||!inPoly(p[0],p[1],lp))return false;const z=zRange(Q,c);return p[2]>=z[0]-50&&p[2]<=z[1]+50});
+/* the beam a brace end lies on, if any: {b, s, L} */
+function ba566Find(Q,e,p){if(ba566OnCol(Q,p))return null;let best=null;
+  for(const b of Q.els){const S=ba566Seg(Q,b);if(!S)continue;const j=ba566Proj(S,p);if(!j||j.s<-1e-6||j.s>1+1e-6)continue;const hw=Math.max(((typ(Q,b)||{}).w||200)/2,20);
+    if(j.d<=hw+0.5&&j.dz<=50&&(!best||j.d+j.dz<best.d+best.dz))best={b,s:clamp(j.s,0,1),L:j.L,d:j.d,dz:j.dz}}return best}
+const ba566New=(Q,f,p)=>{const S=ba566Seg(Q,f.b);return{h:f.b.id,t:'d',v:Math.round(f.s*f.L*10)/10,r:0,p:ba566At(S,f.s).map(x=>Math.round(x*10)/10),g:ba566G(S)}};
+const ba566Near=(a,b,tol)=>!!a&&!!b&&Math.abs(a[0]-b[0])<=tol&&Math.abs(a[1]-b[1])<=tol&&Math.abs(a[2]-b[2])<=tol;
+function ba566Tidy(e){if(Array.isArray(e.ba566)&&!e.ba566[0]&&!e.ba566[1])delete e.ba566}
+/* a new brace: each end that lies on a beam is attached to it, and put on its line */
+XN.push(s0=>{for(const e of P.els){if(e.id<s0||e.cat!=='beam'||e.use!=='brace'||e.bow||Array.isArray(e.ba566))continue;const A=[null,null];          // a copy keeps what it holds
+  for(const k of [0,1]){const p=ba566End(P,e,k),f=ba566Find(P,e,p);if(!f)continue;A[k]=ba566New(P,f,p);ba566Put(P,e,k,A[k].p)}
+  if(A[0]||A[1])e.ba566=A;else delete e.ba566}});
+/* after every change: an attached end follows its beam, slides along it when moved along it, lets go when moved off it or when the beam is gone */
+XD.push(()=>{let ch=false;for(const e of P.els){if(e.cat!=='beam'||e.use!=='brace'||!Array.isArray(e.ba566))continue;
+  for(const k of [0,1]){const a=ba566Of(e,k);if(!a){if(e.ba566[k]){e.ba566[k]=null;ch=true}continue}
+    let b=IDX.get(a.h),S=ba566Seg(P,b);const cur=ba566End(P,e,k);
+    if(!S){e.ba566[k]=null;ch=true;continue}          // the beam is gone (or is no beam any more): the end stays where it is
+    const L=Math.hypot(S[1][0]-S[0][0],S[1][1]-S[0][1]),G=ba566G(S),comp=ba566At(S,ba566S(a,L));
+    if(ba566Near(cur,comp,0.5)){if(!ba566Near(a.p,cur,0.05)||String(a.g)!==String(G)){a.p=cur.map(x=>Math.round(x*10)/10);a.g=G;ch=true}continue}
+    if(!ba566Near(cur,a.p,0.5)){          // the brace end was moved: along the beam it slides, off it it lets go
+      const j=ba566Proj(S,cur),hw=Math.max(((typ(P,b)||{}).w||200)/2,20);
+      if(j&&j.s>=-1e-6&&j.s<=1+1e-6&&j.d<=hw+0.5&&j.dz<=50){const s=clamp(j.s,0,1),q=ba566At(S,s);a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*L:s*L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);
+        ba566Put(P,e,k,q);a.p=ba566End(P,e,k);a.g=G}else{const f=ba566Find(P,e,cur);if(f){e.ba566[k]=ba566New(P,f,cur);ba566Put(P,e,k,e.ba566[k].p);e.ba566[k].p=ba566End(P,e,k)}else e.ba566[k]=null}ch=true;continue}
+    if(String(a.g)!==String(G)){          // the beam changed under a brace end that did not move: on the beam still (stretched, split) it stays; on a piece split off it goes with that piece
+      const j=ba566Proj(S,a.p);if(j&&j.s>=-1e-6&&j.s<=1+1e-6&&j.d<=0.5&&j.dz<=0.5){const s=clamp(j.s,0,1);a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*L:s*L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);a.g=G;ch=true;continue}
+      const f=P.els.find(o=>{if(o===b)return false;const T=ba566Seg(P,o);if(!T||String(ba566G(T))===String(G))return false;const q=ba566Proj(T,a.p);return q&&q.s>=-1e-6&&q.s<=1+1e-6&&q.d<=0.5&&q.dz<=0.5&&o.level===b.level});
+      if(f&&f.id>b.id&&Math.hypot(b.x2-b.x1,b.y2-b.y1)<Math.hypot(a.g[3]-a.g[0],a.g[4]-a.g[1])-0.5){const T=ba566Seg(P,f),q=ba566Proj(T,a.p),s=clamp(q.s,0,1);a.h=f.id;a.v=Math.round((a.t==='r'?(a.r?1-s:s):(a.r?(1-s)*q.L:s*q.L))*(a.t==='r'?1e4:10))/(a.t==='r'?1e4:10);a.g=ba566G(T);ch=true;continue}}
+    ba566Put(P,e,k,comp);a.p=ba566End(P,e,k);a.g=G;ch=true}          // the beam moved, turned or changed: the end goes with its place along it
+  ba566Tidy(e)}return ch});
+/* copies of a brace and its beam: the copy of the brace holds the copy of the beam */
+{const f0=cloneIds;cloneIds=function(ids){const out=f0.apply(this,arguments),M=CLMAP;if(M)for(const id of out){const c=IDX.get(id);if(!c||!Array.isArray(c.ba566))continue;for(const a of c.ba566)if(a&&M.has(a.h))a.h=M.get(a.h)}return out}}
+/* ---- Properties of attached braces: after Structural Usage ---- */
+function ba566Rows(els){const R=[];for(const k of [0,1]){if(!els.every(x=>ba566Of(x,k)))continue;const s=k?'e':'s',V=f=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:''},A=x=>ba566Of(x,k),T=V(x=>A(x).t==='r'?'r':'d');
+    R.push(PR.ro('p_ba566h'+s,(()=>{const h=V(x=>A(x).h),b=h===''?null:IDX.get(h);return b?((typ(P,b)||{}).name||t('beam'))+(b.mark?' ('+b.mark+')':''):t('varies')})()));
+    R.push(PR.sel('ba566t'+s,'p_ba566t'+s,T,[['d',t('ba566_d')],['r',t('ba566_r')],['n',t('ba566_n')]]));
+    if(T==='d')R.push(PR.num('ba566v'+s,'p_ba566d'+s,V(x=>A(x).v),t('u_mm'),'step="10" min="0"'));else if(T==='r')R.push(PR.num('ba566v'+s,'p_ba566r'+s,V(x=>A(x).v),'','step="0.05" min="0" max="1"'));
+    R.push(PR.sel('ba566r'+s,'p_ba566f'+s,V(x=>A(x).r?1:0),[[0,t('ba566_fs')],[1,t('ba566_fe')]]))}return R.join('')}
+{const f0=catRows;catRows=(cat,els,isNew)=>{const h=f0(cat,els,isNew);if(cat!=='beam'||isNew||!els.length||!els.every(x=>x.use==='brace'))return h;const R=ba566Rows(els);if(!R)return h;
+  const m=/<div class="pr"><label for="p_use">[\s\S]*?<\/div><\/div>/.exec(h);if(m){const j=m.index+m[0].length;return h.slice(0,j)+R+h.slice(j)}return h+R}}
+XF.push((cat,o,key,raw)=>{const m=/^ba566(t|v|r)(s|e)$/.exec(key);if(cat!=='beam'||!m)return false;const k=m[2]==='e'?1:0,a=ba566Of(o,k);if(!a)return true;
+  const b=IDX.get(a.h),S=ba566Seg(P,b);if(!S)return true;const L=Math.hypot(S[1][0]-S[0][0],S[1][1]-S[0][1]),s=ba566S(a,L);
+  const val=(t,r)=>{const u=r?1-s:s;return t==='r'?Math.round(u*1e4)/1e4:Math.round(u*L*10)/10};
+  if(m[1]==='t'){if(raw==='n'){o.ba566[k]=null;ba566Tidy(o);return true}const t=raw==='r'?'r':'d';if(t!==a.t){a.t=t;a.v=val(t,a.r)}return true}
+  if(m[1]==='r'){const r=raw==='1'||raw===1?1:0;if(r!==(a.r?1:0)){a.r=r;a.v=val(a.t,r)}return true}
+  const v=parseFloat(raw);if(!isFinite(v))return true;a.v=a.t==='r'?Math.round(clamp(v,0,1)*1e4)/1e4:Math.round(clamp(v,0,L)*10)/10;return true});
+XC.push(()=>{for(const e of P.els){if(e.cat!=='beam'||!('ba566' in e))continue;if(e.use!=='brace'||!Array.isArray(e.ba566)){delete e.ba566;continue}
+  e.ba566=[0,1].map(k=>{const a=e.ba566[k];if(!a||typeof a!=='object'||a.h==null||!isFinite(+a.v))return null;const t=a.t==='r'?'r':'d',v=t==='r'?clamp(+a.v,0,1):Math.max(0,+a.v);
+    const p=Array.isArray(a.p)&&a.p.length===3&&a.p.every(x=>isFinite(+x))?a.p.map(Number):null,g=Array.isArray(a.g)&&a.g.length===6&&a.g.every(x=>isFinite(+x))?a.g.map(Number):null;
+    return{h:a.h,t,v,r:a.r?1:0,p:p||ba566End(P,e,k),g:g||[0,0,0,0,0,0]}});ba566Tidy(e)}});
+/* ---- schedules ---- */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='beam')return F;for(const k of [0,1]){const s=k?'e':'s',A=e=>ba566Of(e,k);
+    F.push({k:'ba566t'+s,l:tr('p_ba566t'+s),g:e=>{const a=A(e);return a?tr(a.t==='r'?'ba566_r':'ba566_d'):''},grp:'i'});
+    F.push({k:'ba566v'+s,l:tr('p_ba566v'+s),g:e=>{const a=A(e);return a?a.v:''},grp:'i',num:1,dec:2})}return F}}
+Object.assign(STR,{
+  p_ba566hs:['ปลายเริ่ม ยึดกับคาน','Start Attached to'],p_ba566he:['ปลายสุด ยึดกับคาน','End Attached to'],
+  p_ba566ts:['ปลายเริ่ม แบบการยึด (Start Attachment Type)','Start Attachment Type'],p_ba566te:['ปลายสุด แบบการยึด (End Attachment Type)','End Attachment Type'],
+  p_ba566ds:['ปลายเริ่ม ระยะยึด (Start Attachment Distance)','Start Attachment Distance'],p_ba566de:['ปลายสุด ระยะยึด (End Attachment Distance)','End Attachment Distance'],
+  p_ba566rs:['ปลายเริ่ม สัดส่วนยึด (Start Attachment Ratio)','Start Attachment Ratio'],p_ba566re:['ปลายสุด สัดส่วนยึด (End Attachment Ratio)','End Attachment Ratio'],
+  p_ba566vs:['ปลายเริ่ม ระยะหรือสัดส่วนยึด','Start Attachment Distance or Ratio'],p_ba566ve:['ปลายสุด ระยะหรือสัดส่วนยึด','End Attachment Distance or Ratio'],
+  p_ba566fs:['ปลายเริ่ม วัดจาก (ปลายของคาน)','Start Attachment measured from'],p_ba566fe:['ปลายสุด วัดจาก (ปลายของคาน)','End Attachment measured from'],
+  ba566_d:['ระยะ (Distance)','Distance'],ba566_r:['สัดส่วน (Ratio)','Ratio'],ba566_n:['ปล่อย (ไม่ยึด)','Detached'],ba566_fs:['ปลายเริ่มของคาน','Start of the beam'],ba566_fe:['ปลายสุดของคาน','End of the beam']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59521,6 +59602,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_mc563s]] และ [[p_mc563e]] ของคาน: [[mc563_n]] [[mc563_f]] หรือ [[mc563_c]] แปลนแสดงสัญลักษณ์ที่ปลายนั้น (สามเหลี่ยมทึบ หรือสามเหลี่ยมโปร่งมีขีดขวาง) [[a_stset]] หน้า [[a_sr563]] เลือกได้ว่าจะแสดงหรือไม่
 - [[stk564_l]]: ที่ระดับรายละเอียดหยาบ แปลนวาดคานและค้ำยันเป็นเส้นเดียวตามแนวคาน ปลายที่ชนเสา คาน หรือค้ำยันอื่นร่นเข้าตาม [[scb564_l]] และ [[scr564_l]] (มม. บนกระดาษ) [[a_stset]] หน้า [[a_sr563]] เลือก [[stk564_s]] [[stk564_a]] หรือ [[stk564_n]]
 - สัญลักษณ์ค้ำยันในแปลน: [[br565_rep]] [[br565_l]] หรือ [[br565_p]] (เยื้องไปทางซ้ายตาม [[br565_off]] มม. บนกระดาษ) [[br565_a]] และ [[br565_b]] (ค้ำยันที่ขึ้นมาถึงระดับนั้นจากข้างล่าง) อยู่ใน [[a_stset]] หน้า [[a_sr563]]
+- ค้ำยันที่ปลายวางบนคาน (บนแนวคานในแปลน สูงต่างไม่เกิน 50 มม. ไม่ใช่บนเสา) ยึดกับคานนั้น: [[p_ba566ts]] [[ba566_d]] หรือ [[ba566_r]] ระยะหรือสัดส่วนวัดจากปลายเริ่มหรือปลายสุดของคาน ปลายตามคานเมื่อคานย้าย หมุน ยืด หรือแบ่ง เลื่อนตามคานเมื่อย้ายไปตามคาน ย้ายออกจากคานหรือเลือก [[ba566_n]] แล้วปล่อย
 - [[a_steel]] (แท็บ [[tab_struct]] แผง [[p_struct]]): ตารางหน้าตัดเหล็กมาตรฐาน H, I, รางน้ำ [, ตัวซี C, ฉาก L, กล่อง □ และท่อกลม Ø (JIS G 3192, 3350, 3466, 3444 · มอก. 1227, 1228, 107) · ติ๊กเลือกขนาดแล้วกด โหลด เป็นชนิดเสาหรือคานเหล็ก · ใน แก้ชนิด ตั้ง [[f_sec]] เป็นเหล็กแล้วแก้ขนาด d b tw tf r ได้ พร้อมค่า A น้ำหนัก กก./ม. Ix Iy Zx Zy rx ry · แปลน 3 มิติ รูปด้าน และรูปตัดแสดงหน้าตัดจริง · ถอดปริมาณและ BOQ เป็นกิโลกรัม (42 บาท/กก. แก้ได้)
 - [[a_colgrids]] (ขณะใช้ [[t_column]]) และ [[a_beamgrids]] (ขณะใช้ [[t_beam]]): วางเสาที่จุดตัดกริด หรือวางคานตามแนวกริดจากจุดตัดหนึ่งถึงจุดตัดถัดไป · ใช้กริดที่เลือก หรือทุกกริดถ้าไม่ได้เลือก · ข้ามตำแหน่งที่มีอยู่แล้ว (รวมเสาจากชั้นล่างที่สูงทะลุขึ้นมา)
 - [[a_cols]] (ขณะใช้ [[t_column]] แผง [[p_placement]]): คลิกจุดฐาน แล้วคลิกจุดบน · แถบตัวเลือกมี [[o_sl1]] และ [[o_sl2]] แต่ละอันเป็นระดับกับระยะ (เริ่มที่ระดับนี้ถึงระดับถัดขึ้นไป) · ในรูปด้านและรูปตัด เครื่องมือเสาวางได้เฉพาะเสาเอียง คลิกสองจุดบนระนาบของมุมมอง ความสูงตามที่คลิก (เสา ผนัง หรือคานใต้ตัวชี้ตอนคลิกแรกกำหนดระนาบ หรือเลือก [[o_slpl]] เป็นกริดหรือแนวตัดในแถบตัวเลือก) · ใน 3 มิติ คลิกบนระดับของ [[o_sl1]] แล้วบนระดับของ [[o_sl2]] หรือติ๊ก [[o_sl3s]] เพื่อใช้จุดบนผิวที่คลิก · [[a_colv]] กลับไปวางเสาแนวดิ่ง
@@ -59796,6 +59878,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - A beam's [[p_mc563s]] and [[p_mc563e]]: [[mc563_n]], [[mc563_f]] or [[mc563_c]]; plans show a symbol at that end (a filled triangle, or an open one with a bar across its tip); [[a_stset]], [[a_sr563]], says whether plans show them
 - [[stk564_l]]: at the Coarse detail level plans draw beams and braces as one line along their location line; an end that meets a column, a beam or a brace is held back by [[scb564_l]] or [[scr564_l]] (mm on paper); [[a_stset]], [[a_sr563]], chooses [[stk564_s]], [[stk564_a]] or [[stk564_n]]
 - Brace symbols in plans: [[br565_rep]] [[br565_l]] or [[br565_p]] (offset to its left by the [[br565_off]], mm on paper), [[br565_a]] and [[br565_b]] (braces coming up to the level from under it), in [[a_stset]], [[a_sr563]]
+- A brace end placed on a beam (on its line in plan, its height within 50 mm, not on a column) is attached to it: [[p_ba566ts]] [[ba566_d]] or [[ba566_r]], measured from the start or the end of the beam; the end follows the beam when it moves, turns, is stretched or split, slides along it when moved along it, and lets go when moved off it or set to [[ba566_n]]
 - [[a_steel]] (the [[tab_struct]] tab, [[p_struct]] panel): tables of standard steel shapes: H, I, channels [, lipped channels C, angles L, hollow sections □ and round tubes Ø (JIS G 3192, 3350, 3466, 3444 · TIS 1227, 1228, 107) · tick the sizes and Load them as steel column or beam types · in Edit Type set [[f_sec]] to a steel shape and change its d, b, tw, tf, r, with its A, kg/m, Ix, Iy, Zx, Zy, rx, ry · plans, 3D views, elevations and sections show the real section · quantities and the BOQ count it in kg (42 THB/kg, to change)
 - [[a_colgrids]] (with [[t_column]]) and [[a_beamgrids]] (with [[t_beam]]): a column at every grid crossing, or beams along the grids from one crossing to the next · of the selected grids, or of all of them · none where there is one already (a column from a level below that runs up through this one counts)
 - [[a_cols]] (with [[t_column]], in the [[p_placement]] panel): click the base, then the top · the options bar has the [[o_sl1]] and the [[o_sl2]], each a level with its offset (this level to the one above, to start with) · in an elevation or a section the column tool places slanted columns only: click two points on the plane of the view, at the heights you click (the column, wall or beam under the pointer at the first click sets the plane, or pick a grid or the cut as the [[o_slpl]] in the options bar) · in a 3D view click on the level of the [[o_sl1]], then on that of the [[o_sl2]], or tick [[o_sl3s]] to take the point you click on · [[a_colv]] goes back to upright columns
@@ -60896,6 +60979,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.563 · การต่อปลายคานรับโมเมนต์ (Moment Connection Start / End) แบบ Revit: คุณสมบัติของคานมีการต่อปลายเริ่มและปลายสุด เลือกไม่มี โครงข้อแข็ง (Moment Frame) หรือโมเมนต์ยื่น (Cantilever Moment) แปลนแสดงสัญลักษณ์ที่ปลายนั้นของคานตามที่สร้าง: สามเหลี่ยมทึบสำหรับโครงข้อแข็ง สามเหลี่ยมโปร่งมีขีดขวางสำหรับโมเมนต์ยื่น ยาว 2.5 มม. บนกระดาษทุกมาตราส่วน การตั้งค่าโครงสร้างมีหน้าการแสดงสัญลักษณ์ (Symbolic Representation Settings) ดูรูปสัญลักษณ์และเลือกว่าจะแสดงในแปลนหรือไม่ คานใหม่รับค่าจากแผงคุณสมบัติขณะใช้เครื่องมือคาน ตารางรายการมีสองช่อง คัดลอกติดไป ค้ำยันไม่มีค่านี้
 - V1.564 · คานในแปลนหยาบแสดงเป็นเส้นเดียว (Stick Symbols) และระยะร่นสัญลักษณ์ (Symbolic Cutback Distance) แบบ Revit: แปลนที่ระดับรายละเอียดหยาบ (Coarse) วาดคานและค้ำยันเป็นเส้นเดียวตามแนวคาน แทนขอบคาน ด้วยเส้นและเส้นประของมันเอง (ตัด ใต้ระดับ หรือไกล) ปลายที่ชนเสา คาน หรือค้ำยันอื่นร่นเข้าตามระยะร่นบนกระดาษ (2.4 มม. ทุกมาตราส่วน) สัญลักษณ์การต่อปลายคานย้ายตามปลายเส้น ระดับกลางและละเอียดแสดงขอบคานเหมือนเดิม การตั้งค่าโครงสร้าง หน้าการแสดงสัญลักษณ์ เลือกว่าแปลนใดใช้: เฉพาะแปลนงานโครงสร้าง (ค่าเริ่มต้น) ทุกแปลน หรือไม่ใช้ และตั้งระยะร่นของคานและของค้ำยันแยกกัน
 - V1.565 · สัญลักษณ์ค้ำยันในแปลน (Brace Symbols) แบบ Revit: แปลนแสดงค้ำยันเหนือระดับ (ปลายล่างอยู่ที่ระดับนั้น เหมือนเดิม) และค้ำยันใต้ระดับ คือค้ำยันที่ขึ้นมาถึงระดับนั้นจากข้างล่าง (ปลายบนอยู่ไม่เกิน 1220 มม. ใต้พื้น) หรือลงจากระดับนั้น ด้วยเส้นของสิ่งที่อยู่ไกล การแสดงในแปลนเลือกได้ เส้น (Line) วาดบนแนวค้ำยันเหมือนเดิม หรือ เส้นขนาน (Parallel Line) วาดเยื้องไปทางซ้ายตามระยะบนกระดาษ (2.5 มม.) ไม่หายไปในเส้นคานที่อยู่เหนือมัน ขอบ เส้นเดี่ยว และเส้นกึ่งกลางเยื้องไปด้วย คลิกที่เส้นที่เห็นเลือกค้ำยันได้ การตั้งค่าโครงสร้าง หน้าการแสดงสัญลักษณ์ มีทั้งสี่ค่า
+- V1.566 · ค้ำยันยึดกับคาน (Brace Attachment) แบบ Revit: ค้ำยันใหม่ที่ปลายวางบนคาน (บนแนวคานในแปลนภายในความกว้างคาน สูงต่างไม่เกิน 50 มม. ไม่ใช่บนเสา) ยึดกับคานนั้นและวางบนแนวคาน คุณสมบัติของปลายที่ยึดมีแบบการยึด ระยะ (Distance) หรือสัดส่วน (Ratio 0 ถึง 1) และวัดจากปลายเริ่มหรือปลายสุดของคาน แก้ค่าแล้วปลายค้ำยันเลื่อนตาม ย้าย หมุน ยืด หรือแบ่งคานแล้วปลายค้ำยันไปกับตำแหน่งบนคาน ย้ายค้ำยันไปตามคานแล้วเลื่อนตามและค่าเปลี่ยน ย้ายออกจากคาน เลือกปล่อย หรือลบคานแล้วไม่ยึด คัดลอกค้ำยันพร้อมคานแล้วยึดกับคานที่คัดลอก ตารางรายการมีแบบและค่าของทั้งสองปลาย
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61634,6 +61718,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.563 · Beam Moment Connections, as in Revit: a beam's Properties have Moment Connection Start and End: None, Moment Frame or Cantilever Moment; plans show a symbol at that end of the beam as built, a filled triangle for a moment frame, an open triangle with a bar across its tip for a cantilever moment, 2.5 mm long on paper at any scale; Structural Settings has a Symbolic Representation Settings page with the symbols and whether plans show them; a new beam takes them from Properties while the Beam tool is on; schedules have both ends; copies keep them; braces have none
 - V1.564 · Framing as stick symbols in Coarse plans, with Symbolic Cutback Distance, as in Revit: a plan at the Coarse detail level draws beams and braces as one line along their location line in place of their outline, in their own pen and dashes (cut, below, beyond); an end that meets a column, a beam or a brace is held back by the cutback distance on paper (2.4 mm at any scale); the moment connection symbols move with the ends; Medium and Fine show the outline as before; Structural Settings, Symbolic Representation Settings, says which plans do it: Structural plans (the default), All plans or None, with the cutback of beams and of braces set apart
 - V1.565 · Brace Symbols in plans, as in Revit: a plan shows the braces above its level (their lower end on it, as before) and now the braces below it, those coming up to it from under it (their upper end within 1220 mm under its floor) or going down from it, in the pen of what lies beyond; Plan representation Line draws a brace on its line as before, Parallel Line beside it, offset to its left by the Parallel Line Offset on paper (2.5 mm), so that it is not lost in the line of a beam over it; its outline, stick and centre line move with it and a click on the line drawn picks it; Structural Settings, Symbolic Representation Settings, has the four
+- V1.566 · Brace ends attached to beams, as in Revit: a new brace whose end is placed on a beam (on its line in plan, within its width, its height within 50 mm, not on a column) is attached to it and put on its line; Properties give an attached end its Attachment Type, Distance or Ratio (0 to 1), measured from the start or the end of the beam, and the end moves when they change; a beam moved, turned, stretched or split takes the brace end along at its place on it; a brace moved along the beam slides on it and its value changes; moved off the beam, set Detached, or its beam deleted, it lets go; a brace copied with its beam holds the copy; schedules have both ends' type and value
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -65728,6 +65813,16 @@ window.PenumBIM.r565={
   set:o=>{edit(()=>{for(const k in o){if(o[k]===null)delete P[k];else P[k]=o[k]}});refresh();const r={};for(const k of ['brp565','bro565','bra565','brb565'])r[k]=P[k]===undefined?null:P[k];return r},
   tidy:()=>{for(const f of XC)f();const r={};for(const k of ['brp565','bro565','bra565','brb565'])r[k]=P[k]===undefined?null:P[k];return r},
   hit:(vid,x,y)=>{const v=P.views.find(q=>q.id===vid),n=navOf(v);const h=hitPlan(v,{x:x*n.s+n.ox,y:y*n.s+n.oy});return h?h.id:null}};
+/* V1.566 test API: brace ends attached to beams */
+window.PenumBIM.r566={
+  ba:id=>{const e=IDX.get(id);return e&&Array.isArray(e.ba566)?e.ba566.map(a=>a?{h:a.h,t:a.t,v:a.v,r:a.r}:null):null},
+  ends:id=>{const e=IDX.get(id);return[0,1].map(k=>ba566End(P,e,k).map(x=>Math.round(x)))},
+  field:(id,key,raw)=>{edit(()=>applyField('beam',IDX.get(id),key,raw));refresh();return window.PenumBIM.r566.ba(id)},
+  move:(ids,dx,dy)=>{edit(()=>translateIds(ids,dx,dy));refresh();return true},
+  setEl:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  split:(id,x,y)=>{edit(()=>splitLine(IDX.get(id),{x,y}));refresh();return P.els.filter(e=>e.cat==='beam'&&e.use!=='brace').map(e=>e.id)},
+  del:ids=>{ui.sel=new Set(ids);act('delete');refresh();return P.els.length},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='beam'&&e.use==='brace').map(e=>({id:e.id,ba:e.ba566===undefined?null:e.ba566.map(a=>a?{h:a.h,t:a.t,v:a.v,r:a.r}:null)}))}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
