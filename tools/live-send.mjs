@@ -1,6 +1,6 @@
 // รับงานสด: send projects into a customer's open program (shared/live.js), from a file of that program.
 //   node tools/live-send.mjs <code> <file> [--app pm|mep|bim] [--only <project id>]
-// A PM file may also carry quotes:[…] and tenders:[…] of those projects (q.pj / t.pj = the project id); they go into the
+// A PM file may also carry quotes:[…], tenders:[…] and tors:[…] of those projects (q.pj / t.pj = the project id); they go into the
 // company's quotes and bids (ทำราคาประมูล, ปร.4 / ปร.5).
 // <code> is the รหัสรับงานสด the customer's program shows (เมนู › รับงานสด…). <file> is a .penpm (PM; its photos go too),
 // or for MEP/BIM a JSON {projects:{id:{name,data}}}. The customer says yes to each project once in their program.
@@ -28,6 +28,8 @@ if (app === 'pm') {
   if (Array.isArray(o.quotes)) extra.quotes = o.quotes.filter(q => projects[q.pj]);
   // bids (ทำราคาประมูล: ปร.4 / ปร.5) of these projects (t.pj), from a file that carries them: {…, tenders:[…]}
   if (Array.isArray(o.tenders)) extra.tenders = o.tenders.filter(t => projects[t.pj]);
+  // TORs of these projects (PM 4.99.56, ขาย › TOR): {…, tors:[…]} with t.pj = the project id; their files ride in photos
+  if (Array.isArray(o.tors)) extra.tors = o.tors.filter(t => projects[t.pj]);
   // a patch to a bid sent before (PM 4.93): {…, tpatch:[{id, pj, items:[{g, desc, unit, q0, xp}]}]}, keeps the customer's settings
   if (Array.isArray(o.tpatch)) extra.tpatch = o.tpatch.filter(t => projects[t.pj]);
 } else {
