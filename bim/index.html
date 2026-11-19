@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=584,V1_NAME='V1.574';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=585,V1_NAME='V1.575';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58997,6 +58997,46 @@ XC.push(()=>{for(const e of P.els){if(!('rc574' in e)&&!('fd574' in e))continue;
   const v=+e.fd574;if(isFinite(v)&&v>=0)e.fd574=Math.round(Math.min(v,5000)*10)/10;else delete e.fd574}});
 Object.assign(STR,{p_rc574:['การตัดปลายจันทัน (Rafter Cut)','Rafter Cut'],rc574_n:['ตัดแนวดิ่ง (Plumb Cut)','Plumb Cut'],rc574_p:['ตัดสองครั้ง แนวดิ่ง (Two Cut - Plumb)','Two Cut - Plumb'],
   rc574_s:['ตัดสองครั้ง ตั้งฉากกับหลังคา (Two Cut - Square)','Two Cut - Square'],p_fd574:['ความลึกเชิงชาย (Fascia Depth)','Fascia Depth']});
+/* ===== 575 Rafter or Truss (V1.575; Revit: a roof made by picking walls has Rafter or Truss.  Truss, the default, measures its plate, where its underside
+   stands at its base, from the outside of the walls; Rafter measures it from their inside).  A sloped roof made with Pick Walls (V1.398, locked to its walls
+   by V1.399) has Rafter or Truss in Properties.  Rafter lowers the roof until its underside meets its base at the inside face of the walls under its sloping
+   sides: by its slope times the distance from its outline to that face (the walls' thickness; more with an Offset, less with the core).  Its eaves, ridge,
+   hips, gable ends, rafter cut and the walls attached to it come down with it; its outline in plans stays.  Moving or retyping the walls keeps the plate on
+   their inside face; unlocked from them, it keeps the last distance.  Walls of different thickness under its slopes: their average along its sides.
+   Schedules: Rafter or Truss. */
+/* e.rt575 'r' Rafter (none: Truss); e.rtd575 how far the inside face of its walls is from its outline (mm, worked out again after every change) */
+const rt575Ok=e=>!!e&&e.cat==='roof'&&RC574_SH.includes(e.shape||'hip')&&(!!e.pkw399||e.rt575==='r');
+let RT575F0=null;
+/* the distance from its outline to the inside face of the walls under its sloping sides (their average along the sides); 0: none */
+function rt575D(Q,e){const k=e&&e.pkw399;if(!k||!Array.isArray(k.w)||!Array.isArray(e.pts)||e.pts.length<3||!RT575F0)return null;const M=new Map();for(const x of Q.els)if(x.cat==='wall')M.set(x.id,x);
+  const W=k.w.map(id=>M.get(id)).filter(Boolean);if(!W.length)return null;let R=null;try{R=RT575F0(Q,e)}catch(_){R=null}if(!R||!Array.isArray(R.S)||!Array.isArray(R.ix))return null;
+  const S=new Set(R.S.map(i=>R.ix[i])),n=e.pts.length;let sw=0,sl=0;
+  for(const i of S){const a=e.pts[i],b=e.pts[(i+1)%n];if(!a||!b)continue;const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1)continue;const u=[(b[0]-a[0])/L,(b[1]-a[1])/L],m=[(a[0]+b[0])/2,(a[1]+b[1])/2];let best=null,bd=Infinity;
+    for(const w of W){const wl=Math.hypot(w.x2-w.x1,w.y2-w.y1);if(wl<1)continue;const v=[(w.x2-w.x1)/wl,(w.y2-w.y1)/wl];if(Math.abs(u[0]*v[1]-u[1]*v[0])>0.02)continue;const T=+((typ(Q,w)||{}).thickness)||150,s=(m[0]-w.x1)*v[0]+(m[1]-w.y1)*v[1];
+      if(s<-T||s>wl+T)continue;const dc=Math.abs((m[0]-w.x1)*v[1]-(m[1]-w.y1)*v[0]);if(dc<bd){bd=dc;best=dc+T/2}}
+    if(best!=null){sw+=best*L;sl+=L}}
+  return sl>0?Math.round(sw/sl*10)/10:null}
+/* how far it comes down */
+const rt575S=rf=>rf&&rf.rt575==='r'&&+rf.rtd575>0?Math.tan(Math.min(70,Math.max(1,rf.slope==null?30:rf.slope))*Math.PI/180)*(+rf.rtd575):0;
+{const f0=roofGeo;RT575F0=f0;roofGeo=function(Q,rf){const G=f0.apply(this,arguments);const s=rt575S(rf);if(!(s>0.01)||!G||!RC574_SH.includes(G.shape)||!Array.isArray(G.faces)||!G.faces.length)return G;const z0=G.z0;
+  const gab=(G.gables||[]).map(g=>{let L=clipHP(g.loop.map(q=>[q[0],q[1],q[2]-s]),q=>q[2]-z0);const o=[];for(const q of L){const l=o[o.length-1];if(!l||Math.hypot(q[0]-l[0],q[1]-l[1],q[2]-l[2])>0.5)o.push(q)}
+    return o.length>=3&&Math.max(...o.map(q=>q[2]))-z0>=5?Object.assign({},g,{loop:o}):null}).filter(Boolean);
+  return Object.assign({},G,{faces:G.faces.map(f=>Object.assign({},f,{loop:f.loop.map(q=>[q[0],q[1],q[2]-s])})),gables:gab,zmax:G.zmax-s,rt575:s})}}
+/* the heights a view range reads it between */
+{const f0=vr9Z;vr9Z=function(e){const z=f0.apply(this,arguments);const s=e&&e.cat==='roof'?rt575S(e):0;return s>0.01&&Array.isArray(z)?[z[0]-s,z[1]]:z}}
+/* after every change: the distance to the inside of its walls as they are now */
+XD.push(()=>{let ch=false;for(const e of P.els){if(e.cat!=='roof'||!('rt575' in e||'rtd575' in e))continue;if(e.rt575!=='r'||!rt575Ok(e)){delete e.rt575;delete e.rtd575;ch=true;continue}
+  if(!e.pkw399)continue;const d=rt575D(P,e);if(d!=null&&d!==e.rtd575){e.rtd575=d;ch=true}}return ch});
+/* ---- Properties: Rafter or Truss, after Overhang; schedules ---- */
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='roof'||isNew||!els.length||!els.every(rt575Ok))return h;
+  const a=els[0].rt575==='r'?'r':'t',r=PR.sel('rt575','p_rt575',els.every(x=>(x.rt575==='r'?'r':'t')===a)?a:'',[['t',t('rt575_t')],['r',t('rt575_r')]]);
+  const i=h.indexOf('id="p_overhang"');if(i<0)return h+r;const j=h.indexOf('</div></div>',i);return j<0?h+r:h.slice(0,j+12)+r+h.slice(j+12)}}
+XF.push((cat,o,key,raw)=>{if(key!=='rt575')return false;if(cat!=='roof'||!rt575Ok(o))return true;
+  if(String(raw)==='r'){const d=o.pkw399?rt575D(P,o):+o.rtd575;if(d>0){o.rt575='r';o.rtd575=d}}else{delete o.rt575;delete o.rtd575}return true});
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat==='roof')F.push({k:'rt575',l:tr('p_rt575'),g:(e,X)=>rt575Ok(e)?X.tr(e.rt575==='r'?'rt575_r':'rt575_t'):'',grp:'i'});return F}}
+XC.push(()=>{for(const e of P.els){if(!('rt575' in e)&&!('rtd575' in e))continue;if(e.rt575!=='r'||!rt575Ok(e)){delete e.rt575;delete e.rtd575;continue}
+  const d=e.pkw399?rt575D(P,e):null,v=d!=null?d:+e.rtd575;if(isFinite(v)&&v>0)e.rtd575=Math.round(Math.min(v,5000)*10)/10;else{delete e.rt575;delete e.rtd575}}});
+Object.assign(STR,{p_rt575:['จันทันหรือโครงถัก (Rafter or Truss)','Rafter or Truss'],rt575_t:['โครงถัก (Truss)','Truss'],rt575_r:['จันทัน (Rafter)','Rafter']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60260,6 +60300,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_mwg571]] ในคุณสมบัติของเสา (ติ๊กไว้เป็นค่าเริ่มต้น): เสาที่ตั้งตรงจุดตัดกริดหรือบนกริดย้ายตามเมื่อย้าย หมุน หรือยืดกริด คานและค้ำยันที่ปลายอยู่ที่เสาย้ายตาม เอาติ๊กออกแล้วเสาอยู่ที่เดิม
 - [[p_mwn573]] ในคุณสมบัติของเฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์ และโคมไฟที่ไม่ได้ฝังในผนัง (ไม่ติ๊กเป็นค่าเริ่มต้น): ติ๊กแล้วชิ้นนั้นยึดกับผนังที่ใกล้ที่สุดข้างตัว ย้ายหรือหมุนผนังแล้วตามไปโดยระยะห่างเท่าเดิม
 - [[p_rc574]] ในคุณสมบัติของหลังคาลาด (ต่อจากระยะยื่นชายคา): [[rc574_n]] แบบเดิม [[rc574_p]] หรือ [[rc574_s]] พร้อม [[p_fd574]] (0 ถึงความหนาหลังคา) ชายคาถูกตัดตามนั้นทั้งในภาพ 3 มิติ รูปตัด และปริมาตร
+- [[p_rt575]] ในคุณสมบัติของหลังคาที่สร้างด้วย Pick Walls: [[rt575_t]] (ค่าเริ่มต้น) วัดฐานหลังคาจากผิวนอกผนัง [[rt575_r]] วัดจากผิวในผนัง หลังคาจึงต่ำลงตามความชันคูณความหนาผนัง
 - [[p_ul240]], [[p_lo240]] และ [[p_bo240]] ในคุณสมบัติของห้อง: ห้องสูงจากระดับชั้นบวกระยะยกฐาน ขึ้นไปถึงระดับบนบวกระยะเลื่อน (ตั้งต้นถึงชั้นถัดไป ถ้าไม่มีชั้นบนสูง 3000 มม.) ตั้ง [[ac_vol240]] ใน [[a_areacomp]] เป็น พื้นที่และปริมาตร แล้วห้องจะแสดง [[p_vol240]] ที่หักส่วนเหนือฝ้าและใต้พื้นชั้นบนออก ตารางห้องและ IFC ใช้ค่านี้ด้วย
 - [[wlf_deck]] เป็นหน้าที่ของชั้นหนึ่งใน [[a_slayers]] ของชนิดพื้น: ชั้นนี้หนาเท่าความสูงลอน เลือก [[dk_prof241]] ได้สามแบบ (ลอนสูง 38 ระยะ 150, 50 ระยะ 200, 75 ระยะ 300 มม.) และ [[dk_use241]] ผูกกับชั้นบน (คอนกรีตของชั้นที่อยู่เหนือเต็มร่องลอน) หรือแผ่นเดี่ยว · ลอนวิ่งตามทิศทางแผ่นพื้น (Span Direction) ในคุณสมบัติของพื้น · 3 มิติและรูปตัดเห็นแผ่นพับเป็นลอนและคอนกรีตในร่อง ใต้สันลอนเป็นช่องว่าง · ปริมาตรของพื้นนับคอนกรีตในร่องแต่ไม่นับช่องว่าง [[a_mtake]] นับแผ่นเหล็กเป็นพื้นที่คลี่และปริมาตรเหล็ก · ชนิดหนึ่งมีได้แผ่นเดียว และใช้ได้กับพื้นเท่านั้น
 - หลังคาเป็นขอบเขตบนของห้องด้วย: เมื่อเปิด พื้นที่และปริมาตร ปริมาตรของห้องหักส่วนที่อยู่เหนือท้องหลังคาทีละผืน (ท้องหลังคาคือผิวบนลบความหนาของหลังคา) ตรงไหนฝ้าหรือพื้นชั้นบนต่ำกว่าก็ใช้อันนั้น ตรงไหนหลังคาต่ำกว่าก็ใช้หลังคา ส่วนของหลังคาที่ต่ำกว่าฐานห้องไม่นับ · ป้ายห้องแบบ [[rk_vol242]] แสดงปริมาตรต่อจากพื้นที่ (เลือกได้ในแถบตัวเลือกของ [[t_rtag]] และในคุณสมบัติของป้าย)
@@ -60544,6 +60585,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_mwg571]] in the properties of a column (checked by default): a column where grids cross, or on a grid, goes with them when they are moved, turned or stretched, and the beams and braces whose ends are at it go along; cleared, the column stays where it is
 - [[p_mwn573]] in the properties of furniture, plumbing fixtures, equipment and lighting fixtures that are not hosted (cleared by default): checked, the component keeps to the nearest wall beside it and goes with it, at the same distance, when the wall is moved or turned
 - [[p_rc574]] in the properties of a sloped roof (after Overhang): [[rc574_n]] as before, [[rc574_p]] or [[rc574_s]], with a [[p_fd574]] from 0 to the roof's thickness: its eaves are cut so in 3D, sections and its volume
+- [[p_rt575]] in the properties of a roof made with Pick Walls: [[rt575_t]] (the default) measures the roof's base from the outside of the walls, [[rt575_r]] from their inside, so the roof comes down by its slope times the walls' thickness
 - [[p_ul240]], [[p_lo240]] and [[p_bo240]] in the properties of rooms: a room rises from its level plus the base offset to the upper limit plus the limit offset (by default the next level up; with no level above, 3000 mm); set [[ac_vol240]] in [[a_areacomp]] to Areas and Volumes and rooms show their [[p_vol240]], less what lies above ceilings and below the floor above; room schedules and IFC use it too
 - [[wlf_deck]] is a Function for a layer in the [[a_slayers]] of a floor type: the layer is as thick as the ribs are high; pick the [[dk_prof241]] (ribs 38 at 150, 50 at 200 or 75 at 300 mm) and the [[dk_use241]]: Bound Layer Above (the concrete of the layer above fills the troughs) or Standalone Deck · the ribs run along the floor's Span Direction in its properties · 3D and sections show the folded sheet and the concrete in the troughs, with the voids under the crests empty · the floor's volume counts the concrete in the troughs and not the voids; the [[a_mtake]] counts the sheet by its area folded out and its steel · one deck per type, in floors only
 - Roofs bound rooms from above too: once Areas and Volumes is set, the volume of a room leaves out what lies above the underside of a roof, face by face (the underside: the top less the roof's thickness); where a ceiling or a floor above is lower that one counts, where the roof dips lower the roof does; parts of a roof below the room's base do not count · a room tag of the kind [[rk_vol242]] shows the volume after the area (in the options of [[t_rtag]] and in the tag's properties)
@@ -61520,6 +61562,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.572 · ฐานรากใต้ผนังเป็นขั้นตามท้องผนังแบบ Revit: ผนังที่แก้รูปด้าน (Edit Profile) ให้ท้องผนังลดเป็นขั้นหรือลาดเอียง หรือท้องผนังยึดกับพื้น (Attach Base) ฐานรากใต้ผนังลดขั้นและลาดตาม หนาเท่าชนิดตลอดแนว ยื่นเกินปลายผนังที่ระดับเดียวกับปลายนั้น ภาพ 3 มิติ รูปตัด รูปด้าน การตรวจชน การต่อกันของฐานราก (V1.570) และการขาดตามช่องเปิด (V1.569) ตามไปด้วย ผังพื้นมีเส้นขวางตรงขั้นและจุดหักมุม ปริมาตรยังเท่าพื้นที่คูณความหนา เหล็กเสริมในฐานรากอยู่ที่เดิม ผนังท้องเรียบไม่เปลี่ยนอะไร
 - V1.573 · ย้ายตามองค์ประกอบใกล้เคียง (Moves With Nearby Elements) แบบ Revit: เฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์เครื่องกลและไฟฟ้า โคมไฟ และอุปกรณ์ที่ไม่ได้ฝังในผนัง มีช่องนี้ในคุณสมบัติ (ไม่ติ๊กเป็นค่าเริ่มต้น) ติ๊กแล้วชิ้นนั้นยึดกับผนังที่ใกล้ที่สุดข้างตัว ย้ายผนังแล้วตามไปโดยระยะห่างเท่าเดิม หมุนผนังแล้วหมุนตาม ผนังที่ยึดคือผนังที่ใกล้ที่สุดตอนติ๊กหรือตอนวางหรือย้ายชิ้นนั้นเอง ผนังที่สร้างใหม่ใกล้กว่าไม่แย่งไป ย้ายพร้อมผนังในครั้งเดียว ปักหมุด หรืออยู่ในกลุ่ม อยู่ที่เดิม ลบผนังแล้วหลุด ตารางรายการใช่ ไม่ใช่
 - V1.574 · การตัดปลายจันทัน (Rafter Cut) แบบ Revit: หลังคาลาดที่สร้างจากรูปรอบ (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะยื่นชายคาได้ว่า ตัดแนวดิ่ง (Plumb Cut แบบเดิม) ตัดสองครั้งแนวดิ่ง (Two Cut - Plumb: ตัดดิ่งลงจากหลังหลังคาลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอนเข้าไปจนชนท้องหลังคา) หรือตัดสองครั้งตั้งฉากกับหลังคา (Two Cut - Square: ตัดตั้งฉากกับความลาดลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอน) · ความลึกเชิงชาย (Fascia Depth) ตั้งได้ตั้งแต่ 0 ถึงความหนาหลังคา เริ่มที่ครึ่งหนึ่งของความหนา · ชั้นวัสดุของหลังคา เส้นขอบ เชิงชายที่หลังคาวาดเอง (ลึกเท่ารอยตัดแรก และเอียงตั้งฉากกับหลังคาเมื่อตัดแบบตั้งฉาก) และฝ้าชายคาใต้หลังคาปั้นหยา (อยู่ใต้รอยตัดแนวนอน) ตามไปด้วย · ภาพ 3 มิติ รูปตัด รูปด้าน การเชื่อมรูปทรง และปริมาตรในตารางถอดปริมาณคิดตามรอยตัด · ตารางรายการมีช่องการตัดปลายจันทันและความลึกเชิงชาย
+- V1.575 · จันทันหรือโครงถัก (Rafter or Truss) แบบ Revit: หลังคาลาดที่สร้างด้วย Pick Walls (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะยื่นชายคาได้ว่า โครงถัก (Truss ค่าเริ่มต้น: ท้องหลังคาวางที่ฐานตรงผิวนอกผนัง) หรือจันทัน (Rafter: ท้องหลังคาวางที่ฐานตรงผิวในผนัง หลังคาจึงต่ำลงเท่าความชันคูณความหนาผนังใต้ด้านที่ลาด) · ชายคา สันหลังคา สันตะเข้ หน้าจั่ว การตัดปลายจันทัน และผนังที่ยึดกับหลังคาลดตามลงไปด้วย ส่วนเส้นรอบรูปหลังคาในผังพื้นคงเดิม · ย้ายผนังหรือเปลี่ยนชนิดผนัง ฐานหลังคายังอยู่ที่ผิวในผนังเสมอ ถ้าปลดออกจากผนังจะคงระยะล่าสุดไว้ · ผนังใต้ด้านลาดหนาไม่เท่ากันใช้ค่าเฉลี่ยตามความยาว · ตารางรายการมีช่องจันทันหรือโครงถัก
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -62267,6 +62310,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.572 · Stepped wall foundations, as in Revit: under a wall whose base was edited to step down or slope (Edit Profile), or whose base is attached to a floor, the wall foundation steps and slopes with the base of the wall, as thick as its type all along, and runs past the ends of the wall at the height of each end; 3D, sections, elevations, clashes, the joins between foundations (V1.570) and the breaks at inserts (V1.569) follow, plans draw a line across it at each step or turn, its volume is still its area times its thickness, and the rebar in it stays where it was; a wall with a flat base changes nothing
 - V1.573 · Moves With Nearby Elements, as in Revit: furniture, plumbing fixtures, mechanical and electrical equipment, lighting fixtures and devices that are not hosted have it in Properties (cleared by default); checked, the component keeps to the nearest wall beside it, moving with that wall at the same distance when the wall is moved and turning with it when it is turned; the wall is the one nearest when the box was checked or when the component itself was last placed or moved, and a wall put nearer later does not take it; one moved in the same edit, pinned or in a group stays, a wall deleted lets it go; schedules show Yes or No
 - V1.574 · Rafter Cut, as in Revit: a sloped roof by footprint (hip, gable, shed, or slopes by edge) has Rafter Cut in Properties after Overhang: Plumb Cut (as before), Two Cut - Plumb (cut straight down from its top for its Fascia Depth, then level inwards to its underside) or Two Cut - Square (cut square to its slope for its Fascia Depth, then level) · Fascia Depth runs from 0 to the thickness of the roof and starts at half of it · the layers of the roof, its edges, the fascia boards it draws by itself (as deep as the first cut, and square to the slope for a square cut) and the soffit under a hip roof's overhang (under the level cut) follow · 3D, sections, elevations, Join Geometry and the volume in quantities follow the cut · schedules have Rafter Cut and Fascia Depth
+- V1.575 · Rafter or Truss, as in Revit: a sloped roof made with Pick Walls (hip, gable, shed, or slopes by edge) has Rafter or Truss in Properties after Overhang: Truss (the default: the underside of the roof stands at its base at the outside face of the walls) or Rafter (at their inside face, so the roof comes down by its slope times the thickness of the walls under its sloping sides) · its eaves, ridge, hips, gable ends, rafter cut and the walls attached to it come down with it; its outline in plans stays · moving or retyping the walls keeps the base on their inside face; unlocked from them, it keeps the last distance · walls of different thickness under its slopes: their average along its sides · schedules have Rafter or Truss
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66512,6 +66556,30 @@ window.PenumBIM.r574={
   nav:(vid,o)=>{const n=navOf(viewById(vid));if(o){Object.assign(n,o);refresh()}const r={};for(const k in n)if(typeof n[k]!=='object'||Array.isArray(n[k]))r[k]=n[k];return JSON.stringify(r)},
   raw:(id,k,v)=>{IDX.get(id)[k]=v;return true},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'rc574' in e||'fd574' in e).map(e=>[e.id,e.rc574===undefined?null:e.rc574,e.fd574===undefined?null:e.fd574])}};
+/* V1.575 test API: Rafter or Truss */
+window.PenumBIM.r575={
+  /* a roof made with Pick Walls on the walls wids (their outside face), locked to them */
+  pk:(lid,wids,o)=>{let id=null;edit(()=>{const q=pk398Out(wids,'roof',{core:false,off:0});if(!q)return;const d=defs('roof')||{},e=Object.assign({id:P.seq++,cat:'roof',type:d.type,level:lid,pts:q.map(p=>[p[0],p[1]]),off:0,shape:'hip',slope:30,overhang:600,alt:0},o||{});
+    P.els.push(e);pk399Link(e,{w:pk398G(wids).ord,o:0,c:0});id=e.id});refresh();return id},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  field:(id,key,raw)=>{const e=IDX.get(id);edit(()=>applyField(e.cat,e,key,raw));refresh();const x=IDX.get(id);return[x.rt575===undefined?null:x.rt575,x.rtd575===undefined?null:x.rtd575]},
+  get:id=>{const x=IDX.get(id);return x?[x.rt575===undefined?null:x.rt575,x.rtd575===undefined?null:x.rtd575]:null},
+  lk:id=>{const x=IDX.get(id);return!!(x&&x.pkw399)},
+  unlock:id=>pk399Unlock([id]),
+  /* its faces: the lowest and highest corner; its gable ends: the highest; the drop worked out */
+  zs:id=>{const G=roofGeo(P,IDX.get(id)),Z=G.faces.flatMap(f=>f.loop.map(q=>q[2]));return{lo:Math.round(Math.min(...Z)*10)/10,hi:Math.round(Math.max(...Z)*10)/10,zmax:Math.round(G.zmax*10)/10,z0:G.z0,s:G.rt575||0,
+    gab:(G.gables||[]).map(g=>Math.round(Math.max(...g.loop.map(q=>q[2]))*10)/10),glo:(G.gables||[]).map(g=>Math.round(Math.min(...g.loop.map(q=>q[2]))*10)/10)}},
+  /* the height of its underside over the point x, y (lowest plane), or null */
+  under:(id,x,y)=>{const S=attSurf(P,IDX.get(id),true);if(!S)return null;let z=null;for(const f of S.faces){if(!inPoly(x,y,f.lp))continue;const p=f.pl,v=p[0]*x+p[1]*y+p[2];z=z==null?v:Math.min(z,v)}return z==null?null:Math.round((z+S.lift)*10)/10},
+  wtop:wid=>{const W=wallProf(P,IDX.get(wid));return W.top.map(p=>[Math.round(p[0]),Math.round(p[1]*10)/10])},
+  att:(wid,rid)=>{edit(()=>{IDX.get(wid).attT=rid});refresh();return true},
+  wmove:(wid,dx,dy)=>{edit(()=>{const w=IDX.get(wid);w.x1+=dx;w.x2+=dx;w.y1+=dy;w.y2+=dy});refresh();return true},
+  prow:()=>{const s=document.querySelector('#props #p_rt575');return s?{v:s.value,o:[...s.options].map(x=>[x.value,x.textContent])}:null},
+  sfv:(id,k)=>{const F=sfAll(P,'roof',t).find(f=>f.k===k);return F?F.g(IDX.get(id),{tr:t,P}):null},
+  raw:(id,o)=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}return true},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='roof').map(e=>[e.id,e.rt575===undefined?null:e.rt575,e.rtd575===undefined?null:e.rtd575])},
+  vr:id=>vr9Z(IDX.get(id))
+};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
