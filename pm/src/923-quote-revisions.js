@@ -92,3 +92,17 @@ document.head.insertAdjacentHTML('beforeend',`<style>.qv{min-width:min(860px,88v
 .qv-t tr.qv-add td{background:rgba(30,142,90,.09)}.qv-t tr.qv-del td{background:rgba(192,57,43,.08);color:var(--muted,#567080)}.qv-t tr.qv-ch td{background:rgba(237,137,24,.10)}.qv-t s{color:var(--muted,#567080)}.qv-w.only tr.qv-same{display:none}.qv-w{max-height:55vh;overflow:auto}.qrv select{max-width:260px}</style>`);
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'ประวัติการแก้ไข (Rev.)':'Revisions (Rev.)','บันทึกเป็น Rev. ใหม่':'Save as a new Rev.','พิมพ์ฉบับนี้':'Print this one','เทียบ':'Compare','ฉบับปัจจุบัน':'Current',
   'แสดงเฉพาะรายการที่เปลี่ยน':'Show changed lines only','เปลี่ยนไป':'Change','เทียบรอบก่อน':'Vs previous','พิมพ์ใบลูกค้า':'Customer copy printed','ส่งลูกค้า':'Sent to customer','บันทึกเอง':'Saved by hand'});
+// 4.99.43 (user, 2026-11-19, R.2 still in อ้างอิง after 4.99.42: "ทำไมไม่อัพเดทด้วย"): on a quote with a Rev. history, a revision typed by
+// hand is taken out of อ้างอิง and เลขที่ by itself when the quote is open (↶ ย้อนกลับ brings it back), and the field shows the Rev. that prints
+const qrvTidy=Q=>{if(!Q||!(Q.revs||[]).length)return '';const h=[qrvHand(Q.ref),qrvNo(Q.no)!==String(Q.no||'')?String(Q.no).slice(qrvNo(Q.no).length).trim():''].filter(Boolean).join(', ');
+  if(!h)return '';Q.ref=qrvStrip(Q.ref);Q.no=qrvNo(Q.no);return h};
+// once per quote while the program is open, so ↶ ย้อนกลับ keeps what the user typed
+const QRV_TIDIED=new Set();
+{const r=render;render=function(){let Q=null,h='';
+  try{if(S.sub&&S.sub.sales==='quote'&&S.sel&&S.sel.quote){Q=(CO().quotes||[]).find(q=>q.id===S.sel.quote);if(Q&&!QRV_TIDIED.has(Q.id)){h=qrvTidy(Q);if(h){QRV_TIDIED.add(Q.id);save()}}}}catch(e){}
+  const out=r.apply(this,arguments);
+  try{if(Q&&(Q.revs||[]).length){const k=qrvCur(Q).n,inp=[...document.querySelectorAll('input[data-p$=".ref"]')].find(x=>x.offsetParent);
+    if(inp&&!inp.parentNode.querySelector('.qrv-chip')){inp.placeholder=k>0?'อ้างอิงอื่น เช่น เลขที่ BOQ ลูกค้า':inp.placeholder;
+      inp.insertAdjacentHTML('afterend',`<small class="qrv-chip" title="เลข Rev. ดึงจากการ์ดประวัติการแก้ไข (Rev.) ให้เอง ไม่ต้องพิมพ์" style="display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12px">${k>0?`พิมพ์เป็น <b style="color:var(--accent,#1C8F9B)">${esc(qrvRef(Q.ref,k))}</b> (Rev. อัตโนมัติ)`:'ฉบับแรก ไม่พิมพ์ Rev.'}</small>`)}}
+    if(h)toast(`เอา ${h} ที่พิมพ์เองออกแล้ว ใช้ Rev.${qrvCur(Q).n} จากประวัติแทน · กด ↶ ย้อนกลับ ถ้าไม่ต้องการ`)}catch(e){}
+  return out}}
