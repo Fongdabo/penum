@@ -14637,7 +14637,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=611,V1_NAME='V1.601';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=612,V1_NAME='V1.602';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -60493,6 +60493,40 @@ function st601Rows(els,top){const V=f=>{const a=els.map(f);return a.every(x=>x==
 Object.assign(STR,{
   p_sbo601:['ระยะยกฐาน (Base Offset)','Base Offset'],p_sto601:['ระยะบน (Top Offset)','Top Offset'],p_dsh601:['ความสูงบันไดที่ต้องการ','Desired Stair Height'],
   top_none601:['ไม่ผูกระดับ (กำหนดความสูงเอง)','None (Desired Stair Height)']});
+/* ===== 602 Railings on a stair or a ramp follow it (V1.602; Revit: a railing hosted by a stair or a ramp is regenerated with it).  A railing put on a stair or
+   a ramp (rhost, rhix) keeps e.hrs602 {s: its host's railing line when last seen, r: its own line then, n: how many railings the host had}: when the host
+   changes (risers, offsets, levels, length, width, shape) and the railing did not, the railing moves as its line did, keeping what was changed on it by hand;
+   a railing whose line is gone (an L stair made straight) goes, and a host that had railings on every line gets them on its new lines too.  Railings of the
+   stairs above a multistory stair follow theirs as before. ===== */
+const hrs602K=['x1','y1','x2','y2','off','off2','bow'];
+/* a line as numbers: the host's from hostRails, a railing's from itself, and the level last */
+const hrs602S=(q,lv)=>[+q.x1||0,+q.y1||0,+q.x2||0,+q.y2||0,+q.off||0,q.off2!=null?+q.off2:(+q.off||0),+q.bow||0,lv];
+const hrs602R=e=>hrs602S(e,e.level);
+const hrs602Eq=(a,b)=>!!a&&!!b&&a.length===b.length&&a.every((x,i)=>Math.abs(x-b[i])<0.05);
+const hrs602Ok=o=>!!o&&typeof o==='object'&&Array.isArray(o.s)&&Array.isArray(o.r)&&o.s.length===8&&o.r.length===8&&o.s.every(x=>typeof x==='number'&&isFinite(x))&&o.r.every(x=>typeof x==='number'&&isFinite(x));
+MST_ROWN.add('hrs602');
+function hrs602Sync(){let ch=false;const H=new Map(),by=new Map();for(const e of P.els){if(e.cat==='stair'||e.cat==='ramp')H.set(e.id,e)}
+  for(const e of P.els){if(e.cat!=='railing')continue;if(e.rhost==null||e.msP!=null||!H.has(e.rhost)){if(e.hrs602!==undefined){delete e.hrs602;ch=true}continue}
+    let L=by.get(e.rhost);if(!L)by.set(e.rhost,L=[]);L.push(e)}
+  const gone=new Set(),add=[];
+  for(const [hid,L] of by){const h=H.get(hid);let S;try{S=hostRails(P,h)}catch(err){continue}if(!Array.isArray(S))continue;const N=S.length;
+    const n0=L.length&&L.every(e=>hrs602Ok(e.hrs602)&&e.hrs602.n===L[0].hrs602.n)?L[0].hrs602.n:null,full=n0!=null&&N>n0&&L.length===n0&&new Set(L.map(e=>e.rhix)).size===n0&&L.every(e=>Number.isInteger(e.rhix)&&e.rhix>=0&&e.rhix<n0);
+    for(const e of L){const i=e.rhix;if(!Number.isInteger(i)||i<0)continue;if(i>=N){gone.add(e.id);continue}          // its line is gone
+      const s=hrs602S(S[i],h.level),rc=hrs602R(e),o=e.hrs602;
+      if(!hrs602Ok(o)){e.hrs602={s,r:rc,n:N};ch=true;continue}
+      if(!hrs602Eq(o.s,s)&&hrs602Eq(o.r,rc)){          // the host changed and the railing did not: it moves as its line did
+        const rn=rc.map((x,k)=>k<7?Math.round((x+s[k]-o.s[k])*10)/10:s[7]);hrs602K.forEach((k,j)=>{if(k==='bow'){if(Math.abs(rn[j])>0.05)e.bow=rn[j];else delete e.bow}else e[k]=rn[j]});
+        if(e.level!==h.level)e.level=h.level;e.hrs602={s,r:hrs602R(e),n:N};ch=true}
+      else if(!hrs602Eq(o.s,s)||!hrs602Eq(o.r,rc)||o.n!==N){e.hrs602={s,r:rc,n:N};ch=true}}
+    if(full)for(let i=n0;i<N;i++){const src=L.find(e=>e.rhix%2===i%2)||L[0],c=JSON.parse(JSON.stringify(src));for(const k of [...hrs602K,'hrs602','msK','msP','msH'])delete c[k];
+      Object.assign(c,S[i],{id:P.seq++,rhost:hid,rhix:i,level:h.level});c.hrs602={s:hrs602S(S[i],h.level),r:null,n:N};c.hrs602.r=hrs602R(c);add.push(c)}
+    if(full)for(const e of L)if(e.hrs602)e.hrs602.n=N}
+  if(gone.size){P.els=P.els.filter(e=>!gone.has(e.id));ch=true}
+  if(add.length){P.els.push(...add);ch=true}
+  return ch}
+XD.push(()=>hrs602Sync());
+XC.push(()=>{for(const e of P.els){if(e.hrs602===undefined)continue;if(e.cat!=='railing'||e.rhost==null||e.msP!=null||!hrs602Ok(e.hrs602)||!Number.isInteger(e.hrs602.n)||e.hrs602.n<0){delete e.hrs602;continue}
+  const o=e.hrs602;for(const k in o)if(k!=='s'&&k!=='r'&&k!=='n')delete o[k]}});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -61607,6 +61641,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[f_rsh599]] และ [[f_mil599]] ของทางลาด (Revit: Shape และ Maximum Incline Length ของชนิดทางลาด): ใน [[edit_type]] ของทางลาด ต่อจากความชันสูงสุด เลือก [[f_rsh599]] หนาเป็นแผ่นลาดเหมือนเดิม หรือตันให้เต็มลงถึงท้องเรียบ และตั้ง [[f_mil599]] (มม. เช่น 6000) · ทางลาดที่ยาวเกินหรือชันกว่าความชันสูงสุดของชนิดขึ้นใน [[a_warn]]
 - [[p_dnr600]] และ [[p_atd600]] (Revit: Desired Number of Risers และ Actual Tread Depth ของบันได): ใน [[g_rs600]] ของคุณสมบัติบันไดตัวเดียว ใส่จำนวนลูกตั้งเองเพื่อให้ลูกตั้งเตี้ยลง (ว่างไว้ = น้อยที่สุดตามลูกตั้งสูงสุดของชนิด) และลูกนอนของบันไดตัวนี้ (ว่างไว้ = ของชนิด) · บันไดที่ลูกตั้งสูงกว่าลูกตั้งสูงสุดของชนิดขึ้นใน [[a_warn]] · บันไดที่วาดตามเส้นเดินนับลูกตั้งจากเส้นเดินเหมือนเดิม
 - [[p_sbo601]] [[p_sto601]] และ [[p_dsh601]] (Revit: Base Offset, Top Offset และ Desired Stair Height ของบันได): ในข้อกำหนดตำแหน่งของคุณสมบัติบันได ใส่ระยะยกฐานใต้ระดับฐาน (บันไดเริ่มสูงหรือต่ำกว่าระดับ) และระยะบนใต้ระดับบน (บันไดจบสูงหรือต่ำกว่าระดับบน) ถ้าระดับบนเป็น [[top_none601]] ใส่ความสูงบันไดที่ต้องการแทน (ว่างไว้ 3000) · จำนวนลูกตั้ง 3D รูปตัด ราวกันตกบนบันได และเส้นตัดในแปลนตามไปด้วย · บันไดหลายชั้นจบที่ระดับบนเสมอ (ไม่มีช่องระยะบน) และบันไดชั้นบนไม่รับค่าเหล่านี้
+- ราวกันตกที่วางบนบันไดหรือทางลาด (Revit: ราวกันตกที่บันไดหรือทางลาดเป็นโฮสต์) ขยับตามเมื่อบันไดหรือทางลาดเปลี่ยน: จำนวนลูกตั้ง ลูกนอน ระยะยกฐาน ระดับ ความยาว ความกว้างของชนิด หรือรูปทรง · ที่แก้เองบนราว (เช่น ยกขึ้น 100) ยังอยู่ · ราวที่แนวของมันหายไป (บันไดตัว L เปลี่ยนเป็นตรง) ถูกลบ และบันไดที่มีราวครบทุกแนวได้ราวบนแนวใหม่ด้วย
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -61919,6 +61954,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[f_rsh599]] and [[f_mil599]] of ramps (Revit: the Shape and Maximum Incline Length of a ramp type): in [[edit_type]] of a ramp, after the maximum slope, pick a [[f_rsh599]], Thick (a sloped slab, as before) or Solid (filled down to a flat underside), and set a [[f_mil599]] (mm, say 6000) · a ramp longer than that, or steeper than its type's maximum slope, is in [[a_warn]]
 - [[p_dnr600]] and [[p_atd600]] (Revit: a stair's Desired Number of Risers and Actual Tread Depth): under [[g_rs600]] in the Properties of one stair, type how many risers it has, for lower risers (empty: the fewest its type's Maximum Riser Height allows), and its own tread depth (empty: its type's) · a stair whose risers are higher than its type's Maximum Riser Height is in [[a_warn]] · a stair by sketch still counts its risers from its walk line
 - [[p_sbo601]], [[p_sto601]] and [[p_dsh601]] (Revit: a stair's Base Offset, Top Offset and Desired Stair Height): in the Constraints of a stair's Properties, type how far above its base level it starts (below it: negative) and how far above its top level it ends; with its top level [[top_none601]], type how high it climbs instead (empty: 3000) · the risers, the 3D, sections, railings on it and the cut line in plan follow · a multistory stair always ends at its top level (no Top Offset row) and the stairs above it take none of these
+- A railing put on a stair or a ramp (Revit: a railing hosted by a stair or a ramp) follows it when it changes: its risers, tread, offsets, levels, length, its type's width or its shape · what was changed on the railing by hand (raised 100, say) stays · a railing whose line is gone (an L stair made straight) goes, and a stair that had railings on every line gets them on its new lines too
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -63099,6 +63135,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.599 · ทางลาด: รูปทรงหนาหรือตัน ความยาวลาดสูงสุด และคำเตือนทางลาดชันหรือยาวเกิน
 - V1.600 · บันได: จำนวนลูกตั้งที่ต้องการ ลูกนอนจริงต่อบันได และคำเตือนลูกตั้งสูงเกิน
 - V1.601 · บันได: ระยะยกฐาน ระยะบน และความสูงบันไดที่ต้องการ
+- V1.602 · ราวกันตกบนบันไดและทางลาดขยับตามเมื่อบันไดหรือทางลาดเปลี่ยน
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -63873,6 +63910,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.599 · Ramps: Thick or Solid shape, Maximum Incline Length, warnings for steep or long ramps
 - V1.600 · Stairs: Desired Number of Risers, Actual Tread Depth, a warning for risers too high
 - V1.601 · Stairs: Base Offset, Top Offset and Desired Stair Height
+- V1.602 · Railings on stairs and ramps follow them when they change
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -68571,6 +68609,19 @@ window.PenumBIM.r601={
   rails:id=>hostRails(P,IDX.get(id)).map(r=>[r.off,r.off2]),
   ms:id=>P.els.filter(e=>e.cat==='stair'&&e.msP===id).map(e=>[zRange(P,e).map(Math.round),e.sbo601==null?null:e.sbo601,e.sto601==null?null:e.sto601]),
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='stair').map(e=>[e.sbo601==null?null:e.sbo601,e.sto601==null?null:e.sto601,e.dsh601==null?null:e.dsh601])}};
+/* V1.602 test API: railings on a stair or a ramp follow it */
+window.PenumBIM.r602={
+  /* Railing › Place on Stair/Ramp on these */
+  place:ids=>{ui.sel=new Set(ids);railHost();return P.els.filter(e=>e.cat==='railing'&&ids.includes(e.rhost)).map(e=>e.id)},
+  /* the railings on a host: [rhix, x1, y1, x2, y2, off, off2, level, type], by rhix */
+  rails:hid=>P.els.filter(e=>e.cat==='railing'&&e.rhost===hid&&e.msP==null).sort((a,b)=>a.rhix-b.rhix).map(e=>[e.rhix,...['x1','y1','x2','y2'].map(k=>Math.round(e[k])),Math.round(e.off||0),Math.round(e.off2!=null?e.off2:(e.off||0)),e.level,e.type]),
+  /* the host's own railing lines, the same way */
+  host:hid=>{const h=IDX.get(hid);return hostRails(P,h).map((q,i)=>[i,...['x1','y1','x2','y2'].map(k=>Math.round(q[k])),Math.round(q.off||0),Math.round(q.off2!=null?q.off2:(q.off||0)),h.level])},
+  /* the railings of the stairs above a multistory stair, and those stairs' own lines */
+  ms:hid=>P.els.filter(e=>e.cat==='stair'&&e.msP===hid).map(s=>{const R=P.els.filter(e=>e.cat==='railing'&&e.rhost===s.id).sort((a,b)=>a.rhix-b.rhix),Hs=hostRails(P,s);return R.map(e=>[Math.round(e.x2),Math.round(e.off2),Math.round(Hs[e.rhix].x2),Math.round(Hs[e.rhix].off2)])}),
+  del:id=>{edit(()=>{P.els=P.els.filter(e=>e.id!==id)});refresh();return true},
+  snap:id=>{const e=IDX.get(id);return e&&e.hrs602?JSON.parse(JSON.stringify(e.hrs602)):null},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='railing').map(e=>e.hrs602===undefined?null:Object.keys(e.hrs602).sort().join(','))}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
