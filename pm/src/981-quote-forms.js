@@ -202,7 +202,9 @@ function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),
   const t=(th,en,il)=>L==='en'?en:L==='th'?th:`${th}<i class="en${il?' il':''}">${en}</i>`,tx=(th,en)=>L==='en'?en:th;
   const gN=g=>{const s=gName(g);return EN&&typeof I18N==='object'&&I18N.en&&I18N.en.x&&I18N.en.x[s]||s};
   // 4.99.31 a section named with the customer's own item number ("1.1 กั้นห้อง…", KCE BOQ) prints that number instead of 1, 2, 3…
-  const gNo=(s,k)=>{const m=String(s).match(/^(\d+(?:\.\d+)+)\.?\s+(.+)$/);return m?[m[1],m[2]]:[k,s]};
+  // 4.99.47 when every section starts with its own number, plain ones ("1 กั้นห้อง…", "15 …") and "Add" print too (a customer's own sheet that skips numbers)
+  let gA=null;const gAll=()=>gA!=null?gA:(gA=order.length>1&&order.every(g=>/^(?:\d+(?:\.\d+)*|Add)\.?\s+\S/.test(gN(g))));
+  const gNo=(s,k)=>{const m=String(s).match(gAll()?/^(\d+(?:\.\d+)*|Add)\.?\s+(.+)$/:/^(\d+(?:\.\d+)+)\.?\s+(.+)$/);return m?[m[1],m[2]]:[k,s]};
   const dt=s=>{if(!okD(s))return '';const d=pd(s);return EN?d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):thDL(s)};
   const cu=C.customers.find(x=>x.id===Q.cust)||{},cuN=EN&&cu.nameEn||cu.name||'',cuA=EN&&cu.addrEn||cu.addr||'',biE=(th,en)=>L==='bi'&&en&&en!==th?`<i class="en">${esc(en)}</i>`:'',st=(C.staff||[]).find(s=>s.name&&Q.by&&s.name===Q.by)||{},c=qCalc(Q);
   const G={},order=[];Q.items.forEach(i=>{const x=qLine(Q,i);if(!G[i.g]){G[i.g]={e:0,m:0,l:0,t:0};order.push(i.g)}const g=G[i.g],e=eqs&&qmIsEq(i);g.e+=e?x.mt:0;g.m+=e?0:x.mt;g.l+=x.lt;g.t+=x.t});
@@ -247,7 +249,7 @@ function qmPrint(Q,bq){qmMig(Q);const C=CO(),L=qmLang(Q),EN=L==='en',ma=qmMa(Q),
       const hd=String(i.head||''),k=hd.indexOf(' · '),h1=k>=0?hd.slice(0,k):hd,h2=k>=0?hd.slice(k+3):'';
       if(h1!==lh){sumH();HA=null;lh=h1;ls=null;if(h1){hi++;const m=qHeadNo(h1,gi,hi,gno);hn=(m?m[1]:gi+'.'+hi)+' '+(m?m[2]:h1);HA={e:0,m:0,l:0,t:0};body.push(`<tr class="h"><td class="n">${m?m[1]:gi+'.'+hi}</td><td colspan="${nc-1}">${esc(m?m[2]:h1)}</td></tr>`)}}
       if(h2!==ls){ls=h2;const m=h2.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);if(h2)body.push(`<tr class="h h2"><td class="n">${m?m[1]:''}</td><td colspan="${nc-1}">${esc(m?m[2]:h2)}</td></tr>`)}
-      li++;const x=qLine(Q,i),E=eqs&&qmIsEq(i),V={e:[E?x.mu:0,E?x.mt:0],m:[E?0:x.mu,E?0:x.mt],l:[x.lu,x.lt]};let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/);
+      li++;const x=qLine(Q,i),E=eqs&&qmIsEq(i),V={e:[E?x.mu:0,E?x.mt:0],m:[E?0:x.mu,E?0:x.mt],l:[x.lu,x.lt]};let d=esc([i.type,i.desc].filter(Boolean).join(' ')),num='';const own=d.match(/^(\d+(?:\.\d+)+)\s+(.*)$/)||(gno==='Add'&&d.startsWith('Add ')?[d,'Add',d.slice(4)]:null);
       if(HA){HA.e+=V.e[1];HA.m+=V.m[1];HA.l+=V.l[1];HA.t+=x.t}
       if(own){num=own[1];d=own[2]}else if(!lh){hi++;num=gno+'.'+hi}
       body.push(`<tr><td class="n">${num}</td><td>${ls&&!own?'<span class="in2"></span>':''}${lh&&!own&&!/^[-–]/.test(d)?'– ':''}${d}</td><td class="c">${fmtq(i.q)}</td><td class="c">${esc(i.unit||'')}</td>${S0?emp(nc-4):MG.length?MG.map(k=>`<td class="r">${M(V[k][0])}</td><td class="r">${M(V[k][1])}</td>`).join(''):`<td class="r">${M(x.u)}</td>`}${S0?'':`<td class="r">${fmt(x.t,2)}</td>`}</tr>`)});
