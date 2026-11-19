@@ -130,6 +130,7 @@ const QOP_UI=`<style>
 .qop-card .rw{display:flex;justify-content:space-between;font-size:12.5px;padding:1px 0}.qop-card .rw b{font-variant-numeric:tabular-nums}
 .qop-card .rw.gt{border-top:1px solid var(--line);margin-top:3px;padding-top:4px;font-size:14px}
 .qop-card .btn{margin-top:6px;width:100%}
+.qop-card .btn.qop-cut{color:#DC2626;border-color:color-mix(in srgb,#DC2626 45%,var(--line))}
 .qop-w{margin-top:8px;padding:6px 10px;border-radius:8px;background:color-mix(in srgb,#F59E0B 14%,transparent);font-size:12.5px}
 .qop .hint{display:block;margin-top:8px}
 </style>`;
@@ -141,7 +142,7 @@ function qopPanel(Q){const o=qopEns(Q),M=qopMap(Q),G=qopSecs(Q),Ls=qopLet(Q),cur
     <label><span>ชื่อ</span><input class="qop-nm" data-id="${Q.id}" data-k="${k}" value="${esc(o.nm[k]||'')}" placeholder="เช่น Dahua 2MP / ยี่ห้อ B"></label>
     <label><span>ส่วนลด</span><input class="qop-dc" data-id="${Q.id}" data-k="${k}" inputmode="decimal" value="${esc(d==null?'':String(d))}" placeholder="${n(Q.disc)?'ตามใบ '+fmt(n(Q.disc),2):'ไม่มี'}"></label>
     <div class="rw"><span>ก่อน VAT</span><b>${fmt(c.net,2)}</b></div><div class="rw"><span>VAT 7%</span><b>${fmt(c.vat,2)}</b></div><div class="rw gt"><span>รวมทั้งสิ้น</span><b>${fmt(c.grand,2)}</b></div>
-    <button type="button" class="btn sm${o.pick===k?' pri':''}" data-a="qopPick" data-id="${Q.id}" data-k="${k}">${o.pick===k?'✓ ลูกค้าเลือกออปชั่นนี้ (กดอีกครั้งเพื่อยกเลิก)':'ลูกค้าเลือกออปชั่นนี้'}</button></div>`};
+    <button type="button" class="btn sm${o.pick===k?' pri':''}" data-a="qopPick" data-id="${Q.id}" data-k="${k}">${o.pick===k?'✓ ลูกค้าเลือกออปชั่นนี้ (กดอีกครั้งเพื่อยกเลิก)':'ลูกค้าเลือกออปชั่นนี้'}</button>${o.pick===k?`<button type="button" class="btn sm qop-cut" data-a="qopCut" data-id="${Q.id}" data-k="${k}" title="ลบหมวดของออปชั่นอื่นออกจากใบนี้ แล้วใช้แบบฟอร์มปกติ (ORIEN Modern) กด ↶ ย้อนกลับ ได้">✂ ตัดออปชั่นอื่นออก เหลือแค่ ${k}</button>`:''}</div>`};
   return QOP_UI+`<div class="qop"><div class="qop-h"><b>ออปชั่นในใบนี้</b><small>เลือกว่าแต่ละหมวดอยู่ในออปชั่นไหน หมวด "ทุกออปชั่น" นับรวมในทุกออปชั่น ยอดรวม VAT ตัวอักษร และงวดเงิน พิมพ์แยกตามออปชั่น</small></div>
     <div class="qop-tw"><table class="qop-t"><thead><tr><th>#</th><th>หมวดงาน</th><th class="r">ราคาขาย</th><th>อยู่ในออปชั่น</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="muted">ยังไม่มีรายการ</td></tr>'}</tbody></table></div>
     ${Ls.length>=2?`<div class="qop-cards">${Ls.map(card).join('')}</div>`:`<div class="qop-w">ต้องมีอย่างน้อย 2 ออปชั่น: แยกรายการเป็นหมวด (เช่น หมวด 1 ออปชั่น A, หมวด 2 ออปชั่น B) หรือกด ⧉ คัดลอกเป็นออปชั่นใหม่ ตอนนี้ใบนี้พิมพ์แบบใบปกติ</div>`}
@@ -153,6 +154,21 @@ const qopFind=id=>(CO().quotes||[]).find(q=>q.id===id);
 ACT.qopSec=b=>{const Q=qopFind(b.dataset.id);if(!Q)return;const o=qopEns(Q),g=decodeURIComponent(b.dataset.g);o.sec[g]=b.dataset.v||'';
   if(o.pick&&!qopLet(Q).includes(o.pick))o.pick='';save();render()};
 ACT.qopPick=b=>{const Q=qopFind(b.dataset.id);if(!Q)return;const o=qopEns(Q),k=b.dataset.k;o.pick=o.pick===k?'':k;save();render();toast(o.pick?`ลูกค้าเลือกออปชั่น ${k}`:'ยกเลิกการเลือกออปชั่น')};
+// 4.99.40 ✂ ตัดออปชั่นอื่นออก (user, 2026-11-19: "ถ้าลูกค้าเลือกแล้ว เราจะตัดออฟชั้นที่ลูกค้าไม่เลือกออกเลยต้องทำยังไง"): on the picked option's card.
+// Removes every line of the other options, takes "(ออปชั่น B)" off the kept sections' names (sub-headings, pictures and per-section
+// settings follow the new name), uses the option's own discount, drops Q.opt and returns the quotation to the regular form. ↶ ย้อนกลับ undoes it.
+ACT.qopCut=b=>{const Q=qopFind(b.dataset.id);if(!Q||!qopOn(Q))return;const k=b.dataset.k,M=qopMap(Q),Ls=qopLet(Q);if(!Ls.includes(k))return;
+  const gone=qopSecs(Q).filter(g=>M[g]&&M[g]!==k),nm=qopNm(Q,k);
+  if(!confirm(`ตัดออปชั่น ${Ls.filter(x=>x!==k).join(', ')} ออก ให้ใบนี้เหลือแค่ออปชั่น ${k}${nm?' · '+nm:''}?\n\nจะลบหมวดเหล่านี้ออกจากใบเสนอราคา:\n${gone.map(g=>'• '+gName(g)).join('\n')}\n\nแล้วใบนี้กลับเป็นแบบฟอร์มปกติ (ORIEN Modern)\nกด ↶ ย้อนกลับ ได้ถ้าตัดผิด`))return;
+  const d=qopDisc(Q,k);Q.items=Q.items.filter(i=>!gone.includes(i.g));
+  if(Array.isArray(Q.pics))Q.pics=Q.pics.filter(p=>!p||!gone.includes(p.g));
+  ['subs','hsp','noHs'].forEach(x=>{if(Q[x]&&typeof Q[x]==='object')gone.forEach(g=>delete Q[x][g])});
+  // the kept option's sections lose their option label: "งาน CCTV (ออปชั่น B)" -> "งาน CCTV"
+  const left=qopSecs(Q);left.filter(g=>M[g]===k&&gName(g)===g).forEach(g=>{const ng=qopBare(g);if(!ng||ng===g||left.includes(ng)||Q.items.some(i=>i.g===ng))return;
+    Q.items.forEach(i=>{if(i.g===g)i.g=ng});if(Array.isArray(Q.pics))Q.pics.forEach(p=>{if(p&&p.g===g)p.g=ng});
+    ['subs','hsp','noHs'].forEach(x=>{const o=Q[x];if(o&&typeof o==='object'&&Object.prototype.hasOwnProperty.call(o,g)){o[ng]=o[g];delete o[g]}})});
+  Q.disc=d||'';Q.optCut=k+(nm?' · '+nm:'');delete Q.opt;Q.form='';
+  save();render();toast(`ใบนี้เหลือแค่ออปชั่น ${k} แล้ว · กด ↶ ย้อนกลับ ถ้าตัดผิด`)};
 // ⧉ a copy of the section's lines as the next free option, right under it; a shared section becomes the first free option itself
 ACT.qopDup=b=>{const Q=qopFind(b.dataset.id);if(!Q)return;const o=qopEns(Q),g=decodeURIComponent(b.dataset.g),M=qopMap(Q);let used=qopLet(Q);
   if(!M[g]){const k=QOP_L.find(x=>!used.includes(x));if(!k){toast('มีครบ 4 ออปชั่นแล้ว');return}o.sec[g]=k;used=qopLet(Q)}
