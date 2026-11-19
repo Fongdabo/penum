@@ -27,7 +27,7 @@ async function torfvDraw(k,name,type){const box=document.createElement('div');bo
   const im=new Image();im.src=v;im.style.cssText='display:block;max-width:100%';box.appendChild(im);return box}
 // fill each placeholder from the drawn file (drawn once per file)
 function torfvFill(root){if(!root)return;root.querySelectorAll('.torfv').forEach(ph=>{const k=ph.dataset.k;let e=TORFV_EL[k];
-  if(e&&e.done){ph.appendChild(e.box);return}
+  if(e&&e.done){ph.replaceChildren(e.box);return}
   ph.innerHTML='<p style="padding:20px;color:#6B7F87">กำลังเปิดไฟล์ TOR…</p>';if(e)return;
   TORFV_EL[k]=e={done:false};torfvDraw(k,ph.dataset.n,ph.dataset.t).catch(err=>{console.warn('torfv',err);const b=document.createElement('div');b.innerHTML='<p style="padding:20px">แสดงไฟล์นี้ไม่ได้ กด เปิด ที่ช่องไฟล์ TOR แทน</p>';return b})
     .then(box=>{e.box=box;e.done=true;document.querySelectorAll('section.qtab-sp>.qpv').forEach(v=>torfvFill(v.shadowRoot));torfvFill($('#print'))})})}
