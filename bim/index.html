@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=665,V1_NAME='V1.655';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=666,V1_NAME='V1.656';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -62573,6 +62573,56 @@ Object.assign(STR,{a_pnllk655:['ล็อกช่อง (Lock)','Lock Slots'],l
   psp_lk655:['ช่อง {0} ล็อกอยู่','Way {0} is locked'],
   psp_note655:['วงจรสำรอง (Spare) มีเบรกเกอร์รอไว้ ช่องว่าง (Space) จองช่องไว้โดยยังไม่มีเบรกเกอร์ ทั้งสองแบบวงจรใหม่และการปรับสมดุลโหลดจะไม่ใช้ช่องนั้น','A spare has a breaker waiting; a space keeps the ways with no breaker yet. New circuits and Rebalance Loads leave both alone']});
 {const st=document.createElement('style');st.textContent='#dlg table.lk655 td,#dlg table.lk655 th{vertical-align:middle}#dlg table.lk655 tr.lk td{background:color-mix(in srgb,var(--accent,#2f6fde) 10%,transparent)}#dlg table.lk655{width:100%;table-layout:auto}#dlg table.lk655 td.lkc{text-align:left;white-space:nowrap;width:64px}#dlg table.lk655 td.lkw{white-space:normal;min-width:220px}#dlg table.lk655 .lkfree{opacity:.55}';document.head.appendChild(st)}
+/* ===== 656 Move Up, Move Down, Move Across, Assign Spare/Space (V1.656; Revit: Modify Panel Schedule › Move Up, Move Down, Move Across, Assign Spare, Assign Space,
+   Remove Spare/Space) =====
+   The slots dialog of V1.655 (now Edit Slots) gets a column of its own: ▲ ▼ move a circuit, spare or space a row up or down (two ways in the Branch Panel layout, one in the
+   Switchboard), ⇄ across to the other side (two columns only); a single-way item on the way it goes to trades places with it, a three-pole one with the three-pole item
+   there or with the single ones in its way (they take the ways it leaves).  A locked slot, either end, does not move; nor a circuit not numbered; nor past the panel's ways
+   (400 when it has none).  A free way takes a spare (the smallest breaker of the settings that will do) or a space; a spare or space there can be removed.  The circuits
+   moved go through pnlApply (V1.86): their elements, wires and the breakers typed for them follow. ===== */
+function slMap656(P0,pe){const mk=pe.mark,lay=panelLay(pe),one=panelDist(P0,pe)!=='3p',W=new Map();
+  for(const c of circuits(P0))if(c.panel===mk&&ckSlot(c.circuit)>0){const sl=ckSlots(lay,ckSlot(c.circuit),one?1:c.poles),it={c:c.circuit,sl};for(const s of sl)if(!W.has(s))W.set(s,it)}
+  for(const q of pnSpares(pe)){const sl=ckSlots(lay,q[0],one?1:q[1]),it={q,sl};for(const s of sl)if(!W.has(s))W.set(s,it)}
+  return W}
+/* where an item on way `way` goes: {plan [[item, its new ways]]} or {err} */
+function slMove656(P0,pe,way,dir,W){if(!pe||!pe.mark)return{err:'pnl_none'};const lay=panelLay(pe),two=lay==='two';W=W||slMap656(P0,pe);const it=W.get(+way);
+  if(!it)return{err:'mv656_empty'};if(dir==='across'&&!two)return{err:'mv656_one'};
+  const d=dir==='up'?(two?-2:-1):dir==='down'?(two?2:1):0,to=dir==='across'?it.sl.map(s=>s%2?s+1:s-1):it.sl.map(s=>s+d),max=+pe.ways>0?+pe.ways:400;
+  if(!d&&dir!=='across')return{err:'mv656_empty'};
+  if(to.some(s=>s<1||s>max))return{err:'mv656_edge'};
+  if(it.c!=null&&!/^\d+$/.test(it.c))return{err:'mv656_name'};
+  const L=lkOf655(pe);if(it.sl.some(s=>L.has(s))||to.some(s=>L.has(s)))return{err:'mv656_lk'};
+  const need=to.filter(s=>!it.sl.includes(s)),vac=it.sl.filter(s=>!to.includes(s)),occ=[...new Set(need.map(s=>W.get(s)).filter(Boolean))],plan=[[it,to]];
+  if(occ.some(o=>o.c!=null&&!/^\d+$/.test(o.c)))return{err:'mv656_name'};
+  if(occ.length===1&&occ[0].sl.length>1){const o=occ[0];if(o.sl.length!==it.sl.length||!o.sl.every(s=>need.includes(s)))return{err:'mv656_busy'};plan.push([o,vac])}
+  else if(occ.length){if(occ.some(o=>o.sl.length>1))return{err:'mv656_busy'};for(const o of occ)plan.push([o,[vac[need.indexOf(o.sl[0])]]])}
+  return{plan}}
+function slApply656(P0,pe,plan){const moves=[];for(const [o,to] of plan){if(o.c!=null)moves.push([o.c,String(to[0])]);else o.q[0]=to[0]}
+  if(moves.length)pnlApply(P0,pe.mark,moves);if(Array.isArray(pe.sp))pe.sp.sort((a,b)=>a[0]-b[0])}
+/* move an item of a panel, as an edit; the reason when it cannot */
+function slDo656(pe,way,dir){const R=slMove656(P,pe,way,dir);if(R.err)return R.err;edit(()=>{const Q=slMove656(P,pe,way,dir);if(Q.plan)slApply656(P,pe,Q.plan)});return null}
+/* a free way given a spare or a space, or a spare or space taken off */
+function slAssign656(pe,way,kind){way=+way;const W=slMap656(P,pe),L=lkOf655(pe);if(L.has(way))return'mv656_lk';
+  if(kind==='rm'){const it=W.get(way);if(!it||!it.q)return'mv656_empty';if(it.sl.some(s=>L.has(s)))return'mv656_lk';edit(()=>{const a=pnSpares(pe).filter(q=>q[0]!==it.q[0]);if(a.length)pe.sp=a;else delete pe.sp});return null}
+  if(W.has(way))return'mv656_busy';const E=esOf(P),b=E.brk.find(x=>x>=E.brkMin)||E.brk[0];
+  edit(()=>{pe.sp=pnSpares(pe).concat([kind==='space'?[way,1,0,1]:[way,1,b]]).sort((p,q)=>p[0]-q[0])});return null}
+{const f0=dlgLock655;dlgLock655=function(id){f0.apply(this,arguments);const d=$('#dlg'),e=IDX.get(id);if(!e||!d.open||!d.querySelector('table.lk655')||!ui.dlg)return;
+  d.classList.add('slw656');const two=panelLay(e)==='two',L=lkOf655(e),W=slMap656(P,e),hr=d.querySelector('table.lk655 thead tr');if(hr)hr.insertAdjacentHTML('beforeend',`<th>${t('mv656_h')}</th>`);
+  for(const tr of d.querySelectorAll('table.lk655 tbody tr')){const sl=tr.dataset.lks.split(',').map(Number),s=sl[0],it=W.get(s),lk=sl.some(x=>L.has(x));let h='';
+    if(it){const B=(dir,ic,tt)=>{const ok=!slMove656(P,e,s,dir,W).err;return`<button class="btn mv656" data-mv656="${dir}:${s}" title="${esc(t(tt))}" aria-label="${esc(t(tt))}"${ok?'':' disabled'}>${ic}</button>`};
+      h=B('up','▲','mv656_up')+B('down','▼','mv656_down')+(two?B('across','⇄','mv656_across'):'');if(it.q&&!lk)h+=`<button class="btn mv656" data-as656="rm:${s}">${t('as656_rm')}</button>`}
+    else if(!lk)h=`<button class="btn mv656" data-as656="spare:${s}">${t('as656_spare')}</button><button class="btn mv656" data-as656="space:${s}">${t('as656_space')}</button>`;
+    tr.insertAdjacentHTML('beforeend',`<td class="mvc">${h}</td>`)}
+  const c0=ui.dlg.click;ui.dlg.click=ev=>{const b=ev.target&&ev.target.closest&&ev.target.closest('[data-mv656],[data-as656]');if(!b)return c0&&c0(ev);if(b.disabled)return;
+    const v=b.dataset.mv656||b.dataset.as656,i=v.indexOf(':'),k=v.slice(0,i),s=+v.slice(i+1),r=b.dataset.mv656?slDo656(e,s,k):slAssign656(e,s,k);if(r)toast(t(r));dlgLock655(id)}}}
+{const st=document.createElement('style');st.textContent='dialog.slw656{width:min(860px,calc(100% - 32px))}#dlg table.lk655 td.mvc{white-space:nowrap}#dlg table.lk655 .btn.mv656{padding:2px 8px;min-width:0;margin-right:3px;font-size:12px;line-height:18px}#dlg table.lk655 .btn.mv656:disabled{opacity:.35}';document.head.appendChild(st)}
+Object.assign(STR,{a_pnllk655:['แก้ช่องในตู้ (Slots)','Edit Slots'],
+  lk655_intro:['ช่องของตู้ {0}: ▲ ▼ ย้ายวงจร วงจรสำรอง หรือช่องว่างขึ้นลงหนึ่งแถว ⇄ ย้ายข้ามฝั่ง (สลับกับสิ่งที่อยู่ในช่องนั้น) ช่องว่างใส่วงจรสำรองหรือช่องว่างได้ ช่องที่ล็อกย้ายไม่ได้ ปรับสมดุลโหลดไม่ย้ายวงจรในช่องที่ล็อกและไม่ย้ายวงจรอื่นเข้าไป วงจรใหม่ วงจรสำรอง และช่องว่างจะไม่ลงในช่องที่ล็อก','Slots of {0}: ▲ ▼ move a circuit, spare or space a row up or down, ⇄ across (trading places with what is there); a free way takes a spare or a space; a locked slot does not move. Rebalance Loads leaves the circuit on a locked slot where it is and moves no other circuit onto it; a new circuit, spare or space does not go on a locked slot'],
+  mv656_h:['ย้าย / กำหนด','Move / Assign'],mv656_up:['ย้ายขึ้น (Move Up)','Move Up'],mv656_down:['ย้ายลง (Move Down)','Move Down'],mv656_across:['ย้ายข้ามฝั่ง (Move Across)','Move Across'],
+  as656_spare:['+ สำรอง','+ Spare'],as656_space:['+ ช่องว่าง','+ Space'],as656_rm:['เอาออก','Remove'],
+  mv656_lk:['ช่องที่ล็อกย้ายหรือแก้ไม่ได้','A locked slot cannot be moved or changed'],mv656_edge:['ย้ายเกินช่องของตู้ไม่ได้','That is past the ways of the panel'],
+  mv656_busy:['ช่องปลายทางมีวงจรหลายขั้วอยู่','A multi-pole item is in the way'],mv656_name:['วงจรที่ชื่อไม่ใช่เลขช่องย้ายไม่ได้','A circuit not numbered by its way cannot be moved'],
+  mv656_one:['ตู้แบบแถวเดียวไม่มีการย้ายข้ามฝั่ง','A panel in one column has no other side'],mv656_empty:['ช่องนี้ว่าง','This way is free']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -63741,6 +63791,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ค่าของตู้ไฟ (Revit: Mounting, Enclosure, Mains, MCB Rating, Short Circuit Rating, Modifications): Properties ของตู้มีกลุ่มแผงจ่ายไฟ เลือกการติดตั้งติดลอย ฝังผนัง หรือตั้งพื้น พิมพ์ตัวตู้ พิกัดบัสบาร์ (A) พิกัดเมนเบรกเกอร์ (A) พิกัดทนกระแสลัดวงจร (kA) และการดัดแปลง พร้อมกระแสลัดวงจรที่ตู้ที่คำนวณจากระบบจ่ายไฟ ตารางโหลดรายตู้แสดงบัสบาร์ MCB และพิกัดทนลัดวงจรต่อจากหัวตาราง แม่แบบตารางเลือกเป็นช่องหัวตารางได้ ตารางอุปกรณ์ไฟฟ้ามีช่องเหล่านี้ ตรวจวงจรไฟฟ้าเตือนเมื่อ MCB ต่ำกว่าเมนเบรกเกอร์ที่โหลดต้องการ บัสบาร์ต่ำกว่า MCB และพิกัดทนลัดวงจรต่ำกว่ากระแสลัดวงจรที่ตู้
 - นิยามแรงดัน (Revit: Electrical Settings › Voltage Definitions และ Voltage ของจุดต่อไฟฟ้า): ตั้งค่างานไฟฟ้ามีหน้านิยามแรงดันก่อนระบบจ่ายไฟ แต่ละนิยามมีชื่อ แรงดัน ต่ำสุด และสูงสุด (ตั้งต้น 230 V ช่วง 220 ถึง 240 และ 400 V ช่วง 380 ถึง 415) เพิ่ม แก้ ลบได้ บอกระบบจ่ายไฟที่ใช้แต่ละนิยามและแรงดันที่ยังไม่มีนิยามครอบ คุณสมบัติชนิดของโคมไฟ อุปกรณ์ไฟฟ้า และเครื่องจักรมีแรงดันไฟฟ้า Properties ของชิ้นงานแสดงแรงดันของมันและแรงดันวงจร ตรวจวงจรไฟฟ้าเตือนเมื่อแรงดันของอุปกรณ์อยู่นอกช่วงของนิยามที่วงจรใช้ สร้างวงจรเตือนก่อนเมื่อเลือกตู้ที่แรงดันไม่ตรง
 - ช่องว่างและล็อกช่อง (Revit: Panel Schedule › Add Space, Lock/Unlock): หน้าวงจรสำรองมีปุ่มเพิ่มช่องว่าง (Space) ที่จองช่องไว้โดยยังไม่มีเบรกเกอร์ และเปลี่ยนวงจรสำรองเป็นช่องว่างหรือกลับได้ ตารางโหลดรายตู้เขียนว่าช่องว่างโดยไม่มีพิกัดเบรกเกอร์ ปุ่มล็อกช่องใน Properties ของตู้ ของตารางโหลด และแถบมุมมอง แสดงทุกช่องกับสิ่งที่อยู่ในช่อง ติ๊กล็อกได้ทีละช่อง ล็อกทุกช่องที่ใช้ หรือปลดล็อกทั้งหมด ปรับสมดุลโหลดไม่ย้ายวงจรในช่องที่ล็อกและไม่ย้ายวงจรอื่นเข้าไป วงจรใหม่ วงจรสำรอง และช่องว่างจะข้ามช่องที่ล็อก
+- ย้ายและกำหนดช่องในตู้ (Revit: Modify Panel Schedule › Move Up, Move Down, Move Across, Assign Spare, Assign Space, Remove Spare/Space): ปุ่มล็อกช่องเปลี่ยนเป็นแก้ช่องในตู้ แต่ละแถวมี ▲ ▼ ย้ายวงจร วงจรสำรอง หรือช่องว่างขึ้นลงหนึ่งแถว (สองช่องในแบบสองฝั่ง หนึ่งช่องในแบบแถวเดียว) ⇄ ย้ายข้ามฝั่ง สลับกับสิ่งที่อยู่ในช่องปลายทาง วงจร 3 ขั้วสลับกับวงจร 3 ขั้วหรือให้วงจร 1 ขั้วไปอยู่ช่องที่มันออก ช่องที่ล็อกย้ายไม่ได้ ช่องว่างกด + สำรอง หรือ + ช่องว่าง ได้ วงจรสำรองและช่องว่างกดเอาออกได้ สายและพิกัดเบรกเกอร์ที่พิมพ์ไว้ตามวงจรไป
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -64107,6 +64158,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Panelboard parameters (Revit: Mounting, Enclosure, Mains, MCB Rating, Short Circuit Rating, Modifications): a panel's Properties have a Panelboard group with Surface, Recessed or Floor standing mounting, the enclosure, Mains (A), MCB Rating (A), Short Circuit Rating (kA) and Modifications, with the fault current the service works out at the panel; the panel schedule reads Mains, MCB and the short circuit rating after its head and a template can show each as a header field; electrical equipment schedules list them; Check Circuits flags an MCB Rating under the main breaker the load needs, Mains under the MCB Rating and a Short Circuit Rating under the fault current at the panel
 - Voltage definitions (Revit: Electrical Settings › Voltage Definitions and the Voltage of an electrical connector): Electrical Settings has a Voltage definitions page before Distribution systems, each with a name, a value, a minimum and a maximum (230 V from 220 to 240 and 400 V from 380 to 415 to start), added, changed or deleted, with the systems using each and the voltages no definition holds; the Type Properties of luminaires, electrical devices and mechanical equipment take a Voltage, the Properties of each element show it with its circuit voltage; Check Circuits flags an element outside the definition of its circuit voltage and Create Circuit warns before a panel of another voltage is used
 - Spaces and locked slots (Revit: Panel Schedule › Add Space, Lock/Unlock): the Spares dialog has Add Space, ways kept for later with no breaker, and turns a spare into a space and back; the panel schedule reads Space there with no breaker; Lock Slots… in the Properties of a panel, of its schedule and on the view bar lists every slot with what is on it, a box to lock each, Lock all used and Unlock all; Rebalance Loads leaves the circuit on a locked slot where it is and moves no other circuit onto one, and a new circuit, spare or space passes locked slots by
+- Moving and assigning slots (Revit: Modify Panel Schedule › Move Up, Move Down, Move Across, Assign Spare, Assign Space, Remove Spare/Space): Lock Slots is now Edit Slots; each row has ▲ ▼ to move a circuit, spare or space a row up or down (two ways in two columns, one in one column) and ⇄ across, trading places with what is there (a three-pole one with a three-pole one, or the single ones take the ways it leaves); a locked slot does not move; a free way takes + Spare or + Space, and a spare or space can be removed; the wires and typed breakers follow their circuits
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -65341,6 +65393,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.653 · ค่าของตู้ไฟแบบ Revit บัสบาร์ MCB พิกัดทนลัดวงจร การติดตั้ง (Panelboard)
 - V1.654 · นิยามแรงดันแบบ Revit และแรงดันของอุปกรณ์ (Voltage Definitions)
 - V1.655 · ช่องว่าง (Add Space) และล็อกช่องในตู้ไฟแบบ Revit ปรับสมดุลโหลดไม่ย้ายช่องที่ล็อก
+- V1.656 · ย้ายวงจรขึ้น ลง ข้ามฝั่ง และใส่วงจรสำรองหรือช่องว่างตรงช่อง แบบ Revit (Move Up/Down/Across)
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -66169,6 +66222,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.653 · Panelboard parameters as in Revit: Mains, MCB Rating, Short Circuit Rating, Mounting
 - V1.654 · Voltage Definitions as in Revit, and the voltage of luminaires, devices and equipment
 - V1.655 · Add Space and locked slots in panels as in Revit; Rebalance Loads keeps locked slots
+- V1.656 · Move Up, Move Down, Move Across and Assign Spare/Space on a slot, as in Revit
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -71412,6 +71466,12 @@ window.PenumBIM.r655={
   slot:()=>circuitCheck(P).filter(x=>x.k==='ck_slot').map(x=>({panel:x.panel,circuit:x.circuit,a:x.a,txt:ckText(x)})),
   items:mk=>lkItems655(P,pnFind(P,mk),t).map(r=>({sl:r.sl,ph:r.ph,kind:r.kind,what:r.what,lk:r.lk})),
   rows:mk=>{const e=pnFind(P,mk);return e?spRows655(e):''}};
+/* V1.656 test API: Move Up, Move Down, Move Across, Assign Spare/Space */
+window.PenumBIM.r656={
+  can:(mk,way,dir)=>{const R=slMove656(P,pnFind(P,mk),way,dir);return R.err?R.err:R.plan.map(([o,to])=>[o.c!=null?'c'+o.c:(o.q[3]===1?'space':'spare')+o.q[0],to])},
+  mv:(mk,way,dir)=>{const r=slDo656(pnFind(P,mk),way,dir);refresh();return r},
+  as:(mk,way,kind)=>{const r=slAssign656(pnFind(P,mk),way,kind);refresh();return r},
+  map:mk=>{const W=slMap656(P,pnFind(P,mk)),o={};for(const [s,it] of W)o[s]=it.c!=null?'c'+it.c:(it.q[3]===1?'space':'spare')+(it.q[0]===s?'':'^');return o}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
