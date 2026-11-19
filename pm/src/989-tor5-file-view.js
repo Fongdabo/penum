@@ -35,7 +35,7 @@ function torfvFill(root){if(!root)return;root.querySelectorAll('.torfv').forEach
 if(typeof ACT.spPv==='function'){const f=ACT.spPv;ACT.spPv=function(){const x=f.apply(this,arguments);torfvFill($('#print'));return x}}
 // the choice in the ข้อกำหนดสำคัญ title row: which file the split shows, or the answer sheet
 {const f=torOne;torOne=function(t){const h=f.apply(this,arguments),L=torfvFiles(t);if(!L.length)return h;const x=torfvPick(t),k='<button type="button" class="btn sm" data-a="print" data-k="tor"';
-  const sel=`<select data-tfv="${t.id}" title="แบ่งจอแสดงอะไรด้านขวา" style="max-width:260px">${L.map(f=>`<option value="${f.id}"${x&&x.id===f.id?' selected':''}>แบ่งจอ: ${esc(f.name||'ไฟล์ TOR')}</option>`).join('')}<option value="sheet"${x?'':' selected'}>แบ่งจอ: ใบตอบ TOR</option></select>`;
+  const sel=`<select data-tfv="${t.id}" title="แบ่งจอแสดงอะไรด้านขวา" style="max-width:260px">${L.map(f=>`<option value="${f.id}"${x&&x.id===f.id?' selected':''}>แบ่งจอ: ${L.length===1?'ไฟล์ TOR (ขอบเขตงาน)':esc(f.name||'ไฟล์ TOR')}</option>`).join('')}<option value="sheet"${x?'':' selected'}>แบ่งจอ: ใบตอบ TOR</option></select>`;
   return h.includes(k)?h.replace(k,sel+k):h}}
 document.addEventListener('change',e=>{const s=e.target.closest&&e.target.closest('select[data-tfv]');if(!s)return;TORFV[s.dataset.tfv]=s.value;render()});
 // a clause clicked in the table: find its words in the Word file beside it
