@@ -24,14 +24,17 @@ if(window.penumLive){
   const LIVE_META=['revs','cmts','appr','status','lowReq','lowOk','lowNo'];if(typeof QRV_WHY==='object')QRV_WHY.live='ก่อนรับงานสดรอบใหม่';
   function liveQuotes(pid,L){const Q=DB.co.quotes=DB.co.quotes||[],lv=DB.co.live=DB.co.live||{},got=lv.q=lv.q||{};
     for(const src of L){if(!src||!src.id||src.pj!==pid)continue;const q=JSON.parse(JSON.stringify(src)),i=Q.findIndex(x=>x.id===q.id);
-      if(i>=0){if(!got[q.id])continue;q.no=Q[i].no;liveKeep(q,Q[i],Q);Q[i]=q}
-      else{if(!q.no||Q.some(x=>x.no===q.no))q.no=nextNo('QT-',Q);liveKeep(q,null,Q);Q.push(q);got[q.id]=1}}}
+      if(i>=0){if(!got[q.id])continue;q.no=Q[i].no;liveKeep(q,Q[i],Q);qrvDedupe(q);liveSig(q);Q[i]=q}
+      else{if(!q.no||Q.some(x=>x.no===q.no))q.no=nextNo('QT-',Q);liveKeep(q,null,Q);liveSig(q);Q.push(q);got[q.id]=1}}}
   // 4.99.31 ("ผู้ลงนาม กับผู้เสนอราคา ทำไมไม่เหมือนตัวอื่น"): a sent quote leaves the customer, signer and ผู้เสนอราคา empty, so
   // keep what was picked here on the quote it replaces; a new one takes the signer and ผู้เสนอราคา of the latest quote that has them, as NEW.quotes does
+  // 4.99.48: the signature a received quote had, so a later send can tell whether anyone changed it in between
+  function liveSig(q){if(typeof qrvSig==='function')try{q._lv=qrvSig(q)}catch(err){}}
   function liveKeep(q,old,Q){const e=k=>!String(q[k]||'').trim(),has=(x,k)=>x&&String(x[k]||'').trim();
     // 4.99.47 (QT-021 revised from the customer's marked-up sheet): a replaced quote keeps its Rev. history, comments, approvals and status,
     // and what it held before is kept as a Rev. first (if it changed since the last one), so the new content becomes the next Rev.
-    if(old){if(typeof qrvSave==='function'&&(old.revs||[]).length)try{qrvSave(old,'live')}catch(err){}
+    // 4.99.48 ("ทำไมมี 2 รีไว"): a quote nobody changed since the last send (old._lv = its signature then) is not kept as a Rev. again
+    if(old){if(typeof qrvSave==='function'&&(old.revs||[]).length&&!(old._lv&&old._lv===qrvSig(old)))try{qrvSave(old,'live')}catch(err){}
       LIVE_META.forEach(k=>{if(q[k]==null&&old[k]!=null)q[k]=old[k]})}
     if(old){['cust','by'].forEach(k=>{if(e(k)&&has(old,k))q[k]=old[k]});if(e('signName')&&has(old,'signName')){q.signName=old.signName;q.signPos=old.signPos||'';if(old.sgMan)q.sgMan=1}}
     const last=k=>{for(let j=Q.length-1;j>=0;j--)if(Q[j]!==old&&has(Q[j],k))return Q[j];return null};
@@ -55,3 +58,11 @@ if(window.penumLive){
   SBKW['co.coset']=(SBKW['co.coset']||'')+' รับงานสด ส่งงาน live inbox';
   if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'รับงานสด…':'Live inbox…'});
 }
+// 4.99.48 ("ทำไมมี 2 รีไว", 2026-11-19): two copies of PM (or two sends seconds apart) could each keep the same
+// quote as a Rev. before receiving a send, and the cloud merge kept both, so the history showed Rev.2 twice.
+// A Rev. kept on receiving a send that repeats the one before it (same number, same price) is dropped.
+function qrvDedupe(Q){const R=Q&&Q.revs;if(!R||R.length<2)return false;const out=[R[0]];
+  for(let i=1;i<R.length;i++){const r=R[i],p=out[out.length-1],n=x=>Number(x&&x.sum&&x.sum.net)||0;
+    if(r.n===p.n&&(r.why==='live'||p.why==='live')&&Math.abs(n(r)-n(p))<0.005)continue;out.push(r)}
+  if(out.length===R.length)return false;Q.revs=out;return true}
+if(typeof qrvCard==='function'){const f=qrvCard;qrvCard=function(Q){if(qrvDedupe(Q)&&typeof save==='function')setTimeout(()=>save(),0);return f.apply(this,arguments)}}
