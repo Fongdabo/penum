@@ -16,7 +16,7 @@ if(window.penumLive){
       const p=migrate(JSON.parse(JSON.stringify(data)));p.id=id;
       for(const [k,v] of Object.entries((extra&&extra.photos)||{}))IDB.put(k,v).catch(()=>{});
       if(DB.projects[id]&&DB.projects[id].jn&&!p.jn)p.jn=DB.projects[id].jn;// 4.99.39: keep the job's งานที่ N (989-job-numbers)
-      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);
+      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);if(typeof liveTors==='function')liveTors(id,(extra&&extra.tors)||[]);
       if(first){DB.cur=id;P=p;S.mode='pj';S.tab='dash';S.sel={}}          // just accepted: open it, so the customer watches it fill
       save(true);render();return true}});
   // quotes are the company's (DB.co.quotes): only ones for this project (q.pj), new ones get the next free number here,
