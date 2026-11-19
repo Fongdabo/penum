@@ -106,3 +106,15 @@ const QRV_TIDIED=new Set();
       inp.insertAdjacentHTML('afterend',`<small class="qrv-chip" title="เลข Rev. ดึงจากการ์ดประวัติการแก้ไข (Rev.) ให้เอง ไม่ต้องพิมพ์" style="display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12px">${k>0?`พิมพ์เป็น <b style="color:var(--accent,#1C8F9B)">${esc(qrvRef(Q.ref,k))}</b> (Rev. อัตโนมัติ)`:'ฉบับแรก ไม่พิมพ์ Rev.'}</small>`)}}
     if(h)toast(`เอา ${h} ที่พิมพ์เองออกแล้ว ใช้ Rev.${qrvCur(Q).n} จากประวัติแทน · กด ↶ ย้อนกลับ ถ้าไม่ต้องการ`)}catch(e){}
   return out}}
+// 4.99.45 (user, 2026-11-19: "ถ้าเราจะรีไวราคาควรมีช่องให้ติ้ก ดีไหม หรือตอนนี้เรารู้ได้ยังไงว่าจะรีไวราคา"): no tick is needed, a Rev. starts by
+// itself when a quote already sent is edited; a badge by the top buttons says which Rev. the quote is on and opens the Rev. card
+const qrvBadge=Q=>{if(!Q||!(Q.items||[]).length)return '';const R=Q.revs||[],c=qrvCur(Q),L=qrvLast(Q);
+  const [t,tip,cl]=!L?['ฉบับแรก · ยังไม่มี Rev.','ยังไม่ได้ส่งลูกค้า แก้ได้เลยไม่นับเป็น Rev. ระบบเก็บ Rev.0 ให้เองเมื่อเปลี่ยนสถานะเป็นส่งแล้ว','']
+    :c.dirty?[`กำลังแก้เป็น Rev.${c.n}`,`แก้ไขหลัง Rev.${L.n} ที่ส่งไปแล้ว ใบที่พิมพ์ตอนนี้ขึ้น Rev.${c.n} และจะเก็บเป็น Rev.${c.n} เมื่อพิมพ์ใบลูกค้าหรือกดบันทึกเป็น Rev. ใหม่`,' dirty']
+    :[`Rev.${L.n}`,`ตรงกับ Rev.${L.n} ที่เก็บไว้ แก้อะไรก็ตามจะกลายเป็น Rev.${L.n+1} ให้เอง`,''];
+  return `<button type="button" class="btn sm qrv-bdg${cl}" data-a="qrvGo" title="${esc(tip)}">${esc(t)}</button>`};
+ACT.qrvGo=()=>{const c=document.querySelector('section.card.qrv');if(c){c.scrollIntoView({behavior:'smooth',block:'start'});c.classList.add('qrv-hl');setTimeout(()=>c.classList.remove('qrv-hl'),1600)}};
+{const f=salesQuote;salesQuote=function(){let h=f.apply(this,arguments);const C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];if(!Q)return h;
+  const a=h.indexOf('<button type="button" class="btn sm qc-btn');return a<0?h:h.slice(0,a)+qrvBadge(Q)+h.slice(a)}}
+document.head.insertAdjacentHTML('beforeend',`<style>.qrv-bdg{font-weight:600}.qrv-bdg.dirty{border-color:#F59E0B;color:#D97706;background:color-mix(in srgb,#F59E0B 14%,transparent)}
+.card.qrv{transition:box-shadow .3s}.card.qrv.qrv-hl{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1C8F9B) 45%,transparent)}</style>`);
