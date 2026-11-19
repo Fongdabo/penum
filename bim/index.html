@@ -14639,7 +14639,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=595,V1_NAME='V1.585';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=596,V1_NAME='V1.586';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -59759,6 +59759,108 @@ Object.assign(STR,{p_bxd585:['ระยะยื่นของชั้นท�
   wx_off585:['ล็อกไว้ที่ฐานหรือยอดผนัง','locked to the base or the top of the wall'],
   wx_note585:['แม่กุญแจบนและล่างของแต่ละชั้น: คลิกปลดล็อก (สีเขียว) ให้ชั้นนั้นยื่นลงใต้ฐานหรือขึ้นเหนือยอดผนังตาม ระยะยื่นของชั้นที่ฐาน / ที่ยอด ในคุณสมบัติของผนังแต่ละผนัง (ค่าลบให้หยุดก่อนถึง) เช่นผิวอิฐโชว์ที่ยื่นลงปิดขอบพื้น',
     'The padlocks at the top and the bottom of each layer: click to unlock one (green) and that layer reaches below the base or above the top of the wall by the Base / Top Extension Distance in the Properties of each wall (negative: it stops short), e.g. a brick facing running down past the slab edge']});
+/* ===== 586 Modify Returns of wall sweeps (V1.586; Revit: Modify | Wall Sweeps › Modify Returns: on the options bar Straight Cut or Return and an Angle, then a
+   click on the end of a sweep; a return turns the profile back round an upright axis on the face of the wall, a positive angle towards the wall, a negative one
+   away from it).  e.rt586 = {end: degrees} on a placed horizontal sweep; an end is 's' (where it starts), 'e' (where it ends), or 'i<insert>0' / 'i<insert>1'
+   (before and after a door or window that cuts it); only a square end returns, not one mitred with another sweep or stopped against a wall.  A return is in 3D,
+   elevations and sections, plans, and the length and volume of the sweep (schedules, the takeoff). ===== */
+const RT586_MAX=90;
+/* the ends of one: [{i (its piece), k (0: where the piece starts, 1: where it ends), key (null: it cannot return), d (along the face)}] */
+function rt586Ends(X,G){const out=[];if(!G||G.v||G.rv||!G.pcs)return out;const e=G.e,o=G.o;let sb=0;try{sb=swpT(X.Q,e).sb||0}catch(_){}
+  const H=[];for(const h of X.H.get(o.w.id)||[]){const T=typ(X.Q,h);if(T)H.push({id:h.id,a:h.pos-T.width/2-sb,b:h.pos+T.width/2+sb})}
+  const n=G.pcs.length;G.pcs.forEach((pc,i)=>{for(const k of [0,1]){const c=k?pc.e1:pc.e0,sq=c.wall==null&&!c.m;let key=null;
+    if(sq){const h=H.find(h=>Math.abs((k?h.a:h.b)-c.d)<2);if(h)key='i'+h.id+(k?'0':'1');else if(!k&&!i)key='s';else if(k&&i===n-1)key='e'}
+    out.push({i,k,key,d:swpCutD(G.F,c,(G.qi+G.qo)/2)})}});
+  return out}
+/* where the point q out from the face of the profile goes, turned by f (radians) round the axis of return R: [along the face, out from it] */
+const rt586At=(R,q,f)=>{const s=R.k?1:-1;if(R.a>0){const r=q-R.qa;return[R.d+s*r*Math.sin(f),R.qa+r*Math.cos(f)]}const r=R.qa-q;return[R.d+s*r*Math.sin(f),R.qa-r*Math.cos(f)]};
+const rt586N=R=>Math.max(2,Math.ceil(R.th/(Math.PI/24)));
+/* what a plan shows of a return: the band ra..rb out from the face swept round */
+function rt586Foot(G,R,ra,rb){const F=G.F,N=rt586N(R),out=[];for(let j=0;j<=N;j++){const p=rt586At(R,rb,R.th*j/N);out.push(F.pt(p[0],p[1]))}
+  for(let j=N;j>=0;j--){const p=rt586At(R,ra,R.th*j/N);out.push(F.pt(p[0],p[1]))}return out}
+/* the returns of a sweep: G.rt586 [{key, i, k, a (degrees), th, d, qa (the axis, out from the face)}]; each adds its length (round the centroid) and volume */
+function rt586Add(X,G){const M=G.e.rt586,R=[],P0=G.P0,n=P0.length;let A=0,cq=0;
+  for(let i=0;i<n;i++){const p=P0[i],q=P0[(i+1)%n],c=p[0]*q[1]-q[0]*p[1];A+=c;cq+=(p[0]+q[0])*c}const oc=Math.abs(A)>1e-9?cq/(3*A):(G.qi+G.qo)/2;
+  for(const E of rt586Ends(X,G)){const a=E.key?Math.round(+M[E.key]||0):0;if(!a)continue;const pc=G.pcs[E.i],c=E.k?pc.e1:pc.e0,th=Math.min(Math.abs(a),RT586_MAX)*Math.PI/180,
+      qa=a>0?Math.min(0,G.qi):G.qo,r={key:E.key,i:E.i,k:E.k,a,th,d:c.d,qa},rc=a>0?oc-qa:qa-oc;
+    R.push(r);G.len+=rc*th;G.vol+=G.area*rc*th;G.pp.push(rt586Foot(G,r,G.qi,G.qo))}
+  if(R.length)G.rt586=R}
+{const f0=swpGeo0;swpGeo0=function(X,e){const G=f0.apply(this,arguments);try{if(G&&e&&e.cat==='wsweep'&&e.rt586&&!G.v&&!G.rv)rt586Add(X,G)}catch(_){}return G}}
+/* 3D: the profile swept round the axis; its end, where it lies on the face of the wall, a hair inside it */
+function rt586Mesh(m,G,R){const F=G.F,z0=G.z[0],N=rt586N(R),flush=R.a>0&&Math.cos(R.th)<1e-3&&R.qa>-0.5,
+    ring=(f,dq)=>G.P0.map(p=>{const q=rt586At(R,p[0],f);return swp3(F,q[0],q[1]-dq,z0+p[1])}),Rs=[];
+  for(let j=0;j<=N;j++)Rs.push(ring(R.th*j/N,0));
+  const n=G.P0.length,T=m.t,put=(...q)=>{for(const p of q)T.push(p[0],p[1],p[2])},L=(p,q)=>m.l.push(p[0],p[1],p[2],q[0],q[1],q[2]),hard=G.hard,tri=G.tri;
+  for(let j=0;j<N;j++){const A=Rs[j],B=Rs[j+1],cA=[0,0,0],cB=[0,0,0];for(let i=0;i<n;i++)for(let k=0;k<3;k++){cA[k]+=A[i][k]/n;cB[k]+=B[i][k]/n}
+    const Nn=newell(G.P0.map(p=>{const q=rt586At(R,p[0],R.th*(j+0.5)/N);return swp3(F,q[0],q[1],z0+p[1])})),f=Nn[0]*(cB[0]-cA[0])+Nn[1]*(cB[1]-cA[1])+Nn[2]*(cB[2]-cA[2])>0,sn=[];
+    for(let i=0;i<n;i++){const i2=(i+1)%n,a=A[i],b=A[i2],c=B[i2],d=B[i];if(f){put(a,b,c);put(a,c,d)}else{put(a,c,b);put(a,d,c)}
+      const v=[(b[0]+c[0]-a[0]-d[0])/2,(b[1]+c[1]-a[1]-d[1])/2,(b[2]+c[2]-a[2]-d[2])/2],w=[(d[0]-a[0]+c[0]-b[0])/2,(d[1]-a[1]+c[1]-b[1])/2,(d[2]-a[2]+c[2]-b[2])/2],k=f?1:-1;
+      sn.push([k*(v[1]*w[2]-v[2]*w[1]),k*(v[2]*w[0]-v[0]*w[2]),k*(v[0]*w[1]-v[1]*w[0])])}
+    for(let i=0;i<n;i++){if(hard[i])L(A[i],B[i]);else m.s.push({a:A[i],b:B[i],n1:sn[(i+n-1)%n],n2:sn[i]})}
+    if(j===N-1){const E=flush?ring(R.th,0.5):B;for(let i=0;i<tri.length;i+=3){const a=tri[i],b=tri[i+1],c=tri[i+2];if(f)put(E[a],E[b],E[c]);else put(E[a],E[c],E[b])}
+      for(let i=0;i<n;i++)L(B[i],B[(i+1)%n])}}}
+{const f0=swpMeshes;swpMeshes=function(Q,FP,items){const n0=items.length;f0.apply(this,arguments);if(Q!==P)return;const X=swpX();
+  for(const e of Q.els){if(e.cat!=='wsweep'||!e.rt586)continue;let G=null;try{G=swpGeo(X,e)}catch(_){}if(!G||!G.rt586)continue;
+    const m=items.find((it,k)=>k>=n0&&it.id===e.id&&it.cat==='wsweep'&&it.v583==null);if(!m)continue;for(const R of G.rt586)try{rt586Mesh(m,G,R)}catch(_){}}}}
+/* plans: cut or seen from above, as the rest of it */
+{const f0=swpPlan;swpPlan=function(ctx,g,v,T,col,o,of,hl,A,det){const r=f0.apply(this,arguments);const SW=of('wsweep').filter(([e])=>e&&e.rt586&&e.v583==null);if(!SW.length)return r;
+  const X=swpX(),cz=VRm(v).cut;g.lay('wsweep');
+  for(const [e,md] of SW){const G=swpGeo(X,e);if(!G||!G.rt586)continue;g.el(e);const h=hl(e.id),cut=md==='cut';let q=[G.qi,G.qo];if(cut){q=swpAt(G.P0,cz-G.z[0]);if(!q)continue}
+    for(const R of G.rt586){const pl=rt586Foot(G,R,q[0],q[1]);g.path(pl);if(cut){ctx.fillStyle=det==='coarse'?A.poche:col.paper;ctx.fill()}ctx.strokeStyle=h||A.ink;if(cut)g.cut(1);
+      ctx.lineWidth=h?2:g.lw(cut?0.25:0.13);ctx.stroke();g.cut(0);if(h){ctx.globalAlpha=0.25;ctx.fillStyle=h;ctx.fill();ctx.globalAlpha=1}}}
+  return r}}
+/* ---- the tool: Modify Returns ---- */
+const rt586Mode=()=>ui.opt.rt586m==='s'?'s':'r',rt586Ang=()=>{const a=Math.round(+ui.opt.rt586a);return isFinite(a)?clamp(a,-RT586_MAX,RT586_MAX):90};
+/* the end of a placed horizontal sweep nearest the pointer (in a plan: of a wall the plan shows; in 3D, elevations and sections: on the screen) */
+function rt586Near(pn,v,p){const X=swpX(),gl=v.kind!=='plan',nav=navOf(v),w=gl?null:{x:(p.x-nav.ox)/nav.s,y:(p.y-nav.oy)/nav.s};let best=null,bd=gl?18:14/nav.s;
+  for(const e of P.els){if(e.cat!=='wsweep'||e.dir==='v')continue;if(!gl){const h=IDX.get(e.host);if(!h||!planShow(v,h))continue}
+    let G=null;try{G=swpGeo(X,e)}catch(_){}if(!G||G.v)continue;const zm=(G.z[0]+G.z[1])/2,qm=(G.qi+G.qo)/2;
+    for(const E of rt586Ends(X,G)){const pt=G.F.pt(E.d,qm);let dd;if(gl){const s=projGL(pn,v,[pt[0],zm,pt[1]]);if(!s)continue;dd=Math.hypot(s[0]-p.x,s[1]-p.y)}else dd=Math.hypot(pt[0]-w.x,pt[1]-w.y);
+      if(dd<bd){bd=dd;best=Object.assign({e,G,pt,z:zm},E)}}}
+  return best}
+function rt586Do(E){if(!E){toast(t('rt586_pick'));return}if(!E.key){toast(t('rt586_no'),5000);return}const e=E.e,has=e.rt586&&e.rt586[E.key];
+  if(rt586Mode()==='s'){if(!has){toast(t('rt586_sq0'));return}edit(()=>{delete e.rt586[E.key];if(!Object.keys(e.rt586).length)delete e.rt586});ui.sel=new Set([e.id]);toast(t('rt586_cut'));return}
+  const a=rt586Ang();if(!a){toast(t('rt586_ang'));return}if(has===a){toast(t('rt586_same',a));return}
+  edit(()=>{if(!e.rt586||typeof e.rt586!=='object')e.rt586={};e.rt586[E.key]=a});ui.sel=new Set([e.id]);toast(t('rt586_done',a))}
+/* a preview of what a click does there: the return it makes, or the straight cut */
+function rt586Prev(E){if(!E||!E.key)return null;const G=E.G,pc=G.pcs[E.i],c=E.k?pc.e1:pc.e0;if(rt586Mode()==='s')return null;const a=rt586Ang();if(!a)return null;
+  return{key:E.key,i:E.i,k:E.k,a,th:Math.abs(a)*Math.PI/180,d:c.d,qa:a>0?Math.min(0,G.qi):G.qo}}
+XT.rt586={ok:v=>!!v&&((v.kind==='plan'&&!v.draft)||v.kind==='3d'||v.kind==='elev'||v.kind==='section'),
+  on(){if(ui.opt.rt586m==null)ui.opt.rt586m='r';if(ui.opt.rt586a==null)ui.opt.rt586a=90;ui.rt586={hv:null,pn:-1};ui.hov=null},off(){ui.rt586=null},
+  hint:()=>t('h_rt586'),
+  opt(who,chk,sel){return who+sel('rt586m',[['s','rt586_s'],['r','rt586_r']])+`<label>${t('o_rt586a')}<input type="number" id="opt_rt586a" data-opt="rt586a" value="${rt586Ang()}" step="5" min="-90" max="90"${rt586Mode()==='s'?' disabled':''}> °</label><span>${t('o_rt586')}</span>`},
+  hov(pn,v,p){const S=ui.rt586;if(!S)return null;S.hv=rt586Near(pn,v,p);S.pn=pn.i;return S.hv?S.hv.e.id:null},
+  click(pn,v,p){rt586Do(rt586Near(pn,v,p))},click3(pn,v,p){rt586Do(rt586Near(pn,v,p))},
+  draw(pn,ctx,v,nav,g){const S=ui.rt586,E=S&&S.hv;if(!E||S.pn!==pn.i)return;ctx.save();ctx.strokeStyle=E.key?C.sel:'#c0392b';ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.arc(g.X(E.pt[0]),g.Y(E.pt[1]),7,0,7);ctx.stroke();const R=rt586Prev(E);if(R){const pl=rt586Foot(E.G,R,E.G.qi,E.G.qo);g.path(pl);ctx.globalAlpha=0.3;ctx.fill();ctx.globalAlpha=1;ctx.stroke()}
+    ctx.restore()},
+  draw3(pn,ctx,v){const S=ui.rt586,E=S&&S.hv;if(!E||S.pn!==pn.i)return;const s=projGL(pn,v,[E.pt[0],E.z,E.pt[1]]);if(!s)return;ctx.save();ctx.strokeStyle=E.key?C.sel:'#c0392b';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(s[0],s[1],8,0,7);ctx.stroke();const R=rt586Prev(E);
+    if(R){const G=E.G,F=G.F,N=rt586N(R);for(const z of [G.z[0],G.z[1]])for(const q of [G.qi,G.qo]){ctx.beginPath();let on=0;
+      for(let j=0;j<=N;j++){const a=rt586At(R,q,R.th*j/N),pt=F.pt(a[0],a[1]),c=projGL(pn,v,[pt[0],z,pt[1]]);if(!c){on=0;continue}if(on)ctx.lineTo(c[0],c[1]);else ctx.moveTo(c[0],c[1]);on=1}ctx.stroke()}}
+    ctx.restore()}};
+Object.assign(BTN,{rt586:['rt586','']});
+XR.push(tl=>{if(tl==='rt586')return[{t:'p_rt586',b:['rt586']}];if(tl!=='modify'||!ui.sel.size)return[];const S=[...ui.sel].map(id=>IDX.get(id));
+  return S.every(e=>e&&e.cat==='wsweep'&&e.dir!=='v')?[{t:'p_rt586',b:['rt586']}]:[]});
+(()=>{const sp=document.querySelector('#sprite defs');if(!sp)return;const E='stroke="#2a3550" stroke-width=".6" stroke-linejoin="round"';
+  sp.insertAdjacentHTML('beforeend',`<symbol id="i-rt586" viewBox="0 0 24 24"><ellipse class="i-sh" fill="#000" opacity=".25" cx="12" cy="21.6" rx="9" ry="1.2"/>`
+    +`<path fill="#d9d4ca" ${E} d="M2 4H6V20H2Z"/><path fill="#b07a4a" ${E} d="M6 14H13A7 7 0 0 1 20 21H17A4 4 0 0 0 13 17H6Z"/>`
+    +`<path fill="none" stroke="#e8590c" stroke-width="1.4" stroke-linecap="round" d="M15 4.5A6 6 0 0 1 20.5 10"/><path fill="#e8590c" d="M21.8 8.6 20.6 12 18.4 9.4Z"/></symbol>`)})();
+/* kept clean: an end that is gone (its door or window), a turn of 1 to 90 degrees either way */
+XC.push(()=>{const ins=new Set();for(const x of P.els)if(HOSTED.includes(x.cat))ins.add(x.id+':'+x.host);
+  for(const e of P.els){if(e.rt586==null)continue;if(e.cat!=='wsweep'||e.dir==='v'||typeof e.rt586!=='object'||Array.isArray(e.rt586)){delete e.rt586;continue}
+    for(const k of Object.keys(e.rt586)){const m=/^(?:s|e|i(\d+)[01])$/.exec(k),a=Math.round(+e.rt586[k]);if(!m||!isFinite(a)||!a||(m[1]&&!ins.has(m[1]+':'+e.host)))delete e.rt586[k];else e.rt586[k]=clamp(a,-RT586_MAX,RT586_MAX)}
+    if(!Object.keys(e.rt586).length)delete e.rt586}});
+Object.assign(STR,{t_rt586:['ปรับปลายบัว (Modify Returns)','Modify Returns'],p_rt586:['บัวผนัง (Wall Sweep)','Wall Sweep'],
+  rt586_s:['ตัดตรง (Straight Cut)','Straight Cut'],rt586_r:['หักกลับ (Return)','Return'],o_rt586a:['มุม (Angle) ','Angle '],
+  o_rt586:['คลิกปลายบัวผนัง · มุมบวกหักเข้าหาผนัง มุมลบหักออกจากผนัง','Click the end of a wall sweep · a positive angle turns it to the wall, a negative one away from it'],
+  h_rt586:['คลิกปลายบัวผนัง: หักกลับ (Return) ม้วนปลายบัวเข้าหาผนังตามมุม (ค่าลบออกจากผนัง) ตัดตรง (Straight Cut) ทำให้กลับเป็นปลายตัดตรง · Esc จบ',
+    'Click the end of a wall sweep: Return turns it back to the wall by the Angle (negative: away from it), Straight Cut squares it off again · Esc to finish'],
+  rt586_pick:['คลิกใกล้ปลายบัวผนัง','Click near the end of a wall sweep'],
+  rt586_no:['ปลายนี้ต่อกับบัวอีกเส้นหรือชนผนังอยู่ หักกลับได้เฉพาะปลายที่ว่าง (ปลายผนัง ข้างประตูหรือหน้าต่าง)','This end meets another sweep or a wall: only a free end returns (at the end of a wall, or by a door or window)'],
+  rt586_sq0:['ปลายนี้ตัดตรงอยู่แล้ว','That end is already a straight cut'],rt586_cut:['ปลายบัวกลับเป็นตัดตรงแล้ว','The end of the sweep is a straight cut again'],
+  rt586_done:['หักปลายบัวกลับ {0}° แล้ว','Return of {0}° at the end of the sweep'],rt586_same:['ปลายนี้หักกลับ {0}° อยู่แล้ว','That end already returns {0}°'],
+  rt586_ang:['มุมต้องเป็น 1 ถึง 90° ทางใดทางหนึ่ง','The angle is 1 to 90° either way']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60859,6 +60961,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # บัวผนังและร่องเซาะ
 - [[t_wsweep]] และ [[t_wrev]] (แท็บ [[tab_arch]] › [[p_build]]): คลิกผนังเพื่อวางตลอดแนวผนังด้านที่คลิก หรือคลิกในห้องเพื่อวางรอบห้องทุกด้าน · ในรูปด้าน รูปตัด และ 3 มิติ วางตรงความสูงที่คลิก
+- [[t_rt586]] (เลือกบัวผนังแล้วอยู่ในแผง [[p_rt586]] ของแท็บแก้ไข แบบ Revit: Modify | Wall Sweeps › Modify Returns): เลือก [[rt586_r]] แล้วใส่มุมในแถบตัวเลือก คลิกใกล้ปลายบัวในผัง 3D รูปด้านหรือรูปตัด ปลายบัวจะม้วนกลับรอบแกนตั้งที่ผิวผนัง มุมบวกเข้าหาผนัง (90° คือปลายจบชนผิวผนังพอดี) มุมลบออกจากผนัง เลือก [[rt586_s]] แล้วคลิกปลายเดิมเพื่อกลับเป็นปลายตัดตรง · หักกลับได้ที่ปลายว่าง คือปลายผนังที่ไม่มีอะไรต่อ และข้างประตูหรือหน้าต่างที่ตัดบัว ปลายที่ต่อมุมกับบัวอีกเส้นหรือชนผนังหักกลับไม่ได้ · เห็นใน 3D รูปด้าน รูปตัด ผัง และนับความยาวกับปริมาตรในตารางและถอดปริมาณ ประตูที่ลบไปแล้วเอาปลายของมันออกด้วย
 - [[o_swdir]] ในแถบตัวเลือก: แนวนอนวิ่งตลอดผนัง ([[o_swz]] และ [[o_swf]] บอกความสูง) · แนวตั้งวางตรงจุดที่คลิก ตั้งแต่ฐานถึงยอดผนัง
 - บัวต่อมุมกับบัวชนิดเดียวกันของผนังข้างเคียง และหยุดชนผิวผนังที่มาบรรจบ · ประตูหน้าต่างตัดบัวออก เว้นแต่ชนิดตั้ง [[f_cbi]] เป็นไม่ · ร่องเซาะตัดเข้าเนื้อผนัง แปลนแสดงร่องเมื่อระนาบตัดผ่าน
 - รูปหน้าตัด ขนาด วัสดุ และราคาต่อเมตรเป็นของชนิด กด [[edit_type]] · ด้านของผนัง ระยะ และ [[p_swpf]] แก้ใน [[properties]] · ในรูปด้านลากบัวแนวนอนขึ้นลงได้ · ความยาวและปริมาตรอยู่ในตารางและ [[a_boq]]
@@ -61154,6 +61257,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 
 # Wall sweeps and reveals
 - [[t_wsweep]] and [[t_wrev]] ([[tab_arch]] › [[p_build]]): click a wall to run one along the face clicked, or click inside a room to run it round every side · in elevations, sections and 3D it goes at the height clicked
+- [[t_rt586]] (in the [[p_rt586]] panel of the Modify tab once a wall sweep is selected, as Revit's Modify | Wall Sweeps › Modify Returns): pick [[rt586_r]] and type an angle on the options bar, then click near the end of a sweep in a plan, 3D, an elevation or a section; the end turns back round an upright axis on the face of the wall, a positive angle towards the wall (90° ends flush on the wall), a negative one away from it; pick [[rt586_s]] and click that end to square it off again · a free end returns: the end of a wall with nothing joined, or beside a door or window that cuts the sweep; an end mitred with another sweep or stopped against a wall does not · shown in 3D, elevations, sections and plans, its length and volume in schedules and the takeoff; an end goes with its door or window when that is deleted
 - [[o_swdir]] on the options bar: a horizontal one runs the length of the wall ([[o_swz]] and [[o_swf]] give its height) · a vertical one goes up the wall where it is clicked, from the base of the wall to its top
 - A sweep mitres with a sweep of its type on the next wall and stops against a wall it runs into · doors and windows cut it unless its type's [[f_cbi]] says no · a reveal cuts a groove into the wall, and plans show it where their cut plane passes through it
 - The profile, size, material and cost per metre belong to the type: [[edit_type]] · the face, the offsets and [[p_swpf]] are in [[properties]] · a horizontal one can be dragged up or down in an elevation · lengths and volumes are in the schedules and the [[a_boq]]
@@ -62315,6 +62419,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.583 · บัวและร่องเซาะในชนิดผนัง (Sweeps / Reveals ของ Edit Structure แบบ Revit): ใน แก้โครงสร้างผนัง เพิ่มบัวผนังและร่องเซาะให้ชนิด เลือกรูปหน้าตัด ระยะจากฐานหรือยอด ด้านนอกหรือใน ระยะยื่น กลับด้าน ผนังทุกผนังของชนิดนี้มีบัวและร่องตลอดแนว ต่อมุมกัน ประตูหน้าต่างตัดตามชนิดของบัว ร่องเซาะตัดเข้าผนัง เห็นใน 3D รูปด้าน รูปตัด แปลน และถอดปริมาณ คลิกบัวแล้วเลือกผนัง
 - V1.584 · วัสดุ ระยะเว้น ตัดผนัง และประตูหน้าต่างตัด ของบัวในชนิดผนัง (คอลัมน์ Material, Setback, Cuts Wall, Cuttable ของ Revit): บัวแต่ละแถวมีวัสดุของตัวเอง หยุดก่อนถึงประตูหน้าต่างตามระยะเว้น บัวที่ยื่นเข้าผนังตัดเนื้อผนังออก และเลือกได้ว่าประตูหน้าต่างตัดหรือไม่ ชนิดบัวและร่องมีระยะเว้นเริ่มต้น ชนิดบัวมีตัดผนัง
 - V1.585 · ชั้นผนังยื่นที่ฐานหรือยอด (Base / Top Extension Distance แบบ Revit): ปลดล็อกแม่กุญแจบนหรือล่างของชั้นในตัวอย่างหน้าตัดของ แก้โครงสร้างผนัง แล้วตั้งระยะยื่นในคุณสมบัติของผนัง ชั้นนั้นยื่นลงหรือขึ้นหรือหยุดก่อนถึง เห็นใน 3D รูปด้าน รูปตัด และถอดปริมาณ
+- V1.586 · ปรับปลายบัว (Modify Returns แบบ Revit): เลือกบัวผนัง กด ปรับปลายบัว เลือก หักกลับ กับมุม หรือ ตัดตรง แล้วคลิกปลายบัว ปลายข้างประตูหน้าต่างและปลายผนังม้วนเข้าหรือออกจากผนัง เห็นใน 3D รูปด้าน รูปตัด ผัง และถอดปริมาณ
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -63073,6 +63178,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.583 · Sweeps and reveals of a wall type (Sweeps… and Reveals… of Edit Structure, as in Revit): Edit Structure gives the type sweeps and reveals, each with its profile, its distance from the base or the top, its side, an offset and a flip; every wall of the type has them along its face, meeting at the corners, cut by doors and windows as the sweep type says, a reveal cutting its groove · 3D, elevations, sections, plans and the takeoff; a click on one picks the wall
 - V1.584 · Material, Setback, Cuts Wall and Cut by Inserts of the sweeps of a wall type (the Material, Setback, Cuts Wall and Cuttable columns of Revit): each sweep row has its own material, stops short of doors and windows by its setback, cuts the wall where it sits into it, and is cut by inserts or not as its row says; sweep and reveal types have a Default Setback, sweep types Cuts Wall
 - V1.585 · Wall layers that extend at the base or the top (Base / Top Extension Distance, as in Revit): unlock a layer's padlock at its top or bottom in the preview of Edit Structure and set the distances in the wall's Properties; that layer reaches down, up or stops short, in 3D, elevations, sections and the takeoff
+- V1.586 · Modify Returns (as in Revit): select a wall sweep, press Modify Returns, pick Return and an angle or Straight Cut and click the end of the sweep; ends by doors, windows and wall ends turn to or away from the wall, in 3D, elevations, sections, plans and the takeoff
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -67561,6 +67667,30 @@ window.PenumBIM.r585={
   lockPt:(k,i)=>{const g=document.querySelector(`#dlg [data-wx585="${k}"][data-i="${i}"] path`);if(!g)return null;const r=g.getBoundingClientRect();return[r.left+r.width/2,r.top+r.height/2]},
   tidy:()=>{for(const f of XC)f();return{L:P.types.wall.filter(T=>Array.isArray(T.lays)&&T.lays.some(l=>'xb585' in l||'xt585' in l)).map(T=>[T.id,T.lays.map(l=>[l.xb585==null?null:l.xb585,l.xt585==null?null:l.xt585])]),
     E:P.els.filter(e=>'bxd585' in e||'txd585' in e).map(e=>[e.id,e.bxd585==null?null:e.bxd585,e.txd585==null?null:e.txd585])}}};
+/* V1.586 test API: Modify Returns of wall sweeps */
+window.PenumBIM.r586={
+  add:(wid,ty,o)=>{const w=IDX.get(wid);let id=null;edit(()=>{const e=Object.assign({id:P.seq++,cat:'wsweep',type:ty,level:w.level,host:wid,pos:0,sill:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  set:(id,rt)=>{edit(()=>{const e=P.els.find(x=>x.id===id);if(rt==null)delete e.rt586;else e.rt586=JSON.parse(JSON.stringify(rt))});refresh();const e=P.els.find(x=>x.id===id);return e.rt586?JSON.parse(JSON.stringify(e.rt586)):null},
+  raw:(id,rt)=>{P.els.find(x=>x.id===id).rt586=rt;return true},
+  get:id=>{const e=P.els.find(x=>x.id===id);return e&&e.rt586?JSON.parse(JSON.stringify(e.rt586)):null},
+  ends:id=>{const X=swpX(),G=swpGeo(X,IDX.get(id));return rt586Ends(X,G).map(E=>[E.key,E.i,E.k,Math.round(E.d)])},
+  geo:id=>{const G=swpGeo(swpX(),IDX.get(id));if(!G)return null;const R=x=>Math.round(x*100)/100;let A=0,cq=0;const P0=G.P0,n=P0.length;for(let i=0;i<n;i++){const p=P0[i],q=P0[(i+1)%n],c=p[0]*q[1]-q[0]*p[1];A+=c;cq+=(p[0]+q[0])*c}
+    return{len:R(G.len),vol:R(G.vol),area:R(G.area),oc:R(cq/(3*A)),qi:G.qi,qo:G.qo,z:G.z,pcs:G.pcs.length,pp:G.pp.length,rt:(G.rt586||[]).map(r=>[r.key,r.a,Math.round(r.d),r.qa])}},
+  /* its meshes: [x lowest, x highest, plan y lowest, plan y highest, z lowest, z highest, triangles, lines] */
+  mesh:id=>{const M=MSm().items.filter(it=>it.id===id&&it.cat==='wsweep');if(!M.length)return null;const b=[Infinity,-Infinity,Infinity,-Infinity,Infinity,-Infinity];let nt=0,nl=0;
+    for(const it of M){for(let k=0;k<it.t.length;k+=3){b[0]=Math.min(b[0],it.t[k]);b[1]=Math.max(b[1],it.t[k]);b[4]=Math.min(b[4],it.t[k+1]);b[5]=Math.max(b[5],it.t[k+1]);b[2]=Math.min(b[2],it.t[k+2]);b[3]=Math.max(b[3],it.t[k+2])}nt+=it.t.length/9;nl+=it.l.length/6}
+    return[...b.map(x=>Math.round(x*10)/10),nt,nl]},
+  /* the middle of an end: [x, plan y, z] */
+  end:(id,key)=>{const X=swpX(),G=swpGeo(X,IDX.get(id)),E=rt586Ends(X,G).find(x=>x.key===key);if(!E)return null;const p=G.F.pt(E.d,(G.qi+G.qo)/2);return[p[0],p[1],(G.z[0]+G.z[1])/2]},
+  endAt:(id,i,k)=>{const X=swpX(),G=swpGeo(X,IDX.get(id)),E=rt586Ends(X,G).find(x=>x.i===i&&x.k===k);if(!E)return null;const p=G.F.pt(E.d,(G.qi+G.qo)/2);return[p[0],p[1],(G.z[0]+G.z[1])/2]},
+  /* a point of a return seen from above: out from the face q, turned f of its angle */
+  foot:(id,key,q,f)=>{const G=swpGeo(swpX(),IDX.get(id)),R=G&&(G.rt586||[]).find(r=>r.key===key);if(!R)return null;const a=rt586At(R,q,R.th*f);return G.F.pt(a[0],a[1])},
+  hv:()=>{const S=ui.rt586;return S&&S.hv?[S.hv.e.id,S.hv.key]:null},
+  qty:id=>{const q=QTY().get(id)||{};return[Math.round((q.len||0)*100)/100,Math.round((q.vol||0)*100)/100]},
+  rib:()=>[...document.querySelectorAll('#ribbon [data-tool="rt586"]')].length,
+  bar:()=>{const b=document.querySelector('#optbar');return b?{txt:b.textContent.replace(/\s+/g,' ').trim(),ang:(b.querySelector('#opt_rt586a')||{}).value,dis:!!(b.querySelector('#opt_rt586a')||{}).disabled}:null},
+  pz:(cx,cy,sc)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap];n.s=sc;n.ox=pn.w/2-cx*sc;n.oy=pn.h/2-cy*sc;refresh();return true},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.rt586).map(e=>[e.id,e.rt586])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
