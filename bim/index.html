@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=578,V1_NAME='V1.568';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=579,V1_NAME='V1.569';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58573,6 +58573,51 @@ Object.assign(STR,{
   f_toe568:['ยาวปลายหน้า (Toe Length)','Toe Length'],f_heel568:['ยาวส้น (Heel Length)','Heel Length'],f_h568:['ความหนาฐานราก (Foundation Thickness)','Foundation Thickness'],
   f_eel568:['ระยะยื่นเกินปลายผนัง (Default End Extension Length)','Default End Extension Length'],wf568_auto:['ครึ่งความกว้าง','Half the width'],
   wf568_wph:['ปลายหน้า + ผนัง + ส้น','Toe + wall + heel'],p_wf568w:['ความกว้าง (Width)','Width'],p_ecc568:['ระยะเยื้องศูนย์ (Eccentricity)','Eccentricity']});
+/* ===== 569 Wall foundations break at inserts (V1.569; Revit: a wall foundation type's Do Not Break at Inserts, and a wall opening that reaches the base of
+   the wall breaks its foundation).  A wall foundation runs on beneath the doors and windows of its wall, as before (Do Not Break at Inserts, the default).
+   With it cleared, the foundation stops either side of every door or window that reaches down to the base of the wall (its sill no higher than the wall's
+   bottom), as wide as the insert; a wall opening (the Wall Opening tool) that reaches the base of the wall breaks it whatever the type says.  The pieces are drawn in plans and 3D (and so sections, clashes and exports), and the
+   quantities count only them; moving, resizing or deleting the insert, or its sill, moves the break. */
+/* T.dnb569 'no': Do Not Break at Inserts cleared (none: checked) */
+/* the doors, windows and openings of a wall, gathered once for each version of the project */
+let WF569C=null;
+function wf569Ins(Q,hid){const k=Q.els;if(!WF569C||WF569C.els!==k||WF569C.ver!==VER||WF569C.n!==k.length){const m=new Map();for(const o of k)if(o.host!=null&&HOSTED.includes(o.cat))(m.get(o.host)||m.set(o.host,[]).get(o.host)).push(o);WF569C={els:k,ver:VER,n:k.length,m}}return WF569C.m.get(hid)||[]}
+/* the stretches along the wall (from its first end) where its foundation is broken */
+function wf569Gaps(Q,e){const w=wf568Wall(Q,e);if(!w)return[];const brk=(typ(Q,e)||{}).dnb569==='no';let z0;try{z0=zRange(Q,w)[0]}catch(_){return[]}if(!isFinite(z0))return[];
+  const base=elev(Q,w.level),L=Math.hypot(w.x2-w.x1,w.y2-w.y1),G=[];
+  for(const o of wf569Ins(Q,w.id)){if(o.cat!=='opening'&&!brk)continue;const ot=typ(Q,o);if(!ot||base+(+o.sill||0)>z0+1)continue;
+    const c=+o.pos||0,h=(+ot.width||0)/2,a=Math.max(0,c-h),b=Math.min(L,c+h);if(b-a>1)G.push([a,b])}
+  G.sort((p,q)=>p[0]-q[0]);const M=[];for(const g of G){const l=M[M.length-1];if(l&&g[0]<=l[1])l[1]=Math.max(l[1],g[1]);else M.push(g.slice())}return M}
+/* the pieces [from, to] along the foundation's line (its extensions included); one piece, the whole, when nothing breaks it */
+function wf569Parts(Q,e){const G=wf568G(Q,e),L=Math.hypot(e.x2-e.x1,e.y2-e.y1),A=-G.ext,B=L+G.ext,out=[];let s=A;
+  for(const g of wf569Gaps(Q,e)){if(g[0]-s>1)out.push([s,g[0]]);s=Math.max(s,g[1])}if(B-s>1)out.push([s,B]);return out}
+function wf569Loops(Q,e){const G=wf568G(Q,e),L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,pt=(t,s)=>[e.x1+ux*t-uy*s,e.y1+uy*t+ux*s];
+  return wf569Parts(Q,e).map(([a,b])=>[pt(a,G.ex),pt(b,G.ex),pt(b,-G.ins),pt(a,-G.ins)])}
+/* the outline of a broken foundation carries its pieces (wf569): plans draw them, a click finds their edges */
+{const f0=wfootLoop;wfootLoop=function(Q,e){const lp=f0.apply(this,arguments);if(!e||e.host==null||!wf569Gaps(Q,e).length)return lp;lp.wf569=wf569Loops(Q,e);return lp}}
+{const f0=painter;painter=function(){const g=f0.apply(this,arguments),pa0=g.path;
+  g.path=function(pts,open){if(!pts||!pts.wf569||open)return pa0.apply(this,arguments);const c=g.ctx;c.beginPath();
+    for(const lp of pts.wf569){lp.forEach((p,i)=>i?c.lineTo(g.X(p[0]),g.Y(p[1])):c.moveTo(g.X(p[0]),g.Y(p[1])));c.closePath()}};return g}}
+{const f0=polyEdgeDist;polyEdgeDist=function(x,y,pts){if(!pts||!pts.wf569)return f0.apply(this,arguments);let d=Infinity;for(const lp of pts.wf569)d=Math.min(d,f0(x,y,lp));return d}}
+/* 3D: the pieces, each its own block */
+{const f0=buildMeshes;buildMeshes=function(Q){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;
+  for(const e of Q.els){if(e.cat!=='wfoot'||e.host==null||e.gx)continue;let S;try{if(!wf569Gaps(Q,e).length)continue;S=wf569Loops(Q,e)}catch(_){continue}const zr=zRange(Q,e),z0=zr[0],z1=zr[1];
+    for(const m of items){if(m.id!==e.id||m.cat!=='wfoot')continue;m.t=[];m.l=[];
+      for(const lp of S){if(z1-z0>0.5)extrude(lp.map(p=>[p[0],z0,p[1]]),[0,z1-z0,0],m.t);
+        for(let i=0;i<lp.length;i++){const a=lp[i],b=lp[(i+1)%lp.length];for(const z of [z0,z1])m.l.push(a[0],z,a[1],b[0],z,b[1]);m.l.push(a[0],z0,a[1],a[0],z1,a[1])}}}}
+  return R}}
+/* quantities: only the pieces */
+{const f0=quantities;quantities=function(P0){const q=f0.apply(this,arguments);if(!q||!P0||!P0.els)return q;
+  for(const e of P0.els){if(e.cat!=='wfoot'||e.gx||e.host==null)continue;const o=q.get(e.id);if(!o)continue;let S;try{if(!wf569Gaps(P0,e).length)continue;S=wf569Parts(P0,e)}catch(_){continue}
+    const T=typ(P0,e)||{},G=wf568G(P0,e),L=S.reduce((s,p)=>s+p[1]-p[0],0);o.len=L;o.area=L*G.w;o.vol=Math.max(0,L*G.w*(+T.h||0)-(o.cutv||0));o.n569=S.length}return q}}
+/* ---- the type: Do Not Break at Inserts, after Default End Extension Length ---- */
+{const F=TYPE_FIELDS.wfoot;if(F){const j=F.findIndex(f=>f[0]==='eel568');F.splice(j<0?F.length:j+1,0,['dnb569','sel',['yes','no']])}}
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='wfoot')return;const T=(P.types.wfoot||[]).find(x=>x.id===+ts.value);if(!T)return;
+  const c0=H.change;H.change=ev=>{const el=ev.target;if(!(el.dataset&&el.dataset.tf==='dnb569'))return c0(ev);const no=el.value==='no';edit(()=>{if(no)T.dnb569='no';else delete T.dnb569});refresh();return dlgTypes('wfoot',T.id)}}}
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat!=='wfoot')return F;for(const f of F)if(f.k==='T.dnb569')f.g=e=>tr((typ(Q,e)||{}).dnb569==='no'?'o_no':'o_yes');
+  F.push({k:'n569',l:tr('p_n569'),g:e=>{try{return wf569Parts(Q,e).length}catch(_){return 1}},num:1,dec:0,grp:'i'});return F}}
+XC.push(()=>{for(const T of P.types.wfoot||[])if('dnb569' in T&&T.dnb569!=='no')delete T.dnb569});
+Object.assign(STR,{f_dnb569:['ไม่ขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts)','Do Not Break at Inserts'],p_n569:['จำนวนช่วง','Pieces']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59721,6 +59766,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ฐานรากเสาเข็ม: ใน แก้ชนิด ของฐานราก เลือก [[f_pn]] 1–9 ต้น แล้วตั้ง [[f_pk]] (เจาะ สปัน สี่เหลี่ยม ไอ ไมโครไพล์) ขนาด ความยาว ระยะห่าง ระยะขอบ [[f_pq]] และ [[f_pcost]] (เว้นว่าง = ราคาที่โปรแกรมคิดจากขนาดและความยาว · เข็มชนิด ขนาด และความยาวเดียวกันใช้ราคาเดียวกันทั้งโครงการ) · รูปฐานตามจำนวนเข็ม (3 ต้นเป็นสามเหลี่ยมตัดมุม) · แปลนแสดงเข็มเป็นเส้นประ แปลนโครงสร้างมีกากบาทที่เข็ม · 3 มิติ รูปด้าน และรูปตัดแสดงเข็มเต็มความยาว · BOQ นับเข็มเป็นต้น แยกตามชนิด ขนาด และความยาว · IFC ส่งเข็มเป็น IfcPile และฐานเป็น PILE_CAP · [[a_ldtake]] บอกจำนวนเข็มที่เสาแต่ละต้นต้องใช้ · ชนิดตั้งต้น PC1–PC4
 - [[t_wfoot]] ((FT)): คลิกบนผนัง ฐานรากแถบจะยาวตามผนัง (เกินปลายผนังข้างละครึ่งความกว้างเพื่อให้ชนกันที่มุม) และเปลี่ยนตามผนัง · [[a_wfootall]] ใส่ให้ผนังทุกแนวของชั้นนี้
 - [[f_su568]] ของชนิดฐานรากใต้ผนัง: [[su568_b]] กว้างตาม [[f_w]] ของชนิด อยู่กึ่งกลางผนังหรือเยื้องตาม [[p_ecc568]] ในคุณสมบัติ (บวกไปทางด้านนอกของผนัง) [[su568_r]] ยื่นเกินผิวผนังด้านนอกตาม [[f_toe568]] และด้านในตาม [[f_heel568]] กลับด้านผนังแล้วปลายหน้าไปด้วย [[f_eel568]] ว่างไว้คือครึ่งความกว้าง
+- [[f_dnb569]] ของชนิดฐานรากใต้ผนัง: ติ๊กไว้ (ค่าเริ่มต้น) ฐานรากต่อเนื่องใต้ประตูหน้าต่าง เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง ช่องเปิดผนัง (Wall Opening) ที่ลงถึงฐานผนังตัดฐานรากเสมอ
 - [[g_rebar]]: เลือกเสา คาน พื้น ฐานราก ฐานรากแถบ หรือผนัง แล้วติ๊ก [[p_rbon]] ในแผงคุณสมบัติ ตั้งขนาด ระยะ [[p_rbhk]] (ไม่งอ 90° 180°) และ [[p_rblap]] (เท่าของขนาดเหล็ก ใช้เมื่อเหล็กยาวเกิน 10 ม.) ปลอกปิดด้วยขอ 135° เสมอ · คานเอียงและค้ำยันก็ใส่ได้ ผนังเว้นเหล็กตรงช่องประตู หน้าต่าง · [[a_rbsched]] (แท็บ [[tab_struct]]) รวมเหล็กที่รูปร่างและความยาวเท่ากันเป็นเบอร์เดียว บอกความยาวตัด จุดทาบ จำนวน น้ำหนัก และส่งออก CSV ได้
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_areinf]] ในผนัง: เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้ววาดขอบเขต (จุดหรือกรอบ) หรือกด [[a_ar528whole]] · ในแปลนเลือกผนังก่อนแล้วกดเครื่องมือ ได้เต็มผนัง · ชั้น [[p_ar528e1]] [[p_ar528e2]] [[p_ar528i1]] [[p_ar528i2]] · [[p_ar528wh]] ยืดตามผนัง · คลิกขอบเขตหรือสัญลักษณ์ในรูปด้านเพื่อเลือก
@@ -59999,6 +60045,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Pile caps: in Edit Type of a footing choose [[f_pn]] (1–9), then [[f_pk]] (bored, spun, square, I, micro), its size, length, spacing, edge distance, [[f_pq]] and [[f_pcost]] (left empty: the program's price from its size and length · piles of the same kind, size and length share one price in the project) · the cap's outline follows the piles (three make a triangle with cut corners) · plans show the piles dashed, plans of the structure with a cross on each · 3D views, elevations and sections show the piles their whole length · the BOQ counts piles, a row for each kind, size and length · IFC export writes each pile as IfcPile and the cap as a PILE_CAP · [[a_ldtake]] says how many piles each column needs · stock types PC1–PC4
 - [[t_wfoot]] ((FT)): click a wall; the strip is as long as the wall (half its own width longer at either end, so that the strips of two walls meet at a corner) and follows it · [[a_wfootall]] does it for every wall of this level
 - A wall foundation type's [[f_su568]]: [[su568_b]] is as wide as the type's [[f_w]], centred under the wall or set off by the [[p_ecc568]] in Properties (above 0 towards the exterior of the wall); [[su568_r]] reaches past the exterior face of the wall by the [[f_toe568]] and past the interior face by the [[f_heel568]], and a flipped wall takes the toe with it; [[f_eel568]] left empty is half the width
+- A wall foundation type's [[f_dnb569]]: checked (the default), the foundation runs on beneath doors and windows; cleared, it breaks beneath a door or window that reaches the base of the wall; a wall opening that reaches the base of the wall always breaks it
 - [[g_rebar]]: select a column, beam, floor, footing, wall footing or wall and tick [[p_rbon]] in Properties; set the sizes, spacing, [[p_rbhk]] (none, 90°, 180°) and [[p_rblap]] (in bar diameters, used where a bar is longer than 10 m). Ties always close with 135° hooks · sloped beams and braces take rebar too; walls leave out the bars at doors and windows · [[a_rbsched]] ([[tab_struct]] tab) gives one mark to bars of the same shape and length, with the cut length, laps, count and weight, and exports CSV
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_areinf]] in walls: in an elevation or a section parallel to the wall, the tool, a click on the wall, then the boundary (points or a rectangle) or [[a_ar528whole]] · in a plan, select a wall first, then the tool: the whole wall · layers [[p_ar528e1]], [[p_ar528e2]], [[p_ar528i1]], [[p_ar528i2]] · [[p_ar528wh]] follows the wall · click the boundary or the symbol in an elevation to select it
@@ -61078,6 +61125,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.566 · ค้ำยันยึดกับคาน (Brace Attachment) แบบ Revit: ค้ำยันใหม่ที่ปลายวางบนคาน (บนแนวคานในแปลนภายในความกว้างคาน สูงต่างไม่เกิน 50 มม. ไม่ใช่บนเสา) ยึดกับคานนั้นและวางบนแนวคาน คุณสมบัติของปลายที่ยึดมีแบบการยึด ระยะ (Distance) หรือสัดส่วน (Ratio 0 ถึง 1) และวัดจากปลายเริ่มหรือปลายสุดของคาน แก้ค่าแล้วปลายค้ำยันเลื่อนตาม ย้าย หมุน ยืด หรือแบ่งคานแล้วปลายค้ำยันไปกับตำแหน่งบนคาน ย้ายค้ำยันไปตามคานแล้วเลื่อนตามและค่าเปลี่ยน ย้ายออกจากคาน เลือกปล่อย หรือลบคานแล้วไม่ยึด คัดลอกค้ำยันพร้อมคานแล้วยึดกับคานที่คัดลอก ตารางรายการมีแบบและค่าของทั้งสองปลาย
 - V1.567 · ตำแหน่งเส้นเดี่ยว (Stick Symbol Location) และระยะโก่งคาน (Camber Size) แบบ Revit: คุณสมบัติของคานมีตำแหน่งเส้นเดี่ยว บนสุด กึ่งกลาง (ค่าเริ่มต้น) หรือท้องคาน วาดเส้นเดี่ยวในแปลนหยาบบนคานตามที่สร้าง (ตามการจัดชิดและระยะเลื่อนแนวราบ แยกปลายได้) หรือ แนวคาน (Location Line) วาดบนแนวคาน ระยะร่นและสัญลักษณ์การต่อปลายไปด้วย ระยะโก่งคาน (มม.) อยู่ในคุณสมบัติ ตารางรายการ และป้ายคาน (c=) แบบจำลองยังตรงเหมือน Revit ค้ำยันไม่มีค่านี้
 - V1.568 · ฐานรากใต้ผนังแบบรับน้ำหนักและแบบกันดิน (Structural Usage: Bearing / Retaining) แบบ Revit: ชนิดฐานรากใต้ผนังมีการใช้งานโครงสร้าง รับน้ำหนัก (ค่าเริ่มต้น เหมือนเดิม) กว้างตามชนิด อยู่กึ่งกลางผนังหรือเยื้องตามระยะเยื้องศูนย์ (Eccentricity) ในคุณสมบัติ กันดิน ยื่นเกินผิวผนังด้านนอกตามยาวปลายหน้า (Toe Length) และด้านในตามยาวส้น (Heel Length) กว้างเท่าสองค่ากับผนังรวมกัน กลับด้านผนังแล้วปลายหน้าไปด้วย ระยะยื่นเกินปลายผนัง (Default End Extension Length) ว่างไว้คือครึ่งความกว้างเหมือนเดิม แปลน 3 มิติ ปริมาณ ตารางรายการ เหล็กเสริม และการเลือกตามไป
+- V1.569 · ฐานรากใต้ผนังขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts) แบบ Revit: ชนิดฐานรากใต้ผนังมีช่องไม่ขาดใต้ประตูหน้าต่าง ติ๊กไว้ (ค่าเริ่มต้น) ต่อเนื่องเหมือนเดิม เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง กว้างเท่าประตูหน้าต่าง ช่องเปิดผนังที่ลงถึงฐานผนังตัดฐานรากเสมอ แปลน 3 มิติ และปริมาณนับเฉพาะช่วงที่เหลือ ย้าย ปรับขนาด หรือลบประตู รอยขาดตามไป
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -61819,6 +61867,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.566 · Brace ends attached to beams, as in Revit: a new brace whose end is placed on a beam (on its line in plan, within its width, its height within 50 mm, not on a column) is attached to it and put on its line; Properties give an attached end its Attachment Type, Distance or Ratio (0 to 1), measured from the start or the end of the beam, and the end moves when they change; a beam moved, turned, stretched or split takes the brace end along at its place on it; a brace moved along the beam slides on it and its value changes; moved off the beam, set Detached, or its beam deleted, it lets go; a brace copied with its beam holds the copy; schedules have both ends' type and value
 - V1.567 · Stick Symbol Location and Camber Size of beams, as in Revit: a beam's Properties have Stick Symbol Location: Top, Center (the default) or Bottom of Geometry draw its stick in Coarse plans on the beam as built (its y Justification and y Offset Value, end by end when Independent), Location Line on its location line; the cutback and moment connection symbols go with it; Camber Size (mm) is in Properties, schedules and beam tags (c=), the model drawn straight as in Revit; braces have neither
 - V1.568 · Wall foundations Bearing or Retaining (Structural Usage), as in Revit: a wall foundation type's Structural Usage: Bearing (the default, as before) is as wide as the type, centred under the wall or set off it by the Eccentricity in Properties; Retaining reaches past the exterior face of the wall by the Toe Length and past the interior face by the Heel Length, as wide as the two and the wall together, and a flipped wall takes the toe with it; Default End Extension Length left empty is half the width, as before; plans, 3D, quantities, schedules, rebar and selection follow
+- V1.569 · Wall foundations break beneath doors and windows (Do Not Break at Inserts), as in Revit: a wall foundation type's Do Not Break at Inserts, checked (the default), keeps it continuous as before; cleared, the foundation breaks beneath each door or window that reaches the base of the wall, as wide as the insert; a wall opening that reaches the base of the wall always breaks it; plans, 3D and quantities count only the pieces, and the break follows the door when it is moved, resized or deleted
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -65952,6 +66001,20 @@ window.PenumBIM.r568={
   close:()=>{const b=document.querySelector('#dlg [data-close]');if(b)b.click();return true},
   rawTidy:(Tm,Em)=>{for(const id in Tm){const T=(P.types.wfoot||[]).find(x=>x.id===+id);if(T)Object.assign(T,Tm[id])}for(const id in Em){const e=IDX.get(+id);if(e)e.ecc568=Em[id]}return window.PenumBIM.r568.tidy()},
   tidy:()=>{for(const f of XC)f();return{T:(P.types.wfoot||[]).map(T=>({id:T.id,su:T.su568??null,toe:T.toe568??null,heel:T.heel568??null,eel:T.eel568??null})),E:P.els.filter(e=>'ecc568' in e).map(e=>({id:e.id,c:e.ecc568}))}}};
+/* V1.569 test API: wall foundations break at inserts */
+window.PenumBIM.r569={
+  ins:(cat,wid,pos,o)=>{let id;edit(()=>{const d=defs(cat)||{},e=Object.assign({id:P.seq++,cat,host:wid,pos,level:IDX.get(wid).level},cat==='opening'?{w:1000,h:2100,sill:0}:{type:d.type,sill:cat==='window'?900:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  gaps:id=>wf569Gaps(P,IDX.get(id)).map(g=>g.map(Math.round)),parts:id=>wf569Parts(P,IDX.get(id)).map(g=>g.map(Math.round)),
+  loops:id=>{const lp=wfootLoop(P,IDX.get(id));return lp.wf569?lp.wf569.map(l=>l.map(p=>p.map(Math.round))):null},
+  /* the 3D blocks of the foundation: their x extents (along a wall on x) */
+  m3:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,xs=[];let n=0;for(const m of B){if(m.id!==id||!m.t)continue;n+=m.t.length/9;for(let k=0;k<m.t.length;k+=3)xs.push(Math.round(m.t[k]))}
+    return{tri:n,xs:[...new Set(xs)].sort((a,b)=>a-b)}},
+  /* the pixels of the plan inked along y between x0 and x1 (a row of dark pixels at the plan's y) */
+  ink:(x0,x1,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],cv=pn.cv,c=cv.getContext('2d'),dpr=cv.width/cv.getBoundingClientRect().width;const out=[];
+    for(let x=x0;x<=x1;x+=50){const px=Math.round((x*n.s+n.ox)*dpr),py=Math.round((y*n.s+n.oy)*dpr);let k=0;for(let d=-2;d<=2;d++){const q=c.getImageData(px,py+d,1,1).data;if(q[0]+q[1]+q[2]<700)k++}out.push(k?1:0)}return out},
+  del:id=>{ui.sel=new Set([id]);act('delete');refresh();return!IDX.get(id)},
+  tidy:()=>{for(const f of XC)f();return(P.types.wfoot||[]).map(T=>({id:T.id,dnb:T.dnb569??null}))},
+  rawT:(tid,o)=>{const T=(P.types.wfoot||[]).find(x=>x.id===tid);Object.assign(T,o);return true}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
