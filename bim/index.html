@@ -7044,7 +7044,7 @@ const WARN_K=['dup','wover','insert','ropen','rmulti','aopen','amulti','jsep','m
 function warnings(P,regsOf){const out=[],add=(k,ids,a)=>out.push({k,ids,a:a==null?'':a}),R=n=>Math.round(n),els=P.els,byId=new Map(els.map(e=>[e.id,e]));
   /* identical instances: same category, type, level (or host) and place */
   const sig=e=>{const G=GEOM[e.cat],h=e.cat+'|'+(e.type||0)+'|'+(e.level||0)+'|'+(e.scheme!=null?e.scheme+'|':'');          /* boundary lines of two area schemes may lie on each other */
-    if(G==='line'){const a=[R(e.x1),R(e.y1)],b=[R(e.x2),R(e.y2)],sw=a[0]>b[0]||(a[0]===b[0]&&a[1]>b[1]);return h+(sw?b+';'+a:a+';'+b)+'|'+R(e.off||0)+'|'+R(e.baseOff||0)}
+    if(G==='line'){const Z=e.cat==='beam'?beamZ(P,e).map(R):null,a=[R(e.x1),R(e.y1)],b=[R(e.x2),R(e.y2)];if(Z){a.push(Z[0]);b.push(Z[1])}const sw=a[0]>b[0]||(a[0]===b[0]&&a[1]>b[1]);return h+(sw?b+';'+a:a+';'+b)+'|'+(Z?'':R(e.off||0))+'|'+R(e.baseOff||0)}          /* V1.557: a beam by the heights of its two ends (a rafter over a tie is not a duplicate) */
     if(G==='point')return e.cat==='room'||e.cat==='area'||e.cat==='link'||e.cat==='sconn'?'':h+R(e.x)+','+R(e.y)+'|'+R(e.off||0)+'|'+R(e.baseOff||0)+'|'+R(e.rot||0);if(G==='host')return h+e.host+'|'+(swpIs(e)?swpSig(e):R(e.pos))+'|'+R(e.sill||0);
     if(G==='sedge'||G==='rfe')return h+e.host+'|'+e.ed+'|'+R(+e.ov||0)+'|'+R(+e.oh||0)+(e.pf?'f':'');if(G==='poly'&&Array.isArray(e.pts))return h+e.pts.map(q=>R(q[0])+','+R(q[1])).sort().join(';')+'|'+R(e.off||0);return''};
   const groups=new Map(),dupOf=new Set();for(const e of els){const s=sig(e);if(!s)continue;(groups.get(s)||groups.set(s,[]).get(s)).push(e.id)}
@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=566,V1_NAME='V1.556';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=567,V1_NAME='V1.557';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -57863,6 +57863,61 @@ Object.assign(STR,{
   cam556_h1:['คลิกตำแหน่งกล้อง (ตา) ที่ความสูงที่ต้องการ ในรูปตัดอยู่บนแนวตัด ในรูปด้านอยู่ที่แนวรูปด้าน','Click where the camera stands (the eye), at its height: on the cut of a section, on the line of an elevation'],
   cam556_h2:['คลิกจุดที่กล้องมองไป บนชิ้นงานจะเล็งที่ผิวใต้เมาส์ ที่ว่างจะเล็งเข้าไปในรูป · Esc เลือกตำแหน่งกล้องใหม่','Click what it looks at: on the model it aims at the face under the pointer, else into the view · Esc picks the eye again'],
   o_persp556:['เปอร์สเปกทีฟ (Perspective)','Perspective']});
+/* ===== 557 Beam drawn in elevations and sections (V1.557; Revit: Structure › Beam in an elevation or a section: the beam is sketched on the work plane, from
+   end to end, at the heights clicked, so that it slopes as drawn).  Structure › Beam in an elevation or a section: the first click is the start of the beam (its
+   top, as a beam's location line is with Top justification), the second its end; both catch levels, grids and the edges of what is under the pointer (the top
+   of a column), and on a column go to its axis.  The plane it goes on: in a section its cut; in an elevation that of the column, or of the beam or wall along
+   the view, under the first click (their axis, its location line), else of the frontmost beam or column whose top line or axis is near it, else the line of
+   the elevation (its marker), else the middle of the model.  Its Reference Level is the one at or under its lower end, with its Start and End Level Offsets.
+   The tool stays on for the next beam; Esc picks the start again, then ends it.  A brace is drawn there as before. */
+/* ui.bm557 = {v, a: {h, z}, d, on: 'col'|'beam'|'wall'|'cut'|'mark'|'mid'} */
+const bm557On=v=>!!v&&ev3EV(v)&&!braceMode();
+const bm557S=v=>{const S=ui.bm557;return S&&v&&S.v===v.id?S:null};
+/* the point under p as the other tools catch it; on a column, along the view at its axis (a beam frames into the middle of a column) */
+function bm557Pt(pn,v,p){const w=ev3Pt(pn,v,p),pk=pickAt(pn,v,p),e=pk&&IDX.get(pk.id);let h=w.h;if(e&&e.cat==='column'&&isFinite(e.x)&&isFinite(e.y))h=ev3Hq(v,[e.x,e.y]);return{h:Math.round(h),z:Math.round(w.z)}}
+/* the plane the beam goes on: [depth, what gave it] */
+function bm557Plane(pn,v,p,h){if(v.kind==='section'){const c=ev3Cut(v,h);if(c)return[c.d,'cut']}          /* a section: its own plane, the cut */
+  const pk=pickAt(pn,v,p),e=pk&&IDX.get(pk.id),f=viewDir(v);
+  if(e&&e.cat==='column'&&isFinite(e.x)&&isFinite(e.y))return[ev3Dq(v,[e.x,e.y]),'col'];
+  const along=q=>{const L=Math.hypot(q.x2-q.x1,q.y2-q.y1)||1;return Math.abs(((q.x2-q.x1)*f[0]+(q.y2-q.y1)*f[1])/L)<0.26};          // a beam or a wall that runs along the view (not one seen end on)
+  if(e&&e.cat==='beam'&&[e.x1,e.y1,e.x2,e.y2].every(isFinite)&&along(e))return[ev3Dq(v,[(e.x1+e.x2)/2,(e.y1+e.y2)/2]),'beam'];
+  if(e&&e.cat==='wall'&&[e.x1,e.y1,e.x2,e.y2].every(isFinite)&&along(e))return[ev3Dq(v,[(e.x1+e.x2)/2,(e.y1+e.y2)/2]),'wall'];
+  {const n=navOf(v),z=-(p.y-n.oy)/n.s,tol=10/n.s;let best=null;          /* the end or the top line of a beam, the axis of a column, near the pointer: the frontmost */
+    for(const q of P.els){let A,B;if(q.cat==='beam'&&[q.x1,q.y1,q.x2,q.y2].every(isFinite)&&along(q)){const Z=beamZ(P,q);A=[ev3Hq(v,[q.x1,q.y1]),Z[0]];B=[ev3Hq(v,[q.x2,q.y2]),Z[1]]}
+      else if(q.cat==='column'&&isFinite(q.x)&&isFinite(q.y)){const Z=zRange(P,q),c=ev3Hq(v,[q.x,q.y]);A=[c,Z[0]];B=[c,Z[1]]}else continue;if(hidEl(v,q))continue;
+      const dx=B[0]-A[0],dy=B[1]-A[1],l=dx*dx+dy*dy,u=l?clamp(((h-A[0])*dx+(z-A[1])*dy)/l,0,1):0,dd=Math.hypot(A[0]+dx*u-h,A[1]+dy*u-z);if(dd>tol)continue;
+      const dq=q.cat==='beam'?ev3Dq(v,[(q.x1+q.x2)/2,(q.y1+q.y2)/2]):ev3Dq(v,[q.x,q.y]);if(!best||dq<best[0]-1)best=[dq,q.cat==='beam'?'beam':'col']}
+    if(best)return best}
+  const o=eaPlanPt(v,h);return[ev3Dq(v,o.p),Array.isArray(v.mk)?'mark':'mid']}
+function bm557Make(v,S,b){const a=S.a;if(Math.abs(b.h-a.h)<100){toast(t('bm557_up'));return null}if(Math.hypot(b.h-a.h,b.z-a.z)<300){toast(t('bm557_short'));return null}
+  const A=ev3At(v,a.h,S.d).map(Math.round),B=ev3At(v,b.h,S.d).map(Math.round),L=sortedLevels(P),z0=Math.min(a.z,b.z);let lv=L[0];for(const l of L)if(l.elev<=z0+1)lv=l;
+  let o=null;edit(()=>{o=newLineEl('beam',lv.id,{x:A[0],y:A[1]},{x:B[0],y:B[1]});delete o.lv2;delete o.use;o.off=Math.round(a.z-lv.elev);const o2=Math.round(b.z-lv.elev);if(o2!==o.off)o.off2=o2;else delete o.off2;P.els.push(o)});return o}
+XT3.beam={ok:v=>bm557On(v),hint:v=>t(bm557S(v)?'bm557_h2':'bm557_h1'),
+  click(pn,v,p){const w=bm557Pt(pn,v,p),S=bm557S(v);if(!S){const q=bm557Plane(pn,v,p,w.h);ui.bm557={v:v.id,a:w,d:Math.round(q[0]),on:q[1]};renderOptbar();refresh();return}
+    if(Math.abs(w.h-S.a.h)<1&&Math.abs(w.z-S.a.z)<1)return;const o=bm557Make(v,S,w);if(!o)return;ui.bm557=null;renderOptbar();refresh();toast(t('bm557_made',fmtLen(beamLen3(P,o))))},
+  draw(pn,ctx,v,nav){const S=bm557S(v);const X=q=>[q.h*nav.s+nav.ox,-q.z*nav.s+nav.oy],c=ui.curPane===pn.i&&ui.cur?bm557Pt(pn,v,ui.cur):null;if(!S)return;
+    const A=X(S.a);ctx.save();ctx.strokeStyle=ctx.fillStyle=C.sketch;ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(A[0],A[1],3.5,0,7);ctx.fill();
+    if(c){const B=X(c),bad=Math.abs(c.h-S.a.h)<100,T=(P.types.beam||[]).find(x=>x.id===defs('beam').type)||{},hh=(+T.h||400)*nav.s;
+      if(bad)ctx.strokeStyle=ctx.fillStyle=C.warn||'#d33';ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+      if(!bad){ctx.globalAlpha=0.14;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.lineTo(B[0],B[1]+hh);ctx.lineTo(A[0],A[1]+hh);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+        ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(A[0],A[1]+hh);ctx.lineTo(B[0],B[1]+hh);ctx.stroke();ctx.setLineDash([])}
+      const s=bad?t('bm557_up'):fmtLen(Math.hypot(c.h-S.a.h,c.z-S.a.z));ctx.font='600 11px '+FONT;ctx.textAlign='left';ctx.textBaseline='bottom';ctx.lineWidth=3;ctx.strokeStyle=C.paper||'#fff';ctx.strokeText(s,B[0]+10,B[1]-6);ctx.fillText(s,B[0]+10,B[1]-6)}
+    ctx.restore()}};
+/* the options bar in an elevation or a section: what is made, and the plane it goes on */
+{const f0=renderOptbar;renderOptbar=()=>{f0();const v=activeView();if(ui.tool!=='beam'||!bm557On(v))return;const o=$('#optbar');if(!o)return;const S=bm557S(v);
+  o.innerHTML=`<span class="who">${esc(t('a_beammain'))}</span><span>${esc(t('bm557_note'))}</span>`+(S?`<span>${esc(t('bm557_on_'+S.on))}</span>`:'')}}
+/* Esc: the start picked again, then the tool ends */
+{const f0=cancelTool;cancelTool=function(hard){const v=activeView();if(!hard&&ui.tool==='beam'&&bm557S(v)){ui.bm557=null;renderOptbar();refresh();return}return f0.apply(this,arguments)}}
+{const f0=setTool;setTool=function(){ui.bm557=null;return f0.apply(this,arguments)}}
+Object.assign(STR,{
+  bm557_h1:['คลิกจุดเริ่มของคาน (หลังคาน) จับระดับชั้น กริด และขอบชิ้นงาน คานอยู่ในแนวเสา คาน หรือผนังใต้เมาส์','Click the start of the beam (its top); it catches levels, grids and edges, and goes on the axis of the column, beam or wall under the pointer'],
+  bm557_h2:['คลิกปลายคาน ความสูงต่างกันได้คานลาด · Esc เลือกจุดเริ่มใหม่','Click its end; at another height the beam slopes · Esc picks the start again'],
+  bm557_note:['หลังคานอยู่ตามเส้นที่คลิก ระดับอ้างอิงคือชั้นที่อยู่ใต้ปลายต่ำ','Its top on the line clicked; its Reference Level the one under its lower end'],
+  bm557_up:['คานตั้งตรงไม่ได้ ใช้เสาแทน','A beam cannot stand straight up: use a column'],
+  bm557_short:['คานสั้นเกินไป อย่างน้อย 300 มม.','Too short: 300 mm at least'],
+  bm557_made:['วางคานแล้ว ยาว {0} คลิกจุดเริ่มของคานถัดไปได้เลย','Beam placed, {0} long: click the start of the next one'],
+  bm557_on_col:['ในแนวแกนเสา','On the axis of the column'],bm557_on_beam:['ในแนวแกนคาน','On the axis of the beam'],bm557_on_wall:['ในแนวผนัง','On the location line of the wall'],
+  bm557_on_cut:['บนแนวตัด','On the cut of the section'],bm557_on_mark:['บนแนวเครื่องหมายรูปด้าน','On the line of the elevation'],bm557_on_mid:['กลางโมเดล','In the middle of the model']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59845,6 +59900,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 
 [[a_stc499]] — แท็บ [[tab_steel]] แผง [[p_sconn]] ต่อจาก [[a_stcplace]] แบบ Revit (Steel › Connection Automation): กฎละหนึ่งแถวตามชนิดรอยต่อ [[stc499k_bcf]] [[stc499k_bcw]] [[stc499k_bb]] [[stc499k_bsp]] [[stc499k_base]] [[stc499k_csp]] เลือกแบบจุดต่อที่จะใส่หรือ [[stc499_none]] ตารางบอกจำนวนรอยต่อที่ยังไม่มีและมีจุดต่อแล้ว เลือก [[stc499_sc_all]] หรือชิ้นที่เลือก แล้วกด [[a_stc499run]] รอยต่อที่ยังไม่มีจุดต่อได้แบบตามกฎ บากปลายคานและตั้งระยะถอยให้เองเหมือนใส่ทีละจุด ที่ใส่ไม่ได้ถูกข้ามพร้อมเหตุผลในหน้าต่าง · กฎเก็บไว้ในโครงการ แถวที่ไม่ได้ตั้งใช้แบบแรกที่เข้ากันได้ (รอยต่อคานใช้แผ่นรับแรงเฉือน รอยต่อแผ่นต่อใช้แบบแผ่นต่อหรือสร้างใหม่) · ย้อนกลับได้ในครั้งเดียว
 [[a_brace]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและจุดปลาย ความสูงตามตำแหน่งที่คลิก
+[[a_beammain]] — วาดในรูปด้านหรือรูปตัดได้ด้วย: คลิกจุดเริ่มและปลายของหลังคาน ความสูงต่างกันได้คานลาด คานอยู่ในแนวแกนเสา คาน หรือผนังใต้คลิกแรก ไม่มีจะอยู่บนแนวตัดหรือแนวรูปด้าน
 [[t_truss]] — มีแบบ [[o_fink]] [[o_scissor]] [[o_bow]] เพิ่ม · [[g_conn]]: ติ๊ก[[p_bp]]ที่เสาเหล็ก หรือ[[p_ep]]ที่คานเหล็ก แล้วเพลทและสลักเกลียวขึ้นใน 3 มิติและนับน้ำหนักใน[[a_mtake]] · ชุดคานติ๊ก[[p_bsfollow]]ให้คานเอียงตามพื้น
 [[a_dxfout]] — ส่งออก DXF ได้จากรูปด้านและรูปตัดด้วย: ตัวอาคารเป็นเส้นจริง (ตัดเส้นที่ถูกบังออก) และเส้นตัดของรูปตัดอยู่ในเลเยอร์ …-CUT · รูปด้านและรูปตัดบนแผ่นงานก็ออกเป็นเส้น
 [[ifc_t]] — เลือกรุ่น IFC4 หรือ IFC2x3 ส่งออกเฉพาะที่เห็นในมุมมองปัจจุบัน และใส่ช่องเปิด (IfcOpeningElement) ของประตูหน้าต่างได้
@@ -60333,6 +60389,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.554 · รูปตัด (Section) ในรูปด้านและรูปตัด แบบ Revit: ลากเส้นตัดขึ้นหรือลงสองคลิก รูปตัดใหม่ตั้งฉากกับมุมมองตลอดความลึกของโมเดล สูงเท่าเส้นที่ลาก (ขอบครอป) ลากขึ้นมองไปทางซ้าย ลากลงมองไปทางขวา จับระดับชั้น กริด และขอบชิ้นงาน พิมพ์ความยาวได้ รูปตัดที่ตั้งฉากกับรูปด้านหรือรูปตัดแสดงเป็นเส้นพร้อมหัวและหางตามชนิดของมัน คลิกเลือก ลากไปด้านข้าง ย้าย คัดลอก ลบ เห็นระยะมองลึกเมื่อเลือก ดับเบิลคลิกที่หัวเพื่อเปิด
 - V1.555 · หลังคาแบบดึงรูปหน้าตัด (Roof by Extrusion) วาดในรูปด้านและรูปตัด แบบ Revit: สถาปัตย์ › หลังคา ในรูปด้านหรือรูปตัด คลิกตามเส้นใต้หลังคาไปทางเดียวกัน (จับระดับชั้น กริด และขอบชิ้นงาน) Enter หรือ เสร็จสิ้น สร้างหลังคา Esc ถอยจุดสุดท้าย หลังคายาวตลอดความลึกของผนังที่อยู่ใต้ สันตามความลึกของมุมมอง ระดับและระยะเยื้องตั้งจากจุดต่ำสุด แก้หน้าตัดและขอบเขตได้เหมือนหลังคาแบบดึงอื่น ลากย้อนกลับหรือขึ้นตรงถูกปฏิเสธพร้อมบอกเหตุผล
 - V1.556 · กล้อง (Camera) วางในรูปด้านและรูปตัด และช่อง Perspective แบบ Revit: มุมมอง › กล้อง ในรูปด้านหรือรูปตัด คลิกแรกคือตำแหน่งตาที่ความสูงที่คลิก (ในรูปตัดอยู่บนแนวตัด ในรูปด้านอยู่ที่แนวรูปด้าน) คลิกที่สองคือจุดที่มอง บนชิ้นงานจะเล็งที่ผิวใต้เมาส์ ที่ว่างจะเล็งเข้าไปกลางรูป จับระดับชั้น กริด และขอบชิ้นงาน กล้องเงยหรือก้มตามความสูงสองจุด เปิดมุมมองใหม่ให้ทันที แสดงกล้องในรูปที่วางได้ ช่อง Perspective ในแถบตัวเลือก (ทั้งในแปลนและรูปด้าน) เอาออกจะได้มุมมอง 3 มิติแบบขนาน Esc เลือกตำแหน่งตาใหม่
+- V1.557 · วาดคานในรูปด้านและรูปตัด แบบ Revit: โครงสร้าง › คาน ในรูปด้านหรือรูปตัด คลิกจุดเริ่มและปลายของหลังคาน (จับระดับชั้น กริด และขอบชิ้นงาน เช่นหัวเสา) ความสูงต่างกันได้คานลาด คานอยู่ในแนวแกนเสาหรือคานใต้คลิกแรก หรือแนวผนังที่ขนานกับรูป ไม่มีจะอยู่บนแนวตัดของรูปตัดหรือแนวเครื่องหมายรูปด้าน ระดับอ้างอิงคือชั้นที่อยู่ใต้ปลายต่ำ พร้อมระยะเยื้องต้นและปลาย ระหว่างวาดเห็นแนวหลังคานและความลึกคาน เครื่องมือยังอยู่สำหรับคานถัดไป Esc เลือกจุดเริ่มใหม่ ค้ำยันยังวาดแบบเดิม
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -60573,6 +60630,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 
 [[a_stc499]] — on the [[tab_steel]] tab, [[p_sconn]] panel, after [[a_stcplace]], as in Revit (Steel › Connection Automation): one rule per kind of joint, [[stc499k_bcf]], [[stc499k_bcw]], [[stc499k_bb]], [[stc499k_bsp]], [[stc499k_base]] and [[stc499k_csp]]: pick the connection type to place there, or [[stc499_none]]; the table counts the joints without and with a connection; choose [[stc499_sc_all]] or the members selected and [[a_stc499run]]: every joint without a connection gets its rule's type, coped and cut back as when placed one by one, and those that cannot take it are skipped and listed with why in the dialog · the rules are kept in the project; a rule not set takes the first type that fits (beam joints a shear plate, splices the splice type, made when there is none) · one undo takes the run back
 [[a_brace]] — can also be drawn in an elevation or a section: click its start and its end, the heights are where you click
+[[a_beammain]] — can also be drawn in an elevation or a section: click the start and the end of its top; at two heights it slopes; it goes on the axis of the column, beam or wall under the first click, else on the cut or the line of the elevation
 [[t_truss]] — now also [[o_fink]], [[o_scissor]] and [[o_bow]] · [[g_conn]]: tick [[p_bp]] on a steel column or [[p_ep]] on a steel beam and plates and bolts show in 3D and count in [[a_mtake]] · a beam system with [[p_bsfollow]] slopes with the floor
 [[a_dxfout]] — elevations and sections export to DXF too: the building as real lines (what is hidden is left out), the cut of a section on …-CUT layers · elevations and sections on sheets come out as lines
 [[ifc_t]] — choose IFC4 or IFC2x3, export only what the current view shows, and add the openings (IfcOpeningElement) of doors and windows
@@ -61061,6 +61119,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.554 · Sections in elevations and sections, as in Revit: two clicks up or down draw a section at right angles to the view across the depth of the model, as high as the line (its crop region), drawn up it looks left, drawn down it looks right; it catches levels, grids and edges; a length can be typed; a section at right angles to an elevation or a section shows there as its line with its head and tail as its type draws them, picked, dragged sideways, moved, copied, deleted, its far clip shown while selected, a double-click on its head opening it
 - V1.555 · Roof by Extrusion sketched in elevations and sections, as in Revit: Architecture › Roof in an elevation or a section takes clicks along the roof's underside, one way across (catching levels, grids and edges); Enter or Finish makes the roof, Esc takes the last point back; it runs the depth of the walls under it, its ridge along the view's depth, its level and offset from the lowest point; its profile and footprint are edited as any extruded roof's; a point that turns back or goes straight up is refused with the reason
 - V1.556 · Camera placed in elevations and sections, and Perspective on the options bar, as in Revit: View › Camera in an elevation or a section takes the eye where clicked, at that height (on the cut of a section, on the line of an elevation), then what it looks at: the face of the model under the pointer, else into the middle of the view; clicks catch levels, grids and edges; the camera tilts up or down between the two heights and its view opens; Show Camera shows it where it was placed; Perspective on the options bar (in plans too), cleared, makes an orthographic 3D view; Esc picks the eye again
+- V1.557 · Beams drawn in elevations and sections, as in Revit: Structure › Beam in an elevation or a section takes the start and the end of the beam's top (catching levels, grids and edges, such as the top of a column); at two heights it slopes; it goes on the axis of the column or beam under the first click, or on a wall along the view, else on the cut of a section or the line of an elevation; its Reference Level is the one under its lower end, with its Start and End Level Offsets; the top and the depth of the beam follow the pointer; the tool stays on for the next beam; Esc picks the start again; Brace works as before
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -64987,6 +65046,24 @@ window.PenumBIM.r556={
   setopt:(k,x)=>{ui.opt[k]=x;renderOptbar();return ui.opt[k]},
   scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   pscr:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+x*n.s+n.ox,y:r.top+y*n.s+n.oy}},
+  prompt:()=>{hint();return $('#prompt').textContent},
+  toast:()=>{const e=$('#toast');return e?e.textContent:''},
+  str:(k,...a)=>t(k,...a)};
+/* V1.557 test API: beams drawn in elevations and sections */
+window.PenumBIM.r557={
+  tool:tl=>{if(tl)setTool(tl);return ui.tool},
+  beam:brace=>{beamTool(!!brace);return[ui.tool,ui.opt.beamUse]},
+  ok:tl=>toolAllowed(tl||'beam',activeView()),
+  click:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:h*n.s+n.ox,y:-z*n.s+n.oy};if(v.kind!=='plan'&&XT3[ui.tool]&&XT3[ui.tool].ok(v))XT3[ui.tool].click(pn,v,p,{});else toolClick(pn,v,p,{});refresh();return{s:ui.bm557?JSON.parse(JSON.stringify(ui.bm557)):null,n:P.els.filter(e=>e.cat==='beam').length,pts:ui.pts.length}},
+  pclick:(x,y)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],p={x:x*n.s+n.ox,y:y*n.s+n.oy};toolClick(pn,v,p,{});refresh();return P.els.filter(e=>e.cat==='beam').length},
+  st:()=>ui.bm557?JSON.parse(JSON.stringify(ui.bm557)):null,
+  esc:()=>{cancelTool();return{s:ui.bm557?1:0,tool:ui.tool}},
+  beams:()=>P.els.filter(e=>e.cat==='beam').map(e=>Object.assign(JSON.parse(JSON.stringify(e)),{z:beamZ(P,e).map(Math.round),len:Math.round(beamLen3(P,e))})),
+  col:(lv,top,x,y)=>{let id=0;edit(()=>{const T=P.types.column[0];const e={id:P.seq++,cat:'column',type:T.id,level:lv,x,y,rot:0,baseOff:0,top,topOff:0,height:3000};P.els.push(e);id=e.id});refresh();return id},
+  dq:(x,y)=>Math.round(ev3Dq(activeView(),[x,y])),
+  at:(h,d)=>ev3At(activeView(),h,d).map(Math.round),
+  opt:()=>{const o=$('#optbar');return o?o.textContent:''},
+  scr:(h,z)=>{const v=activeView(),n=navOf(v),pn=PANES[ui.ap],r=pn.cv.getBoundingClientRect();return{x:r.left+h*n.s+n.ox,y:r.top-z*n.s+n.oy}},
   prompt:()=>{hint();return $('#prompt').textContent},
   toast:()=>{const e=$('#toast');return e?e.textContent:''},
   str:(k,...a)=>t(k,...a)};
