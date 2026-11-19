@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=581,V1_NAME='V1.571';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=582,V1_NAME='V1.572';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58770,6 +58770,79 @@ XF.push((cat,o,key,raw)=>{if(key!=='mwg571')return false;if(cat!=='column')retur
 {const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat==='column')F.push({k:'mwg571',l:tr('p_mwg571'),g:(e,X)=>X.tr(e.mwg571===0?'o_no':'o_yes'),grp:'i'});return F}}
 XC.push(()=>{for(const e of P.els)if('mwg571' in e&&!(e.cat==='column'&&e.mwg571===0))delete e.mwg571});
 Object.assign(STR,{p_mwg571:['ย้ายตามกริด (Moves With Grids)','Moves With Grids']});
+/* ===== 572 Stepped wall foundations (V1.572; Revit: a wall foundation follows the base of its wall, so that under a wall whose profile was edited to step
+   down (Edit Profile), or whose base is attached to a floor, it steps and slopes with it, as thick as its type all along).  The top of a wall foundation is
+   where the base of its wall is, at each point along the wall (past the wall's ends: as at the end); it is as thick as its type everywhere, so where the base
+   of the wall steps the foundation steps with it, and where it slopes the foundation slopes.  3D (and so sections, elevations, clashes and exports), the
+   joins, the breaks at inserts (569: an insert breaks it only where it reaches down to the base of the wall there), the heights it spans (view ranges, schedules) and plans (a line across at each step or turn) follow; its volume is
+   still its area times its thickness.  A wall with a flat base leaves its foundation as it was. */
+let WF572C=null,wf572ZR=null,wf572L0=null;
+/* the base of its wall along the foundation, [[d, z], …] (d from the wall's first end, z above the wall's base), when it is not flat (null: flat) */
+function wf572Rel(Q,e){if(!e||e.cat!=='wfoot'||e.host==null||e.gx)return null;const run=()=>{const w=wf568Wall(Q,e);if(!w||!(w.attB||w.prof)||typeof wallProf!=='function')return null;
+    const W=wallProf(Q,w);if(!W||!W.bot||!W.bot.some(p=>Math.abs(p[1]-W.z0)>0.5))return null;return W.bot.map(p=>[p[0],p[1]-W.z0])};
+  if(e.id==null)try{return run()}catch(_){return null}
+  const k=Q.els;if(!WF572C||WF572C.els!==k||WF572C.ver!==VER||WF572C.n!==k.length)WF572C={els:k,ver:VER,n:k.length,m:new Map()};const M=WF572C.m;if(M.has(e.id))return M.get(e.id);
+  let r=null;try{r=run()}catch(_){r=null}M.set(e.id,r);return r}
+/* its top along it, [[d, z], …] in the model's heights, and its thickness (null: flat) */
+function wf572Top(Q,e){const r=wf572Rel(Q,e);if(!r)return null;const z=wf572ZR(Q,e);return{top:r.map(p=>[p[0],z[1]+p[1]]),h:z[1]-z[0]}}
+/* the height it spans: from the bottom of its lowest step to the top of its highest */
+{const f0=zRange;wf572ZR=f0;zRange=(Q,e)=>{if(!e||e.cat!=='wfoot')return f0(Q,e);const r=wf572Rel(Q,e);if(!r)return f0(Q,e);const z=f0(Q,e);let lo=Infinity,hi=-Infinity;
+  for(const p of r){if(p[1]<lo)lo=p[1];if(p[1]>hi)hi=p[1]}return[z[0]+lo,z[1]+hi]}}
+/* the rebar in it keeps its place, as before (from the foundation's height at the base of the wall) */
+{const f0=rbs501Fr;rbs501Fr=(Q,h)=>{const F=f0(Q,h);if(!F||!h||h.cat!=='wfoot'||!wf572Rel(Q,h))return F;const z=wf572ZR(Q,h);F.zb=z[0];F.zt=z[1];return F}}
+/* the breaks at inserts (569) under a wall whose base steps: an insert breaks the foundation only where it reaches down to the base of the wall there */
+{const f0=wf569Gaps;wf569Gaps=function(Q,e){const r=wf572Rel(Q,e);if(!r)return f0.apply(this,arguments);const w=wf568Wall(Q,e);if(!w)return[];const brk=(typ(Q,e)||{}).dnb569==='no';let z0;try{z0=zRange(Q,w)[0]}catch(_){return[]}if(!isFinite(z0))return[];
+  const base=elev(Q,w.level),L=Math.hypot(w.x2-w.x1,w.y2-w.y1),G=[];
+  for(const o of wf569Ins(Q,w.id)){if(o.cat!=='opening'&&!brk)continue;const ot=typ(Q,o);if(!ot)continue;const sl=base+(+o.sill||0)-z0-1,c=+o.pos||0,hw=(+ot.width||0)/2,a=Math.max(0,c-hw),b=Math.min(L,c+hw);if(b-a<=1)continue;
+    const D=[a,...r.map(p=>p[0]).filter(d=>d>a&&d<b),b].sort((x,y)=>x-y);
+    for(let i=1;i<D.length;i++){const u=D[i-1],v=D[i];if(v-u<1e-6)continue;const zu=profAt(r,u,true)-sl,zv=profAt(r,v,false)-sl;if(zu<0&&zv<0)continue;
+      if(zu>=0&&zv>=0)G.push([u,v]);else{const m=u+(v-u)*zu/(zu-zv);G.push(zu>=0?[u,m]:[m,v])}}}
+  G.sort((p,q)=>p[0]-q[0]);const M=[];for(const g of G){const l=M[M.length-1];if(l&&g[0]<=l[1]+1e-6)l[1]=Math.max(l[1],g[1]);else M.push(g.slice())}return M.filter(g=>g[1]-g[0]>1)}}
+/* a piece (a loop in plan) in strips across the foundation where the base of the wall steps or turns: [{poly, a, b, za, zb}] (za, zb: its top at a and at b) */
+function wf572Strips(e,lp,top){const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,ux=(e.x2-e.x1)/L,uy=(e.y2-e.y1)/L,ax=p=>(p[0]-e.x1)*ux+(p[1]-e.y1)*uy,ts=lp.map(ax),t0=Math.min(...ts),t1=Math.max(...ts);
+  const D=[...new Set(top.map(p=>Math.round(p[0]*1000)/1000))].filter(d=>d>t0+0.5&&d<t1-0.5).sort((a,b)=>a-b),E=[t0,...D,t1],out=[];
+  for(let i=1;i<E.length;i++){const a=E[i-1],b=E[i];if(b-a<0.01)continue;let p=lp;if(i>1)p=clipHP(p,q=>ax(q)-a);if(i<E.length-1)p=clipHP(p,q=>b-ax(q));if(p.length<3)continue;
+    out.push({poly:p,a,b,za:profAt(top,a,true),zb:profAt(top,b,false),ia:i>1,ib:i<E.length-1})}
+  return{S:out,ax}}
+const wf572Z=(s,d)=>s.b-s.a<1e-9?s.za:s.za+(s.zb-s.za)*(d-s.a)/(s.b-s.a);
+/* where two strips meet and the top steps or turns there: the line across the piece and the heights each side */
+function wf572Joints(S,ax){const out=[];for(let i=1;i<S.length;i++){const l=S[i-1],r=S[i];if(Math.abs(l.b-r.a)>1e-6)continue;const zl=l.zb,zr=r.za,kl=(l.zb-l.za)/Math.max(1e-9,l.b-l.a),kr=(r.zb-r.za)/Math.max(1e-9,r.b-r.a);
+    const step=Math.abs(zl-zr)>0.5,turn=Math.abs(kl-kr)>1e-4;if(!step&&!turn)continue;const pts=r.poly.filter(p=>Math.abs(ax(p)-r.a)<1e-6);if(pts.length<2)continue;
+    let p=pts[0],q=pts[1];for(const x of pts)for(const y of pts)if(Math.hypot(x[0]-y[0],x[1]-y[1])>Math.hypot(p[0]-q[0],p[1]-q[1])){p=x;q=y}out.push({p,q,zl,zr,step})}return out}
+/* the pieces of a foundation (one, or those its breaks leave: 569) */
+function wf572Loops(Q,e){const lp=(wf572L0||wfootLoop)(Q,e);return lp&&lp.wf569?lp.wf569:lp?[lp]:[]}
+/* its solid: t triangles (as extrude writes them), l edges; the volume */
+function wf572Solid(Q,e,t,l){const G=wf572Top(Q,e);if(!G)return null;const h=G.h;let V=0;
+  for(const lp of wf572Loops(Q,e)){if(!lp||lp.length<3)continue;const R=wf572Strips(e,lp,G.top),ax=R.ax,ZT=s=>p=>wf572Z(s,ax(p)),L3=(p,z,q,z2)=>{if(l)l.push(p[0],z,p[1],q[0],z2,q[1])};
+    for(const s of R.S){const zt=ZT(s);V+=slopePrism(t,s.poly,p=>zt(p)-h,zt);
+      if(l){const n=s.poly.length;for(let i=0;i<n;i++){const p=s.poly[i],q=s.poly[(i+1)%n],dp=ax(p),dq=ax(q);if((s.ia&&Math.abs(dp-s.a)<1e-6&&Math.abs(dq-s.a)<1e-6)||(s.ib&&Math.abs(dp-s.b)<1e-6&&Math.abs(dq-s.b)<1e-6))continue;
+          L3(p,zt(p),q,zt(q));L3(p,zt(p)-h,q,zt(q)-h)}}}
+    if(!l)continue;
+    for(const c of lp){const d=ax(c),zs=[];for(const s of R.S)if(d>=s.a-1e-6&&d<=s.b+1e-6)zs.push(wf572Z(s,d));if(!zs.length)continue;L3(c,Math.min(...zs)-h,c,Math.max(...zs))}
+    for(const j of wf572Joints(R.S,ax)){const lo=Math.min(j.zl,j.zr),hi=Math.max(j.zl,j.zr);
+      for(const z of j.step?[lo,hi,lo-h,hi-h]:[j.zl,j.zl-h])L3(j.p,z,j.q,z);
+      if(j.step)for(const c of [j.p,j.q]){L3(c,lo,c,hi);L3(c,lo-h,c,hi-h)}}}
+  return V}
+/* 3D: built stepped before the joins cut it (and so it cuts the others as it is) ... */
+function wf572Mesh(Q,m,e){const t=[],l=[];if(wf572Solid(Q,e,t,l)==null)return false;m.t=t;m.l=l;if(m.s)m.s=[];return true}
+{const f0=joinApply;joinApply=function(Q,items){try{if(Q&&Q.els&&Array.isArray(items)){let E=null;for(const m of items){if(m.cat!=='wfoot'||!m.t)continue;if(!E)E=new Map(Q.els.map(e=>[e.id,e]));const e=E.get(m.id);if(e&&wf572Rel(Q,e))wf572Mesh(Q,m,e)}}}catch(_){}
+  return f0.apply(this,arguments)}}
+/* ... and one broken at inserts (569, built again after the joins) built again stepped, and cut by what is joined to it */
+{const f0=buildMeshes;buildMeshes=function(Q){const R=f0.apply(this,arguments),items=Array.isArray(R)?R:R&&R.items;if(!items||!Q||!Q.els)return R;let br=null;
+  for(const e of Q.els)if(e.cat==='wfoot'&&e.host!=null&&!e.gx){try{if(wf572Rel(Q,e)&&wf569Gaps(Q,e).length)(br||(br=new Map())).set(e.id,e)}catch(_){}}if(!br)return R;
+  const by=new Map();for(const it of items)if(it.t&&it.t.length&&!it.ml&&!it.ins)(by.get(it.id)||by.set(it.id,[]).get(it.id)).push(it);
+  for(const [id,e] of br)for(const m of by.get(id)||[])if(m.cat==='wfoot')wf572Mesh(Q,m,e);
+  let J=[];try{J=(Q.joins||[]).concat(wf570Pairs(Q),typeof cutsNE231==='function'?cutsNE231(Q):[]).filter(q=>br.has(q[1]))}catch(_){}if(!J.length)return R;
+  const S=id=>{const s=[];for(const it of by.get(id)||[])if(it.a>=1&&!it.inf)for(const v of it.t)s.push(v);return s},jobs=J.map(q=>[q[1],S(q[0])]);
+  for(const [id,c] of jobs)if(c.length)for(const it of by.get(id)||[])if(it.cat==='wfoot'){const r=csgCut(it.t,it.l,it.s,c);if(r){it.t=r.t;it.l=r.l;it.s=r.s}}return R}}
+/* the joins' quantities: what it takes from another, and what is taken from it, as it is */
+{const f0=joinSolid;joinSolid=function(Q,e){if(e&&e.cat==='wfoot'&&wf572Rel(Q,e)){const t=[];if(wf572Solid(Q,e,t,null)!=null)return t}return f0.apply(this,arguments)}}
+/* plans: a line across it at each step or turn of its top (an edge seen from above) */
+function wf572Lines(Q,e){const G=wf572Top(Q,e);if(!G)return null;const out=[];for(const lp of wf572Loops(Q,e)){if(!lp||lp.length<3)continue;const R=wf572Strips(e,lp,G.top);for(const j of wf572Joints(R.S,R.ax))out.push([j.p,j.q])}return out.length?out:null}
+{const f0=wfootLoop;wf572L0=f0;wfootLoop=function(Q,e){const lp=f0.apply(this,arguments);if(!WF570V||Q!==P||!e||!lp||!wf572Rel(Q,e))return lp;const s=wf572Lines(Q,e);if(!s)return lp;
+  const n=lp.slice();for(const k of ['wf569','wf570'])if(lp[k])n[k]=lp[k];n.wf572=s;return n}}
+{const f0=painter;painter=function(){const g=f0.apply(this,arguments),pa0=g.path;
+  g.path=function(pts,open){const r=pa0.apply(this,arguments);if(pts&&pts.wf572&&!open){const c=g.ctx;for(const s of pts.wf572){c.moveTo(g.X(s[0][0]),g.Y(s[0][1]));c.lineTo(g.X(s[1][0]),g.Y(s[1][1]))}}return r};return g}}
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -59920,6 +59993,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[f_su568]] ของชนิดฐานรากใต้ผนัง: [[su568_b]] กว้างตาม [[f_w]] ของชนิด อยู่กึ่งกลางผนังหรือเยื้องตาม [[p_ecc568]] ในคุณสมบัติ (บวกไปทางด้านนอกของผนัง) [[su568_r]] ยื่นเกินผิวผนังด้านนอกตาม [[f_toe568]] และด้านในตาม [[f_heel568]] กลับด้านผนังแล้วปลายหน้าไปด้วย [[f_eel568]] ว่างไว้คือครึ่งความกว้าง
 - [[f_dnb569]] ของชนิดฐานรากใต้ผนัง: ติ๊กไว้ (ค่าเริ่มต้น) ฐานรากต่อเนื่องใต้ประตูหน้าต่าง เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง ช่องเปิดผนัง (Wall Opening) ที่ลงถึงฐานผนังตัดฐานรากเสมอ
 - ฐานรากใต้ผนังต่อกันเองแบบ Revit: ปลายที่ชนฐานรากใต้ผนังอื่นที่มุมหรือทางแยกยื่นไปถึงขอบด้านไกลของอีกฐาน แทนระยะยื่นตามชนิด สองฐานที่ต่อปลายกันในแนวเดียวกันหยุดที่รอยต่อ ฐานรากที่ซ้อนหรือชนกันและฐานรากเดี่ยวกับฐานรากใต้ผนังเชื่อมกันเอง แปลนวาดเป็นเส้นรอบรูปเดียว 3 มิติตัดชิ้นหลัง (ฐานรากเดี่ยวตัดฐานรากใต้ผนัง) ปริมาณนับคอนกรีตส่วนที่ซ้อนครั้งเดียว [[t_unjoin]] แยกออก [[t_join]] เชื่อมกลับ [[t_swjoin]] สลับว่าชิ้นใดตัด ปลายผนังที่ห้ามต่อ (Disallow Join) ใช้ระยะยื่นตามชนิด
+- ฐานรากใต้ผนังเป็นขั้นตามท้องผนังแบบ Revit: เมื่อแก้รูปด้านผนัง (Edit Profile) ให้ท้องผนังลดเป็นขั้นหรือลาด หรือยึดท้องผนังกับพื้น (Attach Base) ฐานรากใต้ผนังลดขั้นและลาดตามท้องผนัง หนาเท่าชนิดตลอดแนว ผังพื้นมีเส้นขวางตรงขั้น ปริมาตรเท่าพื้นที่คูณความหนา
 - [[g_rebar]]: เลือกเสา คาน พื้น ฐานราก ฐานรากแถบ หรือผนัง แล้วติ๊ก [[p_rbon]] ในแผงคุณสมบัติ ตั้งขนาด ระยะ [[p_rbhk]] (ไม่งอ 90° 180°) และ [[p_rblap]] (เท่าของขนาดเหล็ก ใช้เมื่อเหล็กยาวเกิน 10 ม.) ปลอกปิดด้วยขอ 135° เสมอ · คานเอียงและค้ำยันก็ใส่ได้ ผนังเว้นเหล็กตรงช่องประตู หน้าต่าง · [[a_rbsched]] (แท็บ [[tab_struct]]) รวมเหล็กที่รูปร่างและความยาวเท่ากันเป็นเบอร์เดียว บอกความยาวตัด จุดทาบ จำนวน น้ำหนัก และส่งออก CSV ได้
 - [[t_areinf]]: แท็บ โครงสร้าง แผง เหล็กเสริม คลิกพื้น (หรือเลือกพื้นก่อน) แล้วคลิกจุดของขอบเขต ด้านแรกที่วาดเป็นทิศหลัก คลิกจุดแรกหรือกด Enter เพื่อจบ หรือกด [[a_arwhole]] · ในคุณสมบัติ ติ๊ก [[p_art1]] [[p_art2]] [[p_arb1]] [[p_arb2]] ตั้งขนาดและระยะของแต่ละชั้น [[p_arang]] ระยะหุ้ม และงอปลาย 90° · ลากจุดมุมเพื่อแก้ขอบเขต ย้าย หมุน กลับด้าน คัดลอก และลบไปพร้อมพื้น
 - [[t_areinf]] ในผนัง: เปิดรูปด้านหรือรูปตัดที่ขนานกับผนัง กดเครื่องมือ คลิกผนัง แล้ววาดขอบเขต (จุดหรือกรอบ) หรือกด [[a_ar528whole]] · ในแปลนเลือกผนังก่อนแล้วกดเครื่องมือ ได้เต็มผนัง · ชั้น [[p_ar528e1]] [[p_ar528e2]] [[p_ar528i1]] [[p_ar528i2]] · [[p_ar528wh]] ยืดตามผนัง · คลิกขอบเขตหรือสัญลักษณ์ในรูปด้านเพื่อเลือก
@@ -60201,6 +60275,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - A wall foundation type's [[f_su568]]: [[su568_b]] is as wide as the type's [[f_w]], centred under the wall or set off by the [[p_ecc568]] in Properties (above 0 towards the exterior of the wall); [[su568_r]] reaches past the exterior face of the wall by the [[f_toe568]] and past the interior face by the [[f_heel568]], and a flipped wall takes the toe with it; [[f_eel568]] left empty is half the width
 - A wall foundation type's [[f_dnb569]]: checked (the default), the foundation runs on beneath doors and windows; cleared, it breaks beneath a door or window that reaches the base of the wall; a wall opening that reaches the base of the wall always breaks it
 - Wall foundations join, as in Revit: an end that meets another wall foundation at a corner or a junction runs on to the far side of the other in place of the type's extension; two that meet end to end in one line stop at the joint; wall foundations that overlap or touch, and an isolated foundation and a wall foundation, join of themselves: plans draw one outline, 3D cuts the later one (an isolated foundation cuts the wall foundation) and the quantities count the concrete they share once; [[t_unjoin]] takes them apart, [[t_join]] joins them again, [[t_swjoin]] switches which cuts; a wall end whose join is disallowed keeps the type's extension
+- Stepped wall foundations, as in Revit: when the base of a wall is edited to step down or slope (Edit Profile), or attached to a floor (Attach Base), its wall foundation steps and slopes with it, as thick as its type all along; plans draw a line across it at each step, and its volume is its area times its thickness
 - [[g_rebar]]: select a column, beam, floor, footing, wall footing or wall and tick [[p_rbon]] in Properties; set the sizes, spacing, [[p_rbhk]] (none, 90°, 180°) and [[p_rblap]] (in bar diameters, used where a bar is longer than 10 m). Ties always close with 135° hooks · sloped beams and braces take rebar too; walls leave out the bars at doors and windows · [[a_rbsched]] ([[tab_struct]] tab) gives one mark to bars of the same shape and length, with the cut length, laps, count and weight, and exports CSV
 - [[t_areinf]]: Structure tab, Rebar panel; click a slab (or select one first), then click the points of the boundary, the first side being the major direction; click the first point or press Enter to finish, or [[a_arwhole]] · in Properties tick [[p_art1]], [[p_art2]], [[p_arb1]], [[p_arb2]], set each layer's size and spacing, [[p_arang]], the cover and 90° end hooks · drag a corner to change the boundary; it moves, turns, mirrors, copies and is deleted with its slab
 - [[t_areinf]] in walls: in an elevation or a section parallel to the wall, the tool, a click on the wall, then the boundary (points or a rectangle) or [[a_ar528whole]] · in a plan, select a wall first, then the tool: the whole wall · layers [[p_ar528e1]], [[p_ar528e2]], [[p_ar528i1]], [[p_ar528i2]] · [[p_ar528wh]] follows the wall · click the boundary or the symbol in an elevation to select it
@@ -61284,6 +61359,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.569 · ฐานรากใต้ผนังขาดใต้ประตูหน้าต่าง (Do Not Break at Inserts) แบบ Revit: ชนิดฐานรากใต้ผนังมีช่องไม่ขาดใต้ประตูหน้าต่าง ติ๊กไว้ (ค่าเริ่มต้น) ต่อเนื่องเหมือนเดิม เอาออกแล้วฐานรากขาดใต้ประตูหรือหน้าต่างที่ลงถึงฐานผนัง กว้างเท่าประตูหน้าต่าง ช่องเปิดผนังที่ลงถึงฐานผนังตัดฐานรากเสมอ แปลน 3 มิติ และปริมาณนับเฉพาะช่วงที่เหลือ ย้าย ปรับขนาด หรือลบประตู รอยขาดตามไป
 - V1.570 · ฐานรากใต้ผนังต่อกันเองที่มุมและทางแยกแบบ Revit: ปลายที่ชนฐานรากใต้ผนังอื่นยื่นไปถึงขอบด้านไกลของอีกฐาน ตัดตามขอบนั้น มุมจึงปิดพอดีไม่ว่ากว้าง ปลายหน้า หรือส้นเท่าไร สองฐานที่ต่อปลายกันในแนวเดียวกันหยุดที่รอยต่อ ฐานรากที่ซ้อนหรือชนกัน และฐานรากเดี่ยวกับฐานรากใต้ผนัง เชื่อมกันเอง แปลนวาดเป็นเส้นรอบรูปเดียว 3 มิติตัดชิ้นหลังออก ปริมาณคอนกรีตส่วนที่ซ้อนนับครั้งเดียว เลิกเชื่อม เชื่อม และสลับลำดับการเชื่อมใช้กับฐานรากได้ ฐานรากที่ขาดใต้ประตูก็ถูกตัดด้วย
 - V1.571 · เสาย้ายตามกริด (Moves With Grids) แบบ Revit: เสาที่ตั้งตรงจุดตัดกริดไปอยู่ที่จุดตัดใหม่เมื่อย้าย หมุน หรือยืดกริด เสาที่อยู่บนกริดเส้นเดียวไปตามเส้นใหม่ คานและค้ำยันที่ปลายอยู่ที่เสาย้ายปลายตาม ฐานรากเดี่ยวใต้เสาตามไปด้วย เสาที่ย้ายพร้อมกันในครั้งเดียว เสาเอียง เสาในกลุ่ม หรือเสาที่เอาติ๊กย้ายตามกริดออก อยู่ที่เดิม
+- V1.572 · ฐานรากใต้ผนังเป็นขั้นตามท้องผนังแบบ Revit: ผนังที่แก้รูปด้าน (Edit Profile) ให้ท้องผนังลดเป็นขั้นหรือลาดเอียง หรือท้องผนังยึดกับพื้น (Attach Base) ฐานรากใต้ผนังลดขั้นและลาดตาม หนาเท่าชนิดตลอดแนว ยื่นเกินปลายผนังที่ระดับเดียวกับปลายนั้น ภาพ 3 มิติ รูปตัด รูปด้าน การตรวจชน การต่อกันของฐานราก (V1.570) และการขาดตามช่องเปิด (V1.569) ตามไปด้วย ผังพื้นมีเส้นขวางตรงขั้นและจุดหักมุม ปริมาตรยังเท่าพื้นที่คูณความหนา เหล็กเสริมในฐานรากอยู่ที่เดิม ผนังท้องเรียบไม่เปลี่ยนอะไร
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -62028,6 +62104,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.569 · Wall foundations break beneath doors and windows (Do Not Break at Inserts), as in Revit: a wall foundation type's Do Not Break at Inserts, checked (the default), keeps it continuous as before; cleared, the foundation breaks beneath each door or window that reaches the base of the wall, as wide as the insert; a wall opening that reaches the base of the wall always breaks it; plans, 3D and quantities count only the pieces, and the break follows the door when it is moved, resized or deleted
 - V1.570 · Wall foundations join at corners and junctions, as in Revit: an end that meets another wall foundation runs on to the far side of the other, cut along it, so that the corner closes whatever the widths, toes and heels; two that meet end to end in one line stop at the joint; wall foundations that overlap or touch, and an isolated foundation and a wall foundation, join of themselves: plans draw one outline, 3D cuts the later one and the quantities count the concrete they share once; Unjoin Geometry, Join Geometry and Switch Join Order work on them, and a foundation broken at inserts is cut too
 - V1.571 · Columns move with grids (Moves With Grids), as in Revit: a column where two grids cross goes to where they cross after they are moved, turned or stretched; one on a grid goes to its new line; the beams and braces whose ends are at it go along, and its isolated foundation too; a column moved in the same edit, a slanted column, one in a group or one with Moves With Grids cleared stays where it is
+- V1.572 · Stepped wall foundations, as in Revit: under a wall whose base was edited to step down or slope (Edit Profile), or whose base is attached to a floor, the wall foundation steps and slopes with the base of the wall, as thick as its type all along, and runs past the ends of the wall at the height of each end; 3D, sections, elevations, clashes, the joins between foundations (V1.570) and the breaks at inserts (V1.569) follow, plans draw a line across it at each step or turn, its volume is still its area times its thickness, and the rebar in it stays where it was; a wall with a flat base changes nothing
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66209,6 +66286,23 @@ window.PenumBIM.r571={
   sfv:id=>{const f=sfAll(P,'column',t).find(x=>x.k==='mwg571');return f?f.g(IDX.get(id),{tr:t}):null},
   raw:(id,v)=>{IDX.get(id).mwg571=v;return true},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'mwg571' in e).map(e=>[e.id,e.mwg571])}};
+/* V1.572 test API: stepped wall foundations */
+window.PenumBIM.r572={
+  /* the base of a wall given as [[u, z], …] (u 0..1 along it, z above its base); null: flat again */
+  bot:(wid,b)=>{edit(()=>{const w=IDX.get(wid);if(b)w.prof=Object.assign({},w.prof||{},{b});else if(w.prof){delete w.prof.b;if(!w.prof.t)delete w.prof}});refresh();return true},
+  attB:(wid,fid)=>{edit(()=>{const w=IDX.get(wid);if(fid==null)delete w.attB;else w.attB=fid});refresh();return IDX.get(wid).attB||null},
+  zr:id=>zRange(P,IDX.get(id)).map(Math.round),
+  /* its strips: [from, to, top at from, top at to] */
+  strips:id=>{const e=IDX.get(id),G=wf572Top(P,e);if(!G)return null;return wf572Loops(P,e).map(lp=>wf572Strips(e,lp,G.top).S.map(s=>[s.a,s.b,s.za,s.zb].map(Math.round)))},
+  /* the heights where its 3D crosses the vertical line at x, y */
+  at3:(id,x,y)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,zs=new Set();
+    for(const m of B){if(m.id!==id||!m.t)continue;const t=m.t;for(let i=0;i+8<t.length;i+=9){const ax=t[i],ay=t[i+2],bx=t[i+3],by=t[i+5],cx=t[i+6],cy=t[i+8],d=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy);if(Math.abs(d)<1e-6)continue;
+      const l1=((by-cy)*(x-cx)+(cx-bx)*(y-cy))/d,l2=((cy-ay)*(x-cx)+(ax-cx)*(y-cy))/d,l3=1-l1-l2;if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;zs.add(Math.round(l1*t[i+1]+l2*t[i+4]+l3*t[i+7]))}}
+    return[...zs].sort((a,b)=>a-b)},
+  lines:id=>{const s=wf572Lines(P,IDX.get(id));return s?s.map(q=>q.map(p=>p.map(Math.round))):null},
+  cutv:id=>{const q=QTY().get(id);return q?Math.round((q.cutv||0)/1e6):null},
+  rbF:id=>{const F=rbs501Fr(P,IDX.get(id));return F?[Math.round(F.zb),Math.round(F.zt)]:null},
+  wp:wid=>{const W=wallProf(P,IDX.get(wid));return W.bot.map(p=>p.map(Math.round))}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
