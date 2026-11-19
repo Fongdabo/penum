@@ -179,7 +179,7 @@ function torClauses(lines){const L=[];let cur=null;
     // "4.1 …", "1. …", "2) …" start a clause; a bare "24 เดือน" is the end of the line above
     const m=l.match(/^(\d{1,2}(?:\.\d{1,2}){1,3}\.?|\d{1,2}[.)])\s*(?=[^\d.\s])(.*)$/);
     if(m&&m[2].trim().length>1){cur={ref:m[1].replace(/[.)]$/,''),t:m[2].trim(),k:0};L.push(cur);return}
-    if(cur&&cur.t.length<600)cur.t+=(!cur.k++&&cur.t.length<45&&!/[,:]$/.test(cur.t)?': ':/[\u0E00-\u0E7F]$/.test(cur.t)&&/^[\u0E00-\u0E7F]/.test(l)?'':' ')+l});
+    if(cur&&cur.t.length<1500)cur.t+=(!cur.k++&&cur.t.length<45&&!/[,:]$/.test(cur.t)?': ':/[\u0E00-\u0E7F]$/.test(cur.t)&&/^[\u0E00-\u0E7F]/.test(l)?'':' ')+l});
   return L}
 ACT.torPull=async b=>{const t=torCfg().find(x=>x.id===b.dataset.id),x=t&&(t.files||[]).find(f=>f.id===b.dataset.f);if(!x)return;
   const v=await phSrc(x.k);if(!v){toast('ไม่พบไฟล์ในเครื่องนี้');return}toast('กำลังอ่านไฟล์ '+(x.name||''));
@@ -194,7 +194,7 @@ ACT.torPull=async b=>{const t=torCfg().find(x=>x.id===b.dataset.id),x=t&&(t.file
   t.req=(t.req||[]).filter(r=>String(r.t||'').trim()||r.ok||r.ans||r.ref);
   // starter rows nobody filled in yet are dropped: the file's own clauses replace them
   const starters=new Set(TORCAT[kind].map(c=>c[2]));t.req=t.req.filter(r=>!(starters.has(r.t)&&!r.ok&&!r.ans&&!r.ref));
-  let k=0;rows.forEach(c=>{const key=c.ref+'|'+c.t.slice(0,30);if(have.has(key))return;have.add(key);t.req.push({id:uid(),ref:c.ref,cat:torCatOf(kind,c.t)||par(c.ref)||'oth',t:c.t.slice(0,600),ok:'',ans:'',src:x.id});k++});
+  let k=0;rows.forEach(c=>{const key=c.ref+'|'+c.t.slice(0,30);if(have.has(key))return;have.add(key);t.req.push({id:uid(),ref:c.ref,cat:torCatOf(kind,c.t)||par(c.ref)||'oth',t:c.t.slice(0,1500),ok:'',ans:'',src:x.id});k++});
   save();render();toast(k?`ใส่ข้อกำหนด ${k} ข้อจาก ${x.name||'ไฟล์'} แล้ว ตรวจหมวดแล้วเลือก “เราทำได้ไหม” ทีละข้อ`:'ข้อในไฟล์นี้อยู่ในตารางครบแล้ว')};
 
 /* the TOR on the work it belongs to: the project's เอกสาร page, the quotation, the service contracts */
