@@ -1,8 +1,8 @@
 /* ---------- 4.41 revisions of a quotation (user: "ถ้าแก้ใบหลายครั้ง (Rev.) เราจะเก็บข้อมูลเดิมยังไงดี") ----------
    Each time the customer copy is printed or the status becomes ส่งแล้ว, the quote as it stands is kept as a read-only copy inside the
    quote (Q.revs: Rev.0, Rev.1, …), so it syncs with it. A copy is made only when something changed since the last one; edits after
-   that become the next Rev. by themselves, and "บันทึกเป็น Rev. ใหม่" keeps one by hand. The customer copy prints "Rev.N" after the
-   number from Rev.1 on. Any Rev. can be printed again as it was, and any two (or a Rev. and the current one) compared line by line:
+   that become the next Rev. by themselves, and "บันทึกเป็น Rev. ใหม่" keeps one by hand. The customer copy prints "Rev.N" in อ้างอิง (after the
+   reference typed there; 4.99.42, it was after the number before) from Rev.1 on. Any Rev. can be printed again as it was, and any two (or a Rev. and the current one) compared line by line:
    added, removed and changed lines, and the change in price and profit. */
 const QRV_SKIP=['revs','cmts','appr','lowReq','lowOk','lowNo','status','pj'],QRV_NOSIG=['hid'];
 const qrvSnap=Q=>{const o={};Object.keys(Q).forEach(k=>{if(QRV_SKIP.includes(k)||k[0]==='_')return;const v=Q[k];if(typeof v==='string'&&v.length>40000)return;o[k]=v});return JSON.parse(JSON.stringify(o))};
@@ -22,8 +22,20 @@ const qrvObj=(Q,r)=>Object.assign(JSON.parse(JSON.stringify(r.snap)),{id:Q.id,st
 let QRV_P=null;
 // 981 replaces PRINT.quote after this file, so the wrapper goes on at render time (and again if anything replaces it later)
 const qrvWrap=()=>{if(!PRINT.quote||PRINT.quote.__qrv)return;const f=PRINT.quote;PRINT.quote=function(id){let h=f.apply(this,arguments);const Q=CO().quotes.find(q=>q.id===id);if(!h||!Q||!Q.no||!(Q.revs||[]).length)return h;
-  const k=QRV_P!=null?QRV_P:qrvCur(Q).n;if(!(k>0))return h;const no=esc(Q.no).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  return h.replace(new RegExp(no+'(?![\\w.\\-/])','g'),esc(Q.no)+' Rev.'+k)};PRINT.quote.__qrv=1};
+  const k=QRV_P!=null?QRV_P:qrvCur(Q).n;if(!(k>0))return h;
+  // 4.99.42 (user, 2026-11-19: "เห็นRev.6 ไหม ให้ย้ายมาไว้ที่ช่องอ้างอิงดีไหม ดึงข้อมูลอัตโนมัต"): the number stays plain, Rev.N goes in อ้างอิง
+  // after whatever the user typed there; the print is made again with that reference
+  // "ลดข้อผิดพลาดของ Rev. ด้วย": a revision typed by hand (R.2 in อ้างอิง, "QT-005 Rev.3" in เลขที่) never prints next to the real one
+  const r0=Q.ref,n0=Q.no;Q.ref=qrvRef(Q.ref,k);Q.no=qrvNo(Q.no);try{h=f.apply(this,arguments)}finally{Q.ref=r0;Q.no=n0}return h};PRINT.quote.__qrv=1};
+// a revision typed by hand: "Rev.3", "REV 3", "Revision 3" anywhere; "R.2" / "R2" / "R-2" only when the field holds nothing else
+// (so a customer's "BOQ R1" stays)
+const QRV_REV=/(^|[\s·,;/|]+)rev(?:ision)?\s*\.?\s*-?\s*\d+(?=$|[\s·,;/|])/gi,QRV_R=/^[\s·,;/|]*(?:r\s*[.\-]?\s*\d+[\s·,;/|]*)+$/i;
+const qrvHand=s=>{s=String(s||'');const m=(s.match(QRV_REV)||[]).map(x=>x.replace(/^[\s·,;/|]+/,''));const t=s.replace(QRV_REV,'$1');if(QRV_R.test(t))m.push(t.replace(/^[\s·,;/|]+|[\s·,;/|]+$/g,''));return m.join(', ')};
+const qrvStrip=s=>{let t=String(s||'').replace(QRV_REV,'$1');if(QRV_R.test(t))t='';return t.replace(/^[\s·,;/|]+|[\s·,;/|]+$/g,'').replace(/\s{2,}/g,' ').trim()};
+// อ้างอิง on the customer copy: what the user typed (without a hand-typed revision) · Rev.N from the history
+const qrvRef=(ref,k)=>{const t=qrvStrip(ref);return k>0?(t?t+' · ':'')+'Rev.'+k:t};
+// เลขที่ on the customer copy: only a trailing " Rev.N" typed after the number is taken off (QT-005-R1 style numbers are left alone)
+const qrvNo=no=>String(no||'').replace(/\s+rev(?:ision)?\s*\.?\s*\d+\s*$/i,'').trim()||no;
 {const r=render;render=function(){try{qrvWrap()}catch(e){}return r.apply(this,arguments)}}
 // printing the customer copy or sending it keeps a Rev. first
 // 4.99.26 a draft printed to check it is not a Rev. (user: "REV.3 มาจากไหน" when the customer had R.1): printing keeps one only once the
@@ -34,7 +46,10 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.status$/);if(!m||v!=='s
 // ตั้งเลข Rev.: the number this copy prints with; an unsaved edit is kept as a Rev. first, and later edits count on from it
 ACT.qrvSetN=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q||!(Q.items||[]).length)return;const c=qrvCur(Q);
   const v=prompt('เลข Rev. ของใบนี้ (0 = ฉบับแรก ไม่พิมพ์คำว่า Rev.)',String(c.none?0:c.n));if(v===null)return;const k=parseInt(String(v).replace(/^\s*r(ev)?\.?\s*/i,''),10);
-  if(!(k>=0)){toast('ใส่เป็นตัวเลข เช่น 0, 1, 2');return}const r=qrvSave(Q,'hand','ตั้งเลขเอง')||qrvLast(Q);r.n=k;save();render();toast(`ใบนี้เป็น Rev.${k} แล้ว`)};
+  if(!(k>=0)){toast('ใส่เป็นตัวเลข เช่น 0, 1, 2');return}
+  // 4.99.42 no two Revs. with one number, no going backwards: the new number must be above the Rev. kept before this one
+  {const R=Q.revs||[],pv=c.dirty?R[R.length-1]:R[R.length-2];if(pv&&k<=n(pv.n)){toast(`เลข Rev. ต้องมากกว่า Rev.${pv.n} ที่เก็บไว้ก่อนหน้า (ใส่ ${n(pv.n)+1} ขึ้นไป)`);return}}
+  const r=qrvSave(Q,'hand','ตั้งเลขเอง')||qrvLast(Q);r.n=k;save();render();toast(`ใบนี้เป็น Rev.${k} แล้ว`)};
 ACT.qrvNew=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;const L=qrvLast(Q);if(L&&L.sig===qrvSig(Q)){toast(`ยังไม่ได้แก้อะไรจาก Rev.${L.n}`);return}
   const note=prompt('หมายเหตุของ Rev. นี้ (เช่น ลูกค้าขอลดราคา, ตัดงานท่อออก) เว้นว่างได้','');if(note===null)return;const r=qrvSave(Q,'hand',note.trim());save();render();toast(`บันทึก Rev.${r.n} แล้ว`)};
 ACT.qrvPrint=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),r=Q&&(Q.revs||[]).find(x=>x.id===b.dataset.r);if(!r)return;qrvWrap();const C=CO(),k=C.quotes.indexOf(Q),T=qrvObj(Q,r);let h='';
@@ -61,12 +76,15 @@ document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.datas
 function qrvCard(Q){if(!Q||!(Q.items||[]).length)return '';const R=Q.revs||[],cur=qrvCur(Q),L=qrvLast(Q);
   const st=!L?'ยังไม่มี Rev. ระบบจะเก็บ <b>Rev.0</b> ให้เองเมื่อเปลี่ยนสถานะเป็นส่งแล้ว (พิมพ์ร่างดูเองไม่นับ)'
     :cur.dirty?`แก้ไขหลัง Rev.${L.n} แล้ว ${qrvSent(Q)?'พิมพ์หรือส่ง':'เปลี่ยนเป็นส่งแล้ว'}ครั้งหน้าจะเก็บเป็น <b>Rev.${cur.n}</b>`:`ตรงกับ <b>Rev.${L.n}</b> ที่เก็บไว้ล่าสุด`;
+  // a revision typed by hand in อ้างอิง or after the number: tell the user the print uses the history instead
+  const hr=qrvHand(Q.ref),hn=qrvNo(Q.no)!==String(Q.no||'')?String(Q.no).slice(qrvNo(Q.no).length).trim():'',kp=cur.n;
+  const warn=(hr||hn)&&R.length?`<div class="qrv-w" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:color-mix(in srgb,#F59E0B 14%,transparent);font-size:12.5px">พิมพ์ Rev. เองไว้ที่${hr?` อ้างอิง (<b>${esc(hr)}</b>)`:''}${hr&&hn?' และ':''}${hn?` เลขที่ (<b>${esc(hn)}</b>)`:''} ใบที่พิมพ์จะไม่ใช้ค่านี้ แต่ใส่ <b>${kp>0?'Rev.'+kp:'ไม่มี Rev. (ฉบับแรก)'}</b> จากประวัติในช่องอ้างอิงให้เอง ลบออกจากช่องได้เลยเพื่อไม่ให้สับสน</div>`:'';
   const opt=sel=>[...R.map(r=>[r.id,`Rev.${r.n} · ${qrvWhen(r.at)}`]),...(cur.dirty?[['cur','ฉบับปัจจุบัน (ยังไม่เก็บ)']]:[])].map(([v,l])=>`<option value="${v}"${v===sel?' selected':''}>${esc(l)}</option>`).join('');
   const bSel=cur.dirty?'cur':(R[R.length-1]||{}).id,aSel=cur.dirty?(R[R.length-1]||{}).id:(R[R.length-2]||{}).id;
   const rows=R.slice().reverse().map((r,j,all)=>{const p=all[j+1],s=r.sum||{},d=p?n(s.net)-n((p.sum||{}).net):0;
     return `<tr><td><b>Rev.${r.n}</b></td><td>${qrvWhen(r.at)}</td><td>${esc(r.by||'')}</td><td>${esc(QRV_WHY[r.why]||'')}${r.note?` · ${esc(r.note)}`:''}</td><td class="r">${fmt(n(s.net),2)}</td><td class="r">${p?qrvD(d):''}</td><td class="r">${s.npc!=null?fmt(n(s.npc),1)+'%':''}</td>
       <td style="white-space:nowrap"><button type="button" class="btn sm" data-a="qrvPrint" data-id="${Q.id}" data-r="${r.id}" title="พิมพ์ใบลูกค้าตามที่เป็นใน Rev. นี้">พิมพ์ฉบับนี้</button></td></tr>`}).join('');
-  return `<section class="card qrv"><h2><span>ประวัติการแก้ไข (Rev.)</span><small>${st}</small><span class="sp"></span><button type="button" class="btn sm" data-a="qrvSetN" data-id="${Q.id}" title="ตั้งเลข Rev. ของฉบับนี้เอง เช่น ให้ตรงกับฉบับที่ส่งลูกค้าไปแล้ว">ตั้งเลข Rev.</button><button type="button" class="btn sm" data-a="qrvNew" data-id="${Q.id}">บันทึกเป็น Rev. ใหม่</button></h2>
+  return `<section class="card qrv"><h2><span>ประวัติการแก้ไข (Rev.)</span><small>${st}</small><span class="sp"></span><button type="button" class="btn sm" data-a="qrvSetN" data-id="${Q.id}" title="ตั้งเลข Rev. ของฉบับนี้เอง เช่น ให้ตรงกับฉบับที่ส่งลูกค้าไปแล้ว">ตั้งเลข Rev.</button><button type="button" class="btn sm" data-a="qrvNew" data-id="${Q.id}">บันทึกเป็น Rev. ใหม่</button></h2>${warn}
   ${R.length?`<div class="tw"><table class="qb-t"><thead><tr><th>Rev.</th><th>เมื่อ</th><th>โดย</th><th>เหตุ</th><th class="r">ราคาเสนอ</th><th class="r">เทียบรอบก่อน</th><th class="r">กำไรสุทธิ</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   ${R.length+(cur.dirty?1:0)>1?`<div class="row qrv-c" style="gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">เทียบ <select id="qrvA" aria-label="ฉบับแรก">${opt(aSel)}</select> กับ <select id="qrvB" aria-label="ฉบับที่สอง">${opt(bSel)}</select><button type="button" class="btn sm pri" data-a="qrvCmp" data-id="${Q.id}">เทียบ</button></div>`:''}`:''}</section>`}
 {const f=salesQuote;salesQuote=function(){const h=f.apply(this,arguments),C=CO(),Q=C.quotes.find(q=>q.id===S.sel.quote)||C.quotes.slice().reverse()[0];return Q?qbIns(h,qrvCard(Q)):h}}
