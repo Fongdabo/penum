@@ -2116,9 +2116,11 @@ function roofGeo(P,rf){
   let convex=n>=3;for(let i=0;i<n;i++){const a=E[i],b=E[(i+1)%n];if(a.dx*b.dy-a.dy*b.dx>1e-6)convex=false}
   let shape=rf.shape||'hip';const sk=!convex&&n>=3&&ROOF_SK.includes(shape);let warn=!convex&&shape!=='flat'&&!sk;if(!convex&&!sk)shape='flat';          // V1.88 an outline that turns in (L, T, U …) takes hips and valleys too
   const ED=Array.isArray(rf.ed)?rf.ed:[],tk=E.map((e,k)=>{const d=shape==='fp'&&ED[ix[k]];return d&&+d.a>0?tanOf(+d.a):tan}),oE=E.map((e,k)=>{const d=convex&&shape==='fp'&&ED[ix[k]];return d&&+d.o?+d.o:0});          // V1.579 Offset From Roof Base of an edge: its plane raised          // V1.88 Defines Slope edge by edge (shape 'fp'): rf.ed[i] = {s: 0 a gable, a: its own slope°}
-  const eaveAt=O=>pts.map((p,i)=>{const a=E[(i+n-1)%n],b=E[i],c=a.dx*b.dy-a.dy*b.dx;if(Math.abs(c)<1e-6)return[p[0]-b.nx*O,p[1]-b.ny*O];
-    const ax=p[0]-a.nx*O,ay=p[1]-a.ny*O,bx=p[0]-b.nx*O,by=p[1]-b.ny*O,s=((bx-ax)*b.dy-(by-ay)*b.dx)/c;return[ax+a.dx*s,ay+a.dy*s]});
-  let eave=eaveAt(O);if(sk&&O>0&&!polySimple(eave)){O=0;eave=eaveAt(0)}          // an overhang that would cross itself in a narrow notch: none
+  const eaveAt=O=>pts.map((p,i)=>{const ia=(i+n-1)%n,a=E[ia],b=E[i],c=a.dx*b.dy-a.dy*b.dx,Oa=Array.isArray(O)?O[ia]:O,Ob=Array.isArray(O)?O[i]:O;if(Math.abs(c)<1e-6)return[p[0]-b.nx*Ob,p[1]-b.ny*Ob];          // V1.580: O may be one for each edge
+    const ax=p[0]-a.nx*Oa,ay=p[1]-a.ny*Oa,bx=p[0]-b.nx*Ob,by=p[1]-b.ny*Ob,s=((bx-ax)*b.dy-(by-ay)*b.dx)/c;return[ax+a.dx*s,ay+a.dy*s]});
+  let eave=eaveAt(O);if(sk&&O>0&&!polySimple(eave)){O=0;eave=eaveAt(0)}
+  const oV=E.map((e,k)=>{const d=convex&&shape==='fp'&&ED[ix[k]],v=d&&d.ov!=null&&d.ov!==''?+d.ov:NaN;return isFinite(v)?Math.min(RF580_MAX,Math.max(0,v)):O});let ovOn=oV.some(v=>Math.abs(v-O)>0.01);          // V1.580 Overhang edge by edge: that eave further out or in, down or up its own plane (the planes stay)
+  if(ovOn){const ev=eaveAt(oV);if(polySimple(ev)&&ev.every((q,k)=>{const r=ev[(k+1)%n];return(r[0]-q[0])*E[k].dx+(r[1]-q[1])*E[k].dy>1}))eave=ev;else ovOn=false}          // an edge that would vanish: the roof's Overhang all round          // an overhang that would cross itself in a narrow notch: none
   const zE=z0+th-tan*O,dist=(i,q)=>(q[0]-E[i].p[0])*E[i].nx+(q[1]-E[i].p[1])*E[i].ny+O,hk=(i,q)=>tk[i]*dist(i,q)+oE[i];          // the eaves stay level all round; hk: how far plane i has risen at q
   let S=[],li=0;E.forEach((e,i)=>{if(e.L>E[li].L+1)li=i});
   if(shape==='arc'||shape==='ext'){          // a curved roof extruded along its ridge direction (Revit: Roof by Extrusion with an arc profile): strips across, each a plane, rise e.rise over the walls
@@ -2167,7 +2169,7 @@ function roofGeo(P,rf){
       const loop=[[e.p[0],e.p[1],z0],[e.q[0],e.q[1],z0]];for(let m=prof.length-1;m>=0;m--)if(prof[m][2]-z0>1)loop.push(prof[m]);
       gables.push({loop,nx:e.nx,ny:e.ny,p:e.p,q:e.q})}}
   let area=0;for(const f of faces){const N=newell(f.loop.map(q=>[q[0],q[2],q[1]]));area+=Math.hypot(N[0],N[1],N[2])/2}
-  return{th,z0,eave,faces,gables,shape,warn,zmax,area,S,ix,sk,sa578:AP?AP.map(a=>a.j):null}}
+  return{th,z0,eave,faces,gables,shape,warn,zmax,area,S,ix,sk,sa578:AP?AP.map(a=>a.j):null,ov:ovOn?oV:null,oE:oE.some(Boolean)?oE:null,O,wp:pts}}
 
 /* convex hull of points (monotone chain) */
 function hullOf(pts){const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
@@ -2530,13 +2532,13 @@ function buildMeshes(P,FP,FIT){
           if(g.n>1&&arc)continue;if(g.n>1){const hl=Math.hypot(d[0],d[2]),p=hl<1e-6?[1,0,0]:[-d[2]/hl,0,d[0]/hl],w=[d[0]/dl,d[1]/dl,d[2]/dl],u=[p[1]*w[2]-p[2]*w[1],p[2]*w[0]-p[0]*w[2],p[0]*w[1]-p[1]*w[0]],rr=Math.min(85,R.th*0.75),lp=[];
             for(let i=0;i<8;i++){const t=i/8*2*Math.PI,c=Math.cos(t)*rr,s=Math.sin(t)*rr*0.8;lp.push([a[0]+p[0]*c+u[0]*s,a[1]+p[1]*c+u[1]*s,a[2]+p[2]*c+u[2]*s])}extrude(lp,d,cap.t);
             for(let i=0;i<8;i++){const q=lp[i],o=lp[(i+7)%8],r=lp[(i+1)%8];cap.s.push({a:q,b:[q[0]+d[0],q[1]+d[1],q[2]+d[2]],n1:[(o[0]+q[0])/2-a[0],(o[1]+q[1])/2-a[1],(o[2]+q[2])/2-a[2]],n2:[(q[0]+r[0])/2-a[0],(q[1]+r[1])/2-a[1],(q[2]+r[2])/2-a[2]]})}}          // its outline: the cap covers the ridge or hip line of the roof under it, so without it a hidden-line elevation showed no roof
-          else if(Math.abs(a[1]-zE)<2&&Math.abs(b[1]-zE)<2&&!rfeHas(P,e,'rfas',[a[0],a[2]],[b[0],b[2]])){const hl=Math.hypot(d[0],d[2])||1,ux=d[0]/hl,uy=d[2]/hl;let ox=uy,oy=-ux;if(inPoly((a[0]+b[0])/2+ox*30,(a[2]+b[2])/2+oy*30,R.out||R.eave)){ox=-ox;oy=-oy}
-            const t=22,A=[a[0]-ux*t,a[2]-uy*t],B=[b[0]+ux*t,b[2]+uy*t];solid(fa,[A,B,[B[0]+ox*t,B[1]+oy*t],[A[0]+ox*t,A[1]+oy*t]],zE-Math.max(R.th,170)-20,zE+4)}}
+          else if(((Math.abs(a[1]-zE)<2&&Math.abs(b[1]-zE)<2)||rf580Ev(R,a,b))&&!rfeHas(P,e,'rfas',[a[0],a[2]],[b[0],b[2]])){const hl=Math.hypot(d[0],d[2])||1,ux=d[0]/hl,uy=d[2]/hl;let ox=uy,oy=-ux;if(inPoly((a[0]+b[0])/2+ox*30,(a[2]+b[2])/2+oy*30,R.out||R.eave)){ox=-ox;oy=-oy}
+            const t=22,zF=Math.abs(a[1]-zE)<2?zE:Math.min(a[1],b[1]),A=[a[0]-ux*t,a[2]-uy*t],B=[b[0]+ux*t,b[2]+uy*t];solid(fa,[A,B,[B[0]+ox*t,B[1]+oy*t],[A[0]+ox*t,A[1]+oy*t]],zF-Math.max(R.th,170)-20,zF+4)}}
         if(cap.t.length)items.push(cap);
-        if((R.shape==='hip'||(R.shape==='fp'&&R.S.length===R.eave.length))&&(e.overhang||0)>=150){const zs=zE-R.th;for(const pc of rfeSofCut(P,e,polyMinus(R.eave,holeParts([e.pts]))))prism(fa,pc,zs-10,zs)}
+        if(R.ov||R.oE)rf580Sof(P,e,R,fa,prism);else if((R.shape==='hip'||(R.shape==='fp'&&R.S.length===R.eave.length))&&(e.overhang||0)>=150){const zs=zE-R.th;for(const pc of rfeSofCut(P,e,polyMinus(R.eave,holeParts([e.pts]))))prism(fa,pc,zs-10,zs)}
         if(fa.t.length)items.push(fa)}
       if(e.gut&&R.shape!=='flat'&&R.faces.length){const E=roofEaves(R),gm=mk(e.id,'roof',[0.80,0.82,0.84]),zt=E.zE-25,zb=zt-GUT_H,o0=22,o1=o0+GUT_W,w=6;gm.mt=MAT.metal;          // a gutter along the eaves: a trough hung on the fascia
-        for(const g of E.edges){if(rfeHas(P,e,'rgut',g.a,g.b))continue;const a=g.a,b=g.b,hl=Math.hypot(b[0]-a[0],b[1]-a[1])||1,ux=(b[0]-a[0])/hl,uy=(b[1]-a[1])/hl;let ox=uy,oy=-ux;if(inPoly((a[0]+b[0])/2+ox*30,(a[1]+b[1])/2+oy*30,R.out||R.eave)){ox=-ox;oy=-oy}
+        for(const g of E.edges){if(rfeHas(P,e,'rgut',g.a,g.b))continue;const zt=g.z!=null&&Math.abs(g.z-E.zE)>=2?g.z-25:E.zE-25,zb=zt-GUT_H,a=g.a,b=g.b,hl=Math.hypot(b[0]-a[0],b[1]-a[1])||1,ux=(b[0]-a[0])/hl,uy=(b[1]-a[1])/hl;let ox=uy,oy=-ux;if(inPoly((a[0]+b[0])/2+ox*30,(a[1]+b[1])/2+oy*30,R.out||R.eave)){ox=-ox;oy=-oy}
           const A=[a[0]-ux*o1,a[1]-uy*o1],B=[b[0]+ux*o1,b[1]+uy*o1],st=(p0,p1,z0,z1)=>solid(gm,[[A[0]+ox*p0,A[1]+oy*p0],[B[0]+ox*p0,B[1]+oy*p0],[B[0]+ox*p1,B[1]+oy*p1],[A[0]+ox*p1,A[1]+oy*p1]],z0,z1);
           st(o0,o1,zb,zb+w);st(o1-w,o1,zb+w,zt);st(o0,o0+w,zb+w,zt);
           for(const [Q,sg] of [[A,1],[B,-1]])solid(gm,[[Q[0]+ox*o0,Q[1]+oy*o0],[Q[0]+ox*o1,Q[1]+oy*o1],[Q[0]+ox*o1+ux*w*sg,Q[1]+oy*o1+uy*w*sg],[Q[0]+ox*o0+ux*w*sg,Q[1]+oy*o0+uy*w*sg]],zb+w,zt)}
@@ -14636,7 +14638,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=589,V1_NAME='V1.579';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=590,V1_NAME='V1.580';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15985,11 +15987,11 @@ function rfSlopes(rf,R){R=R||roofGeo(P,rf);const on=rf.pts.map(()=>false);if(rf.
   for(const k of R.S||[])if(R.ix&&R.ix[k]!=null)on[R.ix[k]]=true;return on}
 /* the roof as it looks, edge by edge: the shape 'fp' with a value for each edge (a slope of its own is kept) */
 function rfToFp(rf){const on=ROOF_SK.includes(rf.shape||'hip')?rfSlopes(rf):rf.pts.map(()=>true),A=Array.isArray(rf.ed)?rf.ed:[];
-  rf.ed=rf.pts.map((p,i)=>{const o={s:on[i]?1:0},d=A[i];if(d&&+d.a>0)o.a=+d.a;if(d&&+d.o)o.o=+d.o;return o});rf.shape='fp'}
+  rf.ed=rf.pts.map((p,i)=>{const o={s:on[i]?1:0},d=A[i];if(d&&+d.a>0)o.a=+d.a;if(d&&+d.o)o.o=+d.o;if(d&&d.ov!=null&&d.ov!==''&&isFinite(+d.ov))o.ov=+d.ov;return o});rf.shape='fp'}
 XF.push((cat,o,key,raw)=>{if(cat!=='roof'||key!=='shape'||raw!=='fp')return false;if(o.shape!=='fp'&&o.pts&&o.pts.length>=3)rfToFp(o);else o.shape='fp';return true});
 XC.push(()=>{for(const e of P.els){if(e.cat!=='roof'||e.ed==null)continue;if(!Array.isArray(e.ed)||!Array.isArray(e.pts)){delete e.ed;continue}const n=e.pts.length;
-  e.ed=e.ed.slice(0,n).map(d=>{const o={s:d&&d.s===0?0:1},a=d?+d.a:NaN;if(a>=1&&a<=70)o.a=Math.round(a*100)/100;const ov=d?+d.o:NaN;if(o.s===1&&isFinite(ov)&&Math.round(ov))o.o=Math.round(Math.max(-100000,Math.min(100000,ov)));return o});while(e.ed.length<n)e.ed.push({s:1});
-  if(e.shape!=='fp'&&e.ed.every(d=>d.s===1&&d.a==null&&d.o==null))delete e.ed}});
+  e.ed=e.ed.slice(0,n).map(d=>{const o={s:d&&d.s===0?0:1},a=d?+d.a:NaN;if(a>=1&&a<=70)o.a=Math.round(a*100)/100;const ov=d?+d.o:NaN;if(o.s===1&&isFinite(ov)&&Math.round(ov))o.o=Math.round(Math.max(-100000,Math.min(100000,ov)));const w=d&&d.ov!=null&&d.ov!==''?+d.ov:NaN;if(isFinite(w))o.ov=Math.round(Math.max(0,Math.min(RF580_MAX,w)));return o});while(e.ed.length<n)e.ed.push({s:1});
+  if(e.shape!=='fp'&&e.ed.every(d=>d.s===1&&d.a==null&&d.o==null&&d.ov==null))delete e.ed}});
 XP.push((c,els)=>{if(c!=='roof'||els.length!==1)return'';const e=els[0];if(!e.pts||e.pts.length<3||!ROOF_SK.includes(e.shape||'hip'))return'';const on=rfSlopes(e);
   return PR.grp('g_roofedges')+PR.ro('re_count',t('re_of',on.filter(Boolean).length,on.length))+`<div class="pa"><button class="btn" data-act="roofedges">${t('a_roofedges')}…</button></div>`});
 /* the dialog: the outline with its edges to click, the hips and valleys they give, and a row for each edge */
@@ -16006,10 +16008,10 @@ function dlgRoofEdges(){const rf=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&x.c
       g+=`<circle cx="${(s+nx*15).toFixed(1)}" cy="${(r+ny*15).toFixed(1)}" r="9" fill="${on[i]?'#e5484d':'#8a8f98'}"/><text x="${(s+nx*15).toFixed(1)}" y="${(r+ny*15+3.6).toFixed(1)}" font-size="10" text-anchor="middle" fill="#fff">${i+1}</text>`
         +`<line data-re="${i}" x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="rgba(0,0,0,0)" stroke-width="16" style="cursor:pointer"><title>${t('re_edge')} ${i+1}</title></line>`}
     const dflt=roofSlopeIn(rf.slope==null?30:rf.slope),rows=rf.pts.map((p,i)=>{const q=rf.pts[(i+1)%n],L=Math.hypot(q[0]-p[0],q[1]-p[1]),a=A[i]&&+A[i].a>0?roofSlopeIn(+A[i].a):'';
-      return`<tr><td>${i+1}</td><td>${fmtLen(L)} ${unitName()}</td><td style="text-align:center"><input type="checkbox" data-rs="${i}"${on[i]?' checked':''}></td><td><input type="number" data-ra="${i}" value="${a}" placeholder="${dflt}" step="any" min="0" style="width:84px"${on[i]?'':' disabled'}> <span class="u">${slopeSym('su')}</span></td><td><input type="number" data-ro="${i}" value="${A[i]&&+A[i].o?+A[i].o:''}" placeholder="0" step="10" style="width:84px"${on[i]?'':' disabled'}> <span class="u">${t('u_mm')}</span></td></tr>`}).join('');
+      return`<tr><td>${i+1}</td><td>${fmtLen(L)} ${unitName()}</td><td style="text-align:center"><input type="checkbox" data-rs="${i}"${on[i]?' checked':''}></td><td><input type="number" data-ra="${i}" value="${a}" placeholder="${dflt}" step="any" min="0" style="width:84px"${on[i]?'':' disabled'}> <span class="u">${slopeSym('su')}</span></td><td><input type="number" data-ro="${i}" value="${A[i]&&+A[i].o?+A[i].o:''}" placeholder="0" step="10" style="width:84px"${on[i]?'':' disabled'}> <span class="u">${t('u_mm')}</span></td><td><input type="number" data-rv580="${i}" value="${A[i]&&A[i].ov!=null?A[i].ov:''}" placeholder="${Math.round(Math.max(0,rf.overhang||0))}" step="10" min="0" style="width:84px"> <span class="u">${t('u_mm')}</span></td></tr>`}).join('');
     return`<p class="note">${t('re_note')}</p><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:300px;background:var(--bg2,#1b1e24);border-radius:6px;display:block">${g}</svg>
       <p class="note" style="margin:6px 0">${t('re_sum',on.filter(Boolean).length,n)}${R.warn?' · <b>'+t('roof_flat_only')+'</b>':''}</p>
-      <div style="max-height:220px;overflow:auto"><table class="tbl" style="width:100%"><thead><tr><th>${t('re_edge')}</th><th>${t('re_len')}</th><th>${t('re_ds')}</th><th>${t('re_slope')}</th><th>${t('re_off579')}</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="max-height:220px;overflow:auto"><table class="tbl" style="width:100%"><thead><tr><th>${t('re_edge')}</th><th>${t('re_len')}</th><th>${t('re_ds')}</th><th>${t('re_slope')}</th><th>${t('re_off579')}</th><th>${t('re_ov580')}</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="pa" style="padding:6px 0 0"><button class="btn" data-rea="all">${t('re_all')}</button><button class="btn" data-rea="wing">${t('re_wing')}</button></div>`};
   const go=fn=>{edit(()=>{if(rf.shape!=='fp'||!Array.isArray(rf.ed))rfToFp(rf);fn(rf.ed)});show()};
   const show=()=>openDlg(t('a_roofedges'),body(),`<button class="btn primary" data-close="1">${t('close')}</button>`,{
@@ -16018,6 +16020,7 @@ function dlgRoofEdges(){const rf=[...ui.sel].map(id=>IDX.get(id)).find(x=>x&&x.c
       if(b.dataset.rea==='all')return go(ed=>{for(const d of ed)d.s=1});
       const tmp=Object.assign({},rf,{shape:'gable',ed:undefined}),on=rfSlopes(tmp,roofGeo(P,tmp));go(ed=>ed.forEach((d,i)=>{d.s=on[i]?1:0}))},
     change(ev){const el=ev.target,d=el.dataset;if(d.rs!=null){const i=+d.rs;return go(ed=>{ed[i].s=el.checked?1:0})}
+      if(d.rv580!=null){const i=+d.rv580,v=String(el.value).trim(),x=parseFloat(v);return go(ed=>{if(v!==''&&isFinite(x))ed[i].ov=Math.round(clamp(x,0,RF580_MAX));else delete ed[i].ov})}
       if(d.ro!=null){const i=+d.ro,v=parseFloat(el.value);return go(ed=>{if(isFinite(v)&&Math.round(v))ed[i].o=Math.round(clamp(v,-100000,100000));else delete ed[i].o})}
       if(d.ra!=null){const i=+d.ra,v=String(el.value).trim(),deg=v===''?null:roofSlopeOut(parseFloat(v));if(v!==''&&!(isFinite(deg)&&deg>0))return show();go(ed=>{if(deg==null)delete ed[i].a;else ed[i].a=clamp(Math.round(deg*100)/100,1,70)})}}},'wide');
   show()}
@@ -59364,6 +59367,51 @@ Object.assign(STR,{t_sa578:['ลูกศรความลาด (Slope Arrow)'
    (shape 'fp'), as the slope of an edge does; slope arrows (V1.578) take them with the other planes. */
 Object.assign(STR,{re_off579:['ยกจากฐานหลังคา (Offset From Roof Base)','Offset From Roof Base'],
   re_note:['คลิกเส้นขอบในรูปเพื่อสลับว่าขอบนั้นลาด (Defines Slope) หรือเป็นจั่ว · ช่องความชันเว้นว่างคือใช้ความชันของหลังคา · ยกจากฐานหลังคายกชายคาด้านนั้นขึ้น (เช่นปลายปั้นหยาเป็นจั่วเล็ก Dutch hip) ใช้กับรูปรอบที่ไม่หักเข้า','Click an edge in the drawing to switch it between sloping (Defines Slope) and a gable · a blank slope uses the roof’s slope · Offset From Roof Base raises the eave of that side (a Dutch hip: the ends of a hip roof raised); for outlines that do not turn in']});
+/* ===== 580 Overhang of a roof's edge (V1.580; Revit: each line of a roof's footprint sketch has its own Overhang; the roof still stands on the wall line at
+   its plate, so a wider overhang carries that eave further out and lower down its slope, a narrower one ends it higher; a gable end's line sets how far its
+   rake runs past the wall).  rf.ed[i].ov: mm 0 – 10000, any edge, sloping or not (blank: the roof's Overhang).  roofGeo puts the eave line of each edge out
+   by its own overhang (eaveAt edge by edge) and leaves the planes as they are; an edge that would vanish between two wider ones (or eaves that would cross)
+   gives the roof's Overhang all round.  For outlines that do not turn in (over the straight skeleton every eave stays level), with shape 'fp' as the slope
+   and the Offset From Roof Base (V1.579) of an edge.  Eaves at their own heights (this and V1.579's raised ones): fascia boards, gutters with their
+   downspouts, and the soffit under a hip roof follow each eave at its height (roofEaves takes every level edge of the outline its face rises from). ===== */
+const RF580_MAX=10000;
+/* a free edge a – b of a roof's faces (x, y, z) on its outline, level, its face rising inward: {k} (the edge of the outline it lies on), else null */
+function rf580Low(R,a,b){if(Math.abs(a[2]-b[2])>=2)return null;const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<40)return null;const O=R.out||R.eave,n=O.length;let k=-1;
+  for(let i=0;i<n&&k<0;i++){const p=O[i],q=O[(i+1)%n],l=Math.hypot(q[0]-p[0],q[1]-p[1]);if(l<1)continue;const on=r=>Math.abs((r[0]-p[0])*(q[1]-p[1])-(r[1]-p[1])*(q[0]-p[0]))/l<2;if(on(a)&&on(b))k=i}
+  if(k<0)return null;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;let nx=-(b[1]-a[1])/L*30,ny=(b[0]-a[0])/L*30;if(!inPoly(mx+nx,my+ny,O)){nx=-nx;ny=-ny}
+  const x=mx+nx,y=my+ny;for(const f of R.faces){if(!inPoly(x,y,f.loop.map(q=>[q[0],q[1]])))continue;const p=planeOf(f.loop);if(p&&p[0]*x+p[1]*y+p[2]>a[2]+0.5)return{k}}return null}
+/* the same for an edge of the roof's mesh (GL: x, z, y), only on a roof whose eaves stand at their own heights */
+const rf580Ev=(R,a,b)=>!!(R&&(R.ov||R.oE)&&rf580Low(R,[a[0],a[2],a[1]],[b[0],b[2],b[1]]));
+/* the eaves: each with its height z (and k, the edge of the outline, on such a roof); every level eave of the outline where the eaves are not all at one height */
+{const f0=roofEaves;roofEaves=R=>{const r=f0(R);for(const g of r.edges)g.z=(g.a[2]+g.b[2])/2;if(!R||!(R.ov||R.oE))return r;
+  for(const g of r.edges){const h=rf580Low(R,g.a,g.b);if(h)g.k=h.k}
+  const ED=[];for(const f of R.faces){const L=f.loop;for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],mx=a[0]+b[0],my=a[1]+b[1],mz=a[2]+b[2],g=ED.find(q=>Math.abs(q.mx-mx)<4&&Math.abs(q.my-my)<4&&Math.abs(q.mz-mz)<4);if(g)g.n++;else ED.push({a,b,n:1,mx,my,mz})}}
+  for(const g of ED){if(g.n!==1||(Math.abs(g.a[2]-r.zE)<2&&Math.abs(g.b[2]-r.zE)<2))continue;const h=rf580Low(R,g.a,g.b);if(!h)continue;g.z=(g.a[2]+g.b[2])/2;g.k=h.k;r.edges.push(g)}
+  return r}}
+/* the soffit under a hip roof whose eaves stand at their own heights: under each face, the part of the overhang it covers, level at the height of its eave
+   (prism: buildMeshes') */
+function rf580Sof(Q,e,R,fa,prism){if(!(R.shape==='hip'||(R.shape==='fp'&&R.S&&R.S.length===R.eave.length))||!Array.isArray(R.wp))return;const E=roofEaves(R),W=holeParts([R.wp]);
+  for(const f of R.faces){const k=f.i;if(!(k>=0))continue;const ov=R.ov?R.ov[k]:R.O;if(!(ov>=150))continue;const g=E.edges.filter(x=>x.k===k);if(!g.length)continue;const z=Math.min(...g.map(x=>x.z))-R.th;
+    const lp=f.loop.map(q=>[q[0],q[1]]);for(const pc of rfeSofCut(Q,e,polyMinus(lp,W)))if(Math.abs(area2(pc))>100)prism(fa,pc,z-10,z)}}
+/* downspouts: each from the gutter it hangs from, as far back to the wall as that eave's own overhang takes it */
+{const f0=roofDownspouts;roofDownspouts=(Q,e,R)=>{const out=f0(Q,e,R);if(!out.length)return out;R=R||roofGeo(Q,e);if(!R||!(R.ov||R.oE))return out;const E=roofEaves(R),O=R.out||R.eave,fw=DSP_R+20,
+    bk=v=>v>DSP_OFF+fw?v:0,bg=bk(Math.max(0,e.overhang||0)),Ws=Q.els.filter(w=>w.cat==='wall'&&w.x1!=null);
+  const G=E.edges.map(g=>{const L=Math.hypot(g.b[0]-g.a[0],g.b[1]-g.a[1])||1,ux=(g.b[0]-g.a[0])/L,uy=(g.b[1]-g.a[1])/L;let ox=uy,oy=-ux;if(inPoly((g.a[0]+g.b[0])/2+ox*30,(g.a[1]+g.b[1])/2+oy*30,O)){ox=-ox;oy=-oy}
+    return{g,L,ux,uy,ox,oy,bk:bk(R.ov&&g.k!=null?R.ov[g.k]:Math.max(0,e.overhang||0))}});
+  for(const d of out){const on=G.filter(q=>{const s=(d.gx-q.g.a[0])*q.ux+(d.gy-q.g.a[1])*q.uy,h=(d.gx-q.g.a[0])*q.ox+(d.gy-q.g.a[1])*q.oy;return Math.abs(h-DSP_OFF)<5&&s>-2*DSP_OFF&&s<q.L+2*DSP_OFF});if(!on.length)continue;
+    const lo=on.reduce((m,q)=>q.g.z<m.g.z?q:m);if(Math.abs(lo.g.z-E.zE)>=2){const dz=lo.g.z-E.zE;d.z1=Math.round(d.z1+dz)}
+    let mx=0,my=0;for(const q of on){mx+=q.ox*(bg-q.bk);my+=q.oy*(bg-q.bk)}
+    if(Math.abs(mx)+Math.abs(my)>0.5){let x=d.x+mx,y=d.y+my;if(!bg&&on.some(q=>q.bk)){let ht=0;const vx=x-d.gx,vy=y-d.gy,vl=Math.hypot(vx,vy)||1;          // newly back to the wall: out of it by its half thickness
+        for(const w of Ws){const dx=w.x2-w.x1,dy=w.y2-w.y1,l2=dx*dx+dy*dy||1,t=Math.max(0,Math.min(1,((x-w.x1)*dx+(y-w.y1)*dy)/l2));if(Math.hypot(w.x1+t*dx-x,w.y1+t*dy-y)<fw+400)ht=Math.max(ht,((typ(Q,w)||{}).thickness||200)/2)}
+        if(ht){const k=Math.min(ht*(Math.abs(vx)>1&&Math.abs(vy)>1?Math.SQRT2:1),vl-1);x-=vx/vl*k;y-=vy/vl*k}}
+      d.x=Math.round(x);d.y=Math.round(y);d.run=Math.round(Math.hypot(d.gx-d.x,d.gy-d.y))}
+    d.zk=d.run>1?d.z1-300:d.z1}
+  return out}}
+/* what a view range takes a roof to reach down to: its lowest eave */
+{const f0=vr9Z;vr9Z=e=>{const r=f0(e);if(!e||e.cat!=='roof'||!Array.isArray(e.ed)||!e.ed.some(d=>d&&d.ov!=null))return r;try{const R=roofGeo(P,e);let m=Infinity;for(const f of R.faces)for(const q of f.loop)m=Math.min(m,q[2]);if(isFinite(m))r[0]=Math.min(r[0],m-R.th)}catch(_){}return r}}
+Object.assign(STR,{re_ov580:['ระยะยื่นชายคา (Overhang)','Overhang'],
+  re_note:['คลิกเส้นขอบในรูปเพื่อสลับว่าขอบนั้นลาด (Defines Slope) หรือเป็นจั่ว · ช่องความชันเว้นว่างคือใช้ความชันของหลังคา · ยกจากฐานหลังคายกชายคาด้านนั้นขึ้น (เช่นปลายปั้นหยาเป็นจั่วเล็ก Dutch hip) · ระยะยื่นชายคาเว้นว่างคือใช้ระยะยื่นของหลังคา ยื่นมากชายคาด้านนั้นออกไปไกลและต่ำลงตามความลาด · สองช่องหลังใช้กับรูปรอบที่ไม่หักเข้า',
+    'Click an edge in the drawing to switch it between sloping (Defines Slope) and a gable · a blank slope uses the roof’s slope · Offset From Roof Base raises the eave of that side (a Dutch hip: the ends of a hip roof raised) · a blank Overhang uses the roof’s; a wider one takes that eave further out and lower down its slope · the last two for outlines that do not turn in']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60632,6 +60680,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[f_sg577]] ในคุณสมบัติชนิดหลังคา (แก้ไขชนิด): เลือกใช่แล้วหลังคาชนิดนั้นเป็นแผงกระจกระหว่างเสากระจก ตั้ง [[f_sgg1]] [[f_sgg2]] [[f_sgmw]] และ [[f_sgmd]] ได้
 - [[t_sa578]] ในแท็บแก้ไขของหลังคา: คลิกบนเส้นรอบรูปตรงหางลูกศร แล้วคลิกตรงหัว หลังคาลาดจากหางไปหัว ตั้ง [[p_sa578sp]] [[p_sa578ot]] [[p_sa578oh]] หรือ [[p_sa578s]] ในคุณสมบัติ
 - [[re_off579]] ในหน้าต่าง [[a_roofedges]]: ยกชายคาของขอบที่ลาดด้านนั้นขึ้น ใช้ทำปลายปั้นหยาเป็นจั่วเล็ก (Dutch hip)
+- [[re_ov580]] ในหน้าต่าง [[a_roofedges]]: ระยะยื่นชายคาของขอบนั้นเอง (เว้นว่างคือของหลังคา) ยื่นมากชายคาออกไปไกลและต่ำลงตามความลาด
 - [[p_ul240]], [[p_lo240]] และ [[p_bo240]] ในคุณสมบัติของห้อง: ห้องสูงจากระดับชั้นบวกระยะยกฐาน ขึ้นไปถึงระดับบนบวกระยะเลื่อน (ตั้งต้นถึงชั้นถัดไป ถ้าไม่มีชั้นบนสูง 3000 มม.) ตั้ง [[ac_vol240]] ใน [[a_areacomp]] เป็น พื้นที่และปริมาตร แล้วห้องจะแสดง [[p_vol240]] ที่หักส่วนเหนือฝ้าและใต้พื้นชั้นบนออก ตารางห้องและ IFC ใช้ค่านี้ด้วย
 - [[wlf_deck]] เป็นหน้าที่ของชั้นหนึ่งใน [[a_slayers]] ของชนิดพื้น: ชั้นนี้หนาเท่าความสูงลอน เลือก [[dk_prof241]] ได้สามแบบ (ลอนสูง 38 ระยะ 150, 50 ระยะ 200, 75 ระยะ 300 มม.) และ [[dk_use241]] ผูกกับชั้นบน (คอนกรีตของชั้นที่อยู่เหนือเต็มร่องลอน) หรือแผ่นเดี่ยว · ลอนวิ่งตามทิศทางแผ่นพื้น (Span Direction) ในคุณสมบัติของพื้น · 3 มิติและรูปตัดเห็นแผ่นพับเป็นลอนและคอนกรีตในร่อง ใต้สันลอนเป็นช่องว่าง · ปริมาตรของพื้นนับคอนกรีตในร่องแต่ไม่นับช่องว่าง [[a_mtake]] นับแผ่นเหล็กเป็นพื้นที่คลี่และปริมาตรเหล็ก · ชนิดหนึ่งมีได้แผ่นเดียว และใช้ได้กับพื้นเท่านั้น
 - หลังคาเป็นขอบเขตบนของห้องด้วย: เมื่อเปิด พื้นที่และปริมาตร ปริมาตรของห้องหักส่วนที่อยู่เหนือท้องหลังคาทีละผืน (ท้องหลังคาคือผิวบนลบความหนาของหลังคา) ตรงไหนฝ้าหรือพื้นชั้นบนต่ำกว่าก็ใช้อันนั้น ตรงไหนหลังคาต่ำกว่าก็ใช้หลังคา ส่วนของหลังคาที่ต่ำกว่าฐานห้องไม่นับ · ป้ายห้องแบบ [[rk_vol242]] แสดงปริมาตรต่อจากพื้นที่ (เลือกได้ในแถบตัวเลือกของ [[t_rtag]] และในคุณสมบัติของป้าย)
@@ -60921,6 +60970,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[f_sg577]] in the Type Properties of a roof type: Yes makes roofs of that type glass panels between mullions, with [[f_sgg1]], [[f_sgg2]], [[f_sgmw]] and [[f_sgmd]]
 - [[t_sa578]] on a roof's Modify tab: click on its outline for the tail, then where the head goes; the roof slopes from the tail to the head; [[p_sa578sp]], [[p_sa578ot]], [[p_sa578oh]] or [[p_sa578s]] in Properties
 - [[re_off579]] in [[a_roofedges]]: raises the eave of a sloping edge; a Dutch hip is a hip roof with its ends raised
+- [[re_ov580]] in [[a_roofedges]]: that edge's own overhang (blank: the roof's); a wider one takes the eave further out and lower down its slope
 - [[p_ul240]], [[p_lo240]] and [[p_bo240]] in the properties of rooms: a room rises from its level plus the base offset to the upper limit plus the limit offset (by default the next level up; with no level above, 3000 mm); set [[ac_vol240]] in [[a_areacomp]] to Areas and Volumes and rooms show their [[p_vol240]], less what lies above ceilings and below the floor above; room schedules and IFC use it too
 - [[wlf_deck]] is a Function for a layer in the [[a_slayers]] of a floor type: the layer is as thick as the ribs are high; pick the [[dk_prof241]] (ribs 38 at 150, 50 at 200 or 75 at 300 mm) and the [[dk_use241]]: Bound Layer Above (the concrete of the layer above fills the troughs) or Standalone Deck · the ribs run along the floor's Span Direction in its properties · 3D and sections show the folded sheet and the concrete in the troughs, with the voids under the crests empty · the floor's volume counts the concrete in the troughs and not the voids; the [[a_mtake]] counts the sheet by its area folded out and its steel · one deck per type, in floors only
 - Roofs bound rooms from above too: once Areas and Volumes is set, the volume of a room leaves out what lies above the underside of a roof, face by face (the underside: the top less the roof's thickness); where a ceiling or a floor above is lower that one counts, where the roof dips lower the roof does; parts of a roof below the room's base do not count · a room tag of the kind [[rk_vol242]] shows the volume after the area (in the options of [[t_rtag]] and in the tag's properties)
@@ -61902,6 +61952,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.577 · กระจกหลังคา (Sloped Glazing) แบบ Revit: ชนิดหลังคามีช่องกระจกหลังคาในคุณสมบัติชนิด เลือกใช่แล้วตั้งระยะกริด 1 (เส้นขวางลาด วัดตามลาดจากชายคา) ระยะกริด 2 (เส้นตามลาด วัดแนวราบจากกึ่งกลางแต่ละด้าน) ความกว้างและความลึกเสากระจกได้ · หลังคาชนิดนั้นทุกด้านลาดเป็นแผงกระจกระหว่างเสากระจกบนเส้นกริดและรอบขอบ (ขอบที่สองด้านใช้ร่วมกันเช่นสันตะเข้ครึ่งละด้าน) แทนชั้นวัสดุ ไม่มีเชิงชาย ครอบสัน และฝ้าชายคา ใน 3 มิติ รูปตัด และรูปด้าน · การตัดปลายจันทัน จันทันหรือโครงถัก ระดับตัด ช่องเปิด และหน้าจั่วใช้ได้เหมือนหลังคาอื่น ผังพื้นวาดเส้นกริด ตารางถอดปริมาณมีพื้นที่กระจก
 - V1.578 · ลูกศรความลาดของหลังคา (Slope Arrow) แบบ Revit: เลือกหลังคาแล้วกดลูกศรความลาดในแท็บแก้ไข คลิกบนเส้นรอบรูปตรงหางลูกศร (มุมและกึ่งกลางขอบดูดเข้า) แล้วคลิกตรงหัว หลังคาลาดจากหางไปหัว · คุณสมบัติกำหนดด้วยความสูงที่หางลูกศร (ระดับชั้นและระยะยกที่หางและที่หัว) หรือความลาด (ระดับชั้นและระยะยกที่หาง และความลาด) · หลังคาที่ไม่มีขอบลาดกับลูกศรเดียวเป็นหลังคาเพิงทิศใดก็ได้ ลูกศรสองอันจากปลายขอบเข้ากึ่งกลางเป็นหลังคาจั่วของหน้าต่างหลังคา ลูกศรจากกึ่งกลางจั่วเข้าในทำปลายนั้นเป็นปั้นหยา · หางต้องอยู่บนขอบที่ไม่กำหนดความลาดหรือที่มุม (ขอบที่หางอยู่เลิกกำหนดความลาดให้เอง) · ผังพื้นแสดงลูกศรของหลังคาที่เลือกพร้อมจุดจับ ลากหางไปตามเส้นรอบรูปและลากหัวได้ ลบลูกศรในคุณสมบัติ ลูกศรย้าย หมุน และสะท้อนตามหลังคา
 - V1.579 · ยกจากฐานหลังคา (Offset From Roof Base) แบบ Revit: หน้าต่างขอบหลังคา (Defines Slope) มีช่องยกจากฐานหลังคาของแต่ละขอบที่ลาด ชายคาด้านนั้นสูงขึ้นตามค่า ระนาบมาบรรจบกันใหม่ ผนังใต้ขอบที่ยกสูงถึงท้องหลังคาเหมือนหน้าจั่ว ใช้ทำหลังคาปั้นหยาที่ปลายเป็นจั่วเล็ก (Dutch hip) หรือชายคาสูงต่างกัน · ใช้กับรูปรอบที่ไม่หักเข้า และร่วมกับลูกศรความลาด
+- V1.580 · ระยะยื่นชายคารายขอบ (Overhang ของเส้นรูปรอบ) แบบ Revit: หน้าต่างขอบหลังคามีช่องระยะยื่นชายคาของแต่ละขอบ ทั้งขอบที่ลาดและขอบจั่ว ระนาบหลังคายังวางบนแนวผนังเท่าเดิม ยื่นมากชายคาด้านนั้นออกไปไกลและต่ำลงตามความลาด ยื่นน้อยชายคาสูงขึ้น ขอบจั่วตั้งระยะยื่นปีกนกเองได้ · เชิงชาย รางน้ำ ท่อลง และฝ้าชายคาใต้หลังคาปั้นหยาวางตามความสูงของชายคาแต่ละด้าน (รวมชายคาที่ยกจากฐานหลังคา V1.579) · ใช้กับรูปรอบที่ไม่หักเข้า
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -62654,6 +62705,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.577 · Sloped Glazing, as in Revit: a roof type has Sloped Glazing in Type Properties; with Yes it has Grid 1 Spacing (lines across the slope, measured up it from the eave), Grid 2 Spacing (lines down the slope, measured level from the middle of each slope), Mullion Width and Mullion Depth · every slope of a roof of that type is glass panels between mullions on its grid lines and round its edges (half each side on an edge two slopes share, such as a hip) instead of layers, with no fascia, ridge caps or soffit, in 3D, sections and elevations · its rafter cut, Rafter or Truss, cutoff, openings and gable ends go as for any roof; plans draw its grid lines; quantities give the area of its glass
 - V1.578 · Slope Arrow of a roof, as in Revit: select a roof and press Slope Arrow on its Modify tab, click on the outline for the tail (corners and the middles of edges snap), then where the head goes; the roof slopes from the tail to the head · Properties: Specify Height at Tail (Level and Height Offset at Tail and at Head) or Slope (Level and Height Offset at Tail, and Slope) · a roof whose edges define no slope with one arrow is a shed in any direction; two arrows from the ends of an edge to its middle make a gable dormer roof; an arrow from the middle of a gable end inwards hips that end · the tail is on an edge that does not define slope, or at a corner (the edge under it stops defining slope by itself) · plans show the arrows of a selected roof with grips: the tail slides along the outline, the head goes anywhere; Properties deletes an arrow; arrows move, turn and mirror with the roof
 - V1.579 · Offset From Roof Base, as in Revit: the Roof Edges (Defines Slope) dialog has Offset From Roof Base for each sloping edge; the eave of that side is raised by it, the planes meet anew, and under a raised edge the wall reaches up to the underside of the roof as under a gable end; a Dutch hip (gablet) or eaves at different heights · for outlines that do not turn in, and with slope arrows
+- V1.580 · Overhang edge by edge, as in Revit: the Roof Edges dialog has an Overhang for each edge, sloping or a gable end; the roof still stands on the wall line, so a wider overhang takes that eave further out and lower down its slope and a narrower one ends it higher, and a gable end's rake runs as far as its own · fascia boards, gutters with their downspouts and the soffit under a hip roof follow each eave at its own height (raised eaves of V1.579 too) · for outlines that do not turn in
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -67021,6 +67073,24 @@ window.PenumBIM.r579={
   setO:(id,i,v)=>{edit(()=>{const e=IDX.get(id);if(e.shape!=='fp'||!Array.isArray(e.ed))rfToFp(e);if(v==null)delete e.ed[i].o;else e.ed[i].o=v});refresh();return window.PenumBIM.r579.ed(id)},
   dlg:id=>{ui.sel=new Set([id]);dlgRoofEdges();const d=document.querySelector('#dlg');return d?{th:[...d.querySelectorAll('thead th')].map(x=>x.textContent),ro:[...d.querySelectorAll('[data-ro]')].map(x=>[x.value,x.disabled])}:null},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='roof'&&Array.isArray(e.ed)&&e.ed.some(d=>'o' in d)).map(e=>[e.id,e.ed.map(d=>d.o==null?null:d.o)])}};
+/* V1.580 test API: Overhang of a roof's edge */
+window.PenumBIM.r580={
+  ed:id=>{const e=IDX.get(id);return e.ed?e.ed.map(d=>d.ov==null?null:d.ov):null},
+  setV:(id,i,v)=>{edit(()=>{const e=IDX.get(id);if(e.shape!=='fp'||!Array.isArray(e.ed))rfToFp(e);if(v==null)delete e.ed[i].ov;else e.ed[i].ov=v});refresh();return window.PenumBIM.r580.ed(id)},
+  /* the eave outline: its box */
+  box:id=>{const R=roofGeo(P,IDX.get(id)),xs=R.eave.map(q=>q[0]),ys=R.eave.map(q=>q[1]),r=v=>Math.round(v*10)/10;return[r(Math.min(...xs)),r(Math.min(...ys)),r(Math.max(...xs)),r(Math.max(...ys)),R.eave.length]},
+  eave:id=>{const R=roofGeo(P,IDX.get(id)),r=v=>Math.round(v*10)/10;return R.eave.map(q=>[r(q[0]),r(q[1])]).sort((a,b)=>a[0]-b[0]||a[1]-b[1])},
+  /* the eaves: [height, length] */
+  eaves:id=>{const R=roofGeo(P,IDX.get(id)),E=roofEaves(R),r=v=>Math.round(v*10)/10;return E.edges.map(g=>[r(g.z),Math.round(Math.hypot(g.b[0]-g.a[0],g.b[1]-g.a[1]))]).sort((a,b)=>a[0]-b[0]||a[1]-b[1])},
+  gut:id=>Math.round(roofGutterLen(P,IDX.get(id))),
+  dsp:id=>roofDownspouts(P,IDX.get(id)).map(d=>d.z1).sort((a,b)=>a-b),
+  /* the heights in its fascia/soffit mesh and its gutter mesh */
+  mesh:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,fa=new Set(),gu=new Set(),c=(m,a)=>Array.isArray(m.c)&&a.every((v,i)=>Math.abs(m.c[i]-v)<1e-6);
+    for(const m of B){if(m.id!==id||!m.t||m.cat!=='roof')continue;const S=c(m,[0.93,0.92,0.89])&&m.mt===MAT.paint?fa:c(m,[0.80,0.82,0.84])?gu:null;if(!S)continue;for(let i=1;i<m.t.length;i+=3)S.add(Math.round(m.t[i]))}
+    return{fa:[...fa].sort((a,b)=>a-b),gu:[...gu].sort((a,b)=>a-b)}},
+  dlg:id=>{ui.sel=new Set([id]);dlgRoofEdges();const d=document.querySelector('#dlg');return d?{th:[...d.querySelectorAll('thead th')].map(x=>x.textContent),rv:[...d.querySelectorAll('[data-rv580]')].map(x=>[x.value,x.placeholder,x.disabled])}:null},
+  vr:id=>vr9Z(IDX.get(id)).map(v=>Math.round(v)),
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>e.cat==='roof'&&Array.isArray(e.ed)&&e.ed.some(d=>'ov' in d)).map(e=>[e.id,e.ed.map(d=>d.ov==null?null:d.ov)])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
