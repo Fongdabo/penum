@@ -5754,7 +5754,7 @@ function esClean(P){const m=P.es;if(!m||typeof m!=='object'){delete P.es;return}
   if(Object.keys(o).length)P.es=o;else delete P.es}
 function elecUse(P){const E=esOf(P),set=(arr,vals)=>{arr.length=0;for(const v of vals)arr.push(v)};set(COND_STD,E.cond);set(TRAY_W,E.trayW);set(TRAY_H,E.trayH)}
 /* the distribution system of a panel: what it is given, else single phase for a load centre and three phase for the larger boards */
-const panelDist=(P,e)=>e.dist==='1p'||e.dist==='3p'?e.dist:((typ(P,e)||{}).kind==='lc'?'1p':'3p');
+const panelDist=(P,e)=>{const d=ds649Of(P,e);return d?(d.ph===3?'3p':'1p'):e.dist==='1p'||e.dist==='3p'?e.dist:((typ(P,e)||{}).kind==='lc'?'1p':'3p')};
 /* the load classification of a connected element */
 const loadClass=e=>e.cat==='light'?'light':e.cat==='equip'?'hvac':e.cat==='device'?'power':'other';
 
@@ -5856,7 +5856,7 @@ function pnlSched(P,id,tr,fmt){const pe=P.els.find(e=>e.id===id&&e.cat==='eequip
   for(const c of mine)ckSlots(lay,ckSlot(c.circuit),one?1:c.poles).forEach((s,k)=>{if(!W.has(s))W.set(s,{c,k})});          // two on one way: the first is shown (Check Circuits names the clash)
   for(const q of pnSpares(pe))ckSlots(lay,q[0],one?1:q[1]).forEach((s,k)=>{if(!W.has(s))W.set(s,{sp:q,k})});
   const loose=mine.filter(c=>!(ckSlot(c.circuit)>0)),hi=Math.max(+pe.ways||0,0,...W.keys()),top=two&&!pe.ways&&hi%2?hi+1:hi,vaAt=(c,s)=>c.lv?'':(c.phv||[0,0,0])[one?0:slotPh(lay,s)]||0,
-    head=[mk,one?tr('es_1p',E.vln):tr('es_3p',E.vll,E.vln),pe.panel?tr('pnl_from',pe.panel,pe.circuit?ckLab(P,pe.panel,pe.circuit,1):'—'):tr('pnl_main')].join(' · '),
+    head=[mk,dsHead649(E,P,pe,tr,one),pe.panel?tr('pnl_from',pe.panel,pe.circuit?ckLab(P,pe.panel,pe.circuit,1):'—'):tr('pnl_main')].join(' · '),
     num=k=>rows.reduce((a,r)=>a+(!r._g&&typeof r[k]==='number'?r[k]:0),0);
   let cols;
   if(two){cols=[{k:'lck',label:tr('c_circuit')},{k:'ldesc',label:tr('c_desc'),wrap:1},{k:'lbrk',label:tr('c_brk'),num:1,dec:0,ed:'ckt',ckk:'lk'},{k:'lp',label:tr('c_poles'),num:1,dec:0},{k:'lva',label:tr('c_va'),num:1,dec:0,sep:1},
@@ -5881,7 +5881,7 @@ function pnlSched(P,id,tr,fmt){const pe=P.els.find(e=>e.id===id&&e.cat==='eequip
       rows.push(row(x.c))}
     for(const c of loose)rows.push(row(c));
     const f={_g:'f',desc:tr('c_total'),count:num('count')};for(let i=0;i<(one?1:3);i++)f['va'+i]=num('va'+i);rows.push(f)}
-  const ph=p.phv||[0,0,0],A=v=>(v/E.vln).toFixed(1);
+  const ph=p.phv||[0,0,0],A=v=>(v/dsV649(E,P,pe).vln).toFixed(1);
   rows.push(H(cols,one?tr('pnl_ph1',money(ph[0]),A(ph[0])):tr('pnl_ph3',money(ph[0]),money(ph[1]),money(ph[2]),A(ph[0]),A(ph[1]),A(ph[2]),(p.imb||0).toFixed(1))));
   for(const k of lcKeys637(P))if((p.cls||{})[k]>0)rows.push(H(cols,tr(qm638(E,k)?'pnl_cls638':'pnl_cls',lcName637(P,k,tr),money(p.cls[k]),money(demOf(E,k,p.cls[k],(p.cn||{})[k])),(p.cn||{})[k]||0)));
   rows.push(H(cols,tr('pnl_tot',money(p.load),money(p.va||0),(p.amp||0).toFixed(1),p.main||'—')));
@@ -5907,16 +5907,16 @@ function wireSet(E,poles,s,brk){const p3=poles===3,n=p3&&s>16?Math.max(16,stdUp(
 function ckLab(P,pn,ck,noPan){ck=String(ck==null?'':ck);const cn=esOf(P).cn;if(!ck)return ck;if(cn===2&&/^\d+$/.test(ck))return'L'+(pnPhOf(P,pn,+ck)+1)+'-'+ck;return cn===1&&!noPan&&pn?pn+'-'+ck:ck}
 function circuitCalc(P){const E=esOf(P),pan=new Map(),OV=P.ckt||{},W=E.wire.some(r=>r[2])?E.wire.filter(r=>r[2]):E.wire;for(const e of P.els)if(e.cat==='eequip'&&e.mark&&!pan.has(e.mark))pan.set(e.mark,e);
   return circuits(P).map(c=>{if(c.sys&&c.sys!=='power'&&!c.mix){const pn=pan.get(c.panel)||null;return Object.assign({},c,{pn,dist:'',lv:1,va:0,amp:0,brk:null,auto:0,set:false,wire:null,wamp:0,len:circuitLen(P,pn,c.els)/1000,vd:null,small:false,phv:[0,0,0]})}
-    const pn=pan.get(c.panel)||null,ov=OV[c.panel+'|'+c.circuit]||{},p3=c.poles===3,va=(c.feed?c.dem:c.load)/E.pf,amp=va/(p3?E.vll*Math.sqrt(3):E.vln),need=Math.max(amp*E.brkK,E.brkMin),auto=E.brk.find(b=>b>=need-1e-9)||E.brk[E.brk.length-1],set=+ov.brk>0,brk=set?+ov.brk:auto;
-    const ck644k=c.panel+'|'+c.circuit,px=pnx644(P,pn,ck644k),wm=wmOf640(E,px),WW=wTab640(E,wm),RH=wm==='al'?AL_RHO640:CU_RHO,len=circuitLen(P,pn,c.els)/1000,zE648=wtE643(E,px),vdOf=(s,n)=>(p3?Math.sqrt(3):2)*amp*len*vz648(zE648,RH/s,n)/(p3?E.vll:E.vln)*100;const pr=ws644(wtE643(E,px),WW,brk,vdOf,wsOf644(P,ck644k))||runs642(wtE643(E,px),wm,WW,brk,vdOf),w=pr.w,runs=pr.n,small=pr.small;
+    const pn=pan.get(c.panel)||null,ov=OV[c.panel+'|'+c.circuit]||{},p3=c.poles===3,va=(c.feed?c.dem:c.load)/E.pf,amp=va/(p3?dsV649(E,P,pn).vll*Math.sqrt(3):dsV649(E,P,pn).vln),need=Math.max(amp*E.brkK,E.brkMin),auto=E.brk.find(b=>b>=need-1e-9)||E.brk[E.brk.length-1],set=+ov.brk>0,brk=set?+ov.brk:auto;
+    const ck644k=c.panel+'|'+c.circuit,px=pnx644(P,pn,ck644k),wm=wmOf640(E,px),WW=wTab640(E,wm),RH=wm==='al'?AL_RHO640:CU_RHO,len=circuitLen(P,pn,c.els)/1000,zE648=wtE643(E,px),vdOf=(s,n)=>(p3?Math.sqrt(3):2)*amp*len*vz648(zE648,RH/s,n)/(p3?dsV649(E,P,pn).vll:dsV649(E,P,pn).vln)*100;const pr=ws644(wtE643(E,px),WW,brk,vdOf,wsOf644(P,ck644k))||runs642(wtE643(E,px),wm,WW,brk,vdOf),w=pr.w,runs=pr.n,small=pr.small;
     const E3=wtE643(E,px),ws=wsX644(wireSet(wm==='al'?Object.assign({},E3,{wm646:'al'}):E3,c.poles,w[0],brk),c.poles,w[0],wsOf644(P,ck644k));return Object.assign({},c,{pn,dist:pn?panelDist(P,pn):'',va,amp,brk,auto,set,wm,wire:w[0],wamp:w[1],neu:ws.neu,gnd:ws.gnd,wset:runsTxt642(runs,ws.txt)+(wm==='al'?' Al':'')+wtIns643(E,px),wt:(wtFor643(P,px)||{}).n||'',wsx:!!wsOf644(P,ck644k),ka:E3.ka,runs,len,vd:vdOf(w[0]*runs,runs),small,phv:ckPhv(E,c,panelLay(pn),!pn||panelDist(P,pn)!=='3p')})})}
 /* every panel with what it carries: n circuits (its feeders too), load W connected, va after the demand factors, amp, main: the smallest breaker that will do;
    phv: VA connected on L1 L2 L3, ia: A on each, imb: % the most loaded phase is over the mean of the three, up: the panel it is fed from */
 function panelCalc(P,C){C=C||circuitCalc(P);const E=esOf(P),by=new Map();
   for(const e of P.els)if(e.cat==='eequip'&&e.mark&&!by.has(e.mark))by.set(e.mark,{mark:e.mark,e,dist:panelDist(P,e),n:0,load:0,dem:0,cls:{light:0,power:0,hvac:0,other:0},cn:{},phv:[0,0,0]});
   for(const c of C){const p=by.get(c.panel);if(!p)continue;p.n++;p.load+=c.load;for(const k in c.cls)p.cls[k]=(p.cls[k]||0)+c.cls[k];for(const k in c.cn||{})p.cn[k]=(p.cn[k]||0)+c.cn[k];if(c.phv)for(let i=0;i<3;i++)p.phv[i]+=c.phv[i]}
-  for(const p of by.values()){for(const k in p.cls)p.dem+=demOf(E,k,p.cls[k],p.cn[k]);p.va=p.dem/E.pf;p.amp=p.va/(p.dist==='3p'?E.vll*Math.sqrt(3):E.vln);const need=p.amp*E.brkK;p.main=p.n?(E.brk.find(b=>b>=need-1e-9)||E.brk[E.brk.length-1]):0;
-    const av=(p.phv[0]+p.phv[1]+p.phv[2])/3;p.ia=p.phv.map(v=>v/E.vln);p.imb=p.dist==='3p'&&av>0?(Math.max(...p.phv)-av)/av*100:0;p.up=p.e.panel&&p.e.panel!==p.mark?p.e.panel:''}
+  for(const p of by.values()){for(const k in p.cls)p.dem+=demOf(E,k,p.cls[k],p.cn[k]);p.va=p.dem/E.pf;p.amp=p.va/(p.dist==='3p'?dsV649(E,P,p.e).vll*Math.sqrt(3):dsV649(E,P,p.e).v1);const need=p.amp*E.brkK;p.main=p.n?(E.brk.find(b=>b>=need-1e-9)||E.brk[E.brk.length-1]):0;
+    const av=(p.phv[0]+p.phv[1]+p.phv[2])/3;p.ia=p.phv.map(v=>v/dsV649(E,P,p.e).vln);p.imb=p.dist==='3p'&&av>0?(Math.max(...p.phv)-av)/av*100:0;p.up=p.e.panel&&p.e.panel!==p.mark?p.e.panel:''}
   return[...by.values()]}
 /* Check Circuits (Revit: Analyze > Check Systems, EC): what is wrong -> [{k, ids, panel, circuit, a}] */
 function circuitCheck(P){const out=[],C=circuitCalc(P),E=esOf(P),marks=new Map();for(const e of P.els)if(e.cat==='eequip'&&e.mark)(marks.get(e.mark)||marks.set(e.mark,[]).get(e.mark)).push(e.id);
@@ -12590,7 +12590,7 @@ function catRows(cat,els,isNew){
       h+=PR.grp('g_elec')+PR.sel('panel','p_panel',V(x=>x.panel||'~'),panelOpts(e.panel))+PR.text('circuit','p_circuit',V(x=>x.circuit||''));
       if(!isNew)h+=PR.ro('p_load',els.reduce((s,x)=>s+(+(typ(P,x)||{}).load||0),0)+' W');else if(wallMounted(cat,T))h+=`<div class="pnote">${t('n_wallsnap')}</div>`;break}
     case'eequip':{const T=typ(P,e)||{};h+=PR.grp('g_identity');if(!isNew)h+=PR.text('mark','p_mark',V(x=>x.mark||''))+PR.text('comment','p_comments',V(x=>x.comment||''));h+=PR.grp('g_constraints')+PR.num('off','p_mountelev',isNew?placeOff(e,T):V(x=>x.off||0),U,'step="50"')+PR.num('rot','p_rot',V(x=>x.rot||0),'°','step="15"');
-      if(!isNew){h+=PR.grp('g_elec')+PR.sel('dist','p_dist',V(x=>panelDist(P,x)),[['1p',distName('1p')],['3p',distName('3p')]]);if(els.length===1){const q=panelCalc(P).find(x=>x.e===e)||{n:0,load:0,va:0,amp:0,main:0};          // what the panel carries, worked out with Electrical Settings
+      if(!isNew){h+=PR.grp('g_elec')+PR.sel('dist','p_dist',V(x=>ds649Of(P,x)?x.ds649:panelDist(P,x)),[['1p',distName('1p')],['3p',distName('3p')]].concat(ds649L(P).map(d=>[d.k,d.n+' · '+dsVolt649(d)])));if(els.length===1){const q=panelCalc(P).find(x=>x.e===e)||{n:0,load:0,va:0,amp:0,main:0};          // what the panel carries, worked out with Electrical Settings
           h+=PR.ro('p_circuits',String(q.n))+PR.ro('p_load',Math.round(q.load)+' W')+PR.ro('ck_demand',Math.round(q.va)+' VA')+PR.ro('p_amp',q.amp.toFixed(1)+' A')+(q.n?PR.ro('ck_main',q.main+' A'):'')+(q.n&&q.dist==='3p'?PR.ro('p_phv',q.phv.map(x=>money(x)).join(' / ')+' VA')+PR.ro('p_imb',q.imb.toFixed(1)+' %'):'')}}
       else if(isNew&&wallMounted(cat,T))h+=`<div class="pnote">${t('n_wallsnap')}</div>`;break}
     case'wire':h+=PR.grp('g_elec')+PR.num('n','p_conductors',V(x=>x.n||0),'','step="1" min="0" max="6"')+PR.chk('home','p_homerun',V(x=>!!x.home)===true)+PR.sel('panel','p_panel',V(x=>x.panel||'~'),panelOpts(e.panel))+PR.text('circuit','p_circuit',V(x=>x.circuit||''));break;
@@ -12679,7 +12679,7 @@ function applyField(cat,o,key,raw){
   if(cat==='area'&&areaField(o,key,raw))return;
   if(cat==='beam'&&key==='use'){if(raw==='brace')o.use='brace';else delete o.use;return}if(cat==='beam'&&key==='lv2'){const id=parseInt(raw,10);if(id&&lvl(P,id)&&id!==o.level){o.lv2=id;if(o.off2==null)o.off2=0}else delete o.lv2;return}
   if(cat==='bsys'&&key==='bt'){const id=parseInt(raw,10);if((P.types.beam||[]).some(x=>x.id===id))o.bt=id;return}if(cat==='bsys'&&key==='rule'){if(BS_RULES.includes(raw)){if((raw==='num')!==(o.rule==='num'))o.val=raw==='num'?3:1000;o.rule=raw}return}
-  if(key==='poles'){if(+raw===3)o.poles=3;else delete o.poles;return}if(cat==='eequip'&&key==='dist'){o.dist=raw==='1p'?'1p':'3p';return}
+  if(key==='poles'){if(+raw===3)o.poles=3;else delete o.poles;return}if(cat==='eequip'&&key==='dist'){if(ds649Get(P,raw)){o.ds649=raw;return}delete o.ds649;o.dist=raw==='1p'?'1p':'3p';return}
   if((cat==='text'&&key==='hasLead')||((cat==='tag'||cat==='rtag'||cat==='knote')&&key==='lead')){setLeader(o,!!raw);return}
   if(cat==='section'&&(key==='farOn'||key==='far')){secFar(o,key,raw);return}
   if(cat==='cloud'){const R=revOf(o);if(R&&R.issued)return;if(key==='rev'){const q=revById(+raw);if(q&&!q.issued)o.rev=q.id}else if(key==='tag'){if(raw)delete o.tag;else o.tag=false}else{const s=String(raw).trim();if(s)o[key]=s;else delete o[key]}return}
@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=658,V1_NAME='V1.648';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=659,V1_NAME='V1.649';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -15577,7 +15577,7 @@ function dlgElec(pg,keep){pg=ES_PAGES.includes(pg)?pg:(ES_PAGES.includes(ui.esPa
   else if(pg==='brk')h=num('brkK','es_brkk',E.brkK,'×','step="0.05" min="1" max="2"')+num('brkMin','es_brkmin',E.brkMin,'A','step="1" min="1" max="100"')+`<p class="note">${t('es_brknote')}</p>`+list('brk',E.brk);
   else if(pg==='load')h=`<p class="note">${t('es_loadnote')}</p>`+['light','power','hvac','other'].map(k=>num('df_'+k,'es_cl_'+k,E.df[k],'%','step="5" min="0" max="100"'+(E.dfs[k]?' disabled':''))+`<div class="fr"><label for="esd_${k}">${t('es_dfs')}</label><input type="text" id="esd_${k}" data-esd="${k}" value="${esc(dfsText(E.dfs[k]))}" placeholder="10:100, *:50"></div>`).join('')+`<p class="note">${t('es_dfsnote')}</p>`;
   else if(pg==='cond')h=`<p class="note">${t('es_condnote')}</p>`+list('cond',E.cond);
-  else h=`<p class="note">${t('es_traynote')}</p><h4 class="esh">${t('p_width')}</h4>`+list('trayW',E.trayW)+`<h4 class="esh">${t('p_height')}</h4>`+list('trayH',E.trayH);
+  else if(pg==='tray')h=`<p class="note">${t('es_traynote')}</p><h4 class="esh">${t('p_width')}</h4>`+list('trayW',E.trayW)+`<h4 class="esh">${t('p_height')}</h4>`+list('trayH',E.trayH);
   const stock=pg==='gen'?!(S.vln||S.vll||S.pf||S.vd||S.cn):pg==='wire'?!(S.wire||S.ka||S.kg||S.nk||S.gm||S.wm||S.wireAl||S.wmax||S.wmaxAl||S.amb645!=null||S.cf645||S.gc646):pg==='brk'?!(S.brk||S.brkK||S.brkMin):pg==='load'?!(S.df||S.dfs||S.dfm||LC637_BI.some(k=>dfR641(P)[k])):pg==='cond'?!S.cond:!(S.trayW||S.trayH);
   openDlg(t('a_eset'),`<div class="msw"><nav class="msn" aria-label="${t('a_eset')}">${ES_PAGES.map(k=>`<button type="button" data-esp="${k}" aria-pressed="${k===pg}">${t('es_p_'+k)}</button>`).join('')}</nav><div class="msc">${h}</div></div>`,
     `<button class="btn" data-esx="reset"${stock?' disabled':''}>${t('ms_reset')}</button><span style="flex:1"></span><button class="btn primary" data-close="1">${t('close')}</button>`,
@@ -15605,7 +15605,7 @@ function ckText(i){const a=i.a||[];switch(i.k){case'ck_nopanel':return t('ck_una
     case'ck_loop':return t('ck_loop',i.panel);case'ck_feedmiss':return t('ck_feedmiss',i.panel,a[0]);case'ck_slot':return t('ck_slot',i.panel,i.circuit,a.map(x=>x==null?t('pnl_spare'):x).join(', '));
     case'ck_ways':return t('ck_ways',i.panel,a[0],a[1]);case'ck_unbal':return t('ck_unbal',i.panel,a[0].toFixed(0),money(a[1]),money(a[2]),money(a[3]));default:return i.k}}
 function dlgCircuits(){const C=circuitCalc(P),I=circuitCheck(P),PN=panelCalc(P,C),row=(l,v)=>`<div class="kv"><span>${l}</span><b>${v}</b></div>`;
-  const cards=PN.map((p,i)=>`<div class="card"><div class="ch"><i style="background:${ECOL}"></i>${esc(p.mark)}<button class="btn" data-ck="s${i}">${t('pnl_open')}</button><button class="btn" data-ck="p${i}">${t('sr_select')}</button></div>`+row(t('p_dist'),esc(distName(p.dist)))+(p.up?row(t('p_supply'),esc(p.up)):'')+row(t('p_circuits'),p.n)
+  const cards=PN.map((p,i)=>`<div class="card"><div class="ch"><i style="background:${ECOL}"></i>${esc(p.mark)}<button class="btn" data-ck="s${i}">${t('pnl_open')}</button><button class="btn" data-ck="p${i}">${t('sr_select')}</button></div>`+row(t('p_dist'),esc(p.e?dsName649(P,p.e):distName(p.dist)))+(p.up?row(t('p_supply'),esc(p.up)):'')+row(t('p_circuits'),p.n)
       +(p.n?row(t('ck_conn'),money(p.load)+' W')+row(t('ck_demand'),money(p.va)+' VA')+row(t('p_amp'),p.amp.toFixed(1)+' A')+row(t('ck_main'),p.main+' A'):'')+(p.n&&p.dist==='3p'?row(t('p_phv'),p.phv.map(x=>money(x)).join(' / ')+' VA · '+p.imb.toFixed(1)+'%'):'')+'</div>').join('');
   const iss=I.map((x,i)=>`<p class="note warn">${esc(ckText(x))} <button class="btn" data-ck="i${i}">${t('sr_select')}</button></p>`).join('');
   openDlg(t('a_ckcheck'),(PN.length?cards:`<p class="note">${t('ck_nopanels')}</p>`)+(I.length?iss:`<p class="note ok">${t('ck_ok',C.length)}</p>`)+`<p class="note">${t('ck_note',esOf(P).brkK,esOf(P).vd)}</p>`,
@@ -15786,7 +15786,7 @@ function sfAll(P,cat,tr){const F=[],multi=cat==='*',add=(k,l,g,o)=>F.push(Object
     case'equip':add('off',tr('p_baseelev'),off,MM('off'));break;
     case'fixture':case'sprinkler':case'furn':add('off',tr('p_mountelev'),off,MM('off'));if(cat==='furn')add('grp',tr('fg_title'),(e,X)=>{const g=T(e).grp;return X.tr('fg_'+(FURN_GRP.includes(g)?g:'furn'))});break;
     case'light':case'device':case'eequip':add('off',tr('p_mountelev'),off,MM('off'));
-      if(cat==='eequip'){add('dist',tr('p_dist'),e=>distName(panelDist(P,e)));add('panel',tr('p_supply'),e=>e.panel||'');add('circuit',tr('p_supckt'),e=>e.circuit||'')}
+      if(cat==='eequip'){add('dist',tr('p_dist'),e=>dsName649(P,e));add('panel',tr('p_supply'),e=>e.panel||'');add('circuit',tr('p_supckt'),e=>e.circuit||'')}
       else{add('panel',tr('p_panel'),e=>e.panel||'');add('circuit',tr('p_circuit'),e=>e.circuit||'',{ed:'txt',p:'circuit'})}break}
   if(is('equip'))add('panel',tr('p_panel'),e=>e.panel||''),add('circuit',tr('p_circuit'),e=>e.circuit||'',{ed:'txt',p:'circuit'});
   /* dimensions and quantities, as Revit's Length, Area, Volume, Perimeter */
@@ -29961,8 +29961,8 @@ function svCalc(P0){const E=esOf(P0),S=svSet(P0),T=elecTree(P0,svBase430(P0,S)),
   for(const mk of roots){const tot=T.tot.get(mk),isTx=kind(mk)==='tx',txE=isTx?pan.get(mk):null,TT=txE?typ(P0,txE):null,kw=tot.load/1000,dem=tot.dem/1000,kva=dem/E.pf,amp=kva*1000/(Math.sqrt(3)*U),need=kva*(1+S.sp/100);
     const inK=svKva(TT),txKva=inK>0?inK:svUp(SV_TX,need),zt=svZt(TT,txKva)/100,Zs=c*U*U/(S.smva*1e6),Zt=zt*U*U/(txKva*1000),Rt=Zt*0.2,Xt=Math.sqrt(Zt*Zt-Rt*Rt),R0=Rt+Zs*0.1,X0=Xt+Zs*0.995;
     const ik=(R,X)=>c*U/(Math.sqrt(3)*Math.hypot(R,X))/1000,ik0=ik(R0,X0),main=svUp(brks,amp*E.brkK*(1+S.sp/100));
-    const panels=[];const walk=(m,R,X,up)=>{const t=T.tot.get(m)||{dem:0,load:0},pe=pan.get(m),three=panelDist(P0,pe)==='3p',va=t.dem/E.pf,a=va/(three?Math.sqrt(3)*U:E.vln),brk=svUp(brks,Math.max(a*E.brkK,E.brkMin));
-      let len=0,wire=0,vd=0,small=false,wal=false,runs=1;if(up){len=circuitLen(P0,pan.get(up),[pe])/1000;const fk644=up+'|'+String(pe.circuit||''),px=pnx644(P0,pan.get(up),fk644),wm=wmOf640(E,px),WW=wTab640(E,wm),RH=wm==='al'?AL_RHO640:CU_RHO;wal=wm==='al';const zE648=wtE643(E,px),vdOf=(s,n)=>(three?Math.sqrt(3):2)*a*len*vz648(zE648,RH/s,n)/(three?U:E.vln)*100;{const pr=ws644(wtE643(E,px),WW,brk,vdOf,wsOf644(P0,fk644))||runs642(wtE643(E,px),wm,WW,brk,vdOf);runs=pr.n;small=pr.small;wire=pr.w[0]}vd=vdOf(wire*runs,runs);R+=RH*len/(wire*runs);X+=lx648(zE648)*len/runs}
+    const panels=[];const walk=(m,R,X,up)=>{const t=T.tot.get(m)||{dem:0,load:0},pe=pan.get(m),three=panelDist(P0,pe)==='3p',va=t.dem/E.pf,Vp649=dsV649(E,P0,pe),a=va/(three?Math.sqrt(3)*(Vp649.d?Vp649.vll:U):Vp649.v1),brk=svUp(brks,Math.max(a*E.brkK,E.brkMin));
+      let len=0,wire=0,vd=0,small=false,wal=false,runs=1;if(up){len=circuitLen(P0,pan.get(up),[pe])/1000;const fk644=up+'|'+String(pe.circuit||''),px=pnx644(P0,pan.get(up),fk644),wm=wmOf640(E,px),WW=wTab640(E,wm),RH=wm==='al'?AL_RHO640:CU_RHO;wal=wm==='al';const zE648=wtE643(E,px),vdOf=(s,n)=>(three?Math.sqrt(3):2)*a*len*vz648(zE648,RH/s,n)/(three?(Vp649.d?Vp649.vll:U):Vp649.v1)*100;{const pr=ws644(wtE643(E,px),WW,brk,vdOf,wsOf644(P0,fk644))||runs642(wtE643(E,px),wm,WW,brk,vdOf);runs=pr.n;small=pr.small;wire=pr.w[0]}vd=vdOf(wire*runs,runs);R+=RH*len/(wire*runs);X+=lx648(zE648)*len/runs}
       const k=ik(R,X);if(!(isTx&&m===mk))panels.push({mark:m,up:up||'',kind:kind(m),dem:t.dem/1000,amp:a,brk,wire,wal,runs,len,vd,small,ik:k,icu:svUp(SV_KA,k)});
       for(const s of (kids.get(m)||[]).sort())walk(s,R,X,m)};
     walk(mk,R0,X0,null);
@@ -41528,7 +41528,7 @@ const pstL330=()=>Array.isArray(P.pst330)?P.pst330:[],pstOf330=id=>id==null?null
 /* the header fields of a panel: [label, value] */
 function pstHdr330(P0,pe,tr){const E=esOf(P0),one=panelDist(P0,pe)!=='3p',C=circuitCalc(P0),p=panelCalc(P0,C).find(x=>x.e===pe)||{},L=lvl(P0,pe.level);
   const pv=P0.views.find(x=>x.kind==='plan'&&!x.draft&&x.area==null&&!x.rcp&&x.level===pe.level);let rm=null;try{rm=pv?roomAt(pv,pe):null}catch(e){rm=null}
-  return{sup:pe.panel?pe.panel+(pe.circuit?' / '+ckLab(P0,pe.panel,pe.circuit,1):''):'—',volt:one?tr('es_1p',E.vln):tr('es_3p',E.vll,E.vln),main:p.main?tr('pst_a330',p.main):'—',
+  return{sup:pe.panel?pe.panel+(pe.circuit?' / '+ckLab(P0,pe.panel,pe.circuit,1):''):'—',volt:dsHead649(E,P0,pe,tr,one),main:p.main?tr('pst_a330',p.main):'—',
     ways:String(pe.ways||Math.max(0,...pnlOcc(P0,pe.mark))||'—'),loc:[L?L.name:'',rm?[rm.number,rm.name].filter(Boolean).join(' '):''].filter(Boolean).join(' · ')||'—'}}
 {const f0=pnlSched;pnlSched=(P0,id,tr,fmt,pst)=>{const S=f0(P0,id,tr,fmt),T=pst==null?null:(Array.isArray(P0.pst330)?P0.pst330:[]).find(x=>x.id===+pst);if(!T)return S;
   const pe=P0.els.find(e=>e.id===id&&e.cat==='eequip'),fi=S.rows.findIndex(r=>r._g==='f');if(!pe||!pe.mark||fi<0)return S;
@@ -48227,7 +48227,7 @@ function abCalc428(){const E=esOf(P),pan=new Map(),L=[],z=()=>Object.fromEntries
   for(const o of pan.values()){const seen=new Set();let c=o;while(c&&!seen.has(c.mark)){seen.add(c.mark);for(const k of abCl639())c.tot[k]+=o.own[k];c=c.e.panel&&c.e.panel!==c.mark?pan.get(c.e.panel):null}}
   const sum=x=>abCl639().reduce((s,k)=>s+x[k],0);
   for(const o of pan.values()){o.con=sum(o.own);o.ctot=sum(o.tot);o.dem=abCl639().reduce((s,k)=>s+demOf(E,k,o.tot[k]),0);o.dist=panelDist(P,o.e);
-    o.amp=o.dem/(o.dist==='3p'?E.vll*Math.sqrt(3):E.vln);o.main=o.ctot>0?(E.brk.find(b=>b>=o.amp*E.brkK-1e-9)||E.brk[E.brk.length-1]):0}
+    o.amp=o.dem/(o.dist==='3p'?dsV649(E,P,o.e).vll*Math.sqrt(3):dsV649(E,P,o.e).v1);o.main=o.ctot>0?(E.brk.find(b=>b>=o.amp*E.brkK-1e-9)||E.brk[E.brk.length-1]):0}
   return{L,pan:[...pan.values()].sort((a,b)=>a.mark.localeCompare(b.mark)),free:L.filter(x=>!x.p||x.miss)}}
 /* ---- the tool: click inside rooms of a floor plan ---- */
 const abOptType428=()=>abType428(ui.opt.abt428)?ui.opt.abt428:abTypes428()[0].id,abOptPan428=()=>ui.opt.abp428&&ui.opt.abp428!=='~'?ui.opt.abp428:'';
@@ -48358,7 +48358,7 @@ function eqNext429(){let n=0;for(const e of P.els){const m=e.cat==='eload'&&/^EL
 function eqLoad429(e,Q){const E=esOf(Q||P),va=Math.max(0,+e.va||0),pf=eqPf429(e,Q),np=eqNp429(e),v=np===3?E.vll:E.vln;return{c:eqCls429(e),va,pf,np,w:va*pf,v,amp:va/(np===3?Math.sqrt(3)*E.vll:E.vln)}}
 /* the analytical loads of the panels with the equipment loads: each one goes to its panel and up the feeders, as an area based load does */
 function abDer429(o,E){const sum=x=>abCl639().reduce((s,k)=>s+x[k],0);o.con=sum(o.own);o.ctot=sum(o.tot);o.dem=abCl639().reduce((s,k)=>s+demOf(E,k,o.tot[k]),0);
-  o.amp=o.dem/(o.dist==='3p'?E.vll*Math.sqrt(3):E.vln);o.main=o.ctot>0?(E.brk.find(b=>b>=o.amp*E.brkK-1e-9)||E.brk[E.brk.length-1]):0}
+  o.amp=o.dem/(o.dist==='3p'?dsV649(E,P,o.e).vll*Math.sqrt(3):dsV649(E,P,o.e).v1);o.main=o.ctot>0?(E.brk.find(b=>b>=o.amp*E.brkK-1e-9)||E.brk[E.brk.length-1]):0}
 {const f0=abCalc428;abCalc428=()=>{const S=f0(),E=esOf(P),M=new Map(S.pan.map(o=>[o.mark,o])),EQ=[];for(const o of S.pan){o.ne=0;o.eva=0}
   for(const e of P.els){if(e.cat!=='eload')continue;const q=eqLoad429(e),p=e.p||'',o=M.get(p);
     EQ.push({id:e.id,n:e.n||'',lv:e.level,c:q.c,va:q.va,w:q.w,np:q.np,amp:q.amp,p,miss:!!p&&!o});if(!o)continue;o.ne++;o.eva+=q.va;o.own[q.c]+=q.va;
@@ -62170,6 +62170,79 @@ function vz648(E,r,n){const c=Math.min(1,Math.max(0,+(E&&E.pf)||1)),s=Math.sqrt(
 Object.assign(STR,{ct648:['ท่อร้อยสาย (Conduit Type) ใช้คิดค่ารีแอกแตนซ์ในแรงดันตก','Conduit Type, for the reactance in the voltage drop'],ct648_h:['ท่อ','Conduit'],ct648_n:['ไม่ใช่เหล็ก','Non-steel'],ct648_st:['ท่อเหล็ก','Steel'],
   vd648_note:['แรงดันตกคิดแบบ IEC 60364-5-52 G.52: u = b·(ρ·L/S·cosφ + λ·L·sinφ)·I ใช้ตัวประกอบกำลัง {0} ข้างบน λ 0.08 มΩ/ม. ในท่อไม่ใช่เหล็ก 0.10 ในท่อเหล็ก (เลือกที่ชนิดสาย) สายขนานหารด้วยจำนวนชุด ตัวประกอบกำลัง 1 คิดเฉพาะความต้านทาน',
     'The voltage drop as IEC 60364-5-52 G.52: u = b·(ρ·L/S·cosφ + λ·L·sinφ)·I with the power factor {0} above, λ 0.08 mΩ/m in a non-steel conduit and 0.10 in a steel one (set on the wire type), divided by the sets in parallel; at a power factor of 1, the resistance alone.']});
+/* ===== 649 Distribution Systems (V1.649; Revit: Electrical Settings › Distribution Systems: a name, the phase, the configuration, the wires and the line to line
+   and line to ground voltages, a panel taking one).  P.ds649 [{k: 'd1', n: name, ph: 1 | 3, cfg: 'wye' | 'delta' (three-phase), w: wires (single-phase 2 or 3,
+   three-phase 3 or 4; delta 3), vll: line to line V, vln: line to ground V}] beside the two of Electrical Settings › General (single-phase 2 wire at E.vln, three-
+   phase 4 wire at E.vll/E.vln, e.dist '1p' | '3p'); e.ds649 the system of a panel.  panelDist reads its phase; dsV649 its voltages for the current and the
+   voltage drop of the circuits leaving it (circuitCalc), its own current (panelCalc, the analytical loads, the service) and the schedule.  A three-phase 3 wire
+   system carries no neutral: its three-pole circuits read 3×s + G and Check Circuits flags a single-pole circuit on it.  A single-phase 3 wire system (e.g.
+   240/120 V): circuits at the line to ground voltage, the panel's own current at the line to line one.  ===== */
+function ds649L(P0){return Array.isArray(P0&&P0.ds649)?P0.ds649.filter(d=>d&&typeof d.k==='string'&&/^d\d+$/.test(d.k)):[]}
+function ds649Get(P0,k){return k?ds649L(P0).find(d=>d.k===k)||null:null}
+function ds649Of(P0,e){return e&&e.ds649?ds649Get(P0||P,e.ds649):null}
+/* the voltages a panel works at: vll line to line, vln line to ground (the circuits' single-pole voltage), v1 a single-phase panel's own */
+function dsV649(E,P0,pe){const d=ds649Of(P0,pe);if(!d)return{vll:E.vll,vln:E.vln,v1:E.vln,d:null};return{vll:d.vll,vln:d.vln,v1:d.ph===1&&d.w===3?d.vll:d.vln,d}}
+const dsVolt649=d=>d.ph===3&&d.cfg==='delta'?d.vll+' V':d.ph===1&&d.w===2?d.vln+' V':d.vll+'/'+d.vln+' V';
+/* the system of a panel as the schedule heads it */
+function dsHead649(E,P0,pe,tr,one){const d=ds649Of(P0,pe);if(!d)return one?tr('es_1p',E.vln):tr('es_3p',E.vll,E.vln);return d.n+' ('+dsVolt649(d)+')'}
+function dsName649(P0,e){const d=ds649Of(P0,e);return d?d.n:distName(panelDist(P0,e))}
+function ds649Clean(){const L=ds649L(P),seen=new Set(),out=[],num=(v,a,b)=>{v=+v;return isFinite(v)&&v>=a&&v<=b?Math.round(v*10)/10:null};
+  for(const d of L){const n=String(d.n||'').trim().slice(0,40);if(!n||seen.has(d.k)||out.some(x=>x.n===n))continue;const ph=+d.ph===1?1:3;let o;
+    if(ph===3){const cfg=d.cfg==='delta'?'delta':'wye',vll=num(d.vll,100,50000);if(vll==null)continue;const w=cfg==='delta'?3:(+d.w===3?3:4),vln=cfg==='wye'&&num(d.vln,50,30000)!=null?num(d.vln,50,30000):Math.round(vll/Math.sqrt(3));o={k:d.k,n,ph,cfg,w,vll,vln}}
+    else{const w=+d.w===3?3:2,vln=num(d.vln,50,30000);if(vln==null)continue;const vll=w===3?(num(d.vll,100,60000)!=null?num(d.vll,100,60000):2*vln):vln;o={k:d.k,n,ph,w,vll,vln}}
+    seen.add(d.k);out.push(o)}
+  if(out.length)P.ds649=out;else delete P.ds649;for(const e of P.els)if(e.cat==='eequip'&&e.ds649!=null&&!out.some(d=>d.k===e.ds649))delete e.ds649}
+XC.push(ds649Clean);
+const dsUsed649=k=>P.els.filter(e=>e.cat==='eequip'&&e.ds649===k).length;
+/* a three-phase 3 wire system: the circuits leaving the panel carry no neutral */
+{const f0=wtE643;wtE643=function(E,pn){const o=f0.apply(this,arguments),d=pn&&ds649Of(wtP643(E),pn);if(!d||d.ph!==3||d.w!==3)return o;
+  const q=Object.assign({},o,{nr643:0});Object.defineProperty(q,'_P643',{value:wtP643(E),enumerable:false});return q}}
+/* Check Circuits: a single-pole circuit on a system with no neutral */
+{const f0=circuitCheck;circuitCheck=function(P0){const out=f0.apply(this,arguments);if(!ds649L(P0).length)return out;
+  for(const c of circuits(P0)){if(c.poles===3||!c.panel)continue;const pe=pnFind(P0,c.panel),d=ds649Of(P0,pe);if(d&&d.ph===3&&d.w===3)out.push({k:'ck_ds649',ids:c.els.map(e=>e.id),panel:c.panel,circuit:c.circuit,a:[d.n]})}return out}}
+{const f0=ckText;ckText=function(i){if(i&&i.k==='ck_ds649')return t('ck_ds649',i.panel,i.circuit,(i.a||[])[0]);return f0.apply(this,arguments)}}
+/* Electrical Settings › Distribution Systems */
+ES_PAGES.splice(1,0,'ds');
+{const f0=dlgElec;dlgElec=function(pg){const r=f0.apply(this,arguments);if(ui.esPage!=='ds')return r;const E=esOf(P),H=ui.dlg,c=$('#dlg .msc');if(!c)return r;const L=ds649L(P);
+  const vIn=(d,k,dis)=>`<input type="number" data-dsf="${k}" value="${d[k]}" min="50" max="50000" step="1"${dis?' disabled':''} aria-label="${esc(t(k==='vll'?'ds649_vll':'ds649_vln'))} ${esc(d.n)}">`;
+  const row=d=>`<tr data-dsk="${d.k}"><td><input type="text" data-dsf="n" value="${esc(d.n)}" maxlength="40" aria-label="${esc(t('lc637_name'))}"></td>`
+    +`<td><select data-dsf="ph" aria-label="${esc(t('ds649_ph'))} ${esc(d.n)}">${[1,3].map(x=>`<option value="${x}"${d.ph===x?' selected':''}>${x}</option>`).join('')}</select></td>`
+    +`<td><select data-dsf="cfg"${d.ph===1?' disabled':''} aria-label="${esc(t('ds649_cfg'))} ${esc(d.n)}">${d.ph===1?`<option>—</option>`:['wye','delta'].map(x=>`<option value="${x}"${d.cfg===x?' selected':''}>${esc(t('ds649_'+x))}</option>`).join('')}</select></td>`
+    +`<td><select data-dsf="w"${d.ph===3&&d.cfg==='delta'?' disabled':''} aria-label="${esc(t('ds649_w'))} ${esc(d.n)}">${(d.ph===1?[2,3]:[3,4]).map(x=>`<option value="${x}"${d.w===x?' selected':''}>${x}</option>`).join('')}</select></td>`
+    +`<td>${vIn(d,'vll',d.ph===1&&d.w===2)}</td><td>${vIn(d,'vln',d.ph===3&&d.cfg==='delta')}</td><td class="n">${dsUsed649(d.k)}</td>`
+    +`<td class="fb"><button type="button" data-dsx="del" title="${esc(t('ds649_del'))}" aria-label="${esc(t('ds649_del'))} ${esc(d.n)}">✕</button></td></tr>`;
+  c.innerHTML=`<p class="note">${esc(t('ds649_note'))}</p><div class="clr vgt"><table class="ds649"><thead><tr><th>${esc(t('ds649_n'))}</th><th>${esc(t('ds649_ph'))}</th><th>${esc(t('ds649_cfg'))}</th><th>${esc(t('ds649_w'))}</th><th>L-L (V)</th><th>L-G (V)</th><th>${esc(t('ds649_used'))}</th><th></th></tr></thead><tbody>`
+    +`<tr class="ds649bi"><td>${esc(distName('1p'))}</td><td>1</td><td>—</td><td>2</td><td class="n">—</td><td class="n">${E.vln}</td><td class="n">${P.els.filter(e=>e.cat==='eequip'&&!ds649Of(P,e)&&panelDist(P,e)==='1p').length}</td><td></td></tr>`
+    +`<tr class="ds649bi"><td>${esc(distName('3p'))}</td><td>3</td><td>${esc(t('ds649_wye'))}</td><td>4</td><td class="n">${E.vll}</td><td class="n">${E.vln}</td><td class="n">${P.els.filter(e=>e.cat==='eequip'&&!ds649Of(P,e)&&panelDist(P,e)==='3p').length}</td><td></td></tr>`
+    +L.map(row).join('')+`</tbody></table></div><p class="note">${esc(t('ds649_binote'))}</p>`
+    +`<div class="pa msa"><label for="dsNew649">${esc(t('ds649_new'))}</label><input type="text" id="dsNew649" maxlength="40"><button class="btn" data-dsx="add">${esc(t('ms_add'))}</button></div>`;
+  const rb=$('#dlg [data-esx="reset"]');if(rb)rb.disabled=!L.length;
+  if(H){const c0=H.change,k0=H.click,setD=(k,fn)=>{edit(()=>{const L2=ds649L(P).map(d=>Object.assign({},d)),d=L2.find(x=>x.k===k);if(d)fn(d);P.ds649=L2;ds649Clean()});refresh()};
+    H.change=e=>{const el=e.target,f=el&&el.dataset&&el.dataset.dsf,tr0=f&&el.closest('tr[data-dsk]');if(!tr0)return c0&&c0(e);const k=tr0.dataset.dsk;
+      if(f==='n'){const n=el.value.trim();if(!n||ds649L(P).some(x=>x.k!==k&&x.n===n)){toast(t(n?'ds649_dup':'ds649_noname'));return dlgElec('ds',true)}setD(k,d=>{d.n=n})}
+      else if(f==='ph')setD(k,d=>{d.ph=+el.value===1?1:3;if(d.ph===1){d.w=2;d.vln=d.vln||E.vln;delete d.cfg}else{d.cfg='wye';d.w=4;d.vll=d.vll>=100?d.vll:E.vll;d.vln=Math.round(d.vll/Math.sqrt(3))}});
+      else if(f==='cfg')setD(k,d=>{d.cfg=el.value==='delta'?'delta':'wye';d.w=d.cfg==='delta'?3:4;d.vln=Math.round(d.vll/Math.sqrt(3))});
+      else if(f==='w')setD(k,d=>{d.w=+el.value;if(d.ph===1&&d.w===3)d.vll=2*d.vln});
+      else if(f==='vll'||f==='vln'){const v=parseFloat(el.value);if(!(isFinite(v)&&v>=50&&v<=50000)){toast(t('es_badnum',50,50000));return dlgElec('ds',true)}
+        setD(k,d=>{d[f]=v;if(f==='vll'&&d.ph===3)d.vln=Math.round(v/Math.sqrt(3));if(f==='vln'&&d.ph===1&&d.w===2)d.vll=v})}
+      return dlgElec('ds',true)};
+    H.click=e=>{const rs=e.target.closest&&e.target.closest('[data-esx="reset"]');if(rs){edit(()=>{delete P.ds649;ds649Clean()});refresh();return dlgElec('ds',true)}
+      const b=e.target.closest&&e.target.closest('[data-dsx]'),x=b&&b.dataset.dsx;if(!x)return k0&&k0(e);
+      if(x==='add'){const n=(($('#dsNew649')||{}).value||'').trim();if(!n){toast(t('ds649_noname'));return}if(ds649L(P).some(d=>d.n===n)){toast(t('ds649_dup'));return}
+        edit(()=>{const L2=ds649L(P).slice();let i=1;while(L2.some(d=>d.k==='d'+i))i++;L2.push({k:'d'+i,n,ph:3,cfg:'wye',w:4,vll:E.vll,vln:E.vln});P.ds649=L2;ds649Clean()})}
+      else if(x==='del'){const k=b.closest('tr[data-dsk]').dataset.dsk,u=dsUsed649(k);edit(()=>{P.ds649=ds649L(P).filter(d=>d.k!==k);ds649Clean()});if(u)toast(t('ds649_deld',u))}
+      refresh();dlgElec('ds',true)}}
+  return r}}
+{const st=document.createElement('style');st.textContent='#dlg table.ds649 input[type=text]{width:108px;min-width:96px}#dlg table.ds649 input[type=number]{width:62px}#dlg table.ds649 select{min-width:0;max-width:96px}#dlg table.ds649 tr.ds649bi td:first-child{white-space:normal;max-width:120px;line-height:1.25}#dlg table.ds649 td,#dlg table.ds649 th{vertical-align:middle;padding-left:3px;padding-right:3px}#dlg table.ds649 tr.ds649bi td{color:var(--mut,#667)}';document.head.appendChild(st)}
+Object.assign(STR,{es_p_ds:['ระบบจ่ายไฟ (Distribution Systems)','Distribution systems'],
+  ds649_note:['ระบบจ่ายไฟ (เหมือน Revit: Distribution Systems) บอกเฟส การต่อ จำนวนสาย และแรงดันระหว่างเฟส (L-L) และเฟสกับดิน (L-G) ตู้แต่ละตู้เลือกระบบในคุณสมบัติ วงจรที่ออกจากตู้คิดกระแสและแรงดันตกด้วยแรงดันของระบบนั้น ระบบ 3 เฟส 3 สายไม่มีนิวทรัล วงจร 3 ขั้วเป็น 3×s + G และวงจร 1 ขั้วถูกเตือนในตรวจวงจรไฟฟ้า',
+    'A distribution system (as Revit: Distribution Systems) gives the phase, the configuration, the wires and the line to line (L-L) and line to ground (L-G) voltages; each panel picks one in its Properties, and the circuits leaving it take its voltages for their current and voltage drop. A three-phase 3 wire system carries no neutral: its three-pole circuits read 3×s + G and a single-pole circuit on it is flagged in Check Circuits.'],
+  ds649_binote:['สองแถวแรกมาจากแรงดันในหน้าทั่วไป (ตู้ที่ไม่ได้เลือกระบบใช้แถวเหล่านี้)','The first two rows come from the voltages on the General page (panels with no system of their own take them).'],
+  ds649_n:['ชื่อ','Name'],ds649_ph:['เฟส','Phase'],ds649_cfg:['การต่อ','Configuration'],ds649_wye:['สตาร์ (Y)','Wye'],ds649_delta:['เดลตา (Δ)','Delta'],
+  ds649_w:['จำนวนสาย','Wires'],ds649_vll:['แรงดันระหว่างเฟส','Line to line voltage'],ds649_vln:['แรงดันเฟสกับดิน','Line to ground voltage'],ds649_used:['ตู้ที่ใช้','Panels'],ds649_del:['ลบระบบจ่ายไฟ','Delete the distribution system'],
+  ds649_new:['ระบบจ่ายไฟใหม่','New system'],ds649_noname:['ใส่ชื่อระบบจ่ายไฟก่อน','Name the system first'],ds649_dup:['มีระบบจ่ายไฟชื่อนี้แล้ว','A system has that name already'],
+  ds649_deld:['ลบแล้ว ตู้ {0} ตู้กลับไปใช้ระบบจากตั้งค่าทั่วไป','Deleted: {0} panel(s) back on the systems of the General page'],
+  ck_ds649:['วงจร {0}/{1} เป็นวงจร 1 ขั้วบนระบบ {2} ที่ไม่มีนิวทรัล ใช้วงจร 3 ขั้วหรือย้ายไปตู้ที่มีนิวทรัล','Circuit {0}/{1} is single-pole on {2}, a system with no neutral: make it three-pole or move it to a panel with a neutral']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -63331,6 +63404,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ขนาดสายดิน (Revit: Electrical Settings › Wiring › Ground Conductors): ตั้งค่างานไฟฟ้า › ขนาดสาย มีตารางสายดินตามพิกัดเบรกเกอร์ ช่องทองแดงและอะลูมิเนียม แก้ เพิ่ม หรือลบแถวได้ วงจรใช้แถวแรกที่พิกัดไม่ต่ำกว่าเบรกเกอร์ ตามวัสดุตัวนำของวงจร เช่นเบรกเกอร์ 200 A ทองแดง G16 อะลูมิเนียม G35 · ใช้เมื่อขนาดสายดินตามขนาดเบรกเกอร์ ถ้าตั้งตามขนาดสายเฟสตารางนี้ไม่ใช้
 - นิวทรัลของชนิดสาย (Revit: Wire Type › Neutral Multiplier และ Neutral Size): ตารางชนิดสายไฟในตั้งค่างานไฟฟ้า › ขนาดสาย ใต้ช่องมีสายนิวทรัล ใส่ตัวคูณสายนิวทรัลของชนิดนั้น (0.5 ถึง 2 ว่างไว้ใช้ค่าในตั้งค่า) และเลือกคิดจากสายเฟสหรือสายดิน · วงจร 3 เฟสคิดจากสายเฟส ตัวคูณต่ำกว่า 1 ลดนิวทรัลที่เกิน 16 มม.² แบบเดิม ตัวคูณ 1 ขึ้นไปขยายนิวทรัลทุกขนาด (ฮาร์มอนิก) เช่น 3×70 ×1.73 ได้ N150 · คิดจากสายดินได้ขนาดสายดินคูณตัวคูณ เช่น 3×70 + N16 + G16 · วงจร 1 เฟสนิวทรัลเท่าสายเฟสเสมอ
 - แรงดันตกพร้อมรีแอกแตนซ์ (Revit: Wire Type › Conduit Type): แรงดันตกของวงจร สายป้อน และระบบจ่ายไฟคิดแบบ IEC 60364-5-52 G.52 u = b·(ρ·L/S·cosφ + λ·L·sinφ)·I ใช้ตัวประกอบกำลังในตั้งค่างานไฟฟ้า › ทั่วไป λ 0.08 มΩ/ม. · ชนิดสายไฟเลือกท่อร้อยสายใต้วัสดุ ท่อเหล็กใช้ λ 0.10 · สายขนานหาร λ ด้วยจำนวนชุด · ตัวประกอบกำลัง 1 คิดเฉพาะความต้านทานแบบเดิม
+- ระบบจ่ายไฟ (Revit: Electrical Settings › Distribution Systems): ตั้งค่างานไฟฟ้า › ระบบจ่ายไฟ เพิ่มระบบของโครงการ ชื่อ เฟส (1 หรือ 3) การต่อ (สตาร์หรือเดลตา) จำนวนสาย และแรงดัน L-L และ L-G เช่น 3 เฟส 4 สาย 380/220 V หรือ 3 เฟส 3 สาย 400 V เดลตา · ตู้เลือกระบบในคุณสมบัติ (ระบบจ่ายไฟ) วงจรที่ออกจากตู้คิดกระแสและแรงดันตกด้วยแรงดันของระบบนั้น ตารางโหลดบอกชื่อระบบ · ระบบ 3 เฟส 3 สายไม่มีนิวทรัล วงจร 3 ขั้วเป็น 3×s + G วงจร 1 ขั้วถูกเตือนในตรวจวงจรไฟฟ้า · สองระบบเดิมมาจากแรงดันในหน้าทั่วไป
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -63690,6 +63764,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Ground Conductors (Revit: Electrical Settings › Wiring › Ground Conductors): Electrical Settings › Wire sizes keeps the ground wire by the breaker rating, a copper and an aluminium column, rows to change, add or delete; a circuit takes the first row at or above its breaker in the column of its conductor material: a 200 A breaker G16 in copper, G35 in aluminium · used when the Ground wire size is by breaker, not by the phase size
 - The neutral of a wire type (Revit: a Wire Type's Neutral Multiplier and Neutral Size): in the wire types of Electrical Settings › Wire sizes, under the neutral check, a neutral multiplier for that type (0.5 to 2; empty, that of Electrical Settings) and whether the neutral is sized from the hot or the ground conductor · three-phase circuits from the hot: under 1 reduces a neutral over 16 mm² as before, 1 or more enlarges it at any size (harmonics): 3×70 at ×1.73 takes N150 · from the ground: the ground size times the multiplier, 3×70 + N16 + G16 · single-phase circuits keep a neutral of the hot size
 - The voltage drop with the reactance (Revit: a Wire Type's Conduit Type): the voltage drop of circuits, feeders and the service is worked out as IEC 60364-5-52 G.52, u = b·(ρ·L/S·cosφ + λ·L·sinφ)·I, with the power factor of Electrical Settings › General and λ 0.08 mΩ/m · a wire type picks its conduit under its material, a steel one taking λ 0.10 · sets in parallel divide λ · at a power factor of 1, the resistance alone as before
+- Distribution systems (Revit: Electrical Settings › Distribution Systems): Electrical Settings › Distribution systems adds the project's own, with a name, the phase (single or three), the configuration (wye or delta), the wires and the L-L and L-G voltages, e.g. three phase 4 wire 380/220 V or three phase 3 wire 400 V delta · a panel picks one in its Properties (Distribution System) and the circuits leaving it take its voltages for their current and voltage drop; its schedule names the system · a three-phase 3 wire system carries no neutral: three-pole circuits read 3×s + G and a single-pole circuit is flagged in Check Circuits · the two systems as before come from the voltages on the General page
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -64917,6 +64992,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.646 · ตารางขนาดสายดินทองแดงและอะลูมิเนียม (Ground Conductors)
 - V1.647 · ตัวคูณและขนาดสายนิวทรัลของชนิดสาย (Neutral Multiplier, Neutral Size)
 - V1.648 · แรงดันตกพร้อมรีแอกแตนซ์ และท่อร้อยสายของชนิดสาย (Conduit Type)
+- V1.649 · ระบบจ่ายไฟของโครงการ (Distribution Systems) แรงดันต่อตู้
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -65738,6 +65814,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.646 · Ground Conductors for copper and aluminium
 - V1.647 · Neutral Multiplier and Neutral Size of a wire type
 - V1.648 · The voltage drop with the reactance, and the Conduit Type of a wire type
+- V1.649 · Distribution Systems of the project, the voltages of each panel
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -70909,6 +70986,18 @@ window.PenumBIM.r648={
   cks:pn=>circuitCalc(P).filter(c=>c.panel===pn).map(c=>({ck:c.circuit,feed:c.feed||null,wm:c.wm,wire:c.wire,runs:c.runs,amp:c.amp,len:c.len,vd:c.vd,poles:c.poles,wset:c.wset,brk:c.brk,small:!!c.small})),
   vz:(r,n,pf,ct)=>vz648({pf,ct648:ct},r,n),
   svc:()=>{try{const S=svCalc(P);return S.trees.map(x=>x.panels.map(q=>({mark:q.mark,up:q.up,wire:q.wire,runs:q.runs,vd:q.vd,len:q.len,amp:q.amp,ik:q.ik})))}catch(e){return String(e)}}};
+/* V1.649 test API: Distribution Systems */
+window.PenumBIM.r649={
+  list:()=>JSON.parse(JSON.stringify(P.ds649||null)),
+  add:(n,o)=>{let k=null;edit(()=>{const L=ds649L(P).slice();let i=1;while(L.some(d=>d.k==='d'+i))i++;k='d'+i;L.push(Object.assign({k,n,ph:3,cfg:'wye',w:4,vll:400,vln:230},o||{}));P.ds649=L;ds649Clean()});refresh();return k},
+  set:(k,o)=>{edit(()=>{const L=ds649L(P).map(d=>Object.assign({},d)),d=L.find(x=>x.k===k);if(d)for(const f in o){if(o[f]==null)delete d[f];else d[f]=o[f]}P.ds649=L;ds649Clean()});refresh()},
+  del:k=>{edit(()=>{P.ds649=ds649L(P).filter(d=>d.k!==k);ds649Clean()});refresh()},
+  pan:(mk,k)=>{edit(()=>{const e=pnFind(P,mk);if(e){if(k)e.ds649=k;else delete e.ds649}});refresh()},
+  pds:mk=>{const e=pnFind(P,mk);return e?{ds:e.ds649||null,dist:panelDist(P,e),v:dsV649(esOf(P),P,e)}:null},
+  cks:pn=>circuitCalc(P).filter(c=>c.panel===pn).map(c=>({ck:c.circuit,feed:c.feed||null,poles:c.poles,amp:c.amp,va:c.va,len:c.len,vd:c.vd,wire:c.wire,neu:c.neu,wset:c.wset,brk:c.brk})),
+  pc:mk=>{const p=panelCalc(P).find(x=>x.mark===mk);return p?{amp:p.amp,va:p.va,ia:p.ia,dist:p.dist}:null},
+  svc:()=>{try{const S=svCalc(P);return S.trees.map(x=>x.panels.map(q=>({mark:q.mark,up:q.up,amp:q.amp,vd:q.vd,wire:q.wire})))}catch(e){return String(e)}},
+  chk:()=>circuitCheck(P).filter(i=>i.k==='ck_ds649').map(i=>({panel:i.panel,circuit:i.circuit,txt:ckText(i)}))};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
