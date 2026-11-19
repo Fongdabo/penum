@@ -14634,7 +14634,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=583,V1_NAME='V1.573';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=584,V1_NAME='V1.574';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -58883,6 +58883,120 @@ XF.push((cat,o,key,raw)=>{if(key!=='mwn573')return false;if(!mn573Can(o))return 
 {const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(MN573_CATS.includes(cat))F.push({k:'mwn573',l:tr('p_mwn573'),g:(e,X)=>X.tr('mwn573' in e?'o_yes':'o_no'),grp:'i'});return F}}
 XC.push(()=>{const W=new Set(P.els.filter(e=>e.cat==='wall').map(e=>e.id));for(const e of P.els){if(!('mwn573' in e))continue;if(!mn573Can(e)){delete e.mwn573;continue}const v=+e.mwn573;e.mwn573=Number.isInteger(v)&&W.has(v)?v:-1}});
 Object.assign(STR,{p_mwn573:['ย้ายตามองค์ประกอบใกล้เคียง (Moves With Nearby Elements)','Moves With Nearby Elements']});
+/* ===== 574 Rafter Cut (V1.574; Revit: a roof's Rafter Cut, Plumb Cut, Two Cut - Plumb or Two Cut - Square, with its Fascia Depth).  A sloped roof by
+   footprint (hip, gable, shed, by edges) is cut at its eaves straight down from its top (Plumb Cut, as before).  Two Cut - Plumb cuts it straight down for its
+   Fascia Depth, then level inwards to where that meets its underside; Two Cut - Square cuts it square to its slope for its Fascia Depth, then level.  Its
+   layers, its lines, the fascia boards it draws by itself (on the first cut and as deep as it, square to the slope for a square cut) and the soffit under the
+   overhang of a hip roof (under the level cut) follow; 3D, sections, elevations, joins and its volume follow.  Fascia Depth runs from 0 to the thickness of
+   the roof (for a square cut, to its thickness square to the slope); it starts at half the thickness. */
+/* e.rc574 'p' Two Cut - Plumb, 's' Two Cut - Square (none: Plumb Cut); e.fd574 its Fascia Depth (mm) */
+const RC574_SH=['hip','gable','shed','fp'];
+const rc574Can=e=>!!e&&e.cat==='roof'&&RC574_SH.includes(e.shape||'hip');
+const rc574On=e=>!!e&&e.cat==='roof'&&(e.rc574==='p'||e.rc574==='s');
+let RC574C=new WeakMap();
+/* the cut of each sloped face: X its distance from the eave (level, square to it), zc the height of the level cut, x1 where the first cut ends, xh where the
+   level cut meets the underside (null: nothing is cut) */
+function rc574G(Q,e){if(!rc574On(e))return null;const M=Q===P?RC574C:null,c=M&&M.get(e);if(c&&c.v===VER)return c.G;let G=null;try{G=rc574G0(Q,e)}catch(_){G=null}if(M)M.set(e,{v:VER,G});return G}
+function rc574G0(Q,e){const R=roofGeo(Q,e);if(!R||!RC574_SH.includes(R.shape)||!Array.isArray(R.faces)||!R.faces.length||!(R.th>=1))return null;
+  const th=R.th,sq=e.rc574==='s',v=+e.fd574,fd0=isFinite(v)&&v>=0?v:th/2,zE=Math.min(...R.faces.map(f=>Math.min(...f.loop.map(q=>q[2])))),F=[];
+  for(const f of R.faces){if(f.i<0)continue;const pl=planeOf(f.loop);if(!pl)continue;const t=Math.hypot(pl[0],pl[1]);if(t<0.01)continue;const cs=1/Math.sqrt(1+t*t),sn=t*cs;
+    let fd,zc,x1;if(sq){fd=Math.min(fd0,th*cs);zc=zE-fd*cs;x1=fd*sn}else{fd=Math.min(fd0,th);zc=zE-fd;x1=0}
+    const xh=(zc-(zE-th))/t;if(!sq&&xh<0.5)continue;          // as deep as the roof: a plumb cut, as it was
+    F.push({f,pl,t,cs,sn,fd,zc,x1,xh,X:q=>(pl[0]*q[0]+pl[1]*q[1]+pl[2]-zE)/t})}
+  return F.length?{R,th,zE,sq,F}:null}
+const rc574Cut=(G,C,x)=>G.sq?Math.max(C.zc,G.zE-x/C.t):C.zc;
+/* where a layer from r0 to r1 under the top is cut differently: the distances from the eave where its solid is broken into strips */
+function rc574Xs(G,C,r0,r1){const s=new Set();if(G.sq&&C.x1>0.01)s.add(C.x1);for(const r of [r0,r1]){const a=(C.zc-G.zE-r)/C.t;if(a>0.01)s.add(a);if(G.sq){const b=-r*C.sn*C.cs;if(b>0.01&&b<C.x1)s.add(b)}}
+  return[...s].sort((a,b)=>a-b)}
+function rc574Strips(pc,X,xs){const out=[];let rest=pc;for(const x of xs){if(rest.length<3)break;const a=dedupe(clipHP(rest,q=>x-X(q)));if(a.length>=3&&Math.abs(area2(a))>1)out.push(a);rest=dedupe(clipHP(rest,q=>X(q)-x))}
+  if(rest.length>=3&&Math.abs(area2(rest))>1)out.push(rest);return out}
+/* the solid of the roof from r0 to r1 under its top (all of it: -th to 0) as it is cut at its eaves, into t; its volume, and what it would be uncut */
+function rc574Put(Q,e,G,r0,r1,t,noHoles){let V=0,V0=0;const RH=noHoles?[]:roofHoles(Q,e),RHP=RH.length?holeParts(RH):null;
+  for(const f of G.R.faces){const lp=f.loop.map(q=>[q[0],q[1]]),pl=planeOf(f.loop);if(!pl)continue;const z=q=>pl[0]*q[0]+pl[1]*q[1]+pl[2],C=G.F.find(c=>c.f===f);
+    const pcs=RHP&&RH.some(h=>polyTouch(h,lp))?polyMinus(lp,RHP):[lp];
+    for(const pc of pcs){V0+=Math.abs(area2(pc))*(r1-r0);const xs=C?rc574Xs(G,C,r0,r1):[],xm=xs.length?xs[xs.length-1]:-Infinity;
+      if(!C||Math.min(...pc.map(C.X))>=xm-0.01){V+=slopePrism(t,pc,q=>z(q)+r0,q=>z(q)+r1);continue}
+      for(const cv of holeParts([pc]))for(const s of rc574Strips(cv,C.X,xs))V+=slopePrism(t,s,q=>Math.max(z(q)+r0,rc574Cut(G,C,C.X(q))),q=>z(q)+r1)}}
+  return{V,V0}}
+/* the line X = x across a face: its pieces inside the face */
+function rc574Across(loop,X,x){const P2=[],n=loop.length;let d=null;
+  for(let i=0;i<n;i++){const a=loop[i],b=loop[(i+1)%n],fa=X(a)-x,fb=X(b)-x;if((fa<0)===(fb<0))continue;const k=fa/(fa-fb);P2.push([a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k])}
+  if(P2.length<2)return[];const o=P2[0];let far=P2[1];for(const p of P2)if(Math.hypot(p[0]-o[0],p[1]-o[1])>Math.hypot(far[0]-o[0],far[1]-o[1]))far=p;d=[far[0]-o[0],far[1]-o[1]];
+  P2.sort((p,q)=>(p[0]-o[0])*d[0]+(p[1]-o[1])*d[1]-((q[0]-o[0])*d[0]+(q[1]-o[1])*d[1]));const out=[];for(let i=0;i+1<P2.length;i+=2)if(Math.hypot(P2[i+1][0]-P2[i][0],P2[i+1][1]-P2[i][1])>1)out.push([P2[i],P2[i+1]]);return out}
+/* its lines: the underside along each edge of a face as it is cut, the corners down to it, and the creases the cuts make across a face */
+function rc574Lines(G,m){const th=G.th,R5=v=>Math.round(v*10),key=(a,b)=>a.map(R5).join(',')+'|'+b.map(R5).join(','),drop=new Set(),add=[],O=G.R.out||G.R.eave,onO=q=>O.some(p=>Math.abs(p[0]-q[0])<1&&Math.abs(p[1]-q[1])<1);
+  for(const f of G.R.faces){const C=G.F.find(c=>c.f===f);if(!C)continue;const L=f.loop,n=L.length,z=q=>C.pl[0]*q[0]+C.pl[1]*q[1]+C.pl[2],bot=q=>Math.max(z(q)-th,rc574Cut(G,C,C.X(q)));
+    for(let i=0;i<n;i++){const a=L[i],b=L[(i+1)%n],A=[a[0],a[2]-th,a[1]],B=[b[0],b[2]-th,b[1]];drop.add(key(A,B));drop.add(key(B,A));
+      const xa=C.X(a),xb=C.X(b),ks=[0,1];for(const x of [C.x1,C.xh])if(x>0.01&&(xa-x)*(xb-x)<0)ks.push((x-xa)/(xb-xa));ks.sort((u,v)=>u-v);
+      for(let k=1;k<ks.length;k++){const u=ks[k-1],w=ks[k];if(w-u<1e-6)continue;const p=[a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u],q=[a[0]+(b[0]-a[0])*w,a[1]+(b[1]-a[1])*w];add.push(p[0],bot(p),p[1],q[0],bot(q),q[1])}
+      if(onO(a)){const T0=[a[0],a[2],a[1]];drop.add(key(T0,A));drop.add(key(A,T0));const zb=bot(a);if(a[2]-zb>1)add.push(a[0],a[2],a[1],a[0],zb,a[1])}}
+    for(const x of G.sq?[C.x1,C.xh]:[C.xh]){if(!(x>0.5))continue;for(const [p,q] of rc574Across(L,C.X,x))add.push(p[0],C.zc,p[1],q[0],C.zc,q[1])}}
+  const l=m.l,out=[];for(let i=0;i+5<l.length;i+=6){if(drop.has(key([l[i],l[i+1],l[i+2]],[l[i+3],l[i+4],l[i+5]])))continue;for(let k=0;k<6;k++)out.push(l[i+k])}
+  m.l=out.concat(add)}
+/* a block of poly from z0 to z1 with its edges (as the roof draws its fascia boards) */
+function rc574Box(m,poly,z0,z1){if(z1-z0<0.5)return;extrude(poly.map(p=>[p[0],z0,p[1]]),[0,z1-z0,0],m.t);const n=poly.length;
+  for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];m.l.push(a[0],z0,a[1],b[0],z0,b[1],a[0],z1,a[1],b[0],z1,b[1],a[0],z0,a[1],a[0],z1,a[1])}}
+/* the fascia boards it draws by itself along its level eaves, on the first cut and as deep as it (and 20 under it), and the soffit under the overhang of a
+   hip roof under the level cut (as the roof draws them, 109) */
+function rc574Fa(Q,e,G,fa){const R=G.R,th=G.th,zE=G.zE,O=R.out||R.eave,RH=roofHoles(Q,e),ED=[];fa.t=[];fa.l=[];
+  for(const f of R.faces){const L=f.loop.map(q=>[q[0],q[2],q[1]]);for(let i=0;i<L.length;i++){const a=L[i],b=L[(i+1)%L.length],mx=a[0]+b[0],my=a[1]+b[1],mz=a[2]+b[2],g=ED.find(q=>Math.abs(q.mx-mx)<4&&Math.abs(q.my-my)<4&&Math.abs(q.mz-mz)<4);if(g)g.n++;else ED.push({a,b,n:1,mx,my,mz})}}
+  if(RH.length)rc400Ed(ED,RH);const faceAt=(x,y)=>G.F.find(C=>inPoly(x,y,C.f.loop.map(q=>[q[0],q[1]]))),FE=[];
+  for(const g of ED){const a=g.a,b=g.b,d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],dl=Math.hypot(d[0],d[1],d[2]);if(dl<40||g.n>1)continue;
+    if(!(Math.abs(a[1]-zE)<2&&Math.abs(b[1]-zE)<2)||rfeHas(Q,e,'rfas',[a[0],a[2]],[b[0],b[2]]))continue;
+    const hl=Math.hypot(d[0],d[2])||1,ux=d[0]/hl,uy=d[2]/hl;let ox=uy,oy=-ux;if(inPoly((a[0]+b[0])/2+ox*30,(a[2]+b[2])/2+oy*30,O)){ox=-ox;oy=-oy}
+    FE.push({a:[a[0],a[2]],b:[b[0],b[2]],u:[ux,uy],o:[ox,oy],C:faceAt((a[0]+b[0])/2-ox*5,(a[2]+b[2])/2-oy*5)})}
+  const tk=22,cr=(p,q)=>p[0]*q[1]-p[1]*q[0];
+  for(const E of FE){const {a,b,u,o,C}=E,A=[a[0]-u[0]*tk,a[1]-u[1]*tk],B=[b[0]+u[0]*tk,b[1]+u[1]*tk],box=[A,B,[B[0]+o[0]*tk,B[1]+o[1]*tk],[A[0]+o[0]*tk,A[1]+o[1]*tk]];
+    if(!C){rc574Box(fa,box,zE-Math.max(th,170)-20,zE+4);continue}
+    if(!G.sq){rc574Box(fa,box,C.zc-20,zE+4);continue}
+    /* square to the slope: its profile, s inwards from the eave and z up; mitred where it meets the board of the next eave */
+    const pr=[[-4*C.sn,zE+4*C.cs],[(C.fd+20)*C.sn,zE-(C.fd+20)*C.cs]];pr.push([pr[1][0]-tk*C.cs,pr[1][1]-tk*C.sn],[pr[0][0]-tk*C.cs,pr[0][1]-tk*C.sn]);
+    const end=(p,sg)=>{const N=FE.find(F=>F!==E&&[F.a,F.b].some(q=>Math.hypot(q[0]-p[0],q[1]-p[1])<1));let lam=s=>sg*tk;
+        if(N){const w=[o[0]+N.o[0],o[1]+N.o[1]],k=cr(u,w);if(Math.abs(k)>1e-6)lam=s=>-s*cr(o,w)/k}
+        return pr.map(q=>{const s=-q[0],l=lam(s);return[p[0]+o[0]*s+u[0]*l,q[1],p[1]+o[1]*s+u[1]*l]})},
+      La=end(a,-1),Lb=end(b,1),T=[],tri=(x,y,z)=>T.push(...x,...y,...z);
+    tri(La[0],La[1],La[2]);tri(La[0],La[2],La[3]);tri(Lb[0],Lb[2],Lb[1]);tri(Lb[0],Lb[3],Lb[2]);
+    for(let i=0;i<4;i++){const j=(i+1)%4;tri(La[i],Lb[i],Lb[j]);tri(La[i],Lb[j],La[j]);fa.l.push(...La[i],...La[j],...Lb[i],...Lb[j],...La[i],...Lb[i])}
+    let V=0;for(let i=0;i<T.length;i+=9)V+=T[i]*(T[i+4]*T[i+8]-T[i+5]*T[i+7])-T[i+1]*(T[i+3]*T[i+8]-T[i+5]*T[i+6])+T[i+2]*(T[i+3]*T[i+7]-T[i+4]*T[i+6]);
+    if(V<0)for(let i=0;i<T.length;i+=9)for(let k=0;k<3;k++){const x=T[i+3+k];T[i+3+k]=T[i+6+k];T[i+6+k]=x}
+    for(const v of T)fa.t.push(v)}
+  if((R.shape==='hip'||(R.shape==='fp'&&R.S.length===R.eave.length))&&(e.overhang||0)>=150){const zs0=zE-th,Z=G.F.map(C=>C.zc),one=G.F.length===R.faces.filter(f=>f.i>=0).length&&Z.every(z=>Math.abs(z-Z[0])<0.5);
+    const pr=(pc,zs)=>{if(pc.length>=3)extrude(pc.map(p=>[p[0],zs-10,p[1]]),[0,10,0],fa.t)};
+    for(const pc of rfeSofCut(Q,e,polyMinus(R.eave,holeParts([e.pts])))){if(one&&!G.sq){pr(pc,Z[0]);continue}          // square: it starts behind the fascia board
+      for(const f of R.faces){const C=G.F.find(c=>c.f===f),zs=C?C.zc:zs0,sb=C&&G.sq?C.fd*C.sn-tk/C.cs+10*C.t:-Infinity;
+        for(const cv of holeParts([f.loop.map(q=>[q[0],q[1]])])){let g=convexCut(pc,cv);if(C&&G.sq&&g.length>=3)g=dedupe(clipHP(g,q=>C.X(q)-sb));pr(g,zs)}}}}}
+const rc574IsFa=m=>m.mt===MAT.paint&&typeof m.li!=='number'&&Array.isArray(m.c)&&Math.abs(m.c[0]-0.93)<1e-6&&Math.abs(m.c[1]-0.92)<1e-6&&Math.abs(m.c[2]-0.89)<1e-6;
+/* the roof's own meshes, cut: its layers (as slBands lays them), its lines, its fascia boards and soffit */
+function rc574Mesh(Q,e,G,mine){const T=typ(Q,e)||{},dm={c:[0,0,0]},B=slBands(T,'roof',dm,-G.th,0,c=>({c}));let lm=null;
+  for(const m of mine){if(typeof m.li!=='number'||!m.t)continue;const b=B.find(b=>b.m.li===m.li);if(!b)continue;const t=[];rc574Put(Q,e,G,b.z0,b.z1,t);m.t=t;if(m.l&&m.l.length&&!lm)lm=m}
+  if(lm)rc574Lines(G,lm);for(const m of mine)if(rc574IsFa(m))rc574Fa(Q,e,G,m)}
+/* built before the joins, so that what is joined to it still cuts it (as 572 does for stepped wall foundations) */
+{const f0=joinApply;joinApply=function(Q,items){try{if(Q&&Array.isArray(Q.els)&&Array.isArray(items)){let by=null;
+    for(const e of Q.els){if(!rc574On(e))continue;const G=rc574G(Q,e);if(!G)continue;if(!by){by=new Map();for(const m of items)if(m&&m.cat==='roof')(by.get(m.id)||by.set(m.id,[]).get(m.id)).push(m)}
+      const mine=by.get(e.id);if(mine)rc574Mesh(Q,e,G,mine)}}}catch(_){}
+  return f0.apply(this,arguments)}}
+/* what it cuts when it is joined: itself as it is cut */
+{const f0=joinSolid;joinSolid=function(Q,e){if(e&&rc574On(e)){const G=rc574G(Q,e);if(G){const t=[];rc574Put(Q,e,G,-G.th,0,t,true);return t}}return f0.apply(this,arguments)}}
+/* its volume: less what the cuts take away */
+function rc574Rem(Q,e){const G=rc574G(Q,e);if(!G)return 0;const r=rc574Put(Q,e,G,-G.th,0,[]);return Math.max(0,r.V0-r.V)}
+{const f0=quantities;quantities=function(P0){const q=f0.apply(this,arguments);try{for(const e of P0.els){if(!rc574On(e))continue;const r=q.get(e.id);if(!r||!(r.vol>0))continue;const d=rc574Rem(P0,e);if(d>0)r.vol=Math.max(0,r.vol-d)}}catch(_){}return q}}
+{const f0=snapshot;snapshot=function(){RC574C=new WeakMap();return f0.apply(this,arguments)}}
+/* ---- Properties: Rafter Cut and Fascia Depth, after Overhang; schedules ---- */
+const rc574V=e=>rc574On(e)?e.rc574:'n';
+const rc574Fd=e=>{const v=+e.fd574;if(isFinite(v)&&v>=0)return Math.round(v*10)/10;const T=typ(P,e)||{};return Math.round((+T.thickness||150)/2)};
+{const f0=catRows;catRows=(cat,els,isNew)=>{let h=f0(cat,els,isNew);if(cat!=='roof'||isNew||!els.length||!els.every(rc574Can))return h;
+  const one=(f,d)=>{const a=f(els[0]);return els.every(x=>f(x)===a)?a:d},v=one(rc574V,'');let r=PR.sel('rc574','p_rc574',v,[['n',t('rc574_n')],['p',t('rc574_p')],['s',t('rc574_s')]]);
+  if(els.every(rc574On))r+=PR.num('fd574','p_fd574',one(rc574Fd,''),t('u_mm'),'step="10" min="0"');
+  const i=h.indexOf('id="p_overhang"');if(i<0)return h+r;const j=h.indexOf('</div></div>',i);return j<0?h+r:h.slice(0,j+12)+r+h.slice(j+12)}}
+XF.push((cat,o,key,raw)=>{if(key!=='rc574'&&key!=='fd574')return false;if(cat!=='roof'||!rc574Can(o))return true;
+  if(key==='rc574'){const v=String(raw);if(v==='p'||v==='s'){if(!('fd574' in o))o.fd574=rc574Fd(o);o.rc574=v}else{delete o.rc574;delete o.fd574}return true}
+  if(!rc574On(o))return true;const v=parseFloat(raw);if(!isFinite(v))return true;const T=typ(P,o)||{};o.fd574=Math.round(clamp(v,0,+T.thickness||150)*10)/10;return true});
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(cat==='roof')F.push({k:'rc574',l:tr('p_rc574'),g:(e,X)=>X.tr('rc574_'+rc574V(e)),grp:'i'},
+  {k:'fd574',l:tr('p_fd574')+' (mm)',g:e=>rc574On(e)?rc574Fd(e):'',num:1,dec:0,grp:'i'});return F}}
+XC.push(()=>{for(const e of P.els){if(!('rc574' in e)&&!('fd574' in e))continue;if(!rc574Can(e)||!(e.rc574==='p'||e.rc574==='s')){delete e.rc574;delete e.fd574;continue}
+  const v=+e.fd574;if(isFinite(v)&&v>=0)e.fd574=Math.round(Math.min(v,5000)*10)/10;else delete e.fd574}});
+Object.assign(STR,{p_rc574:['การตัดปลายจันทัน (Rafter Cut)','Rafter Cut'],rc574_n:['ตัดแนวดิ่ง (Plumb Cut)','Plumb Cut'],rc574_p:['ตัดสองครั้ง แนวดิ่ง (Two Cut - Plumb)','Two Cut - Plumb'],
+  rc574_s:['ตัดสองครั้ง ตั้งฉากกับหลังคา (Two Cut - Square)','Two Cut - Square'],p_fd574:['ความลึกเชิงชาย (Fascia Depth)','Fascia Depth']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -60145,6 +60259,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rbd239]] ในคุณสมบัติของผนังและเสา: เอาติ๊กออกจากผนัง ห้องสองข้างจะรวมเป็นพื้นที่เดียว (ผนังกระจกก็ได้) แล้วใช้ [[t_rsep]] แบ่งเองตามต้องการ ติ๊กที่เสา พื้นที่ของเสาส่วนที่อยู่ในห้องจะถูกหักออกจากพื้นที่ห้อง (เสาตั้งต้นไม่ติ๊ก พื้นที่ห้องเดิมจึงไม่เปลี่ยน)
 - [[p_mwg571]] ในคุณสมบัติของเสา (ติ๊กไว้เป็นค่าเริ่มต้น): เสาที่ตั้งตรงจุดตัดกริดหรือบนกริดย้ายตามเมื่อย้าย หมุน หรือยืดกริด คานและค้ำยันที่ปลายอยู่ที่เสาย้ายตาม เอาติ๊กออกแล้วเสาอยู่ที่เดิม
 - [[p_mwn573]] ในคุณสมบัติของเฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์ และโคมไฟที่ไม่ได้ฝังในผนัง (ไม่ติ๊กเป็นค่าเริ่มต้น): ติ๊กแล้วชิ้นนั้นยึดกับผนังที่ใกล้ที่สุดข้างตัว ย้ายหรือหมุนผนังแล้วตามไปโดยระยะห่างเท่าเดิม
+- [[p_rc574]] ในคุณสมบัติของหลังคาลาด (ต่อจากระยะยื่นชายคา): [[rc574_n]] แบบเดิม [[rc574_p]] หรือ [[rc574_s]] พร้อม [[p_fd574]] (0 ถึงความหนาหลังคา) ชายคาถูกตัดตามนั้นทั้งในภาพ 3 มิติ รูปตัด และปริมาตร
 - [[p_ul240]], [[p_lo240]] และ [[p_bo240]] ในคุณสมบัติของห้อง: ห้องสูงจากระดับชั้นบวกระยะยกฐาน ขึ้นไปถึงระดับบนบวกระยะเลื่อน (ตั้งต้นถึงชั้นถัดไป ถ้าไม่มีชั้นบนสูง 3000 มม.) ตั้ง [[ac_vol240]] ใน [[a_areacomp]] เป็น พื้นที่และปริมาตร แล้วห้องจะแสดง [[p_vol240]] ที่หักส่วนเหนือฝ้าและใต้พื้นชั้นบนออก ตารางห้องและ IFC ใช้ค่านี้ด้วย
 - [[wlf_deck]] เป็นหน้าที่ของชั้นหนึ่งใน [[a_slayers]] ของชนิดพื้น: ชั้นนี้หนาเท่าความสูงลอน เลือก [[dk_prof241]] ได้สามแบบ (ลอนสูง 38 ระยะ 150, 50 ระยะ 200, 75 ระยะ 300 มม.) และ [[dk_use241]] ผูกกับชั้นบน (คอนกรีตของชั้นที่อยู่เหนือเต็มร่องลอน) หรือแผ่นเดี่ยว · ลอนวิ่งตามทิศทางแผ่นพื้น (Span Direction) ในคุณสมบัติของพื้น · 3 มิติและรูปตัดเห็นแผ่นพับเป็นลอนและคอนกรีตในร่อง ใต้สันลอนเป็นช่องว่าง · ปริมาตรของพื้นนับคอนกรีตในร่องแต่ไม่นับช่องว่าง [[a_mtake]] นับแผ่นเหล็กเป็นพื้นที่คลี่และปริมาตรเหล็ก · ชนิดหนึ่งมีได้แผ่นเดียว และใช้ได้กับพื้นเท่านั้น
 - หลังคาเป็นขอบเขตบนของห้องด้วย: เมื่อเปิด พื้นที่และปริมาตร ปริมาตรของห้องหักส่วนที่อยู่เหนือท้องหลังคาทีละผืน (ท้องหลังคาคือผิวบนลบความหนาของหลังคา) ตรงไหนฝ้าหรือพื้นชั้นบนต่ำกว่าก็ใช้อันนั้น ตรงไหนหลังคาต่ำกว่าก็ใช้หลังคา ส่วนของหลังคาที่ต่ำกว่าฐานห้องไม่นับ · ป้ายห้องแบบ [[rk_vol242]] แสดงปริมาตรต่อจากพื้นที่ (เลือกได้ในแถบตัวเลือกของ [[t_rtag]] และในคุณสมบัติของป้าย)
@@ -60428,6 +60543,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - [[p_rbd239]] in the properties of walls and columns: clear it on a wall and the rooms on both sides become one region (curtain walls too), then split them with [[t_rsep]] as you like; tick it on a column and the part of the column inside a room comes off that room's area (columns start unticked, so room areas already there do not change)
 - [[p_mwg571]] in the properties of a column (checked by default): a column where grids cross, or on a grid, goes with them when they are moved, turned or stretched, and the beams and braces whose ends are at it go along; cleared, the column stays where it is
 - [[p_mwn573]] in the properties of furniture, plumbing fixtures, equipment and lighting fixtures that are not hosted (cleared by default): checked, the component keeps to the nearest wall beside it and goes with it, at the same distance, when the wall is moved or turned
+- [[p_rc574]] in the properties of a sloped roof (after Overhang): [[rc574_n]] as before, [[rc574_p]] or [[rc574_s]], with a [[p_fd574]] from 0 to the roof's thickness: its eaves are cut so in 3D, sections and its volume
 - [[p_ul240]], [[p_lo240]] and [[p_bo240]] in the properties of rooms: a room rises from its level plus the base offset to the upper limit plus the limit offset (by default the next level up; with no level above, 3000 mm); set [[ac_vol240]] in [[a_areacomp]] to Areas and Volumes and rooms show their [[p_vol240]], less what lies above ceilings and below the floor above; room schedules and IFC use it too
 - [[wlf_deck]] is a Function for a layer in the [[a_slayers]] of a floor type: the layer is as thick as the ribs are high; pick the [[dk_prof241]] (ribs 38 at 150, 50 at 200 or 75 at 300 mm) and the [[dk_use241]]: Bound Layer Above (the concrete of the layer above fills the troughs) or Standalone Deck · the ribs run along the floor's Span Direction in its properties · 3D and sections show the folded sheet and the concrete in the troughs, with the voids under the crests empty · the floor's volume counts the concrete in the troughs and not the voids; the [[a_mtake]] counts the sheet by its area folded out and its steel · one deck per type, in floors only
 - Roofs bound rooms from above too: once Areas and Volumes is set, the volume of a room leaves out what lies above the underside of a roof, face by face (the underside: the top less the roof's thickness); where a ceiling or a floor above is lower that one counts, where the roof dips lower the roof does; parts of a roof below the room's base do not count · a room tag of the kind [[rk_vol242]] shows the volume after the area (in the options of [[t_rtag]] and in the tag's properties)
@@ -61403,6 +61519,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.571 · เสาย้ายตามกริด (Moves With Grids) แบบ Revit: เสาที่ตั้งตรงจุดตัดกริดไปอยู่ที่จุดตัดใหม่เมื่อย้าย หมุน หรือยืดกริด เสาที่อยู่บนกริดเส้นเดียวไปตามเส้นใหม่ คานและค้ำยันที่ปลายอยู่ที่เสาย้ายปลายตาม ฐานรากเดี่ยวใต้เสาตามไปด้วย เสาที่ย้ายพร้อมกันในครั้งเดียว เสาเอียง เสาในกลุ่ม หรือเสาที่เอาติ๊กย้ายตามกริดออก อยู่ที่เดิม
 - V1.572 · ฐานรากใต้ผนังเป็นขั้นตามท้องผนังแบบ Revit: ผนังที่แก้รูปด้าน (Edit Profile) ให้ท้องผนังลดเป็นขั้นหรือลาดเอียง หรือท้องผนังยึดกับพื้น (Attach Base) ฐานรากใต้ผนังลดขั้นและลาดตาม หนาเท่าชนิดตลอดแนว ยื่นเกินปลายผนังที่ระดับเดียวกับปลายนั้น ภาพ 3 มิติ รูปตัด รูปด้าน การตรวจชน การต่อกันของฐานราก (V1.570) และการขาดตามช่องเปิด (V1.569) ตามไปด้วย ผังพื้นมีเส้นขวางตรงขั้นและจุดหักมุม ปริมาตรยังเท่าพื้นที่คูณความหนา เหล็กเสริมในฐานรากอยู่ที่เดิม ผนังท้องเรียบไม่เปลี่ยนอะไร
 - V1.573 · ย้ายตามองค์ประกอบใกล้เคียง (Moves With Nearby Elements) แบบ Revit: เฟอร์นิเจอร์ สุขภัณฑ์ อุปกรณ์เครื่องกลและไฟฟ้า โคมไฟ และอุปกรณ์ที่ไม่ได้ฝังในผนัง มีช่องนี้ในคุณสมบัติ (ไม่ติ๊กเป็นค่าเริ่มต้น) ติ๊กแล้วชิ้นนั้นยึดกับผนังที่ใกล้ที่สุดข้างตัว ย้ายผนังแล้วตามไปโดยระยะห่างเท่าเดิม หมุนผนังแล้วหมุนตาม ผนังที่ยึดคือผนังที่ใกล้ที่สุดตอนติ๊กหรือตอนวางหรือย้ายชิ้นนั้นเอง ผนังที่สร้างใหม่ใกล้กว่าไม่แย่งไป ย้ายพร้อมผนังในครั้งเดียว ปักหมุด หรืออยู่ในกลุ่ม อยู่ที่เดิม ลบผนังแล้วหลุด ตารางรายการใช่ ไม่ใช่
+- V1.574 · การตัดปลายจันทัน (Rafter Cut) แบบ Revit: หลังคาลาดที่สร้างจากรูปรอบ (ปั้นหยา จั่ว เพิงหมาแหงน กำหนดความชันรายด้าน) เลือกในแผงคุณสมบัติต่อจากระยะยื่นชายคาได้ว่า ตัดแนวดิ่ง (Plumb Cut แบบเดิม) ตัดสองครั้งแนวดิ่ง (Two Cut - Plumb: ตัดดิ่งลงจากหลังหลังคาลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอนเข้าไปจนชนท้องหลังคา) หรือตัดสองครั้งตั้งฉากกับหลังคา (Two Cut - Square: ตัดตั้งฉากกับความลาดลึกเท่าความลึกเชิงชาย แล้วตัดแนวนอน) · ความลึกเชิงชาย (Fascia Depth) ตั้งได้ตั้งแต่ 0 ถึงความหนาหลังคา เริ่มที่ครึ่งหนึ่งของความหนา · ชั้นวัสดุของหลังคา เส้นขอบ เชิงชายที่หลังคาวาดเอง (ลึกเท่ารอยตัดแรก และเอียงตั้งฉากกับหลังคาเมื่อตัดแบบตั้งฉาก) และฝ้าชายคาใต้หลังคาปั้นหยา (อยู่ใต้รอยตัดแนวนอน) ตามไปด้วย · ภาพ 3 มิติ รูปตัด รูปด้าน การเชื่อมรูปทรง และปริมาตรในตารางถอดปริมาณคิดตามรอยตัด · ตารางรายการมีช่องการตัดปลายจันทันและความลึกเชิงชาย
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -62149,6 +62266,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.571 · Columns move with grids (Moves With Grids), as in Revit: a column where two grids cross goes to where they cross after they are moved, turned or stretched; one on a grid goes to its new line; the beams and braces whose ends are at it go along, and its isolated foundation too; a column moved in the same edit, a slanted column, one in a group or one with Moves With Grids cleared stays where it is
 - V1.572 · Stepped wall foundations, as in Revit: under a wall whose base was edited to step down or slope (Edit Profile), or whose base is attached to a floor, the wall foundation steps and slopes with the base of the wall, as thick as its type all along, and runs past the ends of the wall at the height of each end; 3D, sections, elevations, clashes, the joins between foundations (V1.570) and the breaks at inserts (V1.569) follow, plans draw a line across it at each step or turn, its volume is still its area times its thickness, and the rebar in it stays where it was; a wall with a flat base changes nothing
 - V1.573 · Moves With Nearby Elements, as in Revit: furniture, plumbing fixtures, mechanical and electrical equipment, lighting fixtures and devices that are not hosted have it in Properties (cleared by default); checked, the component keeps to the nearest wall beside it, moving with that wall at the same distance when the wall is moved and turning with it when it is turned; the wall is the one nearest when the box was checked or when the component itself was last placed or moved, and a wall put nearer later does not take it; one moved in the same edit, pinned or in a group stays, a wall deleted lets it go; schedules show Yes or No
+- V1.574 · Rafter Cut, as in Revit: a sloped roof by footprint (hip, gable, shed, or slopes by edge) has Rafter Cut in Properties after Overhang: Plumb Cut (as before), Two Cut - Plumb (cut straight down from its top for its Fascia Depth, then level inwards to its underside) or Two Cut - Square (cut square to its slope for its Fascia Depth, then level) · Fascia Depth runs from 0 to the thickness of the roof and starts at half of it · the layers of the roof, its edges, the fascia boards it draws by itself (as deep as the first cut, and square to the slope for a square cut) and the soffit under a hip roof's overhang (under the level cut) follow · 3D, sections, elevations, Join Geometry and the volume in quantities follow the cut · schedules have Rafter Cut and Fascia Depth
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -66362,6 +66480,38 @@ window.PenumBIM.r573={
   sfv:id=>{const e=IDX.get(id),f=sfAll(P,e.cat,t).find(x=>x.k==='mwn573');return f?f.g(e,{tr:t}):null},
   raw:(id,v)=>{IDX.get(id).mwn573=v;return true},
   tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'mwn573' in e).map(e=>[e.id,e.mwn573])}};
+/* V1.574 test API: rafter cut */
+window.PenumBIM.r574={
+  rf:(lid,pts,o)=>{let id;edit(()=>{const d=defs('roof')||{},e=Object.assign({id:P.seq++,cat:'roof',type:d.type,level:lid,pts,off:0,shape:'gable',slope:30,overhang:600,alt:0},o||{});P.els.push(e);id=e.id});refresh();return id},
+  set:(id,o)=>{edit(()=>{const e=IDX.get(id);for(const k in o){if(o[k]===null)delete e[k];else e[k]=o[k]}});refresh();return true},
+  field:(id,key,raw)=>{const e=IDX.get(id);edit(()=>applyField(e.cat,e,key,raw));refresh();const x=IDX.get(id);return[x.rc574===undefined?null:x.rc574,x.fd574===undefined?null:x.fd574]},
+  get:id=>{const x=IDX.get(id);return[x.rc574===undefined?null:x.rc574,x.fd574===undefined?null:x.fd574]},
+  th:id=>roofGeo(P,IDX.get(id)).th,
+  geo:id=>{const G=rc574G(P,IDX.get(id));return G?{zE:G.zE,sq:G.sq,F:G.F.map(C=>({zc:C.zc,x1:C.x1,xh:C.xh,t:C.t,fd:C.fd}))}:null},
+  zE:id=>{const R=roofGeo(P,IDX.get(id));return Math.min(...R.faces.map(f=>Math.min(...f.loop.map(q=>q[2]))))},
+  /* the heights where its 3D crosses the vertical line at x, y: w 'b' its layers, 'f' its fascia boards and soffit, 'g' anything else of it */
+  at3:(id,x,y,w)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,zs=new Set();
+    for(const m of B){if(m.id!==id||!m.t||m.cat!=='roof')continue;const k=typeof m.li==='number'?'b':rc574IsFa(m)?'f':'g';if((w||'b')!==k)continue;const t=m.t;
+      for(let i=0;i+8<t.length;i+=9){const ax=t[i],ay=t[i+2],bx=t[i+3],by=t[i+5],cx=t[i+6],cy=t[i+8],d=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy);if(Math.abs(d)<1e-6)continue;
+        const l1=((by-cy)*(x-cx)+(cx-bx)*(y-cy))/d,l2=((cy-ay)*(x-cx)+(ax-cx)*(y-cy))/d,l3=1-l1-l2;if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;zs.add(Math.round(l1*t[i+1]+l2*t[i+4]+l3*t[i+7]))}}
+    return[...zs].sort((a,b)=>a-b)},
+  /* the volume of its layers in 3D (litres), and of its fascia boards: their lowest and highest */
+  bvol:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let v=0;for(const m of B)if(m.id===id&&m.cat==='roof'&&typeof m.li==='number')v+=triVol(m.t);return Math.round(v/1e6)},
+  fab:id=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items;let lo=Infinity,hi=-Infinity;for(const m of B)if(m.id===id&&m.cat==='roof'&&rc574IsFa(m))for(let i=1;i<m.t.length;i+=3){lo=Math.min(lo,m.t[i]);hi=Math.max(hi,m.t[i])}return isFinite(lo)?[Math.round(lo),Math.round(hi)]:null},
+  /* its lines that run level at height z (rounded), along x or y */
+  lnz:(id,z)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,out=[];for(const m of B){if(m.id!==id||m.cat!=='roof'||typeof m.li!=='number'||!m.l)continue;const l=m.l;
+      for(let i=0;i+5<l.length;i+=6)if(Math.abs(l[i+1]-z)<1&&Math.abs(l[i+4]-z)<1)out.push([l[i],l[i+2],l[i+3],l[i+5]].map(Math.round))}return out},
+  vlines:(id,x,y)=>{const B0=buildMeshes(P,FPm(),FITm()),B=Array.isArray(B0)?B0:B0.items,out=[];for(const m of B){if(m.id!==id||m.cat!=='roof'||typeof m.li!=='number'||!m.l)continue;const l=m.l;
+      for(let i=0;i+5<l.length;i+=6)if(Math.abs(l[i]-x)<1&&Math.abs(l[i+2]-y)<1&&Math.abs(l[i+3]-x)<1&&Math.abs(l[i+5]-y)<1)out.push([Math.round(Math.min(l[i+1],l[i+4])),Math.round(Math.max(l[i+1],l[i+4]))])}return out},
+  vol:id=>{const q=QTY().get(id);return q?Math.round(q.vol/1e6):null},
+  rem:id=>Math.round(rc574Rem(P,IDX.get(id))/1e6),
+  jv:id=>Math.round(triVol(joinSolid(P,IDX.get(id)))/1e6),
+  prow:()=>{const rows=[...document.querySelectorAll('#props .pr')].map(r=>{const i=r.querySelector('[data-p]');return i?i.dataset.p:''}),s=document.querySelector('#props #p_rc574'),f=document.querySelector('#props #p_fd574');
+    return{i:rows.indexOf('rc574'),j:rows.indexOf('overhang'),k:rows.indexOf('fd574'),v:s?s.value:null,fd:f?f.value:null}},
+  sfv:(id,k)=>{const e=IDX.get(id),f=sfAll(P,e.cat,t).find(x=>x.k===k);return f?f.g(e,{tr:t}):null},
+  nav:(vid,o)=>{const n=navOf(viewById(vid));if(o){Object.assign(n,o);refresh()}const r={};for(const k in n)if(typeof n[k]!=='object'||Array.isArray(n[k]))r[k]=n[k];return JSON.stringify(r)},
+  raw:(id,k,v)=>{IDX.get(id)[k]=v;return true},
+  tidy:()=>{for(const f of XC)f();return P.els.filter(e=>'rc574' in e||'fd574' in e).map(e=>[e.id,e.rc574===undefined?null:e.rc574,e.fd574===undefined?null:e.fd574])}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
