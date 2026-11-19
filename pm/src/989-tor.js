@@ -1,4 +1,4 @@
-/* ---------- 4.99.45 TOR: ขอบเขตงานของลูกค้า แยกงานโครงการ และงานบำรุงรักษา ----------
+/* ---------- 4.99.46 TOR: ขอบเขตงานของลูกค้า แยกงานโครงการ และงานบำรุงรักษา ----------
    User (2026-11-19): "TOR เราจะเอาที่ไหนดี" … "แต่จะแยกสำหรับโครงการ และงานบำรุงรักษา" … "อยากจะให้มีช่องให้เลือก".
    A TOR usually arrives before there is a quotation or a project, so it lives on its own company page (ขาย › TOR) with
    two tabs: TOR งานโครงการ and TOR งานบำรุงรักษา. Each TOR (CO().tors) is picked onto the work it belongs to: a quotation
