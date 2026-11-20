@@ -14644,7 +14644,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=717,V1_NAME='V1.707';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=718,V1_NAME='V1.708';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -64967,6 +64967,39 @@ Object.assign(FLT_F,{svc707:'s'});
 Object.assign(STR,{p_svc707:['ชนิดบริการ','Service Type'],ff_svc707:['ชนิดบริการ (Service Type)','Service Type'],p_rsp707:['ระยะขั้นบันได','Rung Space'],
   svc707_power:['ไฟกำลัง','Power'],svc707_light:['ไฟแสงสว่าง','Lighting'],svc707_data:['ข้อมูล (Data)','Data'],svc707_comm:['สื่อสาร','Communication'],
   svc707_fa:['แจ้งเหตุเพลิงไหม้','Fire Alarm'],svc707_sec:['รักษาความปลอดภัย','Security'],svc707_emer:['ไฟฉุกเฉิน','Emergency Power']});
+/* ===== 708 Conduit Runs and Cable Tray Runs (V1.708; Revit: the schedule categories Conduit Runs and Cable Tray Runs: one row for every run of
+   conduits or cable trays joined end to end, with its length along the run, fittings included) =====
+   A run is a set of conduits (cable trays) that the network joins (runGraph: ends, elbows, tees and crosses), fittings and all.  New Schedule › Electrical has
+   the two categories, after Cable Trays and Conduits; a row is a run: Run (1, 2 … in the order of their first element), Type, Size, Service Type (V1.707) and
+   Level, the names of all its members once each; Segments; Fittings (elbows, tees, crosses and transitions where the size changes); Bends, the angles of
+   its elbows in plan added up (a pull every 360°, NEC 358.26); Length along the run in metres.  Clicking a row selects its
+   members; Sorting/Grouping, Filter, Formatting and sheets as for any schedule.  An element of a phase the schedule does not show is left out. */
+const RUN708={crun708:'conduit',trun708:'tray'};
+/* the runs of a category: [{ids, els, nfit, bend (°), len (mm)}] */
+function runs708(P0,cat){const G=runGraph(P0,cat,false,true),N=G.nodes.length,up=[...Array(N).keys()],f=i=>{while(up[i]!==i){up[i]=up[up[i]];i=up[i]}return i};
+  for(const ed of G.edges)if(!ed.riser){const a=f(ed.a),b=f(ed.b);if(a!==b)up[a]=b}
+  const by=new Map();
+  for(const ed of G.edges){if(ed.riser)continue;const k=f(ed.a);let R=by.get(k);if(!R)by.set(k,R={els:new Set(),nfit:0,bend:0,len:0});R.els.add(ed.r.e);
+    const L=ed.r.L,dz=(ed.r.z[1]-ed.r.z[0])*(ed.t1-ed.t0);R.len+=Math.hypot(ed.len,dz)}
+  G.nodes.forEach((n,i)=>{const A=n.arms.filter(a=>!a.ed.riser);if(A.length<2)return;const R=by.get(f(i));if(!R)return;
+    if(A.length>2){R.nfit++;return}const d=A[0].dx*A[1].dx+A[0].dy*A[1].dy,turn=180-Math.acos(Math.max(-1,Math.min(1,d)))*180/Math.PI;
+    if(turn>1){R.nfit++;R.bend+=turn;return}const a=A[0].ed.r,b=A[1].ed.r;if(Math.abs(a.hw-b.hw)>0.5||Math.abs(a.hh-b.hh)>0.5)R.nfit++});
+  return[...by.values()].map(R=>{const els=[...R.els].sort((a,b)=>a.id-b.id);return{ids:els.map(e=>e.id),els,nfit:R.nfit,bend:Math.round(R.bend),len:R.len}}).sort((a,b)=>a.ids[0]-b.ids[0])}
+/* the rows a schedule of runs lists */
+function runRows708(P0,sc){const cat=RUN708[sc],one=a=>[...new Set(a.filter(x=>x!==''&&x!=null))].join(', ');
+  return runs708(P0,cat).map((R,i)=>({id:R.ids[0],_ids708:R.ids,cat:sc,run708:i+1,type708:one(R.els.map(e=>(typ(P0,e)||{}).name||'')),size708:one(R.els.map(e=>runSize(P0,e))),
+    svc708:one(R.els.map(e=>e.svc707||'')),level708:one(R.els.map(e=>(lvl(P0,e.level)||{}).name||'')),seg708:R.els.length,fit708:R.nfit,bend708:R.bend,len708:R.len}))}
+/* the categories in New Schedule: Electrical, each after its own */
+for(const sc of ['trun708','crun708']){const i=SF_DISC.elec.indexOf(RUN708[sc]);SF_DISC.elec.splice(i<0?SF_DISC.elec.length:i+1,0,sc);SF_CATS.push(sc)}
+SF_DEF.crun708=SF_DEF.trun708=['run708','type708','size708','svc708','level708','seg708','fit708','bend708','len708'];
+{const f0=sfAll;sfAll=function(Q,cat,tr){if(!RUN708[cat])return f0.apply(this,arguments);const R=[],add=(k,l,o)=>R.push(Object.assign({k,l:tr(l),g:e=>e[k]==null?'':e[k],grp:'i'},o||{}));
+  add('run708','sf_run708',{num:1,dec:0});add('type708','sf_type708');add('size708','sf_size708');add('svc708','p_svc707');add('level708','sf_level708');
+  add('seg708','sf_seg708',{num:1,dec:0,sum:1});add('fit708','sf_fit708',{num:1,dec:0,sum:1});add('bend708','sf_bend708',{num:1,dec:0});add('len708','sf_len708',{num:1,u:'m',sum:1,grp:'q'});return R}}
+{const f0=sfTable;sfTable=function(P0,o,tr,Q){const v=o&&o.v||{};if(!RUN708[v.scat]||v.mto)return f0.apply(this,arguments);const rows=runRows708(P0,v.scat),S=f0(Object.assign({},P0,{els:rows}),o,tr,Q);
+  S.rows.forEach((r,i)=>{const x=rows[i];if(x&&r.id===x.id){r._ids=x._ids708.slice();delete r.id}});return S}}
+Object.assign(STR,{cat_crun708:['แนวท่อร้อยสาย (Conduit Runs)','Conduit Runs'],cat_trun708:['แนวรางเคเบิล (Cable Tray Runs)','Cable Tray Runs'],
+  sf_run708:['แนวที่','Run'],sf_type708:['ชนิด','Type'],sf_size708:['ขนาด','Size'],sf_level708:['ชั้น','Level'],sf_seg708:['จำนวนท่อน','Segments'],sf_fit708:['ข้อต่อ','Fittings'],
+  sf_bend708:['มุมดัดรวม (°)','Bends (°)'],sf_len708:['ความยาวรวม','Length']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -66187,6 +66220,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ไฟเต้ารับ เครื่องปรับอากาศ และอื่น ๆ ที่ติดตั้งในห้อง (Revit: Actual Power Load, Actual HVAC Load และ Actual Other Load ของ Space): เลือกห้องหนึ่งห้อง Properties ในภาระจากคนและไฟฟ้า ใต้ไฟแสงสว่างที่ติดตั้ง มีไฟเต้ารับและอุปกรณ์ ไฟเครื่องปรับอากาศ และไฟอื่น ๆ ที่ติดตั้ง รวมจากเต้ารับ อุปกรณ์ไฟฟ้า ดวงโคม และเครื่องจักรที่อยู่ในห้อง (ห้องเดียวกับที่ตารางหาให้ ตามจุดคำนวณห้อง) แยกตามประเภทโหลดของชนิด (หรือของหมวด) ประเภทโหลดที่โครงการสร้างเองนับเป็นอื่น ๆ ตารางห้องมีสามช่องนี้พร้อมยอดรวม
 - มาตรฐานท่อร้อยสาย (Revit: Standard ของชนิดท่อร้อยสาย, Outside Diameter และ Inside Diameter ของท่อ, Conduit Settings › Size): จัดการ › ชนิด › ท่อร้อยสาย มีมาตรฐาน EMT IMC RMC RNC Schedule 40 หรือ RNC Schedule 80 เว้นไว้จะอ่านจากชื่อชนิดเหมือนเดิม มาตรฐานกำหนดรูในที่ใช้ตรวจสัดส่วนสายในท่อและหาขนาดท่อ (NEC บทที่ 9 ตาราง 4) และขนาดนอกที่ใช้ถอดปริมาณวัสดุ เลือกท่อแล้ว Properties มีมาตรฐาน เส้นผ่านศูนย์กลางภายนอกและภายใน ตารางท่อร้อยสายมีสามช่องนี้ ตั้งค่างานไฟฟ้า › ขนาดท่อร้อยสาย มีตารางขนาดของแต่ละมาตรฐาน (ขนาดนิ้ว รูใน ขนาดนอก) ติ๊กขนาดที่ใช้ในรายการได้
 - ชนิดบริการและระยะขั้นบันไดของรางเคเบิลและท่อร้อยสาย (Revit: Service Type ของ Cable Tray และ Conduit, Rung Space ของรางแบบบันได): เลือกรางเคเบิลหรือท่อร้อยสาย Properties ในงานไฟฟ้ามีชนิดบริการ พิมพ์ได้ถึง 40 ตัวอักษร (ช่องเสนอชนิดที่โครงการใช้แล้วและชนิดทั่วไป เช่น ไฟกำลัง ไฟแสงสว่าง ข้อมูล แจ้งเหตุเพลิงไหม้) รางแบบบันไดมีระยะขั้นบันได 50 ถึง 1500 มม. ในขนาด (ไม่ตั้งคือ 300 เหมือนเดิม) แปลน 3D และการถอดปริมาณวัสดุใช้ระยะนี้ ตารางรางเคเบิลและท่อร้อยสายมีสองช่องนี้ ตัวกรองมีช่องชนิดบริการ
+- ตารางแนวท่อร้อยสายและแนวรางเคเบิล (Revit: หมวดตาราง Conduit Runs และ Cable Tray Runs): มุมมอง › ตาราง › ตารางใหม่ › งานไฟฟ้า มีแนวรางเคเบิลและแนวท่อร้อยสาย หนึ่งแถวคือหนึ่งแนวที่ต่อถึงกัน (ปลายชนปลาย ข้องอ สามทาง สี่ทาง) บอกชนิด ขนาด ชนิดบริการ ชั้น จำนวนท่อน ข้อต่อ (ข้องอ สามทาง และข้อลดที่ขนาดเปลี่ยน) มุมดัดรวมในแปลน (เกิน 360° ควรมีกล่องดึงสาย) และความยาวรวมตามแนว (ม.) คลิกแถวเลือกทั้งแนว จัดกลุ่ม กรอง และวางบนแผ่นงานได้เหมือนตารางอื่น
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -66605,6 +66639,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Actual Power, HVAC and Other Loads of rooms (Revit: Actual Power Load, Actual HVAC Load and Actual Other Load of a Space): select a room and People and Electrical Loads in its Properties has, under Actual Lighting Load, the Actual Power, HVAC and Other Loads, the sums of the receptacles, devices, luminaires and mechanical equipment standing in it (the room a schedule finds for them, at their Room Calculation Point) by the load classification of their type (or of their category); the project's own classifications count as Other; room schedules have the three with totals
 - Conduit Standard (Revit: Standard of a conduit type, Outside Diameter and Inside Diameter of a conduit, Conduit Settings › Size): Manage › Types › Conduit has a Standard, EMT, IMC, RMC, RNC Schedule 40 or RNC Schedule 80, left empty read from the type name as before; the standard gives the bore that the fill check and conduit sizing take (NEC Chapter 9 Table 4) and the outside diameter of the Material Takeoff; select a conduit and its Properties have its Standard, Outside Diameter and Inside Diameter; conduit schedules have the three; Electrical Settings › Conduit Sizes has the sizes of each standard (trade size, bore, outside diameter), ticked to be in the size list
 - Service Type and Rung Space of cable trays and conduits (Revit: Service Type of a Cable Tray or Conduit, Rung Space of a ladder tray): select a cable tray or a conduit and Electrical in its Properties has its Service Type, a text of up to 40 characters (the box offers those the project uses and common ones such as Power, Lighting, Data, Fire Alarm); a ladder cable tray has its Rung Space, 50 to 1500 mm, in Dimensions (300 when not set, as before), which the plan, the 3D view and the Material Takeoff take; schedules of cable trays and conduits have both; filter rules have a field Service Type
+- Conduit Runs and Cable Tray Runs schedules (Revit: the Conduit Runs and Cable Tray Runs schedule categories): View › Schedules › New Schedule › Electrical has Cable Tray Runs and Conduit Runs; a row is a run of conduits or trays joined end to end, at elbows, tees and crosses, with its Type, Size, Service Type, Level, Segments, Fittings (elbows, tees and transitions where the size changes), Bends (the angles of its elbows in plan added up; past 360° a pull box is due) and Length along the run (m); clicking a row selects the run; Sorting/Grouping, Filter and sheets as for any schedule
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -67891,6 +67926,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.705 · ไฟที่ติดตั้งในห้องตามประเภทโหลด: Properties และตารางห้องมีไฟเต้ารับ ไฟเครื่องปรับอากาศ และไฟอื่น ๆ ที่ติดตั้ง เหมือน Revit
 - V1.706 · มาตรฐานท่อร้อยสาย: ชนิดท่อเลือก EMT IMC RMC หรือ RNC (PVC) Schedule 40 หรือ 80 ได้ ท่อบอกเส้นผ่านศูนย์กลางภายนอกและภายใน ตั้งค่ามีตารางขนาดของแต่ละมาตรฐาน เหมือน Revit
 - V1.707 · ชนิดบริการและระยะขั้นบันได: รางเคเบิลและท่อร้อยสายมีชนิดบริการ (ไฟกำลัง ข้อมูล …) ในตารางและตัวกรอง รางแบบบันไดตั้งระยะขั้นบันไดได้ เหมือน Revit
+- V1.708 · ตารางแนวท่อร้อยสายและแนวรางเคเบิล: หนึ่งแถวต่อหนึ่งแนว บอกความยาวรวม ข้อต่อ และมุมดัดรวม เหมือน Conduit Runs และ Cable Tray Runs ของ Revit
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -68771,6 +68807,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.705 · Actual loads of rooms: Properties and room schedules have Actual Power, HVAC and Other Load by load classification, as in Revit
 - V1.706 · Conduit Standard: a conduit type is EMT, IMC, RMC or RNC Schedule 40 or 80; conduits have Outside and Inside Diameter; Electrical Settings lists the sizes of each standard, as in Revit
 - V1.707 · Service Type and Rung Space: cable trays and conduits have a Service Type for schedules and filters; a ladder tray has its Rung Space, as in Revit
+- V1.708 · Conduit Runs and Cable Tray Runs: a schedule row for every run with its length, fittings and bends, as in Revit
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -74581,6 +74618,17 @@ window.PenumBIM.r707={
   sv:(cat,id)=>sfAll(P,cat,t).filter(f=>/707$/.test(f.k)).map(f=>[f.k,f.l,f.g(IDX.get(id)),f.grp]),
   flt:(id,f)=>fltVal(IDX.get(id),f),
   fltField:()=>!!FLT_F.svc707
+};
+/* V1.708 test API: Conduit Runs and Cable Tray Runs */
+window.PenumBIM.r708={
+  runs:cat=>runs708(P,cat).map(R=>({ids:R.ids,nfit:R.nfit,bend:R.bend,len:Math.round(R.len)})),
+  rows:sc=>runRows708(P,sc).map(r=>{const o={};for(const k in r)if(k!=='cat')o[k]=typeof r[k]==='number'?Math.round(r[k]*100)/100:r[k];return o}),
+  cats:()=>[SF_DISC.elec.slice(),SF_CATS.includes('crun708')&&SF_CATS.includes('trun708')],
+  def:()=>SF_DEF.crun708.slice(),
+  flds:sc=>sfAll(P,sc,t).map(f=>[f.k,f.l,!!f.num,!!f.sum]),
+  tab:id=>{const v=viewById(id),S=schedView(P,v,t);return{cols:S.cols.map(c=>[c.k,c.label]),rows:S.rows.map(r=>{const o={_ids:r._ids||null,id:r.id||null,_g:r._g||null};for(const c of S.cols)o[c.k]=typeof r[c.k]==='number'?Math.round(r[c.k]*100)/100:r[c.k];return o}),foot:S.foot}},
+  ns:D=>{nsMake(D);return activeView().id},csv:id=>scheduleCSV(viewById(id)),
+  views:()=>P.views.filter(v=>v.kind==='schedule'&&v.sched==='cat'&&RUN708[v.scat]).map(v=>({id:v.id,scat:v.scat,name:v.name,flds:v.flds}))
 };
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
