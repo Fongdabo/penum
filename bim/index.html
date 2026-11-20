@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=671,V1_NAME='V1.661';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=672,V1_NAME='V1.662';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -62983,6 +62983,92 @@ Object.assign(STR,{p_so661:['ระยะเส้นทาง (ช่วงท�
   so661_tt:['ความสูงของช่วงที่เลือกจากชั้นของตู้ ช่วงอื่นคงเดิม ขึ้นหรือลงที่ปลายช่วง','The height of the selected segment above the level of its panel; the other segments stay, rising or dropping at its ends'],
   ep659_hint:['ลากสี่เหลี่ยมเพื่อย้ายจุดของเส้นทาง ลากวงกลมกลางช่วงเพื่อเพิ่มจุด วางจุดทับจุดข้างเคียงเพื่อเอาออก คลิกเส้นของช่วงเพื่อเลือกแล้วพิมพ์ระยะเส้นทางของช่วงนั้น กดเสร็จใน Properties',
     'Drag a square to move a point of the path, a circle in the middle of a leg to add one; drop a point onto its neighbour to remove it; click a leg to select it and type its Path Offset; Finish in Properties']});
+/* ===== 662 Feed Through Lugs (V1.662; Revit: the Feed Through Lugs of a panel, a panel connected to another through those lugs instead of a breaker, and the
+   Total Load Connected To Feed Through Lugs of a panel schedule) =====
+   e.ftl662 = 1: the panel has feed-through lugs (not a transformer).  A panel fed through them keeps e.panel, the panel with the lugs, and FTL for its circuit: it takes
+   no way there, its load is on that panel's bus as a feeder's is, and its conductors are protected by what protects that bus: the MCB Rating of the panel with the
+   lugs, else the breaker that panel is fed from (up through lugs again when it is fed so), else the main breaker its load needs; the feeder's wire is sized for it.
+   Properties: Feed Through Lugs of a panel and the panel on them; Connection Type, Breaker or Feed Through Lugs, of a panel fed from another.  The panel schedule
+   lists the panel on the lugs below the ways, without a breaker, and the Total Load Connected To Feed Through Lugs below the totals.  One panel on the lugs of a
+   panel, on the same distribution system: Check Circuits flags the rest. */
+const FTL662='FTL';
+const isFtl662=e=>!!e&&e.cat==='eequip'&&!!e.panel&&e.panel!==e.mark&&String(e.circuit==null?'':e.circuit)===FTL662;
+const hasFtl662=(e,P0)=>!!e&&e.cat==='eequip'&&e.ftl662===1&&!isTx657(P0||P,e);
+const ftlKids662=(P0,mk)=>P0.els.filter(x=>isFtl662(x)&&x.panel===mk);
+/* what protects the conductors on the lugs of panel mk: {a: A, s: 'mcb' its MCB Rating | 'sup' the breaker it is fed from | 'main' the main its load needs, pn, ck} */
+function ftlRate662(P0,C,PN,mk,d){const pe=pnFind(P0,mk);if(!pe||(d||0)>20)return null;const q=pn653(pe);if(q.mcb)return{a:q.mcb,s:'mcb',pn:mk};
+  if(pe.panel&&pe.panel!==mk&&pnFind(P0,pe.panel)){if(isFtl662(pe)){const r=ftlRate662(P0,C,PN,pe.panel,(d||0)+1);if(r)return r}
+    else{const c=C.find(x=>x.panel===pe.panel&&x.circuit===String(pe.circuit==null?'':pe.circuit));if(c&&c.brk)return{a:c.brk,s:'sup',pn:pe.panel,ck:c.circuit}}}
+  const p=PN.find(x=>x.e===pe);return p&&p.main?{a:p.main,s:'main',pn:mk}:null}
+/* the feeder on the lugs: the rating of what protects it, its wire sized for that; not a rating typed in the schedule */
+{const f0=circuitCalc;circuitCalc=function(P0){const C=f0.apply(this,arguments);if(!P0||!P0.els.some(isFtl662))return C;const F=C.filter(c=>c.feed&&c.circuit===FTL662&&!c.lv);if(!F.length)return C;
+  const PN=panelCalc(P0,C),R=new Map();for(const c of F){const k=c.panel+'|'+c.circuit;if(R.has(k))continue;const r=ftlRate662(P0,C,PN,c.panel);if(r)R.set(k,r)}if(!R.size)return C;
+  const had=Object.prototype.hasOwnProperty.call(P0,'ckt'),O=P0.ckt,T=Object.assign({},O||{});for(const [k,r] of R)T[k]=Object.assign({},T[k]||{},{brk:r.a});
+  let C2;P0.ckt=T;try{C2=f0.apply(this,arguments)}finally{if(had)P0.ckt=O;else delete P0.ckt}
+  return C2.map(c=>{const r=c.feed&&c.circuit===FTL662?R.get(c.panel+'|'+c.circuit):null;return r?Object.assign(c,{ftl:r,set:false,auto:r.a}):c})}}
+{const f0=cktClean;cktClean=function(P0){f0.apply(this,arguments);if(!P0.ckt)return;for(const k in P0.ckt)if(k.endsWith('|'+FTL662)&&P0.ckt[k]){delete P0.ckt[k].brk;if(!Object.keys(P0.ckt[k]).length)delete P0.ckt[k]}if(!Object.keys(P0.ckt).length)delete P0.ckt}}
+{const f0=ckCell;ckCell=function(c,r){const kk=c.ckk||'ck',ck=r[kk];if(typeof ck==='string'&&ck.endsWith('|'+FTL662))return`<td class="n">${fmtCell(c,r[c.k])}</td>`;return f0.apply(this,arguments)}}
+{const f0=ckLab;ckLab=function(P0,pn,ck,noPan){if(String(ck==null?'':ck)===FTL662)return!noPan&&pn&&esOf(P0||P).cn===1?pn+'-'+FTL662:FTL662;return f0.apply(this,arguments)}}
+XC.push(()=>{for(const e of P.els){if(e.ftl662===undefined)continue;if(e.cat!=='eequip'||isTx657(P,e)||!(e.ftl662===1||e.ftl662===true||e.ftl662==='1'))delete e.ftl662;else e.ftl662=1}});
+/* the panel schedule: the panel on the lugs below the ways, no breaker of its own; the load on the lugs below the totals; the head of the panel fed through lugs */
+{const f0=pnlSched;pnlSched=function(P0,id,tr){const S=f0.apply(this,arguments),pe=P0.els.find(e=>e.id===id&&e.cat==='eequip');if(!pe||!pe.mark||!S||!S.rows)return S;
+  if(isFtl662(pe)){const a=tr('pnl_from',pe.panel,ckLab(P0,pe.panel,FTL662,1)),b=tr('pnl_ftlfrom662',pe.panel);for(const r of S.rows)if(r._g==='h')for(const k in r)if(typeof r[k]==='string'&&r[k].includes(a))r[k]=r[k].replace(a,b)}
+  const F=circuitCalc(P0).filter(c=>c.panel===pe.mark&&c.feed&&c.circuit===FTL662);if(!F.length)return S;const key=pe.mark+'|'+FTL662,one=panelDist(P0,pe)!=='3p';
+  for(const c of F){const d0=tr('pnl_feed',c.feed),d1=tr('pnl_ftl662',c.feed);
+    for(const r of S.rows){if(r._g)continue;if(r.lk===key&&r.ldesc===d0){r.lck=FTL662;r.ldesc=d1;r.lbrk='';delete r.lk;break}if(r.ck===key&&r.desc===d0){r.ckt=FTL662;r.desc=d1;r.brk='';delete r.ck;break}}}
+  const ph=[0,0,0];for(const c of F)for(let i=0;i<3;i++)ph[i]+=(c.phv||[0,0,0])[i];const va=ph[0]+ph[1]+ph[2],who=F.map(c=>c.feed).join(', ');
+  const fi=S.rows.findIndex(r=>r._g==='f'),k0=S.cols[0].k,h={_g:'h'};h[k0]=one?tr('pnl_ftlt662',who,money(va)):tr('pnl_ftlt3662',who,money(va),money(ph[0]),money(ph[1]),money(ph[2]));
+  S.rows.splice(fi<0?S.rows.length:fi+1,0,h);return S}}
+/* a header field of panel schedule templates */
+PST_HDR330.push('ftl662');
+{const f0=pstHdr330;pstHdr330=function(P0,pe,tr){const o=f0.apply(this,arguments);if(!pe)return o;const K=ftlKids662(P0,pe.mark).map(x=>x.mark||'—');
+  o.ftl662=hasFtl662(pe,P0)?(K.length?K.join(', '):tr('yes662')):isFtl662(pe)?tr('pnl_ftlfrom662',pe.panel):'—';return o}}
+/* schedules of electrical equipment */
+{const f0=sfAll;sfAll=(P0,cat,tr)=>{const F=f0(P0,cat,tr);if(cat!=='eequip')return F;const add=(k,l,g)=>F.push({k,l,g,grp:'i'});
+  add('ftl662',tr('sf_ftl662'),e=>hasFtl662(e,P0)?tr('yes662'):'');add('ct662',tr('sf_ct662'),e=>e.panel&&e.panel!==e.mark?tr(isFtl662(e)?'ct662_ftl':'ct662_brk'):'');return F}}
+/* Check Circuits */
+function ftlCheck662(P0){const out=[],by=new Map();
+  for(const e of P0.els){if(!isFtl662(e))continue;const up=pnFind(P0,e.panel);if(!up)continue;
+    if(!hasFtl662(up,P0)){out.push({k:'ck_ftlno662',ids:[e.id],panel:e.mark||'—',a:[e.panel]});continue}
+    (by.get(e.panel)||by.set(e.panel,[]).get(e.panel)).push(e);
+    const c=pSys657(P0,e),s=pSys657(P0,up);if(!(c.ph===s.ph&&c.w===s.w&&vEq657(c.vll,s.vll)&&vEq657(c.vln,s.vln)))out.push({k:'ck_ftlds662',ids:[e.id],panel:e.mark||'—',a:[e.panel,sysLab657(s),sysLab657(c)]})}
+  for(const [mk,a] of by)if(a.length>1)out.push({k:'ck_ftl2662',ids:a.map(e=>e.id).concat([pnFind(P0,mk).id]),panel:mk,a:[a.map(e=>e.mark||'—').sort().join(', ')]});
+  return out}
+{const f0=circuitCheck;circuitCheck=function(P0){const o=f0.apply(this,arguments);return o.concat(ftlCheck662(P0))}}
+{const f0=ckText;ckText=function(i){if(i&&/^ck_ftl(no|ds|2)662$/.test(i.k))return t(i.k,i.panel,...(i.a||[]));return f0.apply(this,arguments)}}
+/* Properties: Feed Through Lugs of a panel and the panel on them; Connection Type of a panel fed from another; the rating that protects a panel on lugs */
+const prSpan662=(h,id)=>{const j=h.indexOf(`<div class="pr"><label for="p_${id}">`);if(j<0)return null;const e=h.indexOf('</div></div>',j);return e<0?null:[j,e+12]};
+function ftlProt662(e){const c=circuitCalc(P).find(x=>x.feed===e.mark&&x.ftl);if(!c)return'';const r=c.ftl,ck=r.ck?ckLab(P,r.pn,r.ck,1):'';
+  return`<div class="pr"><label>${t('p_ftlp662')}</label><div><span class="ro" title="${esc(t('ftlp662_'+r.s,r.a,r.pn,ck))}">${esc(t('ftlq662_'+r.s,r.a,r.pn,ck))}</span></div></div>`}
+{const i=XP.findIndex(f=>/cnRows658|txRows657|pnRows653|PR\.num\('ways','p_ways'/.test(String(f)));if(i>=0){const f0=XP[i];XP[i]=(c,els)=>{let h=f0(c,els);if(c!=='eequip'||!h||!els.length)return h;
+  const e=els[0],one=els.length===1;
+  if(els.every(x=>x.panel&&x.panel!==x.mark)){const allF=els.every(isFtl662),anyF=els.some(isFtl662),sups=[...new Set(els.map(x=>x.panel))],ok=sups.every(s=>hasFtl662(pnFind(P,s)));
+    let x=PR.sel('ct662','p_ct662',allF?'ftl':anyF?'':'brk',[['brk',t('ct662_brk')],['ftl',t('ct662_ftl')+(ok||allF?'':' ⚠ '+t('ftl662_none'))]]);
+    if(one&&allF)x+=ftlProt662(e);
+    const s=prSpan662(h,'circuit');if(s&&allF)h=h.slice(0,s[0])+PR.ro('p_supckt',FTL662)+x+h.slice(s[1]);else if(s)h=h.slice(0,s[1])+x+h.slice(s[1]);else{const q=prSpan662(h,'panel');if(q)h=h.slice(0,q[1])+x+h.slice(q[1])}}
+  if(els.every(x=>!isTx657(P,x))){let x=PR.chk('ftl662','p_ftl662',els.every(x=>hasFtl662(x)));if(one&&e.mark){const K=ftlKids662(P,e.mark);if(K.length)x+=PR.ro('p_ftlk662',K.map(q=>q.mark||'—').join(', '))}
+    const s=prSpan662(h,'ways');if(s)h=h.slice(0,s[1])+x+h.slice(s[1])}
+  return h}}}
+XF.push((cat,o,key,raw)=>{if(cat!=='eequip'||(key!=='ftl662'&&key!=='ct662'))return false;
+  if(key==='ftl662'){if(raw===true||raw==='1'||raw===1||raw==='true'){if(!isTx657(P,o))o.ftl662=1}else delete o.ftl662;return true}
+  if(!o.panel||o.panel===o.mark)return true;const v=String(raw==null?'':raw);
+  if(v==='ftl'){if(isFtl662(o))return true;const up=pnFind(P,o.panel);if(!hasFtl662(up)){toast(t('ftl662_nolugs',o.panel));return true}
+    const on=ftlKids662(P,o.panel).filter(x=>x!==o);if(on.length){toast(t('ftl662_busy',o.panel,on[0].mark||'—'));return true}o.circuit=FTL662;return true}
+  if(v==='brk'&&isFtl662(o))o.circuit=ckFree(P,o.panel,panelDist(P,o)==='3p'?3:1);return true});
+Object.assign(STR,{p_ftl662:['ขั้วต่อผ่าน (Feed Through Lugs)','Feed Through Lugs'],p_ftlk662:['ตู้ที่ต่อผ่านขั้วต่อ','Panel on the lugs'],
+  p_ct662:['การต่อไฟ (Connection Type)','Connection Type'],ct662_brk:['เบรกเกอร์ (Breaker)','Breaker'],ct662_ftl:['ขั้วต่อผ่าน (Feed Through Lugs)','Feed Through Lugs'],
+  p_ftlp662:['ป้องกันโดย','Protected by'],ftlp662_mcb:['{0} A · เมนเบรกเกอร์ของตู้ {1}','{0} A · the MCB of {1}'],ftlp662_sup:['{0} A · เบรกเกอร์วงจร {2} ของตู้ {1} ที่จ่ายไฟให้','{0} A · breaker {2} of {1}, its supply'],
+  ftlq662_mcb:['{0} A · MCB {1}','{0} A · MCB {1}'],ftlq662_sup:['{0} A · {1}/{2}','{0} A · {1}/{2}'],ftlq662_main:['{0} A · เมน {1}','{0} A · main {1}'],
+  ftlp662_main:['{0} A · เมนเบรกเกอร์ที่โหลดของตู้ {1} ต้องการ','{0} A · the main breaker the load of {1} needs'],
+  ftl662_none:['ตู้ต้นทางไม่มีขั้วต่อผ่าน','the supply has no lugs'],ftl662_nolugs:['ตู้ {0} ไม่มีขั้วต่อผ่าน เปิดขั้วต่อผ่าน (Feed Through Lugs) ในคุณสมบัติของตู้ {0} ก่อน','{0} has no feed-through lugs: tick Feed Through Lugs in its Properties first'],
+  ftl662_busy:['ขั้วต่อผ่านของตู้ {0} ต่อกับตู้ {1} อยู่แล้ว ต่อได้ตู้เดียว','The feed-through lugs of {0} already feed {1}; they feed one panel'],yes662:['มี','Yes'],
+  pnl_ftl662:['ตู้ย่อย {0} (ต่อผ่านขั้วต่อ)','Panel {0} (feed-through lugs)'],pnl_ftlfrom662:['รับไฟจาก {0} ผ่านขั้วต่อ (Feed Through Lugs)','fed from {0} through its feed-through lugs'],
+  pnl_ftlt662:['โหลดรวมที่ต่อกับขั้วต่อผ่าน ({0}) {1} VA','Total load connected to feed-through lugs ({0}): {1} VA'],
+  pnl_ftlt3662:['โหลดรวมที่ต่อกับขั้วต่อผ่าน ({0}) {1} VA · L1 {2} · L2 {3} · L3 {4} VA','Total load connected to feed-through lugs ({0}): {1} VA · L1 {2} · L2 {3} · L3 {4} VA'],
+  pst_ftl662330:['ขั้วต่อผ่าน (Feed Through Lugs)','Feed Through Lugs'],sf_ftl662:['ขั้วต่อผ่าน','Feed Through Lugs'],sf_ct662:['การต่อไฟ','Connection Type'],
+  ck_ftlno662:['ตู้ {0} ต่อผ่านขั้วต่อของตู้ {1} แต่ตู้ {1} ไม่มีขั้วต่อผ่าน เปิดขั้วต่อผ่านของ {1} หรือต่อ {0} ด้วยเบรกเกอร์','Panel {0} is on the feed-through lugs of {1}, which has none: tick Feed Through Lugs of {1} or feed {0} from a breaker'],
+  ck_ftl2662:['ขั้วต่อผ่านของตู้ {0} ต่อกับหลายตู้ ({1}) ต่อได้ตู้เดียว','The feed-through lugs of {0} feed more than one panel ({1}); they feed one'],
+  ck_ftlds662:['ตู้ {0} ต่อผ่านขั้วต่อของตู้ {1} จึงต้องใช้ระบบเดียวกัน ({2}) แต่ใช้ {3}','Panel {0} on the feed-through lugs of {1} must be on its system, {2}, but is on {3}']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -64157,6 +64243,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - เส้นทางวงจร (Revit: Path Mode ของวงจรไฟฟ้า All Devices, Farthest Device, Custom และ Edit Path): Properties ของอุปกรณ์ในวงจรเลือกเส้นทางผ่านทุกอุปกรณ์ (ใกล้สุดก่อนเหมือนเดิม) ถึงอุปกรณ์ไกลสุด หรือกำหนดเอง และบอกความยาววงจรที่ใช้เลือกขนาดสายและคิดแรงดันตก กดแก้เส้นทางแล้วแปลนแสดงเส้นทางเป็นเส้นประพร้อมความยาว ลากสี่เหลี่ยมย้ายจุด ลากวงกลมกลางช่วงเพิ่มจุด วางจุดทับจุดข้างเคียงหรือแนวตรงเพื่อเอาออก จุดที่ย้ายทำให้เป็นแบบกำหนดเอง คืนเส้นทางกลับผ่านทุกอุปกรณ์ ย้อนกลับได้ บันทึกแล้วเปิดใหม่ยังอยู่
 - ระยะเส้นทางวงจร (Revit: Circuit Path Offset ในตั้งค่างานไฟฟ้า และ Path Offset ของวงจรตอนแก้เส้นทาง): ตั้งค่างานไฟฟ้า › ทั่วไป ใส่ความสูงของช่วงแนวนอนของเส้นทางวงจรจากชั้นของตู้ ใช้กับวงจรแบบถึงอุปกรณ์ไกลสุด เส้นทางขึ้นหรือลงที่ตู้ เดินแนวนอนที่ระยะนั้น แล้วลงหรือขึ้นที่อุปกรณ์ ความยาววงจรรวมช่วงตั้ง ว่างไว้คือที่ความสูงของตู้แบบเดิม Properties ของอุปกรณ์บนวงจรมีระยะเส้นทางของวงจรนั้นเอง (ถึงอุปกรณ์ไกลสุดและกำหนดเอง) พิมพ์แล้วจุดของเส้นทางกำหนดเองย้ายไปที่ความสูงใหม่ ว่างคือตามตั้งค่า ย้อนกลับ บันทึก และเปิดใหม่ยังอยู่
 - ระยะเส้นทางของช่วง (Revit: เลือกช่วงของเส้นทางวงจรก่อนพิมพ์ Path Offset): ตอนแก้เส้นทาง คลิกเส้นของช่วง (ไม่ใช่สี่เหลี่ยมหรือวงกลม) เพื่อเลือก ช่วงที่เลือกเป็นเส้นหนา คลิกซ้ำเพื่อเลิกเลือก แถวระยะเส้นทางใน Properties เป็นของช่วงนั้น พิมพ์แล้วเส้นทางเป็นกำหนดเอง ช่วงนั้นเดินที่ความสูงใหม่ ขึ้นหรือลงที่ปลายช่วง ช่วงอื่นคงเดิม ปุ่มทั้งเส้นทางกลับไปที่ระยะของทั้งเส้น จุดคู่ที่ขึ้นลงย้ายไปด้วยกันเมื่อลาก ย้อนกลับ บันทึก และเปิดใหม่ยังอยู่
+- ขั้วต่อผ่าน (Revit: Feed Through Lugs ของตู้และการต่อตู้ย่อยผ่านขั้วต่อแทนเบรกเกอร์): ติ๊กขั้วต่อผ่าน (Feed Through Lugs) ในคุณสมบัติของตู้ แล้วตู้ย่อยที่รับไฟจากตู้นั้นเลือกการต่อไฟ (Connection Type) เป็นขั้วต่อผ่านได้ วงจรเป็น FTL ไม่กินช่องในตู้แม่ โหลดของตู้ย่อยรวมในบัสของตู้แม่ สายป้อนถูกป้องกันโดยเมนเบรกเกอร์ (MCB) ของตู้แม่ หรือเบรกเกอร์ที่จ่ายไฟให้ตู้แม่ หรือเมนที่โหลดต้องการ และขนาดสายเลือกตามพิกัดนั้น ตารางโหลดของตู้แม่แสดงแถว FTL ไม่มีเบรกเกอร์ และบรรทัดโหลดรวมที่ต่อกับขั้วต่อผ่าน ตรวจวงจรเตือนเมื่อตู้แม่ไม่มีขั้วต่อผ่าน ต่อหลายตู้ หรือระบบไฟไม่ตรงกัน
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -64529,6 +64616,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Circuit path (Revit: an electrical circuit's Path Mode, All Devices, Farthest Device or Custom, and Edit Path): the Properties of an element on a circuit pick the path through all its devices (nearest first, as before), to its farthest device only, or a custom one, and give the circuit length that sizes the wires and the voltage drop; Edit Path shows the path in the plan dashed with its length: drag a square to move a point, a circle in the middle of a leg to add one, drop a point onto its neighbour or the straight line to remove it; a moved point makes the path Custom, Reset Path brings back All Devices; Undo, save and open keep it
 - Circuit Path Offset (Revit: Circuit Path Offset in Electrical Settings and a circuit's Path Offset in Edit Path): Electrical Settings › General takes the height of the horizontal runs of a circuit path above the level of its panel, for Farthest Device circuits: the path goes up or down at the panel, along at that height, then down or up at the element, and the circuit length counts the rises; blank keeps the panel height, as before. The Properties of an element on a circuit give that circuit its own Path Offset (Farthest Device and Custom); typed in, a Custom path's points move to the new height; blank follows the settings. Undo, save and open keep it
 - Path Offset of one segment (Revit: select a segment of the circuit path before typing its Path Offset): in Edit Path click a leg (away from its square and circle) to select it, drawn bold, and again to let it go; the Path Offset row of Properties is then that leg's: typed in, the path becomes Custom and that leg runs at the new height, rising or dropping at its ends while the other legs stay; Whole Path goes back to the offset of the whole path; the two points of a rise move together when dragged; Undo, save and open keep it
+- Feed Through Lugs (Revit: the Feed Through Lugs of a panel, a panel connected through them instead of a breaker): tick Feed Through Lugs in the Properties of a panel and a panel fed from it can take Feed Through Lugs for its Connection Type; its circuit is FTL and takes no way, its load is on the bus of the panel with the lugs, its feeder is protected by that panel's MCB, or the breaker that feeds that panel, or the main its load needs, and its wire is sized for that rating; the panel schedule lists it as FTL without a breaker and gives the Total Load Connected To Feed Through Lugs; Check Circuits flags a panel on lugs that are not there, two panels on one set of lugs and a system that does not match
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -65769,6 +65857,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.659 · เส้นทางวงจร (Path Mode: ผ่านทุกอุปกรณ์ ถึงอุปกรณ์ไกลสุด กำหนดเอง) และแก้เส้นทางในแปลน แบบ Revit
 - V1.660 · ระยะเส้นทางวงจร (Circuit Path Offset) ในตั้งค่างานไฟฟ้า และระยะเส้นทางของแต่ละวงจร แบบ Revit
 - V1.661 · ระยะเส้นทางของช่วงเดียวในการแก้เส้นทางวงจร แบบ Revit
+- V1.662 · ขั้วต่อผ่าน (Feed Through Lugs) ต่อตู้ย่อยโดยไม่ใช้เบรกเกอร์ แบบ Revit
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -66603,6 +66692,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.659 · Circuit Path Mode (All Devices, Farthest Device, Custom) and Edit Path in plans, as in Revit
 - V1.660 · Circuit Path Offset in Electrical Settings and each circuit's Path Offset, as in Revit
 - V1.661 · Path Offset of one segment of a circuit path in Edit Path, as in Revit
+- V1.662 · Feed Through Lugs: a panel fed through the lugs of another, without a breaker, as in Revit
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -71892,6 +71982,18 @@ window.PenumBIM.r661={
   sel:(k,i)=>{ui.sg661=i==null?null:{k,i};refresh();return ui.sg661},
   sg:()=>ui.sg661||null,
   setSeg:(k,i,v)=>{let r;edit(()=>{const R=ckPath659(P,k);r=legSet661(k,i,elev(P,R.pn.level)+(+v))});ui.sg661={k,i:r};refresh();return r}};
+/* V1.662 test API: Feed Through Lugs */
+window.PenumBIM.r662={
+  lugs:(mk,v)=>{const e=pnFind(P,mk);if(!e)return null;if(v!=null){edit(()=>{for(const f of XF)if(f('eequip',e,'ftl662',!!v))break});refresh()}return hasFtl662(e)?1:0},
+  conn:(mk,ct)=>{const e=pnFind(P,mk);if(!e)return null;if(ct!=null){edit(()=>{for(const f of XF)if(f('eequip',e,'ct662',ct))break});refresh()}return e.panel?(isFtl662(e)?'ftl':'brk'):null},
+  ck:mk=>{const c=circuitCalc(P).find(x=>x.feed===mk);return c?{panel:c.panel,circuit:c.circuit,brk:c.brk,set:!!c.set,ftl:c.ftl||null,wire:c.wire,load:Math.round(c.load),poles:c.poles,phv:(c.phv||[]).map(Math.round)}:null},
+  occ:mk=>[...pnlOcc(P,mk)].sort((a,b)=>a-b),
+  pan:mk=>{const p=panelCalc(P).find(x=>x.mark===mk);return p?{n:p.n,load:Math.round(p.load),main:p.main,phv:p.phv.map(Math.round)}:null},
+  check:()=>circuitCheck(P).filter(i=>/662$/.test(i.k)).map(i=>({k:i.k,panel:i.panel,a:i.a||[],n:i.ids.length,txt:ckText(i)})),
+  sched:(mk,fmt,pst)=>{const e=pnFind(P,mk);if(!e)return null;const S=pnlSched(P,e.id,t,fmt,pst),k0=S.cols[0].k;
+    return S.rows.map(r=>r._g==='h'?['h',r[k0]]:r._g==='f'?['f']:[r.lck!=null?r.lck:r.ckt,r.ldesc!=null?r.ldesc:r.desc,r.lbrk!=null?r.lbrk:r.brk,r.lva!=null?r.lva:(r.va0||0)+(r.va1||0)+(r.va2||0),!!(r.lk||r.ck)])},
+  hdr:mk=>{const e=pnFind(P,mk);return e?pstHdr330(P,e,t).ftl662:null},
+  sf:mk=>{const e=pnFind(P,mk),F=sfAll(P,'eequip',t);const g=k=>{const f=F.find(x=>x.k===k);return f?[f.l,f.g(e)]:null};return[g('ftl662'),g('ct662')]}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
