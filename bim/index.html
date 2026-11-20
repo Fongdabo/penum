@@ -5476,9 +5476,9 @@ function ductRoughOf(P,e){const T=e&&e.cat==='duct'?typ(P,e):null;return T&&+T.r
 /* a flat oval duct (Revit: Oval): two half circles of the minor side h joined by flat sides — its area and perimeter */
 const ovalA=(w,h)=>{h=Math.min(h,w);return Math.PI*h*h/4+h*(w-h)},ovalPer=(w,h)=>{h=Math.min(h,w);return Math.PI*h+2*(w-h)};
 function ductCalc(shape,w,h,flow,rough){const rect=shape==='rect',ov=shape==='oval',a=rect?w*h/1e6:ov?ovalA(w,h)/1e6:Math.PI*w*w/4e6,per=rect?2*(w+h)/1000:ov?ovalPer(w,h)/1000:Math.PI*w/1000;if(!(a>0)||!(flow>0))return{v:0,dp:0,pv:0,dh:a>0?4*a/per*1000:0};
-  const v=flow/1000/a,dh=4*a/per,pv=AIR.rho*v*v/2,f=fricFactor(v*dh/AIR.nu,(rough||ductRough(shape))/1000/dh);return{v,dp:f/dh*pv,pv,dh:dh*1000}}
+  const v=flow/1000/a,dh=4*a/per,pv=AIR.rho*v*v/2,f=fric675('d',v*dh/AIR.nu,(rough||ductRough(shape))/1000/dh);return{v,dp:f/dh*pv,pv,dh:dh*1000}}
 /* water in a pipe (nominal bore). flow L/s, dia mm, roughness mm -> v m/s, dp Pa/m */
-function pipeCalc(dia,flow,rough,fl){fl=fl||WATER;const d=dia/1000,a=Math.PI*d*d/4;if(!(a>0)||!(flow>0))return{v:0,dp:0};const v=flow/1000/a,f=fricFactor(v*d/fl.nu,(rough||0.046)/1000/d);return{v,dp:f/d*fl.rho*v*v/2}}          // fl: the water of the system (fluidOf), at 20 °C when left out
+function pipeCalc(dia,flow,rough,fl){fl=fl||WATER;const d=dia/1000,a=Math.PI*d*d/4;if(!(a>0)||!(flow>0))return{v:0,dp:0};const v=flow/1000/a,f=fric675('p',v*d/fl.nu,(rough||0.046)/1000/d);return{v,dp:f/d*fl.rho*v*v/2}}          // fl: the water of the system (fluidOf), at 20 °C when left out
 /* smallest standard duct that keeps both the friction rate (Pa/m) and the velocity (m/s) within limits. o:{fric,vmax,maxH} */
 function sizeDuct(shape,flow,o,lin,rough){lin=2*(lin||0);          // lin: a lining takes its thickness off the section on every side
   if(shape!=='rect'&&shape!=='oval'){for(const d of DUCT_STD){const c=ductCalc(shape,d-lin,d-lin,flow,rough);if(c.dp<=o.fric&&c.v<=o.vmax)return{w:d,h:d}}const d=DUCT_STD[DUCT_STD.length-1];return{w:d,h:d}}
@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=684,V1_NAME='V1.674';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=685,V1_NAME='V1.675';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -63763,6 +63763,50 @@ Object.assign(STR,{ms_p_oval:['ขนาดท่อลมวงรี','Oval si
 /* the sizes Duct Sizing and Size All Systems write: an oval duct by its width and height (it was shown and applied as a round one), in the size format of V1.672/V1.673 */
 function szSize674(r,a){const F=mszOf673(P);if(r.kind==='pipe')return F.ppre+a[0]+F.psuf;if(r.kind==='conduit'){const E=eszOf672(P);return E.cpre+a[0]+E.csuf}
   return r.sh==='rect'?a[0]+F.rsep+a[1]+F.rsuf:r.sh==='oval'?a[0]+F.osep+a[1]+F.osuf:F.dpre+a[0]+F.dsuf}
+/* ===== 675 Pressure Drop Calculation Methods (V1.675; Revit: Mechanical Settings › Duct Settings › Calculation and Pipe Settings › Calculation, the equation the
+   friction of straight ducts and pipes is worked out by) =====
+   P.cm675 {d: 'col' | 'at', p: 'col' | 'haa' | 'sj' | 'ch'}: ducts by Colebrook or Altshul-Tsal, pipes by Colebrook, Haaland, Swamee and Jain or Churchill; the stock
+   (Colebrook, as before) is not kept.  ductCalc and pipeCalc take the friction factor through fric675, so Duct and Pipe Sizing, the system reports, pressure
+   losses and pump heads follow; mechUse makes the methods of P the ones used (FRM675), as it does the air and the size lists. */
+const CM675={d:['col','at'],p:['col','haa','sj','ch']},CMN675={col:'Colebrook',at:'Altshul-Tsal',haa:'Haaland',sj:'Swamee-Jain',ch:'Churchill'};
+function cmOf675(P0){const m=P0&&P0.cm675,o={d:'col',p:'col'};if(m&&typeof m==='object'&&!Array.isArray(m)){if(CM675.d.includes(m.d))o.d=m.d;if(CM675.p.includes(m.p))o.p=m.p}return o}
+var FRM675={d:'col',p:'col'};
+/* the Darcy friction factor by a method (rr = roughness / diameter); laminar flow 64/Re, but Churchill's equation holds for every flow */
+function ffBy675(m,Re,rr){if(!(Re>0))return 0;
+  if(m==='ch'){const A=Math.pow(2.457*Math.log(1/(Math.pow(7/Re,0.9)+0.27*rr)),16),B=Math.pow(37530/Re,16);return 8*Math.pow(Math.pow(8/Re,12)+Math.pow(A+B,-1.5),1/12)}
+  if(Re<2300)return 64/Re;
+  if(m==='at'){const f=0.11*Math.pow(rr+68/Re,0.25);return f>=0.018?f:0.85*f+0.0028}
+  if(m==='haa')return 1/Math.pow(-1.8*Math.log10(Math.pow(rr/3.7,1.11)+6.9/Re),2);
+  if(m==='sj')return 0.25/Math.pow(Math.log10(rr/3.7+5.74/Math.pow(Re,0.9)),2);
+  return fricFactor(Re,rr)}
+function fric675(k,Re,rr){const m=FRM675&&FRM675[k]||'col';return m==='col'?fricFactor(Re,rr):ffBy675(m,Re,rr)}
+/* the notes that name the equation say the one in use */
+const CMS675={};
+function cmNotes675(){for(const [k,w] of [['sr_note','d'],['pz_note','p']]){const e=STR[k];if(!Array.isArray(e))continue;if(!CMS675[k])CMS675[k]=e.slice();const n=CMN675[FRM675[w]]||'Colebrook';STR[k]=CMS675[k].map(s=>String(s).replace('Darcy–Colebrook','Darcy–'+n))}}
+{const f0=mechUse;mechUse=function(P0){f0.apply(this,arguments);FRM675=cmOf675(P0);cmNotes675()}}
+function cmClean675(){const r=P.cm675;if(r==null)return;if(typeof r!=='object'||Array.isArray(r)){delete P.cm675;return}const A=cmOf675(P),o={};if(A.d!=='col')o.d=A.d;if(A.p!=='col')o.p=A.p;
+  if(Object.keys(o).length)P.cm675=o;else delete P.cm675}
+XC.push(cmClean675);
+/* Mechanical Settings › Calculation: the two methods, and what each gives for a duct and a pipe */
+const CMX675={d:{w:500,h:250,q:360},p:{d:50,q:2}};
+function cmEx675(k,m){const s=FRM675;FRM675=Object.assign({},s,{[k]:m});try{return k==='d'?ductCalc('rect',CMX675.d.w,CMX675.d.h,CMX675.d.q,0).dp:pipeCalc(CMX675.p.d,CMX675.p.q,0,null).dp}finally{FRM675=s}}
+{const f0=dlgMech;dlgMech=function(pg,keep){if(!(pg==='calc'||(pg==null&&ui.msPage==='calc')))return f0.apply(this,arguments);f0('hl',keep);ui.msPage='calc';const c=$('#dlg .msc');if(!c)return;const A=cmOf675(P);
+  for(const b of document.querySelectorAll('#dlg [data-msp]'))b.setAttribute('aria-pressed',String(b.dataset.msp==='calc'));
+  const sel=k=>`<div class="fr"><label for="cm675${k}">${esc(t('cm675_'+k))}</label><select id="cm675${k}" data-cm675="${k}">${CM675[k].map(x=>`<option value="${x}"${A[k]===x?' selected':''}>${esc(t('cm675_m_'+x))}</option>`).join('')}</select></div>`;
+  const tab=(k,cap,dec)=>`<div class="clr vgt"><table id="cm675T${k}"><caption>${esc(cap)}</caption><thead><tr><th>${esc(t('cm675_meth'))}</th><th class="n">Pa/m</th></tr></thead><tbody>`
+    +CM675[k].map(x=>`<tr${A[k]===x?' class="set"':''}><td>${esc(t('cm675_m_'+x))}${A[k]===x?' ✓':''}</td><td class="n">${cmEx675(k,x).toFixed(dec)}</td></tr>`).join('')+`</tbody></table></div>`;
+  c.innerHTML=`<p class="note">${esc(t('cm675_note'))}</p>`+sel('d')+tab('d',t('cm675_exd',CMX675.d.w+'×'+CMX675.d.h,CMX675.d.q),3)+sel('p')+tab('p',t('cm675_exp','Ø'+CMX675.p.d,CMX675.p.q),1)
+    +`<p class="note" id="cm675N">${esc(t('cm675_now',CMN675[A.d],CMN675[A.p]))}</p>`;
+  c.addEventListener('change',ev=>{const el=ev.target,k=el&&el.dataset&&el.dataset.cm675;if(!k||!ui.dlg)return;const v=el.value;edit(()=>{const o=Object.assign({},P.cm675&&typeof P.cm675==='object'?P.cm675:{});o[k]=v;P.cm675=o;cmClean675()});refresh();dlgMech('calc',true)});
+  const rb=$('#dlg [data-msx="reset"]');if(rb){rb.removeAttribute('data-msx');rb.disabled=P.cm675==null;rb.addEventListener('click',()=>{edit(()=>{delete P.cm675});refresh();dlgMech('calc',true)})}}}
+Object.assign(STR,{ms_p_calc:['การคำนวณ (Calculation)','Calculation'],
+  cm675_d:['ความดันตกในท่อลม (Duct Pressure Drop)','Duct pressure drop'],cm675_p:['ความดันตกในท่อน้ำ (Pipe Pressure Drop)','Pipe pressure drop'],
+  cm675_m_col:['สมการ Colebrook','Colebrook equation'],cm675_m_at:['สมการ Altshul-Tsal','Altshul-Tsal equation'],cm675_m_haa:['สมการ Haaland','Haaland equation'],
+  cm675_m_sj:['สมการ Swamee-Jain','Swamee and Jain equation'],cm675_m_ch:['สมการ Churchill','Churchill equation'],cm675_meth:['วิธีคำนวณ','Method'],
+  cm675_exd:['ตัวอย่าง: ท่อลมเหลี่ยม {0} มม. ลม {1} L/s','Example: a {0} mm rectangular duct, {1} L/s'],cm675_exp:['ตัวอย่าง: ท่อน้ำ {0} มม. น้ำ {1} L/s','Example: a {0} mm pipe, {1} L/s'],
+  cm675_now:['ตอนนี้: ท่อลม {0} · ท่อน้ำ {1}','Now: ducts {0} · pipes {1}'],
+  cm675_note:['สมการที่ใช้หาค่าความเสียดทาน (friction factor) ของท่อตรง เหมือน Calculation ใน Duct Settings และ Pipe Settings ของ Revit ใช้กับการปรับขนาดท่อลมและท่อน้ำ รายงานระบบ ความดันตก และหัวปั๊ม ค่าตั้งต้นเป็น Colebrook แบบที่โปรแกรมคำนวณมาตลอด',
+    'The equation the friction factor of straight runs is worked out by, as Calculation in Duct Settings and Pipe Settings in Revit; Duct and Pipe Sizing, the system reports, pressure drops and pump heads use it. Colebrook to start, as the program always worked']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -63803,7 +63847,7 @@ function insRemove(lin){const E=insSel().els.filter(lin?linOf:insOf);if(!E.lengt
    The settings are kept with the project (P.ms; what they mean, msOf, msClean and mechUse are in 27-mep.js).  A page of the dialog for each part:
    hidden lines of runs that cross, the air and the longest flexible duct, the sizes of rectangular and round ducts and of pipes (which of them the size lists
    offer and which sizing may choose), the water of each pipe system, and the slopes the Slope box offers. */
-const MS_PAGES=['hl','duct','ang','rect','oval','round','psz','seg','fluid','slope','rd','fa'],MS_TAB={rect:['rect',50,6000,50],oval:['oval',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
+const MS_PAGES=['hl','duct','ang','rect','oval','round','psz','seg','fluid','slope','calc','rd','fa'],MS_TAB={rect:['rect',50,6000,50],oval:['oval',50,6000,50],round:['round',50,3000,25],psz:['pipe',6,1200,5]},MS_FLUID=['CW','HW','CHWS','CHWR','CDWS','CDWR','FP'];
 function msEdit(fn){edit(()=>{const m=JSON.parse(JSON.stringify(P.ms||{}));fn(m);P.ms=m})}          // sanitize (msClean) keeps only what differs from the stock values
 function dlgMech(pg,keep){pg=MS_PAGES.includes(pg)?pg:(MS_PAGES.includes(ui.msPage)?ui.msPage:'hl');ui.msPage=pg;const M=msOf(P),S=P.ms||{},dc=keep?$('#dlg .clr'):null,top=dc?dc.scrollTop:0;let h='';
   const num=(k,lab,val,unit,at)=>`<div class="fr"><label for="ms_${k}">${t(lab)}</label><span class="un"><input type="number" id="ms_${k}" data-ms="${k}" value="${val}" ${at}> ${unit}</span></div>`;
@@ -64950,6 +64994,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - รูปแบบขนาดรางเคเบิลและท่อร้อยสาย (Revit: Electrical Settings › Cable Tray Settings / Conduit Settings): จัดการ › ตั้งค่างานไฟฟ้า › ขนาดรางเคเบิล มีตัวคั่นขนาด (เดิม ×) และต่อท้ายขนาด หน้าขนาดท่อร้อยสายมีนำหน้าขนาด (เดิม Ø) และต่อท้ายขนาด ยาวได้ 8 ตัวอักษร ป้ายขนาดบนแปลน ป้ายกำกับ และตารางเปลี่ยนตาม BOQ ยังจัดกลุ่มและเก็บราคาตามขนาดแบบเดิม ปุ่มคืนค่าเดิมของหน้าคืนรูปแบบด้วย
 - รูปแบบขนาดท่อลมและท่อน้ำ (Revit: Mechanical Settings › Duct Settings / Pipe Settings): จัดการ › ตั้งค่างานระบบกล › ท่อลม มีรูปแบบขนาดท้ายหน้า ตัวคั่นและต่อท้ายของท่อลมเหลี่ยมและท่อลมวงรี (เดิม × และ OV) นำหน้าและต่อท้ายของท่อลมกลม (เดิม Ø) หน้าขนาดท่อน้ำมีนำหน้า (เดิม Ø) และต่อท้ายขนาดท่อ ยาวได้ 8 ตัวอักษร ป้ายขนาดบนแปลน ป้ายกำกับ ตาราง และท่อขึ้นลงเปลี่ยนตาม BOQ ยังจัดกลุ่มและเก็บราคาตามขนาดแบบเดิม ปุ่มคืนค่าเดิมของหน้าคืนรูปแบบด้วย
 - ขนาดท่อลมวงรี (Revit: Mechanical Settings › Duct Settings › Oval): จัดการ › ตั้งค่างานระบบกล มีหน้าขนาดท่อลมวงรีต่อจากขนาดท่อลมเหลี่ยม ติ๊กใช้ในรายการ ใช้ในการหาขนาด เพิ่มหรือลบขนาดได้เหมือนท่อลมเหลี่ยม ช่องขนาดในแผงคุณสมบัติของท่อลมวงรีเสนอขนาดที่ติ๊กใช้ในรายการ คำสั่งหาขนาดท่อลมและการเดินท่ออัตโนมัติเลือกขนาดท่อลมวงรีจากขนาดที่ติ๊กใช้ในการหาขนาด ท่อลมเหลี่ยมยังใช้ขนาดของตัวเอง ค่าเริ่มต้นเท่ากับขนาดท่อลมเหลี่ยม
+- วิธีคำนวณความดันตก (Revit: Mechanical Settings › Duct Settings / Pipe Settings › Calculation): จัดการ › ตั้งค่างานระบบกล › การคำนวณ เลือกสมการหาค่าความเสียดทานของท่อลม (Colebrook หรือ Altshul-Tsal) และของท่อน้ำ (Colebrook, Haaland, Swamee-Jain หรือ Churchill) มีตารางตัวอย่างความดันตกของแต่ละสมการ การปรับขนาดท่อ รายงานระบบ ความดันตก และหัวปั๊มคิดตามที่เลือก ค่าตั้งต้น Colebrook ทั้งสองอย่าง
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -65335,6 +65380,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Cable tray and conduit size format (Revit: Electrical Settings › Cable Tray Settings / Conduit Settings): Manage › Electrical Settings › Cable tray sizes has the size separator (× to start) and size suffix, Conduit sizes the size prefix (Ø to start) and size suffix, 8 characters at most; size labels on plans, tags and schedules follow, while the BOQ still groups and prices by the stock size; Reset this page takes the format back too
 - Duct and pipe size format (Revit: Mechanical Settings › Duct Settings / Pipe Settings): Manage › Mechanical Settings › Duct Settings ends with the size format, the separator and suffix of rectangular and oval ducts (× and OV to start) and the prefix and suffix of round ducts (Ø to start); Pipe sizes starts with the pipe size prefix (Ø) and suffix, 8 characters at most; size labels on plans, tags, schedules and risers follow, while the BOQ still groups and prices by the stock size; Reset this page takes the format back too
 - Oval duct sizes (Revit: Mechanical Settings › Duct Settings › Oval): Manage › Mechanical Settings has an Oval sizes page after Rectangular sizes, with Used in Size Lists, Used in Sizing, and sizes added or deleted as the rectangular ones are; the size boxes of Properties offer an oval duct the sizes ticked for the lists, Duct Sizing and the automatic layouts size oval ducts from those ticked for sizing, and rectangular ducts keep to their own; the stock list is the rectangular one
+- Pressure drop calculation methods (Revit: Mechanical Settings › Duct Settings / Pipe Settings › Calculation): Manage › Mechanical Settings › Calculation picks the friction equation of ducts (Colebrook or Altshul-Tsal) and of pipes (Colebrook, Haaland, Swamee and Jain, or Churchill), with what each gives for an example duct and pipe; Duct and Pipe Sizing, the system reports, pressure drops and pump heads follow; Colebrook for both to start
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -66588,6 +66634,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.672 · รูปแบบขนาดรางเคเบิลและท่อร้อยสาย (Size Separator, Prefix, Suffix) เหมือน Revit: ป้ายบนแปลน ป้ายกำกับ และตารางเขียนขนาดตามที่ตั้ง ราคาใน BOQ ไม่หาย
 - V1.673 · รูปแบบขนาดท่อลมและท่อน้ำ (Duct Settings / Pipe Settings: Size Separator, Prefix, Suffix) เหมือน Revit: ป้ายบนแปลน ป้ายกำกับ ตาราง และท่อขึ้นลงเขียนขนาดตามที่ตั้ง ราคาใน BOQ ไม่หาย
 - V1.674 · ตารางขนาดท่อลมวงรี (Duct Settings › Oval) เหมือน Revit: ติ๊กขนาดที่ใช้ในรายการและในการหาขนาด หาขนาดท่อลมวงรีจากตารางนี้
+- V1.675 · วิธีคำนวณความดันตกของท่อลมและท่อน้ำ (Duct/Pipe Settings › Calculation) เหมือน Revit: Colebrook, Altshul-Tsal, Haaland, Swamee-Jain, Churchill
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -67435,6 +67482,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.672 · Cable tray and conduit size format (Size Separator, Prefix, Suffix), as in Revit: plan labels, tags and schedules write sizes that way, BOQ prices kept
 - V1.673 · Duct and pipe size format (Duct Settings / Pipe Settings: Size Separator, Prefix, Suffix), as in Revit: plan labels, tags, schedules and risers write sizes that way, BOQ prices kept
 - V1.674 · Oval duct sizes (Duct Settings › Oval), as in Revit: sizes used in the size lists and in sizing, oval ducts sized from them
+- V1.675 · Duct and pipe pressure drop methods (Duct/Pipe Settings › Calculation), as in Revit: Colebrook, Altshul-Tsal, Haaland, Swamee and Jain, Churchill
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -72873,6 +72921,19 @@ window.PenumBIM.r674={
   size:(sh,flow,o)=>sizeDuct(sh,flow,Object.assign({fric:1,vmax:8,maxH:400},o||{}),0,ductRoughOf(P,P.els.find(e=>e.cat==='duct')||{})),
   pages:()=>MS_PAGES.slice(),
   els:()=>P.els.filter(e=>e.cat==='duct').map(e=>({id:e.id,shape:runShape(P,e),w:e.w,h:e.h,flow:e.flow||0}))
+};
+/* V1.675 test API: pressure drop calculation methods */
+window.PenumBIM.r675={
+  cm:()=>cmOf675(P),
+  raw:()=>P.cm675===undefined?null:JSON.parse(JSON.stringify(P.cm675)),
+  ff:(m,Re,rr)=>ffBy675(m,Re,rr),
+  base:(Re,rr)=>fricFactor(Re,rr),
+  duct:(w,h,q)=>ductCalc('rect',w,h,q,0),
+  pipe:(d,q)=>pipeCalc(d,q,0,null),
+  notes:()=>[t('sr_note',0,0,0,0,0,0,0),t('pz_note')],
+  pages:()=>MS_PAGES.slice(),
+  sizeBy:(m,q)=>{const s=FRM675;FRM675={d:m,p:'col'};try{const o=dszOpt();return sizeDuct('rect',q,o,0,0)}finally{FRM675=s}},
+  els:()=>P.els.filter(e=>e.cat==='duct').map(e=>({id:e.id,shape:runShape(P,e),w:e.w,h:e.h,flow:e.flow||0,lin:linOf(e),rough:ductRoughOf(P,e)}))
 };
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
