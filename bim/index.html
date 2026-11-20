@@ -14643,7 +14643,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=670,V1_NAME='V1.660';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=671,V1_NAME='V1.661';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -62922,6 +62922,67 @@ Object.assign(STR,{es_cpo660:['ระยะเส้นทางวงจร (Ci
   es_cpo660n:['ระยะเส้นทางวงจร: ความสูงของช่วงแนวนอนของเส้นทางวงจรจากชั้นของตู้ ใช้กับวงจรแบบถึงอุปกรณ์ไกลสุดที่ไม่ได้ตั้งระยะของตัวเอง (และเส้นทางกำหนดเองที่เริ่มจากแบบนั้น) ขึ้นหรือลงที่ตู้ เดินแนวนอนที่ระยะนี้ แล้วลงหรือขึ้นที่อุปกรณ์ ความยาววงจรรวมช่วงตั้งด้วย ว่างไว้คือเดินที่ความสูงของตู้แบบเดิม',
     'Circuit Path Offset: the height of the horizontal runs of a circuit path above the level of its panel, for Farthest Device circuits without an offset of their own (and Custom paths started from them): up or down at the panel, along at this height, then down or up at the element, the rises counted in the circuit length; blank: at the height of the panel, as before'],
   p_po660:['ระยะเส้นทาง (Path Offset)','Path Offset'],po660_pan:['ที่ความสูงของตู้','At the panel height'],po660_by:['ตามตั้งค่า {0}','By settings: {0}'],po660_lab:['ระยะ {0} mm','offset {0} mm']});
+/* ===== 661 Path Offset of one segment (V1.661; Revit: Edit Path, a segment of the circuit path selected before its Path Offset is typed) =====
+   In Edit Path a click on a leg of the path (away from its square and circle) selects that leg, drawn bold; the Path Offset row of Properties then gives and
+   takes the height of that leg alone: the path becomes Custom and the leg runs at the new height, rising or dropping where it meets the legs before and after
+   it (two points at one place, one above the other).  Such a pair moves together when one of them is dragged.  When a drag ends a point goes only when it lies on
+   the straight line between its neighbours in 3D, or when the point dragged lands on a neighbour or on the line between them (as in V1.659); a rise is kept. */
+const pl661=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
+const sg661Of=k=>{const s=ui.sg661;return s&&s.k===k?s.i:null};
+/* the height of leg i of points A (A[0] the panel, the last the element): its end's for a leg from the panel, its start's for the leg to the element, the
+   height both its ends share otherwise; null for one straight leg from the panel to the element or a sloping leg */
+function legZ661(A,i){const n=A.length-1;if(i<0||i>=n)return null;const a=A[i],b=A[i+1];if(i===0&&n===1)return null;if(i===0)return b[2];if(i+1===n)return a[2];return Math.abs(a[2]-b[2])<1?a[2]:null}
+const legOk661=(A,i)=>i>=0&&i<A.length-1&&pl661(A[i],A[i+1])>=1;
+/* leg i of circuit k at height z (absolute): Custom, a twin point made at a start or an end that is not the panel or the element; returns the leg's new index */
+function legSet661(k,i,z){let R=ckPath659(P,k);if(!R)return i;if(R.m!=='cus'){pmSet659(k,'cus');R=ckPath659(P,k);if(!R)return i}const B=R.pts.map(p=>p.slice(0,3));if(!legOk661(B,i))return i;let n=B.length-1;
+  if(i===0&&n===1){B.splice(1,0,[(B[0][0]+B[1][0])/2,(B[0][1]+B[1][1])/2,z])}
+  else{if(i>0){const a=B[i];if(i-1>=1&&pl661(B[i-1],a)<1)a[2]=z;else if(Math.abs(a[2]-z)>=1){B.splice(i+1,0,[a[0],a[1],z]);i++;n++}}
+    const j=i+1;if(j<n){const b=B[j];if(j+1<n&&pl661(B[j+1],b)<1)b[2]=z;else if(Math.abs(b[2]-z)>=1){B.splice(j+1,0,[b[0],b[1],b[2]]);b[2]=z}}}
+  ckSet644(k,q=>{q.pm659='cus';q.cp659=B.slice(1)});return i}
+/* the tidy pass of V1.659 with rises kept */
+function cpTidy661(S,A,dr){const B=[S,...A];for(let i=B.length-2;i>=1;i--){const a=B[i-1],b=B[i],c=B[i+1],L=pl661(a,c),dz=x=>x>=Math.min(a[2],c[2])-1e-6&&x<=Math.max(a[2],c[2])+1e-6;
+    if(L<1){if(pl661(a,b)<1&&dz(b[2]))B.splice(i,1);continue}
+    const off=Math.abs((c[0]-a[0])*(b[1]-a[1])-(c[1]-a[1])*(b[0]-a[0]))/L,u=((b[0]-a[0])*(c[0]-a[0])+(b[1]-a[1])*(c[1]-a[1]))/(L*L);if(off>=1||u<-1e-6||u>1+1e-6)continue;
+    if(Math.abs(b[2]-(a[2]+(c[2]-a[2])*u))<1||(dr&&dr.i===i&&!dr.tw&&dz(b[2])))B.splice(i,1)}
+  return B.slice(1)}
+{const j=XC.findIndex(f=>/cpTidy659/.test(String(f)));const f1=()=>{if(!P.ckt)return;const dr=ui.cpd661;delete ui.cpd661;for(const k in P.ckt){const q=P.ckt[k];if(!q||q.pm659!=='cus'||!Array.isArray(q.cp659))continue;
+    const pn=pnEl(P,k.slice(0,k.lastIndexOf('|')));if(!pn)continue;const A=cpTidy661([pn.x,pn.y,ckZ659(P,pn)],cp659Clean(q.cp659)||[],dr&&dr.k===k?dr:null);if(A.length)q.cp659=A;else{delete q.cp659;delete q.pm659}}};
+  if(j>=0)XC[j]=f1;else XC.push(f1)}
+/* a point with a twin moves with it; the point dragged is noted for the tidy pass */
+{const f0=moveElDrag;moveElDrag=function(d,v,p){const g=d.h&&d.h.grip;if(d.kind!=='grip'||!d.e||typeof g!=='string')return f0.apply(this,arguments);
+  if(/^cps661:\d+$/.test(g))return;                                           // a leg pressed: selected, not moved
+  if(!/^cp[vm]659:\d+$/.test(g))return f0.apply(this,arguments);const k=ckKey644(d.e),R=k&&ckPath659(P,k);if(!R)return f0.apply(this,arguments);
+  const A=R.pts,i0=+g.split(':')[1],n=A.length-1,tw=g.startsWith('cpv')?[i0-1,i0+1].filter(j=>j>=1&&j<n&&i0>=1&&i0<n&&pl661(A[j],A[i0])<1):[];
+  const r=f0.apply(this,arguments),i=+String(d.h.grip).split(':')[1];ui.cpd661={k,i,tw:tw.length>0};
+  if(tw.length){const q=ckq659(P,k),C=q.cp659;if(Array.isArray(C)&&C[i-1]){const np=C[i-1];ckSet644(k,q2=>{for(const j of tw)if(q2.cp659[j-1]){q2.cp659[j-1][0]=np[0];q2.cp659[j-1][1]=np[1]}});touch()}}
+  return r}}
+/* Edit Path: a leg pressed is a grip of its own */
+{const f0=hitPlan;hitPlan=function(v,p,UL){const h=f0.apply(this,arguments),S=epSel659(v);if(!S||h&&typeof h.grip==='string'&&/^cp[vm]659:/.test(h.grip))return h;const R=ckPath659(P,S.k);if(!R)return h;
+  const nav=navOf(v),A=R.pts.map(q=>scr659(nav,q));let bi=-1,bd=6;
+  for(let i=0;i<A.length-1;i++){const a=A[i],b=A[i+1],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1)continue;const u=clamp(((p.x-a[0])*(b[0]-a[0])+(p.y-a[1])*(b[1]-a[1]))/(L*L),0,1),d=Math.hypot(a[0]+(b[0]-a[0])*u-p.x,a[1]+(b[1]-a[1])*u-p.y);if(d<bd){bd=d;bi=i}}
+  return bi>=0?{id:S.e.id,grip:'cps661:'+bi}:h}}
+{const f0=startElDrag;startElDrag=function(d,v,p){const g=d.h&&d.h.grip;if(typeof g==='string'&&/^cps661:\d+$/.test(g)){const e=IDX.get(d.h.id),k=e&&ckKey644(e),i=+g.split(':')[1];if(k)ui.sg661=sg661Of(k)===i?null:{k,i}}return f0.apply(this,arguments)}}
+{const f0=XA.ep659;XA.ep659=arg=>{delete ui.sg661;return f0(arg)}}
+/* the leg is let go when the element selected is no longer on its circuit */
+{const f0=refresh;refresh=function(){if(ui.sg661){const e=ui.sel.size===1?IDX.get([...ui.sel][0]):null;if(!e||ckKey644(e)!==ui.sg661.k)delete ui.sg661}return f0.apply(this,arguments)}}
+/* the leg selected drawn bold */
+{const f0=drawOverlay;drawOverlay=function(pn,ctx,v,nav){const r=f0.apply(this,arguments),S=epSel659(v);if(!S)return r;const i=sg661Of(S.k),R=i==null?null:ckPath659(P,S.k);if(!R||!legOk661(R.pts,i))return r;
+  const a=scr659(nav,R.pts[i]),b=scr659(nav,R.pts[i+1]);ctx.save();ctx.strokeStyle=C.sel;ctx.lineWidth=4.5;ctx.lineCap='round';ctx.globalAlpha=0.55;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.globalAlpha=1;
+  const z=legZ661(R.pts,i),txt=t('so661_lab',i+1,z==null?'—':Math.round(z-elev(P,R.pn.level))),L=Math.hypot(b[0]-a[0],b[1]-a[1])||1,nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L,s0=ny>0?-1:1,mx=(a[0]+b[0])/2+nx*16*s0,my=(a[1]+b[1])/2+ny*16*s0;
+  ctx.font='600 12px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';const tw=ctx.measureText(txt).width;ctx.fillStyle=C.paper;ctx.fillRect(mx-tw/2-4,my-9,tw+8,18);ctx.fillStyle=C.sel;ctx.fillText(txt,mx,my);ctx.restore();return r}}
+/* Properties: with a leg selected the Path Offset row is that leg's, and Whole Path goes back to the path */
+{const f0=pmRows659;pmRows659=function(els){let h=f0.apply(this,arguments);if(!h)return h;const ks=[...new Set(els.map(ckKey644))],k=ks[0],i=k?sg661Of(k):null;if(i==null)return h;const R=ckPath659(P,k);if(!R||!legOk661(R.pts,i))return h;
+  const z=legZ661(R.pts,i),lv=elev(P,R.pn.level),v=z==null?'':Math.round(z-lv);
+  const row=`<div class="pr"><label for="p_po660">${esc(t('p_so661',i+1))}</label><div><input type="number" id="p_po660" data-p="po660" value="${v}" step="50" min="${PO660_LIM[0]}" max="${PO660_LIM[1]}" placeholder="—" title="${esc(t('so661_tt'))}"><span class="u">mm</span></div></div>`;
+  const j=h.search(/<div class="pr"><label for="p_po660">/);if(j>=0){const e=h.indexOf('</div></div>',j);h=h.slice(0,j)+row+h.slice(e+12)}else{const q=h.indexOf('<div class="pa">');h=q<0?h+row:h.slice(0,q)+row+h.slice(q)}
+  return h.replace('<div class="pa">',`<div class="pa"><button class="btn" data-act="sg661x" data-arg="${esc(k)}">${esc(t('sg661_all'))}</button>`)}}
+XF.unshift((cat,o,key,raw)=>{if(key!=='po660')return false;const k=ckKey644(o),i=k?sg661Of(k):null;if(i==null)return false;const R=ckPath659(P,k);if(!R||!legOk661(R.pts,i))return false;
+  const n=po660N(raw);if(n==null)return true;ui.sg661={k,i:legSet661(k,i,elev(P,R.pn.level)+n)};return true});
+XA.sg661x=()=>{delete ui.sg661;refresh()};
+Object.assign(STR,{p_so661:['ระยะเส้นทาง (ช่วงที่ {0})','Path Offset (segment {0})'],sg661_all:['ทั้งเส้นทาง','Whole Path'],so661_lab:['ช่วงที่ {0} · {1} mm','Segment {0} · {1} mm'],
+  so661_tt:['ความสูงของช่วงที่เลือกจากชั้นของตู้ ช่วงอื่นคงเดิม ขึ้นหรือลงที่ปลายช่วง','The height of the selected segment above the level of its panel; the other segments stay, rising or dropping at its ends'],
+  ep659_hint:['ลากสี่เหลี่ยมเพื่อย้ายจุดของเส้นทาง ลากวงกลมกลางช่วงเพื่อเพิ่มจุด วางจุดทับจุดข้างเคียงเพื่อเอาออก คลิกเส้นของช่วงเพื่อเลือกแล้วพิมพ์ระยะเส้นทางของช่วงนั้น กดเสร็จใน Properties',
+    'Drag a square to move a point of the path, a circle in the middle of a leg to add one; drop a point onto its neighbour to remove it; click a leg to select it and type its Path Offset; Finish in Properties']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -64095,6 +64156,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - แบบการตั้งชื่อวงจร (Revit: Circuit Naming ของตู้ Circuit Prefix, Circuit Prefix Separator และ Circuit Naming Scheme ที่ประกอบจากพารามิเตอร์): ตั้งค่าไฟฟ้า › ตั้งชื่อวงจร มีแบบที่มีให้สี่แบบ หมายเลขวงจร ตู้-หมายเลข เฟส-หมายเลข และคำนำหน้า-หมายเลข สร้างแบบใหม่หรือทำสำเนาแล้วเรียงชิ้นส่วน คำนำหน้าของตู้ ชื่อตู้ เฟส หมายเลขวงจร หรือข้อความ พร้อมตัวคั่นหลังแต่ละชิ้น ดูตัวอย่างชื่อทันที เลือกแบบของโครงการ และตั้งชื่อเฟส (L1 L2 L3 หรือ A B C) Properties ของตู้มีกลุ่มการตั้งชื่อวงจร เลือกแบบของตู้นั้น ใส่คำนำหน้าและตัวคั่น และเห็นชื่อวงจรของตู้ ชื่อนี้ใช้กับป้ายบนแปลน ลูกศรเข้าตู้ ตารางวงจร และ Properties ของอุปกรณ์ในวงจร
 - เส้นทางวงจร (Revit: Path Mode ของวงจรไฟฟ้า All Devices, Farthest Device, Custom และ Edit Path): Properties ของอุปกรณ์ในวงจรเลือกเส้นทางผ่านทุกอุปกรณ์ (ใกล้สุดก่อนเหมือนเดิม) ถึงอุปกรณ์ไกลสุด หรือกำหนดเอง และบอกความยาววงจรที่ใช้เลือกขนาดสายและคิดแรงดันตก กดแก้เส้นทางแล้วแปลนแสดงเส้นทางเป็นเส้นประพร้อมความยาว ลากสี่เหลี่ยมย้ายจุด ลากวงกลมกลางช่วงเพิ่มจุด วางจุดทับจุดข้างเคียงหรือแนวตรงเพื่อเอาออก จุดที่ย้ายทำให้เป็นแบบกำหนดเอง คืนเส้นทางกลับผ่านทุกอุปกรณ์ ย้อนกลับได้ บันทึกแล้วเปิดใหม่ยังอยู่
 - ระยะเส้นทางวงจร (Revit: Circuit Path Offset ในตั้งค่างานไฟฟ้า และ Path Offset ของวงจรตอนแก้เส้นทาง): ตั้งค่างานไฟฟ้า › ทั่วไป ใส่ความสูงของช่วงแนวนอนของเส้นทางวงจรจากชั้นของตู้ ใช้กับวงจรแบบถึงอุปกรณ์ไกลสุด เส้นทางขึ้นหรือลงที่ตู้ เดินแนวนอนที่ระยะนั้น แล้วลงหรือขึ้นที่อุปกรณ์ ความยาววงจรรวมช่วงตั้ง ว่างไว้คือที่ความสูงของตู้แบบเดิม Properties ของอุปกรณ์บนวงจรมีระยะเส้นทางของวงจรนั้นเอง (ถึงอุปกรณ์ไกลสุดและกำหนดเอง) พิมพ์แล้วจุดของเส้นทางกำหนดเองย้ายไปที่ความสูงใหม่ ว่างคือตามตั้งค่า ย้อนกลับ บันทึก และเปิดใหม่ยังอยู่
+- ระยะเส้นทางของช่วง (Revit: เลือกช่วงของเส้นทางวงจรก่อนพิมพ์ Path Offset): ตอนแก้เส้นทาง คลิกเส้นของช่วง (ไม่ใช่สี่เหลี่ยมหรือวงกลม) เพื่อเลือก ช่วงที่เลือกเป็นเส้นหนา คลิกซ้ำเพื่อเลิกเลือก แถวระยะเส้นทางใน Properties เป็นของช่วงนั้น พิมพ์แล้วเส้นทางเป็นกำหนดเอง ช่วงนั้นเดินที่ความสูงใหม่ ขึ้นหรือลงที่ปลายช่วง ช่วงอื่นคงเดิม ปุ่มทั้งเส้นทางกลับไปที่ระยะของทั้งเส้น จุดคู่ที่ขึ้นลงย้ายไปด้วยกันเมื่อลาก ย้อนกลับ บันทึก และเปิดใหม่ยังอยู่
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -64466,6 +64528,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Circuit naming schemes (Revit: a panel's Circuit Naming, Circuit Prefix and Circuit Prefix Separator, and naming schemes built from parameters): Electrical Settings › Circuit Naming has four schemes built in, the number, panel-number, phase-number and prefix-number; make a new one or a copy and put its parts in order, the panel's prefix, the panel name, the phase, the circuit number or a text, with a separator after each, the names shown as you go; pick the project's scheme and the phase labels (L1 L2 L3 or A B C); a panel's Properties have a Circuit Naming group to pick its scheme, give its prefix and separator and see the names it gives; the names show on plan tags, home run labels, circuit schedules and the Properties of the elements on the circuit
 - Circuit path (Revit: an electrical circuit's Path Mode, All Devices, Farthest Device or Custom, and Edit Path): the Properties of an element on a circuit pick the path through all its devices (nearest first, as before), to its farthest device only, or a custom one, and give the circuit length that sizes the wires and the voltage drop; Edit Path shows the path in the plan dashed with its length: drag a square to move a point, a circle in the middle of a leg to add one, drop a point onto its neighbour or the straight line to remove it; a moved point makes the path Custom, Reset Path brings back All Devices; Undo, save and open keep it
 - Circuit Path Offset (Revit: Circuit Path Offset in Electrical Settings and a circuit's Path Offset in Edit Path): Electrical Settings › General takes the height of the horizontal runs of a circuit path above the level of its panel, for Farthest Device circuits: the path goes up or down at the panel, along at that height, then down or up at the element, and the circuit length counts the rises; blank keeps the panel height, as before. The Properties of an element on a circuit give that circuit its own Path Offset (Farthest Device and Custom); typed in, a Custom path's points move to the new height; blank follows the settings. Undo, save and open keep it
+- Path Offset of one segment (Revit: select a segment of the circuit path before typing its Path Offset): in Edit Path click a leg (away from its square and circle) to select it, drawn bold, and again to let it go; the Path Offset row of Properties is then that leg's: typed in, the path becomes Custom and that leg runs at the new height, rising or dropping at its ends while the other legs stay; Whole Path goes back to the offset of the whole path; the two points of a rise move together when dragged; Undo, save and open keep it
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -65705,6 +65768,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.658 · แบบการตั้งชื่อวงจร (Circuit Naming Schemes) คำนำหน้าวงจรของตู้ และชื่อเฟส แบบ Revit
 - V1.659 · เส้นทางวงจร (Path Mode: ผ่านทุกอุปกรณ์ ถึงอุปกรณ์ไกลสุด กำหนดเอง) และแก้เส้นทางในแปลน แบบ Revit
 - V1.660 · ระยะเส้นทางวงจร (Circuit Path Offset) ในตั้งค่างานไฟฟ้า และระยะเส้นทางของแต่ละวงจร แบบ Revit
+- V1.661 · ระยะเส้นทางของช่วงเดียวในการแก้เส้นทางวงจร แบบ Revit
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -66538,6 +66602,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.658 · Circuit naming schemes, a panel's Circuit Prefix and separator, and phase labels, as in Revit
 - V1.659 · Circuit Path Mode (All Devices, Farthest Device, Custom) and Edit Path in plans, as in Revit
 - V1.660 · Circuit Path Offset in Electrical Settings and each circuit's Path Offset, as in Revit
+- V1.661 · Path Offset of one segment of a circuit path in Edit Path, as in Revit
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -71821,6 +71886,12 @@ window.PenumBIM.r660={
   own:k=>{const q=ckq659(P,k);return q.po660===undefined?null:q.po660},
   set:(k,v)=>{edit(()=>po660Set(k,v));refresh()},
   z:k=>{const pn=pnOfKey660(P,k);return pn?Math.round(po660Z(P,pn,ckq659(P,k))):null}};
+/* V1.661 test API: Path Offset of one segment */
+window.PenumBIM.r661={
+  legs:k=>{const R=ckPath659(P,k);if(!R)return null;const lv=elev(P,R.pn.level),out=[];for(let i=0;i<R.pts.length-1;i++)if(legOk661(R.pts,i)){const z=legZ661(R.pts,i);out.push([i,z==null?null:Math.round(z-lv)])}return out},
+  sel:(k,i)=>{ui.sg661=i==null?null:{k,i};refresh();return ui.sg661},
+  sg:()=>ui.sg661||null,
+  setSeg:(k,i,v)=>{let r;edit(()=>{const R=ckPath659(P,k);r=legSet661(k,i,elev(P,R.pn.level)+(+v))});ui.sg661={k,i:r};refresh();return r}};
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
   draft:(k,o)=>{const D=gdDraft456(k);if(!D)return null;if(o)for(const [a,b] of Object.entries(o)){if(b&&typeof b==='object'&&!Array.isArray(b)&&D[a]&&typeof D[a]==='object'){for(const [c,d] of Object.entries(b))D[a][c]=d&&typeof d==='object'&&!Array.isArray(d)?Object.assign({},D[a][c]||{},d):d}else D[a]=b}return gdFix456(D)},
