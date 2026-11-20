@@ -7126,7 +7126,7 @@ const FS_R=`precision highp float;
 varying vec3 vN;varying vec4 vC;varying float vD;varying float vK;
 uniform vec3 uL;uniform vec3 uV;uniform vec3 uEye;uniform float uPersp;uniform float uUseClip;uniform float uFar;uniform float uTint;uniform float uAlpha;uniform vec4 uU;
 uniform mat4 uSM;uniform sampler2D uSh;uniform float uShOn;uniform vec3 uShT;uniform vec2 uPx;uniform float uGlass;uniform vec4 uGr;uniform vec3 uLk;
-uniform vec4 uLp[8];uniform vec3 uLc[8];uniform float uLn;
+uniform vec4 uLp[8];uniform vec3 uLc[8];uniform float uLn;uniform vec4 uLd[8];uniform float uLi[8];
 ${BOXU}
 ${DCU}
 ${GLSL_SKY}
@@ -7207,7 +7207,7 @@ void main(){
   vec3 col=c*mix(amb+sun*(0.76*dif)+0.07*fac,vec3(1.06),em);
   col+=sun*(spk*pow(max(dot(n,hv),0.0),shin)*sd*step(0.0,ndl));
   for(int i=0;i<8;i++){if(float(i)>=uLn)break;vec3 d=uLp[i].xyz-vP;float r=length(d);vec3 l=d/max(r,1.0);          // lamps (Artificial Lights): a soft point light each, w = how far it reaches
-    float a=1.0/(1.0+r*r/(0.09*uLp[i].w*uLp[i].w))*(1.0-smoothstep(0.55*uLp[i].w,uLp[i].w,r));col+=c*uLc[i]*(a*max((dot(n,l)+wrap)/(1.0+wrap),0.0))*(1.0-em);}
+    float a=1.0/(1.0+r*r/(0.09*uLp[i].w*uLp[i].w))*(1.0-smoothstep(0.55*uLp[i].w,uLp[i].w,r));a*=smoothstep(uLd[i].w,uLi[i],dot(-l,uLd[i].xyz));col+=c*uLc[i]*(a*max((dot(n,l)+wrap)/(1.0+wrap),0.0))*(1.0-em);}
   if(refl>0.0)col=mix(col,sky(reflect(vw,n)),refl*(0.3+0.7*pow(1.0-fac,3.0)));
   float al=vC.a;
   if(uGlass>0.5){float f=pow(1.0-fac,3.0);col=mix(vC.rgb*(0.26+0.34*max(ndl,0.0)*sh),sky(reflect(vw,n)),0.30+0.6*f)+sun*(0.9*pow(max(dot(n,hv),0.0),180.0)*sh);al=mix(0.56,0.94,f);}
@@ -7451,7 +7451,7 @@ function glRender1(o){
     gl.uniformMatrix4fv(u.uM,false,M);gl.uniform4fv(u.uClip,clip);gl.uniform1f(u.uUseClip,o.clip?1:0);gl.uniform1f(u.uFar,far);setBox(u,true);gl.uniform3fv(u.uL,R.sun);gl.uniform3fv(u.uV,cam.f);gl.uniform1f(u.uPersp,cam.ortho?0:1);if(!cam.ortho)gl.uniform3fv(u.uEye,cam.eye);
     gl.uniform2f(u.uPx,cam.ortho?2*cam.hh/o.h:0,cam.ortho?0:2*cam.tan/o.h);gl.uniform1f(u.uAlpha,1);gl.uniform1f(u.uTint,0);gl.uniform4f(u.uU,selc[0],selc[1],selc[2],1);gl.uniform1f(u.uGlass,0);gl.uniform4f(u.uGr,0,0,0,0);
     gl.uniform3fv(u.uSkyZ,SKY.z);gl.uniform3fv(u.uSkyH,SKY.h);gl.uniform3fv(u.uSkyG,SKY.g);gl.uniform3fv(u.uLk,R.light||[1,1,1]);
-    const LA=R.lamps;gl.uniform1f(u.uLn,LA?LA.n:0);if(LA&&LA.n){gl.uniform4fv(u['uLp[0]'],LA.p);gl.uniform3fv(u['uLc[0]'],LA.c)}
+    const LA=R.lamps;gl.uniform1f(u.uLn,LA?LA.n:0);if(LA&&LA.n){gl.uniform4fv(u['uLp[0]'],LA.p);gl.uniform3fv(u['uLc[0]'],LA.c);if(LA.d&&u['uLd[0]']){gl.uniform4fv(u['uLd[0]'],LA.d);gl.uniform1fv(u['uLi[0]'],LA.ci)}}
     if(SM){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GLR.shT);gl.uniform1i(u.uSh,0);gl.uniformMatrix4fv(u.uSM,false,SM.M);gl.uniform1f(u.uShOn,1);gl.uniform3f(u.uShT,1/GLR.shN,SM.texel,SM.bias)}else gl.uniform1f(u.uShOn,0);
     return u};
   /* Visibility/Graphics overrides of the view, by category: {s: tint of the surfaces, t: how much, a: opacity, l: colour of the edges} */
@@ -14420,10 +14420,10 @@ function backOf(v){if(!v||v.kind!=='3d')return null;if(v.bgk==='grad')return{k:'
 /* the lamps of a Realistic view: the eight light fixtures nearest the eye (or the middle of the view), as uniforms {n, p: [x, height, y, reach] × 8, c: [r, g, b] × 8} */
 function lampsGL(v,cam){if(!v||!v.lamps||v.hiddenCats.includes('light'))return null;const k=lampkOf(v)/50;if(!k)return null;const L=[];
   for(const e of P.els){if(e.cat!=='light'||!isFinite(e.x+e.y))continue;const m727=alDim727(v,e);if(!(m727>0))continue;const z=zRange(P,e)[0]-40,p=[e.x,z,e.y],W=+(typ(P,e)||{}).load||30;
-    const d=!cam?0:cam.ortho?Math.hypot(dot3(p,cam.r)-cam.cR,dot3(p,cam.u)-cam.cU):Math.hypot(p[0]-cam.eye[0],p[1]-cam.eye[1],p[2]-cam.eye[2]);L.push({p,W,d,m:m727,id:e.id,col:lcol728(typ(P,e))})}
-  if(!L.length)return null;L.sort((a,b)=>a.d-b.d);const n=Math.min(8,L.length),p=new Float32Array(32),c=new Float32Array(24);
-  for(let i=0;i<n;i++){const q=L[i],s=clamp(q.W/30,0.3,4),I=Math.min(2.4,(0.35+0.25*s)*k)*q.m;p.set([q.p[0],q.p[1],q.p[2],3200+1600*Math.sqrt(s)],i*4);c.set([I*q.col[0],I*q.col[1],I*q.col[2]],i*3)}
-  return{n,p,c,ids:L.slice(0,n).map(q=>q.id)}}
+    const d=!cam?0:cam.ortho?Math.hypot(dot3(p,cam.r)-cam.cR,dot3(p,cam.u)-cam.cU):Math.hypot(p[0]-cam.eye[0],p[1]-cam.eye[1],p[2]-cam.eye[2]);L.push({p,W,d,m:m727,id:e.id,col:lcol728(typ(P,e)),sd:lsd730(e,typ(P,e))})}
+  if(!L.length)return null;L.sort((a,b)=>a.d-b.d);const n=Math.min(8,L.length),p=new Float32Array(32),c=new Float32Array(24),dd=new Float32Array(32),ci=new Float32Array(8);
+  for(let i=0;i<n;i++){const q=L[i],s=clamp(q.W/30,0.3,4),I=Math.min(2.4,(0.35+0.25*s)*k)*q.m;p.set([q.p[0],q.p[1],q.p[2],(3200+1600*Math.sqrt(s))*Math.sqrt(q.sd.b)],i*4);c.set([I*q.col[0]*q.sd.b,I*q.col[1]*q.sd.b,I*q.col[2]*q.sd.b],i*3);dd.set([q.sd.d[0],q.sd.d[1],q.sd.d[2],q.sd.co],i*4);ci[i]=q.sd.ci}
+  return{n,p,c,d:dd,ci,ids:L.slice(0,n).map(q=>q.id)}}
 /* where decal e stands on its wall: {a, b: its foot along the face (a on the left of whoever looks at it), z0, z1, n: the way it looks [x, y]} or null */
 function dclGeo(e,FP){const w=IDX.get(e.host);if(!w||w.cat!=='wall')return null;const fp=(FP||FPm()).get(w.id);if(!fp)return null;const T=typ(P,e),hw=T.width/2,s=e.flipF?-1:1,off=s*(fp.g.h+3),nx=fp.g.nx*s,ny=fp.g.ny*s;
   let a=fp.pt(e.pos-hw,off),b=fp.pt(e.pos+hw,off);if(ny*(b[0]-a[0])-nx*(b[1]-a[1])<0){const q=a;a=b;b=q}          // its right lies at (ny, −nx) for one who faces it
@@ -14646,7 +14646,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=739,V1_NAME='V1.729';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=740,V1_NAME='V1.730';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -65922,6 +65922,59 @@ RG_TF.esw729=(T,f)=>`<div class="fr"><label for="tf_esw729">${esc(t('f_esw729'))
 {const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(!(cat==='door'||cat==='window'||cat==='*')||F.some(f=>f.k==='T.esw729'))return F;const T=e=>e&&(e.cat==='door'||e.cat==='window')?typ(Q,e):null;
   F.push({k:'T.esw729',l:tr('f_esw729'),g:e=>{const t0=T(e);return esw729ok(e&&e.cat,t0)?tr(t0.esw729===1?'o_yes':'o_no'):''},grp:'t'});return F}}
 Object.assign(STR,{f_esw729:['เส้นทิศการเปิดในรูปด้าน (Elevation Swing)','Elevation Swing'],vgs_eswing:['เส้นทิศการเปิดในรูปด้าน (Elevation Swing)','Elevation Swing']});
+/* ===== 730 Light Source Definition of light types (V1.730; Revit: a lighting fixture's Photometrics › Light Source Definition, Light Distribution
+   Spherical / Hemispherical / Spot, and its Spot Beam Angle, Spot Field Angle and Tilt Angle) =====
+   T.ldd730 on a light type: 'sph' spherical (all round, as before when unset), 'hemi' hemispherical (only below the fixture, none on the ceiling over it),
+   'spot' a cone.  A spot has T.sba730 the Spot Beam Angle (1 to 179°, 30 when unset: full brightness inside it), T.sfa730 the Spot Field Angle (the
+   beam's to 179°, 60 when unset: no light outside it, a soft edge between) and T.tla730 the Tilt Angle (0 to 180°, 0 when unset: straight down;
+   tilted towards the front of the fixture, the way it faces in plan).  The Realistic style and renderings light with it.  Edit Type has the
+   distribution after the Color Filter (with a small picture) and, for a spot, the three angles; schedules, key schedules and tags of lights have them
+   (a typed cell changes the type); a value that is not one is dropped on opening. */
+const LDD730=['sph','hemi','spot'],LAN730={sba730:[1,179,30],sfa730:[1,179,60],tla730:[0,180,0]};
+const ldd730=T=>T&&LDD730.includes(T.ldd730)?T.ldd730:'sph';
+const lan730=(T,k)=>{const r=LAN730[k],n=T&&T[k]!=null?parseFloat(T[k]):NaN;return isFinite(n)&&n>=r[0]&&n<=r[1]?Math.round(n):null};
+/* the beam and field angles of a spot (the field never narrower than the beam) and its tilt */
+function spot730(T){const b=lan730(T,'sba730')??30,f0=lan730(T,'sfa730')??60;return{b,f:Math.max(b,f0),t:lan730(T,'tla730')??0}}
+/* how lamp e of type T shines: {d: the way its axis points [x, up, y], co: the cosine of the edge, ci: of the full brightness, b: how much brighter and
+   further it reaches for its light being gathered in a cone (1 to 3)}; spherical: everywhere */
+function lsd730(e,T){const k=ldd730(T);if(k==='sph')return{d:[0,-1,0],co:-3,ci:-2,b:1};if(k==='hemi')return{d:[0,-1,0],co:-0.02,ci:0.17,b:1};
+  const S=spot730(T),r=(+e.rot||0)*Math.PI/180,fx=-Math.sin(r),fy=Math.cos(r),a=S.t*Math.PI/180,c=x=>Math.cos(x*Math.PI/360);
+  let co=c(S.f),ci=c(S.b);if(ci-co<0.002)co=ci-0.002;return{d:[fx*Math.sin(a),-Math.cos(a),fy*Math.sin(a)],co,ci,b:Math.min(3,Math.max(1,Math.sqrt(2/(1-(co+ci)/2))/1.4))}}
+XC.push(()=>{for(const c in (P.types||{})){if(!Array.isArray(P.types[c]))continue;for(const T of P.types[c]){if(!T)continue;
+  if(T.ldd730!==undefined&&(c!=='light'||!LDD730.includes(T.ldd730)||T.ldd730==='sph'))delete T.ldd730;
+  for(const k in LAN730)if(T[k]!==undefined){const v=c==='light'?lan730(T,k):null;if(v==null)delete T[k];else T[k]=v}}}});
+/* Edit Type: after the Color Filter */
+function ldPic730(T){const k=ldd730(T),S=spot730(T),W=64,H=40,x=W/2,y=8,R=30,p=(a,r)=>[x+Math.sin(a)*r,y+Math.cos(a)*r].map(n=>n.toFixed(1)).join(' ');
+  let sh='';if(k==='sph')sh=`<circle cx="${x}" cy="${y+4}" r="14" fill="#ffd36a" opacity=".45"/><circle cx="${x}" cy="${y+4}" r="22" fill="#ffd36a" opacity=".2"/>`;
+  else if(k==='hemi')sh=`<path d="M${x-R} ${y} A${R} ${R} 0 0 0 ${x+R} ${y} Z" fill="#ffd36a" opacity=".45"/>`;
+  else{const t=-S.t*Math.PI/180,f=S.f*Math.PI/360,b=S.b*Math.PI/360;sh=`<path d="M${x} ${y} L${p(t-f,R)} A${R} ${R} 0 0 0 ${p(t+f,R)} Z" fill="#ffd36a" opacity=".3"/><path d="M${x} ${y} L${p(t-b,R)} A${R} ${R} 0 0 0 ${p(t+b,R)} Z" fill="#ffc21a" opacity=".55"/>`}
+  return`<svg class="ldpic730" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><line x1="4" y1="${y-3}" x2="${W-4}" y2="${y-3}" stroke="currentColor" stroke-width="1"/>${sh}<rect x="${x-5}" y="${y-3}" width="10" height="4" fill="currentColor"/></svg>`}
+RG_TF.ldd730=(T,f)=>`<div class="fr"><label for="tf_ldd730">${esc(t('f_ldd730'))}</label><span style="display:flex;gap:6px;align-items:center"><select id="tf_ldd730" data-tf="ldd730" style="flex:1">${LDD730.map(o=>`<option value="${o}"${ldd730(T)===o?' selected':''}>${esc(t('ldd_'+o))}</option>`).join('')}</select>${ldPic730(T)}</span></div>`;
+{const f0=tdFields;tdFields=function(cat,T){const F=f0.apply(this,arguments);if(!F||cat!=='light'||F.some(f=>f[0]==='ldd730'))return F;const G=F.slice();
+  let i=G.findIndex(f=>f[0]==='cfl728');if(i<0)i=G.findIndex(f=>f[0]==='cu');G.splice(i<0?G.length:i+1,0,['ldd730','ldd730'],...(ldd730(T)==='spot'?[['sba730','num','°'],['sfa730','num','°'],['tla730','num','°']]:[]));return G}}
+{const f0=dlgTypes;dlgTypes=function(cat,id){f0.apply(this,arguments);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='light')return;
+  const T=(P.types.light||[]).find(x=>x.id===+ts.value);if(!T)return;
+  for(const k in LAN730){const el=$('#dlg #tf_'+k);if(!el)continue;const r=LAN730[k];el.placeholder=String(k==='sfa730'?Math.max(r[2],lan730(T,'sba730')??30):r[2]);el.min=String(r[0]);el.max=String(r[1]);el.step='1'}
+  const c0=H.change;H.change=e=>{const el=e.target,k=el&&el.dataset&&el.dataset.tf;if(k!=='ldd730'&&!LAN730[k])return c0&&c0(e);const s=String(el.value||'').trim();
+    if(k==='ldd730'){if(!LDD730.includes(s))return dlgTypes('light',T.id);if(ldd730(T)!==s)edit(()=>{if(s==='sph')delete T.ldd730;else T.ldd730=s});return dlgTypes('light',T.id)}
+    const v=s?lan730({[k]:s},k):null;if(s&&v==null){toast(t('lan_bad730',LAN730[k][0],LAN730[k][1]));return dlgTypes('light',T.id)}
+    if(lan730(T,k)!==v)edit(()=>{if(v==null)delete T[k];else T[k]=v});return dlgTypes('light',T.id)}}}
+/* schedules, key schedules, tags of lights */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(!(cat==='light'||cat==='*')||F.some(f=>f.k==='T.ldd730'))return F;const one=cat!=='*',T=e=>e&&e.cat==='light'?typ(Q,e):null;
+  F.push(Object.assign({k:'T.ldd730',l:tr('f_ldd730'),g:e=>{const t0=T(e);return t0?tr('ldd_'+ldd730(t0)):''},grp:'t'},one?{ed:'tp',tf:['ldd730','sel',LDD730,'ldd_'],ok:e=>!!T(e)}:{}));
+  for(const k in LAN730)F.push(Object.assign({k:'T.'+k,l:tr('f_'+k),g:e=>{const t0=T(e);if(!t0||ldd730(t0)!=='spot')return'';const S=spot730(t0);return k==='sba730'?S.b:k==='sfa730'?S.f:S.t},grp:'t',num:1,u:'°',dec:0},
+    one?{ed:'tp',tf:[k,'num',null,1],ok:e=>{const t0=T(e);return!!t0&&ldd730(t0)==='spot'}}:{}));return F}}
+{const f0=tpCell107;tpCell107=function(c,r,st){const f=c&&c.sf;if(f&&/^T\.(sba730|sfa730|tla730)$/.test(f.k)&&r){const e=r._g?null:r.id!=null?IDX.get(r.id):tpOne107(r._ids);if(e&&ldd730(typ(P,e))!=='spot')return null}
+  const h=f0.apply(this,arguments);if(h&&f&&f.k==='T.ldd730'&&r){const e=r._g?null:r.id!=null?IDX.get(r.id):tpOne107(r._ids),T=e&&typ(P,e);if(T&&T.ldd730===undefined)return h.replace('value="sph"','value="sph" selected')}return h}}
+{const f0=tpSet107;tpSet107=function(e,f,el){const k=f&&f.tf&&f.tf[0];
+  if(k==='ldd730'||LAN730[k]){const T=e&&e.cat==='light'?typ(P,e):null;if(!T){schRedraw107();return}const s=String(el.value).trim();let v;
+    if(k==='ldd730'){if(!LDD730.includes(s)||ldd730(T)===s){schRedraw107();return}v=s==='sph'?null:s}
+    else{if(ldd730(T)!=='spot'){schRedraw107();return}v=s?lan730({[k]:s},k):null;if(s&&v==null){schRedraw107();return}if(lan730(T,k)===v){schRedraw107();return}}
+    edit(()=>{if(v==null)delete T[k];else T[k]=v});const n=P.els.filter(x=>x.cat==='light'&&typ(P,x)===T).length;toast(t('tpe_done',T.name,n));return}
+  return f0.apply(this,arguments)}}
+Object.assign(STR,{f_ldd730:['การกระจายแสง (Light Distribution)','Light Distribution'],ldd_sph:['รอบทิศ (Spherical)','Spherical'],ldd_hemi:['ครึ่งทรงกลม ลงล่าง (Hemispherical)','Hemispherical'],ldd_spot:['สปอต (Spot)','Spot'],
+  f_sba730:['มุมลำแสง (Spot Beam Angle)','Spot Beam Angle'],f_sfa730:['มุมขอบแสง (Spot Field Angle)','Spot Field Angle'],f_tla730:['มุมเอียง (Tilt Angle)','Tilt Angle'],
+  lan_bad730:['มุมต้องอยู่ระหว่าง {0} ถึง {1}°','The angle must be {0} to {1}°']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -68886,6 +68939,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.727 · แสงจากโคมไฟแยกกลุ่ม เปิดปิดและหรี่ไฟในแต่ละวิว (Artificial Lights, Light Group)
 - V1.728 · อุณหภูมิสีของแสงและฟิลเตอร์สีของชนิดดวงโคม (Initial Color, Color Filter)
 - V1.729 · เส้นทิศการเปิดของประตูหน้าต่างในรูปด้านและรูปตัด (Elevation Swing)
+- V1.730 · การกระจายแสงของชนิดดวงโคม รอบทิศ ครึ่งทรงกลม สปอต มุมลำแสงและมุมเอียง (Light Source Definition)
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -69788,6 +69842,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.727 · Artificial Lights: light groups, on/off and dimming per view
 - V1.728 · Initial Color and Color Filter of light fixture types
 - V1.729 · Elevation Swing of doors and windows in elevations and sections
+- V1.730 · Light Source Definition of light fixture types: Spherical, Hemispherical or Spot, beam, field and tilt angles
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -69954,6 +70009,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - แสงจากโคมไฟแยกกลุ่ม เปิดปิดและหรี่ไฟในแต่ละวิว (Revit: Artificial Lights ของการเรนเดอร์ และ Light Group ของดวงโคม): [[p_props]] ของดวงโคมมี [[f_lg727]] พิมพ์ชื่อกลุ่มหรือเลือกจากรายการ ปุ่ม [[al727_t]]… (อยู่ใน [[a_gdo]] หน้าเรนเดอร์ และ Properties ของดวงโคม) เปิดหน้ารายการกลุ่มของวิวนั้น แต่ละกลุ่มมี [[al727_on]] และ [[al727_dim]] 0 ถึง 1 เปลี่ยนชื่อ ลบ หรือสร้างกลุ่มใหม่ได้ กดลูกศรเพื่อดูโคมในกลุ่ม แต่ละดวงเปิดปิด หรี่ และย้ายกลุ่มได้ [[al727_un]] อยู่ท้ายรายการ วิวแบบเหมือนจริงและการเรนเดอร์ใช้เฉพาะโคมที่เปิด สว่างตามค่าหรี่ ตารางรายการของดวงโคมมีช่อง [[f_lg727]] พิมพ์ในช่องเพื่อเปลี่ยนกลุ่มได้
 - อุณหภูมิสีของแสงและฟิลเตอร์สีของชนิดดวงโคม (Revit: Initial Color และ Color Filter ในกลุ่ม Photometrics): [[edit_type]] ของดวงโคมมี [[f_cct728]] (1500 ถึง 12000 K มีค่าของหลอดที่ใช้บ่อยให้เลือก และสีตัวอย่างข้าง ๆ ว่างคือขาวอุ่นแบบเดิม) และ [[f_cfl728]] (ขาวคือไม่มี ✕ เอาออก) ต่อจาก CU วิวแบบเหมือนจริงและภาพเรนเดอร์ส่องด้วยสีนั้น ตารางและป้ายของดวงโคมมีสองช่องนี้ พิมพ์ในช่องแล้วชนิดเปลี่ยน
 - เส้นทิศการเปิดของประตูหน้าต่างในรูปด้าน (Revit: Elevation Swing ของแฟมิลีประตูหน้าต่าง): [[edit_type]] ของประตูและหน้าต่างบานเปิดหรือบานเลื่อนมีช่อง [[f_esw729]] ติ๊กแล้วรูปด้านและรูปตัดที่ละเอียดปานกลางหรือละเอียดวาดเส้นสองเส้นบนแต่ละบาน จากมุมด้านมือจับไปกลางด้านบานพับ เส้นเต็มเมื่อบานเปิดเข้าหาผู้ดู เส้นประเมื่อเปิดออกจากผู้ดู บานเลื่อนมีลูกศรบอกทางเลื่อนแทน บานที่ถูกบัง ถูกตัด หรืออยู่นอกกรอบไม่วาด ซ่อนได้ด้วยหมวดย่อย [[vgs_eswing]] ของประตูหน้าต่างใน Visibility/Graphics ตารางและป้ายมีช่องนี้
+- การกระจายแสงของดวงโคม (Revit: Light Source Definition ของแฟมิลีดวงโคม): [[edit_type]] ของชนิดดวงโคมมี [[f_ldd730]] ต่อจากฟิลเตอร์สี เลือกรอบทิศ (แบบเดิม ส่องทั้งฝ้าและพื้น) ครึ่งทรงกลม (ส่องเฉพาะด้านล่าง ฝ้าเหนือโคมไม่สว่าง) หรือสปอต (กรวยแสง) พร้อมรูปเล็กแสดงลักษณะแสง สปอตมี [[f_sba730]] (ในมุมนี้สว่างเต็ม ไม่ตั้งคือ 30°) [[f_sfa730]] (นอกมุมนี้ไม่มีแสง ไม่ตั้งคือ 60° ไม่แคบกว่ามุมลำแสง) และ [[f_tla730]] (0° ชี้ลงตรง เอียงไปทางด้านหน้าของโคมตามทิศที่วางในแปลน) วิวแบบเหมือนจริงและภาพเรนเดอร์ส่องตามนี้ ตาราง ตารางคีย์ และป้ายของดวงโคมมีทั้งสี่ช่อง พิมพ์ในช่องแล้วชนิดเปลี่ยน
 - [[a_print]] (Ctrl+P) · [[prs_l342]]: ตั้งกระดาษ สี การประมวลผล ความละเอียด และ [[pr_tags342]] แล้วกด [[prs_as342]] เพื่อเก็บเป็นชื่อในโครงการ เลือกชื่อจากรายการเพื่อใช้ค่าเดิม (* คือแก้ไปจากที่บันทึก) · [[pr_sel]]: ติ๊กแผ่นงานและมุมมอง แล้วเก็บเป็น [[vss_l342]] ไว้เลือกครั้งหน้า · เมนูไฟล์ › [[m_prs342]] เปิดหน้าต่างพิมพ์ที่ช่องตั้งค่า
 - [[a_stg343]] (แท็บจัดการ แผงตั้งค่า): ตั้งหัวรูปตัด ปลายรูปตัด (มีวงกลมทั้งสองปลายได้) และเส้นที่เว้นช่วงของแต่ละป้าย และป้ายที่ชนิดรูปตัดแต่ละชนิดใช้ · เลือกเส้นรูปตัดแล้วเลือก [[p_sty343]] [[p_hs343]] และ [[p_gp343]] ใน Properties
 - [[a_ctg344]] (แท็บจัดการ แผงตั้งค่า): ตั้งหัวแบบขยาย รัศมีมุมกรอบ และชื่อข้างหัวของแต่ละป้าย และป้ายที่ชนิดแบบขยายแต่ละชนิดใช้ · เลือกกรอบแบบขยายแล้วเลือก [[p_cty344]] และ [[p_hs343]] ใน Properties
@@ -70073,6 +70129,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - Light groups, on/off and dimming per view (Revit: Artificial Lights of rendering and the Light Group of light fixtures): [[p_props]] of a light fixture have [[f_lg727]]: type a group name or pick one from the list. [[al727_t]]… (in [[a_gdo]], Render and the Properties of a light fixture) opens the groups of that view: each group has [[al727_on]] and [[al727_dim]] 0 to 1, and can be renamed, deleted or made new; the arrow opens a group to its lights, each of which can be turned on or off, dimmed and moved to another group. [[al727_un]] come last. The Realistic style and renderings use only the lights that are on, as bright as their dimming. Schedules of light fixtures have the [[f_lg727]] field, and a typed cell changes it.
 - Initial Color and Color Filter of light fixture types (Revit: the Photometrics group): [[edit_type]] of a light fixture has [[f_cct728]] (1500 to 12000 K, with common lamps to pick and a swatch beside it; empty: the warm white of before) and [[f_cfl728]] (white: none; ✕ takes it off) after the CU. The Realistic style and renderings light with that colour. Schedules and tags of light fixtures have the two fields, and a typed cell changes the type.
 - Elevation Swing of doors and windows (Revit: the Elevation Swing of door and window families): [[edit_type]] of a door or a casement or sliding window has [[f_esw729]]. Ticked, elevations and sections at Medium or Fine draw two lines on each leaf, from the corners of the latch side to the middle of the hinge side, solid when the leaf opens towards the viewer and dashed when it opens away; a sliding leaf gets an arrow the way it slides. A leaf that is hidden, cut away or out of the crop is not drawn; the [[vgs_eswing]] subcategory of doors and windows in Visibility/Graphics hides them. Schedules and tags have the field.
+- Light Source Definition of light fixtures (Revit: the Light Source Definition of lighting fixture families): [[edit_type]] of a light type has [[f_ldd730]] after the Color Filter: Spherical (as before, lighting the ceiling and the floor), Hemispherical (only below it, the ceiling over it stays dark) or Spot (a cone), with a small picture of it. A spot has [[f_sba730]] (full brightness inside it, 30° when unset), [[f_sfa730]] (no light outside it, 60° when unset, never narrower than the beam) and [[f_tla730]] (0° straight down, tilted towards the front of the fixture as it is placed in plan). The Realistic style and renderings light by it; schedules, key schedules and tags of lights have the four fields, a typed cell changes the type.
 - [[a_print]] (Ctrl+P) · [[prs_l342]]: set the paper, colours, processing, quality and [[pr_tags342]], then [[prs_as342]] keeps them under a name in the project; pick a name to use it again (* means changed since saved) · [[pr_sel]]: tick sheets and views and keep them as a [[vss_l342]] for next time · File › [[m_prs342]] opens Print at its settings
 - [[a_stg343]] (Manage tab, Settings panel): each tag's Section Head, Section Tail (bubbles at both ends if wanted) and broken style, and the tag each section type draws with · select a section line to pick its [[p_sty343]], [[p_hs343]] and [[p_gp343]] in Properties
 - [[a_ctg344]] (Manage tab, Settings panel): each tag's Callout Head, Corner Radius and name beside the head, and the tag each callout type draws with · select a callout's frame to pick its [[p_cty344]] and [[p_hs343]] in Properties
@@ -75956,6 +76013,22 @@ window.PenumBIM.r729={
   drawn:()=>{const n=ESWN729;ESWN729=0;return n},
   sf:cat=>sfAll(P,cat,t).filter(f=>f.k==='T.esw729').map(f=>f.l),sg:(id)=>{const f=sfAll(P,'*',t).find(f=>f.k==='T.esw729');return f?f.g(IDX.get(id)):undefined},
   subs:()=>VG_SUB.door.concat(VG_SUB.window),
+  json:()=>projectJSON(),load:s=>loadText(s)
+};
+/* V1.730 test API: Light Source Definition of light types */
+window.PenumBIM.r730={
+  get:id=>{const T=(P.types.light||[]).find(x=>x.id===id);return T?{d:T.ldd730===undefined?null:T.ldd730,b:T.sba730===undefined?null:T.sba730,f:T.sfa730===undefined?null:T.sfa730,t:T.tla730===undefined?null:T.tla730}:undefined},
+  raw:(cat,id,o)=>{const T=(P.types[cat]||[]).find(x=>x.id===id);if(T)Object.assign(T,o)},
+  ty:(id,o)=>{const T=(P.types.light||[]).find(x=>x.id===id);if(!T)return false;edit(()=>{for(const k in o){if(o[k]==null)delete T[k];else T[k]=o[k]}});refresh();return true},
+  el:(id,o)=>{const e=IDX.get(id);if(!e)return false;edit(()=>Object.assign(e,o));refresh();return true},
+  fields:(cat,id)=>{const T=(P.types[cat]||[]).find(x=>x.id===id);return(tdFields(cat,T)||[]).map(f=>f[0])},
+  /* how each lamp of the view shines, by light id: [dx, dy(up), dz(plan y), cos edge, cos full] rounded */
+  ld:vid=>{const R=lampsGL(viewById(vid),null);if(!R)return null;const o={},q=x=>Math.round(x*1e4)/1e4;R.ids.forEach((id,i)=>{o[id]=[...Array.from(R.d.slice(i*4,i*4+4)),R.ci[i]].map(q)});return o},
+  /* how much of lamp id's light the shader lets reach a point [dx, dh, dy] from the lamp (its distribution only, 0..1) */
+  at:(vid,id,pt)=>{const R=lampsGL(viewById(vid),null);if(!R)return null;const i=R.ids.indexOf(id);if(i<0)return null;const d=[-pt[0],-pt[1],-pt[2]],r=Math.hypot(...d),l=d.map(x=>x/Math.max(r,1)),
+    D=R.d.slice(i*4,i*4+4),c=-(l[0]*D[0]+l[1]*D[1]+l[2]*D[2]),ss=(a,b,x)=>{const t0=Math.min(1,Math.max(0,(x-a)/(b-a)));return t0*t0*(3-2*t0)};return Math.round(ss(D[3],R.ci[i],c)*1e4)/1e4},
+  sf:cat=>sfAll(P,cat,t).filter(f=>/^T\.(ldd730|sba730|sfa730|tla730)$/.test(f.k)).map(f=>({k:f.k,ed:f.ed||null})),
+  sg:(id,k)=>{const f=sfAll(P,'light',t).find(f=>f.k===k);return f?f.g(IDX.get(id)):undefined},
   json:()=>projectJSON(),load:s=>loadText(s)
 };
 window.PenumBIM.r456={
