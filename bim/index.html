@@ -3034,7 +3034,7 @@ function rectFits(P){const trim=new Map(),fits=[],setT=(id,en,v)=>{let a=trim.ge
         if(thru){const big=a.hw*a.hh>=b.hw*b.hh?a:b;reduce(big,big===a?b:a,0);continue}
         // an elbow: centre line radius 1.5 × the width of the duct, less where the runs are short
         const cosT=a.d[0]*b.d[0]+a.d[1]*b.d[1],dl=Math.PI-Math.acos(Math.max(-1,Math.min(1,cosT))),W=2*Math.max(a.hw,b.hw),tn=Math.tan(dl/2);if(dl<0.14||tn<1e-6)continue;
-        let Rc=cat==='tray'?W/2+(+String(pfPref(P,'t',n.x,n.y,a.z,a.hw>=b.hw?a.e:b.e,'elb')).slice(1)||300):1.5*W,T=Rc*tn;const lim=0.45*Math.min(a.len,b.len);if(T>lim){T=lim;Rc=T/tn}if(Rc<W/2+12)continue;          // no room for a radius: the mitre stays
+        let Rc=cat==='tray'?trRc710(P,n,a,b,W):1.5*W,T=Rc*tn;const lim=0.45*Math.min(a.len,b.len);if(T>lim){T=lim;Rc=T/tn}if(Rc<W/2+12)continue;          // no room for a radius: the mitre stays
         const bl=Math.hypot(a.d[0]+b.d[0],a.d[1]+b.d[1])||1,bis=[(a.d[0]+b.d[0])/bl,(a.d[1]+b.d[1])/bl],k=Rc/Math.cos(dl/2),C=[n.x+bis[0]*k,n.y+bis[1]*k],P1=[n.x+a.d[0]*T,n.y+a.d[1]*T],
           r0=[(P1[0]-C[0])/Rc,(P1[1]-C[1])/Rc],sg=(r0[0]*-a.d[1]+r0[1]*a.d[0])>0?1:-1,ns=Math.max(3,Math.ceil(dl/(Math.PI/2)*8)),S=[];          // sg: which way the arc turns from the first run to the second
         for(let i=0;i<=ns;i++){const f=sg*dl*i/ns,cs=Math.cos(f),sn=Math.sin(f),rd=[r0[0]*cs-r0[1]*sn,r0[0]*sn+r0[1]*cs],t=i/ns,hw=a.hw+(b.hw-a.hw)*t;
@@ -14644,7 +14644,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=719,V1_NAME='V1.709';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=720,V1_NAME='V1.710';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -65048,6 +65048,36 @@ Object.assign(STR,{p_cbr709:['รัศมีดัดต่ำสุด','Minim
   cbr709_bad:['รัศมีดัดต้องอยู่ระหว่าง 25 ถึง 5000 มม.','A bend radius is 25 to 5000 mm'],
   cbr709_note:['รัศมีดัดต่ำสุดวัดถึงแนวศูนย์กลางท่อ ช่องว่างคือค่าตาม NEC บทที่ 9 ตาราง 2 (EMT IMC RMC ตามเครื่องดัดแบบ one shot และ full shoe ส่วน PVC ตามช่อง other bends) ข้องอของท่อในแปลนและ 3D ใช้รัศมีนี้',
     'The minimum bend radius is to the centre line; left empty it is that of NEC Chapter 9 Table 2 (one shot and full shoe benders for EMT, IMC and RMC, other bends for PVC).  The bends of conduits in plans and 3D take it.']});
+/* ===== 710 Bend Radius Multiplier of cable tray types (V1.710; Revit: Bend Radius Multiplier in the Type Properties of a cable tray: the bend radius of
+   its fittings is the width of the tray times it, measured to the inside edge) =====
+   T.brm710 on a cable tray type, 0.1 to 20: a bend of its trays has an inside radius of the width times it, so a wider tray bends wider (Revit's default 1
+   gives a 300 tray the 300 of before, a 600 tray 600).  Left empty a type bends as before, at the inside radius its Elbow gives (300, 600 or 900).  A
+   fitting set apart with Edit Fittings keeps its own radius; the dialog says what the type gives.  Properties of a tray, in Dimensions: Bend Radius (the
+   inside radius, with the multiplier); schedules of cable trays have it. */
+/* the inside radius of the bends of a tray, mm, and the multiplier it comes from (0: the type's Elbow) */
+function brmOf710(T){const m=T?+T.brm710:NaN;return m>0?m:0}
+function tbr710(P0,e){const T=typ(P0,e),m=brmOf710(T);if(m)return{r:m*runW(e),m};return{r:+String(T&&T.elb||'').slice(1)||300,m:0}}
+/* the centre line radius of a tray bend at node n between arms a and b (W the larger width): a fitting's own Elbow, else the type of the larger tray */
+function trRc710(P0,n,a,b,W){const e=a.hw>=b.hw?a.e:b.e,o=P0.fito&&P0.fito[pfKey('t',n.x,n.y,a.z)];if(o&&o.elb)return W/2+(+String(o.elb).slice(1)||300);
+  const m=brmOf710(typ(P0,e));return W/2+(m?m*W:+String(pfPref(P0,'t',n.x,n.y,a.z,e,'elb')).slice(1)||300)}
+XC.push(()=>{for(const T of (P.types&&P.types.tray)||[]){if(T.brm710===undefined)continue;const v=+T.brm710;if(!isFinite(v)||v<=0||T.brm710===''||T.brm710==null)delete T.brm710;else T.brm710=Math.round(Math.min(20,Math.max(0.1,v))*100)/100}});
+/* the type dialog: a number, empty for the radius of the Elbow */
+RG_TF.brm710=(T,f)=>{const has=T.brm710!=null&&T.brm710!=='';
+  return`<div class="fr"><label for="tf_brm710">${esc(t('f_brm710'))}</label><span style="display:flex;gap:6px;align-items:center"><input type="number" id="tf_brm710" data-tf="brm710" value="${has?esc(T.brm710):''}" min="0.1" max="20" step="0.05" placeholder="${esc(t('brm710_ph'))}" style="flex:1">${has?`<button type="button" class="btn" data-td="nc:brm710" title="${t('vg_clear')}" aria-label="${t('vg_clear')}">✕</button>`:''}</span></div>`};
+TYPE_FIELDS.tray.push(['brm710','brm710']);
+{const f0=dlgTypes;dlgTypes=(cat,id)=>{f0(cat,id);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='tray')return;const T=(P.types.tray||[]).find(x=>x.id===+ts.value);if(!T)return;const c0=H.change;
+  H.change=e=>{const el=e.target,k=el.dataset&&el.dataset.tf;if(k!=='brm710')return c0(e);const s=String(el.value).trim(),v=parseFloat(s);
+    if(!s){if(T.brm710!==undefined)edit(()=>{delete T.brm710})}else if(isFinite(v)&&v>0){const n=Math.round(Math.min(20,Math.max(0.1,v))*100)/100;if(T.brm710!==n)edit(()=>{T.brm710=n})}return dlgTypes('tray',T.id)}}}
+/* Properties of trays, in Dimensions: Bend Radius */
+{const f0=rspRow707;rspRow707=function(els,V,U){const h=f0.apply(this,arguments);if(!els.length||!els.every(x=>x.cat==='tray'))return h;
+  const r=V(x=>Math.round(tbr710(P,x).r)),m=V(x=>tbr710(P,x).m);return h+PR.ro('p_tbr710',r!==''?r+' '+t('u_mm')+(m?' (× '+m+')':''):'—')}}
+/* schedules of cable trays */
+{const f0=sfAll;sfAll=function(P0,cat,tr){const F=f0.apply(this,arguments);if(cat==='tray')F.push({k:'tbr710',l:tr('p_tbr710')+' (mm)',g:e=>Math.round(tbr710(P0,e).r),grp:'i',num:1},{k:'brm710',l:tr('f_brm710'),g:e=>brmOf710(typ(P0,e))||'',grp:'t',num:1});return F}}
+/* Edit Fittings on a tray bend: the choice by type says what the multiplier gives */
+{const f0=dlgFitP;dlgFitP=function(q){const r=f0.apply(this,arguments);if(!q||q.cat!=='tray')return r;const A=q.A.slice().sort((p,s)=>runW(s.ed.r.e)-runW(p.ed.r.e)),e=A[0].ed.r.e,m=brmOf710(typ(P,e));
+  const o=$('#dlg #feSel option[value=""]');if(m&&o)o.textContent=t('fe_auto')+' ('+t('brm710_auto',m,Math.round(m*runW(e)))+')';return r}}
+Object.assign(STR,{f_brm710:['ตัวคูณรัศมีโค้ง (Bend Radius Multiplier)','Bend Radius Multiplier'],p_tbr710:['รัศมีโค้ง (ด้านใน)','Bend Radius'],
+  brm710_ph:['ว่าง: ตามรัศมีของข้องอ','Empty: the radius of the Elbow'],brm710_auto:['กว้าง × {0} รัศมีใน {1}','width × {0}, {1} inside radius']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -66270,6 +66300,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - ชนิดบริการและระยะขั้นบันไดของรางเคเบิลและท่อร้อยสาย (Revit: Service Type ของ Cable Tray และ Conduit, Rung Space ของรางแบบบันได): เลือกรางเคเบิลหรือท่อร้อยสาย Properties ในงานไฟฟ้ามีชนิดบริการ พิมพ์ได้ถึง 40 ตัวอักษร (ช่องเสนอชนิดที่โครงการใช้แล้วและชนิดทั่วไป เช่น ไฟกำลัง ไฟแสงสว่าง ข้อมูล แจ้งเหตุเพลิงไหม้) รางแบบบันไดมีระยะขั้นบันได 50 ถึง 1500 มม. ในขนาด (ไม่ตั้งคือ 300 เหมือนเดิม) แปลน 3D และการถอดปริมาณวัสดุใช้ระยะนี้ ตารางรางเคเบิลและท่อร้อยสายมีสองช่องนี้ ตัวกรองมีช่องชนิดบริการ
 - ตารางแนวท่อร้อยสายและแนวรางเคเบิล (Revit: หมวดตาราง Conduit Runs และ Cable Tray Runs): มุมมอง › ตาราง › ตารางใหม่ › งานไฟฟ้า มีแนวรางเคเบิลและแนวท่อร้อยสาย หนึ่งแถวคือหนึ่งแนวที่ต่อถึงกัน (ปลายชนปลาย ข้องอ สามทาง สี่ทาง) บอกชนิด ขนาด ชนิดบริการ ชั้น จำนวนท่อน ข้อต่อ (ข้องอ สามทาง และข้อลดที่ขนาดเปลี่ยน) มุมดัดรวมในแปลน (เกิน 360° ควรมีกล่องดึงสาย) และความยาวรวมตามแนว (ม.) คลิกแถวเลือกทั้งแนว จัดกลุ่ม กรอง และวางบนแผ่นงานได้เหมือนตารางอื่น
 - รัศมีดัดต่ำสุดของท่อร้อยสาย (Revit: Electrical Settings › Conduit Settings › Size › Minimum Bend Radius): ข้องอของท่อร้อยสายในแปลน 3D และท่อที่ดัดลงอุปกรณ์ใช้รัศมีตามมาตรฐานและขนาดของท่อ (NEC บทที่ 9 ตาราง 2 ถึงแนวศูนย์กลาง EMT IMC RMC ตามเครื่องดัด one shot ส่วน PVC ตามช่อง other bends) ตั้งค่างานไฟฟ้า › ขนาดท่อร้อยสาย มีช่องรัศมีดัดของทุกขนาด พิมพ์ค่าของโครงการแทนได้ ลบออกกลับเป็นค่าตามตาราง Properties ของท่อบอกรัศมีดัดต่ำสุด และนับข้องอที่ท่อนสั้นเกินจนดัดแคบกว่านั้น ตารางท่อร้อยสายมีช่องนี้
+- ตัวคูณรัศมีโค้งของรางเคเบิล (Revit: Bend Radius Multiplier ใน Type Properties ของ Cable Tray): ในหน้าต่างชนิดของรางเคเบิล ใส่ตัวคูณ 0.1 ถึง 20 แล้วข้องอของรางชนิดนั้นมีรัศมีด้านในเท่ากับความกว้างของรางคูณตัวคูณ รางกว้างก็โค้งกว้างตาม (1 ให้ราง 300 โค้ง 300 ราง 600 โค้ง 600) เว้นว่างไว้ใช้รัศมีของข้องอที่ตั้งในชนิด (300 600 900) เหมือนเดิม ข้องอที่ตั้งแยกด้วยแก้ไขข้อต่อยังใช้ค่าของตัวเอง Properties ของรางบอกรัศมีโค้งในกลุ่มขนาด ตารางรางเคเบิลมีรัศมีโค้งและตัวคูณ
 - [[g_cm593]] (Revit: Cut Mark Type ของชนิดบันได): ใน [[edit_type]] ของบันได ตั้ง [[f_cms593]] ([[cms593_zig]] [[cms593_curve]] หรือ [[cms593_none]]) [[f_cmt593]] ([[cmt593_s]] หรือ [[cmt593_d]]) [[f_cma593]] (มุมระหว่างเส้นตัดกับแนวลูกตั้ง เว้นว่าง = อัตโนมัติ ยาว 0.35 ลูกนอนก่อนและหลังเส้นตัดเหมือนเดิม) และ [[f_cmd593]] ของเส้นคู่ (มม. บนกระดาษ เว้นว่าง = 2) · ใช้กับบันไดช่วงตรง ตัว L ตัว U ขั้นเวียน และบันไดเวียน ในทุกแปลนและ DXF · ชั้นกลางของบันไดหลายชั้นวาดขอบบันไดถึงปลายเส้นตัดตามมุมนั้น
 - [[g_stp593]] ในคุณสมบัติของบันได (Revit: Up Text, Down Text, Show Up Text, Show Down Text ของเส้นทางบันได): พิมพ์ [[p_upt593]] และ [[p_dnt593]] เอง (ลบให้ว่างกลับเป็น ขึ้น / ลง ตามภาษา) หรือเอาติ๊ก [[p_sut593]] / [[p_sdt593]] ออกเพื่อซ่อน · ใช้ในแปลนทุกชั้นของบันไดนั้น
 - [[g_stp593]] ใน [[edit_type]] ของบันได (Revit: ชนิด Stair Path แบบ Automatic Up/Down Direction หรือ Fixed Up Direction กับ Start Symbol Type, Arrow Type และ End at Riser): [[f_spd594]] [[spd594_fix]] ให้เส้นทางชี้ขึ้นบันไดเสมอ ลูกศรอยู่ที่หัวบันไดแม้ในแปลนชั้นบน · [[f_sps594]] และ [[f_spa594]] เลือกแบบทึบ (เหมือนเดิม) แบบโปร่ง หรือไม่มี · [[f_spe594]] ให้เส้นทางลงไปจบที่ลูกตั้งแรกพอดี
@@ -66690,6 +66721,7 @@ Press ((Enter)) while in [[t_modify]], or type ((RC))
 - Service Type and Rung Space of cable trays and conduits (Revit: Service Type of a Cable Tray or Conduit, Rung Space of a ladder tray): select a cable tray or a conduit and Electrical in its Properties has its Service Type, a text of up to 40 characters (the box offers those the project uses and common ones such as Power, Lighting, Data, Fire Alarm); a ladder cable tray has its Rung Space, 50 to 1500 mm, in Dimensions (300 when not set, as before), which the plan, the 3D view and the Material Takeoff take; schedules of cable trays and conduits have both; filter rules have a field Service Type
 - Conduit Runs and Cable Tray Runs schedules (Revit: the Conduit Runs and Cable Tray Runs schedule categories): View › Schedules › New Schedule › Electrical has Cable Tray Runs and Conduit Runs; a row is a run of conduits or trays joined end to end, at elbows, tees and crosses, with its Type, Size, Service Type, Level, Segments, Fittings (elbows, tees and transitions where the size changes), Bends (the angles of its elbows in plan added up; past 360° a pull box is due) and Length along the run (m); clicking a row selects the run; Sorting/Grouping, Filter and sheets as for any schedule
 - Minimum bend radius of conduits (Revit: Electrical Settings › Conduit Settings › Size › Minimum Bend Radius): the bends of conduits in plans and 3D, and where a conduit turns down into a device, take the radius of the conduit's standard and size (NEC Chapter 9 Table 2, to the centre line: one shot and full shoe benders for EMT, IMC and RMC, other bends for PVC); Electrical Settings › Conduit Sizes has the radius of every size, and one typed there is the project's (emptied, the table's again); the Properties of a conduit show its Minimum Bend Radius and count the bends tighter than it, where the segments are too short; schedules of conduits have it
+- Bend Radius Multiplier of cable trays (Revit: Bend Radius Multiplier in the Type Properties of a cable tray): in the type dialog of a cable tray, a multiplier of 0.1 to 20 gives the bends of its trays an inside radius of the tray width times it, so a wider tray bends wider (1 bends a 300 tray at 300, a 600 tray at 600); left empty the type bends at the radius of its Elbow (300, 600 or 900) as before; a fitting set apart with Edit Fittings keeps its own; the Properties of a tray show the Bend Radius in Dimensions; schedules of cable trays have the Bend Radius and the multiplier
 - [[g_cm593]] (Revit: the Cut Mark Type of a stair type): in [[edit_type]] of a stair set the [[f_cms593]] ([[cms593_zig]], [[cms593_curve]] or [[cms593_none]]), the [[f_cmt593]] ([[cmt593_s]] or [[cmt593_d]]), the [[f_cma593]] (between the cut line and the riser line; empty: automatic, 0.35 of a tread before and after the cut, as before) and the [[f_cmd593]] of a double line (in mm on paper; empty: 2) · straight, L and U stairs, winders and spirals take it in every plan and in DXF · a level between those of a multistory stair draws the stair's sides up to the ends of the cut line at its angle
 - [[g_stp593]] in the Properties of a stair (Revit: Up Text, Down Text, Show Up Text and Show Down Text of the stair path): type an [[p_upt593]] and a [[p_dnt593]] of its own (emptied: UP / DN in the language in use) or untick [[p_sut593]] / [[p_sdt593]] to hide it · every plan of the stair takes it
 - [[g_stp593]] in [[edit_type]] of a stair (Revit: the Stair Path types Automatic Up/Down Direction and Fixed Up Direction, with Start Symbol Type, Arrow Type and End at Riser): [[f_spd594]] [[spd594_fix]] makes the path always run up the stair, its arrow at the head even in the plan above · [[f_sps594]] and [[f_spa594]]: filled (as before), open or none · [[f_spe594]] ends a path going down on the first riser
@@ -67978,6 +68010,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.707 · ชนิดบริการและระยะขั้นบันได: รางเคเบิลและท่อร้อยสายมีชนิดบริการ (ไฟกำลัง ข้อมูล …) ในตารางและตัวกรอง รางแบบบันไดตั้งระยะขั้นบันไดได้ เหมือน Revit
 - V1.708 · ตารางแนวท่อร้อยสายและแนวรางเคเบิล: หนึ่งแถวต่อหนึ่งแนว บอกความยาวรวม ข้อต่อ และมุมดัดรวม เหมือน Conduit Runs และ Cable Tray Runs ของ Revit
 - V1.709 · รัศมีดัดต่ำสุดของท่อร้อยสาย: ข้องอของท่อในแปลนและ 3D ใช้รัศมีตามมาตรฐานและขนาดท่อ (NEC) ตั้งค่าของโครงการได้ในตั้งค่างานไฟฟ้า เหมือน Minimum Bend Radius ของ Revit
+- V1.710 · ตัวคูณรัศมีโค้งของรางเคเบิล: ข้องอของรางโค้งตามความกว้างคูณตัวคูณของชนิด รางกว้างโค้งกว้างตาม เหมือน Bend Radius Multiplier ของ Revit
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -68860,6 +68893,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.707 · Service Type and Rung Space: cable trays and conduits have a Service Type for schedules and filters; a ladder tray has its Rung Space, as in Revit
 - V1.708 · Conduit Runs and Cable Tray Runs: a schedule row for every run with its length, fittings and bends, as in Revit
 - V1.709 · Minimum bend radius of conduits: conduit bends in plans and 3D take the radius of their standard and size (NEC), set for the project in Electrical Settings, as in Revit
+- V1.710 · Bend Radius Multiplier of cable trays: tray bends take the width times the multiplier of their type, so a wider tray bends wider, as in Revit
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -74694,6 +74728,20 @@ window.PenumBIM.r709={
   mesh:()=>{const R=buildMeshes(P,footprints(P),fitPlan(P));return R&&R.items?R.items.length:0},
   prow:()=>{const out=[];for(const r of document.querySelectorAll('#props .pr')){const l=r.querySelector('label');if(!l)continue;const k=l.textContent;if([t('p_cbr709'),t('p_cbt709')].includes(k))out.push([k,r.lastElementChild?r.lastElementChild.textContent.trim():''])}return out},
   tab:()=>{const tb=document.querySelector('#cst706t');if(!tb)return null;const s=document.querySelector('#es_cst706');return{std:s&&s.value,head:[...tb.querySelectorAll('thead th')].map(x=>x.textContent),rows:[...tb.querySelectorAll('tbody tr')].map(r=>{const i=r.querySelector('[data-cbr709]');return[r.dataset.d706,i?i.value:null,i?i.placeholder:null]}),note:!!document.querySelector('#cbr709n')}}
+};
+/* V1.710 test API: Bend Radius Multiplier of cable tray types */
+window.PenumBIM.r710={
+  tys:()=>(P.types.tray||[]).map(T=>[T.id,T.name,T.elb||null,T.brm710===undefined?null:T.brm710]),
+  setT:(tid,v)=>{edit(()=>{const T=P.types.tray.find(x=>x.id===tid);if(v==null)delete T.brm710;else T.brm710=v});refresh();const T=P.types.tray.find(x=>x.id===tid);return T.brm710===undefined?null:T.brm710},
+  setElb:(tid,v)=>{edit(()=>{const T=P.types.tray.find(x=>x.id===tid);if(v==null)delete T.elb;else T.elb=v});refresh()},
+  trim:id=>{const a=rectFits(P).trim.get(id);return a?a.map(x=>Math.round(x*10)/10):null},
+  nfit:()=>rectFits(P).fits.filter(f=>f.cat==='tray'&&f.k==='relb').length,
+  tb:id=>{const e=P.els.find(x=>x.id===id);return e?tbr710(P,e):null},
+  fito:(x,y,v)=>{const q=pfAt(activeView(),{x,y});if(!q)return null;const A=q.A.slice().sort((p,r)=>runW(r.ed.r.e)-runW(p.ed.r.e)),z=q.n.z||runZ(P,A[0].ed.r.e)[0];edit(()=>{const m=P.fito||(P.fito={}),k=pfKey('t',q.n.x,q.n.y,z);if(v==null)delete m[k];else m[k]={elb:v};if(!Object.keys(m).length)delete P.fito});refresh();return true},
+  dlgT:id=>dlgTypes('tray',id),mesh:()=>{const R=buildMeshes(P,footprints(P),fitPlan(P));return R&&R.items?R.items.length:0},
+  prow:()=>{const out=[];for(const r of document.querySelectorAll('#props .pr')){const l=r.querySelector('label');if(!l)continue;const k=l.textContent;if(k===t('p_tbr710'))out.push([k,r.lastElementChild?r.lastElementChild.textContent.trim():''])}return out},
+  flds:id=>{const e=P.els.find(x=>x.id===id);return sfAll(P,'tray',t).filter(f=>/710$/.test(f.k)).map(f=>[f.k,f.l,f.g(e)])},
+  fitDlg:(x,y)=>{const q=pfAt(activeView(),{x,y});if(!q)return null;dlgFitP(q);const o=document.querySelector('#dlg #feSel option[value=""]');return o?o.textContent:null}
 };
 window.PenumBIM.r456={
   kinds:()=>Object.keys(GD456_K),
