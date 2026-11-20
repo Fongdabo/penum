@@ -14646,7 +14646,7 @@ function locPts(){const I=P.info,u=unitName(),sp=bpPos('sp'),bp=bpPos('bp'),nm=(
     +nm('bpn','loc_bpn',-bp[1])+nm('bpe','loc_bpe',bp[0])+`<div class="fr"><label for="lc_cref">${t('loc_cref')}</label><select id="lc_cref" data-lc="cref"><option value="sp">${t('bp_sp')}</option><option value="bp"${I.cref==='bp'?' selected':''}>${t('bp_bp')}</option></select></div><p class="note">${t('loc_pts_note')}</p>`}
 /* ===== 75 update: Check for Updates.  The page knows its own build; the newest one published is written beside the page (its database, meta/release) at every release.
    A newer build there means this window still runs an older page: reloading it brings the new one.  The work is kept: it is saved before the reload. */
-const V1_BUILD=743,V1_NAME='V1.733';window.PENUM_VER=V1_NAME;// the feedback box sends it
+const V1_BUILD=744,V1_NAME='V1.734';window.PENUM_VER=V1_NAME;// the feedback box sends it
 async function checkUpdate(){toast(t('up_check'),2500);let db=null;try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
   const box=(msg,more,go)=>openDlg(t('a_update'),`<p>${msg}</p>`+(more?`<p class="note">${more}</p>`:''),(go?`<button class="btn primary" data-up="go">${t('up_go')}</button>`:'')+`<button class="btn" data-close="1">${t('close')}</button>`,{click(e){if(e.target.dataset.up==='go'){try{saveNow()}catch(x){}location.reload()}}});
   if(!db){box(t('up_na',V1_NAME),t('up_na2'));return}
@@ -66125,6 +66125,61 @@ RG_TF.lsh733=(T,f)=>`<div class="fr"><label for="tf_lsh733">${esc(t('f_lsh733'))
 Object.assign(STR,{f_lsh733:['รูปทรงที่ปล่อยแสง (Emit from)','Emit from'],lsh_point:['จุด (Point)','Point'],lsh_line:['เส้น (Line)','Line'],lsh_rect:['สี่เหลี่ยม (Rectangle)','Rectangle'],lsh_circle:['วงกลม (Circle)','Circle'],
   f_lsl733:['ความยาวรูปทรงแสง (Emit Shape Length)','Emit Shape Length'],f_lsw733:['ความกว้างรูปทรงแสง (Emit Shape Width)','Emit Shape Width'],f_lsd733:['เส้นผ่านศูนย์กลางรูปทรงแสง (Emit from Circle Diameter)','Emit from Circle Diameter'],
   lsn_bad733:['ขนาดต้องอยู่ระหว่าง 10 ถึง 10000 มม.','The size must be 10 to 10000 mm']});
+/* ===== 734 Photometric Web of light types (V1.734; Revit: Light Distribution Photometric Web with its Photometric Web File, an IES LM-63 file of
+   the fixture's measured light) =====
+   T.ldd730 'web' on a light type with T.ies734 {n: the file's name, c: the candela at every degree off straight down 0 to 180, 1 the brightest,
+   lm: the lumens it lists} read from an IES file.  Its beam (where the light falls to half the brightest) and field (to a tenth) angles light the
+   Realistic style and renderings as a spot of those angles (tilted with the Tilt Angle), the Light Source (V1.731) draws them in plans, elevations
+   and sections (a field of 120° or more only its small circle, as a spherical one), and Edit Type draws the measured curve.  Web picked in Edit Type changes nothing until a file is read (a type set to web with no
+   file goes back to spherical).  Edit Type has the file (Load…) and its beam and field after the distribution; schedules and tags of lights have the file's name. */
+LDD730.push('web');
+const iesOk734=T=>!!T&&T.ldd730==='web'&&!!T.ies734&&Array.isArray(T.ies734.c)&&T.ies734.c.length===181;
+/* an IES LM-63 file: {c: 181 values 0..1, lm} or null when it is not one */
+function iesParse734(txt){const s=String(txt||''),i=s.search(/TILT\s*=/i);if(i<0)return null;let r=s.slice(i);const nl=r.indexOf('\n');if(nl<0)return null;
+  const tilt=r.slice(0,nl).replace(/TILT\s*=\s*/i,'').trim().toUpperCase();let N=r.slice(nl+1).trim().split(/[\s,]+/).map(Number);
+  if(tilt==='INCLUDE'){const na=N[1];if(!(na>=0&&na<1000))return null;N=N.slice(2+2*na)}
+  const nv=N[3],nh=N[4],o=13;if(!(nv>=2&&nv<=1000&&nh>=1&&nh<=1000)||!Number.isInteger(nv)||!Number.isInteger(nh))return null;
+  const V=N.slice(o,o+nv),C=N.slice(o+nv+nh,o+nv+nh+nv*nh);if(V.length<nv||C.length<nv*nh||V.some(x=>!isFinite(x))||C.some(x=>!isFinite(x)||x<0))return null;
+  const avg=V.map((_,j)=>{let a=0;for(let h=0;h<nh;h++)a+=C[h*nv+j];return a/nh}),at=d=>{if(d<V[0]||d>V[nv-1])return 0;for(let j=1;j<nv;j++)if(d<=V[j]){const t0=V[j]-V[j-1];return t0>0?avg[j-1]+(avg[j]-avg[j-1])*(d-V[j-1])/t0:avg[j]}return avg[nv-1]};
+  const c=[];for(let d=0;d<=180;d++)c.push(at(d));const m=Math.max(...c);if(!(m>0))return null;const lm=N[0]*N[1]*N[2];
+  return{c:c.map(x=>Math.round(x/m*1000)/1000),lm:isFinite(lm)&&lm>0?Math.round(lm):null}}
+/* the full angle where the light falls under a share of the brightest (from straight down), 1 to 179 */
+function iesAng734(c,th){let d=0;while(d<=180&&c[d]<th)d++;if(d>180)return 179;let e=d;while(e<180&&c[e+1]>=th)e++;if(e>=90)return 179;
+  const h=e+(c[e]-th)/Math.max(1e-6,c[e]-c[e+1]);return Math.min(179,Math.max(1,Math.round(2*h)))}
+const iesBF734=T=>{const c=T.ies734.c,b=iesAng734(c,0.5);return{b,f:Math.max(b,iesAng734(c,0.1))}};
+XC.push(()=>{for(const c in (P.types||{})){if(!Array.isArray(P.types[c]))continue;for(const T of P.types[c]){if(!T)continue;
+  if(T.ies734!==undefined){const I=T.ies734;if(c!=='light'||!I||!Array.isArray(I.c)||I.c.length!==181||I.c.some(x=>typeof x!=='number'||!(x>=0&&x<=1)))delete T.ies734;
+    else{T.ies734={n:String(I.n||'').slice(0,120),c:I.c.map(x=>Math.round(x*1000)/1000),lm:+I.lm>0?Math.round(+I.lm):null};if(T.ies734.lm==null)delete T.ies734.lm}}
+  if(T.ldd730==='web'&&!iesOk734(T))delete T.ldd730}}});
+/* a web lights as a spot of its beam and field (the Tilt Angle as a spot's); no file: all round */
+{const f0=spot730;spot730=function(T){const S=f0.apply(this,arguments);if(iesOk734(T)){const A=iesBF734(T);S.b=A.b;S.f=A.f}return S}}
+{const f0=lsd730;lsd730=function(e,T){if(T&&T.ldd730==='web'&&!iesOk734(T))return f0.call(this,e,Object.assign({},T,{ldd730:undefined}));return f0.apply(this,arguments)}}
+{const f0=lsSrc731;lsSrc731=function(e){const S=f0.apply(this,arguments);if(!S||S.k!=='web')return S;const T=typ(P,e);if(!iesOk734(T)){S.k='sph';return S}
+  const L=lsd730(e,T),A=spot730(T);if(A.f>=120){S.k='sph';S.web=1;return S}return Object.assign(S,{k:'spot',web:1,d:[L.d[0],L.d[2],L.d[1]],b:A.b*Math.PI/360,f:A.f*Math.PI/360})}}
+/* Edit Type: the measured curve in the picture */
+{const f0=ldPic730;ldPic730=function(T){if(!iesOk734(T))return f0.apply(this,arguments);const c=T.ies734.c,W=64,H=40,x=W/2,y=8,R=30,t0=-(spot730(T).t||0)*Math.PI/180,pt=[];
+  for(let d=-180;d<=180;d+=3){const a=d*Math.PI/180+t0,r=R*c[Math.abs(d)];pt.push((x+Math.sin(a)*r).toFixed(1)+' '+(y+Math.cos(a)*r).toFixed(1))}
+  return`<svg class="ldpic730 ldpic734" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><line x1="4" y1="${y-3}" x2="${W-4}" y2="${y-3}" stroke="currentColor" stroke-width="1"/><path d="M${pt.join(' L')} Z" fill="#ffd36a" opacity=".5" stroke="#d89a00" stroke-width=".8"/><rect x="${x-5}" y="${y-3}" width="10" height="4" fill="currentColor"/></svg>`}}
+RG_TF.ies734=(T,f)=>{const ok=iesOk734(T),A=ok?iesBF734(T):null;
+  return`<div class="fr"><label>${esc(t('f_ies734'))}</label><span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="ies734n" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap${ok?'':';opacity:.6'}">${esc(ok?T.ies734.n||'.ies':t('ies_none734'))}</span><label class="btn" style="margin:0">${esc(t('ies_load734'))}<input type="file" id="tf_ies734" data-tf="ies734" accept=".ies,.IES" hidden></label></span></div>`+
+    (ok?`<div class="fr"><label>${esc(t('ies_bf734'))}</label><span class="ies734a">${esc(t('ies_bfv734',A.b,A.f))}${T.ies734.lm?' · '+esc(String(T.ies734.lm))+' lm':''}</span></div>`:'')};
+let PICK734=null;          // the light type whose Edit Type shows Photometric Web picked while no file is read yet
+{const f0=tdFields;tdFields=function(cat,T){const F=f0.apply(this,arguments);if(!F||cat!=='light'||F.some(f=>f[0]==='ies734')||!T||(T.ldd730!=='web'&&PICK734!==T.id))return F;const G=F.slice();
+  const i=G.findIndex(f=>f[0]==='ldd730');G.splice(i<0?G.length:i+1,0,['ies734','ies734'],...(G.some(f=>f[0]==='tla730')?[]:[['tla730','num','°']]));return G}}
+/* an IES file read onto type T (from Edit Type or the tests): true when it is one */
+function iesPut734(T,txt,name){const I=iesParse734(txt);if(!I){toast(t('ies_bad734'));return false}
+  edit(()=>{T.ies734=Object.assign({n:String(name||'').slice(0,120)},I);if(T.ies734.lm==null)delete T.ies734.lm;T.ldd730='web'});return true}
+{const f0=dlgTypes;dlgTypes=function(cat,id){f0.apply(this,arguments);const H=ui.dlg,cs=$('#tdCat'),ts=$('#tdType');if(!H||!cs||!ts||cs.value!=='light')return;
+  const T=(P.types.light||[]).find(x=>x.id===+ts.value);if(!T)return;if(PICK734!==T.id||iesOk734(T))PICK734=null;const sl=$('#dlg #tf_ldd730');if(sl&&PICK734===T.id)sl.value='web';const tl=$('#dlg #tf_tla730');if(tl){tl.placeholder='0';tl.min='0';tl.max='180';tl.step='1'}
+  const c0=H.change;H.change=e=>{const el=e.target,k=el&&el.dataset&&el.dataset.tf;
+    if(k==='ldd730'){if(el.value==='web'&&!iesOk734(T)){PICK734=T.id;return dlgTypes('light',T.id)}PICK734=null;return c0&&c0(e)}if(k!=='ies734')return c0&&c0(e);const f=el.files&&el.files[0];if(!f)return;
+    const rd=new FileReader();rd.onload=()=>{if(iesPut734(T,rd.result,f.name))PICK734=null;dlgTypes('light',T.id)};rd.readAsText(f)}}}
+/* schedules, key schedules, tags of lights: the file's name */
+{const f0=sfAll;sfAll=(Q,cat,tr)=>{const F=f0(Q,cat,tr);if(!(cat==='light'||cat==='*')||F.some(f=>f.k==='T.ies734'))return F;
+  F.push({k:'T.ies734',l:tr('f_ies734'),g:e=>{const t0=e&&e.cat==='light'?typ(Q,e):null;return iesOk734(t0)?t0.ies734.n||'.ies':''},grp:'t'});return F}}
+Object.assign(STR,{ldd_web:['เว็บแสงจากไฟล์ IES (Photometric Web)','Photometric Web'],f_ies734:['ไฟล์โฟโตเมตริก (Photometric Web File)','Photometric Web File'],
+  ies_none734:['ยังไม่มีไฟล์ (แสงรอบทิศ)','No file (lights all round)'],ies_load734:['เปิดไฟล์ IES…','Load IES…'],ies_bf734:['มุมลำแสง / ขอบแสงจากไฟล์','Beam / field from the file'],
+  ies_bfv734:['{0}° / {1}°','{0}° / {1}°'],ies_bad734:['ไม่ใช่ไฟล์ IES (LM-63) ที่อ่านได้','Not an IES (LM-63) file that can be read']});
 /* ===== 75 insulation and lining of ducts and pipes (Revit: Duct Insulation · Duct Lining · Pipe Insulation): the rows of Properties, Add / Edit / Remove =====
    The model side (materials, limits, quantities, the shells in 3D, the lines in plans) is in 10-model.js, 25-sched.js, 22-mepgeom.js and 42-mepdraw.js. */
 const insLabel=k=>t('ins_'+k);
@@ -69093,6 +69148,7 @@ Every pipe type has its [[f_joint]], set in [[type_props]] — it decides what t
 - V1.731 · แหล่งกำเนิดแสงของดวงโคมในแปลน รูปด้าน และรูปตัด (Light Source)
 - V1.732 · เส้นการเปิดบานของหน้าต่างบานเปิดในแปลน (Plan Swing)
 - V1.733 · รูปทรงที่ปล่อยแสงของดวงโคม จุด เส้น สี่เหลี่ยม วงกลม (Emit from)
+- V1.734 · เว็บแสงจากไฟล์ IES ของชนิดดวงโคม (Photometric Web)
 - V1.362 SA · วิเคราะห์และออกแบบโครงเหล็ก: แท็บวิเคราะห์ › ออกแบบโครงสร้างเหล็ก › วิเคราะห์และตรวจโครงเหล็ก คำนวณคาน ค้ำยัน และเสาเหล็กทั้งโมเดลเป็นโครงข้อแข็ง 3 มิติจากน้ำหนักบรรทุก (Loads) ชุดค่าผสม และจุดรองรับ (Boundary Conditions และปลายที่ชนเสา ผนัง คาน คสล. อัตโนมัติ) รวมน้ำหนักตัวเอง ตรวจ fb/Fb fv/Fv fa/Fa และระยะแอ่นตัว L/360 แบบ ASD ตรวจพุกเคมี รอยเชื่อม เพลทฐาน และสลักเกลียวของ Steel Connection ดูภาพจำลองการแอ่นตัว แสดงอัตราส่วนบนแปลน และออกรายการคำนวณภาษาไทยเป็น PDF ได้ในตัวโปรแกรม
 
 [[p_gutter]] — เลือกหลังคา แล้วติ๊กในแผงคุณสมบัติ: มีรางน้ำ (กว้าง 125 สูง 100 มม.) ตามแนวชายคาทุกด้านที่น้ำไหลลง เห็นใน 3 มิติ รูปด้าน รูปตัด และบอกความยาวรวม · หลังคาเรียบไม่มีรางน้ำ
@@ -69999,6 +70055,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - V1.731 · Light Source subcategory of light fixtures in plans, elevations and sections
 - V1.732 · Plan Swing of casement windows
 - V1.733 · Emit from shape of light sources: Point, Line, Rectangle or Circle
+- V1.734 · Photometric Web of light types: the light of an IES file
 - V1.362 SA · Steel analysis and design: Analyze › Steel Design › Analyze and Check Steel solves the steel beams, braces and columns of the model as a 3D frame under the Loads, load combinations and supports (Boundary Conditions, and ends on concrete columns, walls and beams found by themselves), with their own weight; checks fb/Fb, fv/Fv, fa/Fa and deflection (L/360) by ASD, chemical anchors, welds, base plates and the bolts of Steel Connections; shows the deflected model, the ratios on plans, and makes a Thai or English calculation report PDF inside the program
 
 [[p_gutter]] — select a roof and tick it in Properties: a gutter (125 wide, 100 high) runs along every eave the water runs to, in 3D views, elevations and sections, and its total length is given · a flat roof has none
@@ -70169,6 +70226,7 @@ Area loads that vary across the area — as in Revit: select an area load (on a 
 - แหล่งกำเนิดแสงของดวงโคม (Revit: หมวดย่อย Light Source ของ Lighting Fixtures): ในหน้า [[a_vg]] ดวงโคมมีแถว [[vgs_source]] ซึ่งปิดอยู่ในทุกวิวจนกว่าจะติ๊ก ติ๊กแล้วแปลนวาดวงกลมเล็กที่ดวงโคม และดวงโคมแบบสปอตวาดวงที่กรวยแสงตกบนพื้นของชั้น (ขอบแสงเส้นประ ลำแสงเส้นเต็ม และแกน) รูปด้านและรูปตัดวาดวงกลม (ครึ่งทรงกลมเป็นครึ่งวงกลมด้านล่าง) และกรวยของสปอตลงถึงพื้น ลำแสงเส้นเต็ม ขอบแสงเส้นประ ตามกรอบตัดและระยะตัดไกลของวิว
 - เส้นการเปิดบานของหน้าต่างบานเปิดในแปลน (Revit: หมวดย่อย Plan Swing ของแฟมิลีหน้าต่างบานเปิด): [[edit_type]] ของหน้าต่างบานเปิดมี [[f_psw732]] ต่อจากเส้นทิศการเปิดในรูปด้าน ติ๊กแล้วแปลนวาดทุกบานเปิดออก 90° ไปทางที่หน้าต่างหันออก (Flip Facing กลับด้าน) เส้นจากบานพับยาวเท่าบาน และเส้นโค้งที่ปลายบานกวาด บานพับตามแบบ 3D (Flip Hand สลับ) ซ่อนได้ด้วยหมวดย่อย [[vgs_pswing]] ของหน้าต่างใน [[a_vg]] ตาราง ตารางคีย์ และป้ายของหน้าต่างแสดง ใช่ / ไม่ใช่
 - รูปทรงที่ปล่อยแสงของดวงโคม (Revit: Emit from ของ Light Source Definition): [[edit_type]] ของชนิดดวงโคมมี [[f_lsh733]] ต่อจากการกระจายแสง เลือกจุด (แบบเดิม) เส้น สี่เหลี่ยม หรือวงกลม พร้อมขนาด ([[f_lsl733]] [[f_lsw733]] [[f_lsd733]] ว่างคือขนาดของโคม) แหล่งกำเนิดแสงที่ติ๊กไว้ใน [[a_vg]] วาดรูปทรงนั้นแทนวงกลมเล็ก ในแปลนหมุนตามโคม ในรูปด้านและรูปตัดเป็นเส้นที่ระดับแหล่งแสงกว้างเท่ารูปทรงที่เห็น ตาราง ตารางคีย์ และป้ายของดวงโคมมีช่องเหล่านี้
+- เว็บแสงจากไฟล์ IES ของดวงโคม (Revit: Light Distribution แบบ Photometric Web และ Photometric Web File): [[edit_type]] ของชนิดดวงโคมเลือก [[ldd_web]] ในการกระจายแสงแล้วกด [[ies_load734]] เปิดไฟล์ IES (LM-63) ของผู้ผลิตโคม โปรแกรมอ่านความเข้มแสงทุกมุมแล้ววาดเส้นโค้งในรูปเล็ก หามุมลำแสง (แสงลดเหลือครึ่ง) และมุมขอบแสง (เหลือหนึ่งในสิบ) ใช้ส่องในภาพ Realistic และภาพเรนเดอร์ เอียงได้ด้วยมุมเอียง และแหล่งกำเนิดแสงในแปลนและรูปตัดวาดตามมุมนั้น ยังไม่มีไฟล์จะส่องรอบทิศแบบเดิม ตารางและป้ายของดวงโคมมีชื่อไฟล์
 - [[a_print]] (Ctrl+P) · [[prs_l342]]: ตั้งกระดาษ สี การประมวลผล ความละเอียด และ [[pr_tags342]] แล้วกด [[prs_as342]] เพื่อเก็บเป็นชื่อในโครงการ เลือกชื่อจากรายการเพื่อใช้ค่าเดิม (* คือแก้ไปจากที่บันทึก) · [[pr_sel]]: ติ๊กแผ่นงานและมุมมอง แล้วเก็บเป็น [[vss_l342]] ไว้เลือกครั้งหน้า · เมนูไฟล์ › [[m_prs342]] เปิดหน้าต่างพิมพ์ที่ช่องตั้งค่า
 - [[a_stg343]] (แท็บจัดการ แผงตั้งค่า): ตั้งหัวรูปตัด ปลายรูปตัด (มีวงกลมทั้งสองปลายได้) และเส้นที่เว้นช่วงของแต่ละป้าย และป้ายที่ชนิดรูปตัดแต่ละชนิดใช้ · เลือกเส้นรูปตัดแล้วเลือก [[p_sty343]] [[p_hs343]] และ [[p_gp343]] ใน Properties
 - [[a_ctg344]] (แท็บจัดการ แผงตั้งค่า): ตั้งหัวแบบขยาย รัศมีมุมกรอบ และชื่อข้างหัวของแต่ละป้าย และป้ายที่ชนิดแบบขยายแต่ละชนิดใช้ · เลือกกรอบแบบขยายแล้วเลือก [[p_cty344]] และ [[p_hs343]] ใน Properties
@@ -70292,6 +70350,7 @@ Click a position and type; ((Shift+Enter)) starts a new line. Choose a [[p_leade
 - Light Source of light fixtures (Revit: the Light Source subcategory of Lighting Fixtures): [[a_vg]] has a [[vgs_source]] row under the light fixtures, off in every view until it is ticked. Ticked, plans draw a small circle at each fixture and, for a spot, where its cone meets the floor of its level (the field dashed, the beam solid, and its axis); elevations and sections draw the circle (a half circle under a hemispherical fixture) and a spot's cone down to the floor, the beam solid and the field dashed, inside the view's crop and far clip.
 - Plan Swing of casement windows (Revit: the Plan Swing subcategory of casement window families): [[edit_type]] of a casement window has [[f_psw732]] after the Elevation Swing. Ticked, plans draw each sash open 90° to the side the window faces (Flip Facing turns it round): a line from its hinge as long as the sash and the arc its tip sweeps, the hinges as in 3D (Flip Hand swaps them). The [[vgs_pswing]] subcategory of windows in [[a_vg]] hides them; schedules, key schedules and tags of windows show Yes / No.
 - Emit from shape of light fixtures (Revit: Emit from in the Light Source Definition): [[edit_type]] of a light type has [[f_lsh733]] after the Light Distribution: Point (as before), Line, Rectangle or Circle, with its sizes ([[f_lsl733]], [[f_lsw733]], [[f_lsd733]]; empty: the size of the fixture). The Light Source ticked in [[a_vg]] draws that shape in place of the small circle: in plans turned with the fixture, in elevations and sections a line at the height of the source as wide as the shape seen from there. Schedules, key schedules and tags of lights have the fields.
+- Photometric Web of light fixtures (Revit: the Photometric Web Light Distribution and its Photometric Web File): in [[edit_type]] of a light type pick [[ldd_web]] as the Light Distribution and press [[ies_load734]] to open the maker's IES (LM-63) file. Its light at every angle is drawn as a curve in the small picture, and its beam (where the light falls to half) and field (to a tenth) angles light the Realistic style and renderings, tilted by the Tilt Angle; the Light Source in plans and sections draws them. With no file it lights all round as before. Schedules and tags of lights have the file's name.
 - [[a_print]] (Ctrl+P) · [[prs_l342]]: set the paper, colours, processing, quality and [[pr_tags342]], then [[prs_as342]] keeps them under a name in the project; pick a name to use it again (* means changed since saved) · [[pr_sel]]: tick sheets and views and keep them as a [[vss_l342]] for next time · File › [[m_prs342]] opens Print at its settings
 - [[a_stg343]] (Manage tab, Settings panel): each tag's Section Head, Section Tail (bubbles at both ends if wanted) and broken style, and the tag each section type draws with · select a section line to pick its [[p_sty343]], [[p_hs343]] and [[p_gp343]] in Properties
 - [[a_ctg344]] (Manage tab, Settings panel): each tag's Callout Head, Corner Radius and name beside the head, and the tag each callout type draws with · select a callout's frame to pick its [[p_cty344]] and [[p_hs343]] in Properties
@@ -76238,6 +76297,20 @@ window.PenumBIM.r733={
   drawn:()=>LSO733.splice(0),
   sf:cat=>sfAll(P,cat,t).filter(f=>/^T\.(lsh733|lsl733|lsw733|lsd733)$/.test(f.k)).map(f=>({k:f.k,ed:f.ed||null})),
   sg:(id,k)=>{const f=sfAll(P,'light',t).find(f=>f.k===k);return f?f.g(IDX.get(id)):undefined},
+  json:()=>projectJSON(),load:s=>loadText(s)
+};
+/* V1.734 test API: Photometric Web of light types */
+window.PenumBIM.r734={
+  get:id=>{const T=(P.types.light||[]).find(x=>x.id===id);if(!T)return undefined;const ok=iesOk734(T),A=ok?iesBF734(T):null;return{d:T.ldd730??null,n:T.ies734?T.ies734.n:null,lm:T.ies734&&T.ies734.lm||null,b:A&&A.b,f:A&&A.f}},
+  raw:(cat,id,o)=>{const T=(P.types[cat]||[]).find(x=>x.id===id);if(T)Object.assign(T,o)},
+  ty:(id,o)=>{const T=(P.types.light||[]).find(x=>x.id===id);if(!T)return false;edit(()=>{for(const k in o){if(o[k]==null)delete T[k];else T[k]=o[k]}});refresh();return true},
+  put:(id,txt,name)=>{const T=(P.types.light||[]).find(x=>x.id===id);const r=!!T&&iesPut734(T,txt,name);refresh();return r},
+  parse:txt=>{const I=iesParse734(txt);return I?{c:I.c,lm:I.lm,b:iesAng734(I.c,0.5),f:iesAng734(I.c,0.1)}:null},
+  fields:(cat,id)=>{const T=(P.types[cat]||[]).find(x=>x.id===id);return(tdFields(cat,T)||[]).map(f=>f[0])},
+  ld:id=>{const e=IDX.get(id),L=lsd730(e,typ(P,e));return[...L.d,L.co,L.ci].map(x=>Math.round(x*1000)/1000)},
+  src:id=>{const S=lsSrc731(IDX.get(id));return S?[S.k,!!S.web,S.b!=null?Math.round(S.b*360/Math.PI):null,S.f!=null?Math.round(S.f*360/Math.PI):null]:null},
+  sg:(id,k)=>{const f=sfAll(P,'light',t).find(f=>f.k===k);return f?f.g(IDX.get(id)):undefined},
+  sf:cat=>sfAll(P,cat,t).filter(f=>f.k==='T.ies734').map(f=>({k:f.k,ed:f.ed||null})),
   json:()=>projectJSON(),load:s=>loadText(s)
 };
 window.PenumBIM.r456={
