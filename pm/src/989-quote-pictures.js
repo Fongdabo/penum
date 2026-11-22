@@ -48,8 +48,8 @@ const QPX_CSS=`<style>@page{size:A4;margin:12mm}
 .qpx{font-size:11px;color:#1d2b3a;--qt:#1c6f7d;--qn:#123a5c;--qg:#667085;--ql:#dde3ea;--qo:#F59E0B}
 .qpx-bar{height:5px;border-radius:3px;background:linear-gradient(90deg,var(--qn),var(--qt));margin:0 0 10px}
 .qpx-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 10px}
-.qpx-h img{max-height:46px;max-width:200px;object-fit:contain}.qpx-h .nm{font-size:16px;font-weight:700;color:var(--qn)}
-.qpx-h .co{text-align:right;font-size:9.5px;color:var(--qg);line-height:1.45}.qpx-h .co b{font-size:11px;color:var(--qn)}
+.qpx-h img,#print .qpx .qpx-h img{display:block;height:46px;width:auto;max-height:none;max-width:300px;margin:0;border:0;object-fit:contain}.qpx-h .nm{font-size:16px;font-weight:700;color:var(--qn)}
+.qpx-h .co,#print .qpx .qpx-h .co{display:block;text-align:right;font-size:9.5px;color:var(--qg);line-height:1.45;margin:0;padding:0;border:0}.qpx-h .co b{font-size:11px;color:var(--qn)}
 .qpx-tt{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--ql);padding:0 0 8px;margin:0 0 10px}
 .qpx-tt small{display:block;letter-spacing:.2em;color:var(--qt);font-size:9px;font-weight:700}.qpx-tt h1{margin:0;font-size:19px;color:var(--qn)}
 .qpx-tt h1 i{font-style:normal;font-weight:400;font-size:12px;color:var(--qg);margin-left:6px}
