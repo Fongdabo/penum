@@ -1,4 +1,4 @@
-/* ---------- 4.99.68 a cloud link opened where the same company was set up on its own (user's tablet, 22 พ.ย.) ----------
+/* ---------- 4.99.69 a cloud link opened where the same company was set up on its own (user's tablet, 22 พ.ย.) ----------
    Typing the activation code on a second device makes a new, empty copy of the company in that browser: same name, same
    code, none of the computer's work. Opening the computer's ลิงก์ผู้ดูแล or a ลิงก์เชิญ there was the way to get the real data,
    but the link only said "เครื่องนี้ใช้ … อยู่แล้ว ไม่ต้องเข้าร่วมอีก" (810) because the names match, and nothing joined.
