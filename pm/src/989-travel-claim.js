@@ -52,59 +52,73 @@ function tvSync(){const L=DB.co.trv||[];Object.values(DB.projects).forEach(p=>{i
   if(keep.length!==p.costs.length||keep.some((c,i)=>c!==p.costs[i]))p.costs=keep})}
 
 function tvList(){const C=CO(),L=C.trv.filter(tvSees).slice().sort((a,b)=>String(b.month+b.round+b.date).localeCompare(String(a.month+a.round+a.date)));
-  if(!L.length)return '<p class="hint">ยังไม่มีใบเบิกค่าเดินทาง กด “+ เบิกค่าเดินทาง” เพื่อเริ่ม</p>';
-  return `<div class="tw"><table class="tv-l"><thead><tr><th>เลขที่</th><th>ผู้เบิก</th><th>รอบ</th><th class="r">เที่ยว</th><th class="r">ระยะทาง (กม.)</th><th class="r">ยอดรวม (บาท)</th><th>สถานะ</th><th></th></tr></thead><tbody>
-  ${L.map(e=>{const t=tvTot(e),st=TVST[e.status]||TVST.draft,on=S.sel.trv===e.id;
-    return `<tr${on?' class="tv-on"':''}><td><button type="button" class="lnk" data-a="sel" data-k="trv" data-id="${e.id}">${esc(e.no)}</button></td><td>${esc(stf(e.staff).name||'–')}</td><td>${(TVR.find(r=>r[0]===e.round)||['',''])[1]} ${esc(tvMonTh(e.month))}</td>
-    <td class="r">${(e.trips||[]).length}</td><td class="r">${fmtq(t.km)}</td><td class="r">${fmt(t.all,2)}</td><td>${pl5(st[0],st[1])}</td>
-    <td style="white-space:nowrap"><button type="button" class="btn sm${on?' pri':''}" data-a="sel" data-k="trv" data-id="${e.id}">${tvEdit(e)?'แก้ไข':'เปิดดู'}</button> <button type="button" class="btn sm ghost" data-a="print" data-k="trv" data-id="${e.id}">พิมพ์</button></td></tr>`}).join('')}</tbody></table></div>`}
+  const add=`<button type="button" class="tv-cd tv-new" data-a="add" data-c="co.trv" data-sel="trv"><span class="tv-plus">+</span><b>เบิกค่าเดินทาง</b><small>ทำใบใหม่ของรอบนี้</small></button>`;
+  return `<div class="tv-cards">${add}${L.map(e=>{const t=tvTot(e),st=TVST[e.status]||TVST.draft,on=S.sel.trv===e.id,s=stf(e.staff);
+    return `<button type="button" class="tv-cd${on?' on':''}" data-a="sel" data-k="trv" data-id="${e.id}"><span class="tv-cd-t"><b>${esc(e.no)}</b>${pl5(st[0],st[1])}</span>
+    <span class="tv-cd-n">${esc(s.name||'ยังไม่เลือกผู้เบิก')}</span><small>รอบ ${(TVR.find(r=>r[0]===e.round)||['',''])[1]} · ${esc(tvMonTh(e.month))}</small>
+    <span class="tv-cd-a">${fmt(t.all,2)} <small>บาท</small></span><small>${(e.trips||[]).length} เที่ยว · ${fmtq(t.km)} กม.</small></button>`}).join('')}</div>`}
 
-function tvEditor(e){const C=CO(),ed=tvEdit(e),base=`co.trv.${e.id}`,u=me(),t=tvTot(e),R=tvRange(e),out=(e.trips||[]).filter(x=>tvOut(e,x)).length,st=TVST[e.status]||TVST.draft;
-  const sel=(k,O,dis)=>`<select data-p="${base}.${k}"${dis?' disabled':''}>${O.map(([v,l])=>`<option value="${esc(v)}"${String(v)===String(e[k]??'')?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
-  const inp=(k,dis,x)=>`<input data-p="${base}.${k}" value="${esc(e[k]??'')}"${dis?' disabled':''}${x||''}>`;
+const TVSTEP=[['send','ส่งเบิก'],['pend','Admin แผนก'],['mgr','ผู้จัดการ'],['acc','ผู้ตรวจสอบ'],['ok','จ่ายเงิน']];
+function tvSteps(e){const at={draft:0,no:0,pend:1,mgr:2,acc:3,ok:4,paid:5}[e.status]??0;
+  return `<ol class="tv-st">${TVSTEP.map(([k,l],i)=>{const done=i<at,cur=i===at&&e.status!=='no',L=done?(k==='send'?{by:stf(e.staff).name,at:e.sentAt}:tvBy(e,k)):{};
+    return `<li class="${done?'ok':cur?'cur':''}"><i>${done?'✓':i+1}</i><span><b>${l}</b><small>${done?esc(L.by||'')+(L.at?' · '+thD(L.at):''):cur?(i?'กำลังรอ':'ยังไม่ได้ส่ง'):'&nbsp;'}</small></span></li>`}).join('')}</ol>`}
+
+function tvEditor(e){const ed=tvEdit(e),base=`co.trv.${e.id}`,u=me(),t=tvTot(e),R=tvRange(e),T=e.trips||[],out=T.filter(x=>tvOut(e,x)).length,st=TVST[e.status]||TVST.draft,s=stf(e.staff);
+  const fld=(lbl,html,cls)=>`<label class="tv-fl${cls?' '+cls:''}"><span>${lbl}</span>${html}</label>`;
+  const txt=(k,ph,o)=>ed?`<input data-p="${o||base}.${k}" value="${esc((o?getPath(o+'.'+k):e[k])??'')}"${ph?` placeholder="${esc(ph)}"`:''}>`:`<div class="tv-ro">${esc((o?getPath(o+'.'+k):e[k])||'–')}</div>`;
+  const seg=(k,O)=>`<div class="tv-seg" role="group">${O.map(([v,l])=>`<button type="button"${ed?` data-a="tvSet" data-id="${e.id}" data-k="${k}" data-v="${v}"`:' disabled'} aria-pressed="${String(e[k])===v}">${l}</button>`).join('')}</div>`;
   const who=tvMineOnly()?[[u.id,u.name||u.code]]:staffOpts();
-  const head=`<div class="form tv-f">
-    <label>ชื่อ-สกุลผู้เบิก${sel('staff',who,!ed)}</label><label>ตำแหน่ง${inp('pos',!ed)}</label><label>รหัสพนักงาน${inp('emp',!ed)}</label>
-    <label>แผนก/ฝ่าย<input value="${esc(tvDept(stf(e.staff)))}" disabled></label><label>ทะเบียนรถ${inp('plate',!ed,' placeholder="เช่น 8 กง 7432"')}</label>
-    <label>เบิกรอบวันที่${sel('round',TVR,!ed)}</label><label>ของเดือน<input type="month" data-p="${base}.month" value="${esc(e.month||'')}"${ed?'':' disabled'}></label>
-    <label>น้ำมันที่ใช้${sel('fuel',TVF,!ed)}</label><label>เบิกกิโลเมตรละ (บาท รวมค่าสึกหรอ)<input class="r" inputmode="decimal" data-t="num" data-p="${base}.rate" value="${esc(e.rate??'')}"${ed&&(canAcc()||!u)?'':' disabled'} title="อัตราตามประกาศ เปลี่ยนได้ที่ ตั้งค่าอัตราค่าเดินทาง (ฝ่ายบัญชี)"></label></div>`;
-  const pjO=()=>[['','– ไม่ระบุ / งานอื่น –'],...projects().map(p=>[p.id,p.name])];
-  const cols=[{k:'i',h:'ลำดับ',t:'calc',f:x=>(e.trips.indexOf(x)+1)},{k:'dw',h:'วัน',t:'calc',f:x=>tvDow(x.date)},{k:'date',h:'วันเดินทางไป<br><small>ขาไป</small>',t:'date'},{k:'back',h:'วันเดินทาง<br><small>ขากลับ</small>',t:'date'},
-    {k:'tGo',h:'เวลาติดต่องาน<br><small>ตามจริง</small>',w:70},{k:'tBack',h:'เวลากลับ<br><small>ตามจริง</small>',w:70},{k:'proj',h:'โครงการ',t:'sel',o:pjO,w:150},{k:'pname',h:'ชื่องาน (ถ้ามี)',w:150},
-    {k:'from',h:'ต้นทาง',w:100},{k:'to',h:'ปลายทาง / จังหวัด',w:110},{k:'det',h:'รายละเอียดการติดต่อ<br><small>ระบุตามความจริง</small>',w:170},
-    {k:'km',h:'ระยะทาง<br><small>จำนวน กม.</small>',t:'num',w:70,sum:x=>n(x.km)},{k:'amt',h:'ระยะทาง<br><small>จำนวนเงิน</small>',t:'calc',r:1,f:x=>fmt(tvAmt(e,x),2),sum:x=>tvAmt(e,x)},
-    {k:'toll',h:'ค่าทางด่วน',t:'num',w:70,sum:x=>n(x.toll)},{k:'all',h:'ยอดรวม',t:'calc',r:1,f:x=>`<b>${fmt(tvRow(e,x),2)}</b>`,sum:x=>tvRow(e,x)}];
-  const roCols=cols.map(c=>c.t==='calc'?c:Object.assign({},c,{t:'calc',r:c.t==='num',f:x=>c.k==='proj'?esc((DB.projects[x.proj]||{}).name||''):c.t==='date'?tvDS(x[c.k]):c.t==='num'?fmtq(x[c.k]):esc(x[c.k]||'')}));
-  TABLES.trv={rows:()=>e.trips,cols:roCols};
-  const tb=gtable(`${base}.trips`,e.trips,ed?cols:roCols,{del:ed,empty:ed?'ยังไม่มีเที่ยว กด “+ เพิ่มเที่ยว”':'ไม่มีเที่ยว',rowCls:x=>tvOut(e,x)?'tv-out':'',cls:'tv-t'});
-  const LB={send:'ส่งเบิก',pend:'Admin แผนก',mgr:'ผู้จัดการ',acc:'ผู้ตรวจสอบ',ok:'จ่ายเงิน',no:'ไม่อนุมัติ'},L=(e.log||[]).map(l=>`${LB[l.st]||l.st}: ${esc(l.by)} ${thD(l.at)}`);
+  const staffSel=ed?`<select data-p="${base}.staff">${who.map(([v,l])=>`<option value="${esc(v)}"${v===e.staff?' selected':''}>${esc(l)}</option>`).join('')}</select>`:`<div class="tv-ro">${esc(s.name||'–')}</div>`;
+  const rateEd=ed&&(canAcc()||!u);
+  const info=`<div class="tv-pn"><div class="tv-pnh"><span class="tv-ic">👤</span><b>ผู้เบิก</b></div><div class="tv-g2">
+      ${fld('ชื่อ-สกุลผู้เบิก',staffSel,'w')}${fld('ตำแหน่ง',txt('pos'))}${fld('รหัสพนักงาน',txt('emp'))}${fld('แผนก/ฝ่าย',`<div class="tv-ro">${esc(tvDept(s)||'–')}</div>`)}${fld('ทะเบียนรถ',txt('plate','เช่น 8 กง 7432'))}</div></div>
+    <div class="tv-pn"><div class="tv-pnh"><span class="tv-ic">🗓</span><b>รอบที่เบิกและอัตรา</b></div><div class="tv-g2">
+      ${fld('เบิกรอบวันที่',seg('round',TVR),'w')}${fld('ของเดือน',ed?`<input type="month" data-p="${base}.month" value="${esc(e.month||'')}">`:`<div class="tv-ro">${esc(tvMonTh(e.month))}</div>`)}
+      ${fld('ช่วงวันที่',`<div class="tv-ro">${R?`${thD(R[0])} – ${thD(R[1])}`:'–'}</div>`)}
+      ${fld('น้ำมันที่ใช้',seg('fuel',TVF))}${fld('เบิกกิโลเมตรละ (รวมค่าสึกหรอ)',rateEd?`<div class="tv-u"><input class="r" inputmode="decimal" data-t="num" data-p="${base}.rate" value="${esc(e.rate??'')}"><em>บาท/กม.</em></div>`:`<div class="tv-ro">${fmt(e.rate,2)} บาท/กม.</div>`)}</div></div>`;
+  const pjO=[['','– ไม่ระบุ / งานอื่น –'],...projects().map(p=>[p.id,p.name])];
+  const trip=(x,i)=>{const o=`${base}.trips.${x.id}`,bad=tvOut(e,x),v=k=>esc(x[k]??'');
+    const I=(k,ph,ty)=>ed?`<input${ty?` type="${ty}"`:''} data-p="${o}.${k}" value="${v(k)}"${ph?` placeholder="${esc(ph)}"`:''}>`:`<div class="tv-ro">${ty==='date'?tvDS(x[k])||'–':v(k)||'–'}</div>`;
+    const N=(k)=>ed?`<input class="r" inputmode="decimal" data-t="num" data-p="${o}.${k}" value="${x[k]===''||x[k]==null?'':v(k)}" placeholder="0">`:`<div class="tv-ro r">${fmtq(x[k])}</div>`;
+    const pj=ed?`<select data-p="${o}.proj">${pjO.map(([a,l])=>`<option value="${esc(a)}"${a===(x.proj||'')?' selected':''}>${esc(l)}</option>`).join('')}</select>`:`<div class="tv-ro">${esc((DB.projects[x.proj]||{}).name||'–')}</div>`;
+    return `<div class="tv-trip${bad?' bad':''}"><div class="tv-tn"><b>${i+1}</b><span>${tvDow(x.date)||'–'}</span></div>
+      <div class="tv-tb"><div class="tv-g4">${fld('วันเดินทางไป',I('date','','date'))}${fld('วันเดินทางกลับ',I('back','','date'))}${fld('เวลาติดต่องาน',I('tGo','09.00 น.'))}${fld('เวลากลับ',I('tBack','17.00 น.'))}</div>
+      <div class="tv-g5">${fld('โครงการ',pj)}${fld('ชื่องาน (ถ้ามี)',I('pname','เช่น ลูกค้าใหม่'))}<div class="tv-g3">${fld('ต้นทาง',I('from','สำนักงาน'))}<span class="tv-ar" aria-hidden="true">→</span>${fld('ปลายทาง / จังหวัด',I('to','สถานที่ จังหวัด'))}</div></div>
+      ${fld('รายละเอียดการติดต่อ (ระบุตามความจริง)',I('det','ไปทำอะไร พบใคร'),'w')}${bad?'<p class="tv-bad">วันที่อยู่นอกรอบที่เบิก</p>':''}</div>
+      <div class="tv-tm">${fld('ระยะทาง (กม.)',N('km'))}${fld('ค่าทางด่วน',N('toll'))}<div class="tv-calc"><small>${fmtq(x.km)} กม. × ${fmt(e.rate,2)} = ${fmt(tvAmt(e,x),2)}</small><b>${fmt(tvRow(e,x),2)}</b><small>บาท</small></div></div>
+      ${ed?`<button type="button" class="tv-x" data-a="delRow" data-c="${base}.trips" data-id="${x.id}" title="ลบเที่ยวนี้" aria-label="ลบเที่ยวที่ ${i+1}">✕</button>`:''}</div>`};
   const btn=[];
-  if(ed)btn.push(`<button type="button" class="btn pri" data-a="tvSend" data-id="${e.id}">ส่งขออนุมัติ</button>`);
-  if(tvCan(e)&&e.status!=='ok')btn.push(`<button type="button" class="btn pri" data-a="tvOk" data-id="${e.id}">อนุมัติ (${esc(st[1].replace(/^รอ/,'').trim())})</button><button type="button" class="btn del" data-a="tvNo" data-id="${e.id}">ไม่อนุมัติ</button>`);
-  if(tvCan(e)&&e.status==='ok')btn.push(`<button type="button" class="btn pri" data-a="tvOk" data-id="${e.id}">จ่ายเงินแล้ว</button>`);
+  if(ed)btn.push(`<button type="button" class="btn pri" data-a="tvSend" data-id="${e.id}">ส่งขออนุมัติ ›</button>`);
+  if(tvCan(e)&&e.status!=='ok')btn.push(`<button type="button" class="btn pri" data-a="tvOk" data-id="${e.id}">✓ อนุมัติ (${esc(st[1].replace(/^รอ/,'').trim())})</button><button type="button" class="btn del" data-a="tvNo" data-id="${e.id}">ไม่อนุมัติ</button>`);
+  if(tvCan(e)&&e.status==='ok')btn.push(`<button type="button" class="btn pri" data-a="tvOk" data-id="${e.id}">฿ จ่ายเงินแล้ว</button>`);
   if(e.status==='pend'&&u&&u.id===e.staff)btn.push(`<button type="button" class="btn" data-a="tvBack" data-id="${e.id}">ดึงกลับไปแก้</button>`);
-  btn.push(`<button type="button" class="btn" data-a="print" data-k="trv" data-id="${e.id}">พิมพ์ / PDF</button>`);
-  if(ed)btn.push(`<button type="button" class="btn ghost del" data-a="tvDel" data-id="${e.id}">ลบใบนี้</button>`);
-  return `<section class="card tv-ed"><h2><span>ใบเบิกค่าเดินทาง ${esc(e.no)}</span><small>${pl5(st[0],st[1])}${R?` · รอบ ${thD(R[0])} – ${thD(R[1])}`:''}${e.why?` · เหตุผลที่ไม่อนุมัติ: ${esc(e.why)}`:''}</small></h2>
-  ${head}
-  ${out?`<p class="tv-warn">มี ${out} เที่ยวที่วันที่อยู่นอกรอบที่เบิก (แถวสีส้ม) การเบิกต้องเป็นเดือนต่อเดือน ไม่มีการเบิกย้อนหลัง</p>`:''}
-  ${tb}
-  ${ed?`<div class="row" style="margin-top:8px"><button type="button" class="btn sm pri" data-a="add" data-c="${base}.trips">+ เพิ่มเที่ยว</button><span class="hint">จำนวนเงิน = กม. × ${fmt(e.rate,2)} บาท · ยอดรวม = จำนวนเงิน + ค่าทางด่วน</span></div>`:''}
-  <dl class="stats tv-s"><div><dt>ระยะทางรวม</dt><dd>${fmtq(t.km)} <small>กม.</small></dd></div><div><dt>ค่าระยะทาง</dt><dd>${fmt(t.amt,2)}</dd></div><div><dt>ค่าทางด่วน</dt><dd>${fmt(t.toll,2)}</dd></div><div><dt>ยอดเบิกรวม</dt><dd>${fmt(t.all,2)}</dd></div></dl>
-  ${L.length?`<p class="hint">${L.join(' · ')}</p>`:''}
-  <div class="row" style="flex-wrap:wrap;gap:8px">${btn.join('')}</div></section>`}
+  btn.push(`<button type="button" class="btn" data-a="print" data-k="trv" data-id="${e.id}">🖨 พิมพ์ / PDF</button>`);
+  if(ed)btn.push(`<span class="sp"></span><button type="button" class="btn ghost del" data-a="tvDel" data-id="${e.id}">ลบใบนี้</button>`);
+  return `<section class="card tv-doc">
+  <header class="tv-hd"><div><small>แบบฟอร์มเบิกค่าเดินทาง</small><h2>${esc(e.no)} ${pl5(st[0],st[1])}</h2><p>${esc(s.name||'ยังไม่เลือกผู้เบิก')} · รอบ ${(TVR.find(r=>r[0]===e.round)||['',''])[1]} ${esc(tvMonTh(e.month))}</p></div>
+    <div class="tv-big"><small>ยอดเบิกรวม</small><b>${fmt(t.all,2)}</b><span>บาท</span></div><button type="button" class="tv-cl" data-a="sel" data-k="trv" data-id="" title="ปิด" aria-label="ปิดใบนี้">✕</button></header>
+  ${tvSteps(e)}
+  ${e.status==='no'&&e.why?`<p class="tv-warn">❌ ไม่อนุมัติ: ${esc(e.why)} · แก้แล้วกดส่งขออนุมัติใหม่ได้</p>`:''}
+  <div class="tv-g2 tv-top">${info}</div>
+  <div class="tv-sh"><b>รายการเดินทาง</b><small>${T.length} เที่ยว</small><span class="sp"></span><small class="tv-fx">ยอดรวม = กม. × ${fmt(e.rate,2)} บาท + ค่าทางด่วน</small></div>
+  ${out?`<p class="tv-warn">⚠ มี ${out} เที่ยวที่วันที่อยู่นอกรอบที่เบิก การเบิกต้องเป็นเดือนต่อเดือน ไม่มีการเบิกย้อนหลัง</p>`:''}
+  <div class="tv-trips">${T.map(trip).join('')||(ed?'':'<p class="hint">ไม่มีเที่ยว</p>')}</div>
+  ${ed?`<button type="button" class="tv-add" data-a="add" data-c="${base}.trips">+ เพิ่มเที่ยวเดินทาง</button>`:''}
+  <div class="tv-sum"><div><small>ระยะทางรวม</small><b>${fmtq(t.km)}</b><span>กม.</span></div><div><small>ค่าระยะทาง</small><b>${fmt(t.amt,2)}</b><span>บาท</span></div><div><small>ค่าทางด่วน</small><b>${fmt(t.toll,2)}</b><span>บาท</span></div><div class="tot"><small>ยอดเบิกรวม</small><b>${fmt(t.all,2)}</b><span>${t.all?esc(bahtText(t.all)):'บาท'}</span></div></div>
+  <div class="tv-act">${btn.join('')}</div></section>`}
 
 function tvPage(){tvEnsure();const C=CO(),acc=canAcc(),u=me(),L=C.trv.filter(tvSees);let e=C.trv.find(x=>x.id===S.sel.trv&&tvSees(x));
   const wait=L.filter(tvCan).filter(x=>x.status!=='ok').length,unpaid=L.filter(x=>x.status==='ok');
-  return `${acc||isMgt()||canHR()?`<dl class="stats"><div><dt>รอคุณอนุมัติ</dt><dd${wait?' style="color:var(--warn-c)"':''}>${wait}</dd></div><div><dt>อนุมัติแล้ว รอจ่าย</dt><dd>${unpaid.length} <small>ใบ · ${fmt(sum(unpaid,x=>tvTot(x).all))} บาท</small></dd></div><div><dt>จ่ายแล้วเดือนนี้</dt><dd>${fmt(sum(L.filter(x=>x.status==='paid'&&String(x.paidAt||'').slice(0,7)===today().slice(0,7)),x=>tvTot(x).all))}</dd></div></dl>`:''}
-  <section class="card"><h2><span>เบิกค่าเดินทาง</span><small>ใช้รถส่วนตัวไปติดต่องาน เบิกตามระยะทาง × อัตราต่อกิโลเมตร (รวมค่าสึกหรอ) + ค่าทางด่วน · เบิกเดือนละ 2 รอบ · ผ่าน Admin แผนก › ผู้จัดการ › ผู้ตรวจสอบ · เที่ยวที่เลือกโครงการจะลงเป็นค่าใช้จ่ายของโครงการนั้นเมื่อจ่ายเงินแล้ว</small></h2>
-  <div class="row" style="margin-bottom:10px"><span class="sp"></span><button type="button" class="btn sm pri" data-a="add" data-c="co.trv" data-sel="trv">+ เบิกค่าเดินทาง</button></div>
-  ${tvList()}</section>
+  return `${acc||isMgt()||canHR()?`<dl class="stats"><div><dt>รอคุณอนุมัติ</dt><dd${wait?' style="color:var(--warn-c)"':''}>${wait} <small>ใบ</small></dd></div><div><dt>อนุมัติแล้ว รอจ่าย</dt><dd>${fmt(sum(unpaid,x=>tvTot(x).all))} <small>บาท · ${unpaid.length} ใบ</small></dd></div><div><dt>จ่ายแล้วเดือนนี้</dt><dd>${fmt(sum(L.filter(x=>x.status==='paid'&&String(x.paidAt||'').slice(0,7)===today().slice(0,7)),x=>tvTot(x).all))} <small>บาท</small></dd></div></dl>`:''}
   ${e?tvEditor(e):''}
+  <section class="card"><h2><span>${tvMineOnly()?'ใบเบิกค่าเดินทางของฉัน':'ใบเบิกค่าเดินทาง'}</span><small>ใช้รถส่วนตัวไปติดต่องาน เบิกตามระยะทาง × อัตราต่อกิโลเมตร + ค่าทางด่วน · เบิกเดือนละ 2 รอบ · ผ่าน Admin แผนก › ผู้จัดการ › ผู้ตรวจสอบ</small></h2>
+  ${tvList()}</section>
   ${acc||!u?`<section class="card"><h2><span>ตั้งค่าอัตราค่าเดินทาง</span><small>อัตราต่อกิโลเมตรรวมค่าสึกหรอ ปรับตามราคาน้ำมันที่ประกาศ ใบที่ทำใหม่จะใช้อัตรานี้ ใบเก่าไม่เปลี่ยน</small></h2>
-    <div class="form"><label>ดีเซล B7 (บาท/กม.)<input class="r" inputmode="decimal" data-t="num" data-p="co.trvf.d" value="${esc(C.trvf.d)}"></label><label>เบนซิน 91 (บาท/กม.)<input class="r" inputmode="decimal" data-t="num" data-p="co.trvf.b" value="${esc(C.trvf.b)}"></label>
-    <label style="grid-column:1/-1">หมายเหตุท้ายฟอร์ม (บรรทัดละข้อ)<textarea data-p="co.trvf.notes" rows="4">${esc(C.trvf.notes)}</textarea></label></div></section>`:''}`}
-
+    <div class="tv-g2" style="max-width:520px"><label class="tv-fl"><span>⛽ ดีเซล B7</span><div class="tv-u"><input class="r" inputmode="decimal" data-t="num" data-p="co.trvf.d" value="${esc(C.trvf.d)}"><em>บาท/กม.</em></div></label><label class="tv-fl"><span>⛽ เบนซิน 91</span><div class="tv-u"><input class="r" inputmode="decimal" data-t="num" data-p="co.trvf.b" value="${esc(C.trvf.b)}"><em>บาท/กม.</em></div></label></div>
+    <label class="tv-fl" style="margin-top:10px"><span>หมายเหตุท้ายฟอร์ม (บรรทัดละข้อ)</span><textarea data-p="co.trvf.notes" rows="4">${esc(C.trvf.notes)}</textarea></label></section>`:''}`}
+ACT.tvSet=b=>{const e=CO().trv.find(x=>x.id===b.dataset.id);if(!e||!tvEdit(e))return;const k=b.dataset.k;e[k]=b.dataset.v;HOOK.forEach(f=>f(`co.trv.${e.id}.${k}`,e[k]));save();render()};
+// a new claim opens at the top of the page
+{const f=ACT.add;ACT.add=b=>{const r=f(b);if(b&&b.dataset&&b.dataset.c==='co.trv')setTimeout(()=>{const d=document.querySelector('.tv-doc');if(d)d.scrollIntoView({behavior:'smooth',block:'start'})},30);return r}}
 const tvGet=b=>CO().trv.find(x=>x.id===b.dataset.id);
 const tvLog=(e,st)=>{(e.log=e.log||[]).push({st,by:whoName(),at:today()})};
 ACT.tvSend=b=>{const e=tvGet(b);if(!e||!tvEdit(e))return;const T=e.trips||[];
@@ -188,12 +202,79 @@ if(typeof CHAP==='object'){CHAP.trv=['เบิกค่าเดินทาง
   {const f=ACT.chApGo;ACT.chApGo=b=>{if(b.dataset.k!=='trv')return f(b);if(me()&&!allowed('co','hr')){toast('หน้านี้ไม่ได้เปิดให้ชื่อผู้ใช้งานนี้');return}
     S.sel.trv=b.dataset.id;S.mode='co';S.ctab='hr';S.sub.hr='trv';render();window.scrollTo(0,0)}}}
 document.head.insertAdjacentHTML('beforeend',`<style>
-.tv-f{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
-.tv-t td input,.tv-t td select{min-width:0}
-.tv-t td:nth-child(-n+6){white-space:nowrap}
-.tv-t tr.tv-out td{background:var(--warn-soft,#fff4e0)}
-.tv-warn{margin:6px 0;padding:8px 12px;border-radius:10px;background:var(--warn-soft,#fff4e0);color:var(--ink);font-size:14px}
-.tv-l tr.tv-on td{background:var(--sunk)}
-.tv-l .lnk{all:unset;cursor:pointer;color:var(--accent);font-weight:600}
-.tv-s{margin:12px 0}
+.tv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tv-cd{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:3px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);transition:border-color .15s,box-shadow .15s,transform .15s}
+.tv-cd:hover,.tv-cd:focus-visible{border-color:var(--accent);box-shadow:0 6px 18px rgba(16,42,58,.08);transform:translateY(-1px)}
+.tv-cd.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.tv-cd small{color:var(--muted);font-size:12.5px}
+.tv-cd-t{display:flex;align-items:center;justify-content:space-between;gap:8px}.tv-cd-t b{font-family:var(--f-display);font-size:15px}.tv-cd-t .pill{margin:0;font-size:11.5px}
+.tv-cd-n{font-weight:600;color:var(--ink);margin-top:4px}
+.tv-cd-a{font-family:var(--f-display);font-size:22px;font-weight:700;color:var(--ink);margin-top:6px}.tv-cd-a small{font-size:12px;font-weight:400}
+.tv-new{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--accent);background:var(--sunk);min-height:128px}
+.tv-new b{color:var(--accent)}.tv-plus{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:24px;line-height:1;margin-bottom:4px}
+.tv-doc{position:relative;scroll-margin-top:90px}
+.tv-hd{display:flex;align-items:flex-start;gap:16px;margin:-4px 0 14px;padding:16px 18px;border-radius:14px;background:linear-gradient(120deg,var(--accent-soft),transparent 70%);border:1px solid var(--line)}
+.tv-hd>div:first-child{flex:1;min-width:0}
+.tv-hd small{color:var(--muted);font-size:12px;letter-spacing:.04em}
+.tv-hd h2{margin:2px 0;font-size:22px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tv-hd h2 .pill{font-size:12px}
+.tv-hd p{margin:0;color:var(--muted);font-size:14px}
+.tv-big{text-align:right}.tv-big b{display:block;font-family:var(--f-display);font-size:30px;line-height:1.1;color:var(--accent)}.tv-big span{font-size:12px;color:var(--muted)}
+.tv-cl{all:unset;cursor:pointer;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:var(--muted)}.tv-cl:hover{background:var(--sunk);color:var(--ink)}
+.tv-st{list-style:none;display:flex;gap:0;margin:0 0 16px;padding:0;overflow-x:auto}
+.tv-st li{flex:1;min-width:120px;display:flex;align-items:flex-start;gap:8px;position:relative;padding-right:10px}
+.tv-st li:not(:last-child)::after{content:"";position:absolute;left:34px;right:8px;top:14px;height:2px;background:var(--line)}
+.tv-st li.ok:not(:last-child)::after{background:var(--accent)}
+.tv-st i{font-style:normal;flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;background:var(--sunk);color:var(--muted);border:2px solid var(--line);position:relative;z-index:1}
+.tv-st li.ok i{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tv-st li.cur i{border-color:var(--accent);color:var(--accent);background:var(--surface);box-shadow:0 0 0 4px var(--accent-soft)}
+.tv-st span{display:flex;flex-direction:column;padding-top:30px;margin-left:-36px;min-width:0}
+.tv-st b{font-size:13px}.tv-st small{font-size:11.5px;color:var(--muted);line-height:1.35}
+.tv-g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.tv-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px}
+.tv-g3{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px 8px;align-items:end}
+.tv-g5{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1.6fr);gap:10px 12px}
+.tv-g2>.w,.tv-g4>.w{grid-column:1/-1}
+.tv-top{gap:14px;margin-bottom:18px}
+.tv-pn{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--surface)}
+.tv-pnh{display:flex;align-items:center;gap:8px;margin-bottom:10px}.tv-pnh b{font-size:15px}
+.tv-ic{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--accent-soft);font-size:14px}
+.tv-fl{display:flex;flex-direction:column;gap:4px;min-width:0;margin:0}
+.tv-fl>span{font-size:12.5px;color:var(--muted);font-weight:500}
+.tv-doc input,.tv-doc select,.tv-doc textarea,.card .tv-fl input,.card .tv-fl textarea{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;min-height:38px}
+.tv-doc input:focus,.tv-doc select:focus,.card .tv-fl input:focus,.card .tv-fl textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tv-ro{min-height:38px;display:flex;align-items:center;padding:0 2px;font-size:14px;color:var(--ink);font-weight:500;border-bottom:1px dashed var(--line)}.tv-ro.r{justify-content:flex-end}
+.tv-u{display:flex;align-items:center;gap:6px}.tv-u em{font-style:normal;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tv-seg{display:inline-flex;flex-wrap:wrap;gap:4px;padding:3px;border-radius:12px;background:var(--sunk);border:1px solid var(--line);width:max-content;max-width:100%}
+.tv-seg button{all:unset;cursor:pointer;padding:6px 14px;border-radius:9px;font-size:14px;color:var(--muted);font-weight:500}
+.tv-seg button[aria-pressed="true"]{background:var(--surface);color:var(--accent);box-shadow:0 1px 4px rgba(16,42,58,.12);font-weight:700}
+.tv-seg button[disabled]{cursor:default}
+.tv-sh{display:flex;align-items:baseline;gap:10px;margin:4px 0 10px;flex-wrap:wrap}.tv-sh b{font-size:17px;font-family:var(--f-display)}.tv-sh small{color:var(--muted)}
+.tv-fx{font-size:12.5px}
+.tv-trips{display:flex;flex-direction:column;gap:10px}
+.tv-trip{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 220px;gap:14px;padding:14px 16px;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:14px;background:var(--surface)}
+.tv-trip.bad{border-left-color:var(--warn-c,#d97706);background:var(--warn-soft,#fff8ec)}
+.tv-tn{display:flex;flex-direction:column;align-items:center;gap:2px}
+.tv-tn b{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:16px}
+.tv-tn span{font-size:12.5px;color:var(--muted);font-weight:600}
+.tv-tb{display:flex;flex-direction:column;gap:10px;min-width:0}
+.tv-ar{padding-bottom:9px;color:var(--muted);font-size:18px}
+.tv-tm{display:flex;flex-direction:column;gap:8px;padding-left:14px;border-left:1px dashed var(--line)}
+.tv-calc{margin-top:auto;text-align:right;display:flex;flex-direction:column}
+.tv-calc small{font-size:11.5px;color:var(--muted)}.tv-calc b{font-family:var(--f-display);font-size:22px;color:var(--ink);line-height:1.2}
+.tv-bad{margin:0;font-size:12.5px;color:var(--warn-c,#b45309);font-weight:600}
+.tv-x{all:unset;cursor:pointer;position:absolute;top:8px;right:10px;width:26px;height:26px;display:grid;place-items:center;border-radius:50%;color:var(--muted);font-size:13px;opacity:.6}
+.tv-x:hover,.tv-x:focus-visible{opacity:1;background:var(--danger-soft,#fde8e8);color:var(--danger,#c0392b)}
+.tv-trip .tv-tm{padding-top:18px}
+.tv-add{all:unset;box-sizing:border-box;cursor:pointer;display:block;width:100%;text-align:center;margin-top:10px;padding:12px;border:1.5px dashed var(--accent);border-radius:14px;color:var(--accent);font-weight:600;background:var(--sunk)}
+.tv-add:hover,.tv-add:focus-visible{background:var(--accent-soft)}
+.tv-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.6fr);margin:16px 0 14px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.tv-sum>div{padding:12px 16px;display:flex;flex-direction:column;gap:1px;border-right:1px solid var(--line)}.tv-sum>div:last-child{border-right:0}
+.tv-sum small{font-size:12px;color:var(--muted)}.tv-sum b{font-family:var(--f-display);font-size:22px;line-height:1.2}.tv-sum span{font-size:12px;color:var(--muted)}
+.tv-sum .tot{background:var(--accent);color:var(--accent-ink)}.tv-sum .tot small,.tv-sum .tot span{color:var(--accent-ink);opacity:.85}.tv-sum .tot b{font-size:26px}
+.tv-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tv-warn{margin:0 0 10px;padding:10px 14px;border-radius:12px;background:var(--warn-soft,#fff4e0);color:var(--ink);font-size:14px;border:1px solid var(--line)}
+@media (max-width:1100px){.tv-g5{grid-template-columns:1fr 1fr}.tv-g5>.tv-g3{grid-column:1/-1}}
+@media (max-width:900px){.tv-trip{grid-template-columns:40px minmax(0,1fr)}.tv-tm{grid-column:1/-1;border-left:0;padding-left:0;border-top:1px dashed var(--line);padding-top:10px!important;display:grid;grid-template-columns:1fr 1fr 1.3fr;align-items:end}.tv-tn b{width:30px;height:30px;font-size:14px}}
+@media (max-width:700px){.tv-g5{grid-template-columns:minmax(0,1fr)}.tv-g2,.tv-top{grid-template-columns:minmax(0,1fr)}.tv-g4{grid-template-columns:1fr 1fr}.tv-hd{flex-wrap:wrap}.tv-big{text-align:left}.tv-sum{grid-template-columns:1fr 1fr}.tv-sum>div{border-bottom:1px solid var(--line)}.tv-sum .tot{grid-column:1/-1}
+  .tv-tm{grid-template-columns:1fr 1fr}.tv-calc{grid-column:1/-1}.tv-st li{min-width:92px}}
 </style>`);
