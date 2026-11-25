@@ -74,7 +74,12 @@ header .brand{display:flex;align-items:center;gap:10px}header .brand img{width:4
 button{white-space:nowrap}td:first-child{white-space:nowrap}
 nav .nb{display:inline-block;min-width:19px;margin-left:6px;padding:0 6px;border-radius:999px;background:#E5484D;color:#fff;font-size:12px;font-weight:700;line-height:19px;text-align:center}
 .fbi{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:12px 14px;display:flex;flex-direction:column;gap:6px}.fbi.new{border-color:color-mix(in srgb,var(--bad) 40%,var(--line));background:color-mix(in srgb,var(--bad) 4%,var(--card));box-shadow:inset 4px 0 0 var(--bad)}
-.fbi .msg{white-space:pre-wrap;word-break:break-word;font-size:14.5px}.fbi .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--mut)}
+.fbi .msg{white-space:pre-wrap;word-break:break-word;font-size:14.5px}
+.fbc{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;padding:4px 2px}.fbc .bb{max-width:86%;padding:8px 12px;border-radius:14px;white-space:pre-wrap;word-break:break-word;font-size:14.5px}
+.fbc .bb small{display:block;font-size:11.5px;opacity:.75;margin-top:3px}.fbc .fcu{align-self:flex-start;background:var(--soft);border-bottom-left-radius:4px}.fbc .fcu b,.fbc .au b{display:block;font-size:12.5px;color:var(--acc2)}
+.fbc .or{align-self:flex-end;background:var(--acc);color:#fff;border-bottom-right-radius:4px}.fbc .au{align-self:flex-end;background:color-mix(in srgb,#7C5CFF 12%,var(--card));border-bottom-right-radius:4px}
+.fbq{display:flex;gap:6px;flex-wrap:wrap}.fbq button{font-size:13px;padding:4px 10px;border-radius:999px}
+:root[data-theme="dark"] .fbc .or{color:#03222A}.fbi .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--mut)}
 </style>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('penum.sales.theme')==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
 
@@ -486,12 +491,20 @@ function viewSet(){const S=DB.set;return `<section class="card"><h2>ข้อม
   <div class="row"><button class="pri" data-a="bk">ดาวน์โหลดไฟล์สำรอง</button><button data-a="rs">เปิดไฟล์สำรอง</button><button data-a="csv">ดาวน์โหลดรายชื่อ (Excel)</button></div><input type="file" id="rsIn" accept=".json" hidden></section>`}
 /* ---- กล่องรับเรื่อง: what customers send from แจ้งปัญหา / ความคิดเห็น in PENUM PM, MEP and BIM ----
    The messages are in ORIEN's Supabase (tools/feedback-setup.sql). The public key can only add them; this app reads and
-   marks them with the reader code the SQL prints, kept in DB.set.fbcode on this device (and in its backup file). */
+   marks them with the reader code the SQL prints, kept in DB.set.fbcode on this device (and in its backup file).
+   แชตตอบกลับ: ตอบกลับ opens the conversation under a message (rpc penum_fb_msgs / penum_fb_answer); the customer reads it in
+   เมนู › แจ้งปัญหา › เรื่องที่ส่งแล้ว and can write back, which brings the message up as new again. The first reply is the
+   automatic acknowledgement (penum_fb_auto, set in the card ข้อความตอบรับอัตโนมัติ); going live with a development task also
+   answers its messages with the version that fixed them (dClose). Messages sent before the chat (f.chat false) cannot be answered. */
 const FBSB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
 const FBK={bug:['🐞 แจ้งปัญหา','bug','p-bad'],idea:['💡 อยากได้เพิ่ม','feat','p-ok'],how:['❓ ถามวิธีใช้','how','p-warn'],other:['💬 ความคิดเห็น','oth','p-mut']};
 const FBST={new:['ใหม่','p-bad'],seen:['อ่านแล้ว','p-warn'],ticket:['เปิดเป็นเรื่องแล้ว','p-ok'],done:['ปิดแล้ว','p-mut']};
 const FBAPP={PM:'PENUM PM',MEP:'PENUM MEP',BIM:'PENUM BIM'};
-let FB={L:null,err:'',busy:false,st:'act',app:'',kind:'',link:null,at:''};
+let FB={L:null,err:'',busy:false,st:'act',app:'',kind:'',link:null,at:'',auto:null,autoErr:'',chat:null,ct:null};
+// short answers staff use often; the box fills in, staff can still edit before sending
+const FBQ=['ได้รับเรื่องแล้วครับ กำลังตรวจสอบ จะแจ้งผลในแชตนี้','ขอรูปหน้าจอตอนที่เกิดปัญหา และเล่าขั้นตอนที่กดก่อนเกิดปัญหาเพิ่มอีกนิดครับ',
+  'แก้ไขแล้วครับ กด เมนู › อัปเดตโปรแกรม แล้วลองใหม่อีกครั้ง','รับไว้เป็นงานพัฒนาแล้วครับ เมื่อเสร็จจะแจ้งในแชตนี้','ขอบคุณสำหรับความคิดเห็นครับ'];
+const fbUn=f=>f.cust_at&&(!f.orien_at||f.cust_at>f.orien_at);
 async function fbRpc(fn,args){let r;try{r=await fetch(FBSB.url+'/rest/v1/rpc/'+fn,{method:'POST',cache:'no-store',headers:{apikey:FBSB.key,'Content-Type':'application/json'},body:JSON.stringify(args)})}catch(e){throw new Error('offline')}
   if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(r.status===404?'nosql':/bad code/.test(m)?'badcode':m||('HTTP '+r.status))}
   const t=await r.text();return t?JSON.parse(t):null}
@@ -508,7 +521,8 @@ function fbItem(f){const k=FBK[f.kind]||FBK.other,s=FBST[f.status]||FBST.new,c=f
   <div class="hd">${c?`<a href="#" data-a="info" data-id="${c.id}"><b>${esc(c.co)}</b></a>`:f.company?`<b style="color:var(--ink)">${esc(f.company)}</b>`:'<span>ไม่ระบุบริษัท</span>'}${f.lic?`<span>รหัสลูกค้า ${esc(f.lic)}</span>`:''}${f.page?`<span>หน้า ${esc(f.page)}</span>`:''}</div>
   <div class="msg">${esc(f.message)}</div>
   ${f.contact?`<div>ติดต่อกลับ: <b>${esc(f.contact)}</b></div>`:''}<div class="mut">${esc(f.device)}${tk?` · เรื่อง ${tk.id} (${TST[tk.st][0]})`:''}</div>
-  <div class="row">${f.shot?`<button class="sm" data-a="fbShot" data-v="${f.id}">🖼 ดูรูปหน้าจอ</button>`:''}${f.status==='ticket'||f.status==='done'?'':`<button class="sm pri" data-a="fbTix" data-v="${f.id}">เปิดเป็นเรื่องช่วยเหลือ</button>`}
+  ${f.chat?(fbUn(f)?`<div><span class="pill p-bad">💬 ลูกค้าตอบกลับมา</span></div>`:f.nmsg?`<div class="mut">💬 แชต ${f.nmsg} ข้อความ</div>`:''):'<div class="mut">ส่งจากโปรแกรมรุ่นก่อนมีแชต ตอบในโปรแกรมไม่ได้ ติดต่อกลับตามช่องทางด้านบน</div>'}
+  <div class="row">${f.chat?`<button class="sm${fbUn(f)||!f.nmsg&&f.status==='new'?' pri':''}" data-a="fbChat" data-v="${f.id}">💬 ตอบกลับ${f.nmsg?' ('+f.nmsg+')':''}</button>`:''}${f.shot?`<button class="sm" data-a="fbShot" data-v="${f.id}">🖼 ดูรูปหน้าจอ</button>`:''}${f.status==='ticket'||f.status==='done'?'':`<button class="sm pri" data-a="fbTix" data-v="${f.id}">เปิดเป็นเรื่องช่วยเหลือ</button>`}
   ${tk?`<button class="sm" data-a="tedit" data-t="${tk.id}">เปิดเรื่อง ${tk.id}</button>`:''}${f.status==='new'?`<button class="sm" data-a="fbSeen" data-v="${f.id}">อ่านแล้ว</button>`:''}
   ${f.status==='done'?`<button class="sm" data-a="fbOpen" data-v="${f.id}">เปิดใหม่</button>`:`<button class="sm" data-a="fbDone" data-v="${f.id}">ปิดเรื่อง</button>`}<button class="sm" data-a="fbCopy" data-v="${f.id}">คัดลอก</button></div></div>`}
 function fbSetup(){return `<section class="card"><h2>ตั้งค่ากล่องรับเรื่อง (ทำครั้งเดียว)</h2>
@@ -528,8 +542,49 @@ function viewFb(){if(!DB.set.fbcode)return fbSetup();
   <select id="fbAp" style="width:auto"><option value="">ทุกโปรแกรม</option>${Object.entries(FBAPP).map(([k,v])=>`<option value="${k}"${FB.app===k?' selected':''}>${v}</option>`).join('')}</select>
   <select id="fbKi" style="width:auto"><option value="">ทุกประเภท</option>${Object.entries(FBK).map(([k,v])=>`<option value="${k}"${FB.kind===k?' selected':''}>${v[0]}</option>`).join('')}</select><button data-a="fbCsv">ดาวน์โหลด (Excel)</button></div>
   <div style="display:flex;flex-direction:column;gap:10px">${L.length?L.map(fbItem).join(''):'<p class="mut" style="margin:0">ไม่มีข้อความ</p>'}</div></section>
+  ${fbAutoCard()}
   <section class="card"><h2>รหัสอ่านกล่อง</h2><label>รหัสที่ใช้อ่าน (จากคำสั่ง SQL)<input data-s="fbcode" value="${esc(DB.set.fbcode)}" autocomplete="off"></label><p class="mut" style="margin:6px 0 0">ใช้หลายเครื่องได้ ใส่รหัสเดียวกันทุกเครื่อง สถานะ อ่านแล้ว / ปิดเรื่อง เห็นตรงกันทุกเครื่อง</p></section>`}
+// ข้อความตอบรับอัตโนมัติ: sent by the database the moment a message arrives ({n} its number, {kind} its kind)
+function fbAutoCard(){if(FB.auto===null&&!FB.autoErr&&!fbAutoCard.busy){fbAutoCard.busy=true;fbRpc('penum_fb_auto',{p_code:DB.set.fbcode,p_text:null}).then(a=>{FB.auto=a||''},e=>{FB.autoErr=e.message}).then(()=>{fbAutoCard.busy=false;if(TAB==='fb')render()})}
+  if(FB.autoErr)return `<section class="card"><h2>แชตตอบกลับลูกค้า ยังไม่เปิด</h2><p style="margin-top:0">${FB.autoErr==='nosql'?'ต้องรันคำสั่ง SQL ชุดใหม่อีกครั้ง 1 ครั้ง ข้อความเดิมไม่หาย และรหัสอ่านกล่องยังเป็นรหัสเดิม':esc(fbErr(new Error(FB.autoErr)))}</p>
+    <ol style="margin:0 0 10px 20px;line-height:1.9"><li>กด <b>คัดลอกคำสั่ง SQL</b></li><li>เปิด <a href="https://supabase.com/dashboard/project/uejnlxwjqsadbnzdncvb/sql/new" target="_blank" rel="noopener">Supabase › SQL Editor › New query</a> วาง (Ctrl+V) แล้วกด <b>Run</b></li><li>กลับมาหน้านี้ กด <b>โหลดใหม่</b></li></ol>
+    <div class="row"><button class="pri" data-a="fbSql">คัดลอกคำสั่ง SQL</button><button data-a="fbAutoRe">โหลดใหม่</button></div></section>`;
+  return `<section class="card"><h2>ข้อความตอบรับอัตโนมัติ</h2><p class="mut" style="margin-top:0">ส่งให้ลูกค้าเองทันทีที่เรื่องเข้ามา อยู่ในแชตของเรื่องนั้น ใช้ <b>{n}</b> แทนเลขที่เรื่อง และ <b>{kind}</b> แทนประเภท (แจ้งปัญหา / อยากได้เพิ่ม / ถามวิธีใช้ / ความคิดเห็น) ลบข้อความทั้งหมดแล้วบันทึก = ปิดการตอบอัตโนมัติ</p>
+  ${FB.auto===null?'<p class="mut">กำลังโหลด…</p>':`<textarea id="fbAuto" rows="4" maxlength="2000" placeholder="ปิดการตอบอัตโนมัติอยู่">${esc(FB.auto)}</textarea>
+  <p class="mut" style="margin:6px 0">ตัวอย่างที่ลูกค้าจะเห็น: <span id="fbAutoEx">${esc(fbAutoEx(FB.auto))}</span></p>
+  <div class="row"><button class="pri" data-a="fbAutoSave">บันทึกข้อความ</button><button data-a="fbAutoOff">ปิดการตอบอัตโนมัติ</button></div>`}</section>`}
+const fbAutoEx=a=>a?a.replace(/\{n\}/g,'125').replace(/\{kind\}/g,'แจ้งปัญหา'):'(ไม่ส่ง)';
+// the conversation under one message, in the dialog; it reloads every 20 s while open
+const fbBub=m=>m.who==='cust'?`<div class="bb fcu"><b>${esc(m.name||'ลูกค้า')}</b>${esc(m.body)}<small>${esc(fbWhen(m.at))}</small></div>`
+  :`<div class="bb ${m.who==='auto'?'au':'or'}">${m.who==='auto'?'<b>ตอบอัตโนมัติ</b>':''}${esc(m.body)}<small>${esc((m.who==='auto'?'':(m.name||'ทีม ORIEN')+' · ')+fbWhen(m.at))}</small></div>`;
+function fbChatPaint(){const f=(FB.L||[]).find(x=>x.id==FB.chat),c=$('#fbCh');if(!f||!c)return;
+  const first={who:'cust',name:f.contact||f.company||'ลูกค้า',body:f.message,at:f.at};const n=c.children.length;
+  c.innerHTML=[first,...(FB.msgs||[])].map(fbBub).join('')||'';if(c.children.length!==n)c.scrollTop=c.scrollHeight}
+async function fbChatLoad(){const id=FB.chat;try{const L=await fbRpc('penum_fb_msgs',{p_code:DB.set.fbcode,p_id:+id});if(FB.chat!==id)return;FB.msgs=L||[];$('#fbChE')&&($('#fbChE').textContent='')}
+  catch(e){$('#fbChE')&&($('#fbChE').textContent=fbErr(e))}fbChatPaint()}
+async function fbChat(id){const f=(FB.L||[]).find(x=>x.id==id);if(!f)return;const k=FBK[f.kind]||FBK.other;FB.chat=f.id;FB.msgs=[];
+  $('#dlgT').textContent=`แชตเรื่อง #${f.id} · ${k[0]}`;
+  $('#dlgB').innerHTML=`<div class="mut" style="margin-bottom:6px">${esc(f.company||'ไม่ระบุบริษัท')}${f.contact?' · '+esc(f.contact):''} · ${esc(FBAPP[f.app]||f.app)} ${esc(f.ver)}</div>
+  <div class="fbc" id="fbCh"></div><p id="fbChE" style="color:var(--bad);margin:4px 0"></p>
+  <div class="fbq" style="margin:8px 0">${FBQ.map((q,i)=>`<button type="button" data-q="${i}">${esc(q.length>34?q.slice(0,32)+'…':q)}</button>`).join('')}</div>
+  <textarea id="fbAns" rows="3" maxlength="3000" placeholder="พิมพ์คำตอบถึงลูกค้า ลูกค้าจะเห็นในโปรแกรมที่ เมนู › แจ้งปัญหา / ความคิดเห็น › เรื่องที่ส่งแล้ว"></textarea>
+  <label style="margin-top:8px">ชื่อผู้ตอบ (ลูกค้าเห็น)<input id="fbSign" value="${esc(DB.set.fbsign||'ทีม ORIEN')}" maxlength="100"></label>`;
+  $('#dlgF').innerHTML='';
+  const go=async(close,ev)=>{const b=$('#fbAns').value.trim(),bt=ev.currentTarget;if(!b){toast('พิมพ์คำตอบก่อน');$('#fbAns').focus();return}bt.disabled=true;
+    const nm=$('#fbSign').value.trim()||'ทีม ORIEN';if(nm!==(DB.set.fbsign||'ทีม ORIEN')){DB.set.fbsign=nm;save()}
+    try{await fbRpc('penum_fb_answer',{p_code:DB.set.fbcode,p_id:+f.id,p_body:b,p_name:nm});$('#fbAns').value='';f.orien_at=new Date().toISOString();f.nmsg=(f.nmsg||0)+1;if(f.status==='new')f.status='seen';
+      if(close)await fbSet(f.id,'done');toast(close?'ส่งคำตอบและปิดเรื่องแล้ว':'ส่งคำตอบแล้ว ลูกค้าจะเห็นในโปรแกรม');await fbChatLoad()}catch(e){toast(fbErr(e))}
+    bt.disabled=false;fbBadge()};
+  dlgBtn('ส่งคำตอบ','pri',ev=>go(false,ev));if(f.status!=='done')dlgBtn('ส่งและปิดเรื่อง','',ev=>go(true,ev));
+  $('#dlgB').onclick=e=>{const q=e.target.closest('[data-q]');if(q){const a=$('#fbAns');a.value=FBQ[+q.dataset.q];a.focus()}};
+  dlgOpen();fbChatPaint();await fbChatLoad();
+  clearInterval(FB.ct);FB.ct=setInterval(()=>{if($('#dlg').open&&FB.chat===f.id&&!document.hidden)fbChatLoad()},20000);
+  $('#dlg').addEventListener('close',()=>{clearInterval(FB.ct);FB.chat=null;$('#dlgB').onclick=null;render()},{once:true});
+  setTimeout(()=>$('#fbAns').focus(),40)}
 async function fbAct(a,t){const id=t.dataset.v,f=(FB.L||[]).find(x=>x.id==id);
+  if(a==='fbChat')fbChat(id);
+  if(a==='fbAutoRe'){FB.auto=null;FB.autoErr='';render()}
+  if(a==='fbAutoSave'||a==='fbAutoOff'){const v=a==='fbAutoOff'?'':$('#fbAuto').value;try{FB.auto=await fbRpc('penum_fb_auto',{p_code:DB.set.fbcode,p_text:v})||'';toast(FB.auto?'บันทึกข้อความตอบรับอัตโนมัติแล้ว':'ปิดการตอบอัตโนมัติแล้ว');render()}catch(e){toast(fbErr(e))}}
   if(a==='fbLoad')fbLoad();if(a==='fbSeen')fbSet(id,'seen');if(a==='fbDone')fbSet(id,'done');if(a==='fbOpen')fbSet(id,'seen');
   if(a==='fbSql'){try{const r=await fetch('files/feedback-setup.sql',{cache:'no-store'});if(!r.ok)throw 0;copy(await r.text())}catch(e){toast('โหลดคำสั่ง SQL ไม่ได้ ขอไฟล์ feedback-setup.sql จาก Claude')}}
   if(a==='fbCopy'&&f)copy([`#${f.id} ${(FBK[f.kind]||FBK.other)[0]} · ${FBAPP[f.app]||f.app} ${f.ver}`,f.company&&('บริษัท '+f.company+(f.lic?' ('+f.lic+')':'')),f.page&&('หน้า '+f.page),'',f.message,'',f.contact&&('ติดต่อกลับ '+f.contact)].filter((x,i)=>x||i===3||i===5).join('\n'));
@@ -1295,6 +1350,8 @@ const appOf=v=>/MEP/i.test(v||'')?'mep':/BIM/i.test(v||'')?'bim':/ฝ่าย�
 const tixPre=t=>({app:appOf(t.ver),kind:t.cat==='bug'?'bug':t.cat==='feat'?'feat':'imp',title:t.title,detail:t.detail,src:[srcTix(t)]});
 const fbPre=f=>({app:FBAPP[f.app]?f.app.toLowerCase():'pm',kind:{bug:'bug',idea:'feat'}[f.kind]||'imp',title:String(f.message||'').split('\n')[0].slice(0,80),detail:(f.message||'')+(f.page?'\n\nหน้า: '+f.page:''),src:[srcFb(f)]});
 const dFb=(id,st,note)=>{if(DB.set.fbcode)fbSet(id,st,note)};
+// …and tells the customer in the message's chat (messages sent before the chat came cannot get it)
+const dFbAns=(id,ans)=>{const f=(FB.L||[]).find(x=>x.id==id);if(DB.set.fbcode&&f&&f.chat)fbRpc('penum_fb_answer',{p_code:DB.set.fbcode,p_id:+id,p_body:ans,p_name:DB.set.fbsign||'ทีม ORIEN'}).then(()=>{f.orien_at=new Date().toISOString();f.nmsg=(f.nmsg||0)+1},()=>{})};
 // a message in กล่องรับเรื่อง is marked with the task's number; a ticket keeps it in t.dev and shows ส่งให้ทีมพัฒนา
 function dLink(d,s){if(d.src.some(x=>x.k===s.k&&x.id===s.id))return;d.src.push(s);
   if(s.k==='fb')dFb(s.id,'ticket',d.id);
@@ -1303,7 +1360,7 @@ function dUnlink(d,s){if(s.k==='fb'){const f=(FB.L||[]).find(x=>x.id==s.id);if(!
   if(s.k==='tix'){const t=DB.tix.find(x=>x.id===s.id);if(t&&t.dev===d.id){delete t.dev;if(t.st==='dev')t.st='open'}}}
 // going live closes the tickets behind the task (the answer names the version) and their messages in กล่องรับเรื่อง
 function dClose(d,only){const ans=`${DK[d.kind][2]}แล้วใน ${DAPP[d.app]}${d.ver?' รุ่น '+d.ver:''} (งานพัฒนา ${d.id}) ให้ลูกค้ากด เมนู › อัปเดตโปรแกรม`;
-  (only?[only]:d.src).forEach(s=>{if(s.k==='fb')dFb(s.id,'done',d.id);
+  (only?[only]:d.src).forEach(s=>{if(s.k==='fb'){dFb(s.id,'done',d.id);dFbAns(s.id,ans)}
     if(s.k==='tix'){const t=DB.tix.find(x=>x.id===s.id);if(t&&t.st!=='done'){t.st='done';t.closed=d.live||today();t.ans=(t.ans?t.ans.trim()+'\n':'')+ans;if(t.fb)dFb(t.fb,'done',t.id)}}})}
 // the version each app runs on the site now, read at most once a minute
 function dVerLoad(force){if(!force&&Date.now()-DVT<6e4)return;DVT=Date.now();const K=Object.keys(DAPP);
@@ -1328,7 +1385,7 @@ function devForm(d,pre){const n=!d;pre=pre||{};const x=Object.assign(d?JSON.pars
   <label>หัวข้อ *<input id="vT" value="${esc(x.title)}" placeholder="เช่น พิมพ์ใบแจ้งหนี้แล้วตัวหนังสือซ้อนกัน"></label>
   <label>รายละเอียด / สิ่งที่ต้องทำ<textarea id="vD" rows="4">${esc(x.detail)}</textarea></label>
   <div id="vLv" class="g"><label>ขึ้นเว็บในรุ่น<input id="vV" value="${esc(x.ver||DVER[x.app]||'')}" placeholder="เช่น 3.76"><span class="mut" id="vVh">${esc(vh(x.app))}</span></label><label>วันที่ขึ้นเว็บ<input id="vL" type="date" value="${x.live||today()}"></label>
-    ${wasLive?'':`<label class="ck" id="vXw" style="grid-column:1/-1"><input type="checkbox" id="vX" checked> ปิดเรื่องของลูกค้าที่เชื่อมไว้ (เรื่องช่วยเหลือและข้อความในกล่องรับเรื่อง) พร้อมบอกรุ่นที่แก้</label>`}</div>
+    ${wasLive?'':`<label class="ck" id="vXw" style="grid-column:1/-1"><input type="checkbox" id="vX" checked> ปิดเรื่องของลูกค้าที่เชื่อมไว้ (เรื่องช่วยเหลือและข้อความในกล่องรับเรื่อง) พร้อมบอกรุ่นที่แก้ และแจ้งลูกค้าในแชตของเรื่อง</label>`}</div>
   <div class="g"><label>ลิงก์ Pull Request (ถ้ามี)<input id="vR" value="${esc(x.pr)}" placeholder="https://github.com/Fongdabo/penum/pull/…"></label><label>หมายเหตุภายใน<input id="vN" value="${esc(x.note)}"></label></div></div>
   <h3 style="font-size:15px;margin:4px 0 0">ลูกค้าที่ขอเรื่องนี้ <span class="mut" id="vSn" style="font-weight:400"></span></h3><div class="dsrc" id="vSrc"></div>
   <select id="vCu"><option value="">+ เพิ่มลูกค้าที่ขอเรื่องนี้ (บอกทางโทรศัพท์หรือตอนคุยกัน)</option>${DB.cust.map(c=>`<option value="${c.id}">${esc(c.co)}</option>`).join('')}</select>`;

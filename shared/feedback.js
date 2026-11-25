@@ -3,7 +3,11 @@
    A message goes to ORIEN's Supabase through the rpc penum_fb_send (tools/feedback-setup.sql): the public key can only add
    messages, never read them; ORIEN ฝ่ายขาย reads them with its reader code. Offline, or before the SQL has been run,
    the same text can go by LINE OA or e-mail instead.
-   Each app calls penumFB.init({app,name,ver,sfx,info}) once and penumFB.open() from its menu. */
+   Each app calls penumFB.init({app,name,ver,sfx,info}) once and penumFB.open() from its menu.
+   แชตตอบกลับ: each message carries a random secret (tok) kept in localStorage penum.fb.mine (+sfx) with its number; with it
+   the tab เรื่องที่ส่งแล้ว reads ORIEN's answers (rpc penum_fb_mine) and the customer writes back (penum_fb_reply). The first
+   answer is the automatic acknowledgement the SQL adds. A new answer from ORIEN shows a notice at the bottom left, checked a
+   few seconds after the page opens and every 3 minutes while the window is in front (every 20 s while a chat is open). */
 (()=>{if(window.penumFB)return;
 const SB={url:'https://uejnlxwjqsadbnzdncvb.supabase.co',key:'sb_publishable_0GTUfFnwBuWxjMw7yYULtQ_mhVVhcez'};
 const LINE='@xhg5783r',MAIL='fong101dt@gmail.com';
@@ -12,6 +16,9 @@ const KINDS=[['bug','🐞','แจ้งปัญหา','เล่าว่า�
   ['how','❓','ถามวิธีใช้','อยากทำอะไร แต่หาเมนูไม่เจอ หรือไม่แน่ใจวิธีใช้'],
   ['other','💬','ความคิดเห็น','ชม ติ หรือเรื่องอื่น ๆ']];
 let C={app:'',name:'PENUM',ver:'',sfx:'',info:null},K='bug',SHOT='',BUILD=null,D=null;
+// แชตตอบกลับ: V the dialog's view (new | list | chat), CUR the open message, TH its server copy per number, TERR why it could not load
+const ST={new:['รอทีมงานอ่าน','new'],seen:['ทีมงานอ่านแล้ว','seen'],ticket:['กำลังดำเนินการ','ticket'],done:['ปิดเรื่องแล้ว','done']};
+let V='new',CUR=null,TH={},TERR='',PT=null,NOTE=null,BGAT=0,OKID=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ls=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k+C.sfx)||'';localStorage.setItem(k+C.sfx,v)}catch(e){return ''}};
 const mob=()=>/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -32,7 +39,27 @@ const CSS=`.pfb{border:none;border-radius:16px;padding:0;width:min(560px,calc(10
 .pfb-ft{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px 16px;border-top:1px solid #E3E9EE}
 .pfb-ok{padding:28px 20px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}.pfb-ok .big{font-size:44px;line-height:1}
 .pfb-er{background:#FFF4E5;border:1px solid #F3C98B;color:#7A4A0B;border-radius:10px;padding:10px 12px;font-size:13.5px;display:flex;flex-direction:column;gap:8px}
-@media(max-width:480px){.pfb-k{grid-template-columns:repeat(2,1fr)}}`;
+.pfb[open]{display:flex;flex-direction:column;max-height:calc(100dvh - 24px)}.pfb>*{flex:none}.pfb>.pfb-bd{flex:1 1 auto;min-height:0;max-height:none}
+@media(max-width:480px){.pfb-hd small{display:none}}
+.pfb-tb{display:flex;gap:6px;padding:6px 18px 0;border-bottom:1px solid #E3E9EE;background:#FAFCFD}.pfb-tb button{font:inherit;font-size:14px;border:none;background:none;padding:7px 10px 9px;cursor:pointer;color:#5E6E75;border-bottom:2.5px solid transparent;display:flex;align-items:center;gap:6px}
+.pfb-tb button[aria-selected=true]{color:#0A6479;border-bottom-color:#0B7F99;font-weight:600}
+.pfb-n{display:inline-block;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:#E5484D;color:#fff;font-size:12px;line-height:19px;text-align:center;font-weight:600}
+.pfb-li{display:flex;flex-direction:column;gap:8px}.pfb-it{text-align:left;font:inherit;border:1px solid #D5DEE7;background:#fff;border-radius:12px;padding:10px 12px;cursor:pointer;color:#1F2A30;display:flex;flex-direction:column;gap:3px;width:100%}
+.pfb-it:hover{border-color:#0B7F99}.pfb-it.un{border-color:#0B7F99;background:#F1FAFC}.pfb-it .h{display:flex;gap:8px;align-items:center;font-size:13px;color:#5E6E75;flex-wrap:wrap}.pfb-it .h b{color:#1F2A30}
+.pfb-it .m{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pfb-it .l{font-size:13px;color:#5E6E75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pfb-st{font-size:12px;padding:1px 8px;border-radius:9px;background:#EEF2F5;color:#44545B}.pfb-st.new{background:#FFF4E5;color:#7A4A0B}.pfb-st.seen{background:#E6F5F8;color:#0A6479}.pfb-st.ticket{background:#EEE9FF;color:#4B3A9C}.pfb-st.done{background:#E7F6EC;color:#17663A}
+.pfb-cht{display:flex;align-items:center;gap:8px;font-size:13.5px;color:#5E6E75;flex-wrap:wrap}
+.pfb-ch{display:flex;flex-direction:column;gap:8px;min-height:160px}.pfb-bb{max-width:86%;padding:8px 12px;border-radius:14px;white-space:pre-wrap;word-break:break-word;font-size:14.5px}
+.pfb-bb small{display:block;font-size:11.5px;opacity:.75;margin-top:3px}.pfb-bb.me{align-self:flex-end;background:#0B7F99;color:#fff;border-bottom-right-radius:4px}
+.pfb-bb.or{align-self:flex-start;background:#F0F3F6;border-bottom-left-radius:4px}.pfb-bb.or b{display:block;font-size:12.5px;color:#0A6479}.pfb-bb.au{background:#F4F1FF}.pfb-bb.au b{color:#5B47B8}
+.pfb .pfb-wr{display:flex;gap:8px;align-items:flex-end;flex-wrap:nowrap}.pfb-wr textarea{flex:1 1 auto}.pfb .pfb-wr textarea{min-height:44px;height:44px;max-height:140px}
+.pfb-note{position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:2147482990;width:min(360px,calc(100% - 28px));background:#fff;color:#1F2A30;border-radius:14px;border:1px solid #CFE3E9;box-sizing:border-box;
+  box-shadow:0 14px 40px rgba(8,20,40,.28);padding:12px 14px;display:flex;flex-direction:column;gap:6px;font:14px/1.5 "IBM Plex Sans Thai","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif;animation:pfb-in .25s ease-out}
+.pfb-note .t{display:flex;gap:8px;align-items:center}.pfb-note .t b{font-size:15px}.pfb-note .p{color:#44545B;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pfb-note .r{display:flex;gap:8px}.pfb-note .x{margin-left:auto;border:none;background:none;font-size:20px;line-height:1;cursor:pointer;color:#5E6E75}
+.pfb-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 2px #fff;margin-left:6px;vertical-align:middle;flex:none}
+@keyframes pfb-in{from{opacity:0;transform:translateY(16px)}}
+@media(max-width:480px){.pfb-k{grid-template-columns:repeat(2,1fr)}.pfb-note{left:10px;width:calc(100% - 20px)}}`;
 function info(){let x={};try{x=(C.info&&C.info())||{}}catch(e){}
   return {company:String(x.company||'').slice(0,200),lic:String(x.lic||'').slice(0,60),page:String(x.page||'').slice(0,200)}}
 function device(){const u=navigator.userAgent,os=/Windows/.test(u)?'Windows':/Android/.test(u)?'Android':/iPhone|iPad|iPod/.test(u)?'iOS':/Mac/.test(u)?'Mac':/Linux/.test(u)?'Linux':'',
@@ -52,8 +79,73 @@ async function shrink(file){const url=await new Promise((ok,no)=>{const r=new Fi
 function setShot(d){SHOT=d||'';const a=D.querySelector('#pfbAt');a.innerHTML=SHOT?`<img src="${SHOT}" alt="รูปที่แนบ"><button type="button" class="pfb-b" data-f="unshot">เอารูปออก</button>`
   :`<button type="button" class="pfb-b" data-f="shot">📎 แนบรูปหน้าจอ</button><span>${mob()?'ไม่บังคับ':'หรือจับภาพหน้าจอแล้วกด Ctrl+V ในกล่องนี้'}</span>`}
 async function addImg(f){if(!f||!/^image\//.test(f.type))return;try{setShot(await shrink(f))}catch(e){setShot('')}}
+// ---- แชตตอบกลับ ----
+const when=t=>{try{return new Date(t).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}catch(e){return ''}};
+function mine(v){if(v===undefined){try{const a=JSON.parse(ls('penum.fb.mine')||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}ls('penum.fb.mine',JSON.stringify(v.slice(0,50)))}
+function tok(){const a=new Uint8Array(16);crypto.getRandomValues(a);return [...a].map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function rpc(fn,args){const r=await fetch(SB.url+'/rest/v1/rpc/'+fn,{method:'POST',cache:'no-store',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(args)});
+  if(!r.ok){let m='';try{m=(await r.json()).message||''}catch(e){}throw new Error(r.status===404?'nosql':/busy/.test(m)?'busy':m||String(r.status))}
+  const t=await r.text();return t?JSON.parse(t):null}
+const why=e=>e instanceof TypeError?'ไม่มีอินเทอร์เน็ต ลองใหม่เมื่อออนไลน์':e.message==='nosql'?'ระบบตอบกลับยังไม่เปิด ทีม ORIEN กำลังตั้งค่า ระหว่างนี้ทีมงานจะติดต่อกลับตามช่องทางที่ให้ไว้':e.message==='busy'?'ส่งถี่เกินไป รอสักครู่แล้วลองใหม่':'โหลดไม่ได้ ('+e.message+')';
+// the conversations of the messages sent from this device (at most 50)
+async function pull(){const M=mine();if(!M.length)return false;
+  try{const L=await rpc('penum_fb_mine',{p:M.map(x=>({id:x.id,t:x.t}))});TH={};(L||[]).forEach(f=>{TH[f.id]=f});TERR=''}catch(e){TERR=why(e);return false}
+  dots();return true}
+const unr=x=>{const f=TH[x.id];return f&&f.msgs?f.msgs.filter(m=>m.who==='orien'&&m.id>(x.seen||0)).length:0};
+const unread=()=>mine().reduce((n,x)=>n+unr(x),0);
+function seen(id){const M=mine(),x=M.find(y=>y.id==id),f=TH[id];if(!x||!f||!f.msgs)return;const top=Math.max(0,...f.msgs.map(m=>m.id));
+  if(top>(x.seen||0)){x.seen=top;x.nt=Math.max(x.nt||0,top);mine(M)}dots()}
+// a red dot on the menu entries that open this box while ORIEN has answered something not read yet
+function dots(){const n=unread();document.querySelectorAll('#btnFb,#menuFb,[data-a="fb"],[data-penum-fb]').forEach(el=>{const d=el.querySelector(':scope>.pfb-dot');
+  if(n&&!d)el.insertAdjacentHTML('beforeend','<span class="pfb-dot" data-noxl aria-hidden="true"></span>');else if(!n&&d)d.remove();
+  const sm=el.closest('details')&&el.closest('details').querySelector(':scope>summary');if(sm){const sd=sm.querySelector(':scope>.pfb-dot');if(n&&!sd)sm.insertAdjacentHTML('beforeend','<span class="pfb-dot" aria-hidden="true"></span>');else if(!n&&sd)sd.remove()}});
+  if(D&&D.open){const b=D.querySelector('[data-v=list]');if(b)b.innerHTML=tabTxt()}}
+const tabTxt=()=>{const c=mine().length,n=unread();return `💬 เรื่องที่ส่งแล้ว${c?' ('+c+')':''}${n?` <span class="pfb-n">${n}</span>`:''}`};
+function head(){return `<div class="pfb-hd"><div><b>แจ้งปัญหา / แสดงความคิดเห็น</b><small>ส่งถึงทีมผู้พัฒนา ${esc(C.name)} ที่ ORIEN โดยตรง ทุกข้อความมีคนอ่าน และตอบกลับในหน้านี้</small></div><button type="button" class="pfb-x" data-f="close" aria-label="ปิด">×</button></div>
+  <div class="pfb-tb" role="tablist"><button type="button" role="tab" data-v="new" aria-selected="${V==='new'}">✏️ ส่งเรื่องใหม่</button><button type="button" role="tab" data-v="list" aria-selected="${V!=='new'}">${tabTxt()}</button></div>`}
+function render(){if(V==='list')list();else if(V==='chat')chat();else form()}
+function list(){const M=mine();
+  D.innerHTML=head()+`<div class="pfb-bd">${TERR?`<div class="pfb-er">${esc(TERR)}</div>`:''}
+  ${M.length?`<div class="pfb-li">${M.map(x=>{const f=TH[x.id],k=KINDS.find(y=>y[0]===(f?f.kind:x.k))||KINDS[3],s=f&&ST[f.status],u=unr(x),ms=f&&f.msgs||[],l=ms[ms.length-1];
+    return `<button type="button" class="pfb-it${u?' un':''}" data-o="${esc(x.id)}"><span class="h"><b>#${esc(x.id)}</b><span>${k[1]} ${k[2]}</span>${s?`<span class="pfb-st ${s[1]}">${s[0]}</span>`:''}<span>${esc(when(x.at))}</span>${x.app&&x.app!==C.app?`<span>${esc(x.app)}</span>`:''}${u?`<span class="pfb-n">${u} ใหม่</span>`:''}</span>
+    <span class="m">${esc(x.m)}</span>${l?`<span class="l">${l.who==='cust'?'คุณ':esc(l.name||'ทีม ORIEN')}: ${esc(l.body)}</span>`:''}</button>`}).join('')}</div>`
+  :`<p style="margin:8px 0;color:#5E6E75">ยังไม่มีเรื่องที่ส่งจากเครื่องนี้ กด <b>ส่งเรื่องใหม่</b> แล้วคำตอบจากทีม ORIEN จะมาอยู่ที่นี่</p>`}
+  <div class="pfb-inf">เรื่องที่ส่งจากเครื่องนี้เท่านั้น เมื่อทีม ORIEN ตอบ โปรแกรมจะขึ้นแจ้งเตือนที่มุมซ้ายล่าง</div></div>
+  <div class="pfb-ft"><button type="button" class="pfb-b" data-f="reload">โหลดใหม่</button><button type="button" class="pfb-b" data-f="close">ปิด</button></div>`}
+function bubbles(){const x=mine().find(y=>y.id==CUR)||{},f=TH[CUR];
+  const L=[{who:'cust',body:f?f.message:x.m,at:f?f.at:x.at},...(f&&f.msgs||[])];
+  return L.map(m=>m.who==='cust'?`<div class="pfb-bb me">${esc(m.body)}<small>${esc(when(m.at))}</small></div>`
+    :`<div class="pfb-bb or${m.who==='auto'?' au':''}"><b>${esc(m.name||'ทีม ORIEN')}${m.who==='auto'?' · ตอบอัตโนมัติ':''}</b>${esc(m.body)}<small>${esc(when(m.at))}</small></div>`).join('')
+    +(f?'':`<div class="pfb-inf">${esc(TERR||'กำลังโหลดคำตอบ…')}</div>`)}
+function chat(){const x=mine().find(y=>y.id==CUR)||{},f=TH[CUR],k=KINDS.find(y=>y[0]===(f?f.kind:x.k))||KINDS[3],s=f&&ST[f.status],dr=D.querySelector('#pfbR');
+  D.innerHTML=head()+`<div class="pfb-bd" id="pfbBd">${OKID==CUR?`<div class="pfb-ok" style="padding:6px 0 2px;flex-direction:row;justify-content:center"><span class="big" style="font-size:26px">✅</span><span><b>ส่งถึงทีม ORIEN แล้ว</b> เลขที่เรื่อง <b>#${esc(CUR)}</b></span></div>`:''}
+  <div class="pfb-cht"><button type="button" class="pfb-b" data-f="back">‹ กลับ</button><b style="color:#1F2A30">#${esc(CUR)}</b><span>${k[1]} ${k[2]}</span><span id="pfbS">${s?`<span class="pfb-st ${s[1]}">${s[0]}</span>`:''}</span></div>
+  <div class="pfb-ch" id="pfbCh" aria-live="polite">${bubbles()}</div>
+  ${f&&f.status==='done'?'<div class="pfb-inf">เรื่องนี้ปิดแล้ว ถ้ายังมีปัญหา พิมพ์ตอบกลับได้ ทีมงานจะเปิดเรื่องใหม่</div>':''}<div id="pfbEr"></div></div>
+  <div class="pfb-ft pfb-wr"><textarea id="pfbR" maxlength="3000" placeholder="พิมพ์ตอบกลับทีม ORIEN…" title="Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่" aria-label="พิมพ์ตอบกลับ"></textarea><button type="button" class="pfb-b pri" data-f="rsend">ส่ง</button></div>`;
+  const r=D.querySelector('#pfbR');if(dr&&dr.value)r.value=dr.value;scrollEnd();seen(CUR)}
+const scrollEnd=()=>{const b=D.querySelector('#pfbBd');if(b)b.scrollTop=b.scrollHeight};
+// a poll refreshes only the bubbles, so what the customer is typing stays
+function refresh(){if(!D||!D.open)return;if(V==='list'){list();return}if(V!=='chat')return;const c=D.querySelector('#pfbCh');if(!c)return;
+  const n=c.children.length;c.innerHTML=bubbles();if(c.children.length!==n)scrollEnd();const f=TH[CUR],s=f&&ST[f.status],e=D.querySelector('#pfbS');if(e)e.innerHTML=s?`<span class="pfb-st ${s[1]}">${s[0]}</span>`:'';seen(CUR)}
+async function reply(){const ta=D.querySelector('#pfbR'),btn=D.querySelector('[data-f=rsend]'),b=ta.value.trim(),x=mine().find(y=>y.id==CUR);if(!b||!x)return;
+  btn.disabled=true;btn.textContent='กำลังส่ง…';
+  try{await rpc('penum_fb_reply',{p_id:+CUR,p_t:x.t,p_body:b,p_name:ls('penum.fb.contact').slice(0,100)});ta.value='';D.querySelector('#pfbEr').innerHTML='';await pull();refresh()}
+  catch(e){D.querySelector('#pfbEr').innerHTML=`<div class="pfb-er">ส่งไม่ได้: ${esc(why(e))}</div>`}
+  btn.disabled=false;btn.textContent='ส่ง';ta.focus()}
+function poll(on){clearInterval(PT);PT=on?setInterval(()=>{if(!document.hidden&&D.open&&V!=='new')pull().then(refresh)},20000):null}
+// in the background: a notice when ORIEN has answered, once per answer
+async function bg(){BGAT=Date.now();if(!mine().length||(D&&D.open))return;if(!await pull())return;const M=mine();let hit=null;
+  M.forEach(x=>{const f=TH[x.id];(f&&f.msgs||[]).forEach(m=>{if(m.who==='orien'&&m.id>Math.max(x.seen||0,x.nt||0)&&(!hit||m.id>hit.m.id))hit={x,m}})});
+  if(!hit)return;M.forEach(x=>{const f=TH[x.id];const top=Math.max(0,...(f&&f.msgs||[]).filter(m=>m.who==='orien').map(m=>m.id));if(top>(x.nt||0))x.nt=top});mine(M);note(hit.x.id,hit.m)}
+function note(id,m){if(NOTE)NOTE.remove();NOTE=document.createElement('div');NOTE.className='pfb-note';NOTE.setAttribute('role','status');
+  NOTE.innerHTML=`<div class="t"><span style="font-size:20px">💬</span><b>${esc(m.name||'ทีม ORIEN')} ตอบเรื่อง #${esc(id)} แล้ว</b><button type="button" class="x" data-n="x" aria-label="ปิด">×</button></div><div class="p">${esc(m.body)}</div>
+  <div class="r"><button type="button" class="pfb-b pri" data-n="open">เปิดอ่าน</button><button type="button" class="pfb-b" data-n="x">ไว้ทีหลัง</button></div>`;
+  NOTE.addEventListener('click',e=>{const n=(e.target.closest('[data-n]')||{}).dataset;if(!n||!n.n)return;NOTE.remove();NOTE=null;if(n.n==='open')window.penumFB.chat(id)});
+  if(!document.querySelector('style[data-pfb]'))css();document.body.append(NOTE)}
+function css(){const st=document.createElement('style');st.dataset.pfb='';st.textContent=CSS;document.head.append(st)}
 function form(){const I=info(),k=KINDS.find(x=>x[0]===K);
-  D.innerHTML=`<div class="pfb-hd"><div><b>แจ้งปัญหา / แสดงความคิดเห็น</b><small>ส่งถึงทีมผู้พัฒนา ${esc(C.name)} ที่ ORIEN โดยตรง ทุกข้อความมีคนอ่าน</small></div><button type="button" class="pfb-x" data-f="close" aria-label="ปิด">×</button></div>
+  D.innerHTML=head()+`
   <div class="pfb-bd"><div class="pfb-k" role="group" aria-label="เรื่องที่จะแจ้ง">${KINDS.map(x=>`<button type="button" data-k="${x[0]}" aria-pressed="${x[0]===K}"><span>${x[1]}</span>${x[2]}</button>`).join('')}</div>
   <label>รายละเอียด *<textarea id="pfbM" maxlength="5000" placeholder="${esc(k[3])}">${esc(ls('penum.fb.draft'))}</textarea></label>
   <div class="pfb-at" id="pfbAt"></div>
@@ -69,17 +161,23 @@ async function copyT(t){try{await navigator.clipboard.writeText(t);return true}c
 async function send(){const p=payload(),btn=D.querySelector('[data-f=send]');
   if(!p.message){D.querySelector('#pfbM').focus();D.querySelector('#pfbEr').innerHTML='<div class="pfb-er">พิมพ์รายละเอียดก่อนกดส่ง</div>';return}
   ls('penum.fb.contact',p.contact);btn.disabled=true;btn.textContent='กำลังส่ง…';
-  let id=null,why='ไม่มีอินเทอร์เน็ต หรือระบบรับเรื่องยังไม่เปิด';
-  try{const r=await fetch(SB.url+'/rest/v1/rpc/penum_fb_send',{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({p})});
+  let id=null,why='ไม่มีอินเทอร์เน็ต หรือระบบรับเรื่องยังไม่เปิด';const t=tok();
+  try{const r=await fetch(SB.url+'/rest/v1/rpc/penum_fb_send',{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({p:{...p,tok:t}})});
     if(r.ok)id=await r.json();else if(r.status===404)why='ระบบรับเรื่องยังไม่เปิด';else{let m='';try{m=(await r.json()).message||''}catch(e){}why=/busy/.test(m)?'มีคนส่งเข้ามามาก รอสักครู่แล้วลองใหม่':'ระบบรับเรื่องไม่ตอบ ('+r.status+')'}}catch(e){}
   if(id==null){btn.disabled=false;btn.textContent='ลองส่งอีกครั้ง';fail(p,why);return}
   ls('penum.fb.draft','');SHOT='';
-  D.innerHTML=`<div class="pfb-ok"><div class="big">✅</div><b style="font-size:18px">ส่งถึงทีม ORIEN แล้ว</b><span>เลขที่เรื่อง <b>#${esc(id)}</b> ขอบคุณที่ช่วยให้ ${esc(C.name)} ดีขึ้น${p.contact?'<br>ทีมงานจะติดต่อกลับตามที่ให้ไว้':''}</span><button type="button" class="pfb-b pri" data-f="close">ปิด</button></div>`}
+  // keep the number and its secret on this device, then show the conversation (the automatic acknowledgement comes first)
+  mine([{id,t,app:C.app,k:p.kind,m:p.message.slice(0,300),at:new Date().toISOString(),seen:0},...mine().filter(x=>x.id!=id)]);
+  OKID=id;CUR=id;V='chat';chat();poll(true);await pull();if(D.open&&V==='chat'&&CUR==id)chat()}
 function wire(){D=document.createElement('dialog');D.className='pfb';D.setAttribute('aria-label','แจ้งปัญหา / แสดงความคิดเห็น');document.body.append(D);
-  const st=document.createElement('style');st.textContent=CSS;document.head.append(st);
+  if(!document.querySelector('style[data-pfb]'))css();
+  D.addEventListener('close',()=>{poll(false);OKID=null});
   D.addEventListener('click',async e=>{const k=e.target.closest('[data-k]');
     if(k){K=k.dataset.k;D.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-pressed',b===k));D.querySelector('#pfbM').placeholder=KINDS.find(x=>x[0]===K)[3];return}
+    const v=e.target.closest('[data-v]');if(v){V=v.dataset.v;OKID=null;render();poll(V!=='new');if(V==='list')pull().then(refresh);return}
+    const o=e.target.closest('[data-o]');if(o){CUR=o.dataset.o;V='chat';chat();pull().then(refresh);setTimeout(()=>{const r=D.querySelector('#pfbR');if(r)r.focus()},30);return}
     const f=(e.target.closest('[data-f]')||{}).dataset;if(!f||!f.f)return;
+    if(f.f==='back'){V='list';OKID=null;list()}if(f.f==='reload'){e.target.textContent='กำลังโหลด…';pull().then(refresh)}if(f.f==='rsend')reply();
     if(f.f==='close')D.close();if(f.f==='send')send();if(f.f==='shot')D.querySelector('#pfbF').click();if(f.f==='unshot')setShot('');
     if(f.f==='copy'){const ok=await copyT(plain(payload()));e.target.textContent=ok?'คัดลอกแล้ว ✓':'คัดลอกไม่ได้'}
     if(f.f==='line'){const t=plain(payload());if(mob()){open(`https://line.me/R/oaMessage/${encodeURIComponent(LINE)}/?${encodeURIComponent(t)}`,'_blank');return}
@@ -87,7 +185,16 @@ function wire(){D=document.createElement('dialog');D.className='pfb';D.setAttrib
       D.querySelector('#pfbLn').innerHTML=`${ok?'คัดลอกข้อความไว้แล้ว':'กด คัดลอกข้อความ ก่อน'} เปิด LINE › เพิ่มเพื่อน › ค้นหาไอดี <b>${LINE}</b> › เปิดแชท › วาง (Ctrl+V) › ส่ง หรือสแกน QR ในหน้าที่เพิ่งเปิดด้วยมือถือ`}});
   D.addEventListener('input',e=>{if(e.target.id==='pfbM')ls('penum.fb.draft',e.target.value)});
   D.addEventListener('paste',e=>{const f=[...((e.clipboardData||{}).files||[])].find(x=>/^image\//.test(x.type));if(f){e.preventDefault();addImg(f)}});
-  D.addEventListener('keydown',e=>e.stopPropagation())}
-window.penumFB={init(o){Object.assign(C,o||{})},
-  open(kind){if(!D)wire();if(kind)K=kind;form();if(!D.open)D.showModal();build().then(()=>{const i=D.querySelector('.pfb-inf');if(i&&BUILD){const I=info();i.textContent=`ส่งไปพร้อมกัน: ${C.name} ${verTxt()}${I.page?' · หน้า '+I.page:''}${I.company?' · '+I.company:''}`}});setTimeout(()=>{const m=D.querySelector('#pfbM');if(m)m.focus()},50)}};
+  D.addEventListener('keydown',e=>{e.stopPropagation();if(e.target.id==='pfbR'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();reply()}})}
+let started=false;
+window.penumFB={init(o){Object.assign(C,o||{});if(started)return;started=true;
+    // look for answers a few seconds after the page opens, then every 3 minutes while the window is in front
+    setTimeout(bg,6000);setInterval(()=>{if(!document.hidden)bg()},180000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-BGAT>60000)bg()})},
+  unread,check:bg,
+  // เรื่องที่ส่งแล้ว, or one conversation
+  inbox(){if(!D)wire();V='list';OKID=null;list();if(!D.open)D.showModal();poll(true);pull().then(refresh)},
+  chat(id){if(!D)wire();V='chat';CUR=String(id);OKID=null;if(!D.open)D.showModal();chat();poll(true);pull().then(refresh)},
+  open(kind){if(!kind&&unread())return this.inbox();
+    if(!D)wire();if(kind)K=kind;V='new';OKID=null;poll(false);form();if(!D.open)D.showModal();build().then(()=>{const i=V==='new'&&D.querySelector('.pfb-inf');if(i&&BUILD){const I=info();i.textContent=`ส่งไปพร้อมกัน: ${C.name} ${verTxt()}${I.page?' · หน้า '+I.page:''}${I.company?' · '+I.company:''}`}});setTimeout(()=>{const m=D.querySelector('#pfbM');if(m)m.focus()},50)}};
 })();
