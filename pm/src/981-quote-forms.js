@@ -526,7 +526,7 @@ HOOK.push(p=>{const m=p.match(/^co\.quotes\.([^.]+)\.disc$/);if(!m)return;const 
   if(n(W.i))p.war.push({id:uid(),item:'รับประกันผลงานติดตั้ง',vendor:co,start:st,months:n(W.i),note:'นับจากวันส่งมอบงาน (ตามใบเสนอราคา '+(Q.no||'')+')'});
   if(hasE&&n(W.ep))p.war.push({id:uid(),item:'รับประกันตัวเครื่อง: อะไหล่',vendor:'',start:st,months:n(W.ep),note:'ตามเงื่อนไขผู้ผลิต'});
   if(hasE&&n(W.ec))p.war.push({id:uid(),item:'รับประกันคอมเพรสเซอร์',vendor:'',start:st,months:n(W.ec),note:'ตามเงื่อนไขผู้ผลิต'});
-  const I=p.inst||[],ret=W.m?n(W.ret):0,sub=I.filter(x=>!(Q.eqSep&&!W.e&&/^E/.test(String(x.no||'')))),r=v=>Math.round(v*1000)/1000;
+  const I=p.inst||[],ret=W.m?n(W.ret):0,sub=I.filter(x=>!(Q.eqSep&&!W.e&&/^E/.test(String(x.no||'')))),r=v=>Math.round(v*1e6)/1e6;
   I.forEach(x=>{x.rp=0;delete x.rx});if(ret&&sub.length){if(W.m==='last')sub[sub.length-1].rx=r(ret*sum(sub,x=>n(x.pct))/100);else sub.forEach(x=>x.rp=ret)}
   p.info.ret=I.length?0:ret;save();render()}}
 // a claim on an งวด with its own retention deducts that, in place of the project's one rate
