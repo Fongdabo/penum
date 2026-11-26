@@ -26,9 +26,16 @@ ACT.instFromQ=()=>{const Q=iqQuote(P);if(!Q)return;const L=iqBuild(Q);if(!L.leng
     const it=Object.assign({id:o?o.id:uid(),task:o?o.task||'':'',date:o?o.date||'':''},x);return it});
   const gone=new Set(old.filter(y=>!used.has(y)).map(y=>y.id));(P.bills||[]).forEach(b=>{if(b.inst&&gone.has(b.inst))b.inst=''});
   P.info.billMode='pct';if(Q.eqSep&&Q.whtB!=='none'&&P.inst.some(x=>x.wp!==undefined))P.info.wht=Math.round(3*qmWhtShare(Q)*1000)/1000;
-  if(P.inst.some(x=>x.rp!==undefined||x.rx!==undefined))P.info.ret=0;save();render();
+  if(P.inst.some(x=>x.rp!==undefined||x.rx!==undefined))P.info.ret=0;save();if(!iqQuiet)render();
   toast(`ตั้งงวดตาม ${Q.no||'ใบเสนอราคา'} แล้ว ${P.inst.length} งวด รวม ${fmt(sum(P.inst,x=>n(x.pct)),1)}%`)};
-{const f=costBill;costBill=function(){let h=f.apply(this,arguments);if(P.info.billMode!=='pct')return h;const Q=iqQuote(P);if(!Q)return h;
+// 4.99.74 (user: "ไม่แยกตามใบเสนอราคาเลย"): a schedule that came from a split quote, does not add up to 100% and has no claim yet
+// is set again by itself when the page opens, so nobody has to find the button
+let iqQuiet=0;
+function iqAuto(){if(!P||P.info.billMode!=='pct')return;const I=P.inst||[],Q=iqQuote(P);if(!Q||!Q.eqSep||!I.length)return;
+  if(Math.abs(sum(I,x=>n(x.pct))-100)<0.01||!I.every(x=>/^[ES]\d/.test(String(x.no||'')))||(P.bills||[]).some(b=>b.inst&&I.some(x=>x.id===b.inst)))return;
+  const L=iqBuild(Q);if(!L.length||Math.abs(sum(L,x=>n(x.pct))-100)>0.01)return;const cf=window.confirm;window.confirm=()=>true;
+  iqQuiet=1;try{ACT.instFromQ()}finally{window.confirm=cf;iqQuiet=0}}
+{const f=costBill;costBill=function(){try{iqAuto()}catch(e){}let h=f.apply(this,arguments);if(P.info.billMode!=='pct')return h;const Q=iqQuote(P);if(!Q)return h;
   const lab=`ตั้งงวดตามใบเสนอราคา ${esc(Q.no||'')}`;
   h=h.replace('<button type="button" class="btn sm" data-a="instGen">',`<button type="button" class="btn sm" data-a="instFromQ" title="แทนที่งวดงานด้วยงวดเงินในใบเสนอราคา${Q.eqSep?' (ค่าเครื่อง + ค่าติดตั้ง คิดเป็น % ของทั้งสัญญา)':''}">${lab}</button>$&`);
   return h.replace(/(<span class="pill warn">รวม [^<]*% ยังไม่เท่ากับ 100%<\/span>)/,`$1 <button type="button" class="btn sm pri" data-a="instFromQ">${lab}</button>`)}}
