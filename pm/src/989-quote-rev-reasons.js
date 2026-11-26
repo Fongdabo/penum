@@ -10,7 +10,7 @@ const qrr=(()=>{
   const few=(a,k,w)=>a.slice(0,k).map(s=>w?s:cut(s,40)).join(', ')+(a.length>k?` และอีก ${a.length-k}`:'');
   const pr=(o,i)=>['m','l','sp'].some(k=>n(o[k])!==n(i[k]));
   const lines=Q=>(Q.items||[]).filter(i=>!i.hs);
-  const pc=v=>fmt(n(v),2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1'),sv=v=>v==null?'':typeof v==='object'?JSON.stringify(v):String(v);
+  const pc=v=>fmt(n(v),2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1'),sv=v=>v==null||typeof qrvEmpty==='function'&&qrvEmpty(v)?'':typeof v==='object'?JSON.stringify(v):String(v);
   const addV=a=>a?(a.pct!==''&&a.pct!=null&&n(a.pct)?pc(a.pct)+'%':pc(a.amt)):'';
   const HEAD={title:'ชื่องาน',cust:'ลูกค้า',site:'สถานที่',ref:'อ้างอิง',no:'เลขที่',date:'วันที่',valid:'ยืนราคา',terms:'เงื่อนไข',note:'หมายเหตุ',sow:'ขอบเขตงาน',pname:'ชื่อโครงการ'};
   const MK={mk:'Markup',mkM:'Markup ของ',mkL:'Markup ค่าแรง'};

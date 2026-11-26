@@ -7,13 +7,24 @@
 const QRV_SKIP=['revs','cmts','appr','lowReq','lowOk','lowNo','status','pj'],QRV_NOSIG=['hid'];
 const qrvSnap=Q=>{const o={};Object.keys(Q).forEach(k=>{if(QRV_SKIP.includes(k)||k[0]==='_')return;const v=Q[k];if(typeof v==='string'&&v.length>40000)return;o[k]=v});return JSON.parse(JSON.stringify(o))};
 // the hanger lines (982 qlHs) are brought up to date first, as the page and the print do, so they never count as an edit
-const qrvSig=Q=>{if(typeof qlHs==='function')try{qlHs(Q)}catch(e){}const o=qrvSnap(Q);QRV_NOSIG.forEach(k=>delete o[k]);const s=JSON.stringify(o);let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)+s.length.toString(36)};
-const qrvLast=Q=>(Q.revs||[])[(Q.revs||[]).length-1]||null;
+// 4.99.82 an empty field ('' / null / [] / {}) counts as no field: opening the quote page adds empty sow / qpay lists to a quote, and that
+// alone made it "edited after Rev.N" (a Rev. kept from the list, by ส่งแล้ว or รับงานสด, showed Rev.N+1 as soon as the quote was opened)
+const qrvEmpty=v=>v==null||v===''||Array.isArray(v)&&!v.length||typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length;
+const qrvSigOf=o=>{o=Object.assign({},o);QRV_NOSIG.forEach(k=>delete o[k]);Object.keys(o).forEach(k=>{if(qrvEmpty(o[k]))delete o[k]});const s=JSON.stringify(o);let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)+s.length.toString(36)};
+const qrvSig=Q=>{if(typeof qlHs==='function')try{qlHs(Q)}catch(e){}return qrvSigOf(qrvSnap(Q))};
+// a Rev. kept before 4.99.82 has its sig worked out again from its own copy, the way qrvSig works now
+const qrvSigFix=r=>{if(r&&r.snap&&r.sv!==2){r.sig=qrvSigOf(r.snap);r.sv=2}return r};
+const qrvLast=Q=>qrvSigFix((Q.revs||[])[(Q.revs||[]).length-1]||null);
 // the number the quote has now: the last Rev. when nothing changed, else the next one
-const qrvCur=Q=>{const L=qrvLast(Q);if(!L)return {n:0,dirty:true,none:true};const d=L.sig!==qrvSig(Q);return {n:d?L.n+1:L.n,dirty:d}};
+// 4.99.82 (user, 2026-11-26, QT-010: Rev.3 kept at 16:42, then the discount was set again for the same 1,100,000 and the preview, the
+// อ้างอิง chip and the printout said Rev.4: "Rev.3 ไม่ใช่หรอ"): an edit that leaves the price as it was in the last Rev. keeps that
+// number, as พิมพ์ already suggests (989-quote-rev-merge-ask: ใช้ Rev.N เดิม) and same-price Revs. join (4.99.53); same marks it.
+// A new number at the same price is still one click: บันทึกเป็น Rev. ใหม่, or เก็บเป็น Rev. ใหม่ when printing
+const qrvCur=Q=>{const L=qrvLast(Q);if(!L)return {n:0,dirty:true,none:true};const d=L.sig!==qrvSig(Q);if(!d)return {n:L.n,dirty:false};
+  const same=!!(L.sum&&L.sum.net!=null)&&Math.abs(n(qrvSum(Q).net)-n(L.sum.net))<0.005;return {n:same?L.n:L.n+1,dirty:true,same}};
 const qrvSum=Q=>{try{const R=typeof qrNow==='function'?qrNow(Q):null,c=R?R.c:qCalc(Q);return {net:c.net,cost:c.cost,grand:c.grand,np:R?R.np:c.net-c.cost,npc:R?R.npc:(c.net?(c.net-c.cost)*100/c.net:0)}}catch(e){return {}}};
 function qrvSave(Q,why,note){const L=qrvLast(Q),sig=qrvSig(Q);if(L&&L.sig===sig)return null;const u=typeof me==='function'&&me();
-  const r={id:uid(),n:L?L.n+1:0,at:new Date().toISOString(),by:u?u.name:'ผู้ดูแลระบบ',why,note:note||'',sig,snap:qrvSnap(Q),sum:qrvSum(Q)};Q.revs=Q.revs||[];Q.revs.push(r);return r}
+  const r={id:uid(),n:L?L.n+1:0,at:new Date().toISOString(),by:u?u.name:'ผู้ดูแลระบบ',why,note:note||'',sig,sv:2,snap:qrvSnap(Q),sum:qrvSum(Q)};Q.revs=Q.revs||[];Q.revs.push(r);return r}
 const qrvWhen=s=>{const d=new Date(s);return isNaN(d)?'':thD(s.slice(0,10))+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
 const QRV_WHY={print:'พิมพ์ใบลูกค้า',sent:'ส่งลูกค้า',hand:'บันทึกเอง'};
 // a Rev. as a quote object the price functions can read
@@ -48,6 +59,9 @@ ACT.qrvSetN=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q||!(Q.item
   const v=prompt('เลข Rev. ของใบนี้ (0 = ฉบับแรก ไม่พิมพ์คำว่า Rev.)',String(c.none?0:c.n));if(v===null)return;const k=parseInt(String(v).replace(/^\s*r(ev)?\.?\s*/i,''),10);
   if(!(k>=0)){toast('ใส่เป็นตัวเลข เช่น 0, 1, 2');return}
   // 4.99.42 no two Revs. with one number, no going backwards: the new number must be above the Rev. kept before this one
+  // 4.99.82 the last Rev.'s own number while the quote is edited after it: the last Rev. takes this copy (as ใช้ Rev.N เดิม when printing)
+  {const L=qrvLast(Q);if(c.dirty&&L&&k===n(L.n)){if(!confirm(`ใช้เลข Rev.${k} เดิม? ฉบับที่เก็บเป็น Rev.${k} จะเปลี่ยนเป็นข้อความและราคาตอนนี้ (ใช้เมื่อ Rev.${k} ฉบับเก่ายังไม่ได้ส่งลูกค้า)`))return;
+    if(typeof qraTake==='function')qraTake(Q);else Object.assign(L,{at:new Date().toISOString(),sig:qrvSig(Q),snap:qrvSnap(Q),sum:qrvSum(Q)});save();render();toast(`ใบนี้เป็น Rev.${k} แล้ว`);return}}
   {const R=Q.revs||[],pv=c.dirty?R[R.length-1]:R[R.length-2];if(pv&&k<=n(pv.n)){toast(`เลข Rev. ต้องมากกว่า Rev.${pv.n} ที่เก็บไว้ก่อนหน้า (ใส่ ${n(pv.n)+1} ขึ้นไป)`);return}}
   const r=qrvSave(Q,'hand','ตั้งเลขเอง')||qrvLast(Q);r.n=k;save();render();toast(`ใบนี้เป็น Rev.${k} แล้ว`)};
 ACT.qrvNew=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id);if(!Q)return;const L=qrvLast(Q);if(L&&L.sig===qrvSig(Q)){toast(`ยังไม่ได้แก้อะไรจาก Rev.${L.n}`);return}
@@ -75,7 +89,7 @@ document.addEventListener('change',e=>{const t=e.target;if(t&&t.dataset&&t.datas
 // ---- the card on the quote page
 function qrvCard(Q){if(!Q||!(Q.items||[]).length)return '';const R=Q.revs||[],cur=qrvCur(Q),L=qrvLast(Q);
   const st=!L?'ยังไม่มี Rev. ระบบจะเก็บ <b>Rev.0</b> ให้เองเมื่อเปลี่ยนสถานะเป็นส่งแล้ว (พิมพ์ร่างดูเองไม่นับ)'
-    :cur.dirty?`แก้ไขหลัง Rev.${L.n} แล้ว ${qrvSent(Q)?'พิมพ์หรือส่ง':'เปลี่ยนเป็นส่งแล้ว'}ครั้งหน้าจะเก็บเป็น <b>Rev.${cur.n}</b>`:`ตรงกับ <b>Rev.${L.n}</b> ที่เก็บไว้ล่าสุด`;
+    :cur.dirty?`แก้ไขหลัง Rev.${L.n} แล้ว${cur.same?` ราคาเท่าเดิม ใบที่พิมพ์ยังเป็น <b>Rev.${L.n}</b>`:''} ${qrvSent(Q)?'พิมพ์หรือส่ง':'เปลี่ยนเป็นส่งแล้ว'}ครั้งหน้าจะเก็บเป็น <b>Rev.${L.n+1}</b>`:`ตรงกับ <b>Rev.${L.n}</b> ที่เก็บไว้ล่าสุด`;
   // a revision typed by hand in อ้างอิง or after the number: tell the user the print uses the history instead
   const hr=qrvHand(Q.ref),hn=qrvNo(Q.no)!==String(Q.no||'')?String(Q.no).slice(qrvNo(Q.no).length).trim():'',kp=cur.n;
   const warn=(hr||hn)&&R.length?`<div class="qrv-w" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:color-mix(in srgb,#F59E0B 14%,transparent);font-size:12.5px">พิมพ์ Rev. เองไว้ที่${hr?` อ้างอิง (<b>${esc(hr)}</b>)`:''}${hr&&hn?' และ':''}${hn?` เลขที่ (<b>${esc(hn)}</b>)`:''} ใบที่พิมพ์จะไม่ใช้ค่านี้ แต่ใส่ <b>${kp>0?'Rev.'+kp:'ไม่มี Rev. (ฉบับแรก)'}</b> จากประวัติในช่องอ้างอิงให้เอง ลบออกจากช่องได้เลยเพื่อไม่ให้สับสน</div>`:'';
@@ -110,6 +124,7 @@ const QRV_TIDIED=new Set();
 // itself when a quote already sent is edited; a badge by the top buttons says which Rev. the quote is on and opens the Rev. card
 const qrvBadge=Q=>{if(!Q||!(Q.items||[]).length)return '';const R=Q.revs||[],c=qrvCur(Q),L=qrvLast(Q);
   const [t,tip,cl]=!L?['ฉบับแรก · ยังไม่มี Rev.','ยังไม่ได้ส่งลูกค้า แก้ได้เลยไม่นับเป็น Rev. ระบบเก็บ Rev.0 ให้เองเมื่อเปลี่ยนสถานะเป็นส่งแล้ว','']
+    :c.dirty&&c.same?[`Rev.${L.n} · แก้แล้ว ราคาเท่าเดิม`,`แก้ไขหลัง Rev.${L.n} แต่ราคาเท่าเดิม ใบที่พิมพ์ตอนนี้ยังขึ้น Rev.${L.n} ถ้าต้องการเลขใหม่ กดบันทึกเป็น Rev. ใหม่ (Rev.${L.n+1})`,' dirty']
     :c.dirty?[`กำลังแก้เป็น Rev.${c.n}`,`แก้ไขหลัง Rev.${L.n} ที่ส่งไปแล้ว ใบที่พิมพ์ตอนนี้ขึ้น Rev.${c.n} และจะเก็บเป็น Rev.${c.n} เมื่อพิมพ์ใบลูกค้าหรือกดบันทึกเป็น Rev. ใหม่`,' dirty']
     :[`Rev.${L.n}`,`ตรงกับ Rev.${L.n} ที่เก็บไว้ แก้อะไรก็ตามจะกลายเป็น Rev.${L.n+1} ให้เอง`,''];
   return `<button type="button" class="btn sm qrv-bdg${cl}" data-a="qrvGo" title="${esc(tip)}">${esc(t)}</button>`};
