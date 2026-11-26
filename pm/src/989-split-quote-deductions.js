@@ -12,14 +12,36 @@ const sqdQ=p=>(CO().quotes||[]).find(q=>q.pj===p.id&&q.status==='won')||null;
 function sqdAdvFix(){let ch=0;Object.values(DB.projects||{}).forEach(p=>{const I=p.info;if(!I||I.advQ||!n(I.adv))return;let Q;try{Q=sqdQ(p)}catch(e){return}if(!Q)return;
   const B=p.bills||[];if(B.some(x=>x.kind==='adv'||((x.kind||'prog')==='prog'&&x.status&&x.status!=='draft')))return;I.adv=0;I.advQ=1;ch=1});return ch}
 {const r=render;render=function(){try{if(sqdAdvFix())save()}catch(e){}return r.apply(this,arguments)}}
-{const f=VIEWS.cost;VIEWS.cost=()=>{let h=f();if((S.sub.cost||'sum')!=='bill'||P.info.billMode!=='pct')return h;const I=P.inst||[];
-  const E=I.filter(x=>/^E\d/.test(String(x.no||''))),Sv=I.filter(x=>/^S\d/.test(String(x.no||'')));if(!E.length||!Sv.length)return h;
-  const C=contract(),pE=sum(E,x=>n(x.pct)),pS=sum(Sv,x=>n(x.pct)),aE=C.total*pE/100,aS=C.total*pS/100,
-    wS=Math.max(0,...Sv.map(x=>n(x.wp))),wE=Math.max(0,...E.map(x=>n(x.wp)));
-  if(I.some(x=>x.wp!==undefined&&x.wp!==''))h=h.replace(/(<input data-t="num" data-p="info\.wht" value="[^"]*">)/,
-    `$1<small class="muted">แต่ละงวดหักตามใบเสนอราคา: ค่าเครื่อง ${wE?`หัก ${fmtq(wE)}%`:'ไม่หัก'} · ค่าติดตั้ง หัก ${fmtq(wS)}% ของยอดเบิกงวดนั้น (${fmt(aS*wS/100,2)} บาท จากค่าติดตั้ง ${fmt(aS,2)}) · ช่องนี้เป็นค่าเฉลี่ยทั้งสัญญา</small>`);
-  const rx=sum(I,x=>n(x.rx)),rpS=Math.max(0,...Sv.map(x=>n(x.rp))),rpE=Math.max(0,...E.map(x=>n(x.rp)));
-  if(rx||rpS){const base=rpE||E.some(x=>n(x.rx))?aE+aS:aS,pc=rx?C.total*rx/base:rpS,amt=rx?C.total*rx/100:base*rpS/100;
-    h=h.replace(/(<input data-t="num" data-p="info\.ret" value="[^"]*">(?:<small class="muted">[^<]*<\/small>)?)/,
-      `$1<small class="muted">= ${fmtq(pc)}% ของ${base===aS?'ค่าติดตั้ง':'มูลค่าสัญญา'} ${fmt(base,2)} = <b>${fmt(amt,2)} บาท</b>${base===aS?' · ค่าเครื่องไม่หักประกันผลงาน':''}</small>`)}
-  return h}}
+/* 4.99.79 (user: "ผมว่าแยกตามเลขใบเสนอราคาเลยดีไหมจะได้ไม่งง"): with งวด from both quotations the blended boxes หักประกันผลงาน,
+   หักเมื่อไร and หัก ณ ที่จ่าย give way to one row per quotation number (<no>-1 ค่าเครื่อง, <no>-2 ค่าติดตั้ง): its value, withholding %
+   and baht, retention %, when it is held and baht. Typing there sets that quotation's งวด (it.wp; it.rp every claim, or it.rx on its
+   last งวด), which is what claims use. A retention held at the end follows the งวด % when they are edited later (P.info.qpr). */
+const sqdParts=()=>{const I=P.inst||[];return {E:I.filter(x=>/^E\d/.test(String(x.no||''))),S:I.filter(x=>/^S\d/.test(String(x.no||'')))}};
+const sqdNow=L=>{const pc=sum(L,x=>n(x.pct)),rx=sum(L,x=>n(x.rx)),rp=Math.max(0,...L.map(x=>n(x.rp)));
+  return {pc,w:Math.max(0,...L.map(x=>n(x.wp))),m:rx?"last":"",r:rx?(pc?Math.round(rx*1e6/pc)/1e4:0):rp}};
+function sqdRet(L,r,m){const pc=sum(L,x=>n(x.pct));L.forEach(x=>{x.rp=0;delete x.rx});if(!r||!L.length)return;
+  if(m==='last'){const z=L[L.length-1];z.rx=Math.round(r*pc*1e4)/1e6}else L.forEach(x=>x.rp=r)}
+// a retention held at the end follows the งวด as they change
+{const f=VIEWS.cost;VIEWS.cost=()=>{try{const Q=P.info.qpr;if(Q&&P.info.billMode==='pct'){const G=sqdParts();['E','S'].forEach(k=>{const q=Q[k];if(q&&q.m==='last'&&G[k].length){
+  const want=Math.round(n(q.r)*sum(G[k],x=>n(x.pct))*1e4)/1e6,z=G[k][G[k].length-1];if(Math.abs(n(z.rx)-want)>1e-6||G[k].some(x=>x!==z&&n(x.rx)))sqdRet(G[k],n(q.r),'last')}})}}catch(e){}return f()}}
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('sqd')||!P)return;e.stopImmediatePropagation();
+  const k=t.dataset.k,G=sqdParts()[k];if(!G||!G.length)return;const cur=sqdNow(G),v=t.dataset.f==='m'?t.value:n(String(t.value).replace(/,/g,''));
+  if(t.dataset.f==='w')G.forEach(x=>x.wp=v);
+  else{const r=t.dataset.f==='r'?v:cur.r,m=t.dataset.f==='m'?v:cur.m;sqdRet(G,r,m);P.info.qpr=P.info.qpr||{};P.info.qpr[k]={r,m}}
+  P.info.ret=0;P.info.iqAuto=1;save();rerender()},true);
+{const f=VIEWS.cost;VIEWS.cost=()=>{let h=f();if((S.sub.cost||'sum')!=='bill'||P.info.billMode!=='pct')return h;const G=sqdParts();if(!G.E.length||!G.S.length)return h;
+  const C=contract(),Q=(typeof iqQuote==='function'&&iqQuote(P))||{},no=Q.no||'',d=document.createElement('div');d.innerHTML=h;
+  const kill=sel=>{const e=d.querySelector(sel),l=e&&e.closest('label');if(l)l.remove();return l};
+  const l1=d.querySelector('input[data-p="info.ret"]'),form=l1&&l1.closest('.form');if(!form)return h;
+  kill('input[data-p="info.ret"]');kill('select[data-p="info.retMode"]');kill('input[data-p="info.wht"]');
+  const row=(k,lab)=>{const L=G[k],x=sqdNow(L),a=C.total*x.pc/100,id=no?`${no}-${k==='E'?1:2}`:(k==='E'?'ค่าเครื่อง':'ค่าติดตั้ง');
+    return `<tr><td><b>${esc(id)}</b></td><td>${lab}</td><td class="r">${fmt(a,2)}</td>
+      <td><input class="r sqd" inputmode="decimal" data-k="${k}" data-f="w" value="${fmtq(x.w)}" aria-label="หัก ณ ที่จ่าย ${esc(id)}"></td><td class="r">${fmt(a*x.w/100,2)}</td>
+      <td><input class="r sqd" inputmode="decimal" data-k="${k}" data-f="r" value="${x.r?fmtq(x.r):'0'}" aria-label="หักประกันผลงาน ${esc(id)}"></td>
+      <td><select class="sqd" data-k="${k}" data-f="m" aria-label="หักประกันผลงานเมื่อไร ${esc(id)}"><option value=""${x.m?'':' selected'}>หักทุกงวด</option><option value="last"${x.m==='last'?' selected':''}>หักครั้งเดียวในงวดสุดท้าย</option></select></td>
+      <td class="r">${fmt(a*x.r/100,2)}</td></tr>`};
+  const t=document.createElement('div');t.className='sqd-box';
+  t.innerHTML=`<h3 style="margin:14px 0 6px;font-size:15px">หัก ณ ที่จ่าย และประกันผลงาน แยกตามเลขใบเสนอราคา</h3><div class="tw"><table><thead><tr><th>เลขที่ใบเสนอราคา</th><th>ส่วน</th><th class="r">มูลค่า (ไม่รวม VAT)</th><th class="r">หัก ณ ที่จ่าย (%)</th><th class="r">หัก ณ ที่จ่าย (บาท)</th><th class="r">หักประกันผลงาน (%)</th><th>หักเมื่อไร</th><th class="r">ประกันผลงาน (บาท)</th></tr></thead>
+    <tbody>${row('E','ค่าเครื่อง (สินค้า)')}${row('S','ค่าติดตั้ง วัสดุ และค่าแรง')}</tbody></table></div><p class="hint" style="margin:4px 0 0">ใบเบิกแต่ละงวดหักตามใบเสนอราคาของงวดนั้น แก้ตัวเลขในตารางนี้ได้เลย</p>`;
+  form.after(t);return d.innerHTML}}
+document.head.insertAdjacentHTML('beforeend','<style>.sqd-box input.sqd{width:100%;min-width:80px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:transparent;color:inherit;font:inherit}.sqd-box select.sqd{min-width:190px}</style>');
