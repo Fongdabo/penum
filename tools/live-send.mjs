@@ -27,6 +27,8 @@ if (app === 'pm') {
   // quotes of these projects (q.pj), from a file that carries them: {…, quotes:[…]}
   if (Array.isArray(o.quotes)) extra.quotes = o.quotes.filter(q => projects[q.pj]);
   // bids (ทำราคาประมูล: ปร.4 / ปร.5) of these projects (t.pj), from a file that carries them: {…, tenders:[…]}
+  // customers those quotes name (PM 4.99.72): {…, customers:[{id, name, contact, phone, email, tax, addr, credit}]}, q.cust = the id
+  if (Array.isArray(o.customers)) extra.customers = o.customers;
   if (Array.isArray(o.tenders)) extra.tenders = o.tenders.filter(t => projects[t.pj]);
   // TORs of these projects (PM 4.99.56, ขาย › TOR): {…, tors:[…]} with t.pj = the project id; their files ride in photos
   if (Array.isArray(o.tors)) extra.tors = o.tors.filter(t => projects[t.pj]);
