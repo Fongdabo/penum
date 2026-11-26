@@ -16,12 +16,21 @@ if(window.penumLive){
       const p=migrate(JSON.parse(JSON.stringify(data)));p.id=id;
       for(const [k,v] of Object.entries((extra&&extra.photos)||{}))IDB.put(k,v).catch(()=>{});
       if(DB.projects[id]&&DB.projects[id].jn&&!p.jn)p.jn=DB.projects[id].jn;// 4.99.39: keep the job's งานที่ N (989-job-numbers)
-      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,(extra&&extra.quotes)||[]);liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);if(typeof liveTors==='function')liveTors(id,(extra&&extra.tors)||[]);
+      DB.projects[id]=p;if(P&&P.id===id)P=p;liveQuotes(id,liveCust((extra&&extra.customers)||[],(extra&&extra.quotes)||[]));liveTenders(id,(extra&&extra.tenders)||[]);liveTPatch(id,(extra&&extra.tpatch)||[]);if(typeof liveTors==='function')liveTors(id,(extra&&extra.tors)||[]);
       if(first){DB.cur=id;P=p;S.mode='pj';S.tab='dash';S.sel={}}          // just accepted: open it, so the customer watches it fill
       save(true);render();return true}});
   // quotes are the company's (DB.co.quotes): only ones for this project (q.pj), new ones get the next free number here,
   // and a quote already here is replaced only if it came in this way (DB.co.live.q), keeping its number
   const LIVE_META=['revs','cmts','appr','status','lowReq','lowOk','lowNo'];if(typeof QRV_WHY==='object')QRV_WHY.live='ก่อนรับงานสดรอบใหม่';
+  // 4.99.72 ("เพิ่มลูกค้าให้ด้วย"): customers sent with the quotes go into ทะเบียนลูกค้า. One already here (same id, same tax ID or
+  // same name) is reused and only its empty fields are filled; the quotes' cust then points at the customer here.
+  function liveCust(CL,QL){if(!CL.length)return QL;const C=DB.co.customers=DB.co.customers||[],nm=x=>String(x||'').replace(/\(.*?\)/g,'').replace(/\s+/g,'').toLowerCase(),map={};
+    for(const src of CL){if(!src||!src.id||!String(src.name||'').trim())continue;
+      let c=C.find(x=>x.id===src.id)||(String(src.tax||'').trim()&&C.find(x=>String(x.tax||'').trim()===String(src.tax).trim()))||C.find(x=>nm(x.name)===nm(src.name));
+      if(c){for(const [k,v] of Object.entries(src))if(k!=='id'&&!String(c[k]??'').trim()&&String(v??'').trim())c[k]=v}
+      else{c=Object.assign(typeof NEW==='object'&&NEW.customers?NEW.customers():{},JSON.parse(JSON.stringify(src)));C.push(c)}
+      map[src.id]=c.id}
+    return QL.map(q=>q&&map[q.cust]?Object.assign({},q,{cust:map[q.cust]}):q)}
   function liveQuotes(pid,L){const Q=DB.co.quotes=DB.co.quotes||[],lv=DB.co.live=DB.co.live||{},got=lv.q=lv.q||{};
     for(const src of L){if(!src||!src.id||src.pj!==pid)continue;const q=JSON.parse(JSON.stringify(src)),i=Q.findIndex(x=>x.id===q.id);
       if(i>=0){if(!got[q.id])continue;q.no=Q[i].no;liveKeep(q,Q[i],Q);qrvDedupe(q);liveSig(q);Q[i]=q}
