@@ -31,17 +31,31 @@ ACT.instFromQ=()=>{const Q=iqQuote(P);if(!Q)return;const L=iqBuild(Q);if(!L.leng
 // 4.99.74 (user: "ไม่แยกตามใบเสนอราคาเลย"): a schedule that came from a split quote, does not add up to 100% and has no claim yet
 // is set again by itself when the page opens, so nobody has to find the button
 let iqQuiet=0;
-function iqAuto(){if(!P||P.info.billMode!=='pct')return;const I=P.inst||[],Q=iqQuote(P);if(!Q||!Q.eqSep||!I.length)return;
+function iqAuto(){if(!P||P.info.billMode!=='pct'||P.info.iqAuto)return;const I=P.inst||[],Q=iqQuote(P);if(!Q||!Q.eqSep||!I.length)return;
   if(Math.abs(sum(I,x=>n(x.pct))-100)<0.01||!I.every(x=>/^[ES]\d/.test(String(x.no||'')))||(P.bills||[]).some(b=>b.inst&&I.some(x=>x.id===b.inst)))return;
   const L=iqBuild(Q);if(!L.length||Math.abs(sum(L,x=>n(x.pct))-100)>0.01)return;const cf=window.confirm;window.confirm=()=>true;
-  iqQuiet=1;try{ACT.instFromQ()}finally{window.confirm=cf;iqQuiet=0}}
-{const f=costBill;costBill=function(){try{iqAuto()}catch(e){}let h=f.apply(this,arguments);if(P.info.billMode!=='pct')return h;const Q=iqQuote(P);if(!Q)return h;
+  iqQuiet=1;try{ACT.instFromQ()}finally{window.confirm=cf;iqQuiet=0}P.info.iqAuto=1;save()}
+{const f=costBill;costBill=function(){try{iqAuto()}catch(e){}let h=f.apply(this,arguments);if(P.info.billMode!=='pct')return h;
+  h=h.replace('<section class="card"><h2><span>งวดงาน</span><small>','<section class="card iq-card"><h2><span>งวดงาน</span><small><span class="muted">แก้เงื่อนไข % จำนวนเงิน หรือยอดรวม VAT ในตารางได้เลย</span> ');const Q=iqQuote(P);if(!Q)return h;
   const lab=`ตั้งงวดตามใบเสนอราคา ${esc(Q.no||'')}`;
   h=h.replace('<button type="button" class="btn sm" data-a="instGen">',`<button type="button" class="btn sm" data-a="instFromQ" title="แทนที่งวดงานด้วยงวดเงินในใบเสนอราคา${Q.eqSep?' (ค่าเครื่อง + ค่าติดตั้ง คิดเป็น % ของทั้งสัญญา)':''}">${lab}</button>$&`);
   return h.replace(/(<span class="pill warn">รวม [^<]*% ยังไม่เท่ากับ 100%<\/span>)/,`$1 <button type="button" class="btn sm pri" data-a="instFromQ">${lab}</button>`)}}
+// 4.99.75 (user: "เพิ่มให้สามารถแก้ไขงวดงานได้"): the automatic fix above runs once per project and never after the schedule is
+// edited by hand (it used to undo a % typed while the total was not yet 100%). The amount and with-VAT cells can be typed too: the
+// % of the contract is worked back from them. The editable cells get a visible box.
+HOOK.push(p=>{if(P&&P.info&&/^inst(\.|$)/.test(p))P.info.iqAuto=1});
+{const f=ACT.add;if(f)ACT.add=function(b){if(P&&P.info&&b&&b.dataset&&b.dataset.c==='inst')P.info.iqAuto=1;return f.apply(this,arguments)}}
+{const f=ACT.delRow;if(f)ACT.delRow=function(b){if(P&&P.info&&b&&b.dataset&&b.dataset.c==='inst')P.info.iqAuto=1;return f.apply(this,arguments)}}
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||!t.dataset.iqamt||!P)return;e.stopImmediatePropagation();
+  const it=(P.inst||[]).find(x=>x.id===t.dataset.iqamt),base=n(t.dataset.base);if(!it||!base)return;
+  it.pct=Math.round(n(t.value)*1e6/base)/1e4;P.info.iqAuto=1;save();rerender()},true);
 // each งวด with VAT next to its amount, as the quotation prints it
 {const g=gtable;gtable=function(base,rows,cols,o){if(base==='inst'&&Array.isArray(cols)&&cols.some(c=>c.h==='% ของสัญญา')&&!cols.some(c=>c.h==='รวม VAT')){
   const k=cols.findIndex(c=>c.h==='จำนวนเงิน');if(k>=0){const C=contract(),v=n(P.info.vat===undefined||P.info.vat===''?7:P.info.vat);
-    cols=cols.slice();cols.splice(k+1,0,{h:'รวม VAT',t:'calc',r:1,f:x=>fmt(C.total*n(x.pct)/100*(1+v/100))})}}
+    const box=(x,m)=>`<input class="r iq-amt" inputmode="decimal" data-iqamt="${x.id}" data-base="${C.total*m}" value="${fmt(C.total*n(x.pct)/100*m)}" aria-label="จำนวนเงิน">`;
+    cols=cols.slice();cols[k]=Object.assign({},cols[k],{f:x=>box(x,1)});cols.splice(k+1,0,{h:'รวม VAT',t:'calc',r:1,f:x=>box(x,1+v/100)})}}
   return g.apply(this,[base,rows,cols,o].slice(0,arguments.length))}}
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'รวม VAT':'Incl. VAT'});
+document.head.insertAdjacentHTML('beforeend',`<style>.iq-amt{width:100%;min-width:96px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:transparent;color:inherit;font:inherit}
+.iq-amt:focus,.iq-amt:hover{border-color:var(--pri,#0ea5e9)}
+.iq-card td input:not([type=checkbox]),.iq-card td select{border:1px solid var(--line);border-radius:8px;padding:5px 8px}</style>`);
