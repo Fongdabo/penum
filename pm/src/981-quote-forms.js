@@ -484,7 +484,7 @@ HOOK.push((p,v)=>{const m=p.match(/^co\.quotes\.([^.]+)\.eqSep$/);if(!m||!v)retu
   return h.replace('<span>เงื่อนไขการชำระเงิน (งวดเงิน)</span><small>','<span>งวดเงิน ค่าติดตั้ง วัสดุ และค่าแรง</span><small>หัก ณ ที่จ่าย 3% · คิดจากยอดค่าติดตั้ง · ')}}
 {const f=ACT.qWon;ACT.qWon=b=>{const Q=CO().quotes.find(q=>q.id===b.dataset.id),had=Q&&Q.pj&&DB.projects[Q.pj];f(b);
   if(!Q||had||!Q.eqSep||qmMa(Q)||!(Q.qpayE||[]).length||!(Q.qpay||[]).length)return;const p=Q.pj&&DB.projects[Q.pj],P=qmParts(Q);if(!p||!P)return;
-  const a=qCalc(P[0]).net,s=qCalc(P[1]).net,w=a+s>0?a/(a+s):0,ws=Q.whtB==='none'?0:Math.round(3*qmWhtShare(P[1])*1000)/1000,r=v=>Math.round(v*1000)/1000;
+  const a=qCalc(P[0]).net,s=qCalc(P[1]).net,w=a+s>0?a/(a+s):0,ws=Q.whtB==='none'?0:Math.round(3*qmWhtShare(P[1])*1000)/1000,r=v=>Math.round(v*1e4)/1e4;
   p.inst=[...Q.qpayE.map(x=>({id:uid(),no:'E'+x.no,desc:'ค่าเครื่อง: '+(x.desc||''),pct:r(n(x.pct)*w),wp:0,task:'',date:''})),
     ...Q.qpay.map(x=>({id:uid(),no:'S'+x.no,desc:'ค่าติดตั้ง: '+(x.desc||''),pct:r(n(x.pct)*(1-w)),wp:ws,task:'',date:''}))];p.info.billMode='pct';save();
   toast(`งวดของโครงการ: ค่าเครื่อง ${Q.qpayE.length} งวด (ไม่หัก ณ ที่จ่าย) + ค่าติดตั้ง ${Q.qpay.length} งวด (หัก ${fmtq(ws)}%)`)}}
