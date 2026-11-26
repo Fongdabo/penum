@@ -6,14 +6,19 @@
    each amount is the quote's own amount before VAT. Rows with the same งวด number keep their id, milestone and claims.
    The card also shows each งวด with VAT, the figure printed on the quotation, and the warning about a total that is not 100%
    offers the same button. */
+const iqP=v=>n(v).toLocaleString('th-TH',{maximumFractionDigits:4});
+const iqNo=(Q,x)=>{const m=String(x.no||'').match(/^([ES])\d/);return m&&Q.no?Q.no+(m[1]==='E'?'-1':'-2'):''};
 const iqQuote=p=>p&&(CO().quotes||[]).find(q=>q.pj===p.id&&q.status==='won'&&(q.qpay||[]).length+(q.qpayE||[]).length>0)||null;
-function iqBuild(Q){const r=v=>Math.round(v*1e4)/1e4,L=[];
+function iqBuild(Q){const r=v=>Math.round(v*1e6)/1e6,L=[];
   const two=Q.eqSep&&!(typeof qmMa==='function'&&qmMa(Q))&&(Q.qpayE||[]).length&&(Q.qpay||[]).length&&typeof qmParts==='function'&&qmParts(Q);
   if(two){const a=qCalc(two[0]).net,s=qCalc(two[1]).net,w=a+s>0?a/(a+s):0,ws=Q.whtB==='none'?0:Math.round(3*qmWhtShare(two[1])*1000)/1000;
     Q.qpayE.forEach(x=>L.push({no:'E'+x.no,desc:'ค่าเครื่อง: '+(x.desc||''),pct:r(n(x.pct)*w),wp:0}));
     Q.qpay.forEach(x=>L.push({no:'S'+x.no,desc:'ค่าติดตั้ง: '+(x.desc||''),pct:r(n(x.pct)*(1-w)),wp:ws}));
     // both schedules complete: the last งวด takes the rounding, so the whole adds up to exactly 100%
-    const t=sum(L,x=>n(x.pct)),z=L.filter(x=>n(x.pct)).pop();if(z&&Math.abs(t-100)<0.01)z.pct=r(n(z.pct)+100-t)}
+    // each quotation's last งวด takes its rounding, so each part is exactly its share and the whole exactly 100%
+    const tE=r(100*w),fix=(G,t)=>{const z=G.filter(x=>n(x.pct)).pop(),d=t-sum(G,x=>n(x.pct));if(z&&Math.abs(d)<0.01)z.pct=r(n(z.pct)+d)};
+    if(Math.abs(sum(Q.qpayE,x=>n(x.pct))-100)<0.01)fix(L.filter(x=>/^E/.test(x.no)),tE);
+    if(Math.abs(sum(Q.qpay,x=>n(x.pct))-100)<0.01)fix(L.filter(x=>/^S/.test(x.no)),r(100-tE))}
   else (Q.qpay||[]).forEach(x=>L.push({no:x.no,desc:x.desc,pct:n(x.pct)}));
   // retention as 4.22 sets it when the quote is won
   const W=typeof qWr==='function'&&qWr(Q),ret=W&&W.m?n(W.ret):0,sub=L.filter(x=>!(Q.eqSep&&W&&!W.e&&/^E/.test(String(x.no||''))));
@@ -39,6 +44,14 @@ function iqAuto(){if(!P||P.info.billMode!=='pct'||P.info.iqAuto)return;const I=P
   h=h.replace('<section class="card"><h2><span>งวดงาน</span><small>','<section class="card iq-card"><h2><span>งวดงาน</span><small><span class="muted">แก้เงื่อนไข % จำนวนเงิน หรือยอดรวม VAT ในตารางได้เลย</span> ');const Q=iqQuote(P);if(!Q)return h;
   const lab=`ตั้งงวดตามใบเสนอราคา ${esc(Q.no||'')}`;
   h=h.replace('<button type="button" class="btn sm" data-a="instGen">',`<button type="button" class="btn sm" data-a="instFromQ" title="แทนที่งวดงานด้วยงวดเงินในใบเสนอราคา${Q.eqSep?' (ค่าเครื่อง + ค่าติดตั้ง คิดเป็น % ของทั้งสัญญา)':''}">${lab}</button>$&`);
+  if(Q.eqSep&&Q.no){const C=contract(),v=n(P.info.vat===undefined||P.info.vat===''?7:P.info.vat),G={};
+    (P.inst||[]).forEach(x=>{const k=iqNo(Q,x)||'อื่น ๆ';(G[k]=G[k]||[]).push(x)});
+    const lab={[Q.no+'-1']:'ค่าเครื่อง (สินค้า)',[Q.no+'-2']:'ค่าติดตั้ง วัสดุ และค่าแรง'},row=(k,L)=>{const pc=sum(L,x=>n(x.pct)),a=C.total*pc/100;
+      return `<tr><td><b>${esc(k)}</b></td><td>${esc(lab[k]||'')}</td><td class="r">${L.length}</td><td class="r">${iqP(pc)}</td><td class="r">${fmt(a,2)}</td><td class="r">${fmt(a*(1+v/100),2)}</td></tr>`};
+    const ks=Object.keys(G),tp=sum(P.inst||[],x=>n(x.pct)),ta=C.total*tp/100;
+    const box=`<div class="tw iq-sum" style="margin-top:10px"><table><thead><tr><th>เลขที่ใบเสนอราคา</th><th>ส่วน</th><th class="r">จำนวนงวด</th><th class="r">% ของสัญญา</th><th class="r">ยอดเงิน (ไม่รวม VAT)</th><th class="r">รวม VAT</th></tr></thead><tbody>
+      ${ks.map(k=>row(k,G[k])).join('')}<tr class="tot"><td>รวม</td><td></td><td class="r">${(P.inst||[]).length}</td><td class="r">${iqP(tp)}</td><td class="r">${fmt(ta,2)}</td><td class="r">${fmt(ta*(1+v/100),2)}</td></tr></tbody></table></div>`;
+    const m=h.indexOf('<section class="card iq-card">'),e=m<0?-1:h.indexOf('<div class="row" style="margin-top:8px">',m);if(e>0)h=h.slice(0,e)+box+h.slice(e)}
   return h.replace(/(<span class="pill warn">รวม [^<]*% ยังไม่เท่ากับ 100%<\/span>)/,`$1 <button type="button" class="btn sm pri" data-a="instFromQ">${lab}</button>`)}}
 // 4.99.75 (user: "เพิ่มให้สามารถแก้ไขงวดงานได้"): the automatic fix above runs once per project and never after the schedule is
 // edited by hand (it used to undo a % typed while the total was not yet 100%). The amount and with-VAT cells can be typed too: the
@@ -48,14 +61,17 @@ HOOK.push(p=>{if(P&&P.info&&/^inst(\.|$)/.test(p))P.info.iqAuto=1});
 {const f=ACT.delRow;if(f)ACT.delRow=function(b){if(P&&P.info&&b&&b.dataset&&b.dataset.c==='inst')P.info.iqAuto=1;return f.apply(this,arguments)}}
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||!t.dataset.iqamt||!P)return;e.stopImmediatePropagation();
   const it=(P.inst||[]).find(x=>x.id===t.dataset.iqamt),base=n(t.dataset.base);if(!it||!base)return;
-  it.pct=Math.round(n(t.value)*1e6/base)/1e4;P.info.iqAuto=1;save();rerender()},true);
+  it.pct=Math.round(n(t.value)*1e8/base)/1e6;P.info.iqAuto=1;save();rerender()},true);
 // each งวด with VAT next to its amount, as the quotation prints it
 {const g=gtable;gtable=function(base,rows,cols,o){if(base==='inst'&&Array.isArray(cols)&&cols.some(c=>c.h==='% ของสัญญา')&&!cols.some(c=>c.h==='รวม VAT')){
   const k=cols.findIndex(c=>c.h==='จำนวนเงิน');if(k>=0){const C=contract(),v=n(P.info.vat===undefined||P.info.vat===''?7:P.info.vat);
     const box=(x,m)=>`<input class="r iq-amt" inputmode="decimal" data-iqamt="${x.id}" data-base="${C.total*m}" value="${fmt(C.total*n(x.pct)/100*m)}" aria-label="จำนวนเงิน">`;
-    cols=cols.slice();cols[k]=Object.assign({},cols[k],{f:x=>box(x,1)});cols.splice(k+1,0,{h:'รวม VAT',t:'calc',r:1,f:x=>box(x,1+v/100)})}}
+    cols=cols.slice();cols[k]=Object.assign({},cols[k],{f:x=>box(x,1)});cols.splice(k+1,0,{h:'รวม VAT',t:'calc',r:1,f:x=>box(x,1+v/100)});
+    const Q=iqQuote(P);if(Q&&Q.eqSep&&Q.no){const j=cols.findIndex(c=>c.k==='desc');cols.splice(j+1,0,{h:'ใบเสนอราคา',t:'calc',f:x=>esc(iqNo(Q,x)||'')})}}}
   return g.apply(this,[base,rows,cols,o].slice(0,arguments.length))}}
 if(typeof I18N==='object'&&I18N.en&&I18N.en.x)Object.assign(I18N.en.x,{'รวม VAT':'Incl. VAT'});
 document.head.insertAdjacentHTML('beforeend',`<style>.iq-amt{width:100%;min-width:96px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:transparent;color:inherit;font:inherit}
 .iq-amt:focus,.iq-amt:hover{border-color:var(--pri,#0ea5e9)}
+.iq-card td input[data-p$=".pct"]{min-width:118px}
+.iq-sum tr.tot td{font-weight:700;border-top:2px solid var(--line)}
 .iq-card td input:not([type=checkbox]),.iq-card td select{border:1px solid var(--line);border-radius:8px;padding:5px 8px}</style>`);
